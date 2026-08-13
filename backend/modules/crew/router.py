@@ -33,11 +33,9 @@ from sqlalchemy import or_, func
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, joinedload
 
-from auth_jwt import make_invite_token
-from config import app_base_url
 from database.db import get_db
 from database.models import Job, User, TimeEntry
-from modules.auth.router import require_role, current_org_id, resolve_org_id
+from modules.auth.router import require_role, current_org_id, resolve_org_id, send_staff_invite
 from utils.dates import business_today, business_tz
 from integrations.connecteam import (
     is_configured as connecteam_is_configured,
@@ -727,7 +725,7 @@ def resend_crew_invite(user_id: int, db: Session = Depends(get_db),
     if u.password_hash:
         raise HTTPException(status_code=409,
                             detail="This cleaner has already set their password.")
-    _send_crew_invite(u)
+    send_staff_invite(u)
     return _crew_row(u)
 
 
@@ -773,33 +771,10 @@ def add_crew(body: CrewCreate, db: Session = Depends(get_db),
         # numeric legacy IDs.
         u.cleaner_id = f"bb{u.id}"
     db.commit(); db.refresh(u)
-    _send_crew_invite(u)
+    send_staff_invite(u)
     return _crew_row(u)
 
 
-def _send_crew_invite(u: User) -> None:
-    """Email the cleaner a link to set their password. Best-effort — a mail
-    failure never fails the create; the office can resend."""
-    try:
-        token = make_invite_token(u.email)
-        link = f"{app_base_url().rstrip('/')}/accept-invite?token={token}"
-        name = (u.full_name or "there").split()[0]
-        from integrations.email import send_email
-        send_email(
-            to=u.email,
-            subject="You're set up on BrightBase — finish signing in",
-            html_body=(
-                f"<p>Hi {name},</p>"
-                f"<p>You've been added to the crew on BrightBase. Set your password to "
-                f"see your schedule and clock in from your phone. This link is good for "
-                f"7 days.</p>"
-                f"<p><a href=\"{link}\" style=\"display:inline-block;padding:10px 18px;"
-                f"background:#4f46e5;color:#fff;border-radius:8px;text-decoration:none;"
-                f"font-weight:600\">Set your password</a></p>"
-                f"<p style=\"color:#666;font-size:12px\">If you weren't expecting this, "
-                f"you can ignore it.</p>"
-            ),
-            text_body=f"Hi {name}, set your BrightBase password (good for 7 days): {link}",
-        )
-    except Exception:
-        log.exception("crew invite email failed for a new cleaner")
+# The invite email itself lives in modules/auth/router.py (send_staff_invite) —
+# one sender for both the crew add and the generic Users-screen invite, so the
+# wording and 7-day TTL can never drift apart.

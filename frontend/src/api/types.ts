@@ -315,6 +315,52 @@ export interface paths {
         patch: operations["update_workspace_user_api_auth_users__user_id__patch"];
         trace?: never;
     };
+    "/api/auth/users/invite": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Invite User
+         * @description Admin adds a person directly (no self-signup + approval dance): creates a
+         *     passwordless invited account with the chosen role and emails them the same
+         *     single-use set-your-password link the crew flow uses. Cleaners invited here
+         *     get a crew ID minted (same as POST /api/crew) so they're assignable
+         *     immediately.
+         */
+        post: operations["invite_user_api_auth_users_invite_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/auth/users/{user_id}/resend-invite": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Resend User Invite
+         * @description Re-email the set-password link to anyone who hasn't activated yet — the
+         *     link expires after 7 days, or the first email got lost. 409 once a password
+         *     exists: resend must never become a password-reset backdoor.
+         */
+        post: operations["resend_user_invite_api_auth_users__user_id__resend_invite_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/auth/google-account": {
         parameters: {
             query?: never;
@@ -6696,6 +6742,18 @@ export interface components {
             /** Author */
             author?: string | null;
         };
+        /** InviteUser */
+        InviteUser: {
+            /** Email */
+            email: string;
+            /** Full Name */
+            full_name?: string | null;
+            /**
+             * Role
+             * @default member
+             */
+            role: string;
+        };
         /** InvoiceCreate */
         InvoiceCreate: {
             /** Client Id */
@@ -8365,6 +8423,70 @@ export interface operations {
                 "application/json": components["schemas"]["AdminUserUpdate"];
             };
         };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    invite_user_api_auth_users_invite_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["InviteUser"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    resend_user_invite_api_auth_users__user_id__resend_invite_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                user_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
         responses: {
             /** @description Successful Response */
             200: {

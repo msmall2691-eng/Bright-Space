@@ -12,7 +12,7 @@ from typing import Optional
 
 from database.db import get_db
 from database.models import User, AppSetting
-from auth_jwt import hash_password, verify_password, create_jwt, verify_jwt, read_invite_token
+from auth_jwt import hash_password, verify_password, create_jwt, verify_jwt, read_invite_token, make_invite_token
 from ratelimit import limiter
 
 logger = logging.getLogger(__name__)
@@ -716,6 +716,9 @@ def _user_row(db: Session, u: User) -> dict:
         "role": u.role,
         "status": u.status or "active",
         "active": u.active,
+        # An invited user hasn't set a password (or signed in via Google) yet —
+        # the Users screen shows them as "Invited" with a Resend button.
+        "activated": bool(u.password_hash) or u.last_login_at is not None,
         "auth_provider": u.auth_provider,
         "google_connected": bool(u.google_sub) or has_google_grant,
         "cleaner_id": u.cleaner_id,
@@ -737,6 +740,39 @@ def _ensure_not_last_admin(db: Session, user: User):
     ).count()
     if others == 0:
         raise HTTPException(status_code=409, detail="Can't remove or demote the last active admin.")
+
+
+def send_staff_invite(u: User) -> None:
+    """Email any staff user (cleaner or office) a link to set their password.
+    Best-effort — a mail failure never fails the create; the admin can resend.
+    The ONE invite sender: the crew module imports this rather than keeping its
+    own copy, so wording and TTL can't drift between the two add-a-person flows."""
+    try:
+        token = make_invite_token(u.email)
+        from config import app_base_url
+        link = f"{app_base_url().rstrip('/')}/accept-invite?token={token}"
+        name = (u.full_name or "there").split()[0]
+        crew = (u.role or "") == "cleaner"
+        blurb = ("see your schedule and clock in from your phone"
+                 if crew else "sign in and get to work")
+        from integrations.email import send_email
+        send_email(
+            to=u.email,
+            subject="You're set up on BrightBase — finish signing in",
+            html_body=(
+                f"<p>Hi {name},</p>"
+                f"<p>You've been added to BrightBase at The Maine Cleaning Co. "
+                f"Set your password to {blurb}. This link is good for 7 days.</p>"
+                f"<p><a href=\"{link}\" style=\"display:inline-block;padding:10px 18px;"
+                f"background:#4f46e5;color:#fff;border-radius:8px;text-decoration:none;"
+                f"font-weight:600\">Set your password</a></p>"
+                f"<p style=\"color:#666;font-size:12px\">If you weren't expecting this, "
+                f"you can ignore it.</p>"
+            ),
+            text_body=f"Hi {name}, set your BrightBase password (good for 7 days): {link}",
+        )
+    except Exception:
+        logger.exception("[auth] staff invite email failed")
 
 
 class AcceptInvite(BaseModel):
@@ -870,6 +906,64 @@ def update_workspace_user(user_id: int, data: AdminUserUpdate, db: Session = Dep
     db.commit()
     logger.info(f"[auth] {current_user.email} updated user {u.email}: "
                 f"role={data.role!r} active={data.active!r} cleaner_id={data.cleaner_id!r}")
+    return _user_row(db, u)
+
+
+class InviteUser(BaseModel):
+    email: str
+    full_name: Optional[str] = None
+    role: str = "member"
+
+
+@router.post("/users/invite")
+def invite_user(data: InviteUser, db: Session = Depends(get_db),
+                current_user: User = Depends(require_role("admin")),
+                org_id: int = Depends(current_org_id)):
+    """Admin adds a person directly (no self-signup + approval dance): creates a
+    passwordless invited account with the chosen role and emails them the same
+    single-use set-your-password link the crew flow uses. Cleaners invited here
+    get a crew ID minted (same as POST /api/crew) so they're assignable
+    immediately."""
+    email = (data.email or "").strip().lower()
+    if not email or "@" not in email:
+        raise HTTPException(status_code=422, detail="A valid email is required.")
+    role = (data.role or "member").strip().lower()
+    # 'client' logins are customer-portal accounts, created by the portal flow —
+    # inviting one from the staff screen would be a mistake, so it's excluded.
+    if role not in (ASSIGNABLE_ROLES - {"client"}):
+        raise HTTPException(status_code=422, detail=f"Unknown role '{role}'")
+    if db.query(User).filter(func.lower(User.email) == email).first():
+        raise HTTPException(status_code=409, detail="A user with that email already exists.")
+    u = User(
+        email=email, password_hash=None,
+        full_name=(data.full_name or "").strip() or email,
+        role=role, status="invited", active=True,
+        org_id=resolve_org_id(org_id, db),
+        auth_provider="password",
+    )
+    db.add(u)
+    db.flush()
+    if role == "cleaner" and not u.cleaner_id:
+        u.cleaner_id = f"bb{u.id}"
+    db.commit(); db.refresh(u)
+    send_staff_invite(u)
+    logger.info(f"[auth] {current_user.email} invited {u.email} as {role}")
+    return _user_row(db, u)
+
+
+@router.post("/users/{user_id}/resend-invite")
+def resend_user_invite(user_id: int, db: Session = Depends(get_db),
+                       current_user: User = Depends(require_role("admin"))):
+    """Re-email the set-password link to anyone who hasn't activated yet — the
+    link expires after 7 days, or the first email got lost. 409 once a password
+    exists: resend must never become a password-reset backdoor."""
+    u = db.query(User).filter(User.id == user_id).first()
+    if not u:
+        raise HTTPException(status_code=404, detail="User not found")
+    if u.password_hash:
+        raise HTTPException(status_code=409,
+                            detail="They've already set a password — use sign-in or a reset instead.")
+    send_staff_invite(u)
     return _user_row(db, u)
 
 
