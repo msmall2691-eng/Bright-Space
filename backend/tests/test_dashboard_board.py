@@ -141,7 +141,7 @@ def test_board_shape_and_stat_deltas(client):
     stat_keys = {s["key"] for s in before["stats"]}
     assert stat_keys == {"unassigned", "weekend", "overdue", "waiting", "leads", "collected"}
     int_keys = {c["key"] for c in before["integrations"]}
-    assert int_keys == {"gmail", "calendar", "connecteam", "square", "twilio"}
+    assert int_keys == {"gmail", "calendar", "square", "twilio"}
     # Every item is well-formed.
     for s in before["sections"]:
         for it in s["items"]:

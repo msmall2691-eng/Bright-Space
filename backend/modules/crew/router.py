@@ -13,9 +13,8 @@ reconcile against Connecteam; as of the Connecteam removal these punches ARE
 payroll's default source (payroll_source='native'), and /my-week lets a cleaner
 see their own earned + predicted pay for the week.
 
-None of this touches the schedule or Connecteam: writing a punch never changes
-Job schedule state, so the scheduling-authority contract (BrightBase canonical,
-Connecteam a read-only projection) is untouched.
+None of this touches the schedule: writing a punch never changes Job schedule
+state, so the scheduling-authority contract (BrightBase canonical) is untouched.
 
 Jobs are fetched for a bounded window and filtered in Python rather than with a
 DB-specific JSON-containment query, matching the pattern the rest of
@@ -37,12 +36,6 @@ from database.db import get_db
 from database.models import Job, User, TimeEntry
 from modules.auth.router import require_role, current_org_id, resolve_org_id, send_staff_invite
 from utils.dates import business_today, business_tz
-from integrations.connecteam import (
-    is_configured as connecteam_is_configured,
-    get_time_activities,
-    get_timesheet_totals,
-    ConnecteamAuthError,
-)
 
 router = APIRouter()
 
@@ -182,7 +175,7 @@ class ClockInBody(BaseModel):
 class ClockOutBody(BaseModel):
     break_minutes: Optional[int] = None
     note: Optional[str] = None
-    # Miles driven for this job, entered at clock-out (parity with Connecteam).
+    # Miles driven for this job, entered at clock-out.
     # Optional — blank/omitted means no driving to reimburse for this punch.
     miles: Optional[float] = None
 
@@ -222,8 +215,8 @@ def my_day(
     upcoming_jobs = [j for j in mine if j.scheduled_date != today]
 
     # ── Native time clock status ─────────────────────────────────────────────
-    # Read-only w.r.t. the schedule and entirely separate from payroll (which
-    # still reads Connecteam). Folded into /my-day so the crew app is one call.
+    # Read-only w.r.t. the schedule. Folded into /my-day so the crew app is
+    # one call; native payroll reads these same punches.
     day_start, day_end = _business_day_bounds_utc(today)
     entries_today = (
         db.query(TimeEntry)
@@ -537,108 +530,6 @@ def set_entry_miles(
 
 
 # ── Reconciliation (office view) ─────────────────────────────────────────────
-
-@router.get("/reconciliation", dependencies=[Depends(require_role("admin", "manager"))])
-async def reconciliation(
-    start: str,
-    end: str,
-    db: Session = Depends(get_db),
-    org_id: int = Depends(current_org_id),
-):
-    """Native clock hours vs Connecteam's hours, per cleaner, for a date range —
-    the proof step before payroll ever depends on the native clock. Read-only:
-    reads Connecteam the same way payroll does (its official timesheet totals,
-    falling back to punch-summed hours) and never writes it. If Connecteam isn't
-    configured, returns native hours alone with connecteam_configured=false."""
-    try:
-        d0 = datetime.strptime(start, "%Y-%m-%d").date()
-        d1 = datetime.strptime(end, "%Y-%m-%d").date()
-    except ValueError:
-        raise HTTPException(status_code=422, detail="Dates must be YYYY-MM-DD")
-    if d1 < d0:
-        raise HTTPException(status_code=422, detail="End date is before start date")
-    if (d1 - d0).days > 92:
-        raise HTTPException(status_code=422, detail="Range is at most 92 days (Connecteam's limit).")
-
-    oid = resolve_org_id(org_id, db)
-    org_scope = lambda model: or_(model.org_id == oid, model.org_id.is_(None))
-
-    # ── Native hours: closed punches whose clock-in falls in the range. ──
-    day_start = _business_day_bounds_utc(d0)[0]
-    day_end = _business_day_bounds_utc(d1)[1]
-    native = defaultdict(float)
-    for e in (
-        db.query(TimeEntry)
-        .filter(org_scope(TimeEntry),
-                TimeEntry.clock_out_at.isnot(None),
-                TimeEntry.clock_in_at >= day_start,
-                TimeEntry.clock_in_at < day_end)
-        .all()
-    ):
-        native[e.cleaner_id] += _entry_hours(e) or 0.0
-
-    # ── Connecteam hours (read-only), the same source payroll reconciles to. ──
-    connecteam: dict = {}
-    ct_error = None
-    configured = connecteam_is_configured()
-    if configured:
-        try:
-            totals: dict = {}
-            if (d1 - d0).days <= 45:   # Connecteam's official-totals window
-                try:
-                    totals = await get_timesheet_totals(start, end)
-                except Exception:
-                    totals = {}
-            if totals:
-                connecteam = {str(k): float((v or {}).get("hours") or 0.0) for k, v in totals.items()}
-            else:
-                agg = defaultdict(float)
-                for r in await get_time_activities(start, end):
-                    agg[str(r["userId"])] += r.get("netHours") or 0.0
-                connecteam = dict(agg)
-        except ConnecteamAuthError as ex:
-            ct_error = str(ex)
-        except Exception as ex:
-            ct_error = f"Connecteam error: {ex}"
-
-    # ── Names from BrightBase logins (crew who use the app have accounts). ──
-    ids = set(native) | set(connecteam)
-    names = {}
-    if ids:
-        for u in db.query(User).filter(User.cleaner_id.in_(ids)).all():
-            names[u.cleaner_id] = u.full_name or u.email
-
-    people = []
-    for cid in ids:
-        nh = round(native.get(cid, 0.0), 2)
-        ch = connecteam.get(cid)
-        ch = round(ch, 2) if ch is not None else None
-        people.append({
-            "cleaner_id": cid,
-            "name": names.get(cid) or cid,
-            "native_hours": nh,
-            "connecteam_hours": ch,
-            "delta_hours": round(nh - ch, 2) if ch is not None else None,
-            # Within 0.25h reads as agreement in the UI.
-            "match": ch is not None and abs(nh - ch) <= 0.25,
-        })
-    people.sort(key=lambda p: (p["name"] or "").lower())
-
-    tot_native = round(sum(p["native_hours"] for p in people), 2)
-    tot_ct = round(sum((p["connecteam_hours"] or 0.0) for p in people), 2)
-    return {
-        "start": start,
-        "end": end,
-        "connecteam_configured": configured,
-        "connecteam_error": ct_error,
-        "people": people,
-        "totals": {
-            "native_hours": tot_native,
-            "connecteam_hours": tot_ct if configured else None,
-            "delta_hours": round(tot_native - tot_ct, 2) if configured else None,
-        },
-    }
-
 
 # ── Crew admin: manage cleaners as native users (Connecteam-free) ────────────
 # The office manages the crew here — add a cleaner, set pay rates, and (crucial

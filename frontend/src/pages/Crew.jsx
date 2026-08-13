@@ -1,11 +1,11 @@
 /**
- * Crew — native crew setup (Connecteam-free).
+ * Crew — native crew setup.
  *
  * The office runs the crew from here: add a cleaner (which emails them a link to
- * set their own password), set per-cleaner pay rates, and — crucial for the
- * Connecteam cutover — claim the crew IDs already sitting on scheduled jobs so
- * nobody falls off the schedule. All reads/writes are our own database; there is
- * no Connecteam call anywhere on this page.
+ * set their own password), set per-cleaner pay rates, and claim the crew IDs
+ * already sitting on scheduled jobs so nobody falls off the schedule (crew IDs
+ * on older jobs were originally imported from the retired external scheduling
+ * app). All reads/writes are our own database.
  *
  * Backend: GET /api/crew/roster, GET /api/crew/unclaimed-ids, POST /api/crew,
  * POST /api/crew/{id}/resend-invite, and pay-rate/crew-ID edits reuse the
@@ -136,7 +136,7 @@ export default function Crew() {
         icon={HardHat}
         iconColor="violet"
         title="Crew"
-        subtitle="Add cleaners, set their pay rates, and send each one a link to set their own password. No Connecteam."
+        subtitle="Add cleaners, set their pay rates, and send each one a link to set their own password."
       />
 
       <div className="px-4 sm:px-8 space-y-5 max-w-4xl">
@@ -150,7 +150,7 @@ export default function Crew() {
             <p className="text-[13px] text-amber-700/90 mb-3">
               These crew IDs are assigned to upcoming jobs but aren’t linked to anyone. Add a cleaner
               with the matching ID so their jobs show up for them — and so no one falls off the
-              schedule as you move off Connecteam.
+              schedule.
             </p>
             <div className="flex flex-wrap gap-2">
               {unclaimed.map(u => (

@@ -1,9 +1,8 @@
 """
 Read-only audit: is the crew set up for native payroll?
 
-Before flipping payroll from Connecteam to the native clock (Settings ->
-payroll_source = 'native'), every active cleaner login needs to be wired up so
-their punches attribute and pay computes. This script checks that, per org, and
+Native payroll pays from the crew clock, so every active cleaner login needs
+to be wired up for their punches to attribute and their pay to compute. This script checks that, per org, and
 never writes anything — it runs SELECTs only, so it's safe against production.
 
 What it checks:

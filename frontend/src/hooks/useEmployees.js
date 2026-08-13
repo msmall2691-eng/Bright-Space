@@ -46,8 +46,8 @@ export function useEmployees() {
   }, [])
 
   const employeeById = useMemo(() => {
-    // Index both by id and by userId — Connecteam / auth systems key cleaners
-    // by userId in some places, by id in others, and the old useScheduleData
+    // Index both by id and by userId — legacy rosters keyed cleaners by
+    // userId in some places, by id in others, and the old useScheduleData
     // helper supported both keys.
     const m = {}
     for (const e of employees) {

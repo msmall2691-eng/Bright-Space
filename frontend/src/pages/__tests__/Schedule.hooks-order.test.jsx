@@ -52,7 +52,6 @@ vi.mock('../../hooks/useScheduleFilters', () => ({
     selectedStatus: 'all', setSelectedStatus: vi.fn(),
     unassignedOnly: false, setUnassignedOnly: vi.fn(),
     noGcalOnly: false, setNoGcalOnly: vi.fn(),
-    noConnecteamOnly: false, setNoConnecteamOnly: vi.fn(),
     filteredVisits: [], unassignedCount: 0, visitsByDate: {}, scheduleStats: {},
     currentlyVisibleVisits: [],
   }),

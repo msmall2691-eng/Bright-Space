@@ -4,7 +4,7 @@ Exercises the aggregator directly (no HTTP) against a seeded schedule: one
 recurring series with a materialized visit, two Airbnb feeds (one healthy, one
 failing), and an imported turnover job. Asserts the channel shape, flow
 directions, the failing-feed rollup, and that the ~14 background ticks are all
-surfaced. Google/Connecteam aren't configured in tests, so their channels report
+surfaced. Google isn't configured in tests, so its channel reports
 'disconnected' and the overall verdict is 'attention' — asserted explicitly so a
 regression that hides the disconnected backbone is caught.
 """
@@ -62,21 +62,14 @@ def test_overview_shape_and_directions(ctx):
     assert set(ov["schedule_log"]) >= {"enabled", "total", "last_event_at", "events_24h", "by_type"}
 
     ch = _by_key(ov)
-    assert set(ch) == {"google", "connecteam", "airbnb", "recurring"}
+    # Connecteam removal: three live channels, no connecteam card at all.
+    assert set(ch) == {"google", "airbnb", "recurring"}
     # Flow directions are the whole point of the redesign — pin them.
     assert ch["google"]["direction"] == "out"
-    assert ch["connecteam"]["direction"] == "out"
     assert ch["airbnb"]["direction"] == "in"
     assert ch["recurring"]["direction"] == "internal"
-    # Connecteam removal step 3: the channel is a static retired marker — no
-    # toggle, no sync action, never drives the verdict.
-    assert ch["connecteam"]["status"] == "retired"
-    assert ch["connecteam"]["toggle_key"] is None
-    assert ch["connecteam"]["sync_action"] is None
-    # Every LIVE channel advertises the automation key its pause toggle posts.
+    # Every channel advertises the automation key its pause toggle posts.
     for chan in ov["channels"]:
-        if chan["key"] == "connecteam":
-            continue
         assert chan["toggle_key"]
         assert chan["status"] in {"ok", "syncing", "paused", "attention", "disconnected"}
 

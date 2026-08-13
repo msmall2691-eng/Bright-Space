@@ -1,7 +1,7 @@
 """Encryption-at-rest for sensitive ``app_settings`` values.
 
 ``app_settings`` stores integration credentials — the SMTP password, the Square
-access token, the Connecteam API key, and the shared Google OAuth token. These
+access token and the shared Google OAuth token. These
 were historically stored in PLAINTEXT, while per-user Google tokens
 (``user_google_accounts``) were already Fernet-encrypted. That inconsistency
 meant a DB dump or backup leaked live credentials. These helpers close the gap.
@@ -37,6 +37,8 @@ logger = logging.getLogger(__name__)
 SECRET_SETTING_KEYS = {
     "smtp_pass",
     "imap_pass",
+    # Legacy: Connecteam was removed; rows may still hold an encrypted value
+    # and must stay decryptable by the backfill script. Nothing reads it.
     "connecteam_api_key",
     "square_access_token",
     "google_token",

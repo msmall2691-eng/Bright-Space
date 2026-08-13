@@ -121,7 +121,6 @@ class JobResponse(BaseModel):
     custom_fields: dict = {}
     dispatched: bool = False
     gcal_event_id: Optional[str] = None
-    connecteam_shift_ids: List[str] = []
     created_at: Optional[str] = None
     updated_at: Optional[str] = None
     booking: Optional[BookingInfo] = None
@@ -541,7 +540,6 @@ def job_to_dict(j: Job, client: Client = None, effective_date=None,
         "custom_fields": j.custom_fields or {},
         "dispatched": bool(j.dispatched),
         "gcal_event_id": j.gcal_event_id,
-        "connecteam_shift_ids": j.connecteam_shift_ids or [],
         "created_at": j.created_at.isoformat() if j.created_at else None,
         "updated_at": j.updated_at.isoformat() if j.updated_at else None,
         # Customer-link state so the operator UI can badge a visit the customer
@@ -1195,12 +1193,12 @@ def sync_health(db: Session = Depends(get_db), org_id: int = Depends(current_org
 
     The point: let the operator TRUST the schedule at a glance instead of
     clicking a pile of redundant 'push now' buttons. Rolls up, read-only:
-      - whether Google + Connecteam are connected and auto-flow is actually on
+      - whether Google is connected and auto-flow is actually on
         (all the background ticks that keep the schedule current);
-      - how many upcoming jobs aren't on Google / Connecteam yet (a backlog the
-        ticks will clear on their own — not something to push manually);
+      - how many upcoming jobs aren't on Google yet (a backlog the ticks will
+        clear on their own — not something to push manually);
       - the data-integrity issues the background audit already computes
-        (duplicate jobs, orphaned shifts) — the only things a human should act on.
+        (duplicate jobs) — the only things a human should act on.
     Never mutates.
     """
     try:
@@ -1208,13 +1206,6 @@ def sync_health(db: Session = Depends(get_db), org_id: int = Depends(current_org
         gcal_configured = bool(_g_ok())
     except Exception:
         gcal_configured = False
-    try:
-        from integrations.connecteam import is_configured as _c_ok
-        ct_configured = bool(_c_ok())
-    except Exception:
-        ct_configured = False
-
-    from modules.settings.router import connecteam_auto_dispatch_enabled
     from integrations.gcal_sync import calendar_source_of_truth
 
     today = business_today().isoformat()
@@ -1236,47 +1227,31 @@ def sync_health(db: Session = Depends(get_db), org_id: int = Depends(current_org
         if gcal_configured else 0
     )
 
-    # Connecteam shift ids live in a JSON column (SQL NULL / JSON null / [] are
-    # all "not dispatched"), which `.is_(None)` can't fully express — count in
-    # Python via truthiness, mirroring the dispatch guard.
-    unsynced_ct = 0
-    if ct_configured:
-        for j in _org_scoped(db.query(Job).filter(
-            Job.status.in_(active), Job.scheduled_date >= today,
-        )).all():
-            if not j.connecteam_shift_ids:
-                unsynced_ct += 1
-
-    ct_auto = bool(connecteam_auto_dispatch_enabled(db))
     automation = {
         "ical_auto_sync": _app_flag(db, "ical_auto_sync_enabled", "ICAL_AUTO_SYNC_ENABLED"),
         "gcal_auto_sync": _app_flag(db, "gcal_auto_sync_enabled", "GCAL_AUTO_SYNC_ENABLED"),
         "recurring_auto_generate": _app_flag(db, "recurring_auto_generate_enabled", "RECURRING_AUTO_GENERATE_ENABLED"),
         "sync_reconcile": _app_flag(db, "sync_reconcile_enabled", "SYNC_RECONCILE_ENABLED"),
-        "connecteam_auto_dispatch": ct_auto,
         "calendar_source_of_truth": calendar_source_of_truth(db),
     }
     # "Auto-flow on" = the schedule maintains itself with zero manual pushes:
-    # feeds pull, jobs generate, and both calendars stay reconciled on their own.
+    # feeds pull, jobs generate, and the calendar stays reconciled on its own.
     # Google is the scheduling backbone, so a disconnected Google account breaks
     # the flow (jobs can't reach the calendar) even with every toggle on.
-    # Connecteam auto-dispatch only counts when Connecteam is actually connected.
     auto_flow_on = bool(
         gcal_configured
         and automation["ical_auto_sync"]
         and automation["gcal_auto_sync"]
         and automation["recurring_auto_generate"]
         and automation["sync_reconcile"]
-        and (ct_auto or not ct_configured)
     )
 
     issues = find_schedule_issues(db, oid)
     dup = issues["counts"]["duplicate_groups"]
-    orph = issues["counts"]["orphaned_shifts"]
 
-    backlog = unsynced_gcal + (unsynced_ct if ct_auto else 0)
+    backlog = unsynced_gcal
     overall = _sync_overall(
-        duplicates=dup, orphans=orph, backlog=backlog,
+        duplicates=dup, orphans=0, backlog=backlog,
         auto_flow_on=auto_flow_on, google_connected=gcal_configured,
     )
 
@@ -1284,9 +1259,7 @@ def sync_health(db: Session = Depends(get_db), org_id: int = Depends(current_org
         "overall": overall,
         "auto_flow_on": auto_flow_on,
         "google": {"configured": gcal_configured, "unsynced_count": unsynced_gcal},
-        "connecteam": {"configured": ct_configured, "auto_dispatch": ct_auto,
-                       "unsynced_count": unsynced_ct},
-        "issues": {"duplicate_jobs": dup, "orphaned_shifts": orph},
+        "issues": {"duplicate_jobs": dup},
         "automation": automation,
     }
 
@@ -1437,58 +1410,12 @@ def sync_reconcile(db: Session = Depends(get_db), org_id: int = Depends(current_
     return result
 
 
-@router.get("/connecteam/readback-preview", dependencies=[Depends(require_role("admin", "manager"))])
-def connecteam_readback_preview(days: int = 30, db: Session = Depends(get_db),
-                                org_id: int = Depends(current_org_id)):
-    """Dry-run of the Connecteam read-back reconcile: compares our record to the
-    ACTUAL shifts in Connecteam and reports what a real sync would change,
-    mutating nothing. Shows:
-      - missing: active jobs whose draft shift(s) vanished from Connecteam
-        (would be recreated),
-      - partial: multi-shift jobs that lost some shifts (flagged for review),
-      - unrecognized: shifts in Connecteam not linked to any of your upcoming
-        jobs (manual shifts or orphans — never auto-deleted).
-
-    Note: Connecteam is a single shared account, so `unrecognized` can include
-    shifts belonging to other workspaces' jobs."""
-    from integrations.connecteam import is_configured as _ct_ok
-    if not _ct_ok():
-        return {"skipped": "not_configured"}
-    oid = resolve_org_id(org_id, db)
-    days = max(1, min(int(days or 30), 120))
-    start = (business_today() - timedelta(days=7)).isoformat()
-    end = (business_today() + timedelta(days=days)).isoformat()
-    window_jobs = db.query(Job).filter(
-        Job.scheduled_date >= start,
-        Job.scheduled_date <= end,
-        or_(Job.org_id == oid, Job.org_id.is_(None)),  # MT-2 tenant scope
-    ).all()
-    try:
-        from integrations.connecteam import get_scheduled_shifts_sync
-        from integrations.connecteam_auto import read_back_reconcile
-        actual_shifts = get_scheduled_shifts_sync(start, end)
-        rb = read_back_reconcile(db, window_jobs, actual_shifts, dry_run=True)
-    except Exception as e:
-        logger.warning(f"connecteam readback-preview failed: {e}")
-        raise HTTPException(status_code=502, detail=f"Couldn't read Connecteam shifts: {e}")
-    return {
-        "window": {"start": start, "end": end},
-        "actual_shifts": rb["actual_shifts"],
-        "missing": rb["missing"],
-        "partial": rb["partial"],
-        "unrecognized_count": rb["unrecognized_count"],
-        "unrecognized_sample": rb["unrecognized"],
-    }
-
-
 def find_schedule_issues(db: Session, org_id: int | None = None) -> dict:
     """Scan the live schedule for problems worth surfacing — read-only, never
-    mutates. Two classes:
-      - duplicate_jobs: more than one LIVE job for the same client + date +
-        start time + type (usually a double-submit).
-      - orphaned_shifts: a cancelled/completed job that still carries Connecteam
-        shift ids (a stale shift that should have been pulled).
-    Used by the /audit endpoint and the background schedule-audit tick."""
+    mutates: duplicate_jobs, more than one LIVE job for the same property +
+    date + start time + type (usually a double-submit). Used by the /audit
+    endpoint and the background schedule-audit tick. (The orphaned-Connecteam-
+    shifts scan left with the Connecteam removal.)"""
     from collections import defaultdict
     q = db.query(Job).filter(Job.status.notin_(["cancelled"]))
     if org_id is not None:
@@ -1505,24 +1432,16 @@ def find_schedule_issues(db: Session, org_id: int | None = None) -> dict:
         for k, js in groups.items() if len(js) > 1
     ]
 
-    oq = db.query(Job).filter(Job.status.in_(["cancelled", "completed"]))
-    if org_id is not None:
-        oq = oq.filter(or_(Job.org_id == org_id, Job.org_id.is_(None)))
-    orphaned_shifts = [
-        {"job_id": j.id, "status": j.status, "shift_ids": j.connecteam_shift_ids}
-        for j in oq.all() if j.connecteam_shift_ids
-    ]
     return {
         "duplicate_jobs": duplicate_jobs,
-        "orphaned_shifts": orphaned_shifts,
-        "counts": {"duplicate_groups": len(duplicate_jobs), "orphaned_shifts": len(orphaned_shifts)},
+        "counts": {"duplicate_groups": len(duplicate_jobs)},
     }
 
 
 @router.get("/audit", dependencies=[Depends(require_role("admin", "manager"))])
 def schedule_audit(db: Session = Depends(get_db), org_id: int = Depends(current_org_id)):
-    """On-demand schedule audit: duplicate jobs + orphaned Connecteam shifts.
-    The same scan the background tick runs, exposed for a Settings/admin view."""
+    """On-demand schedule audit: duplicate jobs. The same scan the background
+    tick runs, exposed for a Settings/admin view."""
     return find_schedule_issues(db, resolve_org_id(org_id, db))
 
 
@@ -2880,12 +2799,6 @@ def update_job(job_id: int, data: JobUpdate, db: Session = Depends(get_db), org_
     prev_job_type = job.job_type or "residential"
     prev_scheduled_date = job.scheduled_date
     prev_start_time = job.start_time
-    # Signature of the shift-relevant fields BEFORE the edit. The edit modal
-    # sends every field, so we compare actual values (not "was it in the body")
-    # to decide whether Connecteam shifts need re-syncing.
-    prev_ct_sig = (job.scheduled_date, job.start_time, job.end_time,
-                   tuple(str(c) for c in (job.cleaner_ids or [])))
-
     updates = data.model_dump(exclude_none=True)
     allow_conflicts = updates.pop("allow_conflicts", False)
     # Per-move notify override — pull it out before the setattr loop (it's not a
@@ -3203,22 +3116,6 @@ def update_job(job_id: int, data: JobUpdate, db: Session = Depends(get_db), org_
         except Exception as e:
             logger.warning(f"GCal update failed for job {job.id}: {e}")
 
-    # ── CONNECTEAM (retired — removal step 3) ──
-    # Edits no longer push or refresh shifts. The only remaining behavior is
-    # PROTECTIVE: a job that still carries legacy shift ids loses them when it's
-    # cancelled or its schedule moves, so anyone still glancing at Connecteam
-    # during the transition can't be sent to cancelled or stale work. Connecteam
-    # only ever LOSES shifts from here on; the crew's real schedule is My Day.
-    try:
-        if job.connecteam_shift_ids:
-            from integrations.connecteam_auto import remove_job_from_connecteam
-            new_ct_sig = (job.scheduled_date, job.start_time, job.end_time,
-                          tuple(str(c) for c in (job.cleaner_ids or [])))
-            if job.status == "cancelled" or new_ct_sig != prev_ct_sig:
-                remove_job_from_connecteam(db, job)
-    except Exception as e:
-        logger.warning(f"Connecteam shift cleanup failed for job {job.id}: {e}")
-
     out = _job_to_dict_enriched(db, job)
     # So the caller (JobDetail.jsx's "Ready to bill?" banner) can tell an
     # invoice was already auto-created by this same request and skip
@@ -3312,46 +3209,8 @@ def delete_job(job_id: int, db: Session = Depends(get_db), org_id: int = Depends
             _log_integration(db, entity_type="job", entity_id=job.id, provider="gcal",
                              action="delete", status="failed", external_id=old_event_id,
                              detail=str(e), commit=False)
-    # Remove any Connecteam shifts so deleting a job doesn't leave cleaners with
-    # orphaned shifts on their schedule.
-    if job.connecteam_shift_ids:
-        try:
-            from integrations.connecteam_auto import remove_job_from_connecteam
-            remove_job_from_connecteam(db, job, commit=False)
-        except Exception as e:
-            logger.warning(f"Connecteam delete failed for job {job.id}: {e}")
     db.delete(job)
     db.commit()
-
-
-@router.post("/{job_id}/dispatch", dependencies=[Depends(require_role("admin", "manager"))])
-def dispatch_job(job_id: int, db: Session = Depends(get_db), org_id: int = Depends(current_org_id)):
-    """Manually push this job's assigned cleaners to Connecteam NOW — the
-    operator-triggered dispatch that MANUAL mode holds for. An explicit action,
-    so it runs regardless of the auto-dispatch setting. Re-syncs instead of
-    duplicating if the job was already dispatched."""
-    job = _get_job_or_404(db, job_id, resolve_org_id(org_id, db))
-    from integrations.connecteam import is_configured as _ct_ok
-    if not _ct_ok():
-        raise HTTPException(status_code=400, detail="Connecteam isn't connected — add your API key in Settings → Integrations first.")
-    if not job.cleaner_ids:
-        raise HTTPException(status_code=400, detail="Assign at least one cleaner before dispatching.")
-    if job.status in ("cancelled", "completed"):
-        raise HTTPException(status_code=400, detail=f"Can't dispatch a {job.status} job.")
-    from integrations.connecteam_auto import auto_dispatch_job, resync_job
-    # Already dispatched → re-sync to the current crew/time instead of creating
-    # duplicate shifts.
-    st = resync_job(db, job) if job.connecteam_shift_ids else auto_dispatch_job(db, job)
-    return {"job_id": job.id, "connecteam": st}
-
-
-@router.post("/{job_id}/undispatch", dependencies=[Depends(require_role("admin", "manager"))])
-def undispatch_job(job_id: int, db: Session = Depends(get_db), org_id: int = Depends(current_org_id)):
-    """Pull this job's shifts back OFF Connecteam — undo a dispatch."""
-    job = _get_job_or_404(db, job_id, resolve_org_id(org_id, db))
-    from integrations.connecteam_auto import remove_job_from_connecteam
-    st = remove_job_from_connecteam(db, job)
-    return {"job_id": job.id, "connecteam": st}
 
 
 @router.post("/{job_id}/invite-client", dependencies=[Depends(require_role("admin", "manager"))])

@@ -143,10 +143,9 @@ export default function JobCreateModal({
   const [endTouched, setEndTouched] = useState(false)
 
   // Assign the cleaner(s) right here at creation — no more "create, then open
-  // the job to assign". Roster comes from the shared cached hook. With
-  // auto-dispatch on, saving with cleaners pushes their Connecteam shift
-  // immediately; a double-booked cleaner surfaces the same "Book anyway"
-  // conflict prompt as any other clash.
+  // the job to assign". Roster comes from the shared cached hook. The assigned
+  // cleaners see the job on My Day; a double-booked cleaner surfaces the same
+  // "Book anyway" conflict prompt as any other clash.
   const { employees } = useEmployees()
   const [cleanerIds, setCleanerIds] = useState([])
   const toggleCleaner = (id) => setCleanerIds(prev =>
@@ -180,10 +179,10 @@ export default function JobCreateModal({
   // which silently 422'd on limit=1000 and rendered empty).
   const [clientQuery, setClientQuery] = useState('')
   const [clientResults, setClientResults] = useState([])
-  // Connecteam employee-name set — used to badge client search results whose
+  // Crew-roster name set — used to badge client search results whose
   // name matches a cleaner (audit finding: "Megan Small" existed as both a
   // client and a cleaner and got confused in dispatch). Loaded lazily and
-  // tolerates Connecteam being offline — an empty set just skips the badge.
+  // tolerates the roster fetch failing — an empty set just skips the badge.
   const [employeeNameSet, setEmployeeNameSet] = useState(() => new Set())
   useEffect(() => {
     if (!standalone) return
@@ -580,8 +579,8 @@ export default function JobCreateModal({
                         )
                       ) : (
                         clientResults.map(c => {
-                          // Warn when this client's name matches a Connecteam
-                          // employee name — they're often two different people
+                          // Warn when this client's name matches a crew-roster
+                          // name — they're often two different people
                           // ("Megan Small" the client vs the cleaner) and picking
                           // the wrong one confuses dispatch. Case-insensitive
                           // exact-match keeps the false-positive rate low.
@@ -593,7 +592,7 @@ export default function JobCreateModal({
                                 <span className="truncate">{c.name}</span>
                                 {namesCollide && (
                                   <span
-                                    title="Same name as a cleaner in your Connecteam roster — confirm this is the customer, not the crew."
+                                    title="Same name as a cleaner on your crew roster — confirm this is the customer, not the crew."
                                     className="shrink-0 text-[10px] font-semibold px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 border border-amber-200"
                                   >
                                     Also a cleaner
@@ -687,9 +686,9 @@ export default function JobCreateModal({
             ) : (
               <div className="flex flex-wrap gap-1.5">
                 {employees.map(e => {
-                  // Normalize the mixed roster shape ({id,name} vs raw Connecteam
+                  // Normalize the mixed roster shape ({id,name} vs the legacy
                   // {userId,firstName,...}) — a bare String(e.id) would save
-                  // 'undefined' for real Connecteam users.
+                  // 'undefined' for legacy-shaped rows.
                   const { id, name } = normalizeEmployee(e)
                   if (!id) return null
                   const on = cleanerIds.includes(id)

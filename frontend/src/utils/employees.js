@@ -1,8 +1,10 @@
-/** Resolve a Connecteam employee to an { id, name } pair, defensively.
- *  The roster comes back in mixed shapes: sometimes { id, name }, but the raw
- *  Connecteam user shape is { userId, firstName, lastName, displayName } with
- *  NO `id`. Using `String(e.id)` blindly turns those into the literal string
- *  'undefined' — colliding buttons and a saved cleaner_ids of ['undefined'].
+/** Resolve a roster employee to an { id, name } pair, defensively.
+ *  The native roster (/api/dispatch/employees) returns { id, name }, but
+ *  historical rows can still carry the legacy shape ({ userId, firstName,
+ *  lastName, displayName } with NO `id` — crew IDs were originally imported
+ *  from an external scheduling app). Using `String(e.id)` blindly turns those
+ *  into the literal string 'undefined' — colliding buttons and a saved
+ *  cleaner_ids of ['undefined'].
  *  Every flow that assigns cleaners must normalize through this. */
 export function normalizeEmployee(e) {
   const id = String(e?.id ?? e?.userId ?? '')

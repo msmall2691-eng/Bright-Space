@@ -18,7 +18,7 @@ import { toLocalYMD } from '../utils/format'
  *  crash the render. `rosterUnavailable` distinguishes "no employees
  *  yet" from "roster fetch failed" so CrewWorkloadTile can show its
  *  diagnostic banner. The roster is native (/api/dispatch/employees
- *  reads cleaner users, not Connecteam). */
+ *  reads cleaner users). */
 export function useDashboardData() {
   const [todayJobs, setTodayJobs] = useState([])
   const [weekJobs, setWeekJobs] = useState([])
@@ -97,8 +97,8 @@ export function useDashboardData() {
     setSvcRevenue(Array.isArray(svcRevenueResp?.by_service) ? svcRevenueResp.by_service : [])
     setCommsSummary(commsSummaryResp && typeof commsSummaryResp === 'object' ? commsSummaryResp : {})
     setFollowUps(Array.isArray(followUpsResp) ? followUpsResp : (followUpsResp?.items || []))
-    // null = roster fetch failed (Connecteam down / bad credentials). The
-    // tile still renders workload from job data; names degrade to IDs.
+    // null = roster fetch failed (server error). The tile still renders
+    // workload from job data; names degrade to IDs.
     setRosterUnavailable(employeesAll === null)
     setEmployees(Array.isArray(employeesAll) ? employeesAll : (employeesAll?.items || []))
     setSummary(summaryResp && typeof summaryResp === 'object' ? summaryResp : null)

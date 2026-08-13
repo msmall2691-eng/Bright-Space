@@ -336,21 +336,19 @@ def str_turnover_autoassign_tick() -> dict:
 
 
 def schedule_audit_tick() -> dict:
-    """Frequent, read-only audit of the schedule for duplicate jobs + orphaned
-    Connecteam shifts. Logs a warning when anything's found so problems surface
-    on their own instead of piling up. Never mutates the schedule — the operator
-    (or the reconcile drift-repair) fixes what it flags."""
+    """Frequent, read-only audit of the schedule for duplicate jobs. Logs a
+    warning when anything's found so problems surface on their own instead of
+    piling up. Never mutates the schedule — the operator fixes what it flags."""
     db = SessionLocal()
     try:
         from modules.scheduling.router import find_schedule_issues
         issues = find_schedule_issues(db)
         c = issues.get("counts", {})
-        if c.get("duplicate_groups") or c.get("orphaned_shifts"):
+        if c.get("duplicate_groups"):
             log.warning(
-                "[schedule-audit] %s duplicate job group(s), %s orphaned shift(s) — "
-                "review at GET /api/jobs/audit. dupes=%s orphans=%s",
-                c.get("duplicate_groups", 0), c.get("orphaned_shifts", 0),
-                issues["duplicate_jobs"][:10], issues["orphaned_shifts"][:10],
+                "[schedule-audit] %s duplicate job group(s) — review at "
+                "GET /api/jobs/audit. dupes=%s",
+                c.get("duplicate_groups", 0), issues["duplicate_jobs"][:10],
             )
         return c
     except Exception as e:
@@ -682,8 +680,8 @@ def start_scheduler():
     else:
         log.info("Sync reconcile disabled via SYNC_RECONCILE_ENABLED=0")
 
-    # Frequent read-only schedule audit — flags duplicate jobs + jobs still
-    # carrying stale Connecteam shift ids; local reads only. Runs a few times a day.
+    # Frequent read-only schedule audit — flags duplicate jobs; local reads
+    # only. Runs a few times a day.
     _scheduler.add_job(
         schedule_audit_tick,
         IntervalTrigger(hours=env_int("SCHEDULE_AUDIT_INTERVAL_HOURS", 6)),

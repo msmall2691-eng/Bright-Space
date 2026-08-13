@@ -52,21 +52,19 @@ def _most_advanced_quote_status(quotes):
 
 def _job_state(jobs):
     """Coarsest single signal of where a deal's work sits, furthest-along first.
-    `done` > `dispatched` > `scheduled` > None (no schedulable job yet)."""
-    done = dispatched = scheduled = False
+    `done` > `scheduled` > None (no schedulable job yet). (The old intermediate
+    'dispatched' state read Connecteam shift ids — gone with the removal; a
+    scheduled+assigned job IS dispatched now, the crew sees it on My Day.)"""
+    done = scheduled = False
     for j in jobs or []:
         if j.status == "cancelled":
             continue
         if j.status == "completed":
             done = True
-        if getattr(j, "connecteam_shift_ids", None):
-            dispatched = True
         if getattr(j, "scheduled_date", None):
             scheduled = True
     if done:
         return "done"
-    if dispatched:
-        return "dispatched"
     if scheduled:
         return "scheduled"
     return None

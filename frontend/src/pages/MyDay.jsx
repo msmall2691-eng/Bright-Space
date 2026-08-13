@@ -7,9 +7,7 @@
  *
  * Phase 1: read-only job list. Phase 2a (this file): a native time clock —
  * Clock in / Clock out per job, a live "on the clock" bar, and hours today.
- * The clock is recorded natively but is NOT wired into payroll yet (payroll
- * still reads Connecteam); it exists to prove the clock works and to build up
- * hours to reconcile against Connecteam before any cutover.
+ * The clock is what Payroll reads — the crew works fully native now.
  */
 import { useCallback, useEffect, useState } from 'react'
 import { MapPin, KeyRound, ParkingCircle, LogOut, RefreshCw, CalendarDays, Clock, Car, DollarSign, ChevronDown } from 'lucide-react'
@@ -38,9 +36,9 @@ function fmtClock(iso) {
 }
 
 // One closed punch in the "Today's punches" recap, with an inline miles editor
-// (parity with Connecteam, where miles are entered per job). Tapping the miles
-// value opens a small number field that PATCHes the entry — the safety net for a
-// clock-out where miles were skipped or fat-fingered.
+// (miles are entered per job). Tapping the miles value opens a small number
+// field that PATCHes the entry — the safety net for a clock-out where miles
+// were skipped or fat-fingered.
 function PunchRecap({ entry, onSaveMiles, busy = false }) {
   const [editing, setEditing] = useState(false)
   const [val, setVal] = useState(entry.miles == null ? '' : String(entry.miles))
@@ -294,8 +292,8 @@ export default function MyDay() {
     finally { setActionBusy(false) }
   }, [fetchDay])
 
-  // Clock-out is a two-step: open the miles prompt, then confirm. Miles at
-  // clock-out mirrors how the crew enter miles per job on Connecteam.
+  // Clock-out is a two-step: open the miles prompt, then confirm. Miles are
+  // entered per job at clock-out so mileage lands on the right shift.
   const requestClockOut = useCallback(() => {
     setMilesInput(''); setActionError(null); setClockOutOpen(true)
   }, [])

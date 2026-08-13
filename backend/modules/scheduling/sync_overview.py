@@ -139,28 +139,6 @@ def build_sync_overview(db: Session, org_id) -> dict:
         ),
     }
 
-    # ---- Connecteam (retired) ------------------------------------------------
-    # Connecteam removal (step 3): nothing pushes shifts anymore — no drain
-    # tick, no reconcile half, no inline/recurring/iCal dispatch. The card
-    # stays as an explicit, static "retired" marker (not a silently vanished
-    # channel) until the integration is deleted outright; no Connecteam-related
-    # queries run for it.
-    connecteam = {
-        "key": "connecteam",
-        "name": "Connecteam",
-        "icon": "users",
-        "direction": "out",
-        "authority": "brightbase",
-        "connected": False,
-        "enabled": False,
-        "toggle_key": None,
-        "last_sync_at": None,
-        "backlog": 0,
-        "sync_action": None,
-        "status": "retired",
-        "summary": "Retired — the crew schedule and time clock are native (My Day)",
-    }
-
     # ---- Airbnb / VRBO iCal feeds (inbound) ----------------------------------
     feed_rows = (
         db.query(PropertyIcal, Property.name)
@@ -262,7 +240,7 @@ def build_sync_overview(db: Session, org_id) -> dict:
         ),
     }
 
-    channels = [google, connecteam, airbnb, recurring]
+    channels = [google, airbnb, recurring]
 
     # ---- The background jobs ("the hidden hands"), finally visible -----------
     def _m(env, default):  # cadence in minutes
@@ -284,7 +262,7 @@ def build_sync_overview(db: Session, org_id) -> dict:
          # OFF) — report the real state, not a green job that isn't running.
          "enabled": bool(_app_flag(db, "str_turnover_autoassign_enabled",
                                    "STR_TURNOVER_AUTOASSIGN_ENABLED", False))},
-        {"key": "schedule_audit", "name": "Audit for duplicates & orphaned shifts", "group": "health",
+        {"key": "schedule_audit", "name": "Audit for duplicate jobs", "group": "health",
          "cadence_minutes": _m("SCHEDULE_AUDIT_INTERVAL_HOURS", 6) * 60, "enabled": True},
         {"key": "turnover_coverage", "name": "Turnover coverage check", "group": "health",
          "cadence_minutes": 24 * 60, "enabled": True},
@@ -333,7 +311,6 @@ def build_sync_overview(db: Session, org_id) -> dict:
     # ---- integrity issues + overall verdict ----------------------------------
     issues = find_schedule_issues(db, oid)
     dup = issues["counts"]["duplicate_groups"]
-    orph = issues["counts"]["orphaned_shifts"]
 
     # Auto-pilot = the schedule maintains itself with zero manual pushes. Google
     # is the backbone, so a disconnected Google breaks the flow even with every
@@ -343,10 +320,6 @@ def build_sync_overview(db: Session, org_id) -> dict:
         and reconcile_enabled
     )
     backlog_total = unsynced_gcal
-    # Orphans (cancelled jobs still carrying legacy Connecteam shift ids) are
-    # informational only now — nothing reads Connecteam, so they can't send a
-    # cleaner anywhere, and the repair path that cleared them is retired. They
-    # stay visible in `issues` but no longer drive the verdict or attention.
     overall = _sync_overall(
         duplicates=dup, orphans=0, backlog=backlog_total,
         auto_flow_on=auto_flow_on, google_connected=g_connected,
@@ -408,7 +381,7 @@ def build_sync_overview(db: Session, org_id) -> dict:
         },
         "channels": channels,
         "attention": attention,
-        "issues": {"duplicate_jobs": dup, "orphaned_shifts": orph},
+        "issues": {"duplicate_jobs": dup},
         "background_jobs": background_jobs,
         "schedule_log": schedule_log,
     }

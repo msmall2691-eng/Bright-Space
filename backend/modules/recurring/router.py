@@ -19,15 +19,12 @@ router = APIRouter()
 
 
 def _release_sync_links(db: Session, job: Job, *, notify: bool = True) -> None:
-    """Delete a job's linked Google Calendar event + Connecteam shift when
-    cancelling/detaching it (audit finding #2, July 2026): every recurring
-    cancellation path below used to just set status='cancelled' and clear
-    recurring_schedule_id, leaving the old GCal event and Connecteam shift
-    in place. Regeneration then created NEW events/shifts for the same slot
-    under the new rule, so cleaners kept stale Connecteam shifts for
-    skipped/moved/superseded visits and the calendar showed both the old and
-    new occurrence. Mirrors modules.scheduling.router.delete_job's cleanup —
-    best-effort, never raises, so a sync hiccup can't block the cancellation
+    """Delete a job's linked Google Calendar event when cancelling/detaching it
+    (audit finding #2, July 2026): every recurring cancellation path below used
+    to just set status='cancelled' and clear recurring_schedule_id, leaving the
+    old GCal event in place — regeneration then created a NEW event for the
+    same slot under the new rule, so the calendar showed both occurrences.
+    Best-effort, never raises, so a sync hiccup can't block the cancellation
     itself (the reconcile sweep catches anything left over)."""
     if job.gcal_event_id:
         try:
@@ -45,12 +42,6 @@ def _release_sync_links(db: Session, job: Job, *, notify: bool = True) -> None:
                 job.gcal_event_id = None
         except Exception as e:
             logger.warning(f"GCal delete failed for job {job.id}: {e}")
-    if job.connecteam_shift_ids:
-        try:
-            from integrations.connecteam_auto import remove_job_from_connecteam
-            remove_job_from_connecteam(db, job, commit=False)
-        except Exception as e:
-            logger.warning(f"Connecteam delete failed for job {job.id}: {e}")
 
 
 def _get_schedule_or_404(db: Session, schedule_id: int, org_id: int) -> RecurringSchedule:

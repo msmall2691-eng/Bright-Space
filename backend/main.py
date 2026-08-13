@@ -40,7 +40,6 @@ from modules.scheduling.router import router as scheduling_router
 from modules.invoicing.router import router as invoicing_router
 from modules.dispatch.router import router as dispatch_router
 from modules.payroll.router import router as payroll_router
-from modules.connecteam.router import router as connecteam_router
 from modules.comms.router import router as comms_router
 from modules.properties.router import router as properties_router
 from modules.recurring.router import router as recurring_router
@@ -161,7 +160,6 @@ app.include_router(scheduling_router, prefix="/api/jobs", tags=["scheduling"])
 app.include_router(invoicing_router, prefix="/api/invoices", tags=["invoicing"])
 app.include_router(dispatch_router, prefix="/api/dispatch", tags=["dispatch"])
 app.include_router(payroll_router, prefix="/api/payroll", tags=["payroll"])
-app.include_router(connecteam_router, prefix="/api/connecteam", tags=["connecteam"])
 app.include_router(comms_router, prefix="/api/comms", tags=["comms"])
 app.include_router(properties_router, prefix="/api/properties", tags=["properties"])
 app.include_router(recurring_router, prefix="/api/recurring", tags=["recurring"])

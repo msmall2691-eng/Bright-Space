@@ -272,46 +272,6 @@ def test_convert_reschedule_to_skip_cancels_moved_job(seeded):
     assert db.query(Job).get(moved_job_id).status == "cancelled"
 
 
-def test_recurring_reschedule_and_generation_never_touch_connecteam(seeded, monkeypatch):
-    """Connecteam removal step 3: recurring generation and single-occurrence
-    reschedules no longer dispatch shifts or enqueue outbox rows — the crew's
-    native My Day reads Job state directly. Any Connecteam shift-create call
-    from these paths is a regression."""
-    monkeypatch.setenv("CONNECTEAM_OUTBOX_ENABLED", "1")   # even with the flag on
-    import integrations.connecteam_auto as ca
-    monkeypatch.setattr(ca, "is_configured", lambda: True)
-    monkeypatch.setattr(ca, "create_shift_sync",
-                        lambda **kw: pytest.fail("retired: generation/reschedule must not dispatch"))
-    monkeypatch.setattr(ca, "create_open_shift_sync",
-                        lambda **kw: pytest.fail("retired: generation/reschedule must not dispatch"))
-    from database.models import ConnecteamOutbox
-    db, c, p = seeded
-
-    # Generation: creates occurrences, zero outbox rows.
-    r = api.post("/api/recurring", json=_base_create_payload(c, p))
-    assert r.status_code == 201, r.text
-    jobs = db.query(Job).filter(Job.recurring_schedule_id == r.json()["id"]).all()
-    assert jobs, "expected generated occurrences"
-    outbox = db.query(ConnecteamOutbox).filter(
-        ConnecteamOutbox.job_id.in_([j.id for j in jobs])).all()
-    assert outbox == []
-
-    # Single-occurrence reschedule: moves the visit, no shift, no outbox row.
-    sched = _make_schedule(db, c, p)  # weekly, cleaner_ids=["c1"]
-    d0 = date.today() + timedelta(days=7)
-    d1 = date.today() + timedelta(days=9)
-    r = api.post(f"/api/recurring/{sched.id}/reschedule", json={
-        "exception_date": d0.isoformat(), "rescheduled_date": d1.isoformat(),
-    })
-    assert r.status_code == 201, r.text
-    db.expire_all()
-    moved = db.query(Job).get(r.json()["job_id"])
-    assert moved.status == "scheduled"
-    assert not moved.connecteam_shift_ids
-    assert db.query(ConnecteamOutbox).filter(
-        ConnecteamOutbox.job_id == moved.id).count() == 0
-
-
 def test_create_accepts_non_zero_padded_time(seeded):
     """A non-zero-padded '9:30' stores a real time, not NULL — the recurring
     router's parser used to reject it (time.fromisoformat) while the scheduling

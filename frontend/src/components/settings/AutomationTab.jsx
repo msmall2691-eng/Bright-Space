@@ -23,8 +23,6 @@ export function useAutomationSettings({ toast, active }) {
     gcal_live_sync: true,
     gmail_live_sync: false,
     gmail_live_sync_available: false,
-    connecteam_auto_dispatch_enabled: true,
-    connecteam_auto_create_jobs_enabled: true,
     customer_self_reschedule: true,
     turnover_lead_buffer_hours: 3,
   })
@@ -213,36 +211,6 @@ export default function AutomationTab({ state, toast, active }) {
                   className="w-4 h-4 rounded disabled:opacity-40" />
               </label>
             </div>
-          </div>
-
-          <div className="border-t border-hairline pt-5">
-            <div className="flex items-center justify-between mb-2">
-              <div>
-                <h3 className="font-semibold text-ink">Live push to Connecteam</h3>
-                <p className="text-xs text-ink-3 mt-1">When ON (default), building the schedule in BrightBase pushes shifts to Connecteam automatically as <strong>drafts</strong> — Airbnb turnovers and not-yet-assigned jobs go out as <strong>open</strong> shifts, assigned jobs go to that cleaner. Nothing hits a cleaner’s live schedule until you publish the drafts in Connecteam. Turn OFF for manual mode (push each job with “Dispatch”). Rescheduling an already-pushed job always re-syncs its shift.</p>
-              </div>
-              <label className="flex items-center gap-2 cursor-pointer">
-                <input type="checkbox" checked={s.connecteam_auto_dispatch_enabled}
-                  onChange={e => setAutomationSettings(x => ({ ...x, connecteam_auto_dispatch_enabled: e.target.checked }))}
-                  className="w-4 h-4 rounded" />
-              </label>
-            </div>
-            {!s.connecteam_auto_dispatch_enabled && (
-              <p className="text-xs text-amber-600 mt-1">Manual mode — nothing reaches Connecteam until you dispatch each job yourself.</p>
-            )}
-            {s.connecteam_auto_dispatch_enabled && (
-              <div className="mt-3 pl-3 border-l-2 border-hairline">
-                <label className="flex items-center justify-between gap-2 cursor-pointer">
-                  <div>
-                    <span className="text-sm font-medium text-ink">Create the Connecteam Job if it doesn’t exist</span>
-                    <p className="text-xs text-ink-3 mt-1">When a job’s client/property has no matching Job in Connecteam’s Jobs list, create one (named after the property, else the client) and link the shift to it — so a brand-new client lands under its own Job instead of a blank address. Turn OFF to only match existing Jobs and never write to the Jobs list.</p>
-                  </div>
-                  <input type="checkbox" checked={s.connecteam_auto_create_jobs_enabled}
-                    onChange={e => setAutomationSettings(x => ({ ...x, connecteam_auto_create_jobs_enabled: e.target.checked }))}
-                    className="w-4 h-4 rounded shrink-0" />
-                </label>
-              </div>
-            )}
           </div>
 
           <div className="border-t border-hairline pt-5">

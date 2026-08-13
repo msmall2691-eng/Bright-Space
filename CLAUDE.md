@@ -27,8 +27,9 @@ last line of isolation — see [Multi-tenancy](#multi-tenancy-mt-3) below.
 - **Database:** Postgres in production (SQLite only for local dev / tests).
 - **Deploy:** Docker → Railway. Frontend is built and served as static files by
   the backend (single container).
-- **Integrations:** Twilio (SMS), Gmail/SMTP (email), Google Calendar, Connecteam
-  (field crew scheduling), Square (payments), iCal feeds, Web Push.
+- **Integrations:** Twilio (SMS), Gmail/SMTP (email), Google Calendar,
+  Square (payments), iCal feeds, Web Push. (Connecteam was removed — crew
+  scheduling, time clock, and payroll are native.)
 
 ## Repository layout
 
@@ -74,7 +75,7 @@ Each subdirectory is a self-contained feature module exposing a FastAPI
 `router` that `main.py` mounts. Domains include: `auth`, `clients`,
 `properties`, `quoting`, `scheduling`, `dispatch`, `invoicing`, `payroll`,
 `booking`, `intake`, `opportunities`, `recurring`, `reminders`, `comms`,
-`connecteam`, `gmail`, `geo`, `search`, `views`, `dashboard`, `portal`,
+`gmail`, `geo`, `search`, `views`, `dashboard`, `portal`, `crew`,
 `push`, `admin`, `ai`, `activities`, `integration_events`, `integrations`,
 `fields`, `settings`.
 

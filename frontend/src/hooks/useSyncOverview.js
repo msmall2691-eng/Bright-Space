@@ -4,7 +4,7 @@ import { get } from '../api'
 /**
  * Poller for the Sync Control Center (`/sync`). One read — GET
  * /api/jobs/sync-overview — returns every schedule BrightBase syncs with
- * (Google / Connecteam / Airbnb-iCal / recurring), the background ticks, and
+ * (Google / Airbnb-iCal / recurring), the background ticks, and
  * the attention list. Refreshes every 60s and exposes refresh() so an action
  * (pause a channel, "sync now") can re-pull immediately.
  *

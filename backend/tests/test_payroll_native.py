@@ -1,13 +1,12 @@
-"""Native payroll source (the default) + per-cleaner pay rates.
+"""Native payroll (the only source — Connecteam was removed) + per-cleaner
+pay rates.
 
 GET /api/payroll/summary computes the breakdown from the native time clock
 (time_entries) — classification by each punch's linked job, per-cleaner rate
-overrides, per-job hourly bump, weekend turnover piece-rate. 'connecteam'
-remains selectable as the legacy escape hatch until the integration is deleted.
+overrides, per-job hourly bump, weekend turnover piece-rate.
 
-These tests never exercise the Connecteam path (that needs live Connecteam), so
-they're hermetic. Fixed 2026 dates keep weekday/weekend deterministic:
-2026-01-05 is a Monday, 2026-01-03 is a Saturday.
+Fixed 2026 dates keep weekday/weekend deterministic: 2026-01-05 is a Monday,
+2026-01-03 is a Saturday.
 """
 import uuid
 from datetime import datetime, date
@@ -38,8 +37,7 @@ def ids():
     db.query(Property).filter(Property.id.in_(ids["properties"] or [0])).delete(synchronize_session=False)
     db.query(Client).filter(Client.id.in_(ids["clients"] or [0])).delete(synchronize_session=False)
     db.query(User).filter(User.id.in_(ids["users"] or [0])).delete(synchronize_session=False)
-    # Clear the source setting (empty → the 'native' default) + shop deep rate.
-    set_setting(db, "payroll_source", "")
+    # Reset the shop deep rate.
     set_setting(db, "pay_rate_deep_clean", "")
     db.commit(); db.close()
 
@@ -106,21 +104,6 @@ def _emp(body, cleaner_id):
     return next((e for e in body["employees"] if str(e["employee_id"]) == str(cleaner_id)), None)
 
 
-def test_source_defaults_to_native_and_validates():
-    """Connecteam removal: with no setting stored, payroll reads the native
-    clock. 'connecteam' stays selectable as the legacy escape hatch."""
-    api = _admin_api()
-    try:
-        assert api.get("/api/payroll/source").json()["source"] == "native"
-        assert api.put("/api/payroll/source", json={"source": "nonsense"}).status_code == 422
-        assert api.put("/api/payroll/source", json={"source": "connecteam"}).json()["source"] == "connecteam"
-        assert api.put("/api/payroll/source", json={"source": "native"}).json()["source"] == "native"
-    finally:
-        # reset to the unset default (no `ids` fixture here)
-        db = SessionLocal(); set_setting(db, "payroll_source", ""); db.commit(); db.close()
-        _clear()
-
-
 def test_native_residential_hours_and_gross(ids):
     cid = f"CT-{uuid.uuid4().hex[:6]}"
     _mk_cleaner(ids, cid, name="Jane")
@@ -128,7 +111,6 @@ def test_native_residential_hours_and_gross(ids):
     _mk_entry(ids, cid, _dt(2026, 1, 5, 14), _dt(2026, 1, 5, 17), job_id=jid)  # 3h, Monday
     api = _admin_api()
     try:
-        api.put("/api/payroll/source", json={"source": "native"})
         body = _summary(api, "2026-01-05", "2026-01-05")
         assert body["source"] == "native"
         emp = _emp(body, cid)
@@ -148,7 +130,6 @@ def test_native_per_cleaner_rate_override(ids):
     _mk_entry(ids, cid, _dt(2026, 1, 5, 9), _dt(2026, 1, 5, 11), job_id=jid)  # 2h
     api = _admin_api()
     try:
-        api.put("/api/payroll/source", json={"source": "native"})
         emp = _emp(_summary(api, "2026-01-05", "2026-01-05"), cid)
         assert emp["residential_hours"] == 2.0
         assert emp["residential_pay"] == 80.0   # 2h * $40 override, not the global rate
@@ -162,7 +143,6 @@ def test_native_unlinked_punch_is_unclassified_and_unpaid(ids):
     _mk_entry(ids, cid, _dt(2026, 1, 5, 9), _dt(2026, 1, 5, 11), job_id=None)  # no job link
     api = _admin_api()
     try:
-        api.put("/api/payroll/source", json={"source": "native"})
         emp = _emp(_summary(api, "2026-01-05", "2026-01-05"), cid)
         assert emp["unclassified_hours"] == 2.0
         assert emp["residential_hours"] == 0.0
@@ -179,7 +159,6 @@ def test_native_weekend_turnover_piece_rate(ids):
     _mk_entry(ids, cid, _dt(2026, 1, 3, 14), _dt(2026, 1, 3, 17), job_id=jid)  # Saturday
     api = _admin_api()
     try:
-        api.put("/api/payroll/source", json={"source": "native"})
         emp = _emp(_summary(api, "2026-01-03", "2026-01-03"), cid)
         assert emp["weekend_turnovers"] == 1
         assert emp["weekend_pay"] == 90.0
@@ -197,7 +176,6 @@ def test_native_weekday_rental_is_hourly(ids):
     _mk_entry(ids, cid, _dt(2026, 1, 5, 9), _dt(2026, 1, 5, 12), job_id=jid)  # Monday, 3h
     api = _admin_api()
     try:
-        api.put("/api/payroll/source", json={"source": "native"})
         emp = _emp(_summary(api, "2026-01-05", "2026-01-05"), cid)
         assert emp["rental_weekday_hours"] == 3.0
         assert emp["rental_weekday_pay"] == 90.0   # 3h * $30, weekday → hourly not piece
@@ -214,7 +192,6 @@ def test_native_summary_is_org_scoped(ids):
     _mk_entry(ids, cid, _dt(2026, 1, 5, 12), _dt(2026, 1, 5, 15), job_id=None, org_id=2)  # org 2 → must be excluded
     api = _admin_api()
     try:
-        api.put("/api/payroll/source", json={"source": "native"})
         emp = _emp(_summary(api, "2026-01-05", "2026-01-05"), cid)
         assert emp["residential_hours"] == 2.0
         assert emp["unclassified_hours"] == 0.0   # the org-2 punch must not leak in
@@ -232,7 +209,6 @@ def test_native_user_lookup_is_org_scoped(ids):
     _mk_entry(ids, cid, _dt(2026, 1, 5, 9), _dt(2026, 1, 5, 11), job_id=jid)  # org 1, 2h
     api = _admin_api()
     try:
-        api.put("/api/payroll/source", json={"source": "native"})
         emp = _emp(_summary(api, "2026-01-05", "2026-01-05"), cid)
         assert emp["name"] == "Org1 Person"
         assert emp["residential_pay"] == 80.0   # 2h * $40 (org-1), not the org-2 $10 rate
@@ -241,12 +217,10 @@ def test_native_user_lookup_is_org_scoped(ids):
 
 
 def test_square_export_native_requires_square_configured(ids):
-    """The native Square export exists now (the old 'switch back to Connecteam'
-    block is gone) — with Square unconfigured it fails on THAT, with the
-    connect-Square message."""
+    """With Square unconfigured, the export fails with the connect-Square
+    message."""
     api = _admin_api()
     try:
-        api.put("/api/payroll/source", json={"source": "native"})
         r = api.post("/api/payroll/send-to-square",
                      json={"start_date": "2026-01-05", "end_date": "2026-01-05", "dry_run": True})
         assert r.status_code == 400
@@ -262,7 +236,6 @@ def test_native_mileage_reimbursed_into_gross_and_totals(ids):
     _mk_entry(ids, cid, _dt(2026, 1, 5, 14), _dt(2026, 1, 5, 17), job_id=jid, miles=20)  # 3h + 20 mi
     api = _admin_api()
     try:
-        api.put("/api/payroll/source", json={"source": "native"})
         body = _summary(api, "2026-01-05", "2026-01-05")
         rate = body["rates"]["mileage_rate"]
         emp = _emp(body, cid)
@@ -286,7 +259,6 @@ def test_native_mileage_reimbursed_even_when_unclassified(ids):
     _mk_entry(ids, cid, _dt(2026, 1, 5, 9), _dt(2026, 1, 5, 11), job_id=None, miles=10)  # unclassified + 10 mi
     api = _admin_api()
     try:
-        api.put("/api/payroll/source", json={"source": "native"})
         body = _summary(api, "2026-01-05", "2026-01-05")
         rate = body["rates"]["mileage_rate"]
         emp = _emp(body, cid)
@@ -305,7 +277,6 @@ def test_native_no_miles_is_zero_reimbursement_and_warns(ids):
     _mk_entry(ids, cid, _dt(2026, 1, 5, 14), _dt(2026, 1, 5, 16), job_id=jid, miles=None)  # no miles
     api = _admin_api()
     try:
-        api.put("/api/payroll/source", json={"source": "native"})
         body = _summary(api, "2026-01-05", "2026-01-05")
         emp = _emp(body, cid)
         assert emp["miles"] == 0.0
@@ -327,7 +298,6 @@ def test_native_deep_clean_paid_at_deep_rate(ids):
     db = SessionLocal(); set_setting(db, "pay_rate_deep_clean", "40"); db.commit(); db.close()
     api = _admin_api()
     try:
-        api.put("/api/payroll/source", json={"source": "native"})
         body = _summary(api, "2026-01-05", "2026-01-05")
         emp = _emp(body, cid)
         assert emp["deep_clean_hours"] == 3.0
@@ -349,7 +319,6 @@ def test_native_deep_clean_defaults_to_residential_rate(ids):
     _mk_entry(ids, cid, _dt(2026, 1, 5, 9), _dt(2026, 1, 5, 11), job_id=jid)  # 2h
     api = _admin_api()
     try:
-        api.put("/api/payroll/source", json={"source": "native"})
         body = _summary(api, "2026-01-05", "2026-01-05")
         emp = _emp(body, cid)
         assert emp["deep_clean_hours"] == 2.0
@@ -367,7 +336,6 @@ def test_native_deep_clean_per_cleaner_override(ids):
     db = SessionLocal(); set_setting(db, "pay_rate_deep_clean", "40"); db.commit(); db.close()
     api = _admin_api()
     try:
-        api.put("/api/payroll/source", json={"source": "native"})
         emp = _emp(_summary(api, "2026-01-05", "2026-01-05"), cid)
         assert emp["deep_clean_pay"] == 90.0   # 2h * $45 override, not the $40 shop rate
     finally:
@@ -385,7 +353,6 @@ def test_native_weekend_deep_clean_is_hourly_not_piece(ids):
     db = SessionLocal(); set_setting(db, "pay_rate_deep_clean", "40"); db.commit(); db.close()
     api = _admin_api()
     try:
-        api.put("/api/payroll/source", json={"source": "native"})
         emp = _emp(_summary(api, "2026-01-03", "2026-01-03"), cid)
         assert emp["deep_clean_hours"] == 3.0
         assert emp["deep_clean_pay"] == 120.0    # 3h * $40 hourly, NOT a piece rate
@@ -429,7 +396,6 @@ def test_native_weekend_turnover_hourly_override(ids):
     _mk_entry(ids, cid, _dt(2026, 1, 3, 9), _dt(2026, 1, 3, 12), job_id=jid)  # Saturday, 3h
     api = _admin_api()
     try:
-        api.put("/api/payroll/source", json={"source": "native"})
         emp = _emp(_summary(api, "2026-01-03", "2026-01-03"), cid)
         assert emp["rental_weekday_hours"] == 3.0
         assert emp["rental_weekday_pay"] == 90.0     # 3h * $30 hourly
@@ -450,7 +416,6 @@ def test_native_weekday_turnover_forced_piece(ids):
     _mk_entry(ids, cid, _dt(2026, 1, 5, 9), _dt(2026, 1, 5, 12), job_id=jid)  # Monday, 3h
     api = _admin_api()
     try:
-        api.put("/api/payroll/source", json={"source": "native"})
         emp = _emp(_summary(api, "2026-01-05", "2026-01-05"), cid)
         assert emp["weekend_turnovers"] == 1        # counted as a piece turnover
         assert emp["weekend_pay"] == 85.0
@@ -470,7 +435,6 @@ def test_native_weekend_turnover_auto_still_piece(ids):
     _mk_entry(ids, cid, _dt(2026, 1, 3, 14), _dt(2026, 1, 3, 17), job_id=jid)
     api = _admin_api()
     try:
-        api.put("/api/payroll/source", json={"source": "native"})
         emp = _emp(_summary(api, "2026-01-03", "2026-01-03"), cid)
         assert emp["weekend_turnovers"] == 1
         assert emp["weekend_pay"] == 90.0
@@ -520,7 +484,6 @@ def test_hourly_bump_raises_hourly_pay_but_not_piece(ids):
 
     api = _admin_api()
     try:
-        api.put("/api/payroll/source", json={"source": "native"})
         emp = _emp(_summary(api, "2026-01-03", "2026-01-05"), cid)
         assert emp["residential_pay"] == 78.0
         assert emp["weekend_pay"] == 90.0
@@ -588,7 +551,6 @@ def test_native_send_to_square_dry_run(ids, monkeypatch):
 
     api = _admin_api()
     try:
-        api.put("/api/payroll/source", json={"source": "native"})
         r = api.post("/api/payroll/send-to-square",
                      json={"start_date": "2026-01-03", "end_date": "2026-01-05", "dry_run": True})
         assert r.status_code == 200, r.text

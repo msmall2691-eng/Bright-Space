@@ -117,8 +117,6 @@ const InvoiceDetail = lazy(() => import('./pages/InvoiceDetail'))
 const Schedule = lazy(() => import('./pages/Schedule'))
 const Billing = lazy(() => import('./pages/Billing'))
 const Payroll = lazy(() => import('./pages/Payroll'))
-const CrewHours = lazy(() => import('./pages/CrewHours'))
-const Connecteam = lazy(() => import('./pages/Connecteam'))
 const Comms = lazy(() => import('./pages/Comms'))
 const Properties = lazy(() => import('./pages/Properties'))
 const PropertyDetail = lazy(() => import('./pages/PropertyDetail'))
@@ -257,8 +255,8 @@ export default function App() {
               <Route path="/schedule" element={<Schedule />} />
               <Route path="/scheduling" element={<Navigate to="/schedule" replace />} />
               {/* Sync Control Center — one screen for every external schedule
-                  BrightBase pushes to / pulls from (Google, Connecteam, Airbnb
-                  feeds, recurring), the background ticks, and the master
+                  BrightBase pushes to / pulls from (Google, Airbnb feeds,
+                  recurring), the background ticks, and the master
                   auto-pilot switch. */}
               <Route path="/sync" element={<SyncCenter />} />
               {/* Calendar dropped — native Schedule covers it (and syncs to GCal). */}
@@ -271,8 +269,11 @@ export default function App() {
               <Route path="/dispatch" element={<Navigate to="/schedule?view=dispatch" replace />} />
               <Route path="/payroll" element={<Payroll />} />
               <Route path="/crew" element={<Crew />} />
-              <Route path="/crew-hours" element={<CrewHours />} />
-              <Route path="/connecteam" element={<Connecteam />} />
+              {/* Connecteam is gone — the crew is native (My Day + Crew page,
+                  payroll reads the native time clock). Old bookmarks land on
+                  the nearest native equivalent. */}
+              <Route path="/crew-hours" element={<Navigate to="/payroll" replace />} />
+              <Route path="/connecteam" element={<Navigate to="/crew" replace />} />
               <Route path="/comms" element={<Comms />} />
               <Route path="/properties" element={<Properties />} />
               <Route path="/properties/:propertyId" element={<PropertyDetail />} />
