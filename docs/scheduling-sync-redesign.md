@@ -32,7 +32,7 @@ migration 068. Currently **dark**: `SCHEDULE_EVENT_LOG_ENABLED` defaults OFF.
   adds a *reader* of the log changes that blast radius and must re-check the Phase 3
   sequencing below.
 - *Activation — safety prep SHIPPED (this branch / #665), flag still OFF:* migration
-  **074** drops the `schedule_events` FKs (`job_id` CASCADE + `org_id`) so the append-only
+  **077** drops the `schedule_events` FKs (`job_id` CASCADE + `org_id`) so the append-only
   log retains a deleted job's history and a `deleted`-event insert can't FK-violate the
   just-removed row on Postgres (which would otherwise roll back the job deletion); the
   flush listener is now **fail-safe** — a logging error can never break a Job write

@@ -1478,7 +1478,7 @@ class ScheduleEvent(Base):
     # history, and logging a `deleted` event in the same transaction that removes
     # the job would FK-violate the just-gone row on Postgres and roll back the
     # deletion itself. org_id is a denormalized tenant tag (RLS reads the value,
-    # not a FK). Migration 074 drops the constraints migration 068 created.
+    # not a FK). Migration 077 drops the constraints migration 068 created.
     org_id = Column(Integer, nullable=True, index=True)  # tenant scope (MT-1); denormalized, no FK
 
     id = Column(Integer, primary_key=True, index=True)

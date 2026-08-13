@@ -20,13 +20,16 @@ Additive/safe (R8): no table or column dropped, the log stays dark until the
 flag flips, and downgrade restores the constraints. No-op off Postgres — SQLite
 builds schedule_events from the (now FK-less) model via create_all.
 
-Revision ID: 074_schedule_events_drop_fks
-Revises: 073_time_entry_one_open
+Revision ID: 077_schedule_events_drop_fks
+Revises: 076_job_pay_mode
 """
 from alembic import op
 
-revision = "074_schedule_events_drop_fks"
-down_revision = "073_time_entry_one_open"
+# Renumbered 074 -> 077: the payroll PRs (#677/#678) landed 074_time_entry_miles
+# off the same 073 parent, so this re-chains onto the current head to keep a
+# single linear head.
+revision = "077_schedule_events_drop_fks"
+down_revision = "076_job_pay_mode"
 branch_labels = None
 depends_on = None
 
