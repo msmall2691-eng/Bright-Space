@@ -57,7 +57,7 @@ export default function Payroll() {
   const [expanded, setExpanded] = useState({})
   const [overrides, setOverrides] = useState({})
   const [square, setSquare] = useState(null)   // { mode:'preview'|'sent', data, busy, error }
-  const [source, setSource] = useState('connecteam')  // 'connecteam' | 'native'
+  const [source, setSource] = useState('native')  // 'native' (default) | 'connecteam'
 
   // Persist manual overrides per pay period so they survive a refresh.
   const ovKey = `payroll_overrides_${startDate}_${endDate}`
@@ -80,19 +80,23 @@ export default function Payroll() {
     try {
       const d = await get(`/api/payroll/summary?start_date=${startDate}&end_date=${endDate}`)
       setData(d)
-      get(`/api/connecteam/pay-rates?start_date=${startDate}&end_date=${endDate}`)
-        .then(r => setCtRates(r.rates || {}))
-        .catch(() => setCtRates({}))
+      // Connecteam's pay-rate comparison column only makes sense when the hours
+      // came from Connecteam — skip the call entirely on the native source.
+      if (d?.source !== 'native') {
+        get(`/api/connecteam/pay-rates?start_date=${startDate}&end_date=${endDate}`)
+          .then(r => setCtRates(r.rates || {}))
+          .catch(() => setCtRates({}))
+      }
     } catch (e) {
       setError(String(e.message || e))
     }
     setLoading(false)
   }
 
-  // Payroll time source (Connecteam vs the native BrightBase clock). Admin-only
-  // toggle; the backend enforces the role and keeps the default at 'connecteam'.
+  // Payroll time source (the native BrightBase clock, default, vs Connecteam —
+  // the legacy escape hatch during the cutover). Backend enforces the role.
   useEffect(() => {
-    get('/api/payroll/source').then(r => setSource(r.source || 'connecteam')).catch(() => {})
+    get('/api/payroll/source').then(r => setSource(r.source || 'native')).catch(() => {})
   }, [])
   const changeSource = async (src) => {
     if (src === source) return
@@ -186,11 +190,11 @@ export default function Payroll() {
             <div>
               <label className="block text-xs text-ink-3 mb-1">Hours source</label>
               <div className="inline-flex rounded-lg border border-hairline overflow-hidden">
-                {[['connecteam', 'Connecteam'], ['native', 'Native clock']].map(([s, label]) => (
+                {[['native', 'Native clock'], ['connecteam', 'Connecteam']].map(([s, label]) => (
                   <button key={s} onClick={() => changeSource(s)} disabled={loading}
                     title={s === 'native'
-                      ? 'Read hours from the native BrightBase clock (verify in Crew Hours first)'
-                      : 'Read hours from Connecteam Time Clock (default)'}
+                      ? 'Hours logged in this app (crew clock in/out) — the default'
+                      : 'Legacy: read hours from Connecteam Time Clock'}
                     className={`px-3 py-2 text-sm font-medium transition-colors ${source === s ? 'bg-indigo-600 text-white' : 'bg-panel text-ink-2 hover:bg-bg-2'}`}>
                     {label}
                   </button>
@@ -204,12 +208,10 @@ export default function Payroll() {
                 className="flex items-center gap-2 bg-panel hover:bg-bg-2 border border-hairline px-4 py-2 rounded-lg text-sm font-medium transition-colors">
                 <Download className="w-4 h-4" />Export CSV
               </button>
-              {source !== 'native' && (
-                <button onClick={() => sendSquare(true)} disabled={square?.busy}
-                  className="flex items-center gap-2 bg-panel hover:bg-bg-2 border border-hairline px-4 py-2 rounded-lg text-sm font-medium transition-colors">
-                  <Send className="w-4 h-4" />Send to Square
-                </button>
-              )}
+              <button onClick={() => sendSquare(true)} disabled={square?.busy}
+                className="flex items-center gap-2 bg-panel hover:bg-bg-2 border border-hairline px-4 py-2 rounded-lg text-sm font-medium transition-colors">
+                <Send className="w-4 h-4" />Send to Square
+              </button>
             </>
           )}
         </div>

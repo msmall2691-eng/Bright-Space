@@ -559,6 +559,12 @@ class Job(Base):
     # on a weekend; "piece" = pay the property's turnover piece rate. Lets the
     # office pay a specific weekend airbnb hourly (or force piece) per job.
     pay_mode = Column(String(16), nullable=True)
+    # Extra dollars-per-hour on top of each cleaner's normal hourly rate for
+    # THIS job — the shop's "+$1/hr for a two-cleaner deep clean / weekday
+    # immediate turnover" offer, set per job during the week. Hourly pay only;
+    # piece-rate pay ignores it (the flat turnover rate is the whole payment).
+    # NULL/0 = no bump. Migration 078.
+    pay_rate_bump = Column(Float, nullable=True)
 
     # Links — only set for the relevant type
     property_id = Column(Integer, ForeignKey("properties.id"), nullable=False)  # PR 2: Every job must have a property

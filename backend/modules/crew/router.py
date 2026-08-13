@@ -6,12 +6,12 @@ sees exactly the jobs already assigned to their crew ID in Job.cleaner_ids
 (GET /my-day). The account/crew-ID link is managed from the admin Users screen
 (auth/router.py's AdminUserUpdate.cleaner_id), not here.
 
-Phase 2a (this file adds): a native time clock — POST /clock-in, POST
-/clock-out, and clock status folded into /my-day. Punches land in the
-`time_entries` table, a NEW canonical domain (when a cleaner actually worked).
-This is deliberately NOT wired into payroll: payroll still reads Connecteam
-Time Clock punches. The point of Phase 2a is to prove a native clock works and
-accumulate real hours to reconcile against Connecteam before any cutover.
+Phase 2a added a native time clock — POST /clock-in, POST /clock-out, and clock
+status folded into /my-day. Punches land in the `time_entries` table, a
+canonical domain (when a cleaner actually worked). Originally dark-launched to
+reconcile against Connecteam; as of the Connecteam removal these punches ARE
+payroll's default source (payroll_source='native'), and /my-week lets a cleaner
+see their own earned + predicted pay for the week.
 
 None of this touches the schedule or Connecteam: writing a punch never changes
 Job schedule state, so the scheduling-authority contract (BrightBase canonical,
@@ -265,6 +265,143 @@ def my_day(
     }
 
 
+@router.get("/my-week")
+def my_week(
+    db: Session = Depends(get_db),
+    org_id: int = Depends(current_org_id),
+    current_user: User = Depends(require_role("cleaner")),
+):
+    """A cleaner's week of pay, so they can see what the week is shaping up to
+    be worth: what they've EARNED so far (from their closed punches, computed by
+    the exact same code the office's Payroll page runs — one pay-math
+    implementation, no drift) plus a PREDICTION for the rest of the week from
+    the jobs still assigned to them (scheduled length × their hourly rate + any
+    per-job bump; piece-rate turnovers at the property's flat rate).
+
+    Only ever returns the CALLER's own numbers — the full payroll breakdown
+    stays admin/manager-only."""
+    from modules.payroll.router import _get_rates, _native_summary
+
+    _require_crew_id(current_user)
+    oid = resolve_org_id(org_id, db)
+    org_scope = lambda model: or_(model.org_id == oid, model.org_id.is_(None))
+    today = business_today()
+    week_start = today - timedelta(days=today.weekday())   # Monday
+    week_end = week_start + timedelta(days=6)              # Sunday
+
+    rates = _get_rates(db)
+
+    # Earned so far: the payroll engine over this week's window, then pick out
+    # ONLY the caller's row. The window is a week and the shop is small, so
+    # computing everyone and filtering costs nothing measurable.
+    summary = _native_summary(db, week_start.isoformat(), week_end.isoformat(), rates, oid)
+    mine = next((e for e in summary["employees"] if e["employee_id"] == current_user.cleaner_id), None)
+    earned = {
+        "gross_pay": mine["gross_pay"] if mine else 0.0,
+        "hours": mine["total_hours"] if mine else 0.0,
+        "miles": mine["miles"] if mine else 0.0,
+        "mileage_reimbursement": mine["mileage_reimbursement"] if mine else 0.0,
+        "turnovers": mine["weekend_turnovers"] if mine else 0,
+    }
+
+    # Which jobs already have a CLOSED punch by this cleaner this week — those
+    # are in "earned" and must not also be predicted. An OPEN punch keeps its
+    # job in the prediction: mid-job, the estimate stands until clock-out.
+    tz = business_tz()
+    lo = datetime.combine(week_start, dtime(0, 0), tzinfo=tz).astimezone(timezone.utc).replace(tzinfo=None)
+    hi = datetime.combine(week_end + timedelta(days=1), dtime(0, 0), tzinfo=tz).astimezone(timezone.utc).replace(tzinfo=None)
+    punched_job_ids = {
+        e.job_id for e in db.query(TimeEntry).filter(
+            org_scope(TimeEntry),
+            TimeEntry.cleaner_id == current_user.cleaner_id,
+            TimeEntry.clock_out_at.isnot(None),
+            TimeEntry.clock_in_at >= lo,
+            TimeEntry.clock_in_at < hi,
+        ).all() if e.job_id
+    }
+
+    jobs = (
+        db.query(Job)
+        .options(joinedload(Job.property))
+        .filter(
+            org_scope(Job),
+            Job.scheduled_date >= today,
+            Job.scheduled_date <= week_end,
+            Job.status.in_(("scheduled", "in_progress")),
+        )
+        .order_by(Job.scheduled_date, Job.start_time)
+        .all()
+    )
+    upcoming = []
+    predicted_upcoming = 0.0
+    for j in jobs:
+        if current_user.cleaner_id not in (j.cleaner_ids or []):
+            continue
+        if j.id in punched_job_ids:
+            continue
+        prop = j.property
+        weekend = j.scheduled_date.weekday() >= 5
+        if j.job_type == "str_turnover":
+            kind = "rental"
+        elif j.job_type == "deep_clean":
+            kind = "deep"
+        else:
+            kind = "residential"
+        mode = (j.pay_mode or "auto").lower()
+        use_piece = (kind == "rental" and weekend) if mode == "auto" else (mode == "piece")
+
+        # Scheduled length in hours (start/end are NOT NULL on Job).
+        dur = (datetime.combine(j.scheduled_date, j.end_time)
+               - datetime.combine(j.scheduled_date, j.start_time)).total_seconds() / 3600.0
+        dur = max(0.0, dur)
+
+        bump = float(j.pay_rate_bump or 0.0)
+        unpriced = False
+        if use_piece:
+            rate = getattr(prop, "turnover_rate", None) if prop is not None else None
+            if rate is None:
+                unpriced = True
+                pay = 0.0
+            else:
+                pay = float(rate)
+        else:
+            if kind == "deep":
+                hourly = (current_user.pay_rate_deep if current_user.pay_rate_deep is not None
+                          else rates["deep_clean_rate"])
+            elif kind == "rental":
+                hourly = (current_user.pay_rate_rental if current_user.pay_rate_rental is not None
+                          else rates["rental_weekday_rate"])
+            else:
+                hourly = (current_user.pay_rate_residential if current_user.pay_rate_residential is not None
+                          else rates["residential_rate"])
+            pay = dur * (hourly + bump)
+
+        predicted_upcoming += pay
+        upcoming.append({
+            "id": j.id,
+            "date": j.scheduled_date.isoformat(),
+            "title": j.title,
+            "property_name": prop.name if prop else None,
+            "start_time": _fmt_time(j.start_time),
+            "end_time": _fmt_time(j.end_time),
+            "hours": round(dur, 2),
+            "piece": use_piece,
+            "bump": bump or 0.0,
+            "unpriced": unpriced,
+            "predicted_pay": round(pay, 2),
+        })
+
+    return {
+        "as_of": today.isoformat(),
+        "week_start": week_start.isoformat(),
+        "week_end": week_end.isoformat(),
+        "earned": earned,
+        "upcoming": upcoming,
+        "predicted_upcoming_total": round(predicted_upcoming, 2),
+        "predicted_week_total": round(earned["gross_pay"] + predicted_upcoming, 2),
+    }
+
+
 @router.post("/clock-in")
 def clock_in(
     body: ClockInBody,
@@ -273,8 +410,8 @@ def clock_in(
     current_user: User = Depends(require_role("cleaner")),
 ):
     """Start a punch. One open punch per cleaner — a second clock-in while
-    already on the clock is a 409 (clock out first). Phase 2a: recorded only,
-    never read by payroll."""
+    already on the clock is a 409 (clock out first). These punches are what
+    native payroll pays from."""
     _require_crew_id(current_user)
     oid = resolve_org_id(org_id, db)
     org_scope = lambda model: or_(model.org_id == oid, model.org_id.is_(None))

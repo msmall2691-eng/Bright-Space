@@ -30,6 +30,7 @@ class JobCreate(BaseModel):
     title: str
     job_type: Optional[str] = "residential"  # "residential" | "deep_clean" | "commercial" | "str_turnover"
     pay_mode: Optional[str] = None            # native-payroll override: auto | hourly | piece
+    pay_rate_bump: Optional[float] = None     # extra $/hr on top of hourly rates for this job
     scheduled_date: str       # YYYY-MM-DD
     start_time: str           # HH:MM
     end_time: str             # HH:MM
@@ -59,6 +60,7 @@ class JobUpdate(BaseModel):
     # it and property changes never saved.
     job_type: Optional[str] = None
     pay_mode: Optional[str] = None            # native-payroll override: auto | hourly | piece
+    pay_rate_bump: Optional[float] = None     # extra $/hr on top of hourly rates for this job
     property_id: Optional[int] = None
     allow_conflicts: Optional[bool] = False
     # Per-move notification override for THIS edit (see update_job). None = fall
@@ -521,6 +523,7 @@ def job_to_dict(j: Job, client: Client = None, effective_date=None,
         "opportunity_id": j.opportunity_id,
         "job_type": j.job_type or "residential",
         "pay_mode": j.pay_mode or "auto",
+        "pay_rate_bump": j.pay_rate_bump,
         "property_id": j.property_id,
         "property_name": property_name,
         "recurring_schedule_id": j.recurring_schedule_id,
@@ -844,6 +847,11 @@ def create_job(data: JobCreate, db: Session = Depends(get_db), org_id: int = Dep
 
     # ── TIMING VALIDATION ── reject past dates / inverted windows up front.
     _validate_job_timing(data.scheduled_date, data.start_time, data.end_time, is_new=True)
+
+    # A negative hourly bump would silently dock pay — reject it here the same
+    # way the PATCH path does.
+    if data.pay_rate_bump is not None and data.pay_rate_bump < 0:
+        raise HTTPException(status_code=400, detail="pay_rate_bump cannot be negative")
 
     # ── CONFLICT / DUPLICATE CHECK ──
     # Prevent creating duplicate jobs for the same property + date + time
@@ -3007,6 +3015,8 @@ def update_job(job_id: int, data: JobUpdate, db: Session = Depends(get_db), org_
     if "pay_mode" in updates and updates["pay_mode"] not in PAY_MODES \
             and updates["pay_mode"] != job.pay_mode:
         raise HTTPException(status_code=400, detail=f"Unknown pay_mode '{updates['pay_mode']}'")
+    if updates.get("pay_rate_bump") is not None and updates["pay_rate_bump"] < 0:
+        raise HTTPException(status_code=400, detail="pay_rate_bump cannot be negative")
     if "status" in updates and updates["status"] not in JOB_STATUSES \
             and updates["status"] != job.status:
         raise HTTPException(status_code=400, detail=f"Unknown status '{updates['status']}'")

@@ -17,6 +17,7 @@ export default function JobEditModal({ job, properties = [], clients = [], onClo
     title: job?.title || '',
     job_type: job?.job_type || 'residential',
     pay_mode: job?.pay_mode || 'auto',
+    pay_rate_bump: job?.pay_rate_bump ?? '',
     status: job?.status || 'scheduled',
     property_id: job?.property_id || '',
     address: job?.address || '',
@@ -295,6 +296,8 @@ export default function JobEditModal({ job, properties = [], clients = [], onClo
         title: formData.title || (prop ? `Cleaning \u2014 ${prop.name}` : 'Cleaning'),
         job_type: formData.job_type || 'residential',
         pay_mode: formData.pay_mode || 'auto',
+        pay_rate_bump: formData.pay_rate_bump === '' || formData.pay_rate_bump == null
+          ? null : Number(formData.pay_rate_bump) || 0,
         status: formData.status || 'scheduled',
         property_id: parseInt(formData.property_id),
         address: formData.address || prop?.address || '',
@@ -366,6 +369,8 @@ export default function JobEditModal({ job, properties = [], clients = [], onClo
           extra.notes = formData.notes
           if (formData.job_type) extra.job_type = formData.job_type
           if (formData.pay_mode) extra.pay_mode = formData.pay_mode
+          if (formData.pay_rate_bump !== '' && formData.pay_rate_bump != null)
+            extra.pay_rate_bump = Number(formData.pay_rate_bump) || 0
           if (formData.status && formData.status !== job.status) extra.status = formData.status
           if (res?.job_id && Object.keys(extra).length) {
             await patch(`/api/jobs/${res.job_id}`, extra)
@@ -377,6 +382,8 @@ export default function JobEditModal({ job, properties = [], clients = [], onClo
             title: formData.title || undefined,
             job_type: formData.job_type || undefined,
             pay_mode: formData.pay_mode || undefined,
+            pay_rate_bump: formData.pay_rate_bump === '' || formData.pay_rate_bump == null
+              ? null : Number(formData.pay_rate_bump) || 0,
             status: formData.status || undefined,
             address: formData.address || undefined,
             cleaner_ids: formData.cleaner_ids,
@@ -775,6 +782,26 @@ export default function JobEditModal({ job, properties = [], clients = [], onClo
                 <p className="text-xs text-ink-3 mt-1">Native payroll only — overrides how this turnover is paid.</p>
               </div>
             )}
+
+            {/* Hourly bump — the "+$1/hr" offer for a two-cleaner deep clean or a
+                weekday immediate turnover. Applies to hourly pay on this job for
+                every assigned cleaner; piece-rate pay ignores it. */}
+            <div>
+              <label className="block text-sm font-semibold text-ink-2 mb-2">Hourly bump ($/hr)</label>
+              <input
+                type="number"
+                min="0"
+                step="0.5"
+                value={formData.pay_rate_bump}
+                onChange={e => setFormData(f => ({ ...f, pay_rate_bump: e.target.value }))}
+                placeholder="0 — no bump"
+                className="w-full px-3 py-3 border border-hairline rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent text-base"
+              />
+              <p className="text-xs text-ink-3 mt-1">
+                Extra dollars per hour on top of each cleaner's normal rate, for this job only —
+                e.g. +$1/hr for a two-cleaner deep clean. Doesn't apply to piece-rate turnovers.
+              </p>
+            </div>
 
             {/* Address — editable; pre-fills from the property when blank */}
             <div>

@@ -163,12 +163,15 @@ def update_pay_rates(rates: PayRates, db: Session = Depends(get_db)):
 
 
 def _payroll_source(db: Session) -> str:
-    return (get_setting(db, "payroll_source") or "connecteam").strip().lower()
+    # Native is the default as of the Connecteam removal: pay comes from hours
+    # logged in THIS app (the crew time clock). 'connecteam' remains selectable
+    # as an escape hatch until the integration is deleted outright.
+    return (get_setting(db, "payroll_source") or "native").strip().lower()
 
 
 @router.get("/source", dependencies=[Depends(require_role("admin", "manager"))])
 def get_payroll_source(db: Session = Depends(get_db)):
-    """Which time source payroll reads: 'connecteam' (default) or 'native'."""
+    """Which time source payroll reads: 'native' (default) or 'connecteam'."""
     return {"source": _payroll_source(db)}
 
 
@@ -178,10 +181,9 @@ class PayrollSourceBody(BaseModel):
 
 @router.put("/source", dependencies=[Depends(require_role("admin"))])
 def set_payroll_source(body: PayrollSourceBody, db: Session = Depends(get_db)):
-    """Switch payroll between Connecteam punches and the native time clock. Kept
-    behind this flag so the native source can be dark-tested against Connecteam
-    (via Crew Hours reconciliation) and cut over only once the numbers match.
-    Default stays 'connecteam' until an admin flips it."""
+    """Switch payroll between the native time clock (default) and Connecteam
+    punches. The Connecteam option is the temporary escape hatch during the
+    cutover — it goes away when the integration is deleted."""
     src = (body.source or "").strip().lower()
     if src not in ("connecteam", "native"):
         raise HTTPException(status_code=422, detail="source must be 'connecteam' or 'native'")
@@ -305,6 +307,14 @@ def _native_summary(db: Session, start_date: str, end_date: str, rates: dict, oi
 
         job = e.job
         prop = job.property if job is not None else None
+        # Per-job hourly bump (the "+$1/hr for a two-cleaner deep clean /
+        # weekday immediate turnover" offer): added to whichever hourly rate
+        # applies. Piece pay ignores it — the flat turnover rate is the whole
+        # payment for that job.
+        bump = float(getattr(job, "pay_rate_bump", None) or 0.0) if job is not None else 0.0
+        res_rate += bump
+        rental_rate += bump
+        deep_rate += bump
         d = _native_local_date(e.clock_in_at)
         weekend = _is_weekend(d)
         # Classification by job_type: str_turnover → rental, deep_clean → deep,
@@ -341,6 +351,7 @@ def _native_summary(db: Session, start_date: str, end_date: str, rates: dict, oi
             "shift_title": "",
             "job_label": (job.title if job is not None else "") or "",
             "rate_pay": use_piece,
+            "rate_bump": bump or 0.0,
             "note": e.note or "",
             "pay": 0.0,
         }
@@ -477,7 +488,7 @@ async def payroll_summary(
     """The payroll-ready breakdown for a pay period: per-crew hours split into
     residential / rental-weekday / weekend-turnover buckets, mileage, and a
     computed gross. This is the endpoint the Payroll page runs on."""
-    # Guard the 92-day Connecteam window early with a friendly message.
+    # Sane period cap (also Connecteam's own API limit while that path lasts).
     try:
         d0 = datetime.strptime(start_date, "%Y-%m-%d").date()
         d1 = datetime.strptime(end_date, "%Y-%m-%d").date()
@@ -486,7 +497,7 @@ async def payroll_summary(
     if d1 < d0:
         raise HTTPException(status_code=422, detail="End date is before start date")
     if (d1 - d0).days > 92:
-        raise HTTPException(status_code=422, detail="Connecteam allows at most a 92-day range")
+        raise HTTPException(status_code=422, detail="Pay periods are capped at 92 days")
 
     rates = _get_rates(db)
 
@@ -741,24 +752,240 @@ class SendToSquareBody(BaseModel):
     overrides: dict = {}
 
 
+async def _native_send_to_square(body: SendToSquareBody, db: Session, oid: int) -> dict:
+    """Square export sourced from the NATIVE time clock: hourly punches become
+    Labor API Timecards at each cleaner's effective BrightBase rate (per-cleaner
+    override or shop default, plus the job's hourly bump); piece-rate work and
+    mileage come back as a per-person adjustment list to enter in Square
+    manually. Same response shape as the Connecteam path so the Payroll page's
+    preview panel renders it unchanged.
+
+    Two deliberate differences from the Connecteam path:
+    * People match by the native User's EMAIL first (every native cleaner has
+      one — it's their login), then name. No Connecteam directory involved.
+    * Timecards always carry the BrightBase rate (rate_source='brightbase').
+      BrightBase is the source of truth for pay intent — per-cleaner overrides
+      and per-job bumps live here, and silently preferring a Square-configured
+      wage would drop the bump the office just set.
+    """
+    from integrations import square
+    if not square.is_configured():
+        raise HTTPException(status_code=400, detail="Square isn't connected — add a token + location in Settings.")
+    try:
+        d0 = datetime.strptime(body.start_date, "%Y-%m-%d").date()
+        d1 = datetime.strptime(body.end_date, "%Y-%m-%d").date()
+    except ValueError:
+        raise HTTPException(status_code=422, detail="Dates must be YYYY-MM-DD")
+    if d1 < d0:
+        raise HTTPException(status_code=422, detail="End date is before start date")
+
+    rates = _get_rates(db)
+
+    # Same punch window as _native_summary: business-local [d0, d1] inclusive.
+    tz = business_tz()
+    lo = datetime.combine(d0, time.min, tzinfo=tz).astimezone(_tz.utc).replace(tzinfo=None)
+    hi = (datetime.combine(d1, time.min, tzinfo=tz) + timedelta(days=1)).astimezone(_tz.utc).replace(tzinfo=None)
+    entries = (
+        db.query(TimeEntry)
+        .options(joinedload(TimeEntry.job).joinedload(Job.property))
+        .filter(or_(TimeEntry.org_id == oid, TimeEntry.org_id.is_(None)),
+                TimeEntry.clock_out_at.isnot(None),
+                TimeEntry.clock_in_at >= lo,
+                TimeEntry.clock_in_at < hi)
+        .order_by(TimeEntry.clock_in_at)
+        .all()
+    )
+
+    users: dict = {}
+    cleaner_ids = {e.cleaner_id for e in entries}
+    if cleaner_ids:
+        for u in db.query(User).filter(
+            User.cleaner_id.in_(cleaner_ids),
+            or_(User.org_id == oid, User.org_id.is_(None)),
+        ).all():
+            users[u.cleaner_id] = u
+
+    try:
+        sq_members = await square.list_team_members()
+    except square.SquareAuthError as e:
+        raise HTTPException(status_code=503, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"Square error: {e}")
+    sq_by_email = {(m["email"] or "").strip().lower(): m for m in sq_members if m.get("email")}
+    sq_by_name = {_norm_name(m["name"]): m for m in sq_members}
+
+    def match_square(u, fallback_name: str):
+        email = ((u.email if u else "") or "").strip().lower()
+        if email and email in sq_by_email:
+            return sq_by_email[email]
+        return sq_by_name.get(_norm_name((u.full_name if u else "") or fallback_name))
+
+    # Square wage-job titles per pay bucket, so hours land under the right job
+    # in Square Payroll. Deep cleans get their own title (native classifies
+    # them; the Connecteam path never could).
+    jobs = {
+        "residential": get_setting(db, "square_job_residential") or "Residential",
+        "rental": get_setting(db, "square_job_rental") or "Rental",
+        "deep": get_setting(db, "square_job_deep") or "Deep Clean",
+    }
+
+    emps: dict = {}
+    piece_seen: dict = {}  # (cleaner_id, prop-or-job key) → set of local dates
+    for e in entries:
+        cid = e.cleaner_id
+        emp = emps.get(cid)
+        u = users.get(cid)
+        if emp is None:
+            sqm = match_square(u, cid)
+            emp = {"employee_id": cid,
+                   "name": (u.full_name or u.email) if u else cid,
+                   "timecards": [], "piece_total": 0.0, "piece_count": 0, "miles": 0.0,
+                   "unpriced": 0, "excluded": 0,
+                   "square_team_member_id": sqm["id"] if sqm else None,
+                   "square_name": sqm["name"] if sqm else None,
+                   "matched": bool(sqm)}
+            emps[cid] = emp
+        emp["miles"] += e.miles or 0.0
+
+        hours = _native_entry_hours(e)
+        job = e.job
+        prop = job.property if job is not None else None
+        d = _native_local_date(e.clock_in_at)
+        weekend = _is_weekend(d)
+        if job is None:
+            kind = None
+        elif job.job_type == "str_turnover":
+            kind = "rental"
+        elif job.job_type == "deep_clean":
+            kind = "deep"
+        else:
+            kind = "residential"
+
+        # Same effective-mode resolution as /summary, then the page's manual
+        # per-shift override on top (keyed by the summary's 'native:{id}').
+        job_pay_mode = (getattr(job, "pay_mode", None) or "auto").lower() if job is not None else "auto"
+        auto_piece = (kind == "rental" and weekend) if job_pay_mode == "auto" else (job_pay_mode == "piece")
+        ov = body.overrides.get(f"native:{e.id}") or {}
+        mode = ov.get("mode") or "auto"
+
+        if mode == "exclude":
+            emp["excluded"] += 1
+            continue
+        if mode == "piece" or (mode == "auto" and auto_piece):
+            if mode == "piece" and ov.get("amount"):
+                amt = float(ov.get("amount") or 0)
+            else:
+                amt = float(getattr(prop, "turnover_rate", None) or 0)
+            # One piece payment per distinct (property, local date) — a second
+            # punch at the same turnover the same day is part of the same job.
+            key = (cid, prop.id if prop is not None else f"job:{job.id if job else 'x'}")
+            seen = piece_seen.setdefault(key, set())
+            if d.isoformat() in seen:
+                continue
+            seen.add(d.isoformat())
+            if amt > 0:
+                emp["piece_total"] += amt
+                emp["piece_count"] += 1
+            else:
+                emp["unpriced"] += 1
+            continue
+        if kind is None:
+            emp["excluded"] += 1  # unlinked punch — never silently paid
+            continue
+
+        # Hourly: the cleaner's effective BrightBase rate + the job's bump.
+        bump = float(getattr(job, "pay_rate_bump", None) or 0.0)
+        if kind == "deep":
+            rate = (u.pay_rate_deep if (u and u.pay_rate_deep is not None) else rates["deep_clean_rate"]) + bump
+        elif kind == "rental":
+            rate = (u.pay_rate_rental if (u and u.pay_rate_rental is not None) else rates["rental_weekday_rate"]) + bump
+        else:
+            rate = (u.pay_rate_residential if (u and u.pay_rate_residential is not None) else rates["residential_rate"]) + bump
+        rate_cents = square.dollars_to_cents(rate)
+        start_ts = int(e.clock_in_at.replace(tzinfo=_tz.utc).timestamp())
+        end_ts = int(start_ts + round(hours * 3600))
+        emp["timecards"].append({
+            "shift_id": f"native:{e.id}",
+            "title": jobs[kind],
+            "start_ts": start_ts,
+            "end_ts": end_ts,
+            "hours": round(hours, 2),
+            "rate": rate_cents / 100.0,
+            "rate_cents": rate_cents,
+            "rate_source": "brightbase",
+            "kind": kind,
+        })
+
+    location = square._get_location()
+    out_emps = []
+    total_timecards = 0
+    for emp in emps.values():
+        emp["mileage_reimbursement"] = round(emp["miles"] * rates["mileage_rate"], 2)
+        emp["miles"] = round(emp["miles"], 1)
+        emp["piece_total"] = round(emp["piece_total"], 2)
+        emp["timecard_count"] = len(emp["timecards"])
+        total_timecards += len(emp["timecards"])
+        out_emps.append(emp)
+    out_emps.sort(key=lambda x: str(x["name"]).lower())
+
+    result = {
+        "dry_run": body.dry_run,
+        "period": f"{body.start_date} to {body.end_date}",
+        "location_id": location,
+        "jobs": jobs,
+        "square_rates_used": False,
+        "source": "native",
+        "matched": sum(1 for e in out_emps if e["matched"]),
+        "unmatched": [e["name"] for e in out_emps if not e["matched"]],
+        "timecards_total": total_timecards,
+        "employees": out_emps,
+    }
+    if body.dry_run:
+        return result
+
+    created, errors = 0, []
+    for emp in out_emps:
+        if not emp["matched"]:
+            continue
+        for tc in emp["timecards"]:
+            try:
+                res = await square.create_timecard(
+                    team_member_id=emp["square_team_member_id"],
+                    start_ts=tc["start_ts"], end_ts=tc["end_ts"],
+                    hourly_rate_cents=tc["rate_cents"], title=tc["title"],
+                    # Stable per native punch (R4): re-running the export can't
+                    # duplicate a timecard.
+                    idempotency_key=f"bb-{tc['shift_id']}-{emp['square_team_member_id']}",
+                    location_id=location,
+                )
+                if res.get("ok"):
+                    created += 1
+                else:
+                    errors.append({"employee": emp["name"], "shift": tc["shift_id"], "error": res.get("error")})
+            except square.SquareAuthError as ex:
+                raise HTTPException(status_code=503, detail=str(ex))
+            except Exception as ex:
+                errors.append({"employee": emp["name"], "shift": tc["shift_id"], "error": str(ex)})
+    result["created"] = created
+    result["errors"] = errors
+    return result
+
+
 @router.post("/send-to-square", dependencies=[Depends(require_role("admin"))])
-async def send_to_square(body: SendToSquareBody, db: Session = Depends(get_db)):
+async def send_to_square(body: SendToSquareBody, db: Session = Depends(get_db),
+                         org_id: int = Depends(current_org_id)):
     """Push the period's HOURLY hours to Square as Labor API Timecards (which
     Square Payroll then imports), and return the piece-rate + mileage amounts as
     a per-person adjustment list to enter in Square manually.
 
     Defaults to a DRY RUN — it matches people and shows exactly what WOULD be
     sent (nothing is written to Square) so the operator can verify before
-    committing. Set dry_run=false to actually create the timecards."""
-    # The Square export still sources hours from Connecteam; block it while the
-    # payroll source is native so a preview/submission can't silently diverge
-    # from (or outlive) the native hours the admin just reviewed.
+    committing. Set dry_run=false to actually create the timecards.
+
+    Hours come from whichever source payroll is set to: the native BrightBase
+    clock (default) or Connecteam (legacy escape hatch during the cutover)."""
     if _payroll_source(db) == "native":
-        raise HTTPException(
-            status_code=400,
-            detail="Square export from the native clock isn't wired up yet. Switch Payroll's "
-                   "hours source back to Connecteam, or use Export CSV.",
-        )
+        return await _native_send_to_square(body, db, resolve_org_id(org_id, db))
     from integrations import square
     if not square.is_configured():
         raise HTTPException(status_code=400, detail="Square isn't connected — add a token + location in Settings.")

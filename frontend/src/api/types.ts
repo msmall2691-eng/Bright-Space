@@ -2410,15 +2410,14 @@ export interface paths {
         };
         /**
          * Get Payroll Source
-         * @description Which time source payroll reads: 'connecteam' (default) or 'native'.
+         * @description Which time source payroll reads: 'native' (default) or 'connecteam'.
          */
         get: operations["get_payroll_source_api_payroll_source_get"];
         /**
          * Set Payroll Source
-         * @description Switch payroll between Connecteam punches and the native time clock. Kept
-         *     behind this flag so the native source can be dark-tested against Connecteam
-         *     (via Crew Hours reconciliation) and cut over only once the numbers match.
-         *     Default stays 'connecteam' until an admin flips it.
+         * @description Switch payroll between the native time clock (default) and Connecteam
+         *     punches. The Connecteam option is the temporary escape hatch during the
+         *     cutover — it goes away when the integration is deleted.
          */
         put: operations["set_payroll_source_api_payroll_source_put"];
         post?: never;
@@ -2468,6 +2467,9 @@ export interface paths {
          *     Defaults to a DRY RUN — it matches people and shows exactly what WOULD be
          *     sent (nothing is written to Square) so the operator can verify before
          *     committing. Set dry_run=false to actually create the timecards.
+         *
+         *     Hours come from whichever source payroll is set to: the native BrightBase
+         *     clock (default) or Connecteam (legacy escape hatch during the cutover).
          */
         post: operations["send_to_square_api_payroll_send_to_square_post"];
         delete?: never;
@@ -5550,6 +5552,34 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/crew/my-week": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * My Week
+         * @description A cleaner's week of pay, so they can see what the week is shaping up to
+         *     be worth: what they've EARNED so far (from their closed punches, computed by
+         *     the exact same code the office's Payroll page runs — one pay-math
+         *     implementation, no drift) plus a PREDICTION for the rest of the week from
+         *     the jobs still assigned to them (scheduled length × their hourly rate + any
+         *     per-job bump; piece-rate turnovers at the property's flat rate).
+         *
+         *     Only ever returns the CALLER's own numbers — the full payroll breakdown
+         *     stays admin/manager-only.
+         */
+        get: operations["my_week_api_crew_my_week_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/crew/clock-in": {
         parameters: {
             query?: never;
@@ -5562,8 +5592,8 @@ export interface paths {
         /**
          * Clock In
          * @description Start a punch. One open punch per cleaner — a second clock-in while
-         *     already on the clock is a 409 (clock out first). Phase 2a: recorded only,
-         *     never read by payroll.
+         *     already on the clock is a 409 (clock out first). These punches are what
+         *     native payroll pays from.
          */
         post: operations["clock_in_api_crew_clock_in_post"];
         delete?: never;
@@ -6762,6 +6792,8 @@ export interface components {
             job_type: string | null;
             /** Pay Mode */
             pay_mode?: string | null;
+            /** Pay Rate Bump */
+            pay_rate_bump?: number | null;
             /** Scheduled Date */
             scheduled_date: string;
             /** Start Time */
@@ -6822,6 +6854,8 @@ export interface components {
             job_type?: string | null;
             /** Pay Mode */
             pay_mode?: string | null;
+            /** Pay Rate Bump */
+            pay_rate_bump?: number | null;
             /** Property Id */
             property_id?: number | null;
             /**
@@ -16569,6 +16603,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    my_week_api_crew_my_week_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
                 };
             };
         };
