@@ -636,7 +636,9 @@ def _triage_card(r, today: date) -> dict:
         title = f"{title} — billing"
     body = (r.subject or "").strip() or (r.snippet or "").strip()
     tags = [{"label": (r.category or "other").upper(), "tone": _TRIAGE_TONE.get(r.category, "gray")}]
-    actions = [_api("Dismiss", f"/api/inbox/triage/{r.id}/dismiss", body={}, done="Dismissed")]
+    # "Delete" trashes the email in Gmail (when the account granted it) and
+    # tombstones the card so it never resurfaces; board-only fallback otherwise.
+    actions = [_api("Delete", f"/api/inbox/triage/{r.id}/delete", body={}, done="Deleted")]
     link = _gmail_link(r.external_id)
     if link:
         actions.append(_link("Open in Gmail", link))

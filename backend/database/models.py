@@ -1261,6 +1261,10 @@ class InboxTriageItem(Base):
 
     is_read = Column(Boolean, default=False, nullable=False)
     dismissed_at = Column(DateTime, nullable=True)    # operator cleared it → hidden from board
+    # True once the underlying email has been moved to Gmail Trash (a "Delete",
+    # not just a board dismiss). Drives the Undo path (untrash) and lets the list
+    # show whether the real email is gone. Requires the account's gmail.modify grant.
+    gmail_trashed = Column(Boolean, default=False, nullable=False)
 
     created_at = Column(DateTime, default=_utcnow)
     updated_at = Column(DateTime, default=_utcnow, onupdate=_utcnow)

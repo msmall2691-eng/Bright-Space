@@ -585,7 +585,14 @@ export default function OpsBoard() {
         setNote(res.message || 'Could not complete automatically — open it to finish.')
       } else {
         if (action.clears) markCleared(item.id)
-        setNote(`${action.done || 'Done'} — ${item.title}`)
+        // Delete of a triaged email: if it cleared the board but couldn't be
+        // removed from Gmail (e.g. an account needs to reconnect), say why
+        // instead of a bare "Deleted".
+        if (res && res.deleted && res.gmail_trashed === false && res.reason) {
+          setNote(`Cleared from board — ${res.reason}`)
+        } else {
+          setNote(`${action.done || 'Done'} — ${item.title}`)
+        }
       }
     } catch {
       setNote('That action failed — nothing was changed.')
@@ -825,7 +832,7 @@ export default function OpsBoard() {
         </p>
 
         <BoardAssistant open={assistantOpen} onClose={() => setAssistantOpen(false)}
-          sections={sections} navigate={navigate} />
+          sections={sections} navigate={navigate} onActed={() => load(true)} />
       </div>
     </div>
   )
