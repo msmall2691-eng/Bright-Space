@@ -25,8 +25,38 @@ const toneFor = (id) => {
   return CREW_TONE[Math.abs(n) % CREW_TONE.length]
 }
 
+/** Availability chip for one crew for the board's date (crew app Phase 4):
+ *  time off (amber) and weekly usually-off patterns (gray) come from
+ *  /api/jobs/cleaner-availability; anyone absent from that payload is
+ *  presumed available (green dot). Signals only — assignment never blocks. */
+function AvailabilityChip({ info }) {
+  if (info?.status === 'off') {
+    return (
+      <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-amber-700 dark:text-amber-300 bg-amber-500/10 border border-amber-500/20 rounded-full px-1.5 py-0.5"
+        title={info.detail}>
+        Time off
+      </span>
+    )
+  }
+  if (info?.status === 'usually_off') {
+    return (
+      <span className="inline-flex items-center gap-1 text-[10px] font-medium text-ink-3 bg-bg-2 border border-hairline rounded-full px-1.5 py-0.5"
+        title={info.detail}>
+        {info.detail || 'Usually off'}
+      </span>
+    )
+  }
+  if (info?.status === 'conflict' || info?.status === 'same_day') return null  // the bar shows load
+  return (
+    <span className="inline-flex items-center gap-1 text-[10px] font-medium text-emerald-700 dark:text-emerald-300"
+      title="No time off or pattern says available">
+      <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" /> Available
+    </span>
+  )
+}
+
 export default function CrewUtilization({
-  crewLoad, empName, draggingVisit, dragOverCrewId, onDragOverCrew, onDropCrew,
+  crewLoad, availability = {}, empName, draggingVisit, dragOverCrewId, onDragOverCrew, onDropCrew,
 }) {
   if (!crewLoad || crewLoad.length === 0) {
     // Previously rendered nothing at all here, leaving the dispatch board's
@@ -102,6 +132,9 @@ export default function CrewUtilization({
                 <span className="text-[10.5px] font-mono tabular-nums text-ink-3 shrink-0">
                   {crew.hours}h · {crew.capacityPct}%
                 </span>
+              </div>
+              <div className="mt-1.5">
+                <AvailabilityChip info={availability[String(crew.id)]} />
               </div>
               <div className="mt-2 h-1.5 rounded-full bg-bg-2 relative overflow-hidden">
                 <span

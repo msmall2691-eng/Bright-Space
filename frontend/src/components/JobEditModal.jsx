@@ -665,10 +665,15 @@ export default function JobEditModal({ job, properties = [], clients = [], onClo
                         : 'hover:bg-blue-50'
                     const hintCls = status === 'conflict' || status === 'off'
                       ? 'text-red-600' : status === 'same_day'
-                        ? 'text-amber-700' : 'text-emerald-600'
+                        ? 'text-amber-700'
+                        : status === 'usually_off' ? 'text-ink-3' : 'text-emerald-600'
                     const hintLabel = status === 'conflict' ? a.detail
                       : status === 'off' ? a.detail
                       : status === 'same_day' ? a.detail
+                      /* Weekly pattern (crew app Phase 4): a soft gray hint —
+                         picking them still works, it's their usual week, not
+                         a booking. */
+                      : status === 'usually_off' ? a.detail
                       : formData.scheduled_date ? 'Free' : ''
                     return (
                       <button

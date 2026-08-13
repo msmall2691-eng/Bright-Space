@@ -33,7 +33,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, joinedload
 
 from database.db import get_db
-from database.models import Job, JobPhoto, JobResponse, User, TimeEntry
+from database.models import CleanerAvailability, Job, JobPhoto, JobResponse, User, TimeEntry
 from modules.auth.router import require_role, current_org_id, resolve_org_id, send_staff_invite
 from modules.scheduling.completion import auto_create_draft_invoice
 from utils.activity_logger import log_job_status_change
@@ -1149,6 +1149,73 @@ def update_me(
 
     db.commit(); db.refresh(u)
     return _me_row(u)
+
+
+# ── Weekly availability (crew app Phase 4) ───────────────────────────────────
+# The recurring shape of a cleaner's week — per day, AM / PM / Off (owner
+# decision #3). A SIGNAL for the office's assign surfaces, never a block;
+# one-off absences stay in CleanerTimeOff. Empty week {} = available never
+# — distinct from "no row" = never set a pattern (unknown).
+
+_WEEK_DAYS = ("mon", "tue", "wed", "thu", "fri", "sat", "sun")
+_DAY_SLOTS = ("am", "pm")
+
+
+def _normalize_week(raw) -> dict:
+    """Clamp arbitrary input to the canonical shape: every day present, each
+    a sorted subset of ["am","pm"]. Unknown days/slots are dropped, never an
+    error — availability must be un-messupable from a phone."""
+    raw = raw if isinstance(raw, dict) else {}
+    out = {}
+    for day in _WEEK_DAYS:
+        slots = raw.get(day)
+        slots = slots if isinstance(slots, (list, tuple)) else []
+        out[day] = [s for s in _DAY_SLOTS
+                    if any(str(x).strip().lower() == s for x in slots)]
+    return out
+
+
+class AvailabilityBody(BaseModel):
+    week: dict
+
+
+@router.get("/me/availability")
+def get_my_availability(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_role("cleaner")),
+):
+    """The caller's own weekly pattern; week=None when they never set one."""
+    _require_crew_id(current_user)
+    row = (db.query(CleanerAvailability)
+           .filter(CleanerAvailability.cleaner_id == current_user.cleaner_id)
+           .first())
+    return {"week": _normalize_week(row.week) if row else None,
+            "updated_at": _iso_utc(row.updated_at) if row else None}
+
+
+@router.put("/me/availability")
+def set_my_availability(
+    body: AvailabilityBody,
+    db: Session = Depends(get_db),
+    org_id: int = Depends(current_org_id),
+    current_user: User = Depends(require_role("cleaner")),
+):
+    """Save the caller's weekly pattern (upsert, whole-week replace)."""
+    _require_crew_id(current_user)
+    oid = resolve_org_id(org_id, db)
+    week = _normalize_week(body.week)
+    row = (db.query(CleanerAvailability)
+           .filter(CleanerAvailability.cleaner_id == current_user.cleaner_id)
+           .first())
+    if row:
+        row.week = week
+        row.updated_at = _now_naive_utc()
+    else:
+        row = CleanerAvailability(org_id=oid, cleaner_id=current_user.cleaner_id,
+                                  week=week, updated_at=_now_naive_utc())
+        db.add(row)
+    db.commit(); db.refresh(row)
+    return {"week": row.week, "updated_at": _iso_utc(row.updated_at)}
 
 
 # ── Reconciliation (office view) ─────────────────────────────────────────────

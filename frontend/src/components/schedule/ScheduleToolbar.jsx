@@ -7,15 +7,18 @@ import SyncHealthPill from './SyncHealthPill'
 
 // One source of truth for the views so the mobile (full-width, short labels)
 // and desktop (inline, full labels) switchers never drift apart.
-// [value, desktopLabel, phoneLabel] — phone labels stay short so five segments
-// fit a narrow row.
+// [value, desktopLabel, phoneLabel].
+//
+// Three tabs, down from six (owner request, Aug 2026 — "I don't need all the
+// tabs"): Day / Week / Month. "Day" is smart — it renders the dispatch board
+// on a wide window and the agenda cards on a narrow one (half-screen, phone),
+// which is what made the separate Agenda/Dispatch tabs redundant. The old
+// 'upcoming' and 'google' views still render via ?view= URLs (nothing
+// deleted, tab buttons only), and "Open in Google Calendar" stays in Tools.
 const VIEWS = [
-  ['agenda', 'Day', 'Day'],
-  ['dispatch', 'Dispatch', 'Board'],
+  ['day', 'Day', 'Day'],
   ['week', 'Week', 'Week'],
   ['month', 'Calendar', 'Month'],
-  ['upcoming', 'Upcoming', 'All'],
-  ['google', 'Google', 'GCal'],
 ]
 
 /** Sticky top toolbar. Two deliberately different layouts, split at `md`

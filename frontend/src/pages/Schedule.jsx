@@ -52,17 +52,30 @@ export default function Schedule() {
   // Landing default depends on viewport: agenda on phones, dispatch on
   // desktop. The old "always default to month" landed a dispatcher on a
   // grid of "10:00" pills with no context — the July audit called it out.
-  const VALID_VIEWS = ['agenda', 'dispatch', 'week', 'month', 'upcoming', 'google']
-  const rawView = searchParams.get('view')
+  // Three visible tabs (Day / Week / Month) since Aug 2026 — the owner asked
+  // for fewer ("I don't need all the tabs"). 'upcoming' and 'google' still
+  // render when reached via ?view= (old bookmarks), they just have no button.
+  // Legacy 'agenda'/'dispatch' values (old bookmarks + remembered prefs)
+  // normalize to 'day', which picks its own layout by window width below.
+  const VALID_VIEWS = ['day', 'week', 'month', 'upcoming', 'google']
+  const normalizeView = (v) => (v === 'agenda' || v === 'dispatch') ? 'day' : v
+  const rawView = normalizeView(searchParams.get('view'))
   const isMobile = useIsMobile(768)
+  // Half-screen fix: below this width the dispatch board's three columns
+  // stop earning their keep, so Day renders the agenda (card) layout — the
+  // same one phones get. A half-snapped 1440p window (~960-1280px) lands
+  // here, which is exactly the "can't see who's scheduled" complaint.
+  const isNarrowBoard = useIsMobile(1100)
   // Remember the last view the operator chose so it sticks between visits —
-  // a month-first admin lands back on month, a dispatcher on dispatch — rather
-  // than always resetting to the viewport default.
+  // a month-first admin lands back on month — rather than always resetting.
   let remembered = null
-  try { remembered = localStorage.getItem('bb_schedule_view') } catch { /* ignore */ }
+  try { remembered = normalizeView(localStorage.getItem('bb_schedule_view')) } catch { /* ignore */ }
   const viewMode = VALID_VIEWS.includes(rawView)
     ? rawView
-    : (VALID_VIEWS.includes(remembered) ? remembered : (isMobile ? 'agenda' : 'dispatch'))
+    : (VALID_VIEWS.includes(remembered) ? remembered : 'day')
+  // What actually renders: 'day' resolves to the agenda layout (narrow) or
+  // the dispatch board (wide); every other view is itself.
+  const effectiveView = viewMode === 'day' ? (isNarrowBoard ? 'agenda' : 'dispatch') : viewMode
   const setViewMode = (next) => {
     try { localStorage.setItem('bb_schedule_view', next) } catch { /* ignore */ }
     const params = new URLSearchParams(searchParams)
@@ -117,6 +130,25 @@ export default function Schedule() {
     crewLoad, unassignedToday,
   } = useScheduleAnalytics({ visits, currentDate, employees })
   const [showFilters, setShowFilters] = useState(false)  // filters hidden by default; most days show everything
+  // Crew availability signals for the board's date (crew app Phase 4):
+  // { [cleaner_id]: {status, detail} } from /api/jobs/cleaner-availability —
+  // time off, weekly usually-off patterns. Day-board only; a failed fetch
+  // just means no chips (never blocks the schedule).
+  const [crewAvailability, setCrewAvailability] = useState({})
+  useEffect(() => {
+    if (effectiveView !== 'dispatch') return undefined
+    let cancelled = false
+    const d = toLocalYMD(currentDate)
+    get(`/api/jobs/cleaner-availability?date=${d}`)
+      .then(rows => {
+        if (cancelled) return
+        const map = {}
+        for (const r of (Array.isArray(rows) ? rows : [])) map[String(r.cleaner_id)] = r
+        setCrewAvailability(map)
+      })
+      .catch(() => { if (!cancelled) setCrewAvailability({}) })
+    return () => { cancelled = true }
+  }, [effectiveView, currentDate])
   // Guest-stay (Airbnb/VRBO iCal) overlay on the month calendar — off by
   // default; it tinted nearly every cell and crowded out the actual jobs.
   // Persisted (unlike the other filter chips) because it's a display
@@ -368,13 +400,13 @@ export default function Schedule() {
 
   const prevWeek = () => {
     const d = new Date(currentDate)
-    d.setDate(d.getDate() - ((viewMode === 'agenda' || viewMode === 'dispatch') ? 1 : 7))
+    d.setDate(d.getDate() - (viewMode === 'day' ? 1 : 7))
     setCurrentDate(d)
   }
 
   const nextWeek = () => {
     const d = new Date(currentDate)
-    d.setDate(d.getDate() + ((viewMode === 'agenda' || viewMode === 'dispatch') ? 1 : 7))
+    d.setDate(d.getDate() + (viewMode === 'day' ? 1 : 7))
     setCurrentDate(d)
   }
 
@@ -461,7 +493,7 @@ export default function Schedule() {
           "Select all visible → Cancel N" would mass-cancel jobs the user
           can't see. Keep bulk operations to the list surface where every
           row is individually selectable. */}
-      {viewMode === 'agenda' && (
+      {effectiveView === 'agenda' && (
         <ScheduleBulkBar
           visibleCount={currentlyVisibleVisits.length}
           allSelected={currentlyVisibleVisits.length > 0 && currentlyVisibleVisits.every(v => selectedVisitIds.has(v.id))}
@@ -482,8 +514,8 @@ export default function Schedule() {
           arrive (even an empty week), the real branch takes over so
           filters/empty-states get to render. */}
       {loading && (visits?.length ?? 0) === 0 ? (
-        <ScheduleSkeleton viewMode={viewMode} />
-      ) : viewMode === 'agenda' ? (
+        <ScheduleSkeleton viewMode={effectiveView} />
+      ) : effectiveView === 'agenda' ? (
         <div className="flex-1 overflow-auto flex flex-col">
           <AgendaHero
             currentDate={currentDate}
@@ -516,13 +548,14 @@ export default function Schedule() {
             onNewJob={() => { setNewJobDate(dateStr); setShowNewJob(true) }}
           />
         </div>
-      ) : viewMode === 'dispatch' ? (
+      ) : effectiveView === 'dispatch' ? (
         <DispatchBoard
           currentDate={currentDate}
           todayVisits={todayVisits}
           todayStats={todayStats}
           unassignedToday={unassignedToday}
           crewLoad={crewLoad}
+          crewAvailability={crewAvailability}
           jobs={jobs}
           properties={properties}
           clients={clients}

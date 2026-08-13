@@ -1511,15 +1511,18 @@ export interface paths {
          * @description Per-cleaner availability status for the given date + time window.
          *
          *     Returns [{cleaner_id, status, detail}] where status is one of:
-         *       - "off"       — approved time off covering that date
-         *       - "conflict"  — already assigned to another job overlapping the window
-         *       - "same_day"  — assigned to another job that day (no time overlap)
-         *       - "free"      — no conflicts detected
+         *       - "off"         — approved time off covering that date
+         *       - "conflict"    — already assigned to another job overlapping the window
+         *       - "same_day"    — assigned to another job that day (no time overlap)
+         *       - "usually_off" — their weekly pattern (crew app Phase 4) doesn't cover
+         *                         this date/window. A soft signal, never a block —
+         *                         assignment still goes through.
+         *       - "free"        — no conflicts detected
          *
          *     Powers the JobEdit cleaner picker's inline availability hints so
-         *     operators aren't picking blind from an alphabetical list. Audit
-         *     finding: assigning cleaners without seeing conflicts led to
-         *     double-bookings.
+         *     operators aren't picking blind from an alphabetical list (audit
+         *     finding: assigning blind led to double-bookings), and the dispatch
+         *     board's crew chips (same payload, no window).
          */
         get: operations["cleaner_availability_api_jobs_cleaner_availability_get"];
         put?: never;
@@ -5481,6 +5484,30 @@ export interface paths {
         patch: operations["update_me_api_crew_me_patch"];
         trace?: never;
     };
+    "/api/crew/me/availability": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get My Availability
+         * @description The caller's own weekly pattern; week=None when they never set one.
+         */
+        get: operations["get_my_availability_api_crew_me_availability_get"];
+        /**
+         * Set My Availability
+         * @description Save the caller's weekly pattern (upsert, whole-week replace).
+         */
+        put: operations["set_my_availability_api_crew_me_availability_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/crew/roster": {
         parameters: {
             query?: never;
@@ -5805,6 +5832,13 @@ export interface components {
             customer_self_reschedule?: boolean | null;
             /** Turnover Lead Buffer Hours */
             turnover_lead_buffer_hours?: number | null;
+        };
+        /** AvailabilityBody */
+        AvailabilityBody: {
+            /** Week */
+            week: {
+                [key: string]: unknown;
+            };
         };
         /** Body_import_clients_api_admin_import_clients_post */
         Body_import_clients_api_admin_import_clients_post: {
@@ -16363,6 +16397,59 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["MeUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_my_availability_api_crew_me_availability_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    set_my_availability_api_crew_me_availability_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AvailabilityBody"];
             };
         };
         responses: {
