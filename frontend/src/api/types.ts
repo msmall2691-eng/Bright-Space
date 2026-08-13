@@ -5336,6 +5336,35 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/crew/jobs/{job_id}/respond": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Respond To Job
+         * @description The cleaner answers an assignment: accepted, or declined with a reason.
+         *
+         *     A STATUS, not a schedule write (crew-app plan decision #1): declining
+         *     never touches Job.cleaner_ids — the office keeps schedule authority and
+         *     decides the reassignment. Changing your mind is allowed: one row per
+         *     (job, cleaner), updated in place (the unique constraint backstops races).
+         *
+         *     A decline pings staff (web push, best-effort) and both answers land on the
+         *     job's timeline — quiet green check vs. loud red flag, matching how the
+         *     office actually needs to hear about each.
+         */
+        post: operations["respond_to_job_api_crew_jobs__job_id__respond_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/crew/jobs/{job_id}/photos": {
         parameters: {
             query?: never;
@@ -7313,6 +7342,13 @@ export interface components {
         ResetDataRequest: {
             /** Confirm */
             confirm: string;
+        };
+        /** RespondBody */
+        RespondBody: {
+            /** Response */
+            response: string;
+            /** Reason */
+            reason?: string | null;
         };
         /** RouteRequest */
         RouteRequest: {
@@ -16043,6 +16079,41 @@ export interface operations {
         requestBody?: {
             content: {
                 "application/json": components["schemas"]["MarkDoneBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    respond_to_job_api_crew_jobs__job_id__respond_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                job_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RespondBody"];
             };
         };
         responses: {

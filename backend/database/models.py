@@ -790,6 +790,36 @@ class JobPhoto(Base):
     job = relationship("Job")
 
 
+class JobResponse(Base):
+    """A cleaner's answer to being put on a job — accepted, or declined with a
+    reason. This is a STATUS, not a schedule write (crew-app plan decision #1):
+    declining never edits Job.cleaner_ids — the office sees the flag and
+    decides the reassignment, so nothing silently falls off the schedule.
+
+    One row per (job, cleaner), updated in place when they change their mind;
+    the unique constraint is the upsert backstop.
+    """
+    __tablename__ = "job_responses"
+    org_id = Column(Integer, ForeignKey("orgs.id"), nullable=True, index=True)  # tenant scope (MT-1)
+
+    id = Column(Integer, primary_key=True, index=True)
+    job_id = Column(Integer, ForeignKey("jobs.id", ondelete="CASCADE"), nullable=False, index=True)
+    # Same crew-ID string space as Job.cleaner_ids / User.cleaner_id.
+    cleaner_id = Column(String, nullable=False, index=True)
+    # The login that answered (audit). SET NULL so removing a user keeps the record.
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    response = Column(String(8), nullable=False)   # "accepted" | "declined"
+    reason = Column(Text, nullable=True)           # declines only, optional
+    created_at = Column(DateTime, default=_utcnow)
+    updated_at = Column(DateTime, default=_utcnow, onupdate=_utcnow)
+
+    job = relationship("Job")
+
+    __table_args__ = (
+        UniqueConstraint("job_id", "cleaner_id", name="uq_job_response_job_cleaner"),
+    )
+
+
 class LeadIntake(Base):
     """Initial contact form submission from lead before client/opportunity creation."""
     __tablename__ = "lead_intakes"

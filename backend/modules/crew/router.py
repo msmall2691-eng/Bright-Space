@@ -33,7 +33,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, joinedload
 
 from database.db import get_db
-from database.models import Job, JobPhoto, User, TimeEntry
+from database.models import Job, JobPhoto, JobResponse, User, TimeEntry
 from modules.auth.router import require_role, current_org_id, resolve_org_id, send_staff_invite
 from modules.scheduling.completion import auto_create_draft_invoice
 from utils.activity_logger import log_job_status_change
@@ -63,7 +63,8 @@ def _turnover_line(job: Job) -> str:
     return " · ".join(parts)
 
 
-def _job_row(job: Job, names_by_cid: dict | None = None, self_cid: str | None = None) -> dict:
+def _job_row(job: Job, names_by_cid: dict | None = None, self_cid: str | None = None,
+             my_response: "JobResponse | None" = None) -> dict:
     prop = job.property
     client = job.client
     return {
@@ -96,6 +97,10 @@ def _job_row(job: Job, names_by_cid: dict | None = None, self_cid: str | None = 
             for cid in (job.cleaner_ids or [])
             if self_cid is None or str(cid) != str(self_cid)
         ) if names_by_cid is not None else [],
+        # The caller's own accept/decline answer for this job (crew app Phase
+        # 2) — null until they respond. Drives the Accept / Can't-make-it row.
+        "my_response": ({"response": my_response.response, "reason": my_response.reason}
+                        if my_response else None),
         # Mark-done state (Phase 2c): lets the card show "Done ✓" and echo the
         # note the cleaner left, instead of the job silently vanishing.
         "completed_at": _iso_utc(job.completed_at),
@@ -250,6 +255,14 @@ def my_day(
     # upcoming preview they'd be noise.
     upcoming_jobs = [j for j in mine if j.scheduled_date != today and j.status != "completed"]
     names = _names_by_cleaner_id(db, mine)
+    # The caller's own accept/decline answers for the window, one query.
+    my_responses = {
+        r.job_id: r
+        for r in db.query(JobResponse).filter(
+            JobResponse.job_id.in_([j.id for j in mine] or [0]),
+            JobResponse.cleaner_id == current_user.cleaner_id,
+        ).all()
+    }
 
     # ── Native time clock status ─────────────────────────────────────────────
     # Read-only w.r.t. the schedule. Folded into /my-day so the crew app is
@@ -283,8 +296,10 @@ def my_day(
     return {
         "as_of": today.isoformat(),
         "crew_id": current_user.cleaner_id,
-        "today": [_job_row(j, names, current_user.cleaner_id) for j in today_jobs],
-        "upcoming": [_job_row(j, names, current_user.cleaner_id) for j in upcoming_jobs],
+        "today": [_job_row(j, names, current_user.cleaner_id, my_responses.get(j.id))
+                  for j in today_jobs],
+        "upcoming": [_job_row(j, names, current_user.cleaner_id, my_responses.get(j.id))
+                     for j in upcoming_jobs],
         "clock": {
             "active": _entry_row(active) if active else None,
             "hours_today": hours_today,
@@ -648,6 +663,110 @@ def mark_job_done(
         auto_create_draft_invoice(db, job)
 
     return _job_row(job, _names_by_cleaner_id(db, [job]), current_user.cleaner_id)
+
+
+# ── Accept / decline (crew app Phase 2) ──────────────────────────────────────
+
+class RespondBody(BaseModel):
+    response: str                      # "accepted" | "declined"
+    reason: Optional[str] = None       # declines only, optional
+
+
+@router.post("/jobs/{job_id}/respond")
+def respond_to_job(
+    job_id: int,
+    body: RespondBody,
+    db: Session = Depends(get_db),
+    org_id: int = Depends(current_org_id),
+    current_user: User = Depends(require_role("cleaner")),
+):
+    """The cleaner answers an assignment: accepted, or declined with a reason.
+
+    A STATUS, not a schedule write (crew-app plan decision #1): declining
+    never touches Job.cleaner_ids — the office keeps schedule authority and
+    decides the reassignment. Changing your mind is allowed: one row per
+    (job, cleaner), updated in place (the unique constraint backstops races).
+
+    A decline pings staff (web push, best-effort) and both answers land on the
+    job's timeline — quiet green check vs. loud red flag, matching how the
+    office actually needs to hear about each.
+    """
+    _require_crew_id(current_user)
+    oid = resolve_org_id(org_id, db)
+    org_scope = or_(Job.org_id == oid, Job.org_id.is_(None))
+
+    resp = (body.response or "").strip().lower()
+    if resp not in ("accepted", "declined"):
+        raise HTTPException(status_code=422, detail="response must be 'accepted' or 'declined'.")
+
+    job = db.query(Job).filter(org_scope, Job.id == job_id).first()
+    if not job or current_user.cleaner_id not in (job.cleaner_ids or []):
+        raise HTTPException(status_code=404, detail="Job not found.")
+    if job.status in ("cancelled", "completed"):
+        raise HTTPException(status_code=400, detail="This job is already settled.")
+
+    reason = _sanitize_note(body.reason) if resp == "declined" else None
+    row = (db.query(JobResponse)
+           .filter(JobResponse.job_id == job.id,
+                   JobResponse.cleaner_id == current_user.cleaner_id)
+           .first())
+    changed = row is None or row.response != resp or row.reason != reason
+    if row is None:
+        row = JobResponse(org_id=oid, job_id=job.id,
+                          cleaner_id=current_user.cleaner_id,
+                          user_id=current_user.id,
+                          response=resp, reason=reason,
+                          created_at=_now_naive_utc(), updated_at=_now_naive_utc())
+        db.add(row)
+    else:
+        row.response, row.reason = resp, reason
+        row.updated_at = _now_naive_utc()
+    try:
+        db.commit()
+    except IntegrityError:
+        # Double-tap race on first response — the unique constraint caught the
+        # twin insert; re-apply as an update.
+        db.rollback()
+        row = (db.query(JobResponse)
+               .filter(JobResponse.job_id == job.id,
+                       JobResponse.cleaner_id == current_user.cleaner_id)
+               .first())
+        row.response, row.reason = resp, reason
+        row.updated_at = _now_naive_utc()
+        db.commit()
+    db.refresh(row)
+
+    if changed:
+        who = getattr(current_user, "full_name", None) or current_user.email
+        when = job.scheduled_date.isoformat() if job.scheduled_date else "unscheduled"
+        try:
+            from utils.activity_logger import log_activity
+            verb = "accepted" if resp == "accepted" else "can't make"
+            log_activity(
+                db, "crew_response", job_id=job.id, client_id=job.client_id,
+                actor=who,
+                summary=f"{who} {verb} {job.title} ({when})" + (f" — “{reason}”" if reason else ""),
+                extra_data={"response": resp, "reason": reason,
+                            "cleaner_id": current_user.cleaner_id},
+                commit=True,
+            )
+        except Exception:
+            log.exception("activity log failed on respond_to_job")
+        if resp == "declined":
+            # Loud path: a decline needs eyes today, not at the next login.
+            try:
+                from services.push_service import notify_staff
+                notify_staff(
+                    db, "Crew can't make a job",
+                    f"{who} declined {job.title} on {when}"
+                    + (f': "{reason}"' if reason else "") + " — needs a reassignment.",
+                    url=f"/jobs/{job.id}", tag=f"job-response-{job.id}", org_id=oid,
+                )
+            except Exception:
+                log.exception("push notify failed on respond_to_job")
+
+    return {"job_id": job.id, "response": row.response, "reason": row.reason,
+            "updated_at": _iso_utc(row.updated_at)}
 
 
 # ── Job photos ───────────────────────────────────────────────────────────────

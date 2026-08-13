@@ -25,8 +25,8 @@ bottom sheets, no chrome).
 
 | # | What ships | Status |
 |---|------------|--------|
-| 1 | Tab shell (Today/Schedule/Me) · teammates by name on job cards · client name+phone · property checklist display · Me profile (name/phone/emergency contact, migration 082) | this PR |
-| 2 | Accept / decline on assigned jobs — per-cleaner response + reason, office flags on Schedule/JobDetail. Response state lives OUTSIDE `Job.cleaner_ids` (it's a status, not a schedule write — scheduling-invariants reviewed) | next |
+| 1 | Tab shell (Today/Schedule/Me) · teammates by name on job cards · client name+phone · property checklist display · Me profile (name/phone/emergency contact, migration 082) | merged #684 |
+| 2 | Accept / decline on assigned jobs — per-cleaner response + reason (migration 083), Accept / Can't-make-it on crew job cards, per-cleaner state on JobDetail, decline pushes a staff notification + timeline entry. Response state lives OUTSIDE `Job.cleaner_ids` (a status, not a schedule write — scheduling-invariants reviewed) | this PR |
 | 3 | Open-jobs board — office marks a job open; crew claim it (atomic first-claim-wins writes `Job.cleaner_ids` server-side, activity-logged, office notified) | |
 | 4 | Weekly availability — per-cleaner Mon–Sun AM/PM/Off template edited in Me; availability chip beside names in the office assign flow; complements the existing `cleaner_time_off` date ranges | |
 | 5 | Training (links) + Documents (PDFs, stored in-DB like job photos) — read view in Me, managed from Crew admin | |

@@ -214,7 +214,48 @@ function ChecklistBlock({ template }) {
   )
 }
 
-function JobCard({ job, clockable = false, activeEntry = null, onClockIn, onClockOut, onMarkDone, onPhotos, busy = false }) {
+/** Accept / Can't-make-it on an assigned job (crew app Phase 2). An answer is
+ *  a status the office sees — declining never takes the job off this list
+ *  (the office decides the reassignment). Change is always allowed. */
+function RespondRow({ job, onRespond, onDecline, busy }) {
+  const [changing, setChanging] = useState(false)
+  const r = job.my_response
+  if (!r || changing) {
+    return (
+      <div className="mt-3 border-t border-hairline pt-3">
+        <div className="text-[11px] text-ink-3 mb-1.5">Can you make this job?</div>
+        <div className="grid grid-cols-2 gap-2">
+          <button onClick={() => { setChanging(false); onRespond('accepted') }} disabled={busy}
+            className="text-[13px] font-semibold bg-emerald-600 hover:bg-emerald-700 disabled:opacity-60 text-white py-2 rounded-lg transition-colors inline-flex items-center justify-center gap-1.5">
+            <CheckCircle2 className="w-4 h-4" /> Accept
+          </button>
+          <button onClick={() => { setChanging(false); onDecline() }} disabled={busy}
+            className="text-[13px] font-semibold bg-panel border border-hairline text-ink-2 hover:bg-bg-2 disabled:opacity-60 py-2 rounded-lg transition-colors">
+            Can't make it
+          </button>
+        </div>
+      </div>
+    )
+  }
+  const accepted = r.response === 'accepted'
+  return (
+    <div className={`mt-3 rounded-lg border px-3 py-2 text-[12px] flex items-center justify-between gap-2 ${
+      accepted
+        ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-700 dark:text-emerald-300'
+        : 'bg-amber-500/10 border-amber-500/20 text-amber-800 dark:text-amber-300'}`}>
+      <span className="min-w-0">
+        {accepted ? '✓ You accepted' : 'You declined — the office knows'}
+        {!accepted && r.reason && <span className="italic"> · “{r.reason}”</span>}
+      </span>
+      <button onClick={() => setChanging(true)} disabled={busy}
+        className="shrink-0 font-semibold underline underline-offset-2 opacity-80 hover:opacity-100">
+        Change
+      </button>
+    </div>
+  )
+}
+
+function JobCard({ job, clockable = false, activeEntry = null, onClockIn, onClockOut, onMarkDone, onPhotos, onRespond, onDecline, busy = false }) {
   const isTurnover = job.job_type === 'str_turnover'
   const done = job.status === 'completed'
   const isActiveJob = clockable && activeEntry && activeEntry.job_id === job.id
@@ -307,6 +348,10 @@ function JobCard({ job, clockable = false, activeEntry = null, onClockIn, onCloc
         <div className="mt-3 rounded-lg bg-emerald-500/10 border border-emerald-500/20 px-3 py-2 text-[12px] text-ink-2">
           Your note: “{job.completion_note}”
         </div>
+      )}
+
+      {!done && onRespond && (
+        <RespondRow job={job} onRespond={onRespond} onDecline={onDecline} busy={busy} />
       )}
 
       {clockable && !done && (
@@ -417,6 +462,9 @@ export default function MyDay() {
   const [doneNote, setDoneNote] = useState('')
   // Photo sheet: the job whose photos are open (null = closed).
   const [photoJob, setPhotoJob] = useState(null)
+  // Decline sheet: the job being declined (null = closed) + optional reason.
+  const [declineJob, setDeclineJob] = useState(null)
+  const [declineReason, setDeclineReason] = useState('')
 
   const [weekPay, setWeekPay] = useState(null)
 
@@ -498,6 +546,25 @@ export default function MyDay() {
     catch (e) { setActionError(e.detail || e.message || 'Could not mark the job done') }
     finally { setActionBusy(false) }
   }, [markDoneJob, doneNote, fetchDay])
+
+  // Accept is one tap; declining opens a sheet for the optional reason.
+  // Either way the answer is a status — the job stays on the list (the
+  // office decides any reassignment).
+  const respond = useCallback(async (job, response, reason) => {
+    setActionBusy(true); setActionError(null)
+    try {
+      await post(`/api/crew/jobs/${job.id}/respond`,
+        reason ? { response, reason } : { response })
+      setDeclineJob(null)
+      await fetchDay(true)
+    }
+    catch (e) { setActionError(e.detail || e.message || 'Could not send your answer') }
+    finally { setActionBusy(false) }
+  }, [fetchDay])
+
+  const requestDecline = useCallback((job) => {
+    setDeclineReason(''); setActionError(null); setDeclineJob(job)
+  }, [])
 
   // Correct the miles on an already-closed punch (from the Today's punches list).
   const saveMiles = useCallback(async (entryId, miles) => {
@@ -607,6 +674,8 @@ export default function MyDay() {
                       onClockOut={requestClockOut}
                       onMarkDone={() => requestMarkDone(j)}
                       onPhotos={() => setPhotoJob(j)}
+                      onRespond={(resp) => respond(j, resp)}
+                      onDecline={() => requestDecline(j)}
                       busy={actionBusy}
                     />
                   ))}
@@ -640,7 +709,12 @@ export default function MyDay() {
                   {dayLabel(g.date)}
                 </h2>
                 <div className="space-y-3">
-                  {g.jobs.map(j => <JobCard key={j.id} job={j} />)}
+                  {g.jobs.map(j => (
+                    <JobCard key={j.id} job={j}
+                      onRespond={(resp) => respond(j, resp)}
+                      onDecline={() => requestDecline(j)}
+                      busy={actionBusy} />
+                  ))}
                 </div>
               </section>
             ))
@@ -714,6 +788,53 @@ export default function MyDay() {
 
       {photoJob && (
         <JobPhotoSheet job={photoJob} onClose={() => setPhotoJob(null)} />
+      )}
+
+      {declineJob && (
+        <div
+          className="fixed inset-0 z-30 flex items-end sm:items-center justify-center bg-black/40 px-4 pb-4 sm:pb-0"
+          onClick={() => { if (!actionBusy) setDeclineJob(null) }}>
+          <div
+            className="w-full max-w-sm bg-panel rounded-2xl border border-hairline shadow-glass p-5 space-y-4"
+            onClick={e => e.stopPropagation()}>
+            <div>
+              <div className="text-base font-bold text-ink">Can't make it</div>
+              <div className="text-[13px] text-ink-3 mt-0.5 truncate">
+                {declineJob.property_name || declineJob.title}
+                {declineJob.scheduled_date ? ` · ${dayLabel(declineJob.scheduled_date)}` : ''}
+              </div>
+            </div>
+            <p className="text-[12px] text-ink-3">
+              You'll stay on the job until the office reassigns it — they get
+              notified right away.
+            </p>
+            <label className="block">
+              <span className="text-[13px] font-medium text-ink-2">Why not? (optional)</span>
+              <textarea
+                value={declineReason} onChange={e => setDeclineReason(e.target.value)}
+                rows={2} maxLength={2000} autoFocus
+                placeholder="e.g. doctor's appointment, car trouble…"
+                className="mt-1.5 w-full rounded-lg border border-hairline bg-bg px-3 py-2.5 text-[13px] text-ink placeholder-ink-3 focus:outline-none focus:border-blue-400 resize-none"
+              />
+            </label>
+            {actionError && (
+              <div className="text-xs text-red-700 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
+                {actionError}
+              </div>
+            )}
+            <div className="flex gap-2">
+              <button onClick={() => setDeclineJob(null)} disabled={actionBusy}
+                className="flex-1 text-[13px] font-semibold bg-panel border border-hairline text-ink-2 py-2.5 rounded-lg hover:bg-bg-2 disabled:opacity-60 transition-colors">
+                Never mind
+              </button>
+              <button onClick={() => respond(declineJob, 'declined', declineReason.trim() || undefined)}
+                disabled={actionBusy}
+                className="flex-1 text-[13px] font-semibold bg-amber-600 hover:bg-amber-700 text-white py-2.5 rounded-lg disabled:opacity-60 transition-colors">
+                {actionBusy ? 'Sending…' : 'Send'}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {markDoneJob && (

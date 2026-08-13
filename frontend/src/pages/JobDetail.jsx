@@ -312,6 +312,34 @@ export default function JobDetail() {
               </div>
             </div>
 
+            {(job.crew_responses || []).length > 0 && (
+              /* Accept/decline state per assigned cleaner (crew app Phase 2).
+                 A decline never unassigns — this list is where the office
+                 spots who needs replacing. */
+              <div className="border-t border-hairline pt-3">
+                <div className="text-[10px] uppercase tracking-wide text-ink-3 mb-1.5">Crew responses</div>
+                <div className="space-y-1.5">
+                  {job.crew_responses.map(r => (
+                    <div key={r.cleaner_id} className="text-[12px] flex items-start justify-between gap-2">
+                      <span className="text-ink-2 truncate">{r.name}</span>
+                      {r.response === 'accepted' ? (
+                        <span className="shrink-0 inline-flex items-center gap-1 text-emerald-600 font-semibold">
+                          <CheckCircle className="w-3.5 h-3.5" /> Accepted
+                        </span>
+                      ) : r.response === 'declined' ? (
+                        <span className="shrink-0 text-red-600 font-semibold text-right">
+                          Can't make it
+                          {r.reason && <span className="block font-normal italic text-[11px] text-red-500/90">“{r.reason}”</span>}
+                        </span>
+                      ) : (
+                        <span className="shrink-0 text-ink-3">No answer yet</span>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
             <div className="border-t border-hairline pt-3">
               <div className="text-[10px] uppercase tracking-wide text-ink-3 mb-1">Client</div>
               {job.client_id ? (
