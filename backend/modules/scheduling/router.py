@@ -1513,15 +1513,18 @@ def cleaner_availability(
     """Per-cleaner availability status for the given date + time window.
 
     Returns [{cleaner_id, status, detail}] where status is one of:
-      - "off"       — approved time off covering that date
-      - "conflict"  — already assigned to another job overlapping the window
-      - "same_day"  — assigned to another job that day (no time overlap)
-      - "free"      — no conflicts detected
+      - "off"         — approved time off covering that date
+      - "conflict"    — already assigned to another job overlapping the window
+      - "same_day"    — assigned to another job that day (no time overlap)
+      - "usually_off" — their weekly pattern (crew app Phase 4) doesn't cover
+                        this date/window. A soft signal, never a block —
+                        assignment still goes through.
+      - "free"        — no conflicts detected
 
     Powers the JobEdit cleaner picker's inline availability hints so
-    operators aren't picking blind from an alphabetical list. Audit
-    finding: assigning cleaners without seeing conflicts led to
-    double-bookings.
+    operators aren't picking blind from an alphabetical list (audit
+    finding: assigning blind led to double-bookings), and the dispatch
+    board's crew chips (same payload, no window).
     """
     d = _to_date(date)
     if d is None:
@@ -1556,10 +1559,36 @@ def cleaner_availability(
             else:
                 same_day_only.setdefault(cid, []).append(j)
 
-    # 3) Build the result for every known cleaner id we've seen (from any of
-    #    the three sources); the caller's cleaner list is separate — this
-    #    endpoint just answers "for these cleaners, what's their state".
-    all_ids = set(off_by_id) | set(conflicts) | set(same_day_only)
+    # 2b) Weekly patterns (crew app Phase 4): who is USUALLY off for this
+    #     date/window. Lowest-priority signal — time off and real conflicts
+    #     always win. A cleaner with no saved pattern contributes nothing.
+    from database.models import CleanerAvailability as _CA
+    from modules.crew.router import _normalize_week
+    weekday_key = ("mon", "tue", "wed", "thu", "fri", "sat", "sun")[d.weekday()]
+    usually_off: dict[str, str] = {}
+    for row in db.query(_CA).filter(
+            or_(_CA.org_id == oid, _CA.org_id.is_(None))).all():
+        slots = _normalize_week(row.week).get(weekday_key, [])
+        st, en = _to_time(start) if start else None, _to_time(end) if end else None
+        needs = set()
+        if st is not None or en is not None:
+            if (st or en).hour < 12:
+                needs.add("am")
+            if (en or st).hour >= 12:
+                needs.add("pm")
+        else:
+            needs = {"am", "pm"}
+        missing = needs - set(slots)
+        if not slots:
+            usually_off[str(row.cleaner_id)] = f"usually off {weekday_key.capitalize()}"
+        elif missing == needs and missing:
+            label = " + ".join(sorted("mornings" if m == "am" else "afternoons" for m in missing))
+            usually_off[str(row.cleaner_id)] = f"usually off {weekday_key.capitalize()} {label}"
+
+    # 3) Build the result for every known cleaner id we've seen (from any
+    #    source); the caller's cleaner list is separate — this endpoint just
+    #    answers "for these cleaners, what's their state".
+    all_ids = set(off_by_id) | set(conflicts) | set(same_day_only) | set(usually_off)
     out = []
     for cid in sorted(all_ids):
         if cid in off_by_id:
@@ -1572,11 +1601,14 @@ def cleaner_availability(
             slot = f"{j.start_time}-{j.end_time}" if j.start_time and j.end_time else "same window"
             out.append({"cleaner_id": cid, "status": "conflict",
                         "detail": f"booked {slot}", "conflict_job_id": j.id})
-        else:
+        elif cid in same_day_only:
             j = same_day_only[cid][0]
             slot = f"{j.start_time}-{j.end_time}" if j.start_time and j.end_time else "same day"
             out.append({"cleaner_id": cid, "status": "same_day",
                         "detail": f"another job {slot}", "conflict_job_id": j.id})
+        else:
+            out.append({"cleaner_id": cid, "status": "usually_off",
+                        "detail": usually_off[cid]})
     return out
 
 

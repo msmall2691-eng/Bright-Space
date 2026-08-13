@@ -26,12 +26,27 @@ import DispatchTimeline from './DispatchTimeline'
 import CrewUtilization from './CrewUtilization'
 import { toLocalYMD, todayYMD } from '../../utils/format'
 
+// Which board columns are showing — persisted so a half-screen operator who
+// hides Unassigned to give the timeline room finds it hidden tomorrow too.
+// (Owner request, Aug 2026: "I wish I could collapse some parts".)
+const COLS_KEY = 'bb_dispatch_cols'
+const DEFAULT_COLS = { unassigned: true, timeline: true, crews: true }
+
+function loadCols() {
+  try {
+    const raw = JSON.parse(localStorage.getItem(COLS_KEY) || 'null')
+    if (raw && typeof raw === 'object') return { ...DEFAULT_COLS, ...raw }
+  } catch { /* ignore */ }
+  return { ...DEFAULT_COLS }
+}
+
 export default function DispatchBoard({
   currentDate,
   todayVisits,
   todayStats,
   unassignedToday,
   crewLoad,
+  crewAvailability = {},
   jobs,
   properties,
   clients,
@@ -50,6 +65,18 @@ export default function DispatchBoard({
 
   const [draggingVisit, setDraggingVisit] = useState(null)
   const [dragOverCrewId, setDragOverCrewId] = useState(null)
+  const [cols, setCols] = useState(loadCols)
+  const toggleCol = useCallback((key) => {
+    setCols(prev => {
+      const shown = Object.values(prev).filter(Boolean).length
+      // Never allow hiding the last visible column — a fully blank board
+      // reads as broken, and there'd be nothing left to click.
+      if (prev[key] && shown <= 1) return prev
+      const next = { ...prev, [key]: !prev[key] }
+      try { localStorage.setItem(COLS_KEY, JSON.stringify(next)) } catch { /* ignore */ }
+      return next
+    })
+  }, [])
 
   const commitAssign = useCallback(async (visit, crewId, opts = {}) => {
     const { allowConflicts = false, isRetry = false } = opts
@@ -117,50 +144,75 @@ export default function DispatchBoard({
 
         <OpsSummary stats={todayStats} isToday={false} />
 
-        {/* Three-column board — collapses to a single stack on narrower
-            viewports via the media-query rule below. Inline style would
-            override that override, so the layout lives in a class. */}
-        <div className="dispatch-board-grid gap-3 mt-2">
-          <UnassignedQueue
-            visits={unassignedToday}
-            jobs={jobs}
-            properties={properties}
-            clients={clients}
-            onOpen={onOpen}
-            onDragStartVisit={setDraggingVisit}
-            onDragEndVisit={() => setDraggingVisit(null)}
-          />
-          <DispatchTimeline
-            visits={todayVisits}
-            jobs={jobs}
-            properties={properties}
-            clients={clients}
-            empName={empName}
-            onOpen={onOpen}
-            onDragStartVisit={setDraggingVisit}
-            onDragEndVisit={() => setDraggingVisit(null)}
-          />
-          <CrewUtilization
-            crewLoad={crewLoad}
-            empName={empName}
-            draggingVisit={draggingVisit}
-            dragOverCrewId={dragOverCrewId}
-            onDragOverCrew={setDragOverCrewId}
-            onDropCrew={handleDropOnCrew}
-          />
+        {/* Column toggles — collapse what you don't need so the timeline
+            gets the room on a half-width window. Persisted; the last
+            visible column can't be hidden. */}
+        <div className="flex items-center gap-1.5 mt-2">
+          {[
+            ['unassigned', `Unassigned${unassignedToday?.length ? ` (${unassignedToday.length})` : ''}`],
+            ['timeline', 'Timeline'],
+            ['crews', `Crews${crewLoad?.length ? ` (${crewLoad.length})` : ''}`],
+          ].map(([key, label]) => (
+            <button key={key} onClick={() => toggleCol(key)} aria-pressed={cols[key]}
+              className={`text-[11px] font-semibold px-2.5 py-1 rounded-full border transition-colors ${
+                cols[key]
+                  ? 'bg-panel border-hairline text-ink'
+                  : 'bg-bg-2 border-transparent text-ink-3 line-through decoration-ink-3/50 hover:text-ink-2'}`}>
+              {label}
+            </button>
+          ))}
         </div>
 
-        <style>{`
-          .dispatch-board-grid {
-            display: grid;
-            grid-template-columns: minmax(240px, 300px) minmax(0, 1fr) minmax(260px, 320px);
-          }
-          @media (max-width: 900px) {
-            .dispatch-board-grid {
-              grid-template-columns: 1fr;
-            }
-          }
-        `}</style>
+        {/* The board — only the visible columns render, and the grid template
+            is computed from them (the timeline always takes the flexible
+            track). The old <900px single-stack media query is gone: below
+            1100px the Day tab renders the agenda layout instead, so this
+            board never has to squeeze. */}
+        <div
+          className="grid gap-3 mt-2"
+          style={{
+            gridTemplateColumns: [
+              cols.unassigned && 'minmax(240px, 300px)',
+              cols.timeline && 'minmax(0, 1fr)',
+              cols.crews && 'minmax(260px, 320px)',
+            ].filter(Boolean).join(' ') || '1fr',
+          }}
+        >
+          {cols.unassigned && (
+            <UnassignedQueue
+              visits={unassignedToday}
+              jobs={jobs}
+              properties={properties}
+              clients={clients}
+              onOpen={onOpen}
+              onDragStartVisit={setDraggingVisit}
+              onDragEndVisit={() => setDraggingVisit(null)}
+            />
+          )}
+          {cols.timeline && (
+            <DispatchTimeline
+              visits={todayVisits}
+              jobs={jobs}
+              properties={properties}
+              clients={clients}
+              empName={empName}
+              onOpen={onOpen}
+              onDragStartVisit={setDraggingVisit}
+              onDragEndVisit={() => setDraggingVisit(null)}
+            />
+          )}
+          {cols.crews && (
+            <CrewUtilization
+              crewLoad={crewLoad}
+              availability={crewAvailability}
+              empName={empName}
+              draggingVisit={draggingVisit}
+              dragOverCrewId={dragOverCrewId}
+              onDragOverCrew={setDragOverCrewId}
+              onDropCrew={handleDropOnCrew}
+            />
+          )}
+        </div>
       </div>
     </div>
   )

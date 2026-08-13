@@ -15,6 +15,7 @@ import { get, post, patch, logout } from '../api'
 import { EmptyState, ErrorState, Skeleton } from '../components/ui'
 import JobPhotoSheet from '../components/crew/JobPhotoSheet'
 import CrewProfile from '../components/crew/CrewProfile'
+import CrewAvailability from '../components/crew/CrewAvailability'
 
 const SOFT = 'bg-panel rounded-xl border border-hairline shadow-glass-sm'
 
@@ -785,6 +786,7 @@ export default function MyDay() {
         {tab === 'me' && (
           <>
             <CrewProfile />
+            <CrewAvailability />
             <WeekPayCard week={weekPay} />
             <button onClick={logout}
               className="w-full text-[13px] font-semibold bg-panel border border-hairline text-red-600 dark:text-red-400 py-2.5 rounded-lg hover:bg-bg-2 transition-colors inline-flex items-center justify-center gap-1.5">

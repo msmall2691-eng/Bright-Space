@@ -825,6 +825,27 @@ class JobResponse(Base):
     )
 
 
+class CleanerAvailability(Base):
+    """A cleaner's WEEKLY availability pattern, self-maintained from the crew
+    app's Me tab (crew app Phase 4, owner decision #3: per-day AM / PM / Off).
+
+    `week` is {"mon": ["am","pm"], "tue": ["am"], ... "sun": []} — a missing
+    day means off, a missing ROW means the cleaner never set a pattern
+    (unknown, not off). This is a SIGNAL for the office's assign surfaces
+    ("usually off Friday afternoon"), never a hard block — the office can
+    always assign anyway. One-off absences stay in CleanerTimeOff (date
+    ranges); this is the recurring shape of their week.
+    """
+    __tablename__ = "cleaner_availability"
+    org_id = Column(Integer, ForeignKey("orgs.id"), nullable=True, index=True)  # tenant scope (MT-1)
+
+    id = Column(Integer, primary_key=True, index=True)
+    # Same crew-ID string space as Job.cleaner_ids / User.cleaner_id.
+    cleaner_id = Column(String, nullable=False, unique=True, index=True)
+    week = Column(JSON, nullable=False, default=dict)
+    updated_at = Column(DateTime, default=_utcnow, onupdate=_utcnow)
+
+
 class LeadIntake(Base):
     """Initial contact form submission from lead before client/opportunity creation."""
     __tablename__ = "lead_intakes"
