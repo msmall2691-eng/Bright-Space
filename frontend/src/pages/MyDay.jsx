@@ -324,6 +324,16 @@ function JobCard({ job, clockable = false, activeEntry = null, onClockIn, onCloc
         </div>
       )}
 
+      {!job.open && !job.access_notes && !job.house_code && !done && (
+        /* Empty ≠ broken: tell them BEFORE they drive that no code is on
+           file, so "how do I get in" gets asked from the driveway at home,
+           not the doorstep. */
+        <div className="mt-2 text-[11px] text-ink-3 flex items-start gap-1.5">
+          <KeyRound className="w-3.5 h-3.5 mt-0.5 shrink-0" />
+          No access info on file — ask the office if you need a code.
+        </div>
+      )}
+
       {(job.access_notes || job.parking_notes || job.house_code) && (
         <div className="mt-3 space-y-1.5 border-t border-hairline pt-3">
           {job.house_code && !job.turnover_line?.includes(job.house_code) && (
@@ -341,6 +351,14 @@ function JobCard({ job, clockable = false, activeEntry = null, onClockIn, onCloc
               <ParkingCircle className="w-3.5 h-3.5 mt-0.5 shrink-0 text-ink-3" /> {job.parking_notes}
             </div>
           )}
+        </div>
+      )}
+
+      {job.notes && (
+        /* What the office wrote on the job — the "dog in the yard" tier.
+           Was silently missing from crew cards until Aug 2026. */
+        <div className="mt-3 rounded-lg bg-blue-500/5 border border-blue-500/15 px-3 py-2 text-[12px] text-ink-2 whitespace-pre-wrap">
+          <span className="font-semibold text-ink">From the office: </span>{job.notes}
         </div>
       )}
 

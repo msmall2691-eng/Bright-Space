@@ -80,6 +80,10 @@ def _job_row(job: Job, names_by_cid: dict | None = None, self_cid: str | None = 
         "end_time": _fmt_time(job.end_time),
         "property_name": prop.name if prop else None,
         "address": prop.address if prop else (job.address or None),
+        # What the office wrote on the job — "dog in the yard", "bring the
+        # tall ladder". Was never sent to crew before Aug 2026 (owner bug
+        # report: "I'm still not seeing notes").
+        "notes": (job.notes or "").strip() or None,
         # Crew-relevant property context only — no billing/client-financial
         # data belongs in this response.
         "access_notes": (prop.access_notes if prop else None) or None,
@@ -310,7 +314,8 @@ def my_day(
         row = _job_row(j, names, current_user.cleaner_id)
         row.update({"open": True, "house_code": None, "access_notes": None,
                     "parking_notes": None, "client_phone": None,
-                    "checklist_template": None, "turnover_line": ""})
+                    "checklist_template": None, "turnover_line": "",
+                    "notes": None})   # office notes can carry access details
         open_jobs.append(row)
 
     return {

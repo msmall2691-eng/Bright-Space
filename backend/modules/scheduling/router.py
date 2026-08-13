@@ -2659,7 +2659,14 @@ def get_job_details(job_id: int, db: Session = Depends(get_db), org_id: int = De
         # write-only. New photos live in job_photos (GET /api/crew/jobs/{id}/photos).
         "photos_legacy": job.photos or [],
         "crew_responses": crew_responses,
-        "property": ({"id": job.property.id, "name": job.property.name, "address": job.property.address}
+        "property": ({"id": job.property.id, "name": job.property.name,
+                      "address": job.property.address,
+                      # Access fields surface here so the office can SEE a
+                      # missing door code from the job page (owner bug
+                      # report: crew cards looked broken when the property
+                      # simply had no code on file) — and fill it in place.
+                      "house_code": job.property.house_code,
+                      "access_notes": job.property.access_notes}
                      if job.property else None),
         "opportunity": ({"id": job.opportunity.id, "title": job.opportunity.title, "stage": job.opportunity.stage}
                         if job.opportunity else None),

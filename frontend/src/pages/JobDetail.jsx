@@ -1,13 +1,69 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useParams, useNavigate, Link } from 'react-router-dom'
 import {
-  ArrowLeft, Building2, MapPin, Receipt, FileText, TrendingUp, Calendar, Send, Plus, CalendarPlus,
+  ArrowLeft, Building2, MapPin, Receipt, FileText, TrendingUp, Calendar, Send, Plus, CalendarPlus, KeyRound,
 } from 'lucide-react'
 import { get, patch, post, download } from '../api'
 import { toast } from '../utils/toastBus'
 import { formatDateShort as fmtDate } from '../utils/format'
 import { canEdit } from '../utils/perms'
 import InlineSelect from '../components/InlineSelect'
+
+/** Door code + access notes for the job's property, editable in place.
+ *  Exists because empty codes were invisible: crew cards correctly show
+ *  nothing when there's nothing on file, which read as "the app is broken"
+ *  (owner bug report, Aug 2026). Missing fields render as amber fill-me
+ *  inputs; a save PATCHes the property, so every future job there has it. */
+function PropertyAccessCard({ property, canEdit: editable }) {
+  const [vals, setVals] = useState({ house_code: property.house_code || '', access_notes: property.access_notes || '' })
+  const [saved, setSaved] = useState({ house_code: property.house_code || '', access_notes: property.access_notes || '' })
+  const [busy, setBusy] = useState(false)
+  const missing = !saved.house_code && !saved.access_notes
+
+  const save = async (field) => {
+    const v = vals[field].trim()
+    if (v === (saved[field] || '')) return
+    setBusy(true)
+    try {
+      await patch(`/api/properties/${property.id}`, { [field]: v })
+      setSaved(s => ({ ...s, [field]: v }))
+      toast.success('Saved — crew see it on their next refresh')
+    } catch (e) {
+      toast.error(e.detail || e.message || 'Could not save')
+      setVals(s => ({ ...s, [field]: saved[field] || '' }))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <div className={`rounded-xl border p-3 space-y-2 ${missing ? 'border-amber-300 bg-amber-50/50' : 'border-hairline bg-panel'}`}>
+      <div className="text-[10px] uppercase tracking-wide text-ink-3 flex items-center gap-1">
+        <KeyRound className="w-3 h-3" /> Access — what the crew sees
+      </div>
+      {missing && (
+        <p className="text-[11px] text-amber-800">
+          Nothing on file — crew cards show no door code for this property.
+        </p>
+      )}
+      {['house_code', 'access_notes'].map(field => (
+        <label key={field} className="block">
+          <span className="text-[11px] text-ink-3">{field === 'house_code' ? 'Door code' : 'Access notes'}</span>
+          {editable ? (
+            <input value={vals[field]} disabled={busy}
+              placeholder={field === 'house_code' ? 'e.g. 4251#' : 'e.g. key in lockbox by side door'}
+              onChange={e => setVals(s => ({ ...s, [field]: e.target.value }))}
+              onBlur={() => save(field)}
+              onKeyDown={e => { if (e.key === 'Enter') e.target.blur() }}
+              className="mt-0.5 w-full bg-bg border border-hairline rounded-lg px-2 py-1.5 text-[12.5px] text-ink focus:outline-none focus:border-amber-400" />
+          ) : (
+            <div className="text-[12.5px] text-ink">{saved[field] || '—'}</div>
+          )}
+        </label>
+      ))}
+    </div>
+  )
+}
 import InlineEditField from '../components/InlineEditField'
 import { AlertCircle, CheckCircle, CalendarClock } from 'lucide-react'
 import { computeDisplayStatus } from '../components/schedule/constants'
@@ -425,6 +481,9 @@ export default function JobDetail() {
             <LinkedCard icon={MapPin} label="Property"
               to={job.property ? `/properties/${job.property.id}` : null}
               primary={job.property?.name} secondary={job.property?.address} />
+            {job.property && (
+              <PropertyAccessCard property={job.property} canEdit={canEdit()} />
+            )}
             <RelatedList icon={Receipt} title="Invoices" items={job.invoices || []} empty="No invoices yet"
               render={(inv) => (
                 <Link key={inv.id} to={`/invoices/${inv.id}`}
