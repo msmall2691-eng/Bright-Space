@@ -3,7 +3,7 @@ import { NavLink, useLocation } from 'react-router-dom'
 import {
   LayoutDashboard, Sparkles, Users, Calendar, Receipt, LayoutGrid,
   DollarSign, MessageSquare, Zap, Home, Repeat, Settings, X, Inbox, Clock,
-  LogOut, ChevronDown, TrendingUp, PanelLeftClose, Pin, Radar, Rows3, Filter, Scale,
+  LogOut, ChevronDown, TrendingUp, PanelLeftClose, Pin, Radar, Rows3, Filter, Scale, HardHat,
 } from 'lucide-react'
 import { logout } from '../api'
 
@@ -32,6 +32,7 @@ const nav = [
   { to: '/recurring',   icon: Repeat,          label: 'Recurring' },
   { to: '/sync',        icon: Radar,           label: 'Sync',        roles: ['admin', 'manager', 'viewer'] },
   { divider: true, label: 'Team' },
+  { to: '/crew',        icon: HardHat,         label: 'Crew',        roles: ['admin', 'manager'] },
   { to: '/payroll',     icon: DollarSign,      label: 'Payroll' },
   { to: '/crew-hours',  icon: Scale,           label: 'Crew Hours',  roles: ['admin', 'manager'] },
   { to: '/connecteam',  icon: Clock,           label: 'Connecteam' },

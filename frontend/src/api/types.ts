@@ -210,6 +210,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/auth/accept-invite": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Accept Invite
+         * @description Public: an invited staff/crew member sets their password from the emailed
+         *     link and lands signed in. The token carries only an email + typ (no user_id),
+         *     so it can't be a session on its own, and it's single-use — once a password
+         *     exists a replayed invite is rejected, so it's never a password-reset backdoor.
+         */
+        post: operations["accept_invite_api_auth_accept_invite_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/auth/users": {
         parameters: {
             query?: never;
@@ -5610,6 +5633,94 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/crew/roster": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Crew Roster
+         * @description The native crew list — every cleaner user, no Connecteam.
+         */
+        get: operations["crew_roster_api_crew_roster_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/crew/unclaimed-ids": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Unclaimed Crew Ids
+         * @description Crew IDs already on upcoming jobs (Job.cleaner_ids) that no native user
+         *     claims yet — read entirely from OUR database, never Connecteam. Naming each
+         *     (create a cleaner with that crew-ID) keeps every scheduled job assigned
+         *     across the cutover, so nobody falls off the schedule.
+         */
+        get: operations["unclaimed_crew_ids_api_crew_unclaimed_ids_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/crew/{user_id}/resend-invite": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Resend Crew Invite
+         * @description Re-email the set-password invite to a cleaner who hasn't activated yet —
+         *     the link expires in 7 days, or the first email got lost. 404 if they're not
+         *     a cleaner in this org; 409 once they've set a password (nothing to invite —
+         *     they sign in, or reset, from there).
+         */
+        post: operations["resend_crew_invite_api_crew__user_id__resend_invite_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/crew": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Add Crew
+         * @description Add a cleaner as a native user and email them an invite to set a password.
+         *     Their optional crew-ID ties them to existing Job.cleaner_ids assignments
+         *     (see /unclaimed-ids). No Connecteam involved.
+         */
+        post: operations["add_crew_api_crew_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/push/vapid-public-key": {
         parameters: {
             query?: never;
@@ -5758,6 +5869,13 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /** AcceptInvite */
+        AcceptInvite: {
+            /** Token */
+            token: string;
+            /** Password */
+            password: string;
+        };
         /** AddressValidate */
         AddressValidate: {
             /** Address */
@@ -6203,6 +6321,21 @@ export interface components {
             end_time?: string | null;
             /** Cleaner Ids */
             cleaner_ids?: unknown[] | null;
+        };
+        /** CrewCreate */
+        CrewCreate: {
+            /** Full Name */
+            full_name: string;
+            /** Email */
+            email: string;
+            /** Cleaner Id */
+            cleaner_id?: string | null;
+            /** Pay Rate Residential */
+            pay_rate_residential?: number | null;
+            /** Pay Rate Rental */
+            pay_rate_rental?: number | null;
+            /** Pay Rate Deep */
+            pay_rate_deep?: number | null;
         };
         /** DraftLeadRequest */
         DraftLeadRequest: {
@@ -8046,6 +8179,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+        };
+    };
+    accept_invite_api_auth_accept_invite_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AcceptInvite"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LoginResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
@@ -16511,6 +16677,110 @@ export interface operations {
             cookie?: never;
         };
         requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    crew_roster_api_crew_roster_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    unclaimed_crew_ids_api_crew_unclaimed_ids_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    resend_crew_invite_api_crew__user_id__resend_invite_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                user_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    add_crew_api_crew_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CrewCreate"];
+            };
+        };
         responses: {
             /** @description Successful Response */
             200: {

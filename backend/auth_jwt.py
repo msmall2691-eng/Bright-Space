@@ -56,6 +56,30 @@ def verify_password(plain: str, hashed: str) -> bool:
         return False
 
 
+def make_invite_token(email: str, ttl_days: int = 7) -> str:
+    """Short-lived, single-purpose token emailed to a newly-added staff/crew
+    member so they set their own password. Carries typ='staff_invite' and NO
+    user_id, so it can never satisfy get_current_user on its own (mirrors the
+    customer-portal magic-token isolation)."""
+    payload = {
+        "email": (email or "").strip().lower(),
+        "typ": "staff_invite",
+        "exp": datetime.now(timezone.utc) + timedelta(days=ttl_days),
+    }
+    return jwt.encode(payload, SECRET_KEY, algorithm=ALGORITHM)
+
+
+def read_invite_token(token: str) -> Optional[str]:
+    """Return the email a valid staff-invite token carries, else None."""
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+    except jwt.InvalidTokenError:
+        return None
+    if payload.get("typ") != "staff_invite":
+        return None
+    return ((payload.get("email") or "").strip().lower()) or None
+
+
 def create_jwt(user_id: int, email: str, role: str) -> str:
     """Create a JWT token with user info and 24-hour expiration."""
     expires = datetime.now(timezone.utc) + timedelta(hours=TOKEN_EXPIRE_HOURS)

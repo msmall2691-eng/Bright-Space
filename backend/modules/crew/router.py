@@ -22,16 +22,19 @@ DB-specific JSON-containment query, matching the pattern the rest of
 scheduling/dashboard already uses — portable across SQLite (tests/local) and
 Postgres (prod), and the window is tiny (one crew member, ~2 weeks).
 """
+import logging
 from collections import defaultdict
 from datetime import datetime, timedelta, timezone, time as dtime
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
-from sqlalchemy import or_
+from sqlalchemy import or_, func
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, joinedload
 
+from auth_jwt import make_invite_token
+from config import app_base_url
 from database.db import get_db
 from database.models import Job, User, TimeEntry
 from modules.auth.router import require_role, current_org_id, resolve_org_id
@@ -500,3 +503,151 @@ async def reconciliation(
             "delta_hours": round(tot_native - tot_ct, 2) if configured else None,
         },
     }
+
+
+# ── Crew admin: manage cleaners as native users (Connecteam-free) ────────────
+# The office manages the crew here — add a cleaner, set pay rates, and (crucial
+# for the Connecteam cutover) claim the crew IDs already sitting on scheduled
+# jobs so no assignment is lost. Adding a cleaner emails them an invite link to
+# set their own password; accepting it is auth/router.py's public /accept-invite.
+
+log = logging.getLogger(__name__)
+
+
+def _crew_row(u: User) -> dict:
+    return {
+        "id": u.id,
+        "full_name": u.full_name,
+        "email": u.email,
+        "cleaner_id": u.cleaner_id,
+        "pay_rate_residential": u.pay_rate_residential,
+        "pay_rate_rental": u.pay_rate_rental,
+        "pay_rate_deep": u.pay_rate_deep,
+        "status": u.status or "active",
+        # True once they've set a password (accepted the invite) or logged in.
+        "activated": bool(u.password_hash) or u.last_login_at is not None,
+    }
+
+
+@router.get("/roster", dependencies=[Depends(require_role("admin", "manager"))])
+def crew_roster(db: Session = Depends(get_db), org_id: int = Depends(current_org_id)):
+    """The native crew list — every cleaner user, no Connecteam."""
+    oid = resolve_org_id(org_id, db)
+    rows = (db.query(User)
+            .filter(User.role == "cleaner", or_(User.org_id == oid, User.org_id.is_(None)))
+            .all())
+    rows.sort(key=lambda u: (u.full_name or u.email or "").lower())
+    return [_crew_row(u) for u in rows]
+
+
+@router.get("/unclaimed-ids", dependencies=[Depends(require_role("admin", "manager"))])
+def unclaimed_crew_ids(db: Session = Depends(get_db), org_id: int = Depends(current_org_id)):
+    """Crew IDs already on upcoming jobs (Job.cleaner_ids) that no native user
+    claims yet — read entirely from OUR database, never Connecteam. Naming each
+    (create a cleaner with that crew-ID) keeps every scheduled job assigned
+    across the cutover, so nobody falls off the schedule."""
+    oid = resolve_org_id(org_id, db)
+    today = business_today()
+    known = {(cid or "").strip()
+             for (cid,) in db.query(User.cleaner_id).filter(User.cleaner_id.isnot(None)).all()}
+    known.discard("")
+    counts: dict = defaultdict(int)
+    jobs = (db.query(Job)
+            .filter(or_(Job.org_id == oid, Job.org_id.is_(None)), Job.scheduled_date >= today)
+            .all())
+    for j in jobs:
+        for cid in (j.cleaner_ids or []):
+            cid = str(cid).strip()
+            if cid and cid not in known:
+                counts[cid] += 1
+    return [{"cleaner_id": cid, "upcoming_jobs": n}
+            for cid, n in sorted(counts.items(), key=lambda kv: -kv[1])]
+
+
+class CrewCreate(BaseModel):
+    full_name: str
+    email: str
+    cleaner_id: Optional[str] = None
+    pay_rate_residential: Optional[float] = None
+    pay_rate_rental: Optional[float] = None
+    pay_rate_deep: Optional[float] = None
+
+
+@router.post("/{user_id}/resend-invite", dependencies=[Depends(require_role("admin"))])
+def resend_crew_invite(user_id: int, db: Session = Depends(get_db),
+                       org_id: int = Depends(current_org_id)):
+    """Re-email the set-password invite to a cleaner who hasn't activated yet —
+    the link expires in 7 days, or the first email got lost. 404 if they're not
+    a cleaner in this org; 409 once they've set a password (nothing to invite —
+    they sign in, or reset, from there)."""
+    oid = resolve_org_id(org_id, db)
+    u = (db.query(User)
+         .filter(User.id == user_id, User.role == "cleaner",
+                 or_(User.org_id == oid, User.org_id.is_(None)))
+         .first())
+    if not u:
+        raise HTTPException(status_code=404, detail="Cleaner not found.")
+    if u.password_hash:
+        raise HTTPException(status_code=409,
+                            detail="This cleaner has already set their password.")
+    _send_crew_invite(u)
+    return _crew_row(u)
+
+
+@router.post("", dependencies=[Depends(require_role("admin"))])
+def add_crew(body: CrewCreate, db: Session = Depends(get_db),
+             org_id: int = Depends(current_org_id)):
+    """Add a cleaner as a native user and email them an invite to set a password.
+    Their optional crew-ID ties them to existing Job.cleaner_ids assignments
+    (see /unclaimed-ids). No Connecteam involved."""
+    email = (body.email or "").strip().lower()
+    if not email or "@" not in email:
+        raise HTTPException(status_code=422, detail="A valid email is required to invite a cleaner.")
+    if db.query(User).filter(func.lower(User.email) == email).first():
+        raise HTTPException(status_code=409, detail="A user with that email already exists.")
+    for attr in ("pay_rate_residential", "pay_rate_rental", "pay_rate_deep"):
+        v = getattr(body, attr)
+        if v is not None and v < 0:
+            raise HTTPException(status_code=422, detail=f"{attr} cannot be negative.")
+    oid = resolve_org_id(org_id, db)
+    u = User(
+        email=email, password_hash=None,
+        full_name=(body.full_name or "").strip() or email,
+        role="cleaner", status="invited", active=True, org_id=oid,
+        auth_provider="password",
+        cleaner_id=(body.cleaner_id or "").strip() or None,
+        pay_rate_residential=body.pay_rate_residential,
+        pay_rate_rental=body.pay_rate_rental,
+        pay_rate_deep=body.pay_rate_deep,
+    )
+    db.add(u); db.commit(); db.refresh(u)
+    _send_crew_invite(u)
+    return _crew_row(u)
+
+
+def _send_crew_invite(u: User) -> None:
+    """Email the cleaner a link to set their password. Best-effort — a mail
+    failure never fails the create; the office can resend."""
+    try:
+        token = make_invite_token(u.email)
+        link = f"{app_base_url().rstrip('/')}/accept-invite?token={token}"
+        name = (u.full_name or "there").split()[0]
+        from integrations.email import send_email
+        send_email(
+            to=u.email,
+            subject="You're set up on BrightBase — finish signing in",
+            html_body=(
+                f"<p>Hi {name},</p>"
+                f"<p>You've been added to the crew on BrightBase. Set your password to "
+                f"see your schedule and clock in from your phone. This link is good for "
+                f"7 days.</p>"
+                f"<p><a href=\"{link}\" style=\"display:inline-block;padding:10px 18px;"
+                f"background:#4f46e5;color:#fff;border-radius:8px;text-decoration:none;"
+                f"font-weight:600\">Set your password</a></p>"
+                f"<p style=\"color:#666;font-size:12px\">If you weren't expecting this, "
+                f"you can ignore it.</p>"
+            ),
+            text_body=f"Hi {name}, set your BrightBase password (good for 7 days): {link}",
+        )
+    except Exception:
+        log.exception("crew invite email failed for a new cleaner")
