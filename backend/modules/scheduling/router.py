@@ -2539,6 +2539,29 @@ def get_job_details(job_id: int, db: Session = Depends(get_db), org_id: int = De
         Invoice.job_id == job.id,
         or_(Invoice.org_id == org_id, Invoice.org_id.is_(None)),
     ).all()
+
+    # Crew accept/decline state (crew app Phase 2): one entry per ASSIGNED
+    # cleaner, response=None until they answer. Declining never unassigns
+    # (owner decision) — this list is exactly how the office finds out who
+    # needs replacing. Names resolved here directly (same pattern as
+    # _turnover_line: no cross-importing another module's private helper).
+    from database.models import JobResponse as _JobResponse, User as _User
+    cids = [str(c) for c in (job.cleaner_ids or [])]
+    _resp_rows = {r.cleaner_id: r for r in db.query(_JobResponse).filter(
+        _JobResponse.job_id == job.id).all()} if cids else {}
+    _name_rows = {u.cleaner_id: (u.full_name or u.email) for u in db.query(_User).filter(
+        _User.cleaner_id.in_(cids)).all()} if cids else {}
+    crew_responses = [
+        {
+            "cleaner_id": cid,
+            "name": _name_rows.get(cid, cid),
+            "response": (_resp_rows[cid].response if cid in _resp_rows else None),
+            "reason": (_resp_rows[cid].reason if cid in _resp_rows else None),
+            "responded_at": (_resp_rows[cid].updated_at.isoformat()
+                             if cid in _resp_rows and _resp_rows[cid].updated_at else None),
+        }
+        for cid in cids
+    ]
     quote = None
     if job.quote_id:
         quote = db.query(Quote).filter(Quote.id == job.quote_id).first()
@@ -2553,6 +2576,7 @@ def get_job_details(job_id: int, db: Session = Depends(get_db), org_id: int = De
         # the JobDetail gallery can finally show them — they used to be
         # write-only. New photos live in job_photos (GET /api/crew/jobs/{id}/photos).
         "photos_legacy": job.photos or [],
+        "crew_responses": crew_responses,
         "property": ({"id": job.property.id, "name": job.property.name, "address": job.property.address}
                      if job.property else None),
         "opportunity": ({"id": job.opportunity.id, "title": job.opportunity.title, "stage": job.opportunity.stage}
