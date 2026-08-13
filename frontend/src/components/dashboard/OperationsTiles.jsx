@@ -38,8 +38,8 @@ export function TurnoverCoverageTile({ loading, turnover, navigate }) {
 
 /** "Crew workload" tile — a per-cleaner 7-day booking count as a
  *  horizontal bar chart (relative to the busiest cleaner), plus a red
- *  "unassigned" callout row when jobs need a crew. When the Connecteam
- *  roster is unreachable, cleaners are shown by their ID and a small
+ *  "unassigned" callout row when jobs need a crew. When the (native)
+ *  roster fetch fails, cleaners are shown by their ID and a small
  *  banner explains why. */
 export function CrewWorkloadTile({ loading, crew, rosterUnavailable, navigate }) {
   return (
@@ -64,7 +64,10 @@ export function CrewWorkloadTile({ loading, crew, rosterUnavailable, navigate })
         <div className="flex-1 overflow-y-auto max-h-[300px] space-y-1.5">
           {rosterUnavailable && (
             <p className="text-[11px] text-ink-3 bg-bg-2 rounded-lg px-2.5 py-1.5">
-              Crew roster unavailable (Connecteam offline) — cleaners shown by ID.
+              Couldn’t load the crew roster — cleaners shown by ID.{' '}
+              <button onClick={() => navigate('/crew')} className="underline hover:text-ink-2">
+                Manage crew
+              </button>
             </p>
           )}
           {crew.rows.map(r => {

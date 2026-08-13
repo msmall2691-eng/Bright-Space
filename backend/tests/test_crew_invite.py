@@ -137,6 +137,34 @@ def test_roster_lists_cleaners(api):
     assert any(row["id"] == made["users"][0] for row in roster.json())
 
 
+def test_add_crew_autoissues_crew_id_and_guards_duplicates(api):
+    """A cleaner added without a crew ID gets one minted ('bb{user_id}') so
+    they're assignable in dispatch from day one; an explicit crew ID that
+    another user already holds is rejected (one crew ID = one person)."""
+    client, made = api
+    r = client.post("/api/crew", json={"full_name": "Auto Id", "email": _email()})
+    row = r.json(); made["users"].append(row["id"])
+    assert row["cleaner_id"] == f"bb{row['id']}"
+
+    # And the new cleaner shows up in the native dispatch roster under that ID.
+    disp = {e["id"]: e for e in client.get("/api/dispatch/employees").json()}
+    assert row["cleaner_id"] in disp
+    assert disp[row["cleaner_id"]]["name"] == "Auto Id"
+
+    # Duplicate explicit crew ID → 409 on create...
+    taken = row["cleaner_id"]
+    assert client.post("/api/crew", json={"full_name": "Dup", "email": _email(),
+                                          "cleaner_id": taken}).status_code == 409
+    # ...and on the admin PATCH path.
+    r2 = client.post("/api/crew", json={"full_name": "Other", "email": _email()})
+    made["users"].append(r2.json()["id"])
+    assert client.patch(f"/api/auth/users/{r2.json()['id']}",
+                        json={"cleaner_id": taken}).status_code == 409
+    # Re-saving your OWN id is not a conflict.
+    assert client.patch(f"/api/auth/users/{row['id']}",
+                        json={"cleaner_id": taken}).status_code == 200
+
+
 def test_resend_invite_before_and_after_activation(api):
     client, made = api
     email = _email()

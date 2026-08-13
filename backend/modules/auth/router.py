@@ -849,7 +849,15 @@ def update_workspace_user(user_id: int, data: AdminUserUpdate, db: Session = Dep
         # "" clears the link; anything else sets it. Trimmed so a stray space
         # pasted from a Connecteam export doesn't silently fail to match
         # Job.cleaner_ids.
-        u.cleaner_id = data.cleaner_id.strip() or None
+        new_cid = data.cleaner_id.strip() or None
+        if new_cid and new_cid != u.cleaner_id and (
+            db.query(User).filter(User.cleaner_id == new_cid, User.id != u.id).first()
+        ):
+            # One crew ID = one person: a shared ID would give two logins the
+            # same schedule and double-accrue its pay in native payroll.
+            raise HTTPException(status_code=409,
+                                detail=f"Crew ID '{new_cid}' already belongs to another user.")
+        u.cleaner_id = new_cid
     # Per-cleaner pay rates: applied only when present in the request (null
     # clears, a number sets, omission leaves untouched).
     _fields_set = data.model_fields_set

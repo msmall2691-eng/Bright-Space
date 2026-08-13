@@ -609,18 +609,33 @@ def add_crew(body: CrewCreate, db: Session = Depends(get_db),
         v = getattr(body, attr)
         if v is not None and v < 0:
             raise HTTPException(status_code=422, detail=f"{attr} cannot be negative.")
+    cid = (body.cleaner_id or "").strip() or None
+    if cid and db.query(User).filter(User.cleaner_id == cid).first():
+        # One crew ID = one person. Two accounts sharing an ID would see the
+        # same schedule and both accrue its pay.
+        raise HTTPException(status_code=409,
+                            detail=f"Crew ID '{cid}' already belongs to another user.")
     oid = resolve_org_id(org_id, db)
     u = User(
         email=email, password_hash=None,
         full_name=(body.full_name or "").strip() or email,
         role="cleaner", status="invited", active=True, org_id=oid,
         auth_provider="password",
-        cleaner_id=(body.cleaner_id or "").strip() or None,
+        cleaner_id=cid,
         pay_rate_residential=body.pay_rate_residential,
         pay_rate_rental=body.pay_rate_rental,
         pay_rate_deep=body.pay_rate_deep,
     )
-    db.add(u); db.commit(); db.refresh(u)
+    db.add(u)
+    db.flush()  # assigns u.id so the auto crew ID can derive from it
+    if not u.cleaner_id:
+        # Every cleaner needs a crew ID to be assignable — it's the value the
+        # Schedule writes into Job.cleaner_ids and dispatch/My-Day key on. New
+        # crew (no legacy Connecteam ID to claim) get one minted from the PK:
+        # 'bb{id}' is unique by construction and can never collide with the
+        # numeric legacy IDs.
+        u.cleaner_id = f"bb{u.id}"
+    db.commit(); db.refresh(u)
     _send_crew_invite(u)
     return _crew_row(u)
 

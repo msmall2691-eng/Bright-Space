@@ -2353,9 +2353,17 @@ export interface paths {
         };
         /**
          * List Employees
-         * @description Fetch all employees from Connecteam.
+         * @description The crew roster for assignment UIs (Schedule, dispatch board, job
+         *     create/edit, dashboard workload tile).
          *
-         *     Gated to internal roles: the roster is staff PII (names, phones) and must
+         *     Native as of the Connecteam removal: this reads our own users table —
+         *     cleaner-role accounts managed on the /crew page — never Connecteam. `id` is
+         *     the user's crew ID (User.cleaner_id), because that's the value assignment
+         *     writes into Job.cleaner_ids and the value My Day matches against; rows
+         *     without a crew ID are omitted (nothing valid to assign). The add-crew flow
+         *     auto-issues a crew ID, so in practice that's only legacy rows.
+         *
+         *     Gated to internal roles: the roster is staff PII (names, emails) and must
          *     not be reachable by cleaner/client logins. Before this, only the global
          *     API-key/JWT middleware gated it, so ANY authenticated principal could pull
          *     the full roster (docs/audit-2026-04-23.md §6).

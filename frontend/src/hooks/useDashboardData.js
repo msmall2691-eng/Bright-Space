@@ -16,8 +16,9 @@ import { toLocalYMD } from '../utils/format'
  *  Every setter's fallback matches the shape the tiles expect — plain
  *  arrays for lists, {} for the summary maps — so a bad payload can't
  *  crash the render. `rosterUnavailable` distinguishes "no employees
- *  yet" from "roster fetch failed" (Connecteam offline / bad
- *  credentials) so CrewWorkloadTile can show its diagnostic banner. */
+ *  yet" from "roster fetch failed" so CrewWorkloadTile can show its
+ *  diagnostic banner. The roster is native (/api/dispatch/employees
+ *  reads cleaner users, not Connecteam). */
 export function useDashboardData() {
   const [todayJobs, setTodayJobs] = useState([])
   const [weekJobs, setWeekJobs] = useState([])
