@@ -26,14 +26,14 @@ from collections import defaultdict
 from datetime import datetime, timedelta, timezone, time as dtime
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Response, UploadFile
 from pydantic import BaseModel
 from sqlalchemy import or_, func
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, joinedload
 
 from database.db import get_db
-from database.models import Job, User, TimeEntry
+from database.models import Job, JobPhoto, User, TimeEntry
 from modules.auth.router import require_role, current_org_id, resolve_org_id, send_staff_invite
 from modules.scheduling.completion import auto_create_draft_invoice
 from utils.activity_logger import log_job_status_change
@@ -622,6 +622,194 @@ def mark_job_done(
         auto_create_draft_invoice(db, job)
 
     return _job_row(job)
+
+
+# ── Job photos ───────────────────────────────────────────────────────────────
+# Before/after shots, taken on the cleaner's phone from My Day (the office can
+# use these endpoints too — the JobDetail gallery reads the same list). Bytes
+# are stored in the DB (see the JobPhoto model for why), so serving is a plain
+# authenticated GET here — no external storage, no public URLs to leak.
+
+_MAX_PHOTO_BYTES = 5 * 1024 * 1024   # matches the office modal's per-file cap
+_MAX_PHOTOS_PER_JOB = 30             # before+after of every room, with headroom
+
+
+def _sniff_image_mime(data: bytes):
+    """Identify the image type from magic bytes — never trust the client's
+    content-type header (it's caller-supplied, and the bytes are what we'll
+    serve back to a browser later)."""
+    if data[:3] == b"\xff\xd8\xff":
+        return "image/jpeg"
+    if data[:8] == b"\x89PNG\r\n\x1a\n":
+        return "image/png"
+    if data[:4] == b"RIFF" and data[8:12] == b"WEBP":
+        return "image/webp"
+    return None
+
+
+def _photo_job_or_404(db: Session, oid: int, job_id: int, current_user: User) -> Job:
+    """The job, org-scoped, with object-level access resolved per role:
+    office roles see any job in the org; a cleaner only jobs assigned to their
+    crew ID. Not-yours reads as 404 (same anti-probing pattern as mark-done).
+    Deliberately stricter than GET /api/jobs/{id}/details' role gate — photos
+    of clients' homes don't need to be readable across the whole crew."""
+    org_scope = or_(Job.org_id == oid, Job.org_id.is_(None))
+    job = db.query(Job).filter(org_scope, Job.id == job_id).first()
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found.")
+    if current_user.role == "cleaner":
+        _require_crew_id(current_user)
+        if current_user.cleaner_id not in (job.cleaner_ids or []):
+            raise HTTPException(status_code=404, detail="Job not found.")
+    return job
+
+
+def _photo_row(p: JobPhoto, current_user: User, uploader_names: dict) -> dict:
+    return {
+        "id": p.id,
+        "job_id": p.job_id,
+        "kind": p.kind,
+        "content_type": p.content_type,
+        "size_bytes": p.size_bytes,
+        "created_at": _iso_utc(p.created_at),
+        "uploaded_by": p.uploaded_by,
+        "uploaded_by_name": uploader_names.get(p.uploaded_by),
+        # Drives the delete affordance client-side; the DELETE endpoint
+        # re-checks server-side regardless.
+        "mine": p.uploaded_by == current_user.id,
+        "url": f"/api/crew/jobs/{p.job_id}/photos/{p.id}",
+    }
+
+
+def _uploader_names(db: Session, photos) -> dict:
+    ids = {p.uploaded_by for p in photos if p.uploaded_by}
+    if not ids:
+        return {}
+    rows = db.query(User.id, User.full_name, User.email).filter(User.id.in_(ids)).all()
+    return {r[0]: (r[1] or r[2]) for r in rows}
+
+
+@router.post("/jobs/{job_id}/photos")
+async def upload_job_photo(
+    job_id: int,
+    file: UploadFile = File(...),
+    kind: str = Form(None),
+    db: Session = Depends(get_db),
+    org_id: int = Depends(current_org_id),
+    current_user: User = Depends(require_role("cleaner", "admin", "manager")),
+):
+    """Attach one photo to a job. Cleaners only on their own assigned jobs
+    (404 otherwise); office roles on any job in the org.
+
+    The frontend downscales to ~1600px JPEG before posting, so the 5MB cap is
+    a backstop against raw phone originals, not the normal path. The stored
+    content type comes from sniffing the bytes, never the client's header.
+    An unknown `kind` is clamped to untagged rather than rejected — a photo
+    must never bounce over its label."""
+    oid = resolve_org_id(org_id, db)
+    job = _photo_job_or_404(db, oid, job_id, current_user)
+
+    data = await file.read()
+    if not data:
+        raise HTTPException(status_code=400, detail="That file is empty.")
+    if len(data) > _MAX_PHOTO_BYTES:
+        raise HTTPException(
+            status_code=413,
+            detail="That photo is too large (over 5MB) — try again from the app, "
+                   "which resizes before uploading.",
+        )
+    mime = _sniff_image_mime(data)
+    if not mime:
+        raise HTTPException(status_code=400,
+                            detail="That file doesn't look like a photo (JPEG, PNG, or WebP).")
+
+    count = db.query(func.count(JobPhoto.id)).filter(JobPhoto.job_id == job.id).scalar() or 0
+    if count >= _MAX_PHOTOS_PER_JOB:
+        raise HTTPException(status_code=400,
+                            detail=f"This job already has {_MAX_PHOTOS_PER_JOB} photos.")
+
+    k = (kind or "").strip().lower()
+    photo = JobPhoto(
+        org_id=oid,
+        job_id=job.id,
+        uploaded_by=current_user.id,
+        kind=k if k in ("before", "after") else None,
+        content_type=mime,
+        size_bytes=len(data),
+        data=data,
+        created_at=_now_naive_utc(),
+    )
+    db.add(photo)
+    db.commit()
+    db.refresh(photo)
+    return _photo_row(photo, current_user, _uploader_names(db, [photo]))
+
+
+@router.get("/jobs/{job_id}/photos")
+def list_job_photos(
+    job_id: int,
+    db: Session = Depends(get_db),
+    org_id: int = Depends(current_org_id),
+    current_user: User = Depends(require_role("cleaner", "admin", "manager", "viewer")),
+):
+    """Metadata only (no bytes) — the gallery fetches each image lazily via the
+    serve endpoint below, so listing stays cheap on a phone connection."""
+    oid = resolve_org_id(org_id, db)
+    job = _photo_job_or_404(db, oid, job_id, current_user)
+    photos = (db.query(JobPhoto)
+              .filter(JobPhoto.job_id == job.id)
+              .order_by(JobPhoto.created_at, JobPhoto.id)
+              .all())
+    names = _uploader_names(db, photos)
+    return [_photo_row(p, current_user, names) for p in photos]
+
+
+@router.get("/jobs/{job_id}/photos/{photo_id}")
+def serve_job_photo(
+    job_id: int,
+    photo_id: int,
+    db: Session = Depends(get_db),
+    org_id: int = Depends(current_org_id),
+    current_user: User = Depends(require_role("cleaner", "admin", "manager", "viewer")),
+):
+    """The image bytes. Same access rule as the list; a photo is immutable once
+    uploaded, so the browser may cache it privately for a day."""
+    oid = resolve_org_id(org_id, db)
+    job = _photo_job_or_404(db, oid, job_id, current_user)
+    photo = (db.query(JobPhoto)
+             .filter(JobPhoto.job_id == job.id, JobPhoto.id == photo_id)
+             .first())
+    if not photo:
+        raise HTTPException(status_code=404, detail="Photo not found.")
+    return Response(
+        content=photo.data,
+        media_type=photo.content_type,
+        headers={"Cache-Control": "private, max-age=86400"},
+    )
+
+
+@router.delete("/jobs/{job_id}/photos/{photo_id}")
+def delete_job_photo(
+    job_id: int,
+    photo_id: int,
+    db: Session = Depends(get_db),
+    org_id: int = Depends(current_org_id),
+    current_user: User = Depends(require_role("cleaner", "admin", "manager")),
+):
+    """Office roles can remove any photo on the job; a cleaner only their own
+    uploads (the fat-finger case). Not-yours is a 404, same as everywhere else
+    in this module."""
+    oid = resolve_org_id(org_id, db)
+    job = _photo_job_or_404(db, oid, job_id, current_user)
+    q = db.query(JobPhoto).filter(JobPhoto.job_id == job.id, JobPhoto.id == photo_id)
+    if current_user.role == "cleaner":
+        q = q.filter(JobPhoto.uploaded_by == current_user.id)
+    photo = q.first()
+    if not photo:
+        raise HTTPException(status_code=404, detail="Photo not found.")
+    db.delete(photo)
+    db.commit()
+    return {"deleted": photo_id}
 
 
 # ── Reconciliation (office view) ─────────────────────────────────────────────

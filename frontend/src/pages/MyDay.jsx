@@ -10,9 +10,10 @@
  * The clock is what Payroll reads — the crew works fully native now.
  */
 import { useCallback, useEffect, useState } from 'react'
-import { MapPin, KeyRound, ParkingCircle, LogOut, RefreshCw, CalendarDays, Clock, Car, DollarSign, ChevronDown, Navigation, CheckCircle2 } from 'lucide-react'
+import { MapPin, KeyRound, ParkingCircle, LogOut, RefreshCw, CalendarDays, Clock, Car, DollarSign, ChevronDown, Navigation, CheckCircle2, Camera } from 'lucide-react'
 import { get, post, patch, logout } from '../api'
 import { EmptyState, ErrorState, Skeleton } from '../components/ui'
+import JobPhotoSheet from '../components/crew/JobPhotoSheet'
 
 const SOFT = 'bg-panel rounded-xl border border-hairline shadow-glass-sm'
 
@@ -175,7 +176,7 @@ function getPosition() {
   })
 }
 
-function JobCard({ job, clockable = false, activeEntry = null, onClockIn, onClockOut, onMarkDone, busy = false }) {
+function JobCard({ job, clockable = false, activeEntry = null, onClockIn, onClockOut, onMarkDone, onPhotos, busy = false }) {
   const isTurnover = job.job_type === 'str_turnover'
   const done = job.status === 'completed'
   const isActiveJob = clockable && activeEntry && activeEntry.job_id === job.id
@@ -283,6 +284,15 @@ function JobCard({ job, clockable = false, activeEntry = null, onClockIn, onCloc
           </button>
         </div>
       )}
+
+      {onPhotos && (
+        /* Photos stay reachable after Mark done on purpose — "after" shots are
+           usually taken on the way out the door. */
+        <button onClick={onPhotos} disabled={busy}
+          className="mt-2 w-full text-[12px] font-medium text-ink-3 hover:text-ink-2 hover:bg-bg-2 disabled:opacity-60 py-2 rounded-lg transition-colors inline-flex items-center justify-center gap-1.5 border border-dashed border-hairline">
+          <Camera className="w-3.5 h-3.5" /> Photos
+        </button>
+      )}
     </div>
   )
 }
@@ -300,6 +310,8 @@ export default function MyDay() {
   // Mark-done sheet: the job being completed (null = closed) + optional note.
   const [markDoneJob, setMarkDoneJob] = useState(null)
   const [doneNote, setDoneNote] = useState('')
+  // Photo sheet: the job whose photos are open (null = closed).
+  const [photoJob, setPhotoJob] = useState(null)
 
   const [weekPay, setWeekPay] = useState(null)
 
@@ -493,6 +505,7 @@ export default function MyDay() {
                       onClockIn={() => clockIn(j.id)}
                       onClockOut={requestClockOut}
                       onMarkDone={() => requestMarkDone(j)}
+                      onPhotos={() => setPhotoJob(j)}
                       busy={actionBusy}
                     />
                   ))}
@@ -574,6 +587,10 @@ export default function MyDay() {
             </div>
           </div>
         </div>
+      )}
+
+      {photoJob && (
+        <JobPhotoSheet job={photoJob} onClose={() => setPhotoJob(null)} />
       )}
 
       {markDoneJob && (

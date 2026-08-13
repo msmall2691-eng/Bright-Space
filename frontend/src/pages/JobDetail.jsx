@@ -13,6 +13,7 @@ import { AlertCircle, CheckCircle, CalendarClock } from 'lucide-react'
 import { computeDisplayStatus } from '../components/schedule/constants'
 import Timeline, { jobTimelineSource } from '../components/Timeline'
 import RecordSkeleton from '../components/record/RecordSkeleton'
+import JobPhotosCard from '../components/schedule/JobPhotosCard'
 import { EmptyState } from '../components/ui'
 
 const STATUS_OPTIONS = [
@@ -349,6 +350,7 @@ export default function JobDetail() {
                 </div>
               </div>
             )}
+            <JobPhotosCard jobId={id} legacy={job.photos_legacy} />
             <div className="bg-panel border border-hairline rounded-xl p-3">
               <textarea
                 value={note} onChange={e => setNote(e.target.value)}

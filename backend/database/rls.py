@@ -27,6 +27,8 @@ TENANT_TABLES = [
     "inbox_triage_items",
     # Native crew time clock (migration 070): clock-in/out punches, org-scoped.
     "time_entries",
+    # Crew job photos (migration 081): before/after shots, bytes in-DB.
+    "job_photos",
 ]
 
 POLICY = "bb_org_isolation"
