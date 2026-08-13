@@ -1515,11 +1515,19 @@ def cleaner_availability(
     Returns [{cleaner_id, status, detail}] where status is one of:
       - "off"         — approved time off covering that date
       - "conflict"    — already assigned to another job overlapping the window
+      - "unavailable" — an EXPLICIT week entry (crew app Phase 4b) says this
+                        date/window doesn't work. Firmer than usually_off
+                        (the cleaner said it about THIS week) but still not
+                        a block. Outranks same_day: "I can't that day" beats
+                        "they're stackable".
       - "same_day"    — assigned to another job that day (no time overlap)
-      - "usually_off" — their weekly pattern (crew app Phase 4) doesn't cover
-                        this date/window. A soft signal, never a block —
-                        assignment still goes through.
+      - "usually_off" — their recurring template doesn't cover this
+                        date/window. The softest signal.
       - "free"        — no conflicts detected
+
+    A week entry MASKS the template for its week in BOTH directions: a
+    cleaner who marks a usually-off Friday as available for one week must
+    show as free, not "usually off" — that's the volunteer case.
 
     Powers the JobEdit cleaner picker's inline availability hints so
     operators aren't picking blind from an alphabetical list (audit
@@ -1559,38 +1567,71 @@ def cleaner_availability(
             else:
                 same_day_only.setdefault(cid, []).append(j)
 
-    # 2b) Weekly patterns (crew app Phase 4): who is USUALLY off for this
-    #     date/window. Lowest-priority signal — time off and real conflicts
-    #     always win. A cleaner with no saved pattern contributes nothing.
-    from database.models import CleanerAvailability as _CA
+    # 2b) Availability patterns (crew app Phase 4/4b). Two tiers, and the
+    #     explicit week entry MASKS the template for its week in BOTH
+    #     directions (a volunteer who opened a usually-off day must show
+    #     free). Shared window logic:
+    from database.models import CleanerAvailability as _CA, CleanerWeekAvailability as _CWA
     from modules.crew.router import _normalize_week
+    from utils.dates import week_monday as _week_monday
     weekday_key = ("mon", "tue", "wed", "thu", "fri", "sat", "sun")[d.weekday()]
+    st, en = _to_time(start) if start else None, _to_time(end) if end else None
+    needs = set()
+    if st is not None or en is not None:
+        if (st or en).hour < 12:
+            needs.add("am")
+        if (en or st).hour >= 12:
+            needs.add("pm")
+    else:
+        needs = {"am", "pm"}
+
+    def _misses(week: dict) -> "str | None":
+        """Human wording when `week` doesn't cover the needed slots, else None.
+        Day-level asks (no window) only flag fully-off days — partial
+        availability is not a warning."""
+        slots = set(_normalize_week(week).get(weekday_key, []))
+        missing = needs - slots
+        if not slots:
+            return weekday_key.capitalize()
+        if missing == needs and missing:
+            label = " + ".join(sorted("mornings" if m == "am" else "afternoons" for m in missing))
+            return f"{weekday_key.capitalize()} {label}"
+        return None
+
+    # Explicit rows for the week containing `d` — the firm tier.
+    monday = _week_monday(d)
+    week_rows = {str(r.cleaner_id): r for r in db.query(_CWA).filter(
+        _CWA.week_start == monday,
+        or_(_CWA.org_id == oid, _CWA.org_id.is_(None))).all()}
+    unavailable: dict[str, str] = {}
+    for cid, r in week_rows.items():
+        miss = _misses(r.week)
+        if miss:
+            unavailable[cid] = f"unavailable {miss} (set for this week)"
+
+    # Template tier — only for cleaners with NO week row (the mask).
     usually_off: dict[str, str] = {}
     for row in db.query(_CA).filter(
             or_(_CA.org_id == oid, _CA.org_id.is_(None))).all():
-        slots = _normalize_week(row.week).get(weekday_key, [])
-        st, en = _to_time(start) if start else None, _to_time(end) if end else None
-        needs = set()
-        if st is not None or en is not None:
-            if (st or en).hour < 12:
-                needs.add("am")
-            if (en or st).hour >= 12:
-                needs.add("pm")
-        else:
-            needs = {"am", "pm"}
-        missing = needs - set(slots)
-        if not slots:
-            usually_off[str(row.cleaner_id)] = f"usually off {weekday_key.capitalize()}"
-        elif missing == needs and missing:
-            label = " + ".join(sorted("mornings" if m == "am" else "afternoons" for m in missing))
-            usually_off[str(row.cleaner_id)] = f"usually off {weekday_key.capitalize()} {label}"
+        cid = str(row.cleaner_id)
+        if cid in week_rows:
+            continue
+        miss = _misses(row.week)
+        if miss:
+            usually_off[cid] = f"usually off {miss}"
 
     # 3) Build the result for every known cleaner id we've seen (from any
     #    source); the caller's cleaner list is separate — this endpoint just
-    #    answers "for these cleaners, what's their state".
-    all_ids = set(off_by_id) | set(conflicts) | set(same_day_only) | set(usually_off)
+    #    answers "for these cleaners, what's their state". Priority:
+    #    off > conflict > unavailable > same_day > usually_off — an explicit
+    #    "I can't that day" outranks "they're stackable", and a booking that
+    #    contradicts the week entry is flagged in the detail rather than
+    #    swallowed.
+    all_ids = (set(off_by_id) | set(conflicts) | set(same_day_only)
+               | set(unavailable) | set(usually_off))
     out = []
     for cid in sorted(all_ids):
+        contradiction = " · marked unavailable this week" if cid in unavailable else ""
         if cid in off_by_id:
             r = off_by_id[cid]
             out.append({"cleaner_id": cid, "status": "off",
@@ -1600,7 +1641,10 @@ def cleaner_availability(
             j = conflicts[cid][0]
             slot = f"{j.start_time}-{j.end_time}" if j.start_time and j.end_time else "same window"
             out.append({"cleaner_id": cid, "status": "conflict",
-                        "detail": f"booked {slot}", "conflict_job_id": j.id})
+                        "detail": f"booked {slot}{contradiction}", "conflict_job_id": j.id})
+        elif cid in unavailable:
+            out.append({"cleaner_id": cid, "status": "unavailable",
+                        "detail": unavailable[cid]})
         elif cid in same_day_only:
             j = same_day_only[cid][0]
             slot = f"{j.start_time}-{j.end_time}" if j.start_time and j.end_time else "same day"

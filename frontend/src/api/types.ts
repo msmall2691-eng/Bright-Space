@@ -1513,11 +1513,19 @@ export interface paths {
          *     Returns [{cleaner_id, status, detail}] where status is one of:
          *       - "off"         — approved time off covering that date
          *       - "conflict"    — already assigned to another job overlapping the window
+         *       - "unavailable" — an EXPLICIT week entry (crew app Phase 4b) says this
+         *                         date/window doesn't work. Firmer than usually_off
+         *                         (the cleaner said it about THIS week) but still not
+         *                         a block. Outranks same_day: "I can't that day" beats
+         *                         "they're stackable".
          *       - "same_day"    — assigned to another job that day (no time overlap)
-         *       - "usually_off" — their weekly pattern (crew app Phase 4) doesn't cover
-         *                         this date/window. A soft signal, never a block —
-         *                         assignment still goes through.
+         *       - "usually_off" — their recurring template doesn't cover this
+         *                         date/window. The softest signal.
          *       - "free"        — no conflicts detected
+         *
+         *     A week entry MASKS the template for its week in BOTH directions: a
+         *     cleaner who marks a usually-off Friday as available for one week must
+         *     show as free, not "usually off" — that's the volunteer case.
          *
          *     Powers the JobEdit cleaner picker's inline availability hints so
          *     operators aren't picking blind from an alphabetical list (audit
@@ -5514,7 +5522,16 @@ export interface paths {
         };
         /**
          * Get My Availability
-         * @description The caller's own weekly pattern; week=None when they never set one.
+         * @description The caller's availability picture in ONE fetch (the Me tab's rule):
+         *
+         *     - week / updated_at: the recurring "usual week" template (back-compat
+         *       keys; None when never set).
+         *     - current_week_start: this week's Monday per the BUSINESS clock — the
+         *       phone's own clock is never trusted for lock math.
+         *     - weeks[]: current week + the next WEEKS_AHEAD, each {week_start,
+         *       week|null, source: "set"|"template", locked, updated_at}. `week` is
+         *       the explicit row only — null means the template applies. `locked` is
+         *       computed server-side: the running week and the past are read-only.
          */
         get: operations["get_my_availability_api_crew_me_availability_get"];
         /**
@@ -5524,6 +5541,37 @@ export interface paths {
         put: operations["set_my_availability_api_crew_me_availability_put"];
         post?: never;
         delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/crew/me/availability/week": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Set Week Availability
+         * @description Save availability for ONE specific week (upsert, whole-week replace).
+         *
+         *     week_start is snapped server-side to its Monday before both the lock
+         *     check and the unique lookup — a client sending a mid-week date can
+         *     neither dodge the lock nor strand a row where the resolver won't look.
+         */
+        put: operations["set_week_availability_api_crew_me_availability_week_put"];
+        post?: never;
+        /**
+         * Clear Week Availability
+         * @description Revert a week to "use my usual week" (delete its explicit row).
+         *
+         *     Same lock as writing — removing a locked week's row would change the
+         *     stable picture the office is scheduling from just as surely as editing it.
+         */
+        delete: operations["clear_week_availability_api_crew_me_availability_week_delete"];
         options?: never;
         head?: never;
         patch?: never;
@@ -7935,6 +7983,15 @@ export interface components {
             idempotencyKey?: string | null;
             /** Idempotency Key */
             idempotency_key?: string | null;
+        };
+        /** WeekBody */
+        WeekBody: {
+            /** Week Start */
+            week_start: string;
+            /** Week */
+            week: {
+                [key: string]: unknown;
+            };
         };
     };
     responses: never;
@@ -16574,6 +16631,70 @@ export interface operations {
                 "application/json": components["schemas"]["AvailabilityBody"];
             };
         };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    set_week_availability_api_crew_me_availability_week_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WeekBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    clear_week_availability_api_crew_me_availability_week_delete: {
+        parameters: {
+            query: {
+                week_start: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
         responses: {
             /** @description Successful Response */
             200: {

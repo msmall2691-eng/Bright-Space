@@ -46,7 +46,18 @@ function AvailabilityChip({ info }) {
       </span>
     )
   }
+  if (info?.status === 'unavailable') {
+    /* Explicit week entry (Phase 4b) — firmer than the gray usually-off,
+       distinct from the amber Time-off chip. */
+    return (
+      <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-red-700 dark:text-red-300 bg-red-500/10 border border-red-500/20 rounded-full px-1.5 py-0.5"
+        title={info.detail}>
+        Unavailable
+      </span>
+    )
+  }
   if (info?.status === 'conflict' || info?.status === 'same_day') return null  // the bar shows load
+  if (info?.status) return null  // unknown future status: no chip, never a false green
   return (
     <span className="inline-flex items-center gap-1 text-[10px] font-medium text-emerald-700 dark:text-emerald-300"
       title="No time off or pattern says available">

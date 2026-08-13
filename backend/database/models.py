@@ -850,6 +850,37 @@ class CrewDoc(Base):
     updated_at = Column(DateTime, default=_utcnow, onupdate=_utcnow)
 
 
+class CleanerWeekAvailability(Base):
+    """A cleaner's availability for ONE SPECIFIC WEEK (crew app Phase 4b,
+    owner feedback on the live template editor: "show which week; let them
+    set weeks in advance but not change the week that's underway").
+
+    week_start is the MONDAY the week begins (design-review decision: the
+    {mon..sun}-keyed week JSON and the Me tab's Monday-anchored pay week
+    make Monday the only anchor where the grid's first row is the week's
+    first day; the office Schedule's Sunday-first strip is display-only —
+    it consumes availability per single date). Always snap through
+    utils.dates.week_monday() before lookup or lock checks. Same
+    {mon..sun: [am,pm]} JSON shape as the CleanerAvailability template; a
+    missing row for a week means "use the template". Rows for the
+    current/past weeks are LOCKED server-side: the office schedules against
+    a stable picture, and same-week emergencies go through the office
+    (CleanerTimeOff), not here.
+    """
+    __tablename__ = "cleaner_week_availability"
+    org_id = Column(Integer, ForeignKey("orgs.id"), nullable=True, index=True)  # tenant scope (MT-1)
+
+    id = Column(Integer, primary_key=True, index=True)
+    cleaner_id = Column(String, nullable=False, index=True)
+    week_start = Column(Date, nullable=False)   # the Monday this week begins
+    week = Column(JSON, nullable=False, default=dict)
+    updated_at = Column(DateTime, default=_utcnow, onupdate=_utcnow)
+
+    __table_args__ = (
+        UniqueConstraint("cleaner_id", "week_start", name="uq_cleaner_week_availability"),
+    )
+
+
 class CleanerAvailability(Base):
     """A cleaner's WEEKLY availability pattern, self-maintained from the crew
     app's Me tab (crew app Phase 4, owner decision #3: per-day AM / PM / Off).

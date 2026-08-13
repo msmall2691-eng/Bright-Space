@@ -23,7 +23,7 @@ Postgres (prod), and the window is tiny (one crew member, ~2 weeks).
 """
 import logging
 from collections import defaultdict
-from datetime import datetime, timedelta, timezone, time as dtime
+from datetime import date, datetime, timedelta, timezone, time as dtime
 from typing import Optional
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Response, UploadFile
@@ -33,11 +33,14 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, joinedload
 
 from database.db import get_db
-from database.models import CleanerAvailability, CrewDoc, Job, JobPhoto, JobResponse, User, TimeEntry
+from database.models import (
+    CleanerAvailability, CleanerWeekAvailability, CrewDoc, Job, JobPhoto,
+    JobResponse, User, TimeEntry,
+)
 from modules.auth.router import require_role, current_org_id, resolve_org_id, send_staff_invite
 from modules.scheduling.completion import auto_create_draft_invoice
 from utils.activity_logger import log_job_status_change
-from utils.dates import business_today, business_tz
+from utils.dates import business_today, business_tz, week_monday
 
 router = APIRouter()
 
@@ -1209,18 +1212,54 @@ class AvailabilityBody(BaseModel):
     week: dict
 
 
+# How many future weeks a cleaner can plan ahead — matches the recurring
+# generator's default horizon (generate_weeks_ahead=8), the furthest the
+# office actually materializes jobs.
+WEEKS_AHEAD = 8
+
+
 @router.get("/me/availability")
 def get_my_availability(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_role("cleaner")),
 ):
-    """The caller's own weekly pattern; week=None when they never set one."""
+    """The caller's availability picture in ONE fetch (the Me tab's rule):
+
+    - week / updated_at: the recurring "usual week" template (back-compat
+      keys; None when never set).
+    - current_week_start: this week's Monday per the BUSINESS clock — the
+      phone's own clock is never trusted for lock math.
+    - weeks[]: current week + the next WEEKS_AHEAD, each {week_start,
+      week|null, source: "set"|"template", locked, updated_at}. `week` is
+      the explicit row only — null means the template applies. `locked` is
+      computed server-side: the running week and the past are read-only.
+    """
     _require_crew_id(current_user)
-    row = (db.query(CleanerAvailability)
-           .filter(CleanerAvailability.cleaner_id == current_user.cleaner_id)
-           .first())
-    return {"week": _normalize_week(row.week) if row else None,
-            "updated_at": _iso_utc(row.updated_at) if row else None}
+    template = (db.query(CleanerAvailability)
+                .filter(CleanerAvailability.cleaner_id == current_user.cleaner_id)
+                .first())
+    this_monday = week_monday(business_today())
+    mondays = [this_monday + timedelta(weeks=i) for i in range(WEEKS_AHEAD + 1)]
+    rows = {r.week_start: r for r in db.query(CleanerWeekAvailability).filter(
+        CleanerWeekAvailability.cleaner_id == current_user.cleaner_id,
+        CleanerWeekAvailability.week_start.in_(mondays),
+    ).all()}
+    return {
+        "week": _normalize_week(template.week) if template else None,
+        "updated_at": _iso_utc(template.updated_at) if template else None,
+        "current_week_start": this_monday.isoformat(),
+        "weeks_ahead": WEEKS_AHEAD,
+        "weeks": [
+            {
+                "week_start": m.isoformat(),
+                "week": _normalize_week(rows[m].week) if m in rows else None,
+                "source": "set" if m in rows else "template",
+                "locked": m <= business_today(),
+                "updated_at": _iso_utc(rows[m].updated_at) if m in rows else None,
+            }
+            for m in mondays
+        ],
+    }
 
 
 @router.put("/me/availability")
@@ -1246,6 +1285,184 @@ def set_my_availability(
         db.add(row)
     db.commit(); db.refresh(row)
     return {"week": row.week, "updated_at": _iso_utc(row.updated_at)}
+
+
+class WeekBody(BaseModel):
+    week_start: str          # any date in the target week; server snaps to Monday
+    week: dict
+
+
+def _to_date(s: str) -> "date | None":
+    try:
+        return date.fromisoformat((s or "").strip())
+    except (ValueError, AttributeError):
+        return None
+
+
+def _assert_week_editable(monday) -> None:
+    """The lock (crew app Phase 4b): a week is writable only BEFORE it starts.
+
+    Compared against business_today() in Python — never the phone clock, and
+    never SQL CURRENT_DATE (the Railway box runs UTC and would lock Sunday
+    evenings, the likeliest edit time, a night early). The 409 carries the
+    first editable Monday so the UI can resync its lock display without doing
+    its own timezone math.
+    """
+    today = business_today()
+    if monday <= today:
+        first_editable = week_monday(today) + timedelta(weeks=1)
+        raise HTTPException(
+            status_code=409,
+            detail=f"That week is locked — the office schedules from it. "
+                   f"Weeks from {first_editable.isoformat()} on are still open; "
+                   f"for changes this week, contact the office.",
+            headers={"X-First-Editable-Week": first_editable.isoformat()},
+        )
+
+
+def _uncovered_assignments(db: Session, oid: int, cleaner_id: str, monday, week: dict) -> list[dict]:
+    """Jobs this cleaner is already assigned in [monday, monday+6] whose
+    day/slot the new week no longer covers — the write-time contradiction
+    check. Saving is allowed (the future stays theirs to plan), but both
+    sides get told: the cleaner in the response, the office via push."""
+    org_scope = or_(Job.org_id == oid, Job.org_id.is_(None))
+    jobs = db.query(Job).filter(
+        org_scope,
+        Job.scheduled_date >= monday,
+        Job.scheduled_date <= monday + timedelta(days=6),
+        Job.status.in_(("scheduled", "in_progress")),
+    ).all()
+    out = []
+    for j in jobs:
+        if cleaner_id not in (j.cleaner_ids or []):
+            continue
+        slots = set(week.get(_WEEK_DAYS[j.scheduled_date.weekday()], []))
+        needs = set()
+        if j.start_time is not None or j.end_time is not None:
+            if (j.start_time or j.end_time).hour < 12:
+                needs.add("am")
+            if (j.end_time or j.start_time).hour >= 12:
+                needs.add("pm")
+        else:
+            needs = {"am", "pm"}
+        if needs - slots:
+            out.append({
+                "job_id": j.id, "title": j.title,
+                "scheduled_date": j.scheduled_date.isoformat(),
+                "start_time": str(j.start_time)[:5] if j.start_time else None,
+            })
+    return out
+
+
+@router.put("/me/availability/week")
+def set_week_availability(
+    body: WeekBody,
+    db: Session = Depends(get_db),
+    org_id: int = Depends(current_org_id),
+    current_user: User = Depends(require_role("cleaner")),
+):
+    """Save availability for ONE specific week (upsert, whole-week replace).
+
+    week_start is snapped server-side to its Monday before both the lock
+    check and the unique lookup — a client sending a mid-week date can
+    neither dodge the lock nor strand a row where the resolver won't look.
+    """
+    _require_crew_id(current_user)
+    oid = resolve_org_id(org_id, db)
+    d = _to_date(body.week_start)
+    if d is None:
+        raise HTTPException(status_code=422, detail="week_start must be YYYY-MM-DD.")
+    monday = week_monday(d)
+    _assert_week_editable(monday)
+    week = _normalize_week(body.week)
+
+    row = (db.query(CleanerWeekAvailability)
+           .filter(CleanerWeekAvailability.cleaner_id == current_user.cleaner_id,
+                   CleanerWeekAvailability.week_start == monday)
+           .first())
+    if row:
+        row.week = week
+        row.updated_at = _now_naive_utc()
+    else:
+        row = CleanerWeekAvailability(org_id=oid, cleaner_id=current_user.cleaner_id,
+                                      week_start=monday, week=week,
+                                      updated_at=_now_naive_utc())
+        db.add(row)
+    try:
+        db.commit()
+    except IntegrityError:
+        # Two devices racing on the first save of the same week — the unique
+        # constraint caught the twin insert; re-apply as an update.
+        db.rollback()
+        row = (db.query(CleanerWeekAvailability)
+               .filter(CleanerWeekAvailability.cleaner_id == current_user.cleaner_id,
+                       CleanerWeekAvailability.week_start == monday)
+               .first())
+        row.week = week
+        row.updated_at = _now_naive_utc()
+        db.commit()
+    db.refresh(row)
+
+    # Contradiction check: the office may have ALREADY assigned this cleaner
+    # in that week — a quiet flip would invalidate finished scheduling work.
+    uncovered = _uncovered_assignments(db, oid, current_user.cleaner_id, monday, week)
+    if uncovered:
+        who = getattr(current_user, "full_name", None) or current_user.email
+        try:
+            from utils.activity_logger import log_activity
+            for u in uncovered:
+                log_activity(
+                    db, "crew_availability_conflict", job_id=u["job_id"], actor=who,
+                    summary=f"{who} set availability for week of {monday.isoformat()} "
+                            f"that no longer covers {u['title']} ({u['scheduled_date']})",
+                    extra_data={"cleaner_id": current_user.cleaner_id,
+                                "week_start": monday.isoformat()},
+                    commit=True,
+                )
+        except Exception:
+            log.exception("activity log failed on set_week_availability")
+        try:
+            from services.push_service import notify_staff
+            first = uncovered[0]
+            more = f" (+{len(uncovered) - 1} more)" if len(uncovered) > 1 else ""
+            notify_staff(
+                db, "Availability change conflicts with the schedule",
+                f"{who}'s week of {monday.isoformat()} no longer covers "
+                f"{first['title']} on {first['scheduled_date']}{more} — check the assignment.",
+                url=f"/jobs/{first['job_id']}",
+                tag=f"avail-conflict-{current_user.cleaner_id}-{monday.isoformat()}",
+                org_id=oid,
+            )
+        except Exception:
+            log.exception("push notify failed on set_week_availability")
+
+    return {"week_start": monday.isoformat(), "week": row.week,
+            "updated_at": _iso_utc(row.updated_at), "uncovered_jobs": uncovered}
+
+
+@router.delete("/me/availability/week")
+def clear_week_availability(
+    week_start: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_role("cleaner")),
+):
+    """Revert a week to "use my usual week" (delete its explicit row).
+
+    Same lock as writing — removing a locked week's row would change the
+    stable picture the office is scheduling from just as surely as editing it.
+    """
+    _require_crew_id(current_user)
+    d = _to_date(week_start)
+    if d is None:
+        raise HTTPException(status_code=422, detail="week_start must be YYYY-MM-DD.")
+    monday = week_monday(d)
+    _assert_week_editable(monday)
+    (db.query(CleanerWeekAvailability)
+     .filter(CleanerWeekAvailability.cleaner_id == current_user.cleaner_id,
+             CleanerWeekAvailability.week_start == monday)
+     .delete(synchronize_session=False))
+    db.commit()
+    return {"week_start": monday.isoformat(), "week": None, "source": "template"}
 
 
 # ── Reconciliation (office view) ─────────────────────────────────────────────
