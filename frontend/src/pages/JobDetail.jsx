@@ -310,6 +310,22 @@ export default function JobDetail() {
                 <InlineSelect value={job.job_type || 'residential'} options={JOB_TYPE_OPTIONS}
                   onSelect={(v) => saveField({ job_type: v })} />
               </div>
+              {canEdit() && job.status === 'scheduled' && (
+                /* Open-jobs board (crew app Phase 3): flip to show this job on
+                   every cleaner's phone with a Claim button. First claim adds
+                   them to the crew and turns this back off automatically. */
+                <button
+                  onClick={() => saveField({ open_for_claims: !job.open_for_claims })}
+                  className={`w-full flex items-center justify-between gap-2 rounded-lg border px-3 py-2 text-[12px] font-medium transition-colors ${
+                    job.open_for_claims
+                      ? 'border-amber-300 bg-amber-50 text-amber-800 hover:bg-amber-100'
+                      : 'border-hairline bg-bg-2 text-ink-2 hover:bg-bg-3'}`}>
+                  <span>{job.open_for_claims ? '✨ Up for grabs — crew can claim it' : 'Open for claims'}</span>
+                  <span className="text-[10px] uppercase tracking-wide opacity-70">
+                    {job.open_for_claims ? 'On · tap to close' : 'Off'}
+                  </span>
+                </button>
+              )}
             </div>
 
             {(job.crew_responses || []).length > 0 && (

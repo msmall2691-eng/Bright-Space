@@ -10,7 +10,7 @@
  * The clock is what Payroll reads — the crew works fully native now.
  */
 import { useCallback, useEffect, useState } from 'react'
-import { MapPin, KeyRound, ParkingCircle, LogOut, RefreshCw, CalendarDays, Clock, Car, DollarSign, ChevronDown, Navigation, CheckCircle2, Camera, Users, Phone, ClipboardList, CalendarRange, CircleUserRound, Sun } from 'lucide-react'
+import { MapPin, KeyRound, ParkingCircle, LogOut, RefreshCw, CalendarDays, Clock, Car, DollarSign, ChevronDown, Navigation, CheckCircle2, Camera, Users, Phone, ClipboardList, CalendarRange, CircleUserRound, Sun, Sparkles } from 'lucide-react'
 import { get, post, patch, logout } from '../api'
 import { EmptyState, ErrorState, Skeleton } from '../components/ui'
 import JobPhotoSheet from '../components/crew/JobPhotoSheet'
@@ -255,7 +255,7 @@ function RespondRow({ job, onRespond, onDecline, busy }) {
   )
 }
 
-function JobCard({ job, clockable = false, activeEntry = null, onClockIn, onClockOut, onMarkDone, onPhotos, onRespond, onDecline, busy = false }) {
+function JobCard({ job, clockable = false, activeEntry = null, onClockIn, onClockOut, onMarkDone, onPhotos, onRespond, onDecline, onClaim, busy = false }) {
   const isTurnover = job.job_type === 'str_turnover'
   const done = job.status === 'completed'
   const isActiveJob = clockable && activeEntry && activeEntry.job_id === job.id
@@ -352,6 +352,20 @@ function JobCard({ job, clockable = false, activeEntry = null, onClockIn, onCloc
 
       {!done && onRespond && (
         <RespondRow job={job} onRespond={onRespond} onDecline={onDecline} busy={busy} />
+      )}
+
+      {onClaim && (
+        /* Open-jobs board (Phase 3): first tap wins server-side; access
+           details and the customer's number unlock once it's theirs. */
+        <div className="mt-3 border-t border-hairline pt-3">
+          <button onClick={onClaim} disabled={busy}
+            className="w-full text-[13px] font-semibold bg-blue-600 hover:bg-blue-700 disabled:opacity-60 text-white py-2.5 rounded-lg transition-colors inline-flex items-center justify-center gap-1.5">
+            <Sparkles className="w-4 h-4" /> Claim this job
+          </button>
+          <p className="text-[10px] text-ink-3 mt-1.5 text-center">
+            First come, first served{job.teammates?.length ? ` · you'd join ${job.teammates.join(', ')}` : ''}
+          </p>
+        </div>
       )}
 
       {clockable && !done && (
@@ -465,6 +479,8 @@ export default function MyDay() {
   // Decline sheet: the job being declined (null = closed) + optional reason.
   const [declineJob, setDeclineJob] = useState(null)
   const [declineReason, setDeclineReason] = useState('')
+  // Claim confirm sheet: the open job being claimed (null = closed).
+  const [claimJob, setClaimJob] = useState(null)
 
   const [weekPay, setWeekPay] = useState(null)
 
@@ -565,6 +581,24 @@ export default function MyDay() {
   const requestDecline = useCallback((job) => {
     setDeclineReason(''); setActionError(null); setDeclineJob(job)
   }, [])
+
+  // Claim an open job — the confirm sheet's Claim button. First tap wins is
+  // enforced server-side; a 409 here means somebody else got it, so refresh
+  // the board rather than leaving a stale offer on screen.
+  const confirmClaim = useCallback(async () => {
+    if (!claimJob) return
+    setActionBusy(true); setActionError(null)
+    try {
+      await post(`/api/crew/jobs/${claimJob.id}/claim`)
+      setClaimJob(null)
+      await fetchDay(true)
+    }
+    catch (e) {
+      setActionError(e.detail || e.message || 'Could not claim the job')
+      if (e.status === 409) { setClaimJob(null); await fetchDay(true) }
+    }
+    finally { setActionBusy(false) }
+  }, [claimJob, fetchDay])
 
   // Correct the miles on an already-closed punch (from the Today's punches list).
   const saveMiles = useCallback(async (entryId, miles) => {
@@ -683,6 +717,19 @@ export default function MyDay() {
               )}
             </section>
 
+            {(data.open_jobs || []).filter(j => j.scheduled_date === data.as_of).length > 0 && (
+              <section>
+                <h2 className="text-xs font-semibold uppercase tracking-wide text-ink-3 mb-2 flex items-center gap-1.5">
+                  <Sparkles className="w-3.5 h-3.5 text-amber-500" /> Up for grabs today
+                </h2>
+                <div className="space-y-3">
+                  {(data.open_jobs || []).filter(j => j.scheduled_date === data.as_of).map(j => (
+                    <JobCard key={j.id} job={j} onClaim={() => { setActionError(null); setClaimJob(j) }} busy={actionBusy} />
+                  ))}
+                </div>
+              </section>
+            )}
+
             {closedToday.length > 0 && (
               <section>
                 <h2 className="text-xs font-semibold uppercase tracking-wide text-ink-3 mb-2">Today's punches</h2>
@@ -698,8 +745,22 @@ export default function MyDay() {
           </>
         )}
 
+        {tab === 'schedule' && !loading && !error && data && (data.open_jobs || []).length > 0 && (
+          <section>
+            <h2 className="text-xs font-semibold uppercase tracking-wide text-ink-3 mb-2 flex items-center gap-1.5">
+              <Sparkles className="w-3.5 h-3.5 text-amber-500" /> Up for grabs
+            </h2>
+            <div className="space-y-3">
+              {(data.open_jobs || []).map(j => (
+                <JobCard key={j.id} job={j} onClaim={() => { setActionError(null); setClaimJob(j) }} busy={actionBusy} />
+              ))}
+            </div>
+          </section>
+        )}
+
         {tab === 'schedule' && !loading && !error && data && (
           data.upcoming.length === 0 ? (
+            (data.open_jobs || []).length > 0 ? null :
             <EmptyState icon={CalendarRange} title="Nothing else scheduled yet"
               description="Jobs assigned to you over the next two weeks show up here." compact />
           ) : (
@@ -788,6 +849,45 @@ export default function MyDay() {
 
       {photoJob && (
         <JobPhotoSheet job={photoJob} onClose={() => setPhotoJob(null)} />
+      )}
+
+      {claimJob && (
+        <div
+          className="fixed inset-0 z-30 flex items-end sm:items-center justify-center bg-black/40 px-4 pb-4 sm:pb-0"
+          onClick={() => { if (!actionBusy) setClaimJob(null) }}>
+          <div
+            className="w-full max-w-sm bg-panel rounded-2xl border border-hairline shadow-glass p-5 space-y-4"
+            onClick={e => e.stopPropagation()}>
+            <div>
+              <div className="text-base font-bold text-ink">Claim this job?</div>
+              <div className="text-[13px] text-ink-3 mt-0.5 truncate">
+                {claimJob.property_name || claimJob.title}
+                {claimJob.scheduled_date ? ` · ${claimJob.scheduled_date === data?.as_of ? 'Today' : dayLabel(claimJob.scheduled_date)}` : ''}
+                {claimJob.start_time ? ` · ${fmtTimeRange(claimJob.start_time, claimJob.end_time)}` : ''}
+              </div>
+            </div>
+            <p className="text-[12px] text-ink-3">
+              First come, first served — it's yours the moment you tap Claim, and the
+              office gets notified. Address details unlock once it's on your list.
+            </p>
+            {actionError && (
+              <div className="text-xs text-red-700 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
+                {actionError}
+              </div>
+            )}
+            <div className="flex gap-2">
+              <button onClick={() => setClaimJob(null)} disabled={actionBusy}
+                className="flex-1 text-[13px] font-semibold bg-panel border border-hairline text-ink-2 py-2.5 rounded-lg hover:bg-bg-2 disabled:opacity-60 transition-colors">
+                Never mind
+              </button>
+              <button onClick={confirmClaim} disabled={actionBusy}
+                className="flex-1 text-[13px] font-semibold bg-blue-600 hover:bg-blue-700 text-white py-2.5 rounded-lg disabled:opacity-60 transition-colors inline-flex items-center justify-center gap-1.5">
+                <Sparkles className="w-4 h-4" />
+                {actionBusy ? 'Claiming…' : 'Claim it'}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {declineJob && (

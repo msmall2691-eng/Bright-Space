@@ -293,6 +293,23 @@ def my_day(
     )
     hours_today = round(sum((_entry_hours(e) or 0.0) for e in entries_today), 2)
 
+    # Jobs the office put "up for grabs" (crew app Phase 3) — visible to every
+    # cleaner in the org, claim is first-come-first-served. Access details and
+    # the customer's phone stay hidden until the job is actually theirs: an
+    # open listing is an offer, not a work order, and gate codes don't belong
+    # on every phone in the crew.
+    open_jobs = []
+    for j in jobs:
+        if not getattr(j, "open_for_claims", False) or j.status != "scheduled":
+            continue
+        if current_user.cleaner_id in (j.cleaner_ids or []):
+            continue
+        row = _job_row(j, names, current_user.cleaner_id)
+        row.update({"open": True, "house_code": None, "access_notes": None,
+                    "parking_notes": None, "client_phone": None,
+                    "checklist_template": None, "turnover_line": ""})
+        open_jobs.append(row)
+
     return {
         "as_of": today.isoformat(),
         "crew_id": current_user.cleaner_id,
@@ -300,6 +317,7 @@ def my_day(
                   for j in today_jobs],
         "upcoming": [_job_row(j, names, current_user.cleaner_id, my_responses.get(j.id))
                      for j in upcoming_jobs],
+        "open_jobs": open_jobs,
         "clock": {
             "active": _entry_row(active) if active else None,
             "hours_today": hours_today,
@@ -663,6 +681,105 @@ def mark_job_done(
         auto_create_draft_invoice(db, job)
 
     return _job_row(job, _names_by_cleaner_id(db, [job]), current_user.cleaner_id)
+
+
+# ── Open jobs: claim (crew app Phase 3) ──────────────────────────────────────
+
+@router.post("/jobs/{job_id}/claim")
+def claim_job(
+    job_id: int,
+    db: Session = Depends(get_db),
+    org_id: int = Depends(current_org_id),
+    current_user: User = Depends(require_role("cleaner")),
+):
+    """First-come-first-served claim of a job the office marked open.
+
+    This is the one place the crew app writes schedule state, and it's
+    narrowly gated (scheduling-invariants reviewed): the job must carry the
+    office-set open_for_claims flag (owner decision #2 — being unassigned is
+    NOT enough), the write is this endpoint's atomic add-claimer +
+    close-the-offer, it's activity-logged and pushes a staff notification.
+    BrightBase stays the canonical schedule owner throughout — no projection
+    or external system is involved.
+
+    Concurrency (R5): the row is locked (SELECT ... FOR UPDATE on Postgres;
+    SQLite serializes writers) and the open flag is re-checked under the
+    lock, so two cleaners racing on the same offer get exactly one winner —
+    the loser sees 409 "already claimed".
+    """
+    _require_crew_id(current_user)
+    oid = resolve_org_id(org_id, db)
+    org_scope = or_(Job.org_id == oid, Job.org_id.is_(None))
+
+    job = (db.query(Job)
+           .options(joinedload(Job.property), joinedload(Job.client))
+           .filter(org_scope, Job.id == job_id)
+           .with_for_update()
+           .first())
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found.")
+    if current_user.cleaner_id in (job.cleaner_ids or []):
+        raise HTTPException(status_code=400, detail="You're already on this job.")
+    if not getattr(job, "open_for_claims", False) or job.status != "scheduled":
+        raise HTTPException(status_code=409,
+                            detail="Somebody beat you to it — this job was already claimed.")
+
+    # Don't let a claim double-book the claimer: same conflict engine the
+    # office's assign flow uses (one implementation, no drift).
+    from modules.scheduling.router import _find_cleaner_conflicts, _conflict_detail
+    conflicts = _find_cleaner_conflicts(
+        db, cleaner_ids=[current_user.cleaner_id], scheduled_date=job.scheduled_date,
+        start_time=job.start_time, end_time=job.end_time, exclude_job_id=job.id,
+        org_id=oid,
+    )
+    if conflicts:
+        raise HTTPException(status_code=409, detail=_conflict_detail(conflicts))
+
+    job.cleaner_ids = [*(job.cleaner_ids or []), current_user.cleaner_id]
+    job.open_for_claims = False   # one claim closes the offer; office can re-open
+    # Claiming IS accepting — seed the Phase 2 response so the office sees a
+    # green check, not "no answer yet", on a job they chose themselves.
+    existing = (db.query(JobResponse)
+                .filter(JobResponse.job_id == job.id,
+                        JobResponse.cleaner_id == current_user.cleaner_id)
+                .first())
+    if existing:
+        existing.response, existing.reason = "accepted", None
+        existing.updated_at = _now_naive_utc()
+    else:
+        db.add(JobResponse(org_id=oid, job_id=job.id,
+                           cleaner_id=current_user.cleaner_id,
+                           user_id=current_user.id, response="accepted",
+                           created_at=_now_naive_utc(), updated_at=_now_naive_utc()))
+
+    who = getattr(current_user, "full_name", None) or current_user.email
+    when = job.scheduled_date.isoformat() if job.scheduled_date else "unscheduled"
+    try:
+        from utils.activity_logger import log_activity
+        log_activity(
+            db, "crew_claim", job_id=job.id, client_id=job.client_id, actor=who,
+            summary=f"{who} claimed {job.title} ({when})",
+            extra_data={"cleaner_id": current_user.cleaner_id},
+        )
+    except Exception:
+        log.exception("activity log failed on claim_job")
+    db.commit()
+    db.refresh(job)
+
+    try:
+        from services.push_service import notify_staff
+        notify_staff(
+            db, "Open job claimed",
+            f"{who} claimed {job.title} on {when}.",
+            url=f"/jobs/{job.id}", tag=f"job-claim-{job.id}", org_id=oid,
+        )
+    except Exception:
+        log.exception("push notify failed on claim_job")
+
+    return _job_row(job, _names_by_cleaner_id(db, [job]), current_user.cleaner_id,
+                    my_response=db.query(JobResponse).filter(
+                        JobResponse.job_id == job.id,
+                        JobResponse.cleaner_id == current_user.cleaner_id).first())
 
 
 # ── Accept / decline (crew app Phase 2) ──────────────────────────────────────

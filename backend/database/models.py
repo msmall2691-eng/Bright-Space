@@ -611,6 +611,11 @@ class Job(Base):
     notes = Column(Text)
     custom_fields = Column(JSON, default=dict)
     dispatched = Column(Boolean, default=False, nullable=False)
+    # Crew app Phase 3: the office flips this to put the job "up for grabs" on
+    # every cleaner's Schedule tab (owner decision #2: ONLY office-marked jobs
+    # are claimable — an unassigned job is not automatically open). The first
+    # successful claim adds the claimer to cleaner_ids and flips this back off.
+    open_for_claims = Column(Boolean, default=False, nullable=False)
     # (connecteam_shift_ids / connecteam_synced_schedule were dropped by
     # migration 079 with the Connecteam removal.)
 
