@@ -658,23 +658,21 @@ export default function JobEditModal({ job, properties = [], clients = [], onClo
                   {filteredCleaners.map(cleaner => {
                     const a = availability[String(cleaner.id)]
                     const status = a?.status
-                    const rowCls = status === 'conflict' || status === 'off'
+                    const rowCls = status === 'conflict' || status === 'off' || status === 'unavailable'
                       ? 'bg-red-50/40 hover:bg-red-50'
                       : status === 'same_day'
                         ? 'bg-amber-50/40 hover:bg-amber-50'
                         : 'hover:bg-blue-50'
-                    const hintCls = status === 'conflict' || status === 'off'
+                    const hintCls = status === 'conflict' || status === 'off' || status === 'unavailable'
                       ? 'text-red-600' : status === 'same_day'
                         ? 'text-amber-700'
                         : status === 'usually_off' ? 'text-ink-3' : 'text-emerald-600'
-                    const hintLabel = status === 'conflict' ? a.detail
-                      : status === 'off' ? a.detail
-                      : status === 'same_day' ? a.detail
-                      /* Weekly pattern (crew app Phase 4): a soft gray hint —
-                         picking them still works, it's their usual week, not
-                         a booking. */
-                      : status === 'usually_off' ? a.detail
-                      : formData.scheduled_date ? 'Free' : ''
+                    /* Known statuses render their detail; anything the server
+                       adds later degrades to NO hint, never to green "Free" —
+                       an unrecognized "can't work" must not read as available. */
+                    const hintLabel = ['conflict', 'off', 'same_day', 'unavailable', 'usually_off'].includes(status)
+                      ? a.detail
+                      : (!status && formData.scheduled_date) ? 'Free' : ''
                     return (
                       <button
                         key={cleaner.id}

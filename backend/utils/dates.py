@@ -96,6 +96,19 @@ def business_today() -> date:
     return business_now().date()
 
 
+def week_monday(d: date) -> date:
+    """The Monday of the week containing ``d`` (ISO week anchor).
+
+    The canonical snap for week-anchored crew availability: BOTH the crew
+    write path and the office resolver must snap through this before any
+    lookup or lock comparison, so a client sending a mid-week date can never
+    dodge the lock or strand a row where per-date resolution won't find it.
+    (The office Schedule's Sunday-first strip is a display convention only —
+    availability weeks and the crew pay week are Monday-anchored.)
+    """
+    return d - timedelta(days=d.weekday())
+
+
 # --- Business-hours SLA math ------------------------------------------------
 #
 # Response-time SLAs count ONLY business hours, so a message that lands Friday
