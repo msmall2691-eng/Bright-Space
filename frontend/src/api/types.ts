@@ -5484,6 +5484,27 @@ export interface paths {
         patch: operations["update_me_api_crew_me_patch"];
         trace?: never;
     };
+    "/api/crew/docs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Crew Docs
+         * @description Published docs only, pinned first then freshest — the Learn tab's feed.
+         *     Office drafts (published=False) never reach a phone.
+         */
+        get: operations["list_crew_docs_api_crew_docs_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/crew/me/availability": {
         parameters: {
             query?: never;
@@ -5594,6 +5615,45 @@ export interface paths {
         options?: never;
         head?: never;
         patch?: never;
+        trace?: never;
+    };
+    "/api/crew-docs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Docs
+         * @description Everything, including unpublished drafts — this is the office list.
+         */
+        get: operations["list_docs_api_crew_docs_get"];
+        put?: never;
+        /** Create Doc */
+        post: operations["create_doc_api_crew_docs_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/crew-docs/{doc_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Delete Doc */
+        delete: operations["delete_doc_api_crew_docs__doc_id__delete"];
+        options?: never;
+        head?: never;
+        /** Update Doc */
+        patch: operations["update_doc_api_crew_docs__doc_id__patch"];
         trace?: never;
     };
     "/api/push/vapid-public-key": {
@@ -6211,6 +6271,48 @@ export interface components {
             pay_rate_rental?: number | null;
             /** Pay Rate Deep */
             pay_rate_deep?: number | null;
+        };
+        /** DocBody */
+        DocBody: {
+            /** Title */
+            title: string;
+            /**
+             * Body
+             * @default
+             */
+            body: string;
+            /** Url */
+            url?: string | null;
+            /**
+             * Category
+             * @default how-to
+             */
+            category: string;
+            /**
+             * Pinned
+             * @default false
+             */
+            pinned: boolean;
+            /**
+             * Published
+             * @default true
+             */
+            published: boolean;
+        };
+        /** DocPatch */
+        DocPatch: {
+            /** Title */
+            title?: string | null;
+            /** Body */
+            body?: string | null;
+            /** Url */
+            url?: string | null;
+            /** Category */
+            category?: string | null;
+            /** Pinned */
+            pinned?: boolean | null;
+            /** Published */
+            published?: boolean | null;
         };
         /** DraftLeadRequest */
         DraftLeadRequest: {
@@ -16420,6 +16522,26 @@ export interface operations {
             };
         };
     };
+    list_crew_docs_api_crew_docs_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
     get_my_availability_api_crew_me_availability_get: {
         parameters: {
             query?: never;
@@ -16554,6 +16676,125 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["CrewCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_docs_api_crew_docs_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    create_doc_api_crew_docs_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DocBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_doc_api_crew_docs__doc_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                doc_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_doc_api_crew_docs__doc_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                doc_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DocPatch"];
             };
         };
         responses: {

@@ -33,6 +33,8 @@ TENANT_TABLES = [
     "job_responses",
     # Crew weekly availability pattern (migration 085), org-scoped.
     "cleaner_availability",
+    # Crew training/docs library (migration 086), org-scoped.
+    "crew_docs",
 ]
 
 POLICY = "bb_org_isolation"

@@ -16,6 +16,7 @@ import { HardHat, RefreshCw, UserPlus, Mail, Link2, CheckCircle2, Clock, Ban } f
 import { get, post, patch } from '../api'
 import { PageHeader, EmptyState, ErrorState, Skeleton } from '../components/ui'
 import { pushToast } from '../utils/toastBus'
+import CrewDocsAdmin from '../components/crew/CrewDocsAdmin'
 
 const numOrNull = (v) => {
   const s = String(v ?? '').trim()
@@ -281,6 +282,8 @@ export default function Crew() {
             </div>
           )}
         </div>
+
+        <CrewDocsAdmin />
       </div>
     </div>
   )

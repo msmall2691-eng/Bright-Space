@@ -33,7 +33,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, joinedload
 
 from database.db import get_db
-from database.models import CleanerAvailability, Job, JobPhoto, JobResponse, User, TimeEntry
+from database.models import CleanerAvailability, CrewDoc, Job, JobPhoto, JobResponse, User, TimeEntry
 from modules.auth.router import require_role, current_org_id, resolve_org_id, send_staff_invite
 from modules.scheduling.completion import auto_create_draft_invoice
 from utils.activity_logger import log_job_status_change
@@ -1149,6 +1149,36 @@ def update_me(
 
     db.commit(); db.refresh(u)
     return _me_row(u)
+
+
+# ── Training / docs library, read side (crew app Phase 5) ────────────────────
+
+@router.get("/docs")
+def list_crew_docs(
+    db: Session = Depends(get_db),
+    org_id: int = Depends(current_org_id),
+    current_user: User = Depends(require_role("cleaner")),
+):
+    """Published docs only, pinned first then freshest — the Learn tab's feed.
+    Office drafts (published=False) never reach a phone."""
+    oid = resolve_org_id(org_id, db)
+    rows = (db.query(CrewDoc)
+            .filter(or_(CrewDoc.org_id == oid, CrewDoc.org_id.is_(None)),
+                    CrewDoc.published.is_(True))
+            .order_by(CrewDoc.pinned.desc(), CrewDoc.updated_at.desc())
+            .all())
+    return [
+        {
+            "id": d.id,
+            "title": d.title,
+            "body": d.body or "",
+            "url": d.url,
+            "category": d.category or "other",
+            "pinned": bool(d.pinned),
+            "updated_at": _iso_utc(d.updated_at),
+        }
+        for d in rows
+    ]
 
 
 # ── Weekly availability (crew app Phase 4) ───────────────────────────────────
