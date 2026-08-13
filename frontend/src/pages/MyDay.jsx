@@ -10,10 +10,11 @@
  * The clock is what Payroll reads — the crew works fully native now.
  */
 import { useCallback, useEffect, useState } from 'react'
-import { MapPin, KeyRound, ParkingCircle, LogOut, RefreshCw, CalendarDays, Clock, Car, DollarSign, ChevronDown, Navigation, CheckCircle2, Camera } from 'lucide-react'
+import { MapPin, KeyRound, ParkingCircle, LogOut, RefreshCw, CalendarDays, Clock, Car, DollarSign, ChevronDown, Navigation, CheckCircle2, Camera, Users, Phone, ClipboardList, CalendarRange, CircleUserRound, Sun } from 'lucide-react'
 import { get, post, patch, logout } from '../api'
 import { EmptyState, ErrorState, Skeleton } from '../components/ui'
 import JobPhotoSheet from '../components/crew/JobPhotoSheet'
+import CrewProfile from '../components/crew/CrewProfile'
 
 const SOFT = 'bg-panel rounded-xl border border-hairline shadow-glass-sm'
 
@@ -176,6 +177,43 @@ function getPosition() {
   })
 }
 
+/** Read-only view of the property's cleaning checklist, collapsed behind a
+ *  task count. Working the checklist stays part of completion, not this list. */
+function ChecklistBlock({ template }) {
+  const [open, setOpen] = useState(false)
+  const areas = Array.isArray(template) ? template : []
+  const total = areas.reduce((n, a) => n + (a.tasks?.length || 0), 0)
+  if (!total) return null
+  return (
+    <div className="mt-3 border-t border-hairline pt-3">
+      <button onClick={() => setOpen(o => !o)}
+        className="w-full flex items-center justify-between text-[13px] text-ink-2">
+        <span className="flex items-center gap-1.5">
+          <ClipboardList className="w-3.5 h-3.5 text-ink-3" /> Checklist
+          <span className="text-ink-3">· {total} tasks</span>
+        </span>
+        <ChevronDown className={`w-4 h-4 text-ink-3 transition-transform ${open ? 'rotate-180' : ''}`} />
+      </button>
+      {open && (
+        <div className="mt-2 space-y-2">
+          {areas.map((a, i) => (
+            <div key={i}>
+              <div className="text-[11px] font-bold uppercase tracking-wide text-ink-3">{a.area}</div>
+              <ul className="mt-0.5 space-y-0.5">
+                {(a.tasks || []).map((t, j) => (
+                  <li key={j} className="text-[13px] text-ink-2 flex items-start gap-1.5">
+                    <span className="mt-[7px] w-1 h-1 rounded-full bg-ink-3 shrink-0" /> {t}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
 function JobCard({ job, clockable = false, activeEntry = null, onClockIn, onClockOut, onMarkDone, onPhotos, busy = false }) {
   const isTurnover = job.job_type === 'str_turnover'
   const done = job.status === 'completed'
@@ -213,6 +251,30 @@ function JobCard({ job, clockable = false, activeEntry = null, onClockIn, onCloc
         )}
       </div>
 
+      {(job.client_name || (job.teammates && job.teammates.length > 0)) && (
+        <div className="mt-2 space-y-1">
+          {job.client_name && (
+            <div className="text-[13px] text-ink-2 flex items-center gap-1.5 flex-wrap">
+              <span className="text-ink-3">For</span> {job.client_name}
+              {job.client_phone && (
+                /* Direct line to the customer — the owner's explicit call, so
+                   "I'm outside" texts don't have to route through the office. */
+                <a href={`tel:${job.client_phone}`}
+                  className="inline-flex items-center gap-1 text-blue-600 dark:text-blue-400 active:opacity-60">
+                  <Phone className="w-3 h-3" /> {job.client_phone}
+                </a>
+              )}
+            </div>
+          )}
+          {job.teammates && job.teammates.length > 0 && (
+            <div className="text-[13px] text-ink-2 flex items-center gap-1.5">
+              <Users className="w-3.5 h-3.5 text-ink-3 shrink-0" />
+              With {job.teammates.join(', ')}
+            </div>
+          )}
+        </div>
+      )}
+
       {job.turnover_line && (
         <div className="mt-3 rounded-lg bg-bg border border-hairline px-3 py-2 text-[13px] text-ink-2">
           {job.turnover_line}
@@ -239,9 +301,7 @@ function JobCard({ job, clockable = false, activeEntry = null, onClockIn, onCloc
         </div>
       )}
 
-      {job.crew_size > 1 && (
-        <div className="mt-2 text-[11px] text-ink-3">{job.crew_size} on this job</div>
-      )}
+      <ChecklistBlock template={job.checklist_template} />
 
       {done && job.completion_note && (
         <div className="mt-3 rounded-lg bg-emerald-500/10 border border-emerald-500/20 px-3 py-2 text-[12px] text-ink-2">
@@ -297,10 +357,55 @@ function JobCard({ job, clockable = false, activeEntry = null, onClockIn, onCloc
   )
 }
 
+/** Upcoming jobs grouped by day with a friendly header — the Schedule tab. */
+function groupByDate(jobs) {
+  const groups = []
+  for (const j of jobs) {
+    const last = groups[groups.length - 1]
+    if (last && last.date === j.scheduled_date) last.jobs.push(j)
+    else groups.push({ date: j.scheduled_date, jobs: [j] })
+  }
+  return groups
+}
+
+function dayLabel(iso) {
+  if (!iso) return ''
+  const d = new Date(`${iso}T12:00:00`)
+  const today = new Date(); today.setHours(12, 0, 0, 0)
+  const diffDays = Math.round((d - today) / 86400000)
+  if (diffDays === 1) return 'Tomorrow'
+  return d.toLocaleDateString(undefined, { weekday: 'long', month: 'short', day: 'numeric' })
+}
+
+const TABS = [
+  { key: 'today', label: 'Today', icon: Sun },
+  { key: 'schedule', label: 'Schedule', icon: CalendarRange },
+  { key: 'me', label: 'Me', icon: CircleUserRound },
+]
+
+function CrewTabBar({ tab, setTab }) {
+  return (
+    <nav className="fixed bottom-0 inset-x-0 z-20 bg-panel/95 backdrop-blur border-t border-hairline"
+      style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}>
+      <div className="max-w-lg mx-auto grid grid-cols-3">
+        {TABS.map(({ key, label, icon: Icon }) => (
+          <button key={key} onClick={() => setTab(key)}
+            className={`py-2.5 flex flex-col items-center gap-0.5 text-[11px] font-semibold transition-colors ${
+              tab === key ? 'text-blue-600 dark:text-blue-400' : 'text-ink-3 hover:text-ink-2'}`}>
+            <Icon className="w-5 h-5" strokeWidth={tab === key ? 2.4 : 2} />
+            {label}
+          </button>
+        ))}
+      </div>
+    </nav>
+  )
+}
+
 export default function MyDay() {
   const [data, setData] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
+  const [tab, setTab] = useState('today')
   const [actionBusy, setActionBusy] = useState(false)
   const [actionError, setActionError] = useState(null)
   const [now, setNow] = useState(() => new Date())
@@ -320,7 +425,8 @@ export default function MyDay() {
     // Week pay rides along on every refresh (clocking out changes "earned so
     // far") but is best-effort — the day view never blocks on it.
     get('/api/crew/my-week').then(setWeekPay).catch(() => {})
-    return get('/api/crew/my-day')
+    // days=14 (the endpoint's max) so the Schedule tab shows two weeks out.
+    return get('/api/crew/my-day?days=14')
       .then(setData)
       .catch(e => { if (!silent) setError(e) })
       .finally(() => { if (!silent) setLoading(false) })
@@ -417,17 +523,14 @@ export default function MyDay() {
       <div className="sticky top-0 z-10">
         <header className="bg-panel border-b border-hairline px-4 py-3 flex items-center justify-between">
           <div>
-            <div className="text-sm font-bold text-ink">My Day</div>
+            <div className="text-sm font-bold text-ink">
+              {tab === 'schedule' ? 'My Schedule' : tab === 'me' ? 'Me' : 'My Day'}
+            </div>
             <div className="text-[12px] text-ink-3">{longDate}</div>
           </div>
-          <div className="flex items-center gap-1">
-            <button onClick={() => fetchDay()} className="p-2 rounded-lg text-ink-3 hover:text-ink hover:bg-bg-2" title="Refresh">
-              <RefreshCw className="w-4 h-4" />
-            </button>
-            <button onClick={logout} className="p-2 rounded-lg text-ink-3 hover:text-ink hover:bg-bg-2" title="Log out">
-              <LogOut className="w-4 h-4" />
-            </button>
-          </div>
+          <button onClick={() => fetchDay()} className="p-2 rounded-lg text-ink-3 hover:text-ink hover:bg-bg-2" title="Refresh">
+            <RefreshCw className="w-4 h-4" />
+          </button>
         </header>
 
         {active && (
@@ -456,20 +559,20 @@ export default function MyDay() {
         )}
       </div>
 
-      <div className="px-4 py-4 max-w-lg mx-auto space-y-5">
+      <div className="px-4 py-4 max-w-lg mx-auto space-y-5 pb-24">
         {actionError && (
           <div className="text-xs text-red-700 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
             {actionError}
           </div>
         )}
 
-        {loading && (
+        {tab !== 'me' && loading && (
           <div className="space-y-3">
             {[0, 1].map(i => <Skeleton key={i} className="h-28 w-full rounded-xl" />)}
           </div>
         )}
 
-        {!loading && error && (
+        {tab !== 'me' && !loading && error && (
           error.status === 400 ? (
             <ErrorState
               title="Not set up yet"
@@ -481,10 +584,8 @@ export default function MyDay() {
           )
         )}
 
-        {!loading && !error && data && (
+        {tab === 'today' && !loading && !error && data && (
           <>
-            <WeekPayCard week={weekPay} />
-
             <section>
               <div className="flex items-center justify-between mb-2">
                 <h2 className="text-xs font-semibold uppercase tracking-wide text-ink-3">Today</h2>
@@ -525,18 +626,40 @@ export default function MyDay() {
                 </div>
               </section>
             )}
+          </>
+        )}
 
-            {data.upcoming.length > 0 && (
-              <section>
-                <h2 className="text-xs font-semibold uppercase tracking-wide text-ink-3 mb-2">Coming up</h2>
+        {tab === 'schedule' && !loading && !error && data && (
+          data.upcoming.length === 0 ? (
+            <EmptyState icon={CalendarRange} title="Nothing else scheduled yet"
+              description="Jobs assigned to you over the next two weeks show up here." compact />
+          ) : (
+            groupByDate(data.upcoming).map(g => (
+              <section key={g.date}>
+                <h2 className="text-xs font-semibold uppercase tracking-wide text-ink-3 mb-2">
+                  {dayLabel(g.date)}
+                </h2>
                 <div className="space-y-3">
-                  {data.upcoming.map(j => <JobCard key={j.id} job={j} />)}
+                  {g.jobs.map(j => <JobCard key={j.id} job={j} />)}
                 </div>
               </section>
-            )}
+            ))
+          )
+        )}
+
+        {tab === 'me' && (
+          <>
+            <CrewProfile />
+            <WeekPayCard week={weekPay} />
+            <button onClick={logout}
+              className="w-full text-[13px] font-semibold bg-panel border border-hairline text-red-600 dark:text-red-400 py-2.5 rounded-lg hover:bg-bg-2 transition-colors inline-flex items-center justify-center gap-1.5">
+              <LogOut className="w-4 h-4" /> Log out
+            </button>
           </>
         )}
       </div>
+
+      <CrewTabBar tab={tab} setTab={setTab} />
 
       {clockOutOpen && (
         <div

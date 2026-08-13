@@ -63,8 +63,9 @@ def _turnover_line(job: Job) -> str:
     return " · ".join(parts)
 
 
-def _job_row(job: Job) -> dict:
+def _job_row(job: Job, names_by_cid: dict | None = None, self_cid: str | None = None) -> dict:
     prop = job.property
+    client = job.client
     return {
         "id": job.id,
         "title": job.title,
@@ -82,12 +83,36 @@ def _job_row(job: Job) -> dict:
         "house_code": (prop.house_code if prop else None) or None,
         "turnover_line": _turnover_line(job),
         "checklist_template": (prop.checklist_template if prop else None) or None,
+        # Who the customer is + how to reach them — the owner's explicit call
+        # (crew handle "I'm outside" texts themselves). Name and phone only;
+        # nothing billing-shaped.
+        "client_name": client.name if client else None,
+        "client_phone": (client.phone if client else None) or None,
         "crew_size": len(job.cleaner_ids or []),
+        # The OTHER people on this job, as display names (crew-ID strings mean
+        # nothing to a human). Resolved from the map my-day builds in one query.
+        "teammates": sorted(
+            (names_by_cid or {}).get(str(cid), str(cid))
+            for cid in (job.cleaner_ids or [])
+            if self_cid is None or str(cid) != str(self_cid)
+        ) if names_by_cid is not None else [],
         # Mark-done state (Phase 2c): lets the card show "Done ✓" and echo the
         # note the cleaner left, instead of the job silently vanishing.
         "completed_at": _iso_utc(job.completed_at),
         "completion_note": job.completion_note,
     }
+
+
+def _names_by_cleaner_id(db: Session, jobs) -> dict:
+    """crew-ID → display name for every ID appearing on `jobs`, one query.
+    Unclaimed IDs stay unmapped (the row falls back to the raw ID, which is
+    still more useful than hiding a teammate)."""
+    cids = {str(cid) for j in jobs for cid in (j.cleaner_ids or [])}
+    if not cids:
+        return {}
+    rows = (db.query(User.cleaner_id, User.full_name, User.email)
+            .filter(User.cleaner_id.in_(cids)).all())
+    return {r[0]: (r[1] or r[2]) for r in rows}
 
 
 # ── Time clock (Phase 2a) ────────────────────────────────────────────────────
@@ -206,7 +231,7 @@ def my_day(
 
     jobs = (
         db.query(Job)
-        .options(joinedload(Job.property))
+        .options(joinedload(Job.property), joinedload(Job.client))
         .filter(
             org_scope(Job),
             Job.scheduled_date >= today,
@@ -224,6 +249,7 @@ def my_day(
     # Completed jobs only show for *today* (the just-marked-done case); in the
     # upcoming preview they'd be noise.
     upcoming_jobs = [j for j in mine if j.scheduled_date != today and j.status != "completed"]
+    names = _names_by_cleaner_id(db, mine)
 
     # ── Native time clock status ─────────────────────────────────────────────
     # Read-only w.r.t. the schedule. Folded into /my-day so the crew app is
@@ -257,8 +283,8 @@ def my_day(
     return {
         "as_of": today.isoformat(),
         "crew_id": current_user.cleaner_id,
-        "today": [_job_row(j) for j in today_jobs],
-        "upcoming": [_job_row(j) for j in upcoming_jobs],
+        "today": [_job_row(j, names, current_user.cleaner_id) for j in today_jobs],
+        "upcoming": [_job_row(j, names, current_user.cleaner_id) for j in upcoming_jobs],
         "clock": {
             "active": _entry_row(active) if active else None,
             "hours_today": hours_today,
@@ -587,7 +613,7 @@ def mark_job_done(
 
     job = (
         db.query(Job)
-        .options(joinedload(Job.property))
+        .options(joinedload(Job.property), joinedload(Job.client))
         .filter(org_scope(Job), Job.id == job_id)
         .first()
     )
@@ -621,7 +647,7 @@ def mark_job_done(
     if prev_status != "completed":
         auto_create_draft_invoice(db, job)
 
-    return _job_row(job)
+    return _job_row(job, _names_by_cleaner_id(db, [job]), current_user.cleaner_id)
 
 
 # ── Job photos ───────────────────────────────────────────────────────────────
@@ -810,6 +836,83 @@ def delete_job_photo(
     db.delete(photo)
     db.commit()
     return {"deleted": photo_id}
+
+
+# ── Me: the cleaner's own profile (crew app Phase 1) ─────────────────────────
+# Self-service contact info so the office file stays current without Meg
+# re-typing texted phone numbers. Strictly the CALLER's own row — no user_id
+# in the path, nothing about other users, and role/pay/crew-ID stay read-only
+# (those are the office's to set, from Settings → Users / Crew).
+
+_PROFILE_FIELD_MAX = 120
+
+
+def _clean_profile_str(v):
+    """Trim + cap a self-entered profile string; empty → None."""
+    if v is None:
+        return None
+    v = str(v).strip()
+    return v[:_PROFILE_FIELD_MAX] if v else None
+
+
+def _me_row(u: User) -> dict:
+    return {
+        "id": u.id,
+        "email": u.email,
+        "full_name": u.full_name,
+        "phone": u.phone,
+        "emergency_contact_name": u.emergency_contact_name,
+        "emergency_contact_phone": u.emergency_contact_phone,
+        "cleaner_id": u.cleaner_id,
+        "member_since": _iso_utc(u.created_at),
+    }
+
+
+class MeUpdate(BaseModel):
+    full_name: Optional[str] = None
+    phone: Optional[str] = None
+    emergency_contact_name: Optional[str] = None
+    emergency_contact_phone: Optional[str] = None
+
+
+@router.get("/me")
+def get_me(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_role("cleaner")),
+):
+    u = db.query(User).filter(User.id == current_user.id).first()
+    if not u:
+        raise HTTPException(status_code=404, detail="Account not found.")
+    return _me_row(u)
+
+
+@router.patch("/me")
+def update_me(
+    body: MeUpdate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_role("cleaner")),
+):
+    """Update the caller's own contact info. Omitted fields are untouched;
+    sending an empty string clears a field — except full_name, which can be
+    corrected but never blanked (every login needs a display name; it's what
+    teammates and payroll show)."""
+    u = db.query(User).filter(User.id == current_user.id).first()
+    if not u:
+        raise HTTPException(status_code=404, detail="Account not found.")
+
+    if body.full_name is not None:
+        name = _clean_profile_str(body.full_name)
+        if name:
+            u.full_name = name
+    if body.phone is not None:
+        u.phone = _clean_profile_str(body.phone)
+    if body.emergency_contact_name is not None:
+        u.emergency_contact_name = _clean_profile_str(body.emergency_contact_name)
+    if body.emergency_contact_phone is not None:
+        u.emergency_contact_phone = _clean_profile_str(body.emergency_contact_phone)
+
+    db.commit(); db.refresh(u)
+    return _me_row(u)
 
 
 # ── Reconciliation (office view) ─────────────────────────────────────────────
