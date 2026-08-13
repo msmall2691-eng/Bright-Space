@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom'
 import {
   Radar, RefreshCw, Calendar, Users, Home, Repeat, ArrowRight, ArrowLeft,
   ArrowLeftRight, Crown, AlertTriangle, CheckCircle2, ChevronDown, Zap,
-  Clock, ExternalLink, Loader2, WifiOff, PauseCircle,
+  Clock, ExternalLink, Loader2, WifiOff, PauseCircle, ScrollText,
 } from 'lucide-react'
 import { PageHeader, Button } from '../components/ui'
 import { post } from '../api'
@@ -278,6 +278,44 @@ function BackgroundJobsPanel({ jobs }) {
   )
 }
 
+// Phase 2 foundation: the append-only schedule log. Read-only health so the
+// operator can watch it capturing real job changes once it goes live.
+function ScheduleLogPanel({ log }) {
+  if (!log) return null
+  const live = !!log.enabled
+  const types = Object.entries(log.by_type || {}).sort((a, b) => b[1] - a[1])
+  return (
+    <div className="bg-panel border border-hairline rounded-2xl p-4">
+      <div className="flex items-center justify-between gap-2">
+        <div className="flex items-center gap-2 min-w-0">
+          <ScrollText className="w-4 h-4 text-ink-3 shrink-0" />
+          <span className="font-semibold text-ink text-sm">Schedule log</span>
+          <span className={`inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-full ${live ? 'bg-emerald-500/10 text-emerald-600' : 'bg-slate-500/10 text-ink-3'}`}>
+            <span className={`w-1.5 h-1.5 rounded-full ${live ? 'bg-emerald-500' : 'bg-slate-400'}`} />
+            {live ? 'Capturing' : 'Dark'}
+          </span>
+        </div>
+        <span className="text-xs text-ink-3 shrink-0">{(log.total || 0).toLocaleString()} event{log.total === 1 ? '' : 's'}</span>
+      </div>
+      <p className="text-[13px] text-ink-2 mt-2">
+        {live
+          ? `An append-only record of every job change — created, moved, reassigned, cancelled, completed. ${log.events_24h} in the last 24h · last ${relTime(log.last_event_at)}.`
+          : 'The append-only record of every job change. Not capturing yet — it turns on with the deploy.'}
+      </p>
+      {live && types.length > 0 && (
+        <div className="flex flex-wrap gap-1.5 mt-3">
+          {types.map(([t, n]) => (
+            <span key={t} className="inline-flex items-center gap-1 text-[11px] px-2 py-0.5 rounded-full bg-bg-2 text-ink-2">
+              <span className="capitalize">{t}</span>
+              <span className="text-ink-3">{n}</span>
+            </span>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
 export default function SyncCenter() {
   const { data, loading, error, refresh } = useSyncOverview()
   const [busy, setBusy] = useState(null)
@@ -432,6 +470,9 @@ export default function SyncCenter() {
 
         {/* The 14 hidden hands, finally visible. */}
         <BackgroundJobsPanel jobs={data.background_jobs || []} />
+
+        {/* Phase 2 foundation: the append-only schedule log, so you can watch it capture. */}
+        <ScheduleLogPanel log={data.schedule_log} />
 
         {!canSync && (
           <p className="text-[11px] text-ink-3 text-center">

@@ -56,9 +56,10 @@ def test_overview_shape_and_directions(ctx):
 
     # Top-level contract.
     for k in ("overall", "headline", "master", "auto_pilot", "channels",
-              "attention", "issues", "background_jobs"):
+              "attention", "issues", "background_jobs", "schedule_log"):
         assert k in ov, f"missing top-level key {k}"
     assert ov["master"] == "brightbase"
+    assert set(ov["schedule_log"]) >= {"enabled", "total", "last_event_at", "events_24h", "by_type"}
 
     ch = _by_key(ov)
     assert set(ch) == {"google", "connecteam", "airbnb", "recurring"}
@@ -149,3 +150,33 @@ def test_disconnected_backbone_is_attention(ctx):
     assert ov["overall"] == "attention"
     assert _by_key(ov)["google"]["status"] == "disconnected"
     assert any(a["key"] == "google_disconnected" for a in ov["attention"])
+
+
+def test_schedule_log_health_reports_captured_events(ctx):
+    """The Control Center's log-health block counts the append-only
+    schedule_events (org-scoped), splits them by type, and windows the last 24h —
+    the read-only surface that lets the operator watch the log capturing."""
+    db, c, p = ctx
+    from database.models import ScheduleEvent
+    import datetime as dt
+    j = _job(db, c, p, scheduled_date=date.today() + timedelta(days=1))
+    now = dt.datetime.now(dt.timezone.utc)
+    db.add_all([
+        ScheduleEvent(org_id=1, job_id=j.id, event_type="created", created_at=now),
+        ScheduleEvent(org_id=1, job_id=j.id, event_type="rescheduled", created_at=now),
+        ScheduleEvent(org_id=1, job_id=j.id, event_type="rescheduled", created_at=now),
+        ScheduleEvent(org_id=1, job_id=j.id, event_type="completed",
+                      created_at=now - dt.timedelta(days=3)),  # >24h old
+    ])
+    db.commit()
+    try:
+        log = build_sync_overview(db, 1)["schedule_log"]
+        assert log["total"] >= 4
+        assert log["by_type"]["created"] >= 1
+        assert log["by_type"]["rescheduled"] >= 2
+        assert log["events_24h"] >= 3            # the three 'now' events (old 'completed' excluded)
+        assert log["last_event_at"] is not None
+        assert isinstance(log["enabled"], bool)  # mirrors SCHEDULE_EVENT_LOG_ENABLED (OFF in tests)
+    finally:
+        db.query(ScheduleEvent).filter(ScheduleEvent.job_id == j.id).delete(synchronize_session=False)
+        db.commit()

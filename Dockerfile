@@ -43,6 +43,12 @@ RUN groupadd --system --gid 1000 app \
 
 USER app
 
+# Phase 2 scheduling redesign: turn the append-only schedule_events log ON in the
+# deployed image. The flush listener defaults OFF in code, so local/dev/tests stay
+# dark; only the shipped container captures. Kill-switch without a redeploy by
+# setting SCHEDULE_EVENT_LOG_ENABLED=0 in Railway. See docs/scheduling-sync-redesign.md.
+ENV SCHEDULE_EVENT_LOG_ENABLED=1
+
 EXPOSE 8000
 # --workers ${UVICORN_WORKERS:-4}: one uvicorn worker was blocking ALL traffic
 # whenever a request tied it up (a slow /api/jobs, a hung Twilio call, the

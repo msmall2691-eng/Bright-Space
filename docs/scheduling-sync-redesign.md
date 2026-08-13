@@ -38,10 +38,12 @@ migration 068. Currently **dark**: `SCHEDULE_EVENT_LOG_ENABLED` defaults OFF.
   flush listener is now **fail-safe** — a logging error can never break a Job write
   (regression test `test_listener_error_never_breaks_the_job_write`). The log is still
   **dark**; this prep changes no observable behavior.
-- *Remaining to activate (the deliberate cut-over):* (1) a read-only **log-health surface**
-  in the Sync Control Center so the capture can be watched, then (2) flip the flag on in
-  prod — `ENV SCHEDULE_EVENT_LOG_ENABLED=1` in the Dockerfile (one line, no Railway
-  change). Sequenced so the log can be verified against real data the moment it goes live.
+- *Cut-over BUILT (this branch / #665):* a read-only **log-health surface** in the Sync
+  Control Center (`schedule_log` in sync-overview + a "Schedule log" card showing
+  Capturing/Dark, counts, and a by-type breakdown) plus `ENV SCHEDULE_EVENT_LOG_ENABLED=1`
+  in the Dockerfile. **Merging #665 turns the log ON in prod** and the card shows it
+  capturing against real data. Kill-switch: set `SCHEDULE_EVENT_LOG_ENABLED=0` in Railway
+  (no redeploy). Code default stays OFF, so local/dev/tests remain dark.
 
 **R1 baseline:** re-verified **14** ticks @ `af379fa` (2026-08-12) — `main` advanced
 through #661 / #670 / #671 / #673 / #674 / #675 since the `06d7860` pin and **none
