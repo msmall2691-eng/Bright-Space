@@ -5336,6 +5336,39 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/crew/jobs/{job_id}/claim": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Claim Job
+         * @description First-come-first-served claim of a job the office marked open.
+         *
+         *     This is the one place the crew app writes schedule state, and it's
+         *     narrowly gated (scheduling-invariants reviewed): the job must carry the
+         *     office-set open_for_claims flag (owner decision #2 — being unassigned is
+         *     NOT enough), the write is this endpoint's atomic add-claimer +
+         *     close-the-offer, it's activity-logged and pushes a staff notification.
+         *     BrightBase stays the canonical schedule owner throughout — no projection
+         *     or external system is involved.
+         *
+         *     Concurrency (R5): the row is locked (SELECT ... FOR UPDATE on Postgres;
+         *     SQLite serializes writers) and the open flag is re-checked under the
+         *     lock, so two cleaners racing on the same offer get exactly one winner —
+         *     the loser sees 409 "already claimed".
+         */
+        post: operations["claim_job_api_crew_jobs__job_id__claim_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/crew/jobs/{job_id}/respond": {
         parameters: {
             query?: never;
@@ -6647,6 +6680,8 @@ export interface components {
             allow_conflicts: boolean | null;
             /** Notify Customer */
             notify_customer?: boolean | null;
+            /** Open For Claims */
+            open_for_claims?: boolean | null;
         };
         /**
          * LinkClientRequest
@@ -16081,6 +16116,37 @@ export interface operations {
                 "application/json": components["schemas"]["MarkDoneBody"];
             };
         };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    claim_job_api_crew_jobs__job_id__claim_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                job_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
         responses: {
             /** @description Successful Response */
             200: {

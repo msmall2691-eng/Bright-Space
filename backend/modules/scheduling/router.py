@@ -69,6 +69,9 @@ class JobUpdate(BaseModel):
     # Lets an operator nudge a job around the calendar silently (the default) but
     # still opt into telling the customer when a move actually matters to them.
     notify_customer: Optional[bool] = None
+    # Crew app Phase 3: put the job "up for grabs" on every cleaner's phone
+    # (claiming flips it back off atomically, crew router's /claim).
+    open_for_claims: Optional[bool] = None
 
 JOB_TYPES = {"residential", "deep_clean", "commercial", "str_turnover", "one_time"}
 JOB_STATUSES = {"unscheduled", "scheduled", "in_progress", "completed", "cancelled"}
@@ -544,6 +547,9 @@ def job_to_dict(j: Job, client: Client = None, effective_date=None,
         "completion_note": j.completion_note,
         "custom_fields": j.custom_fields or {},
         "dispatched": bool(j.dispatched),
+        # Crew app Phase 3: "up for grabs" flag the office toggles; claiming
+        # flips it back off (crew router's /claim).
+        "open_for_claims": bool(getattr(j, "open_for_claims", False)),
         "gcal_event_id": j.gcal_event_id,
         "created_at": j.created_at.isoformat() if j.created_at else None,
         "updated_at": j.updated_at.isoformat() if j.updated_at else None,
@@ -2878,8 +2884,20 @@ def update_job(job_id: int, data: JobUpdate, db: Session = Depends(get_db), org_
         and updates.get("status", prev_status) == prev_status
     ):
         updates["status"] = "scheduled"
+    prev_cleaner_ids = [str(c) for c in (job.cleaner_ids or [])]
     for field, value in updates.items():
         setattr(job, field, value)
+
+    # Assignment changed → drop the accept/decline answers of anyone REMOVED,
+    # so a cleaner taken off (after declining, say) and re-added later starts
+    # at "no answer yet" instead of wearing a stale response (crew app Phase 3
+    # cleanup of the Phase 2 edge). Answers of cleaners still on the job keep.
+    if "cleaner_ids" in updates:
+        removed = set(prev_cleaner_ids) - {str(c) for c in (job.cleaner_ids or [])}
+        if removed:
+            from database.models import JobResponse as _JR
+            db.query(_JR).filter(_JR.job_id == job.id,
+                                 _JR.cleaner_id.in_(removed)).delete(synchronize_session=False)
 
     # A move to a new day/time invalidates two things the customer's OLD time
     # carried: their confirmation (they agreed to a time that no longer exists)
