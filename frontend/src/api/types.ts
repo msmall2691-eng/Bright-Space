@@ -5395,6 +5395,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/crew/me": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Me */
+        get: operations["get_me_api_crew_me_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Update Me
+         * @description Update the caller's own contact info. Omitted fields are untouched;
+         *     sending an empty string clears a field — except full_name, which can be
+         *     corrected but never blanked (every login needs a display name; it's what
+         *     teammates and payroll show).
+         */
+        patch: operations["update_me_api_crew_me_patch"];
+        trace?: never;
+    };
     "/api/crew/roster": {
         parameters: {
             query?: never;
@@ -6674,6 +6698,17 @@ export interface components {
         MarkDoneBody: {
             /** Note */
             note?: string | null;
+        };
+        /** MeUpdate */
+        MeUpdate: {
+            /** Full Name */
+            full_name?: string | null;
+            /** Phone */
+            phone?: string | null;
+            /** Emergency Contact Name */
+            emergency_contact_name?: string | null;
+            /** Emergency Contact Phone */
+            emergency_contact_phone?: string | null;
         };
         /** MergeClientsBody */
         MergeClientsBody: {
@@ -16140,6 +16175,59 @@ export interface operations {
             cookie?: never;
         };
         requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_me_api_crew_me_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    update_me_api_crew_me_patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MeUpdate"];
+            };
+        };
         responses: {
             /** @description Successful Response */
             200: {

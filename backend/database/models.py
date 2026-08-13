@@ -158,6 +158,11 @@ class User(Base):
     # falls back to the residential rate). Native payroll only.
     pay_rate_deep = Column(Float, nullable=True)
 
+    # Emergency contact, self-maintained from the crew app's Me tab (migration
+    # 082) — on file for people working alone in clients' homes.
+    emergency_contact_name = Column(String, nullable=True)
+    emergency_contact_phone = Column(String, nullable=True)
+
     client = relationship("Client", back_populates="user", foreign_keys="User.client_id")
     # User.jobs_assigned was dropped by migration 040 — its FK column
     # (Job.assigned_cleaner_user_id) was never wired up; Job.cleaner_ids is
