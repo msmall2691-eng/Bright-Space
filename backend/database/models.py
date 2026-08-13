@@ -140,8 +140,8 @@ class User(Base):
 
     # Crew accounts (Phase 1 — native crew directory): links a role="cleaner"
     # login to the crew-ID string space Job.cleaner_ids already uses (these
-    # are Connecteam employee IDs in production — see CleanerTimeOff). NULL
-    # for everyone else. Additive: existing Connecteam-driven dispatch and
+    # were originally Connecteam employee IDs — see CleanerTimeOff). NULL
+    # for everyone else. Additive: existing dispatch and
     # payroll are untouched; this only lets a cleaner log in and see the jobs
     # already assigned to their crew ID.
     cleaner_id = Column(String, nullable=True, index=True)
@@ -149,8 +149,7 @@ class User(Base):
     # Per-cleaner pay rate overrides ($/hr) for the native payroll source. NULL
     # = use the global Settings rate for that bucket (pay_rate_residential /
     # pay_rate_rental_weekday). Only meaningful for role="cleaner" logins; lets
-    # an admin pay individual crew above/below the shop default. The Connecteam
-    # payroll source ignores these (Connecteam holds its own rates).
+    # an admin pay individual crew above/below the shop default.
     pay_rate_residential = Column(Float, nullable=True)
     pay_rate_rental = Column(Float, nullable=True)
     # Per-cleaner override ($/hr) for deep-clean jobs (job_type="deep_clean").
@@ -606,13 +605,8 @@ class Job(Base):
     notes = Column(Text)
     custom_fields = Column(JSON, default=dict)
     dispatched = Column(Boolean, default=False, nullable=False)
-    connecteam_shift_ids = Column(JSON, default=list)
-    # Snapshot of {scheduled_date, start_time, end_time} as of the last
-    # successful Connecteam push — lets the reconcile sweep detect "the job
-    # was rescheduled since we pushed" (time drift, audit #4) without a
-    # Connecteam read API. NULL means "never pushed" or "no longer
-    # meaningful" (shifts fully removed).
-    connecteam_synced_schedule = Column(JSON, nullable=True)
+    # (connecteam_shift_ids / connecteam_synced_schedule were dropped by
+    # migration 079 with the Connecteam removal.)
 
     # Completion tracking — set when the cleaner marks the job done. Migrated
     # from the Visit table as part of the Job/Visit unification (see
@@ -690,15 +684,13 @@ class TimeEntry(Base):
     Writing a punch never touches Job schedule state, so it stays clear of the
     scheduling-authority contract.
 
-    Deliberately NOT wired into payroll yet — payroll still reads Connecteam
-    Time Clock punches. This table exists to (a) prove a native clock works and
-    (b) accumulate real hours to reconcile against Connecteam before any cutover.
+    Native payroll's source of hours: /api/payroll/summary classifies each
+    punch by its linked job and computes pay from it.
 
     cleaner_id is the same string identifier Job.cleaner_ids / User.cleaner_id
-    use (a Connecteam employee id today), so a punch ties to the same person the
-    schedule assigns. job_id (nullable) links a punch to the job being worked —
-    the hook a future native payroll will use to classify hours by job_type —
-    but nothing reads it for pay in Phase 2a.
+    use, so a punch ties to the same person the schedule assigns. job_id
+    (nullable) links a punch to the job being worked — how payroll classifies
+    hours by job_type.
     """
     __tablename__ = "time_entries"
     org_id = Column(Integer, ForeignKey("orgs.id"), nullable=True, index=True)  # tenant scope (MT-1)
@@ -719,13 +711,11 @@ class TimeEntry(Base):
     clock_out_at = Column(DateTime, nullable=True)    # NULL = still on the clock (open punch)
     break_minutes = Column(Integer, nullable=False, default=0)
     note = Column(Text, nullable=True)
-    # Miles driven for this job, entered by the crew at clock-out — parity with
-    # Connecteam, where they type miles after each job. NULL = not entered (treated
-    # as 0 in payroll); reimbursed at the Settings 'mileage_rate' (IRS default) in
-    # the native payroll path, exactly like Connecteam's per-shift miles.
+    # Miles driven for this job, entered by the crew at clock-out. NULL = not
+    # entered (treated as 0 in payroll); reimbursed at the Settings
+    # 'mileage_rate' (IRS default) in the payroll path.
     miles = Column(Float, nullable=True)
-    # 'native' today; room to tag an imported/Connecteam-sourced entry later
-    # without a migration.
+    # 'native' today; room to tag an imported entry later without a migration.
     source = Column(String(16), nullable=False, default="native")
 
     # GPS captured at clock-in (Phase 2b) — browser geolocation, best-effort.
@@ -1297,7 +1287,7 @@ class CleanerTimeOff(Base):
     """A date range a cleaner is unavailable (vacation, sick, etc.).
 
     cleaner_id matches the string identifiers stored in Job.cleaner_ids (these
-    are Connecteam employee IDs in production). Used by the scheduling guard so
+    were originally Connecteam employee IDs). Used by the scheduling guard so
     a cleaner can't be assigned to a job on a day they're off. Dates are
     inclusive (start_date..end_date)."""
     __tablename__ = "cleaner_time_off"
@@ -1337,88 +1327,13 @@ class IntegrationEvent(Base):
     id = Column(Integer, primary_key=True, index=True)
     entity_type = Column(String, nullable=False)   # 'job' | 'visit' | 'quote' | 'invoice'
     entity_id = Column(Integer, nullable=False)    # the row this action was for
-    provider = Column(String, nullable=False)      # 'gcal' | 'email' | 'sms' | 'connecteam'
+    provider = Column(String, nullable=False)      # 'gcal' | 'email' | 'sms' | 'connecteam' (legacy rows)
     action = Column(String, nullable=False)        # 'create' | 'update' | 'delete' | 'send'
     status = Column(String, nullable=False)        # 'ok' | 'failed'
     external_id = Column(String, nullable=True)    # gcal_event_id, message sid, email id, ...
     error_message = Column(String, nullable=True)  # failure reason (status='failed')
     request_payload = Column(String, nullable=True)   # short human note (e.g. "to a@b.com")
     created_at = Column(DateTime, default=_utcnow, index=True)
-
-
-class ConnecteamPushRun(Base):
-    """Tracks one "Push schedule → open shifts" sweep (T-20 Part B).
-
-    The endpoint used to run the whole bulk-create inline, blocking the
-    request for the entire Connecteam round trip — on Railway's single-worker
-    (now multi-worker) deploy that hung the UI for 3+ minutes with no
-    progress feedback. The POST now just creates this row and schedules the
-    work as a background task, returning immediately; the frontend polls
-    GET .../push-open-shifts/{run_id} for status.
-
-    Persisted rather than kept in an in-process dict because the app runs
-    multiple uvicorn workers — the POST that starts a run and the GET that
-    polls it can land on different worker processes, so only a DB row is
-    visible to both."""
-    __tablename__ = "connecteam_push_runs"
-
-    id = Column(String, primary_key=True)  # uuid4 hex — opaque run token
-    status = Column(String, nullable=False, default="queued")  # queued|running|done|error
-    range_start = Column(Date, nullable=True)
-    range_end = Column(Date, nullable=True)
-    considered = Column(Integer, default=0)
-    pushed = Column(Integer, default=0)
-    skipped = Column(Integer, default=0)
-    errors = Column(JSON, default=list)
-    error_message = Column(String, nullable=True)
-    created_at = Column(DateTime, default=_utcnow, index=True)
-    finished_at = Column(DateTime, nullable=True)
-
-
-class ConnecteamOutbox(Base):
-    """Transactional outbox for Connecteam shift sync (durability hardening).
-
-    Dispatching/removing a shift by calling Connecteam's API inline has two
-    failure modes: (1) the API call succeeds but the enclosing request then
-    rolls back → an orphan shift with no local record; (2) a double-submit or
-    two concurrent paths both read connecteam_shift_ids as empty and each
-    create a shift → a DUPLICATE. Instead, job-change paths can ENQUEUE a sync
-    intent here in the SAME transaction as the job change (so a rollback
-    discards the intent — no orphan), and a background drain performs the
-    Connecteam call.
-
-    Idempotency: dedupe_key is UNIQUE, so enqueuing the same intent twice
-    (double-submit, retry, two racing callers) collapses to one row. The drain
-    claims a row (pending → terminal) with SELECT ... FOR UPDATE SKIP LOCKED so
-    two workers can't process it at once. Together these make duplicate shifts
-    structurally impossible for enqueued-and-drained syncs; the narrow
-    crash-after-create-before-record window is swept by the read-back reconcile.
-
-    Gated by the connecteam_outbox_enabled setting — off leaves the existing
-    inline dispatch untouched. Scaffolded in migration 061.
-    """
-    __tablename__ = "connecteam_outbox"
-    org_id = Column(Integer, ForeignKey("orgs.id"), nullable=True, index=True)  # tenant scope (MT-1)
-
-    id = Column(Integer, primary_key=True, index=True)
-    job_id = Column(Integer, ForeignKey("jobs.id", ondelete="CASCADE"),
-                    nullable=False, index=True)
-    op = Column(String(16), nullable=False)  # 'dispatch' | 'remove'
-    # Unique intent fingerprint: op + job + desired-state hash. A repeat enqueue
-    # of the SAME desired state is a no-op; a new state (after a reschedule) gets
-    # a new key, so it's re-synced.
-    dedupe_key = Column(String(200), nullable=False, unique=True)
-    status = Column(String(16), nullable=False, default="pending", index=True)
-    # pending | done | failed
-    attempts = Column(Integer, nullable=False, default=0)
-    last_error = Column(Text, nullable=True)
-    created_at = Column(DateTime, default=_utcnow, nullable=False)
-    updated_at = Column(DateTime, default=_utcnow, onupdate=_utcnow, nullable=False)
-    processed_at = Column(DateTime, nullable=True)
-
-    __table_args__ = (
-        Index("idx_connecteam_outbox_status", "status", "created_at"),
-    )
 
 
 class SavedView(Base):
@@ -1516,7 +1431,7 @@ class ProjectionState(Base):
     org_id = Column(Integer, ForeignKey("orgs.id"), nullable=True, index=True)  # tenant scope (MT-1)
 
     id = Column(Integer, primary_key=True, index=True)
-    target = Column(String(24), nullable=False)  # "gcal" | "connecteam"
+    target = Column(String(24), nullable=False)  # "gcal" (was also "connecteam" pre-removal)
     job_id = Column(Integer, ForeignKey("jobs.id", ondelete="CASCADE"), nullable=False, index=True)
     last_event_applied = Column(Integer, nullable=True)  # schedule_events.id cursor
     last_push_at = Column(DateTime, nullable=True)
