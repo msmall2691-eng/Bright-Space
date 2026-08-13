@@ -35,6 +35,8 @@ from sqlalchemy.orm import Session, joinedload
 from database.db import get_db
 from database.models import Job, User, TimeEntry
 from modules.auth.router import require_role, current_org_id, resolve_org_id, send_staff_invite
+from modules.scheduling.completion import auto_create_draft_invoice
+from utils.activity_logger import log_job_status_change
 from utils.dates import business_today, business_tz
 
 router = APIRouter()
@@ -81,6 +83,10 @@ def _job_row(job: Job) -> dict:
         "turnover_line": _turnover_line(job),
         "checklist_template": (prop.checklist_template if prop else None) or None,
         "crew_size": len(job.cleaner_ids or []),
+        # Mark-done state (Phase 2c): lets the card show "Done ✓" and echo the
+        # note the cleaner left, instead of the job silently vanishing.
+        "completed_at": _iso_utc(job.completed_at),
+        "completion_note": job.completion_note,
     }
 
 
@@ -205,14 +211,19 @@ def my_day(
             org_scope(Job),
             Job.scheduled_date >= today,
             Job.scheduled_date <= window_end,
-            Job.status.in_(("scheduled", "in_progress")),
+            # "completed" is included so a job the cleaner just marked done
+            # stays on today's screen as "Done ✓" instead of vanishing the
+            # moment they tap the button (which reads as a glitch, not success).
+            Job.status.in_(("scheduled", "in_progress", "completed")),
         )
         .order_by(Job.scheduled_date, Job.start_time)
         .all()
     )
     mine = [j for j in jobs if current_user.cleaner_id in (j.cleaner_ids or [])]
     today_jobs = [j for j in mine if j.scheduled_date == today]
-    upcoming_jobs = [j for j in mine if j.scheduled_date != today]
+    # Completed jobs only show for *today* (the just-marked-done case); in the
+    # upcoming preview they'd be noise.
+    upcoming_jobs = [j for j in mine if j.scheduled_date != today and j.status != "completed"]
 
     # ── Native time clock status ─────────────────────────────────────────────
     # Read-only w.r.t. the schedule. Folded into /my-day so the crew app is
@@ -527,6 +538,90 @@ def set_entry_miles(
     entry.miles = _sanitize_miles(body.miles)
     db.commit(); db.refresh(entry)
     return _entry_row(entry)
+
+
+# ── Mark done (Phase 2c) ─────────────────────────────────────────────────────
+
+def _sanitize_note(v: Optional[str]) -> Optional[str]:
+    """Trim and cap the completion note. Empty/whitespace → None (no note)."""
+    if v is None:
+        return None
+    v = v.strip()
+    return v[:2000] if v else None
+
+
+class MarkDoneBody(BaseModel):
+    # Optional message back to the office ("lockbox was empty", "low on
+    # towels"). Internal-only: stored on Job.completion_note, which is kept
+    # OFF invoices by design (see the model comment / migration 080).
+    note: Optional[str] = None
+
+
+@router.post("/jobs/{job_id}/complete")
+def mark_job_done(
+    job_id: int,
+    body: MarkDoneBody = MarkDoneBody(),
+    db: Session = Depends(get_db),
+    org_id: int = Depends(current_org_id),
+    current_user: User = Depends(require_role("cleaner")),
+):
+    """The cleaner marks one of THEIR OWN jobs completed, optionally with a
+    note for the office.
+
+    This is the crew-side counterpart of the office's POST /api/jobs/{id}/complete
+    and produces the same canonical transition: status='completed', completion
+    stamps, a JOB_COMPLETED activity on the client timeline, and the draft
+    invoice on the completing transition (same shared helper — billing doesn't
+    depend on who marked the job done).
+
+    Object-level authorization: the job must be assigned to the caller's crew
+    ID. Not-yours reads as 404 (same pattern as the punch endpoints) so job IDs
+    can't be probed. completed_by is always the caller — never client-supplied.
+
+    Idempotent: re-marking an already-completed job just refreshes the note
+    (their "oops, forgot to mention" path); no duplicate activity or invoice.
+    """
+    _require_crew_id(current_user)
+    oid = resolve_org_id(org_id, db)
+    org_scope = lambda model: or_(model.org_id == oid, model.org_id.is_(None))
+
+    job = (
+        db.query(Job)
+        .options(joinedload(Job.property))
+        .filter(org_scope(Job), Job.id == job_id)
+        .first()
+    )
+    if not job or current_user.cleaner_id not in (job.cleaner_ids or []):
+        raise HTTPException(status_code=404, detail="Job not found.")
+    if job.status == "cancelled":
+        raise HTTPException(
+            status_code=400,
+            detail="This job was cancelled — check with the office before cleaning.",
+        )
+
+    note = _sanitize_note(body.note)
+    prev_status = job.status
+    job.status = "completed"
+    job.completed_at = job.completed_at or datetime.now(timezone.utc)
+    job.completed_by = current_user.id
+    if note is not None:
+        job.completion_note = note
+
+    if prev_status != "completed":
+        try:
+            log_job_status_change(db, job, prev_status=prev_status,
+                                  actor=getattr(current_user, "full_name", None) or "crew",
+                                  note=note)
+        except Exception:
+            log.exception("log_job_status_change failed on crew mark_job_done")
+
+    db.commit()
+    db.refresh(job)
+
+    if prev_status != "completed":
+        auto_create_draft_invoice(db, job)
+
+    return _job_row(job)
 
 
 # ── Reconciliation (office view) ─────────────────────────────────────────────

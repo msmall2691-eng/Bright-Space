@@ -338,6 +338,17 @@ export default function JobDetail() {
 
           {/* ── Center: notes + activity ──────────────────────────── */}
           <div className="min-w-0 space-y-4">
+            {job.completion_note && (
+              /* Field report left by the cleaner at mark-done. Internal-only —
+                 stored on its own column so it can never ride onto an invoice. */
+              <div className="bg-emerald-50 dark:bg-emerald-500/10 border border-emerald-200 dark:border-emerald-500/30 rounded-xl p-3 flex items-start gap-2">
+                <CheckCircle className="w-4 h-4 mt-0.5 shrink-0 text-emerald-600" />
+                <div className="min-w-0 text-[13px]">
+                  <span className="font-semibold text-emerald-800 dark:text-emerald-300">Crew note</span>
+                  <span className="text-ink-2"> — {job.completion_note}</span>
+                </div>
+              </div>
+            )}
             <div className="bg-panel border border-hairline rounded-xl p-3">
               <textarea
                 value={note} onChange={e => setNote(e.target.value)}

@@ -616,6 +616,11 @@ class Job(Base):
     completed_by = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     checklist_results = Column(JSON, nullable=True)
     photos = Column(JSON, default=list)
+    # Internal note the cleaner left when marking the job done ("lockbox was
+    # empty"). Deliberately its OWN column, not appended to Job.notes:
+    # _auto_create_draft_invoice copies Job.notes onto the customer-facing
+    # invoice, and a crew field report must never leak to a client. Migration 080.
+    completion_note = Column(Text, nullable=True)
 
     # Customer-facing confirm/reschedule-request link (Part 2 Tier 2 — mirrors
     # Quote.public_token). Lazily generated the first time it's needed (the

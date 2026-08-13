@@ -107,8 +107,14 @@ def promote_client_from_lead(db, client_id, *, reason: str, actor: str = "system
         return False
 
 
-def log_job_status_change(db: Session, job, prev_status: str, actor: str = "system") -> Optional[Activity]:
-    """Map a job status change to the appropriate ActivityType."""
+def log_job_status_change(db: Session, job, prev_status: str, actor: str = "system",
+                          note: Optional[str] = None) -> Optional[Activity]:
+    """Map a job status change to the appropriate ActivityType.
+
+    `note` carries the cleaner's completion note ("lockbox was empty") into the
+    feed entry — in the summary so it reads at a glance, and in extra_data for
+    any UI that wants it structured.
+    """
     status = (job.status or "").lower()
     type_map = {
         "completed":  ActivityType.JOB_COMPLETED.value,
@@ -119,14 +125,17 @@ def log_job_status_change(db: Session, job, prev_status: str, actor: str = "syst
     activity_type = type_map.get(status)
     if not activity_type or status == (prev_status or "").lower():
         return None
+    extra = {"prev_status": prev_status, "new_status": status}
+    if note:
+        extra["note"] = note
     return log_activity(
         db,
         activity_type,
         client_id=job.client_id,
         job_id=job.id,
         actor=actor,
-        summary=f"Job {status}: {job.title}",
-        extra_data={"prev_status": prev_status, "new_status": status},
+        summary=f"Job {status}: {job.title}" + (f' — "{note}"' if note else ""),
+        extra_data=extra,
     )
 
 

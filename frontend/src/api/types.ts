@@ -2095,6 +2095,12 @@ export interface paths {
          *     the PATCH /{job_id} status path — this used to be the one "mark complete"
          *     route that didn't, so a job completed through the field checklist UI
          *     (the actual completion flow) never got billed automatically.
+         *
+         *     Office-only. The "cleaner" role was removed when crew mark-done shipped:
+         *     this endpoint has no assignment check and accepts caller-supplied
+         *     completed_by / notes / photos, so a cleaner token could complete (and
+         *     overwrite notes on) ANY job in the org. Cleaners complete their own jobs
+         *     via POST /api/crew/jobs/{id}/complete, which verifies assignment.
          */
         post: operations["complete_job_api_jobs__job_id__complete_post"];
         delete?: never;
@@ -5296,6 +5302,40 @@ export interface paths {
         patch: operations["set_entry_miles_api_crew_entry__entry_id__miles_patch"];
         trace?: never;
     };
+    "/api/crew/jobs/{job_id}/complete": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Mark Job Done
+         * @description The cleaner marks one of THEIR OWN jobs completed, optionally with a
+         *     note for the office.
+         *
+         *     This is the crew-side counterpart of the office's POST /api/jobs/{id}/complete
+         *     and produces the same canonical transition: status='completed', completion
+         *     stamps, a JOB_COMPLETED activity on the client timeline, and the draft
+         *     invoice on the completing transition (same shared helper — billing doesn't
+         *     depend on who marked the job done).
+         *
+         *     Object-level authorization: the job must be assigned to the caller's crew
+         *     ID. Not-yours reads as 404 (same pattern as the punch endpoints) so job IDs
+         *     can't be probed. completed_by is always the caller — never client-supplied.
+         *
+         *     Idempotent: re-marking an already-completed job just refreshes the note
+         *     (their "oops, forgot to mention" path); no duplicate activity or invoice.
+         */
+        post: operations["mark_job_done_api_crew_jobs__job_id__complete_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/crew/roster": {
         parameters: {
             query?: never;
@@ -6560,6 +6600,11 @@ export interface components {
             service_type: string | null;
             /** Message */
             message?: string | null;
+        };
+        /** MarkDoneBody */
+        MarkDoneBody: {
+            /** Note */
+            note?: string | null;
         };
         /** MergeClientsBody */
         MergeClientsBody: {
@@ -15859,6 +15904,41 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["EntryMilesBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    mark_job_done_api_crew_jobs__job_id__complete_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                job_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["MarkDoneBody"];
             };
         };
         responses: {

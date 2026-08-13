@@ -537,6 +537,11 @@ def job_to_dict(j: Job, client: Client = None, effective_date=None,
         "cleaner_ids": j.cleaner_ids or [],
         "status": j.status,
         "notes": j.notes,
+        # Completion state, so the office UI can show when/who marked a job
+        # done and the note the cleaner left (kept off invoices by design).
+        "completed_at": j.completed_at.isoformat() if j.completed_at else None,
+        "completed_by": j.completed_by,
+        "completion_note": j.completion_note,
         "custom_fields": j.custom_fields or {},
         "dispatched": bool(j.dispatched),
         "gcal_event_id": j.gcal_event_id,
@@ -2719,71 +2724,10 @@ def _get_job_or_404(db: Session, job_id: int, org_id: int) -> Job:
     return job
 
 
-def _auto_create_draft_invoice(db: Session, job: "Job") -> None:
-    """Auto-create a draft Invoice the first time a job lands on 'completed'.
-
-    Idempotent: skip if an Invoice already exists for this Job. Uses the
-    source Quote's items when available; otherwise emits a placeholder line.
-    Called from both completion paths (update_job's status PATCH and
-    complete_job's dedicated endpoint) so invoicing doesn't depend on which
-    UI the operator used to mark the job done."""
-    try:
-        from database.models import Invoice, Quote, RecurringSchedule
-        existing_inv = db.query(Invoice).filter(Invoice.job_id == job.id).first()
-        if existing_inv:
-            return
-        # Pull line items + tax from the originating quote when the job came
-        # from one (quotes are integer-keyed, matching Job.quote_id);
-        # otherwise build a default single-line invoice.
-        #
-        # Recurring-generated jobs never carry their own quote_id (Job.quote_id
-        # is unique, and one schedule fans out into many jobs), so look up the
-        # *schedule's* quote instead — otherwise every recurring visit falls
-        # through to the $0 placeholder below even when the series was set up
-        # from a priced quote.
-        quote = db.query(Quote).filter(Quote.id == job.quote_id).first() if job.quote_id else None
-        if not quote and job.recurring_schedule_id:
-            sched = db.query(RecurringSchedule).filter(RecurringSchedule.id == job.recurring_schedule_id).first()
-            if sched and sched.quote_id:
-                quote = db.query(Quote).filter(Quote.id == sched.quote_id).first()
-        items = (quote.items if (quote and quote.items) else [{
-            "name": job.title or "Cleaning",
-            "qty": 1,
-            "unit_price": 0,
-            "description": "",
-        }])
-        subtotal = sum(float(i.get("qty", 1)) * float(i.get("unit_price", 0)) for i in items)
-        # `is not None`, not truthiness: a quote with tax_rate=0 is explicitly
-        # tax-exempt (0 is also the column default) — treating 0 as "unset" and
-        # falling back to 5.5% billed tax to customers who owe none.
-        tax_rate = float(quote.tax_rate) if (quote and quote.tax_rate is not None) else 5.5
-        tax = round(subtotal * (tax_rate / 100), 2)
-        total = round(subtotal + tax, 2)
-        due_date = (datetime.now(timezone.utc) + timedelta(days=14)).strftime("%Y-%m-%d")
-        invoice = Invoice(
-            client_id=job.client_id,
-            job_id=job.id,
-            opportunity_id=job.opportunity_id,
-            org_id=job.org_id,  # MT-2: inherit the job's workspace (was unset → NULL-org invoice visible to every tenant)
-            items=items,
-            subtotal=round(subtotal, 2),
-            tax_rate=tax_rate,
-            tax=tax,
-            total=total,
-            status="draft",
-            due_date=due_date,
-            notes=job.notes or "",
-        )
-        db.add(invoice)
-        db.flush()  # materialize the PK so the number can derive from it
-        # REQUIRED: without a number, send_invoice / reminders mail the customer
-        # "Invoice None". Shared helper keeps the manual + auto paths identical.
-        from modules.invoicing.router import assign_invoice_number
-        assign_invoice_number(db, invoice)
-        db.commit()
-        logger.info(f"[auto-invoice] created draft Invoice id={invoice.id} number={invoice.invoice_number} from completed Job {job.id}")
-    except Exception as e:
-        logger.warning(f"[auto-invoice] failed for job {job.id}: {e}")
+# Moved to modules/scheduling/completion.py so the crew router can share it
+# without importing a private out of this (shrinking — R6) monolith. The alias
+# keeps the two in-file call sites and test_invoice_numbering's import working.
+from modules.scheduling.completion import auto_create_draft_invoice as _auto_create_draft_invoice  # noqa: E402
 
 
 @router.patch("/{job_id}", dependencies=[Depends(require_role("admin", "manager"))])
@@ -3489,7 +3433,7 @@ class JobCompleteRequest(BaseModel):
     notes: Optional[str] = None
 
 
-@router.post("/{job_id}/complete", dependencies=[Depends(require_role("admin", "manager", "cleaner"))])
+@router.post("/{job_id}/complete", dependencies=[Depends(require_role("admin", "manager"))])
 def complete_job(job_id: int, data: JobCompleteRequest = JobCompleteRequest(),
                  db: Session = Depends(get_db), org_id: int = Depends(current_org_id)):
     """Mark a job as completed in a single call.
@@ -3503,6 +3447,12 @@ def complete_job(job_id: int, data: JobCompleteRequest = JobCompleteRequest(),
     the PATCH /{job_id} status path — this used to be the one "mark complete"
     route that didn't, so a job completed through the field checklist UI
     (the actual completion flow) never got billed automatically.
+
+    Office-only. The "cleaner" role was removed when crew mark-done shipped:
+    this endpoint has no assignment check and accepts caller-supplied
+    completed_by / notes / photos, so a cleaner token could complete (and
+    overwrite notes on) ANY job in the org. Cleaners complete their own jobs
+    via POST /api/crew/jobs/{id}/complete, which verifies assignment.
     """
     job = _get_job_or_404(db, job_id, resolve_org_id(org_id, db))
 
