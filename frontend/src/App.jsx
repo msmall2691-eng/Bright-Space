@@ -19,6 +19,7 @@ import PublicPayment from './pages/PublicPayment'
 import PublicJobConfirm from './pages/PublicJobConfirm'
 import CustomerPortal from './pages/CustomerPortal'
 import PortalVerify from './pages/PortalVerify'
+import AcceptInvite from './pages/AcceptInvite'
 import { useUnreadCount } from './hooks/useUnreadCount'
 import { playChime } from './utils/chime'
 import { notify } from './utils/notifications'
@@ -127,6 +128,7 @@ const SyncCenter = lazy(() => import('./pages/SyncCenter'))
 const OwnerDashboard = lazy(() => import('./pages/OwnerDashboard'))
 const Cleanup = lazy(() => import('./pages/Cleanup'))
 const QuoteFunnel = lazy(() => import('./pages/QuoteFunnel'))
+const Crew = lazy(() => import('./pages/Crew'))
 const Settings = lazy(() => import('./pages/Settings'))
 const DesignSystem = lazy(() => import('./pages/DesignSystem'))
 
@@ -169,6 +171,7 @@ export default function App() {
 
   const isPublicRoute = location.pathname.startsWith('/quote/') || location.pathname.startsWith('/pay/')
     || location.pathname.startsWith('/job/') || location.pathname.startsWith('/portal')
+    || location.pathname.startsWith('/accept-invite')
   const isLoginRoute = location.pathname === '/login'
   const isAuthenticated = !!user && !!localStorage.getItem('brightbase_jwt')
 
@@ -180,6 +183,7 @@ export default function App() {
         <Route path="/job/:token" element={<PublicJobConfirm />} />
         <Route path="/portal/verify" element={<PortalVerify />} />
         <Route path="/portal" element={<CustomerPortal />} />
+        <Route path="/accept-invite" element={<AcceptInvite />} />
         <Route path="*" element={<Navigate to="/dashboard" replace />} />
       </Routes>
     )
@@ -266,6 +270,7 @@ export default function App() {
                   on desktop only because that's the default view there). */}
               <Route path="/dispatch" element={<Navigate to="/schedule?view=dispatch" replace />} />
               <Route path="/payroll" element={<Payroll />} />
+              <Route path="/crew" element={<Crew />} />
               <Route path="/crew-hours" element={<CrewHours />} />
               <Route path="/connecteam" element={<Connecteam />} />
               <Route path="/comms" element={<Comms />} />

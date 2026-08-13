@@ -12,7 +12,7 @@ from typing import Optional
 
 from database.db import get_db
 from database.models import User, AppSetting
-from auth_jwt import hash_password, verify_password, create_jwt, verify_jwt
+from auth_jwt import hash_password, verify_password, create_jwt, verify_jwt, read_invite_token
 from ratelimit import limiter
 
 logger = logging.getLogger(__name__)
@@ -739,6 +739,41 @@ def _ensure_not_last_admin(db: Session, user: User):
         raise HTTPException(status_code=409, detail="Can't remove or demote the last active admin.")
 
 
+class AcceptInvite(BaseModel):
+    token: str
+    password: str
+
+
+@router.post("/accept-invite", response_model=LoginResponse)
+def accept_invite(data: AcceptInvite, db: Session = Depends(get_db)):
+    """Public: an invited staff/crew member sets their password from the emailed
+    link and lands signed in. The token carries only an email + typ (no user_id),
+    so it can't be a session on its own, and it's single-use — once a password
+    exists a replayed invite is rejected, so it's never a password-reset backdoor."""
+    email = read_invite_token(data.token or "")
+    if not email:
+        raise HTTPException(status_code=400, detail="This invite link is invalid or has expired.")
+    if not data.password or len(data.password) < 8:
+        raise HTTPException(status_code=422, detail="Choose a password of at least 8 characters.")
+    u = (db.query(User).filter(func.lower(User.email) == email).first()
+         or db.query(User).filter(User.email == email).first())
+    if not u:
+        raise HTTPException(status_code=404, detail="That invite no longer matches an account.")
+    if u.password_hash:
+        raise HTTPException(status_code=409,
+                            detail="This invite was already used — sign in, or use password reset.")
+    u.password_hash = hash_password(data.password)
+    if not u.auth_provider:
+        u.auth_provider = "password"
+    u.active = True
+    if (u.status or "") in ("invited", "pending", ""):
+        u.status = "active"
+    db.commit(); db.refresh(u)
+    return LoginResponse(access_token=create_jwt(u.id, u.email, u.role),
+                         user_id=u.id, email=u.email, role=u.role,
+                         status=u.status or "active")
+
+
 @router.get("/users", dependencies=[Depends(require_role("admin"))])
 def list_workspace_users(db: Session = Depends(get_db), include_clients: bool = False):
     """All workspace users for the admin Users screen. Customer logins
@@ -800,6 +835,12 @@ def update_workspace_user(user_id: int, data: AdminUserUpdate, db: Session = Dep
     if data.active is not None:
         if not data.active:
             _ensure_not_last_admin(db, u)
+            # Keep status in lockstep with the active flag. This used to set
+            # active=False but leave status='active', so the Users screen showed
+            # an "Active" pill next to a "Re-enable" button for an account that
+            # actually couldn't log in (login checks `active`). The row's badge
+            # reads `status`, so a deactivated user must read 'disabled' there.
+            u.status = "disabled"
         u.active = data.active
         # Re-enabling a disabled account restores access in one step.
         if data.active and (u.status or "active") == "disabled":
@@ -808,7 +849,15 @@ def update_workspace_user(user_id: int, data: AdminUserUpdate, db: Session = Dep
         # "" clears the link; anything else sets it. Trimmed so a stray space
         # pasted from a Connecteam export doesn't silently fail to match
         # Job.cleaner_ids.
-        u.cleaner_id = data.cleaner_id.strip() or None
+        new_cid = data.cleaner_id.strip() or None
+        if new_cid and new_cid != u.cleaner_id and (
+            db.query(User).filter(User.cleaner_id == new_cid, User.id != u.id).first()
+        ):
+            # One crew ID = one person: a shared ID would give two logins the
+            # same schedule and double-accrue its pay in native payroll.
+            raise HTTPException(status_code=409,
+                                detail=f"Crew ID '{new_cid}' already belongs to another user.")
+        u.cleaner_id = new_cid
     # Per-cleaner pay rates: applied only when present in the request (null
     # clears, a number sets, omission leaves untouched).
     _fields_set = data.model_fields_set

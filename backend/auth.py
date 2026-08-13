@@ -34,6 +34,10 @@ _PUBLIC_PREFIXES = (
     "/api/version",
     "/api/auth/login",
     "/api/auth/register",
+    # Newly-added staff/crew set their password from an emailed invite link
+    # before any session exists; the handler validates a signed, typed,
+    # short-lived invite token itself.
+    "/api/auth/accept-invite",
     # Google sign-in: the login page calls these before a JWT exists.
     "/api/auth/google",
     "/api/intake/submit",

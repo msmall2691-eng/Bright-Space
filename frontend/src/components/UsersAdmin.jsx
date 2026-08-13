@@ -101,7 +101,15 @@ export default function UsersAdmin() {
 
       {!loading && (
         <div className="space-y-1.5">
-          {rest.map(u => (
+          {rest.map(u => {
+            // `active` (the login gate) and `status` (the badge) are separate
+            // columns and could disagree — a deactivated account used to keep
+            // status='active', showing an "Active" pill beside a "Re-enable"
+            // button for someone who couldn't log in. Derive both from one
+            // effective flag so the row can never contradict itself.
+            const isDisabled = !u.active || u.status === 'disabled'
+            const pillStatus = isDisabled ? 'disabled' : (u.status || 'active')
+            return (
             <div key={u.id} className="flex items-center gap-3 border border-hairline rounded-lg px-3 py-2.5">
               <div className="flex-1 min-w-0">
                 <div className="text-sm font-medium text-ink truncate flex items-center gap-1.5">
@@ -114,8 +122,8 @@ export default function UsersAdmin() {
                   {u.last_login_at ? ` · last login ${new Date(u.last_login_at).toLocaleDateString()}` : ''}
                 </div>
               </div>
-              <span className={`text-[11px] px-2 py-0.5 rounded-full border capitalize shrink-0 ${STATUS_STYLES[u.status] || STATUS_STYLES.active}`}>
-                {u.status}
+              <span className={`text-[11px] px-2 py-0.5 rounded-full border capitalize shrink-0 ${STATUS_STYLES[pillStatus] || STATUS_STYLES.active}`}>
+                {pillStatus}
               </span>
               <select value={u.role} disabled={busyId === u.id}
                 onChange={e => setRole(u, e.target.value)}
@@ -184,7 +192,7 @@ export default function UsersAdmin() {
                   />
                 </>
               )}
-              {u.active && u.status !== 'disabled' ? (
+              {!isDisabled ? (
                 <button onClick={() => setActive(u, false)} disabled={busyId === u.id}
                   className="text-xs px-2.5 py-1.5 bg-panel border border-hairline hover:border-red-300 hover:text-red-700 disabled:opacity-60 text-ink-3 rounded-lg transition-colors shrink-0">
                   Deactivate
@@ -196,7 +204,8 @@ export default function UsersAdmin() {
                 </button>
               )}
             </div>
-          ))}
+            )
+          })}
           {rest.length === 0 && pending.length === 0 && (
             <p className="text-sm text-ink-3 py-4 text-center">No users yet.</p>
           )}
