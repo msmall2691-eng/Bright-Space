@@ -154,3 +154,108 @@ def test_admin_can_link_a_cleaner_id_via_users_endpoint():
         db = SessionLocal()
         db.query(User).filter(User.id == uid).delete()
         db.commit(); db.close()
+
+
+# ── /my-week: earned-so-far + predicted pay ──────────────────────────────────
+
+class _PaidCleaner(_Cleaner):
+    """my-week reads the caller's per-cleaner rates off the User object, so the
+    stub carries them (None on the base stub would be an AttributeError)."""
+    def __init__(self, uid, cleaner_id, res=30.0, rental=None, deep=None):
+        super().__init__(uid, cleaner_id)
+        self.pay_rate_residential = res
+        self.pay_rate_rental = rental
+        self.pay_rate_deep = deep
+
+
+def test_my_week_predicts_upcoming_and_excludes_punched_jobs(ids):
+    """The cleaner's week view: a job already worked (closed punch) counts in
+    'earned' via the payroll engine and is NOT double-counted as a prediction;
+    remaining assigned jobs are predicted at scheduled-hours × (rate + bump),
+    piece jobs at the property's flat rate."""
+    from datetime import datetime, time as dtime
+    from database.models import TimeEntry
+
+    crew = f"CT-{uuid.uuid4().hex[:6]}"
+    cid = _mk_client(ids)
+
+    # Job A — worked already: 2h closed punch. Shop default residential rate
+    # (no DB user for this crew ID) → earned = 2 × $25 = $50.
+    pid_a = _mk_str_property(ids, cid)
+    job_a = _mk_job(ids, cid, pid_a, [crew], offset_days=0, job_type="residential")
+    db = SessionLocal()
+    e = TimeEntry(org_id=1, cleaner_id=crew, job_id=job_a,
+                  clock_in_at=datetime.combine(business_today(), dtime(12, 0)),
+                  clock_out_at=datetime.combine(business_today(), dtime(14, 0)),
+                  source="native")
+    db.add(e); db.commit(); db.refresh(e); entry_id = e.id
+    db.close()
+
+    # Job B — still ahead today, 10:00–13:00 (3h), +$1/hr bump → 3 × (30+1) = 93
+    # at the caller's residential override.
+    pid_b = _mk_str_property(ids, cid)
+    job_b = _mk_job(ids, cid, pid_b, [crew], offset_days=0, job_type="residential")
+    db = SessionLocal()
+    db.query(Job).filter(Job.id == job_b).update({"pay_rate_bump": 1.0})
+    db.commit(); db.close()
+
+    # Job C — a turnover forced to piece rate, $80 flat (deterministic on any
+    # weekday, so the test doesn't care which day of the week 'today' is).
+    pid_c = _mk_str_property(ids, cid)
+    job_c = _mk_job(ids, cid, pid_c, [crew], offset_days=0, job_type="str_turnover")
+    db = SessionLocal()
+    db.query(Job).filter(Job.id == job_c).update({"pay_mode": "piece"})
+    db.query(Property).filter(Property.id == pid_c).update({"turnover_rate": 80.0})
+    db.commit(); db.close()
+
+    app.dependency_overrides[get_current_user] = lambda: _PaidCleaner(9005, crew)
+    app.dependency_overrides[current_org_id] = lambda: 1
+    api = TestClient(app)
+    try:
+        res = api.get("/api/crew/my-week")
+        assert res.status_code == 200, res.text
+        body = res.json()
+
+        # Earned = 2h at the CURRENT shop residential rate (no DB user carries
+        # this crew ID, so the engine falls back to the settings default —
+        # read it live so an earlier test tweaking rates can't flake this).
+        from modules.payroll.router import _get_rates
+        db = SessionLocal(); shop_res = _get_rates(db)["residential_rate"]; db.close()
+        expected_earned = round(2.0 * shop_res, 2)
+        assert body["earned"]["gross_pay"] == expected_earned
+        assert body["earned"]["hours"] == 2.0
+
+        by_id = {j["id"]: j for j in body["upcoming"]}
+        assert job_a not in by_id          # worked → earned, never predicted too
+        assert by_id[job_b]["predicted_pay"] == 93.0
+        assert by_id[job_b]["bump"] == 1.0
+        assert by_id[job_c]["piece"] is True
+        assert by_id[job_c]["predicted_pay"] == 80.0
+
+        assert body["predicted_upcoming_total"] == 173.0
+        assert body["predicted_week_total"] == round(expected_earned + 173.0, 2)
+    finally:
+        db = SessionLocal()
+        db.query(TimeEntry).filter(TimeEntry.id == entry_id).delete(synchronize_session=False)
+        db.commit(); db.close()
+        app.dependency_overrides.pop(get_current_user, None)
+        app.dependency_overrides.pop(current_org_id, None)
+
+
+def test_my_week_requires_cleaner_role_and_crew_id():
+    # Wrong role → 403 (the roster/payroll surface stays staff-only).
+    class _Member(_PaidCleaner):
+        def __init__(self):
+            super().__init__(9006, "CT-X")
+            self.role = "member"
+    app.dependency_overrides[get_current_user] = lambda: _Member()
+    app.dependency_overrides[current_org_id] = lambda: 1
+    api = TestClient(app)
+    try:
+        assert api.get("/api/crew/my-week").status_code == 403
+        # No crew ID linked yet → 400 with the setup message.
+        app.dependency_overrides[get_current_user] = lambda: _PaidCleaner(9007, None)
+        assert api.get("/api/crew/my-week").status_code == 400
+    finally:
+        app.dependency_overrides.pop(get_current_user, None)
+        app.dependency_overrides.pop(current_org_id, None)

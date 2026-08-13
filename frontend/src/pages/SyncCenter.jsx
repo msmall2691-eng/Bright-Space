@@ -13,13 +13,14 @@ import { useSyncOverview } from '../hooks/useSyncOverview'
 /**
  * Sync Control Center (`/sync`) — one screen for the whole scheduling nervous
  * system. The engine was already sound (BrightBase is the master; it pushes
- * one-way to Google + Connecteam, pulls Airbnb/VRBO turnovers inbound, and
- * generates recurring visits itself) — but that truth was scattered across a
- * health pill, a toggles panel, per-feed status on property pages, and ~14
- * invisible background ticks. This page makes it legible: every connected
- * schedule as a card (which way it flows, who wins a conflict, when it last
- * synced, what's waiting), the background jobs finally visible, an attention
- * list of only what a human should act on, and one master auto-pilot switch.
+ * one-way to Google, pulls Airbnb/VRBO turnovers inbound, and generates
+ * recurring visits itself) — but that truth was scattered across a
+ * health pill, a toggles panel, per-feed status on property pages, and a
+ * dozen invisible background ticks. This page makes it legible: every
+ * connected schedule as a card (which way it flows, who wins a conflict,
+ * when it last synced, what's waiting), the background jobs finally visible,
+ * an attention list of only what a human should act on, and one master
+ * auto-pilot switch.
  *
  * All reads come from GET /api/jobs/sync-overview. All actions reuse existing
  * endpoints (settings/automation, jobs/sync-reconcile, jobs/push-to-gcal,
@@ -28,8 +29,7 @@ import { useSyncOverview } from '../hooks/useSyncOverview'
  */
 
 // Per-channel "Sync now" → the existing endpoint that flushes that channel.
-// reconcile pushes unsynced jobs to Google AND dispatches Connecteam shifts,
-// so it's the right catch-up for the outbound crew side.
+// reconcile pushes unsynced jobs to Google — the catch-up for the outbound side.
 const SYNC_ENDPOINT = {
   gcal: '/api/jobs/push-to-gcal',
   reconcile: '/api/jobs/sync-reconcile',
@@ -38,15 +38,13 @@ const SYNC_ENDPOINT = {
 }
 
 // The automation flags the master auto-pilot switch flips together — the ones
-// that pull, push, generate, dispatch, and reconcile on their own. Reconcile is
-// included so "auto-pilot off" actually stops the 30-min self-heal tick;
-// otherwise it would keep pushing to Google/Connecteam and "Manual syncs only"
-// would be a lie.
+// that pull, push, generate, and reconcile on their own. Reconcile is included
+// so "auto-pilot off" actually stops the 30-min self-heal tick; otherwise it
+// would keep pushing to Google and "Manual syncs only" would be a lie.
 const AUTOPILOT_KEYS = [
   'gcal_auto_sync_enabled',
   'ical_auto_sync_enabled',
   'recurring_auto_generate_enabled',
-  'connecteam_auto_dispatch_enabled',
   'sync_reconcile_enabled',
 ]
 
@@ -270,7 +268,7 @@ function BackgroundJobsPanel({ jobs }) {
             )
           })}
           <div className="px-4 py-2.5 text-[11px] text-ink-3">
-            These run automatically. Turn the ones that push, pull, generate, and dispatch on or off with the auto-pilot switch above.
+            These run automatically. Turn the ones that push, pull, and generate on or off with the auto-pilot switch above.
           </div>
         </div>
       )}
@@ -363,7 +361,7 @@ export default function SyncCenter() {
   const syncEverything = useCallback(async () => {
     setBusy('all')
     const steps = [
-      ['Crews & Google', '/api/jobs/sync-reconcile'],
+      ['Google Calendar', '/api/jobs/sync-reconcile'],
       ['Rental feeds', '/api/properties/sync-all'],
       ['Recurring visits', '/api/recurring/generate-all'],
     ]
@@ -431,7 +429,7 @@ export default function SyncCenter() {
               <div className="text-base font-bold text-ink">{data.headline}</div>
               <p className="text-[13px] text-ink-3 mt-0.5">
                 <span className="font-semibold text-ink-2">BrightBase is the master.</span> Your schedule here is the
-                source of truth — it pushes out to Google &amp; Connecteam, pulls Airbnb turnovers in, and keeps recurring
+                source of truth — it pushes out to Google, pulls Airbnb turnovers in, and keeps recurring
                 visits filled.{' '}
                 {googleAuthority
                   ? 'Google is set as the calendar’s source of truth, so time changes you make in Google sync back here.'
@@ -468,7 +466,7 @@ export default function SyncCenter() {
           ))}
         </div>
 
-        {/* The 14 hidden hands, finally visible. */}
+        {/* The hidden hands, finally visible. */}
         <BackgroundJobsPanel jobs={data.background_jobs || []} />
 
         {/* Phase 2 foundation: the append-only schedule log, so you can watch it capture. */}

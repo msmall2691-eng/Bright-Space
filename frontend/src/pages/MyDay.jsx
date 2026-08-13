@@ -7,12 +7,10 @@
  *
  * Phase 1: read-only job list. Phase 2a (this file): a native time clock —
  * Clock in / Clock out per job, a live "on the clock" bar, and hours today.
- * The clock is recorded natively but is NOT wired into payroll yet (payroll
- * still reads Connecteam); it exists to prove the clock works and to build up
- * hours to reconcile against Connecteam before any cutover.
+ * The clock is what Payroll reads — the crew works fully native now.
  */
 import { useCallback, useEffect, useState } from 'react'
-import { MapPin, KeyRound, ParkingCircle, LogOut, RefreshCw, CalendarDays, Clock, Car } from 'lucide-react'
+import { MapPin, KeyRound, ParkingCircle, LogOut, RefreshCw, CalendarDays, Clock, Car, DollarSign, ChevronDown } from 'lucide-react'
 import { get, post, patch, logout } from '../api'
 import { EmptyState, ErrorState, Skeleton } from '../components/ui'
 
@@ -38,9 +36,9 @@ function fmtClock(iso) {
 }
 
 // One closed punch in the "Today's punches" recap, with an inline miles editor
-// (parity with Connecteam, where miles are entered per job). Tapping the miles
-// value opens a small number field that PATCHes the entry — the safety net for a
-// clock-out where miles were skipped or fat-fingered.
+// (miles are entered per job). Tapping the miles value opens a small number
+// field that PATCHes the entry — the safety net for a clock-out where miles
+// were skipped or fat-fingered.
 function PunchRecap({ entry, onSaveMiles, busy = false }) {
   const [editing, setEditing] = useState(false)
   const [val, setVal] = useState(entry.miles == null ? '' : String(entry.miles))
@@ -79,6 +77,76 @@ function PunchRecap({ entry, onSaveMiles, busy = false }) {
         </button>
       )}
     </div>
+  )
+}
+
+const fmtMoney = (n) => `$${Number(n || 0).toFixed(2)}`
+
+/** "This week" pay card: earned so far (from punches, same math as the office's
+ *  Payroll page) + a prediction for the rest of the week from the jobs still
+ *  assigned. Collapsed to the two headline numbers; expands to the per-job
+ *  breakdown so a cleaner can see where the prediction comes from. */
+function WeekPayCard({ week }) {
+  const [open, setOpen] = useState(false)
+  if (!week) return null
+  const upcoming = week.upcoming || []
+  return (
+    <section>
+      <div className="bg-panel border border-hairline rounded-xl overflow-hidden">
+        <button onClick={() => setOpen(o => !o)} className="w-full px-4 py-3 flex items-center justify-between gap-3">
+          <div className="flex items-center gap-2 min-w-0">
+            <span className="grid place-items-center w-8 h-8 rounded-lg bg-emerald-50 text-emerald-600 shrink-0">
+              <DollarSign className="w-4 h-4" />
+            </span>
+            <div className="text-left leading-tight min-w-0">
+              <div className="text-[13px] font-bold text-ink">This week</div>
+              <div className="text-[11px] text-ink-3">
+                Earned {fmtMoney(week.earned?.gross_pay)} · on track for {fmtMoney(week.predicted_week_total)}
+              </div>
+            </div>
+          </div>
+          <ChevronDown className={`w-4 h-4 text-ink-3 shrink-0 transition-transform ${open ? 'rotate-180' : ''}`} />
+        </button>
+        {open && (
+          <div className="px-4 pb-3 border-t border-hairline">
+            <div className="flex items-center justify-between text-[12px] py-2 text-ink-2">
+              <span>Earned so far ({week.earned?.hours || 0}h worked
+                {week.earned?.miles ? `, ${week.earned.miles} mi` : ''})</span>
+              <span className="font-semibold tabular-nums">{fmtMoney(week.earned?.gross_pay)}</span>
+            </div>
+            {upcoming.length > 0 && (
+              <div className="divide-y divide-hairline border-t border-hairline">
+                {upcoming.map(j => (
+                  <div key={j.id} className="flex items-center justify-between gap-2 py-2 text-[12px]">
+                    <div className="min-w-0">
+                      <div className="text-ink-2 truncate">{j.property_name || j.title}</div>
+                      <div className="text-[11px] text-ink-3">
+                        {new Date(`${j.date}T12:00:00`).toLocaleDateString(undefined, { weekday: 'short' })}
+                        {' · '}
+                        {j.piece
+                          ? (j.unpriced ? 'piece rate — not set yet' : 'piece rate')
+                          : `${j.hours}h${j.bump ? ` · +$${j.bump}/hr` : ''}`}
+                      </div>
+                    </div>
+                    <span className="font-semibold tabular-nums text-ink shrink-0">
+                      {j.unpriced ? '—' : fmtMoney(j.predicted_pay)}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
+            <div className="flex items-center justify-between text-[12px] py-2 border-t border-hairline font-bold text-ink">
+              <span>Week total (predicted)</span>
+              <span className="tabular-nums">{fmtMoney(week.predicted_week_total)}</span>
+            </div>
+            <p className="text-[10px] text-ink-3 pb-1">
+              Predictions use each job's scheduled length and your pay rates; the final number
+              comes from your actual clocked hours.
+            </p>
+          </div>
+        )}
+      </div>
+    </section>
   )
 }
 
@@ -188,8 +256,13 @@ export default function MyDay() {
   const [clockOutOpen, setClockOutOpen] = useState(false)
   const [milesInput, setMilesInput] = useState('')
 
+  const [weekPay, setWeekPay] = useState(null)
+
   const fetchDay = useCallback((silent = false) => {
     if (!silent) { setLoading(true); setError(null) }
+    // Week pay rides along on every refresh (clocking out changes "earned so
+    // far") but is best-effort — the day view never blocks on it.
+    get('/api/crew/my-week').then(setWeekPay).catch(() => {})
     return get('/api/crew/my-day')
       .then(setData)
       .catch(e => { if (!silent) setError(e) })
@@ -219,8 +292,8 @@ export default function MyDay() {
     finally { setActionBusy(false) }
   }, [fetchDay])
 
-  // Clock-out is a two-step: open the miles prompt, then confirm. Miles at
-  // clock-out mirrors how the crew enter miles per job on Connecteam.
+  // Clock-out is a two-step: open the miles prompt, then confirm. Miles are
+  // entered per job at clock-out so mileage lands on the right shift.
   const requestClockOut = useCallback(() => {
     setMilesInput(''); setActionError(null); setClockOutOpen(true)
   }, [])
@@ -333,6 +406,8 @@ export default function MyDay() {
 
         {!loading && !error && data && (
           <>
+            <WeekPayCard week={weekPay} />
+
             <section>
               <div className="flex items-center justify-between mb-2">
                 <h2 className="text-xs font-semibold uppercase tracking-wide text-ink-3">Today</h2>

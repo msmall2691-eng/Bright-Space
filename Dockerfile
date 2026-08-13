@@ -52,7 +52,7 @@ ENV SCHEDULE_EVENT_LOG_ENABLED=1
 EXPOSE 8000
 # --workers ${UVICORN_WORKERS:-4}: one uvicorn worker was blocking ALL traffic
 # whenever a request tied it up (a slow /api/jobs, a hung Twilio call, the
-# 3-minute Connecteam "Push open shifts"). Every other request queued past
+# long-running request). Every other request queued past
 # Railway's edge timeout → intermittent 502 "Application failed to respond."
 # Memory headroom is huge (~300 MB per worker × 4 = ~1.2 GB well under the
 # Railway instance). Override via UVICORN_WORKERS env var if we ever need to

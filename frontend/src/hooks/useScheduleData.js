@@ -6,7 +6,7 @@ import { useEmployees } from './useEmployees'
 
 /** Loads the /api/schedule/week aggregate (visits + jobs + properties +
  *  clients) for the range implied by `viewMode` around `currentDate`,
- *  plus the Connecteam employee roster used for cleaner-name lookup.
+ *  plus the crew roster used for cleaner-name lookup.
  *
  *  Audit §16: the range is now view-aware. agenda + week fetch the
  *  Sun-Sat week (unchanged). Month fetches the full calendar-grid range

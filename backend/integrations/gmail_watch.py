@@ -56,7 +56,7 @@ def is_configured() -> bool:
 def live_sync_enabled(db: Session) -> bool:
     """Whether real-time Gmail push is turned on (Settings → Automation),
     AND a topic is configured. OFF by default; env GMAIL_LIVE_SYNC overrides the
-    DB toggle (mirrors connecteam_outbox_enabled)."""
+    DB toggle."""
     if not is_configured():
         return False
     env = os.getenv("GMAIL_LIVE_SYNC")

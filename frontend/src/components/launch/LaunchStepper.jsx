@@ -1,8 +1,8 @@
 /**
  * LaunchStepper — run one deal through the pipeline in a single surface.
  *
- * Quote → Send → Accept → Schedule → Dispatch, opening at the deal's current
- * stage (detected in useLaunch). Each step is one deliberate action wrapping
+ * Quote → Send → Accept → Schedule, opening at the deal's current stage
+ * (detected in useLaunch). Each step is one deliberate action wrapping
  * an existing endpoint; steps already behind the deal render as done, the
  * current step is actionable, later steps are locked until their turn. The
  * money/scheduling moves are deterministic buttons — no AI in the firing path
@@ -11,17 +11,16 @@
  * Twenty idiom: flat panel, hairline rail, calm ink, one indigo accent; the
  * active step gets the color, the rest stay quiet.
  */
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { X, Check, Send, CheckCircle2, CalendarDays, Rocket, ArrowRight, Lock } from 'lucide-react'
-import { useLaunch, LAUNCH_STEPS } from '../../hooks/useLaunch'
+import { X, Check, Send, CheckCircle2, CalendarDays, Rocket, ArrowRight } from 'lucide-react'
+import { useLaunch } from '../../hooks/useLaunch'
 
 const STEP_META = {
   quote:    { label: 'Quote',    icon: Rocket,       blurb: 'Draft the price for this deal.' },
   send:     { label: 'Send',     icon: Send,         blurb: 'Email the quote to the customer.' },
   accept:   { label: 'Accept',   icon: CheckCircle2, blurb: 'Mark the quote accepted (creates the job).' },
   schedule: { label: 'Schedule', icon: CalendarDays, blurb: 'Put the job on the calendar.' },
-  dispatch: { label: 'Dispatch', icon: Rocket,       blurb: 'Send the assigned crew their shift.' },
 }
 
 function Rail({ steps, currentStep }) {
@@ -81,12 +80,7 @@ function ScheduleForm({ busy, onSchedule }) {
 export default function LaunchStepper({ opportunityId, title, onClose }) {
   const L = useLaunch(opportunityId)
   const navigate = useNavigate()
-  const { steps, currentStep, primaryQuote, primaryJob, busy, loading, error } = L
-
-  // Close automatically once the whole pipeline is done (dispatch complete).
-  useEffect(() => {
-    if (steps.length && steps.every(s => s.done)) { /* stay open on the done state */ }
-  }, [steps])
+  const { steps, currentStep, primaryQuote, busy, loading, error } = L
 
   const meta = STEP_META[currentStep]
   const allDone = steps.length > 0 && steps.every(s => s.done)
@@ -101,12 +95,6 @@ export default function LaunchStepper({ opportunityId, title, onClose }) {
         return { label: busy ? 'Sending…' : 'Send quote', icon: Send, onClick: L.sendQuote, disabled: !primaryQuote }
       case 'accept':
         return { label: busy ? 'Accepting…' : 'Mark accepted', icon: CheckCircle2, onClick: L.acceptQuote, disabled: !primaryQuote }
-      case 'dispatch':
-        return {
-          label: busy ? 'Sending…' : 'Send to crew', icon: Rocket, onClick: L.dispatchJob,
-          disabled: !primaryJob || !(primaryJob.cleaner_ids?.length),
-          hint: primaryJob && !(primaryJob.cleaner_ids?.length) ? 'Assign a crew to this job first.' : null,
-        }
       default:
         return null
     }
@@ -122,7 +110,7 @@ export default function LaunchStepper({ opportunityId, title, onClose }) {
             <span className="grid place-items-center w-8 h-8 rounded-lg bg-indigo-500/10 text-indigo-600 dark:text-indigo-300 shrink-0"><Rocket className="w-4 h-4" /></span>
             <div className="min-w-0">
               <h2 className="text-sm font-semibold text-ink truncate">Launch{title ? ` · ${title}` : ''}</h2>
-              <p className="text-[11px] text-ink-3">Run this deal through to dispatch</p>
+              <p className="text-[11px] text-ink-3">Run this deal through to the schedule</p>
             </div>
           </div>
           <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-bg-2 text-ink-3"><X className="w-5 h-5" /></button>
@@ -141,7 +129,7 @@ export default function LaunchStepper({ opportunityId, title, onClose }) {
                 <div className="text-center py-6">
                   <span className="grid place-items-center w-12 h-12 rounded-2xl bg-emerald-500/15 text-emerald-600 dark:text-emerald-300 mx-auto mb-3"><Check className="w-6 h-6" /></span>
                   <p className="text-sm font-semibold text-ink">Launched</p>
-                  <p className="text-[12px] text-ink-3 mt-0.5">This deal is scheduled and the crew has been notified.</p>
+                  <p className="text-[12px] text-ink-3 mt-0.5">This deal is on the schedule — the assigned crew sees it on My Day.</p>
                 </div>
               ) : (
                 <>
@@ -154,16 +142,11 @@ export default function LaunchStepper({ opportunityId, title, onClose }) {
                   {currentStep === 'schedule' ? (
                     <ScheduleForm busy={busy} onSchedule={L.scheduleJob} />
                   ) : action ? (
-                    <>
-                      <button onClick={action.onClick} disabled={action.disabled || busy}
-                        className="inline-flex items-center gap-1.5 text-[13px] font-semibold px-3.5 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white">
-                        {action.icon && <action.icon className="w-4 h-4" />} {action.label}
-                        {!action.icon && <ArrowRight className="w-4 h-4" />}
-                      </button>
-                      {action.hint && (
-                        <p className="mt-2 inline-flex items-center gap-1 text-[11px] text-amber-600 dark:text-amber-300"><Lock className="w-3 h-3" /> {action.hint}</p>
-                      )}
-                    </>
+                    <button onClick={action.onClick} disabled={action.disabled || busy}
+                      className="inline-flex items-center gap-1.5 text-[13px] font-semibold px-3.5 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white">
+                      {action.icon && <action.icon className="w-4 h-4" />} {action.label}
+                      {!action.icon && <ArrowRight className="w-4 h-4" />}
+                    </button>
                   ) : null}
 
                   {/* Context on what already exists for the deal. */}

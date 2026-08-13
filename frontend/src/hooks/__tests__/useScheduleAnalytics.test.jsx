@@ -34,7 +34,7 @@ describe('useScheduleAnalytics', () => {
     ]
     const employees = [{ id: 'a' }, { id: 'b' }, { id: 'c' }] // 3 crews × 8h = 24 capacity
     const { result } = renderHook(() =>
-      useScheduleAnalytics({ visits, jobs: {}, currentDate: anchor, employees }),
+      useScheduleAnalytics({ visits, currentDate: anchor, employees }),
     )
     const stats = result.current.todayStats
     expect(stats.jobs).toBe(3)             // cancelled excluded
@@ -44,34 +44,13 @@ describe('useScheduleAnalytics', () => {
     expect(stats.capacityPct).toBe(29)     // 7 / 24 ≈ 29%
   })
 
-  it('counts crew hand-off coverage over today’s assigned, open visits', () => {
-    const visits = [
-      makeVisit({ id: 1, date: today, start: '09:00', end: '12:00', cleaners: ['a', 'b'] }), // fully sent
-      makeVisit({ id: 2, date: today, start: '09:00', end: '11:00', cleaners: ['c'] }),      // not sent
-      makeVisit({ id: 3, date: today, start: '14:00', end: '16:00', cleaners: [] }),         // unassigned → not counted
-      makeVisit({ id: 6, date: today, start: '10:00', end: '11:00', cleaners: ['a'], status: 'completed' }), // terminal → not counted
-    ]
-    const jobs = {
-      1: { id: 1, cleaner_ids: ['a', 'b'], connecteam_shift_ids: ['s1', 's2'] },
-      2: { id: 2, cleaner_ids: ['c'], connecteam_shift_ids: [] },
-      6: { id: 6, cleaner_ids: ['a'], connecteam_shift_ids: ['s'] },
-    }
-    const employees = [{ id: 'a' }, { id: 'b' }, { id: 'c' }]
-    const { result } = renderHook(() =>
-      useScheduleAnalytics({ visits, jobs, currentDate: anchor, employees }),
-    )
-    const stats = result.current.todayStats
-    expect(stats.assignedForHandoff).toBe(2)  // visits 1 and 2 (not the unassigned or completed)
-    expect(stats.sentToCrew).toBe(1)          // only visit 1 is fully pushed
-  })
-
   it('produces a 7-day Sunday-first window with load per day', () => {
     const visits = [
       makeVisit({ id: 1, date: today, start: '09:00', end: '17:00', cleaners: ['a'] }),      // 8h → 100% w/ 1 crew, ~33% w/ 3
     ]
     const employees = [{ id: 'a' }, { id: 'b' }, { id: 'c' }]
     const { result } = renderHook(() =>
-      useScheduleAnalytics({ visits, jobs: {}, currentDate: anchor, employees }),
+      useScheduleAnalytics({ visits, currentDate: anchor, employees }),
     )
     const { weekDates, loadByDate } = result.current
     expect(weekDates.length).toBe(7)
@@ -88,7 +67,7 @@ describe('useScheduleAnalytics', () => {
     ]
     const employees = [{ id: 'sarah' }, { id: 'grace' }, { id: 'jamie' }]
     const { result } = renderHook(() =>
-      useScheduleAnalytics({ visits, jobs: {}, currentDate: anchor, employees }),
+      useScheduleAnalytics({ visits, currentDate: anchor, employees }),
     )
     const load = result.current.crewLoad
     const sarah = load.find(c => c.id === 'sarah')
@@ -105,7 +84,7 @@ describe('useScheduleAnalytics', () => {
       makeVisit({ id: 3, date: today, start: '13:00', end: '15:00' }),
     ]
     const { result } = renderHook(() =>
-      useScheduleAnalytics({ visits, jobs: {}, currentDate: anchor, employees: [] }),
+      useScheduleAnalytics({ visits, currentDate: anchor, employees: [] }),
     )
     const unassigned = result.current.unassignedToday
     expect(unassigned.map(v => v.id)).toEqual([2, 3, 1])

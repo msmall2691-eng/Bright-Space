@@ -7,12 +7,12 @@ import {
 import { get, put, patch, post } from '../api'
 import { PageHeader } from '../components/ui'
 
-// Payroll / Connecteam breakdown.
-// Pulls Time Clock punches for a pay period and splits each crew member's
-// hours into residential vs rental, weekday vs weekend, with mileage and a
-// computed gross. Rates are editable; and each shift can be manually set to
-// Hourly / Piece rate / Exclude so piece-rate ("Rate Pay") jobs can have their
-// hours swapped out for a flat amount at payroll time.
+// Payroll breakdown.
+// Pulls native time-clock punches for a pay period and splits each crew
+// member's hours into residential vs rental, weekday vs weekend, with mileage
+// and a computed gross. Rates are editable; and each shift can be manually set
+// to Hourly / Piece rate / Exclude so piece-rate ("Rate Pay") jobs can have
+// their hours swapped out for a flat amount at payroll time.
 
 const money = (n) => `$${(Number(n) || 0).toFixed(2)}`
 const hrs = (n) => `${(Number(n) || 0).toFixed(1)}h`
@@ -51,13 +51,11 @@ export default function Payroll() {
   const [startDate, setStartDate] = useState(isoDaysAgo(14))
   const [endDate, setEndDate] = useState(isoDaysAgo(0))
   const [data, setData] = useState(null)
-  const [ctRates, setCtRates] = useState({})
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [expanded, setExpanded] = useState({})
   const [overrides, setOverrides] = useState({})
   const [square, setSquare] = useState(null)   // { mode:'preview'|'sent', data, busy, error }
-  const [source, setSource] = useState('connecteam')  // 'connecteam' | 'native'
 
   // Persist manual overrides per pay period so they survive a refresh.
   const ovKey = `payroll_overrides_${startDate}_${endDate}`
@@ -76,34 +74,14 @@ export default function Payroll() {
 
   const pull = async () => {
     if (!startDate || !endDate) { setError('Select a date range'); return }
-    setLoading(true); setError(''); setData(null); setCtRates({})
+    setLoading(true); setError(''); setData(null)
     try {
       const d = await get(`/api/payroll/summary?start_date=${startDate}&end_date=${endDate}`)
       setData(d)
-      get(`/api/connecteam/pay-rates?start_date=${startDate}&end_date=${endDate}`)
-        .then(r => setCtRates(r.rates || {}))
-        .catch(() => setCtRates({}))
     } catch (e) {
       setError(String(e.message || e))
     }
     setLoading(false)
-  }
-
-  // Payroll time source (Connecteam vs the native BrightBase clock). Admin-only
-  // toggle; the backend enforces the role and keeps the default at 'connecteam'.
-  useEffect(() => {
-    get('/api/payroll/source').then(r => setSource(r.source || 'connecteam')).catch(() => {})
-  }, [])
-  const changeSource = async (src) => {
-    if (src === source) return
-    setError('')
-    try {
-      const r = await put('/api/payroll/source', { source: src })
-      setSource(r.source || src)
-      if (startDate && endDate) pull()
-    } catch (e) {
-      setError(String(e.message || e))
-    }
   }
 
   const rates = data?.rates
@@ -154,16 +132,12 @@ export default function Payroll() {
   }
 
   const t = data?.totals
-  const isAdmin = (() => {
-    try { return JSON.parse(localStorage.getItem('brightbase_user') || '{}').role === 'admin' }
-    catch { return false }
-  })()
 
   return (
     <div className="max-w-6xl">
       <PageHeader
         title="Payroll"
-        subtitle="Pull Connecteam timesheets for a pay period and break the hours down by job type for payroll."
+        subtitle="Pull the crew's time-clock hours for a pay period and break them down by job type for payroll."
         icon={DollarSign}
         iconColor="emerald"
       >
@@ -182,34 +156,16 @@ export default function Payroll() {
             className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white disabled:bg-bg-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors">
             <Search className="w-4 h-4" />{loading ? 'Loading...' : 'Pull Data'}
           </button>
-          {isAdmin && (
-            <div>
-              <label className="block text-xs text-ink-3 mb-1">Hours source</label>
-              <div className="inline-flex rounded-lg border border-hairline overflow-hidden">
-                {[['connecteam', 'Connecteam'], ['native', 'Native clock']].map(([s, label]) => (
-                  <button key={s} onClick={() => changeSource(s)} disabled={loading}
-                    title={s === 'native'
-                      ? 'Read hours from the native BrightBase clock (verify in Crew Hours first)'
-                      : 'Read hours from Connecteam Time Clock (default)'}
-                    className={`px-3 py-2 text-sm font-medium transition-colors ${source === s ? 'bg-indigo-600 text-white' : 'bg-panel text-ink-2 hover:bg-bg-2'}`}>
-                    {label}
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
           {data && (
             <>
               <button onClick={exportCsv}
                 className="flex items-center gap-2 bg-panel hover:bg-bg-2 border border-hairline px-4 py-2 rounded-lg text-sm font-medium transition-colors">
                 <Download className="w-4 h-4" />Export CSV
               </button>
-              {source !== 'native' && (
-                <button onClick={() => sendSquare(true)} disabled={square?.busy}
-                  className="flex items-center gap-2 bg-panel hover:bg-bg-2 border border-hairline px-4 py-2 rounded-lg text-sm font-medium transition-colors">
-                  <Send className="w-4 h-4" />Send to Square
-                </button>
-              )}
+              <button onClick={() => sendSquare(true)} disabled={square?.busy}
+                className="flex items-center gap-2 bg-panel hover:bg-bg-2 border border-hairline px-4 py-2 rounded-lg text-sm font-medium transition-colors">
+                <Send className="w-4 h-4" />Send to Square
+              </button>
             </>
           )}
         </div>
@@ -255,11 +211,7 @@ export default function Payroll() {
                 Mileage {money(rates.mileage_rate)}/mi · Weekend rentals paid per-property piece rate
               </div>
               <div>
-                {data.hours_source === 'connecteam'
-                  ? <span className="text-emerald-400">✓ Total hours pulled from Connecteam's official timesheet (their rounding applied) — matches Connecteam exactly.</span>
-                  : data.hours_source === 'native'
-                  ? <span className="text-blue-400">Hours and mileage from the native BrightBase clock (crew enter miles at clock-out).</span>
-                  : <span className="text-amber-400">Total hours computed from raw punches (Connecteam's official totals unavailable for this range).</span>}
+                <span className="text-blue-400">Hours and mileage from the BrightBase time clock (crew enter miles at clock-out).</span>
                 {t.unallocated_hours > 0.05 && <span> · {t.unallocated_hours}h not yet split into a job bucket.</span>}
               </div>
             </div>
@@ -276,14 +228,6 @@ export default function Payroll() {
                         <div className="flex items-center gap-1.5 font-medium text-ink flex-wrap">
                           <User className="w-4 h-4 text-ink-3 shrink-0" />{emp.name}
                           <span className="text-xs text-ink-3 ml-1">{hrs(emp.total_hours)} total</span>
-                          {emp.hours_source === 'connecteam' && (
-                            <span className="text-[11px] text-emerald-400/90 ml-1" title="From Connecteam's official timesheet">· Connecteam</span>
-                          )}
-                          {ctRates[emp.employee_id]?.rate != null && (
-                            <span className="text-[11px] text-ink-3 ml-1" title="Rate stored in Connecteam">
-                              · CT rate {money(ctRates[emp.employee_id].rate)}/hr
-                            </span>
-                          )}
                         </div>
                         <div className="flex items-center gap-2">
                           {a.changed && <span className="text-xs text-ink-3 line-through">{money(emp.gross_pay)}</span>}

@@ -7,7 +7,7 @@ vi.mock('../../api', () => ({ get: (...a) => get(...a), post: (...a) => post(...
 vi.mock('../../utils/toastBus', () => ({ toast: { error: vi.fn(), success: vi.fn(), info: vi.fn() } }))
 vi.mock('../../hooks/useEmployees', () => ({
   useEmployees: () => ({
-    // Mixed roster shapes: a clean {id,name} AND a raw Connecteam
+    // Mixed roster shapes: a clean {id,name} AND a legacy
     // {userId,firstName,lastName} with no `id`, to prove normalization.
     employees: [
       { id: 'e1', name: 'Alice' },
@@ -31,11 +31,11 @@ const renderModal = (props = {}) =>
   render(<JobCreateModal clientId={42} clientName="Casey" onClose={() => {}} onCreated={() => {}} {...props} />)
 
 describe('JobCreateModal — assign cleaner at creation', () => {
-  it('shows the cleaner picker in the essentials, with Connecteam names normalized', () => {
+  it('shows the cleaner picker in the essentials, with legacy names normalized', () => {
     renderModal()
     expect(screen.getByText('Cleaner')).toBeTruthy()
     expect(screen.getByRole('button', { name: 'Alice' })).toBeTruthy()
-    // Raw Connecteam shape (userId + first/last, no id/name) still renders a
+    // Legacy shape (userId + first/last, no id/name) still renders a
     // real name — not "Cleaner undefined".
     expect(screen.getByRole('button', { name: 'Bob Ng' })).toBeTruthy()
     expect(screen.queryByRole('button', { name: /undefined/i })).toBeNull()

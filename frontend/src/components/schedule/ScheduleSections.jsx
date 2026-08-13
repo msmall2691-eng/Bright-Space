@@ -23,8 +23,8 @@ export function ScheduleHealthStrip({
   // Just the at-a-glance counts. The old "Needs attention" amber banner that
   // lived here was removed: the SyncHealthPill in the toolbar now owns sync
   // status + the fix action, and the toolbar filter chips ("Not on Google",
-  // "Needs cleaner", "Not in Connecteam") own the same filtered queues — so the
-  // banner was pure duplication. Fewer competing call-outs, cleaner page.
+  // "Needs cleaner") own the same filtered queues — so the banner was pure
+  // duplication. Fewer competing call-outs, cleaner page.
   return (
     <div className="no-print bg-bg border-b border-hairline px-3 sm:px-4 py-2">
       <div className="max-w-7xl mx-auto flex items-center gap-4 text-sm">

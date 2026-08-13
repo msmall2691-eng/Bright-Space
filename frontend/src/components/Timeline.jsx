@@ -51,6 +51,8 @@ const ACTIVITY_COLORS = {
   opportunity_won: 'text-emerald-600 bg-emerald-50', opportunity_lost: 'text-red-600 bg-red-50',
   note_added: 'text-ink-2 bg-bg',
 }
+// `connecteam` stays only to render HISTORICAL integration-log rows from the
+// retired Connecteam integration — no live Connecteam calls exist anymore.
 const PROVIDER_ICONS = { gcal: Calendar, connecteam: Users, email: Mail, sms: MessageSquare }
 const CHANNEL_ICONS = { email: Mail, sms: MessageSquare, chat: MessageSquare, whatsapp: MessageSquare }
 

@@ -15,9 +15,9 @@ import { useEmployees } from '../hooks/useEmployees'
 import EndsPicker from '../components/schedule/EndsPicker'
 import { RecurringCreateModal } from '../components/schedule/ScheduleTabs'
 
-/** Resolve a Connecteam employee to an id+name pair, defensively. Mirrors
- *  JobEditModal's normalizeEmployee — Connecteam returns shapes like
- *  { userId, firstName, lastName, displayName } or sometimes { id, name }. */
+/** Resolve a roster employee to an id+name pair, defensively. Mirrors
+ *  JobEditModal's normalizeEmployee — legacy roster rows carry shapes like
+ *  { userId, firstName, lastName, displayName }; native rows are { id, name }. */
 function normalizeEmployee(e) {
   const id = String(e?.id ?? e?.userId ?? '')
   const composed = [e?.firstName, e?.lastName].filter(Boolean).join(' ').trim()
@@ -474,7 +474,7 @@ function EditSeriesModal({ schedule, onClose, onDone }) {
       <div>
         <label className="block text-xs font-semibold text-ink-3 mb-1">Crew</label>
         {cleaners.length === 0 ? (
-          <p className="text-xs text-ink-3">No cleaners returned from Connecteam.</p>
+          <p className="text-xs text-ink-3">No cleaners on the roster yet — add your crew on the Crew page.</p>
         ) : (
           <div className="flex flex-wrap gap-2">
             {cleaners.map(c => {
@@ -967,7 +967,7 @@ export default function Recurring() {
       const sample = items.slice(0, 6).map(c => `• ${c.scheduled_date} — ${c.title}`).join('\n')
       const more = items.length > 6 ? `\n…and ${items.length - 6} more` : ''
       const ok = await confirmDialog(
-        `Found ${items.length} future visit${items.length === 1 ? '' : 's'} on the wrong week (leftovers from the old biweekly bug):\n\n${sample}${more}\n\nCancel them? Their Google Calendar events and Connecteam shifts are removed too. Past and completed visits are never touched.`,
+        `Found ${items.length} future visit${items.length === 1 ? '' : 's'} on the wrong week (leftovers from the old biweekly bug):\n\n${sample}${more}\n\nCancel them? Their Google Calendar events are removed too. Past and completed visits are never touched.`,
         { confirmLabel: `Cancel ${items.length} duplicate${items.length === 1 ? '' : 's'}`, cancelLabel: 'Keep them', danger: true },
       )
       if (!ok) return

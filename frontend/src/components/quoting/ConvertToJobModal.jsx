@@ -55,10 +55,10 @@ const ARRIVAL_WINDOW_LABELS = {
   flexible: 'Flexible',
 }
 
-// Mirrors JobEditModal's normalizer so a Connecteam roster (which returns
-// { userId, firstName, lastName, displayName }) shows up the same as a
-// manual roster ({ id, name }) — the previous version dropped every
-// Connecteam row on the floor because it only looked at snake_case fields.
+// Mirrors JobEditModal's normalizer so a legacy-shaped roster row
+// ({ userId, firstName, lastName, displayName }) shows up the same as a
+// native one ({ id, name }) — the previous version dropped every
+// legacy row on the floor because it only looked at snake_case fields.
 function _normalizeEmployee(e) {
   const id = String(e?.id ?? e?.userId ?? '')
   const composed = [e?.firstName, e?.lastName].filter(Boolean).join(' ').trim()
@@ -167,9 +167,9 @@ export default function ConvertToJobModal({ quote, onClose, onConverted, onError
   }
 
   // Times are pre-filled; require them so we always go through create_job's
-  // guard path (double-booking, capacity, Google Free/Busy, Connecteam
-  // dispatch). If the operator wants no schedule they use the "without
-  // scheduling" button, which posts an empty payload.
+  // guard path (double-booking, capacity, Google Free/Busy). If the operator
+  // wants no schedule they use the "without scheduling" button, which posts
+  // an empty payload.
   const timeValid = !!startTime && !!endTime && endTime > startTime
   const dateValid = !!date
 

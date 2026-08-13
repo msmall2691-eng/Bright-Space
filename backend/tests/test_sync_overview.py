@@ -4,7 +4,7 @@ Exercises the aggregator directly (no HTTP) against a seeded schedule: one
 recurring series with a materialized visit, two Airbnb feeds (one healthy, one
 failing), and an imported turnover job. Asserts the channel shape, flow
 directions, the failing-feed rollup, and that the ~14 background ticks are all
-surfaced. Google/Connecteam aren't configured in tests, so their channels report
+surfaced. Google isn't configured in tests, so its channel reports
 'disconnected' and the overall verdict is 'attention' — asserted explicitly so a
 regression that hides the disconnected backbone is caught.
 """
@@ -62,10 +62,10 @@ def test_overview_shape_and_directions(ctx):
     assert set(ov["schedule_log"]) >= {"enabled", "total", "last_event_at", "events_24h", "by_type"}
 
     ch = _by_key(ov)
-    assert set(ch) == {"google", "connecteam", "airbnb", "recurring"}
+    # Connecteam removal: three live channels, no connecteam card at all.
+    assert set(ch) == {"google", "airbnb", "recurring"}
     # Flow directions are the whole point of the redesign — pin them.
     assert ch["google"]["direction"] == "out"
-    assert ch["connecteam"]["direction"] == "out"
     assert ch["airbnb"]["direction"] == "in"
     assert ch["recurring"]["direction"] == "internal"
     # Every channel advertises the automation key its pause toggle posts.
@@ -78,8 +78,10 @@ def test_background_ticks_are_all_surfaced(ctx):
     db, c, p = ctx
     ov = build_sync_overview(db, 1)
     jobs = ov["background_jobs"]
-    # The "14 hidden hands" the operator couldn't see before.
-    assert len(jobs) == 14
+    # 13 background ticks after Connecteam-removal step 3 dropped the outbox
+    # drain (was the "14 hidden hands"; scheduling-invariants R1: down only).
+    assert len(jobs) == 13
+    assert not any(j["key"] == "connecteam_drain" for j in jobs)
     for j in jobs:
         assert j["name"] and isinstance(j["cadence_minutes"], int)
         assert j["group"] in {"scheduling", "health", "messaging", "other"}
@@ -88,10 +90,11 @@ def test_background_ticks_are_all_surfaced(ctx):
     autoassign = next(j for j in jobs if j["key"] == "str_autoassign")
     assert autoassign["enabled"] is False
     # Auto-pilot exposes the exact toggle set the master switch flips.
+    # (connecteam_auto_dispatch_enabled left the set with the retirement.)
     assert set(ov["auto_pilot"]["toggles"]) == {
         "gcal_auto_sync_enabled", "ical_auto_sync_enabled",
         "recurring_auto_generate_enabled", "sync_reconcile_enabled",
-        "connecteam_auto_dispatch_enabled", "calendar_source_of_truth",
+        "calendar_source_of_truth",
     }
 
 

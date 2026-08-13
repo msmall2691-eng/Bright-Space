@@ -66,7 +66,7 @@ def test_release_sync_links_silent_on_operator_move(monkeypatch):
     def job():
         return types.SimpleNamespace(
             id=1, gcal_event_id="evt_123", job_type="residential",
-            gcal_account_id=None, connecteam_shift_ids=None)
+            gcal_account_id=None)
 
     rr._release_sync_links(None, job(), notify=False)
     assert captured["send_updates"] == "none"   # operator move → silent

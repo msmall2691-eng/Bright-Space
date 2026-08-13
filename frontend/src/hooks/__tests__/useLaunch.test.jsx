@@ -51,14 +51,14 @@ describe('useLaunch — stage detection', () => {
     expect(result.current.currentStep).toBe('schedule')
   })
 
-  it('opens at "dispatch" once a job is scheduled', async () => {
+  it('is fully done once a job is scheduled', async () => {
     get.mockResolvedValue(details({
       quotes: [{ id: 9, status: 'converted' }],
       jobs: [{ id: 3, status: 'scheduled', scheduled_date: '2026-08-10', cleaner_ids: [1] }],
     }))
     const { result } = await mounted()
-    expect(result.current.currentStep).toBe('dispatch')
-    expect(result.current.steps.find(s => s.key === 'schedule').done).toBe(true)
+    expect(result.current.steps.every(s => s.done)).toBe(true)
+    expect(result.current.currentStep).toBe('schedule')
   })
 })
 
@@ -84,18 +84,6 @@ describe('useLaunch — actions wrap the right endpoints', () => {
     expect(post).toHaveBeenCalledWith('/api/quotes/9/convert-to-job', { scheduled_date: '2026-08-12', start_time: '09:00', end_time: '11:00' })
   })
 
-  it('dispatchJob POSTs the job dispatch endpoint and marks dispatch done', async () => {
-    get.mockResolvedValue(details({
-      quotes: [{ id: 9, status: 'converted' }],
-      jobs: [{ id: 3, status: 'scheduled', scheduled_date: '2026-08-10', cleaner_ids: [1] }],
-    }))
-    post.mockResolvedValue({ connecteam: { dispatched: true } })
-    const { result } = await mounted()
-    await act(async () => { await result.current.dispatchJob() })
-    expect(post).toHaveBeenCalledWith('/api/jobs/3/dispatch', {})
-    await waitFor(() => expect(result.current.steps.find(s => s.key === 'dispatch').done).toBe(true))
-  })
-
   it('scheduleJob updates the EXISTING job (PATCH) instead of convert-to-job', async () => {
     // Accepting a property-linked quote already created an unscheduled job.
     get.mockResolvedValue(details({
@@ -115,16 +103,5 @@ describe('useLaunch — surfaces soft failures instead of false success', () => 
     post.mockResolvedValue({ delivered: false, errors: ['No email address'] })
     const { result } = await mounted()
     await expect(result.current.sendQuote()).rejects.toThrow(/No email address/)
-  })
-
-  it('dispatchJob rejects (and does not complete) when Connecteam reports a no-op', async () => {
-    get.mockResolvedValue(details({
-      quotes: [{ id: 9, status: 'converted' }],
-      jobs: [{ id: 3, status: 'scheduled', scheduled_date: '2026-08-10', cleaner_ids: [1] }],
-    }))
-    post.mockResolvedValue({ connecteam: { dispatched: false, reason: 'no_cleaners' } })
-    const { result } = await mounted()
-    await expect(result.current.dispatchJob()).rejects.toThrow(/no cleaners/)
-    expect(result.current.steps.find(s => s.key === 'dispatch').done).toBe(false)
   })
 })

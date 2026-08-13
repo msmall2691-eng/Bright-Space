@@ -1,14 +1,13 @@
 import { useEffect, useState } from 'react'
 import GoogleAccountCard from '../GoogleAccountCard'
 import { get, post } from '../../api'
-import { confirmDialog } from '../../utils/confirmBus'
 
 /** Integrations tab — the "connect BrightBase to Google / your phone /
  *  external tools" hub, reorganized into two sections:
  *    - Google        — GoogleAccountCard (per-user grant) + business GCal
  *                      status with the embed URL inline + Gmail per-account health.
- *    - Other         — Connecteam (paste key, test, push open shifts),
- *                      plus "Coming soon" chips for Stripe / Zapier.
+ *    - Other         — Square Payroll, plus "Coming soon" chips for
+ *                      Stripe / Zapier.
  *
  *  Customer-messaging toggle and iCal Turnover Sync used to live here too but
  *  they're automation switches, not integrations — moved to AutomationTab. */
@@ -18,22 +17,6 @@ export default function IntegrationsTab({ toast, active }) {
   const [gcalConn, setGcalConn] = useState({ loading: true })
   const [gcalConnecting, setGcalConnecting] = useState(false)
   const [gmailConn, setGmailConn] = useState({ loading: true })
-  const [connecteam, setConnecteam] = useState({ loading: true })
-  const [ctForm, setCtForm] = useState({ api_key: '', company_id: '', timeclock_id: '', open: false })
-  const [ctSaving, setCtSaving] = useState(false)
-  const [ctTesting, setCtTesting] = useState(false)
-  const [ctPushing, setCtPushing] = useState(false)
-  // Dry-run: how BrightBase properties link to Connecteam Jobs. null | {loading}
-  // | {error} | full result.
-  const [jobMatch, setJobMatch] = useState(null)
-  const previewJobMatches = async () => {
-    setJobMatch({ loading: true })
-    try {
-      setJobMatch(await get('/api/settings/connecteam/job-match-preview'))
-    } catch (e) {
-      setJobMatch({ error: e?.message || 'Could not load job matches' })
-    }
-  }
 
   const refreshGcalStatus = () => {
     setGcalConn({ loading: true })
@@ -49,158 +32,12 @@ export default function IntegrationsTab({ toast, active }) {
       .catch(e => setGmailConn({ loading: false, connected: false, accounts: [], detail: e?.message || 'Could not check status' }))
   }
 
-  const refreshConnecteamStatus = () => {
-    setConnecteam(c => ({ ...c, loading: true }))
-    return get('/api/settings/connecteam-status')
-      .then(r => {
-        setConnecteam({ loading: false, ...r })
-        setCtForm(f => ({ ...f, company_id: r.company_id || '', timeclock_id: r.timeclock_id || '' }))
-      })
-      .catch(e => setConnecteam({ loading: false, configured: false, error: e?.message || 'Could not check status' }))
-  }
-
   useEffect(() => {
     if (!active) return
     get('/api/settings/gcal-embed').then(r => setGcalEmbed(r?.override || '')).catch(() => {})
     refreshGcalStatus()
     refreshGmailStatus()
-    refreshConnecteamStatus()
   }, [active])
-
-  const saveConnecteam = async () => {
-    setCtSaving(true)
-    try {
-      const payload = { company_id: ctForm.company_id.trim(), timeclock_id: ctForm.timeclock_id.trim() }
-      // Only send api_key if the user actually typed one — empty means "leave alone".
-      if (ctForm.api_key.trim()) payload.api_key = ctForm.api_key.trim()
-      const r = await post('/api/settings/connecteam', payload)
-      setConnecteam({ loading: false, ...r })
-      setCtForm(f => ({ ...f, api_key: '', open: false, company_id: r.company_id || f.company_id, timeclock_id: r.timeclock_id || f.timeclock_id }))
-      toast('Connecteam credentials saved')
-    } catch (e) {
-      toast(e?.message || 'Could not save Connecteam credentials', 'error')
-    } finally {
-      setCtSaving(false)
-    }
-  }
-
-  const disconnectConnecteam = async () => {
-    if (!(await confirmDialog('Disconnect Connecteam? BrightBase will stop pushing shifts until you re-add the API key.', { confirmLabel: 'Disconnect', danger: true }))) return
-    setCtSaving(true)
-    try {
-      const r = await post('/api/settings/connecteam', { api_key: '', company_id: '' })
-      setConnecteam({ loading: false, ...r })
-      setCtForm({ api_key: '', company_id: '', timeclock_id: '', open: false })
-      toast('Connecteam disconnected')
-    } catch (e) {
-      toast(e?.message || 'Could not disconnect Connecteam', 'error')
-    } finally {
-      setCtSaving(false)
-    }
-  }
-
-  // testConnecteam({silent: true}) is called automatically when the form opens
-  // so the Scheduler ID field is already a real dropdown of the operator's
-  // schedulers — no more "hit Test connection first, then re-open the form to
-  // pick from the list". A silent call swallows both the success toast and
-  // failures (a failed silent probe just leaves the plain input in place).
-  const testConnecteam = async ({ silent = false } = {}) => {
-    if (!silent) setCtTesting(true)
-    try {
-      const r = await post('/api/settings/connecteam/test', {})
-      setConnecteam(c => ({ ...c, schedulers: r.schedulers || [] }))
-      if (!silent) {
-        const acct = r.account?.name || r.account?.email || 'Connecteam'
-        const n = (r.schedulers || []).length
-        toast(`Connecteam OK — connected as ${acct}${n ? ` · ${n} scheduler${n === 1 ? '' : 's'} available` : ''}`)
-      }
-    } catch (e) {
-      if (!silent) toast(e?.message || 'Connecteam test call failed', 'error')
-    } finally {
-      if (!silent) setCtTesting(false)
-    }
-  }
-
-  // Auto-populate the scheduler dropdown when the credentials form opens (or
-  // opens implicitly because Connecteam isn't configured yet). Only fires when
-  // an API key is actually saved — no point probing without one.
-  useEffect(() => {
-    if (!active) return
-    const formVisible = !connecteam.loading && (!connecteam.configured || ctForm.open)
-    if (!formVisible) return
-    if (!connecteam.has_key) return
-    if (Array.isArray(connecteam.schedulers)) return
-    testConnecteam({ silent: true })
-    // testConnecteam is defined inline above with stable closures; only the
-    // form-open trigger + presence of a saved key should re-run it.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [active, connecteam.loading, connecteam.configured, ctForm.open, connecteam.has_key])
-
-  // Push now returns 202 + a run_id immediately (T-20 Part B) — the actual
-  // bulk Connecteam POST runs as a background task server-side, so this
-  // polls for the result instead of holding the request open for minutes
-  // (that used to hang the button with zero feedback).
-  const pollPushRun = async (runId) => {
-    for (let i = 0; i < 120; i++) { // ~3 min ceiling
-      const r = await get(`/api/settings/connecteam/push-open-shifts/${runId}`)
-      if (r.status === 'done' || r.status === 'error') return r
-      await new Promise(resolve => setTimeout(resolve, 1500))
-    }
-    return { status: 'timeout' }
-  }
-
-  const pushScheduleToConnecteam = async () => {
-    if (!(await confirmDialog('Push the next 14 days of BrightBase jobs to Connecteam as open shifts?', { confirmLabel: 'Push' }))) return
-    setCtPushing(true)
-    try {
-      const kicked = await post('/api/settings/connecteam/push-open-shifts', {})
-      const r = await pollPushRun(kicked.run_id)
-
-      if (r.status === 'error') {
-        toast(r.error || 'Connecteam push failed — check server logs for the underlying error.', 'error')
-        return
-      }
-      if (r.status === 'timeout') {
-        toast('Push is still running in the background — check Connecteam directly, or try again shortly.', 'error')
-        return
-      }
-
-      // Diagnostic toast: the base case ("Pushed 0 · 0 skipped") gave no signal
-      // for why nothing went over. Split the message by outcome so the operator
-      // knows whether to create jobs, un-dispatch, or check a real error.
-      const range = r.range ? ` (${r.range.start_date}→${r.range.end_date})` : ''
-      const e0 = r.errors?.[0]
-      // Surface Connecteam's actual complaint when it's a 4xx (their response
-      // body names the reason — invalid scheduler id, duration too long,
-      // etc). Truncate so a huge body doesn't blow up the toast.
-      const firstErr = e0
-        ? (e0.status
-            ? ` — first failure: HTTP ${e0.status}${e0.body ? ` — ${String(e0.body).slice(0, 180)}` : ''}`
-            : ` — first failure: ${e0.error}`)
-        : ''
-      let msg
-      let tone
-      if (r.pushed > 0) {
-        msg = `Pushed ${r.pushed} open shift${r.pushed === 1 ? '' : 's'} to Connecteam · ${r.skipped} skipped${r.errors?.length ? ` · ${r.errors.length} failed` : ''}`
-        tone = r.errors?.length ? 'error' : undefined
-      } else if (r.considered === 0) {
-        msg = `No BrightBase jobs found${range}. Create jobs on the Schedule page first — this endpoint only pushes real jobs, not iCal turnovers that haven't been materialised.`
-        tone = 'error'
-      } else if (r.errors?.length) {
-        msg = `Connecteam rejected all ${r.errors.length} job push${r.errors.length === 1 ? '' : 'es'}${firstErr}`
-        tone = 'error'
-      } else {
-        // considered > 0, pushed = 0, no errors → all skipped
-        msg = `All ${r.considered} job${r.considered === 1 ? '' : 's'} in the window were skipped (already dispatched or missing date/time). Nothing to do.`
-        tone = 'error'
-      }
-      toast(msg, tone)
-    } catch (e) {
-      toast(e?.message || 'Could not push schedule', 'error')
-    } finally {
-      setCtPushing(false)
-    }
-  }
 
   // Returning from Google's consent screen lands here with ?gcal=connected.
   useEffect(() => {
@@ -393,220 +230,21 @@ export default function IntegrationsTab({ toast, active }) {
           </div>
         </div>
 
-        {/* Other integrations — the field-team + payment stack. */}
+        {/* Other integrations — payments + external workflows. */}
         <div>
           <div className="mb-4">
             <h2 className="text-lg font-bold text-ink">Other integrations</h2>
-            <p className="text-sm text-ink-2 mt-1">Push jobs to your field team, take payments, and hook into external workflows.</p>
+            <p className="text-sm text-ink-2 mt-1">Take payments and hook into external workflows.</p>
           </div>
 
           <div className="space-y-3">
-            {/* Connecteam — real card. Paste API key + Company ID; test the
-                connection; push the upcoming schedule to Connecteam as OPEN
-                shifts so cleaners can self-claim them. */}
-            <div className="bg-panel rounded-xl border border-hairline p-4">
-              <div className="flex items-start justify-between gap-4">
-                <div className="flex items-start gap-4">
-                  <span className="text-2xl">👥</span>
-                  <div>
-                    <h3 className="font-semibold text-ink">Connecteam</h3>
-                    <p className="text-xs text-ink-3">Push jobs to your field team as open shifts they can claim.</p>
-                    {!connecteam.loading && connecteam.configured && (
-                      <p className="text-[11px] text-ink-3 mt-1">
-                        Key <code className="bg-bg-2 px-1 rounded text-ink-2">{connecteam.api_key_masked}</code>
-                        {(connecteam.scheduler_id || connecteam.company_id) ? <> · Scheduler <code className="bg-bg-2 px-1 rounded text-ink-2">{connecteam.scheduler_id || connecteam.company_id}</code></> : null}
-                        {connecteam.source === 'env' && <span className="ml-1 text-ink-3">(from server env)</span>}
-                      </p>
-                    )}
-                    {/* Persistent warning: when the backend has a cached
-                        scheduler list AND the saved id isn't in it, the
-                        Push button will always 400 "schedule id doesn't
-                        exist". Surface this on the connected card itself
-                        so you don't have to open Update key to know
-                        something's off. */}
-                    {!connecteam.loading && connecteam.configured && connecteam.scheduler_id_valid === false && Array.isArray(connecteam.schedulers) && connecteam.schedulers.length > 0 && (
-                      <p className="text-[11px] text-red-700 dark:text-red-300 bg-red-50 dark:bg-red-500/10 border border-red-200 dark:border-red-500/25 rounded-md px-2 py-1 mt-2 inline-block">
-                        Saved Scheduler ID <code>{connecteam.scheduler_id || connecteam.company_id}</code> isn't on your Connecteam account. Click Update key and pick from the list.
-                      </p>
-                    )}
-                  </div>
-                </div>
-                <span className={`px-3 py-1.5 rounded-lg text-xs font-medium border shrink-0 ${
-                  connecteam.loading
-                    ? 'bg-bg-2 text-ink-3 border-hairline'
-                    : connecteam.configured
-                      ? 'bg-emerald-50 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border-emerald-200 dark:border-emerald-500/25'
-                      : 'bg-bg-2 text-ink-3 border-hairline'
-                }`}>
-                  {connecteam.loading ? 'Checking…' : connecteam.configured ? '✓ Connected' : 'Not connected'}
-                </span>
-              </div>
-
-              {/* Form: shown when not connected, or when the user clicks
-                  "Update key" on a connected card (so re-keying is one click). */}
-              {!connecteam.loading && (!connecteam.configured || ctForm.open) && (
-                <div className="mt-4 space-y-3 border-t border-hairline pt-4">
-                  <div>
-                    <label className="block text-xs font-medium text-ink-2 mb-1">API Key</label>
-                    <input
-                      type="password"
-                      autoComplete="off"
-                      value={ctForm.api_key}
-                      onChange={e => setCtForm(f => ({ ...f, api_key: e.target.value }))}
-                      placeholder={connecteam.has_key ? 'Enter a new key to replace the saved one' : 'Paste your Connecteam API key'}
-                      className="w-full bg-bg border border-hairline rounded-lg px-3 py-2 text-sm text-ink placeholder-ink-3 font-mono focus:outline-none focus:border-blue-400"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-medium text-ink-2 mb-1">Scheduler ID</label>
-                    {Array.isArray(connecteam.schedulers) && connecteam.schedulers.length > 0 ? (
-                      <>
-                        <select
-                          value={ctForm.company_id}
-                          onChange={e => setCtForm(f => ({ ...f, company_id: e.target.value }))}
-                          className="w-full bg-bg border border-hairline rounded-lg px-3 py-2 text-sm text-ink focus:outline-none focus:border-blue-400"
-                        >
-                          <option value="">— pick a scheduler —</option>
-                          {connecteam.schedulers.map(s => (
-                            <option key={s.id} value={s.id}>{s.name} (ID {s.id})</option>
-                          ))}
-                        </select>
-                        {/* Warn when the currently-selected/saved id doesn't
-                            match any scheduler on the account — the mistake
-                            that made "rejected 8 pushes" happen the first time
-                            (a Company ID got pasted where a Scheduler ID
-                            belongs). Empty selection is fine — that's the
-                            initial "pick one" state. */}
-                        {ctForm.company_id && !connecteam.schedulers.some(s => String(s.id) === String(ctForm.company_id)) && (
-                          <p className="text-[11px] text-red-700 dark:text-red-300 mt-1">
-                            ID <code className="bg-red-50 dark:bg-red-500/10 px-1 rounded">{ctForm.company_id}</code> isn't one of your schedulers — pick from the list above.
-                          </p>
-                        )}
-                      </>
-                    ) : (
-                      <input
-                        type="text"
-                        autoComplete="off"
-                        value={ctForm.company_id}
-                        onChange={e => setCtForm(f => ({ ...f, company_id: e.target.value }))}
-                        placeholder="numeric scheduler id, e.g. 12345"
-                        className="w-full bg-bg border border-hairline rounded-lg px-3 py-2 text-sm text-ink placeholder-ink-3 font-mono focus:outline-none focus:border-blue-400"
-                      />
-                    )}
-                  </div>
-                  <div>
-                    <label className="block text-xs font-medium text-ink-2 mb-1">Time Clock ID <span className="text-ink-3 font-normal">(payroll)</span></label>
-                    {Array.isArray(connecteam.timeclocks) && connecteam.timeclocks.length > 0 ? (
-                      <select
-                        value={ctForm.timeclock_id}
-                        onChange={e => setCtForm(f => ({ ...f, timeclock_id: e.target.value }))}
-                        className="w-full bg-bg border border-hairline rounded-lg px-3 py-2 text-sm text-ink focus:outline-none focus:border-blue-400"
-                      >
-                        <option value="">— auto (first time clock) —</option>
-                        {connecteam.timeclocks.map(tc => (
-                          <option key={tc.id} value={tc.id}>{tc.name} (ID {tc.id})</option>
-                        ))}
-                      </select>
-                    ) : (
-                      <input
-                        type="text"
-                        autoComplete="off"
-                        value={ctForm.timeclock_id}
-                        onChange={e => setCtForm(f => ({ ...f, timeclock_id: e.target.value }))}
-                        placeholder="leave blank to auto-pick, or a numeric time clock id"
-                        className="w-full bg-bg border border-hairline rounded-lg px-3 py-2 text-sm text-ink placeholder-ink-3 font-mono focus:outline-none focus:border-blue-400"
-                      />
-                    )}
-                  </div>
-                  <p className="text-[11px] text-ink-3">
-                    Get the API key from Connecteam → <b>Integrations Center → API keys</b>. The Scheduler ID is the schedule shifts are pushed into; the Time Clock ID is the clock whose punches drive <b>Payroll</b> (leave it on auto if you only have one). Save the key first, hit <b>Test connection</b>, and both fields turn into pickers of what's on your account.
-                  </p>
-                  <div className="flex items-center gap-2">
-                    <button onClick={saveConnecteam} disabled={ctSaving || (!ctForm.company_id.trim() && !ctForm.api_key.trim())}
-                      className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg text-xs font-semibold transition-colors disabled:opacity-50">
-                      {ctSaving ? 'Saving…' : 'Save credentials'}
-                    </button>
-                    {ctForm.open && (
-                      <button onClick={() => setCtForm(f => ({ ...f, open: false, api_key: '' }))}
-                        className="px-3 py-2 rounded-lg text-xs font-medium bg-bg-2 hover:bg-hairline text-ink-2 transition-colors">
-                        Cancel
-                      </button>
-                    )}
-                  </div>
-                </div>
-              )}
-
-              {/* Actions: shown when connected. Test verifies the saved key
-                  against Connecteam; Push sends upcoming jobs as open shifts. */}
-              {!connecteam.loading && connecteam.configured && !ctForm.open && (
-                <div className="mt-4 flex flex-wrap items-center gap-2 border-t border-hairline pt-4">
-                  <button onClick={pushScheduleToConnecteam} disabled={ctPushing}
-                    className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg text-xs font-semibold transition-colors disabled:opacity-50">
-                    {ctPushing ? 'Pushing…' : 'Push schedule → open shifts'}
-                  </button>
-                  <button onClick={testConnecteam} disabled={ctTesting}
-                    className="px-3 py-2 rounded-lg text-xs font-medium bg-bg-2 hover:bg-hairline text-ink-2 transition-colors disabled:opacity-50">
-                    {ctTesting ? 'Testing…' : 'Test connection'}
-                  </button>
-                  <button onClick={previewJobMatches} disabled={jobMatch?.loading}
-                    className="px-3 py-2 rounded-lg text-xs font-medium bg-bg-2 hover:bg-hairline text-ink-2 transition-colors disabled:opacity-50"
-                    title="Check which Connecteam Job each property will link its shifts to">
-                    {jobMatch?.loading ? 'Checking…' : 'Preview job matches'}
-                  </button>
-                  <button onClick={() => setCtForm(f => ({ ...f, open: true, api_key: '' }))}
-                    className="px-3 py-2 rounded-lg text-xs font-medium bg-bg-2 hover:bg-hairline text-ink-2 transition-colors">
-                    Update key
-                  </button>
-                  <button onClick={disconnectConnecteam} disabled={ctSaving}
-                    className="ml-auto px-3 py-2 rounded-lg text-xs font-medium text-red-700 dark:text-red-300 hover:bg-red-50 transition-colors disabled:opacity-50">
-                    Disconnect
-                  </button>
-                </div>
-              )}
-
-              {/* Job-match dry-run results — which Connecteam Job each property
-                  links to. Surfaces unmatched properties (they'd push as a
-                  free-text shift) so their names can be lined up. */}
-              {jobMatch && !jobMatch.loading && (
-                <div className="mt-3 p-3 rounded-lg bg-bg-2 border border-hairline text-xs">
-                  {jobMatch.error ? (
-                    <p className="text-red-700 dark:text-red-300">{jobMatch.error}</p>
-                  ) : jobMatch.configured === false ? (
-                    <p className="text-ink-3">Connect Connecteam first to preview job matches.</p>
-                  ) : (
-                    <>
-                      <p className="font-semibold text-ink mb-1.5">
-                        {jobMatch.matched} of {jobMatch.matched + jobMatch.unmatched} properties link to a Connecteam Job
-                        <span className="font-normal text-ink-3"> · {jobMatch.job_count} jobs in Connecteam</span>
-                      </p>
-                      {jobMatch.unmatched > 0 ? (
-                        <div>
-                          <p className="text-amber-700 dark:text-amber-300 mb-1">
-                            These won’t link (they’ll push as a free-text shift) — rename the Connecteam Job to match, or the property:
-                          </p>
-                          <ul className="list-disc pl-4 space-y-0.5 text-ink-2">
-                            {jobMatch.properties.filter(p => !p.matched_job_id).slice(0, 20).map((p, i) => (
-                              <li key={i}>{p.property}{p.client ? <span className="text-ink-3"> · {p.client}</span> : null}</li>
-                            ))}
-                          </ul>
-                        </div>
-                      ) : (
-                        <p className="text-emerald-700 dark:text-emerald-300">Every property links to a Connecteam Job. ✓</p>
-                      )}
-                    </>
-                  )}
-                </div>
-              )}
-            </div>
-
             <SquareCard toast={toast} active={active} />
 
             {/* Stripe / Zapier — not built yet. The "Connect" button here
                 used to be an orphaned <button> with no onClick — clicking it
                 did literally nothing, which set operators up to click and
-                click waiting for a modal that would never appear (same
-                disease the pre-#441 Connecteam button had). Downgraded to
-                a "Coming soon" chip so the roadmap is visible without
+                click waiting for a modal that would never appear. Downgraded
+                to a "Coming soon" chip so the roadmap is visible without
                 looking like a live action. */}
             {[
               { name: 'Stripe', icon: '💳', desc: 'Accept online payments' },

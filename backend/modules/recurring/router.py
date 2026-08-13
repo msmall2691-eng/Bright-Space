@@ -19,15 +19,12 @@ router = APIRouter()
 
 
 def _release_sync_links(db: Session, job: Job, *, notify: bool = True) -> None:
-    """Delete a job's linked Google Calendar event + Connecteam shift when
-    cancelling/detaching it (audit finding #2, July 2026): every recurring
-    cancellation path below used to just set status='cancelled' and clear
-    recurring_schedule_id, leaving the old GCal event and Connecteam shift
-    in place. Regeneration then created NEW events/shifts for the same slot
-    under the new rule, so cleaners kept stale Connecteam shifts for
-    skipped/moved/superseded visits and the calendar showed both the old and
-    new occurrence. Mirrors modules.scheduling.router.delete_job's cleanup —
-    best-effort, never raises, so a sync hiccup can't block the cancellation
+    """Delete a job's linked Google Calendar event when cancelling/detaching it
+    (audit finding #2, July 2026): every recurring cancellation path below used
+    to just set status='cancelled' and clear recurring_schedule_id, leaving the
+    old GCal event in place — regeneration then created a NEW event for the
+    same slot under the new rule, so the calendar showed both occurrences.
+    Best-effort, never raises, so a sync hiccup can't block the cancellation
     itself (the reconcile sweep catches anything left over)."""
     if job.gcal_event_id:
         try:
@@ -45,12 +42,6 @@ def _release_sync_links(db: Session, job: Job, *, notify: bool = True) -> None:
                 job.gcal_event_id = None
         except Exception as e:
             logger.warning(f"GCal delete failed for job {job.id}: {e}")
-    if job.connecteam_shift_ids:
-        try:
-            from integrations.connecteam_auto import remove_job_from_connecteam
-            remove_job_from_connecteam(db, job, commit=False)
-        except Exception as e:
-            logger.warning(f"Connecteam delete failed for job {job.id}: {e}")
 
 
 def _get_schedule_or_404(db: Session, schedule_id: int, org_id: int) -> RecurringSchedule:
@@ -766,37 +757,10 @@ def generate_jobs(db: Session, sched: RecurringSchedule) -> int:
                 logger.warning(f"GCal push failed for job {job.id} (schedule {sched.id}): {e}")
         db.commit()
 
-    # Auto-push new jobs to Connecteam too, mirroring the Google push above, so a
-    # recurring occurrence reaches the cleaner app instead of only Google Calendar
-    # (the gap that made recurring shifts never show up in Connecteam). Gated by
-    # the same setting job create/edit use, and best-effort — a Connecteam hiccup
-    # must never block generation.
-    if new_jobs:
-        try:
-            from modules.settings.router import (
-                connecteam_auto_dispatch_enabled, connecteam_outbox_enabled,
-            )
-            # New occurrences auto-dispatch only in auto mode (manual mode waits
-            # for the operator), same as before — whether via the durable outbox
-            # or the direct inline call.
-            if connecteam_auto_dispatch_enabled(db):
-                if connecteam_outbox_enabled(db):
-                    # Durable path: queue a sync intent per new job in this same
-                    # transaction (rollback-safe, deduplicated); the outbox drain
-                    # performs the Connecteam call exactly once.
-                    from integrations.connecteam_outbox import enqueue_sync
-                    for job in new_jobs:
-                        enqueue_sync(db, job, "dispatch", commit=False)
-                else:
-                    from integrations.connecteam_auto import auto_dispatch_job
-                    for job in new_jobs:
-                        try:
-                            auto_dispatch_job(db, job, commit=False)
-                        except Exception as e:
-                            logger.warning(f"Connecteam push failed for job {job.id} (schedule {sched.id}): {e}")
-                db.commit()
-        except Exception as e:
-            logger.warning(f"Connecteam dispatch pass failed for schedule {sched.id}: {e}")
+    # Connecteam removal (step 3): newly-generated occurrences are no longer
+    # dispatched (inline or via the outbox) to Connecteam — the crew sees them
+    # on their native My Day schedule as soon as they're assigned. Google
+    # Calendar sync for these jobs is untouched.
 
     return created
 
@@ -1524,11 +1488,6 @@ def _reschedule_occurrence(db: Session, sched: RecurringSchedule, exception_date
     # delete it.
     carried_event_id = old_occurrence.gcal_event_id if old_occurrence else None
     carried_acct = getattr(old_occurrence, "gcal_account_id", None) if old_occurrence else None
-    # Whether the occurrence being moved was already on a cleaner's Connecteam
-    # schedule — captured BEFORE the cancel below pulls its shift, so the moved
-    # visit re-dispatches immediately even in manual mode (mirrors update_job:
-    # an already-dispatched visit that moves must not strand a stale shift).
-    was_dispatched = bool(old_occurrence and old_occurrence.connecteam_shift_ids)
 
     if rescheduled_date != exception_date:
         if old_occurrence is not None:
@@ -1660,39 +1619,10 @@ def _reschedule_occurrence(db: Session, sched: RecurringSchedule, exception_date
             logger.warning(f"GCal in-place move failed for schedule {sched.id}: {e}")
             rescheduled_job.gcal_event_id = None  # reconcile re-creates on the new date
 
-    # ── CONNECTEAM SHIFT SYNC ── reflect the move on the cleaner's app now
-    # instead of leaving the moved occurrence shiftless until the 30-minute
-    # reconcile tick. Mirrors update_job's one-off path: a visit that was
-    # already dispatched re-syncs even in manual mode (its shift follows it),
-    # while a not-yet-dispatched occurrence follows the auto-dispatch setting.
-    # Everything is staged with commit=False so it persists atomically with the
-    # caller's commit, and it's best-effort — a Connecteam hiccup must never
-    # block the reschedule itself.
-    try:
-        from integrations.connecteam_auto import (
-            auto_dispatch_job, remove_job_from_connecteam)
-        from modules.settings.router import (
-            connecteam_auto_dispatch_enabled, connecteam_outbox_enabled,
-        )
-        db.flush()  # assign a freshly-created job its id for the shift log / FK
-        should_sync = bool(rescheduled_job.connecteam_shift_ids) or (
-            rescheduled_job.cleaner_ids and (was_dispatched or connecteam_auto_dispatch_enabled(db)))
-        if should_sync and connecteam_outbox_enabled(db):
-            # Durable path: queue the sync in this transaction; the drain
-            # applies it (it re-syncs an existing shift or dispatches a new one).
-            from integrations.connecteam_outbox import enqueue_sync
-            enqueue_sync(db, rescheduled_job, "dispatch", commit=False)
-        elif rescheduled_job.connecteam_shift_ids:
-            # An existing shift whose time/crew changed → pull the stale one and
-            # push fresh. Primitives (not resync_job, which force-commits) so it
-            # stays in this transaction.
-            remove_job_from_connecteam(db, rescheduled_job, commit=False)
-            auto_dispatch_job(db, rescheduled_job, commit=False)
-        elif rescheduled_job.cleaner_ids and (was_dispatched or connecteam_auto_dispatch_enabled(db)):
-            auto_dispatch_job(db, rescheduled_job, commit=False)
-    except Exception as e:
-        logger.warning(
-            f"Connecteam sync for rescheduled occurrence (schedule {sched.id}) failed: {e}")
+    # Connecteam removal (step 3): a moved occurrence is no longer re-synced to
+    # Connecteam — the cleaner's native My Day reads Job state directly, so the
+    # move is visible there the instant this transaction commits.
+    db.flush()  # assign a freshly-created job its id before the caller's commit
 
     return ex, rescheduled_job
 

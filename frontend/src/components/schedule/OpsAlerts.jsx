@@ -1,10 +1,10 @@
 /**
  * Ops alerts — the two things you might need to act on right now.
  *
- * The existing ScheduleHealthStrip surfaces "N not on Google" / "N not in
- * Connecteam" / "N unassigned" as filter counters. This card row is
- * complementary: it names the *specific* offenders inline and lets you
- * one-tap toward them (turn on the filter, jump to the queue).
+ * The existing ScheduleHealthStrip surfaces "N not on Google" /
+ * "N unassigned" as filter counters. This card row is complementary: it
+ * names the *specific* offenders inline and lets you one-tap toward them
+ * (turn on the filter, jump to the queue).
  *
  * Renders nothing when there's nothing to say — no chrome for a clean day.
  */

@@ -41,7 +41,6 @@ from database.models import (
     PropertyIcal,
     Property,
     RecurringSchedule,
-    ConnecteamOutbox,
     ScheduleEvent,
 )
 from utils.dates import business_today
@@ -96,20 +95,13 @@ def build_sync_overview(db: Session, org_id) -> dict:
         g_connected = bool(_g_ok())
     except Exception:
         g_connected = False
-    try:
-        from integrations.connecteam import is_configured as _c_ok
-        c_connected = bool(_c_ok())
-    except Exception:
-        c_connected = False
 
-    from modules.settings.router import connecteam_auto_dispatch_enabled
     from integrations.gcal_sync import calendar_source_of_truth
 
     gcal_enabled = _app_flag(db, "gcal_auto_sync_enabled", "GCAL_AUTO_SYNC_ENABLED")
     ical_enabled = _app_flag(db, "ical_auto_sync_enabled", "ICAL_AUTO_SYNC_ENABLED")
     recurring_enabled = _app_flag(db, "recurring_auto_generate_enabled", "RECURRING_AUTO_GENERATE_ENABLED")
     reconcile_enabled = _app_flag(db, "sync_reconcile_enabled", "SYNC_RECONCILE_ENABLED")
-    c_auto = bool(connecteam_auto_dispatch_enabled(db))
     source_of_truth = calendar_source_of_truth(db)  # "brightbase" | "google"
 
     # ---- Google Calendar (outbound) ------------------------------------------
@@ -144,65 +136,6 @@ def build_sync_overview(db: Session, org_id) -> dict:
             "Not connected" if not g_connected
             else f"{unsynced_gcal} job{'s' if unsynced_gcal != 1 else ''} waiting to push"
             if unsynced_gcal else "Every job is on Google"
-        ),
-    }
-
-    # ---- Connecteam (outbound) — one pass over upcoming active jobs ----------
-    unsynced_ct = 0
-    pending_resync = 0
-    if c_connected:
-        for j in _job_scoped(db.query(Job).filter(
-            Job.status.in_(_ACTIVE), Job.scheduled_date >= today,
-        )).all():
-            if not j.connecteam_shift_ids:
-                unsynced_ct += 1
-                continue
-            # Already dispatched: has the job's schedule moved since the shift
-            # went out? The push stores a {scheduled_date,start_time,end_time}
-            # snapshot; a mismatch means the shift is stale and awaits a resync.
-            snap = j.connecteam_synced_schedule or {}
-            if snap:
-                cur = {"scheduled_date": j.scheduled_date,
-                       "start_time": j.start_time, "end_time": j.end_time}
-                if any(str(snap.get(k)) != str(cur.get(k)) for k in cur):
-                    pending_resync += 1
-
-    ob_pending = db.query(func.count(ConnecteamOutbox.id)).filter(
-        ConnecteamOutbox.status == "pending",
-        or_(ConnecteamOutbox.org_id == oid, ConnecteamOutbox.org_id.is_(None)),
-    ).scalar() or 0
-    ob_failed = db.query(func.count(ConnecteamOutbox.id)).filter(
-        ConnecteamOutbox.status == "failed",
-        or_(ConnecteamOutbox.org_id == oid, ConnecteamOutbox.org_id.is_(None)),
-    ).scalar() or 0
-    ct_last = db.query(func.max(IntegrationEvent.created_at)).filter(
-        IntegrationEvent.provider == "connecteam",
-        or_(IntegrationEvent.org_id == oid, IntegrationEvent.org_id.is_(None)),
-    ).scalar()
-
-    ct_backlog = (unsynced_ct if c_auto else 0) + pending_resync
-    connecteam = {
-        "key": "connecteam",
-        "name": "Connecteam",
-        "icon": "users",
-        "direction": "out",
-        "authority": "brightbase",
-        "connected": c_connected,
-        "enabled": c_auto,
-        "toggle_key": "connecteam_auto_dispatch_enabled",
-        "last_sync_at": _iso(ct_last),
-        "backlog": ct_backlog,
-        "pending_resync": pending_resync,
-        "outbox_pending": int(ob_pending),
-        "outbox_failed": int(ob_failed),
-        "sync_action": "reconcile",
-        "status": _channel_status(connected=c_connected, enabled=c_auto,
-                                  backlog=ct_backlog, failing=int(ob_failed)),
-        "summary": (
-            "Not connected" if not c_connected
-            else "Auto-dispatch is off" if not c_auto
-            else f"{ct_backlog} shift{'s' if ct_backlog != 1 else ''} to send"
-            if ct_backlog else "Every crew shift is up to date"
         ),
     }
 
@@ -307,7 +240,7 @@ def build_sync_overview(db: Session, org_id) -> dict:
         ),
     }
 
-    channels = [google, connecteam, airbnb, recurring]
+    channels = [google, airbnb, recurring]
 
     # ---- The background jobs ("the hidden hands"), finally visible -----------
     def _m(env, default):  # cadence in minutes
@@ -318,10 +251,9 @@ def build_sync_overview(db: Session, org_id) -> dict:
          "cadence_minutes": _m("GCAL_AUTO_SYNC_INTERVAL_MINUTES", 10), "enabled": bool(gcal_enabled)},
         {"key": "ical_sync", "name": "Pull Airbnb / VRBO turnovers", "group": "scheduling",
          "cadence_minutes": _m("ICAL_AUTO_SYNC_INTERVAL_MINUTES", 15), "enabled": bool(ical_enabled)},
-        {"key": "sync_reconcile", "name": "Reconcile calendars & dispatch crews", "group": "scheduling",
+        {"key": "sync_reconcile", "name": "Reconcile the Google calendar", "group": "scheduling",
          "cadence_minutes": _m("SYNC_RECONCILE_INTERVAL_MINUTES", 30), "enabled": bool(reconcile_enabled)},
-        {"key": "connecteam_drain", "name": "Send crew shifts to Connecteam", "group": "scheduling",
-         "cadence_minutes": _m("CONNECTEAM_OUTBOX_DRAIN_INTERVAL_MINUTES", 2), "enabled": c_auto},
+        # (connecteam_drain retired in Connecteam-removal step 3 — tick 14 → 13.)
         {"key": "recurring", "name": "Generate upcoming recurring visits", "group": "scheduling",
          "cadence_minutes": _m("RECURRING_AUTO_GENERATE_INTERVAL_HOURS", 24) * 60, "enabled": bool(recurring_enabled)},
         {"key": "str_autoassign", "name": "Auto-assign turnover crews", "group": "scheduling",
@@ -330,7 +262,7 @@ def build_sync_overview(db: Session, org_id) -> dict:
          # OFF) — report the real state, not a green job that isn't running.
          "enabled": bool(_app_flag(db, "str_turnover_autoassign_enabled",
                                    "STR_TURNOVER_AUTOASSIGN_ENABLED", False))},
-        {"key": "schedule_audit", "name": "Audit for duplicates & orphaned shifts", "group": "health",
+        {"key": "schedule_audit", "name": "Audit for duplicate jobs", "group": "health",
          "cadence_minutes": _m("SCHEDULE_AUDIT_INTERVAL_HOURS", 6) * 60, "enabled": True},
         {"key": "turnover_coverage", "name": "Turnover coverage check", "group": "health",
          "cadence_minutes": 24 * 60, "enabled": True},
@@ -379,18 +311,17 @@ def build_sync_overview(db: Session, org_id) -> dict:
     # ---- integrity issues + overall verdict ----------------------------------
     issues = find_schedule_issues(db, oid)
     dup = issues["counts"]["duplicate_groups"]
-    orph = issues["counts"]["orphaned_shifts"]
 
     # Auto-pilot = the schedule maintains itself with zero manual pushes. Google
     # is the backbone, so a disconnected Google breaks the flow even with every
-    # toggle on. Connecteam auto-dispatch only counts when Connecteam is wired.
+    # toggle on. (Connecteam retired in step 3 — it no longer factors in.)
     auto_flow_on = bool(
         g_connected and gcal_enabled and ical_enabled and recurring_enabled
-        and reconcile_enabled and (c_auto or not c_connected)
+        and reconcile_enabled
     )
-    backlog_total = unsynced_gcal + (unsynced_ct if c_auto else 0)
+    backlog_total = unsynced_gcal
     overall = _sync_overall(
-        duplicates=dup, orphans=orph, backlog=backlog_total,
+        duplicates=dup, orphans=0, backlog=backlog_total,
         auto_flow_on=auto_flow_on, google_connected=g_connected,
     )
 
@@ -416,13 +347,6 @@ def build_sync_overview(db: Session, org_id) -> dict:
             "title": f"{dup} duplicate job{'s' if dup != 1 else ''} detected",
             "detail": "Two jobs share a property, date, and time.",
             "action": {"kind": "link", "label": "Review on Schedule", "href": "/schedule"},
-        })
-    if orph:
-        attention.append({
-            "level": "warn", "key": "orphaned_shifts",
-            "title": f"{orph} orphaned Connecteam shift{'s' if orph != 1 else ''}",
-            "detail": "A crew shift exists with no matching BrightBase job.",
-            "action": {"kind": "sync", "label": "Reconcile now", "target": "reconcile"},
         })
     if backlog_total and not auto_flow_on:
         attention.append({
@@ -452,13 +376,12 @@ def build_sync_overview(db: Session, org_id) -> dict:
                 "ical_auto_sync_enabled": bool(ical_enabled),
                 "recurring_auto_generate_enabled": bool(recurring_enabled),
                 "sync_reconcile_enabled": bool(reconcile_enabled),
-                "connecteam_auto_dispatch_enabled": c_auto,
                 "calendar_source_of_truth": source_of_truth,
             },
         },
         "channels": channels,
         "attention": attention,
-        "issues": {"duplicate_jobs": dup, "orphaned_shifts": orph},
+        "issues": {"duplicate_jobs": dup},
         "background_jobs": background_jobs,
         "schedule_log": schedule_log,
     }

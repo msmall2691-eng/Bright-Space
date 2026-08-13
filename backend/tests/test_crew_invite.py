@@ -203,3 +203,56 @@ def test_deactivate_cleaner_syncs_status_to_disabled(api):
     assert e.status_code == 200, e.text
     assert e.json()["active"] is True
     assert e.json()["status"] == "active"
+
+
+# ── Generic staff invite (Settings → Users, any role) ────────────────────────
+
+def test_invite_user_any_role_and_accept(api):
+    """Admin invites an office member directly: passwordless invited account,
+    same single-use accept-invite link, and the row carries activated=False
+    until they set a password."""
+    client, made = api
+    email = _email()
+    r = client.post("/api/auth/users/invite",
+                    json={"full_name": "Front Office", "email": email, "role": "member"})
+    assert r.status_code == 200, r.text
+    row = r.json()
+    made["users"].append(row["id"])
+    assert row["role"] == "member"
+    assert row["status"] == "invited"
+    assert row["activated"] is False
+
+    token = make_invite_token(email)
+    a = client.post("/api/auth/accept-invite", json={"token": token, "password": "off1cepw!"})
+    assert a.status_code == 200, a.text
+    assert a.json()["role"] == "member"
+
+    # Invalid role and duplicate email are rejected.
+    assert client.post("/api/auth/users/invite",
+                       json={"email": _email(), "role": "superuser"}).status_code == 422
+    assert client.post("/api/auth/users/invite",
+                       json={"email": email, "role": "member"}).status_code == 409
+    # 'client' is a portal account, not staff — not invitable here.
+    assert client.post("/api/auth/users/invite",
+                       json={"email": _email(), "role": "client"}).status_code == 422
+
+
+def test_invite_user_cleaner_gets_crew_id_and_generic_resend(api):
+    """Inviting role=cleaner from the Users screen mints a crew ID exactly like
+    POST /api/crew, so they're assignable either way. The generic resend works
+    pre-activation and 409s after."""
+    client, made = api
+    email = _email()
+    r = client.post("/api/auth/users/invite",
+                    json={"full_name": "Via Users", "email": email, "role": "cleaner"})
+    row = r.json()
+    made["users"].append(row["id"])
+    assert row["cleaner_id"] == f"bb{row['id']}"
+
+    assert client.post(f"/api/auth/users/{row['id']}/resend-invite").status_code == 200
+    assert client.post("/api/auth/users/99999999/resend-invite").status_code == 404
+
+    token = make_invite_token(email)
+    assert client.post("/api/auth/accept-invite",
+                       json={"token": token, "password": "cl3anerpw!"}).status_code == 200
+    assert client.post(f"/api/auth/users/{row['id']}/resend-invite").status_code == 409

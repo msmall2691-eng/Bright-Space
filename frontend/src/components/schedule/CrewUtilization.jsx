@@ -30,8 +30,8 @@ export default function CrewUtilization({
 }) {
   if (!crewLoad || crewLoad.length === 0) {
     // Previously rendered nothing at all here, leaving the dispatch board's
-    // third column blank — a brand-new org (no Connecteam roster yet) or a
-    // day with zero jobs saw a lopsided 2-column layout that read as broken
+    // third column blank — a brand-new org (no crew roster yet) or a day
+    // with zero jobs saw a lopsided 2-column layout that read as broken
     // rather than "nothing to show yet".
     return (
       <div className="bg-bg-2 border border-hairline rounded-2xl p-3 flex flex-col min-w-0">
@@ -44,7 +44,7 @@ export default function CrewUtilization({
           <Users className="w-6 h-6 text-ink-3 mb-2" />
           <p className="text-[13px] text-ink">No crew roster yet</p>
           <p className="text-[11.5px] text-ink-3 mt-0.5">
-            Connect Connecteam in Settings to see crew capacity here.
+            Add your cleaners on the Crew page to see crew capacity here.
           </p>
         </div>
       </div>

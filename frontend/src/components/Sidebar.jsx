@@ -2,8 +2,8 @@ import { useState, useEffect } from 'react'
 import { NavLink, useLocation } from 'react-router-dom'
 import {
   LayoutDashboard, Sparkles, Users, Calendar, Receipt, LayoutGrid,
-  DollarSign, MessageSquare, Zap, Home, Repeat, Settings, X, Inbox, Clock,
-  LogOut, ChevronDown, TrendingUp, PanelLeftClose, Pin, Radar, Rows3, Filter, Scale, HardHat,
+  DollarSign, MessageSquare, Zap, Home, Repeat, Settings, X, Inbox,
+  LogOut, ChevronDown, TrendingUp, PanelLeftClose, Pin, Radar, Rows3, Filter, HardHat,
 } from 'lucide-react'
 import { logout } from '../api'
 
@@ -34,8 +34,6 @@ const nav = [
   { divider: true, label: 'Team' },
   { to: '/crew',        icon: HardHat,         label: 'Crew',        roles: ['admin', 'manager'] },
   { to: '/payroll',     icon: DollarSign,      label: 'Payroll' },
-  { to: '/crew-hours',  icon: Scale,           label: 'Crew Hours',  roles: ['admin', 'manager'] },
-  { to: '/connecteam',  icon: Clock,           label: 'Connecteam' },
   { divider: true, label: 'Settings' },
   { to: '/settings',    icon: Settings,        label: 'Settings' },
 ]

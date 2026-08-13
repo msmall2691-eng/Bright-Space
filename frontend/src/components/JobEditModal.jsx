@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from 'react'
-import { X, Search, Check, User, Zap, Trash2, Ban, ChevronDown, AlertTriangle, Send } from 'lucide-react'
+import { X, Search, Check, User, Zap, Trash2, Ban, ChevronDown, AlertTriangle } from 'lucide-react'
 import { get, patch, post, del } from '../api'
 import Button from './ui/Button'
 import { useEmployees } from '../hooks/useEmployees'
@@ -17,6 +17,7 @@ export default function JobEditModal({ job, properties = [], clients = [], onClo
     title: job?.title || '',
     job_type: job?.job_type || 'residential',
     pay_mode: job?.pay_mode || 'auto',
+    pay_rate_bump: job?.pay_rate_bump ?? '',
     status: job?.status || 'scheduled',
     property_id: job?.property_id || '',
     address: job?.address || '',
@@ -42,7 +43,7 @@ export default function JobEditModal({ job, properties = [], clients = [], onClo
   // Cleaner roster comes from the shared useEmployees hook so this modal
   // reuses the same cached /api/dispatch/employees response CalendarView +
   // useScheduleData already have on the wire (audit §18). normalizeEmployee
-  // still handles the shape drift between Connecteam payload variants.
+  // still handles legacy roster shape drift (see utils/employees.js).
   const { employees, loading: loadingCleaners } = useEmployees()
   const cleaners = useMemo(
     () => (employees || []).map(normalizeEmployee).filter(c => c.id),
@@ -142,34 +143,6 @@ export default function JobEditModal({ job, properties = [], clients = [], onClo
   // that explicitly instead of dead-ending the save.
   const [conflict, setConflict] = useState(null)
   const [removing, setRemoving] = useState(false)
-  const [dispatching, setDispatching] = useState(false)
-  // Already pushed to Connecteam? (drives Dispatch vs Re-dispatch label.)
-  const isDispatched = Boolean(job?.connecteam_shift_ids && job.connecteam_shift_ids.length)
-
-  // Manual Connecteam dispatch — the operator's "send the cleaners now" action.
-  // In manual-dispatch mode (default) nothing goes to Connecteam until this is
-  // pressed. Re-syncs (no duplicate shifts) if already dispatched.
-  const handleDispatch = async () => {
-    if (!job?.id) return
-    setDispatching(true); setError('')
-    try {
-      const res = await post(`/api/jobs/${job.id}/dispatch`, {})
-      const st = res?.connecteam || {}
-      if (st.dispatched || st.resynced || st.reason === 'already_dispatched') {
-        notify?.(isDispatched ? 'Re-synced with Connecteam' : 'Dispatched to Connecteam ✓')
-      } else if (st.reason === 'not_configured') {
-        notify?.('Connecteam isn’t connected — add your API key in Settings → Integrations.', 'error')
-      } else {
-        notify?.(`Dispatch: ${st.reason || 'done'}`)
-      }
-      onSave?.({ action: 'dispatch', jobId: job.id })
-    } catch (e) {
-      const msg = e?.detail || e?.message || 'Dispatch failed'
-      setError(msg); notify?.(msg, 'error')
-    } finally {
-      setDispatching(false)
-    }
-  }
 
   // onSave is invoked with a small envelope describing what changed so the
   // parent can update local state instead of refetching the whole week.
@@ -295,6 +268,8 @@ export default function JobEditModal({ job, properties = [], clients = [], onClo
         title: formData.title || (prop ? `Cleaning \u2014 ${prop.name}` : 'Cleaning'),
         job_type: formData.job_type || 'residential',
         pay_mode: formData.pay_mode || 'auto',
+        pay_rate_bump: formData.pay_rate_bump === '' || formData.pay_rate_bump == null
+          ? null : Number(formData.pay_rate_bump) || 0,
         status: formData.status || 'scheduled',
         property_id: parseInt(formData.property_id),
         address: formData.address || prop?.address || '',
@@ -366,6 +341,8 @@ export default function JobEditModal({ job, properties = [], clients = [], onClo
           extra.notes = formData.notes
           if (formData.job_type) extra.job_type = formData.job_type
           if (formData.pay_mode) extra.pay_mode = formData.pay_mode
+          if (formData.pay_rate_bump !== '' && formData.pay_rate_bump != null)
+            extra.pay_rate_bump = Number(formData.pay_rate_bump) || 0
           if (formData.status && formData.status !== job.status) extra.status = formData.status
           if (res?.job_id && Object.keys(extra).length) {
             await patch(`/api/jobs/${res.job_id}`, extra)
@@ -377,6 +354,8 @@ export default function JobEditModal({ job, properties = [], clients = [], onClo
             title: formData.title || undefined,
             job_type: formData.job_type || undefined,
             pay_mode: formData.pay_mode || undefined,
+            pay_rate_bump: formData.pay_rate_bump === '' || formData.pay_rate_bump == null
+              ? null : Number(formData.pay_rate_bump) || 0,
             status: formData.status || undefined,
             address: formData.address || undefined,
             cleaner_ids: formData.cleaner_ids,
@@ -708,7 +687,7 @@ export default function JobEditModal({ job, properties = [], clients = [], onClo
               )}
               {!loadingCleaners && cleaners.length === 0 && (
                 <p className="text-xs text-ink-3 mt-2">
-                  No cleaners returned from Connecteam. Check the Connecteam integration in Settings.
+                  No cleaners on the roster yet. Add your crew on the Crew page.
                 </p>
               )}
             </div>
@@ -721,7 +700,7 @@ export default function JobEditModal({ job, properties = [], clients = [], onClo
             )}
           </div>
 
-          {/* Advanced options — type, status, address override, notes, dispatch.
+          {/* Advanced options — type, status, address override, notes.
               Rarely touched on a routine edit, so collapsed by default. */}
           <div className="border-t border-hairline pt-4">
             <button
@@ -775,6 +754,26 @@ export default function JobEditModal({ job, properties = [], clients = [], onClo
                 <p className="text-xs text-ink-3 mt-1">Native payroll only — overrides how this turnover is paid.</p>
               </div>
             )}
+
+            {/* Hourly bump — the "+$1/hr" offer for a two-cleaner deep clean or a
+                weekday immediate turnover. Applies to hourly pay on this job for
+                every assigned cleaner; piece-rate pay ignores it. */}
+            <div>
+              <label className="block text-sm font-semibold text-ink-2 mb-2">Hourly bump ($/hr)</label>
+              <input
+                type="number"
+                min="0"
+                step="0.5"
+                value={formData.pay_rate_bump}
+                onChange={e => setFormData(f => ({ ...f, pay_rate_bump: e.target.value }))}
+                placeholder="0 — no bump"
+                className="w-full px-3 py-3 border border-hairline rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent text-base"
+              />
+              <p className="text-xs text-ink-3 mt-1">
+                Extra dollars per hour on top of each cleaner's normal rate, for this job only —
+                e.g. +$1/hr for a two-cleaner deep clean. Doesn't apply to piece-rate turnovers.
+              </p>
+            </div>
 
             {/* Address — editable; pre-fills from the property when blank */}
             <div>
@@ -856,16 +855,6 @@ export default function JobEditModal({ job, properties = [], clients = [], onClo
                   className="inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium text-ink-2 hover:bg-bg-2 disabled:opacity-60 transition-colors"
                 >
                   <Ban className="w-4 h-4" /> Cancel job
-                </button>
-              )}
-              {formData.status !== 'cancelled' && formData.cleaner_ids.length > 0 && (
-                <button
-                  onClick={handleDispatch}
-                  disabled={dispatching || removing || saving}
-                  title="Send the assigned cleaners' shifts to Connecteam now"
-                  className="inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium text-blue-600 hover:bg-blue-50 disabled:opacity-60 transition-colors"
-                >
-                  <Send className="w-4 h-4" /> {dispatching ? 'Dispatching…' : (isDispatched ? 'Re-dispatch' : 'Dispatch to Connecteam')}
                 </button>
               )}
             </div>

@@ -22,7 +22,6 @@ beforeEach(() => {
 const health = (over = {}) => ({
   overall: 'ok', auto_flow_on: true,
   google: { configured: true, unsynced_count: 0 },
-  connecteam: { configured: true, auto_dispatch: true, unsynced_count: 0 },
   issues: { duplicate_jobs: 0, orphaned_shifts: 0 },
   automation: { calendar_source_of_truth: 'brightbase' },
   ...over,

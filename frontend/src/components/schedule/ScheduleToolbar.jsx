@@ -59,9 +59,6 @@ export default function ScheduleToolbar({
   unassignedOnly = false,
   onToggleUnassigned,
   unassignedCount = 0,
-  noConnecteamOnly = false,
-  onToggleNoConnecteam,
-  notConnecteamCount = 0,
   noGcalOnly = false,
   onToggleNoGcal,
   notGcalCount = 0,
@@ -69,7 +66,7 @@ export default function ScheduleToolbar({
   onToggleGuestStays,
 }) {
   const filterActive = selectedPropertyType !== 'all' || selectedStatus !== 'all'
-    || unassignedOnly || noConnecteamOnly || noGcalOnly
+    || unassignedOnly || noGcalOnly
 
   const toolsMenu = (
     <ToolsMenu
@@ -250,11 +247,11 @@ export default function ScheduleToolbar({
               <option value="cancelled">Cancelled</option>
             </select>
 
-            {/* Quick-filter chips: needs cleaner / not in Connecteam / not on
-                Google. Live counts sit inside the chip so the dispatcher can
-                see how much work each queue represents without clicking.
-                Zero-count chips render disabled instead of hidden so the row
-                shape doesn't jump around when the numbers change. */}
+            {/* Quick-filter chips: needs cleaner / not on Google. Live counts
+                sit inside the chip so the dispatcher can see how much work
+                each queue represents without clicking. Zero-count chips
+                render disabled instead of hidden so the row shape doesn't
+                jump around when the numbers change. */}
             {onToggleUnassigned && (
               <ChipToggle
                 active={unassignedOnly}
@@ -264,17 +261,6 @@ export default function ScheduleToolbar({
                 testid="filter-unassigned"
               >
                 Needs cleaner ({unassignedCount})
-              </ChipToggle>
-            )}
-            {onToggleNoConnecteam && (
-              <ChipToggle
-                active={noConnecteamOnly}
-                onClick={onToggleNoConnecteam}
-                disabled={notConnecteamCount === 0 && !noConnecteamOnly}
-                colorActive="bg-amber-50 text-amber-800 border-amber-200"
-                testid="filter-no-connecteam"
-              >
-                Not in Connecteam ({notConnecteamCount})
               </ChipToggle>
             )}
             {onToggleNoGcal && (
@@ -326,8 +312,8 @@ function ToolsMenu({ open, onClose, onPreviewAutoAssign, onPreviewFixTimes, onOp
     <>
       <div className="fixed inset-0 z-40" onClick={onClose} />
       <div className="absolute right-0 mt-1 w-60 bg-panel border border-hairline rounded-xl shadow-lg z-50 py-1">
-        {/* The old "Push to Google & Connecteam now" item lived here. It was
-            removed: pushing is automatic (background reconcile), and the passive
+        {/* The old "Push to Google now" item lived here. It was removed:
+            pushing is automatic (background reconcile), and the passive
             Sync-health pill now carries a "Sync now" override for the rare
             do-it-this-second case — so the menu is just maintenance actions. */}
         <button onClick={() => { onClose(); onPreviewAutoAssign() }}
@@ -358,9 +344,9 @@ function ToolsMenu({ open, onClose, onPreviewAutoAssign, onPreviewFixTimes, onOp
   )
 }
 
-/** Small toggle chip used for the quick filters (needs cleaner / not in
- *  Connecteam / not on Google). Kept local because it shares the exact
- *  visual language of the two selects above and isn't reused elsewhere.
+/** Small toggle chip used for the quick filters (needs cleaner / not on
+ *  Google). Kept local because it shares the exact visual language of the
+ *  two selects above and isn't reused elsewhere.
  */
 function ChipToggle({ active, onClick, disabled, colorActive, testid, children }) {
   const base = 'text-[11px] font-medium px-2 py-1 rounded-full border whitespace-nowrap transition-colors'

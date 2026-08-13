@@ -9,7 +9,6 @@ import { MemoryRouter } from 'react-router-dom'
 
 const sendQuote = vi.fn()
 const acceptQuote = vi.fn()
-const dispatchJob = vi.fn()
 const scheduleJob = vi.fn()
 let hookState
 vi.mock('../../../hooks/useLaunch', async () => {
@@ -19,18 +18,19 @@ vi.mock('../../../hooks/useLaunch', async () => {
 
 import LaunchStepper from '../LaunchStepper'
 
-const baseSteps = (current) => ['quote', 'send', 'accept', 'schedule', 'dispatch']
-  .map(key => ({ key, done: ['quote', 'send', 'accept', 'schedule', 'dispatch'].indexOf(key) < ['quote', 'send', 'accept', 'schedule', 'dispatch'].indexOf(current) }))
+const ORDER = ['quote', 'send', 'accept', 'schedule']
+const baseSteps = (current) => ORDER
+  .map(key => ({ key, done: ORDER.indexOf(key) < ORDER.indexOf(current) }))
 
 beforeEach(() => {
   hookState = {
     detail: {}, loading: false, error: null, busy: false,
     steps: baseSteps('send'), currentStep: 'send',
     primaryQuote: { id: 9, status: 'draft', quote_number: 'QT-1' }, primaryJob: null,
-    reload: vi.fn(), sendQuote, acceptQuote, scheduleJob, dispatchJob,
+    reload: vi.fn(), sendQuote, acceptQuote, scheduleJob,
   }
 })
-afterEach(() => { cleanup(); sendQuote.mockReset(); acceptQuote.mockReset(); dispatchJob.mockReset(); scheduleJob.mockReset() })
+afterEach(() => { cleanup(); sendQuote.mockReset(); acceptQuote.mockReset(); scheduleJob.mockReset() })
 
 const renderStepper = () => render(<MemoryRouter><LaunchStepper opportunityId={5} title="Acme" onClose={() => {}} /></MemoryRouter>)
 
@@ -49,15 +49,6 @@ describe('LaunchStepper', () => {
     expect(acceptQuote).toHaveBeenCalledTimes(1)
   })
 
-  it('locks Dispatch when the job has no crew', () => {
-    hookState.steps = baseSteps('dispatch'); hookState.currentStep = 'dispatch'
-    hookState.primaryJob = { id: 3, status: 'scheduled', scheduled_date: '2026-08-10', cleaner_ids: [] }
-    renderStepper()
-    const btn = screen.getByRole('button', { name: /Send to crew/ })
-    expect(btn.disabled).toBe(true)
-    expect(screen.getByText(/Assign a crew/)).toBeTruthy()
-  })
-
   it('shows the schedule form on the schedule step', () => {
     hookState.steps = baseSteps('schedule'); hookState.currentStep = 'schedule'
     hookState.primaryQuote = { id: 9, status: 'accepted' }
@@ -68,8 +59,8 @@ describe('LaunchStepper', () => {
   })
 
   it('renders the Launched done-state when every step is done', () => {
-    hookState.steps = ['quote', 'send', 'accept', 'schedule', 'dispatch'].map(key => ({ key, done: true }))
-    hookState.currentStep = 'dispatch'
+    hookState.steps = ORDER.map(key => ({ key, done: true }))
+    hookState.currentStep = 'schedule'
     renderStepper()
     expect(screen.getByText('Launched')).toBeTruthy()
   })

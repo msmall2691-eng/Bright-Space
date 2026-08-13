@@ -710,7 +710,6 @@ def _integration_health(db: Session, oid: int, today: date):
                   "detail": "synced" if cal else "not connected", "tone": "green" if cal else "gray"})
 
     for key, label, setting in (
-        ("connecteam", "Connecteam", "connecteam_api_key"),
         ("square", "Square", "square_access_token"),
     ):
         on = bool(_setting(db, setting))

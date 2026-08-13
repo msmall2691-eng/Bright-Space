@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
-import { X, Users, Calendar, Home, Repeat, Zap, ExternalLink } from 'lucide-react'
+import { X, Calendar, Home, Repeat, Zap, ExternalLink } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { get, post } from '../../api'
 import { toast } from '../../utils/toastBus'
@@ -10,13 +10,13 @@ import { toast } from '../../utils/toastBus'
  * instead of buried in Settings, in plain language. Reuses
  * GET/POST /api/settings/automation (partial updates), so no backend change.
  *
- * Deliberately shows ONLY the scheduling-relevant settings (Connecteam push,
- * Google live sync, Airbnb import, recurring auto-generate) — the customer-
- * messaging toggles stay in full Settings so this stays uncluttered.
+ * Deliberately shows ONLY the scheduling-relevant settings (Google live
+ * sync, Airbnb import, recurring auto-generate) — the customer-messaging
+ * toggles stay in full Settings so this stays uncluttered.
  *
  * Sync is ONE-WAY: BrightBase is the master and pushes the schedule out to
- * Google + Connecteam live. Changes made directly in Google/Connecteam are not
- * pulled back — so there's no "who wins" choice and no drift queue to babysit.
+ * Google live. Changes made directly in Google are not pulled back — so
+ * there's no "who wins" choice and no drift queue to babysit.
  */
 
 function Toggle({ on, onChange, disabled }) {
@@ -91,17 +91,6 @@ export default function ScheduleSyncSettings({ open, onClose }) {
           <div className="p-8 text-center text-sm text-ink-3">Loading…</div>
         ) : (
           <div className="flex-1 overflow-y-auto divide-y divide-hairline">
-            {/* Connecteam */}
-            <div>
-              <div className="px-4 pt-3 pb-1 text-[11px] font-semibold uppercase tracking-wider text-ink-3">Connecteam</div>
-              <div className="flex items-center justify-between">
-                <Row icon={Users} tint="bg-violet-500/15 text-violet-500"
-                  title="Live push to Connecteam"
-                  desc="Building the schedule pushes shifts to Connecteam automatically, as drafts. Airbnb turnovers and not-yet-assigned jobs go out as open shifts; assigned jobs go to that cleaner. Nothing goes live until you publish the drafts in Connecteam." />
-                <div className="pr-4"><Toggle on={!!s.connecteam_auto_dispatch_enabled} onChange={v => save({ connecteam_auto_dispatch_enabled: v })} /></div>
-              </div>
-            </div>
-
             {/* Google Calendar */}
             <div>
               <div className="px-4 pt-3 pb-1 text-[11px] font-semibold uppercase tracking-wider text-ink-3">Google Calendar</div>

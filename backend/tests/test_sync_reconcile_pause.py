@@ -41,10 +41,8 @@ def flags():
 
 def _stub_integrations(monkeypatch, *, gcal_connected):
     import integrations.google_calendar as gcal
-    import integrations.connecteam as ct
     import integrations.gcal_sync as gsync
     monkeypatch.setattr(gcal, "is_configured", lambda: gcal_connected)
-    monkeypatch.setattr(ct, "is_configured", lambda: False)  # isolate the GCal path
     monkeypatch.setattr(gsync, "reassert_deleted_gcal_events", lambda db: {"restored": 0})
 
 

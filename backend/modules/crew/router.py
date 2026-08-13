@@ -6,16 +6,15 @@ sees exactly the jobs already assigned to their crew ID in Job.cleaner_ids
 (GET /my-day). The account/crew-ID link is managed from the admin Users screen
 (auth/router.py's AdminUserUpdate.cleaner_id), not here.
 
-Phase 2a (this file adds): a native time clock — POST /clock-in, POST
-/clock-out, and clock status folded into /my-day. Punches land in the
-`time_entries` table, a NEW canonical domain (when a cleaner actually worked).
-This is deliberately NOT wired into payroll: payroll still reads Connecteam
-Time Clock punches. The point of Phase 2a is to prove a native clock works and
-accumulate real hours to reconcile against Connecteam before any cutover.
+Phase 2a added a native time clock — POST /clock-in, POST /clock-out, and clock
+status folded into /my-day. Punches land in the `time_entries` table, a
+canonical domain (when a cleaner actually worked). Originally dark-launched to
+reconcile against Connecteam; as of the Connecteam removal these punches ARE
+payroll's default source (payroll_source='native'), and /my-week lets a cleaner
+see their own earned + predicted pay for the week.
 
-None of this touches the schedule or Connecteam: writing a punch never changes
-Job schedule state, so the scheduling-authority contract (BrightBase canonical,
-Connecteam a read-only projection) is untouched.
+None of this touches the schedule: writing a punch never changes Job schedule
+state, so the scheduling-authority contract (BrightBase canonical) is untouched.
 
 Jobs are fetched for a bounded window and filtered in Python rather than with a
 DB-specific JSON-containment query, matching the pattern the rest of
@@ -33,18 +32,10 @@ from sqlalchemy import or_, func
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, joinedload
 
-from auth_jwt import make_invite_token
-from config import app_base_url
 from database.db import get_db
 from database.models import Job, User, TimeEntry
-from modules.auth.router import require_role, current_org_id, resolve_org_id
+from modules.auth.router import require_role, current_org_id, resolve_org_id, send_staff_invite
 from utils.dates import business_today, business_tz
-from integrations.connecteam import (
-    is_configured as connecteam_is_configured,
-    get_time_activities,
-    get_timesheet_totals,
-    ConnecteamAuthError,
-)
 
 router = APIRouter()
 
@@ -184,7 +175,7 @@ class ClockInBody(BaseModel):
 class ClockOutBody(BaseModel):
     break_minutes: Optional[int] = None
     note: Optional[str] = None
-    # Miles driven for this job, entered at clock-out (parity with Connecteam).
+    # Miles driven for this job, entered at clock-out.
     # Optional — blank/omitted means no driving to reimburse for this punch.
     miles: Optional[float] = None
 
@@ -224,8 +215,8 @@ def my_day(
     upcoming_jobs = [j for j in mine if j.scheduled_date != today]
 
     # ── Native time clock status ─────────────────────────────────────────────
-    # Read-only w.r.t. the schedule and entirely separate from payroll (which
-    # still reads Connecteam). Folded into /my-day so the crew app is one call.
+    # Read-only w.r.t. the schedule. Folded into /my-day so the crew app is
+    # one call; native payroll reads these same punches.
     day_start, day_end = _business_day_bounds_utc(today)
     entries_today = (
         db.query(TimeEntry)
@@ -265,6 +256,143 @@ def my_day(
     }
 
 
+@router.get("/my-week")
+def my_week(
+    db: Session = Depends(get_db),
+    org_id: int = Depends(current_org_id),
+    current_user: User = Depends(require_role("cleaner")),
+):
+    """A cleaner's week of pay, so they can see what the week is shaping up to
+    be worth: what they've EARNED so far (from their closed punches, computed by
+    the exact same code the office's Payroll page runs — one pay-math
+    implementation, no drift) plus a PREDICTION for the rest of the week from
+    the jobs still assigned to them (scheduled length × their hourly rate + any
+    per-job bump; piece-rate turnovers at the property's flat rate).
+
+    Only ever returns the CALLER's own numbers — the full payroll breakdown
+    stays admin/manager-only."""
+    from modules.payroll.router import _get_rates, _native_summary
+
+    _require_crew_id(current_user)
+    oid = resolve_org_id(org_id, db)
+    org_scope = lambda model: or_(model.org_id == oid, model.org_id.is_(None))
+    today = business_today()
+    week_start = today - timedelta(days=today.weekday())   # Monday
+    week_end = week_start + timedelta(days=6)              # Sunday
+
+    rates = _get_rates(db)
+
+    # Earned so far: the payroll engine over this week's window, then pick out
+    # ONLY the caller's row. The window is a week and the shop is small, so
+    # computing everyone and filtering costs nothing measurable.
+    summary = _native_summary(db, week_start.isoformat(), week_end.isoformat(), rates, oid)
+    mine = next((e for e in summary["employees"] if e["employee_id"] == current_user.cleaner_id), None)
+    earned = {
+        "gross_pay": mine["gross_pay"] if mine else 0.0,
+        "hours": mine["total_hours"] if mine else 0.0,
+        "miles": mine["miles"] if mine else 0.0,
+        "mileage_reimbursement": mine["mileage_reimbursement"] if mine else 0.0,
+        "turnovers": mine["weekend_turnovers"] if mine else 0,
+    }
+
+    # Which jobs already have a CLOSED punch by this cleaner this week — those
+    # are in "earned" and must not also be predicted. An OPEN punch keeps its
+    # job in the prediction: mid-job, the estimate stands until clock-out.
+    tz = business_tz()
+    lo = datetime.combine(week_start, dtime(0, 0), tzinfo=tz).astimezone(timezone.utc).replace(tzinfo=None)
+    hi = datetime.combine(week_end + timedelta(days=1), dtime(0, 0), tzinfo=tz).astimezone(timezone.utc).replace(tzinfo=None)
+    punched_job_ids = {
+        e.job_id for e in db.query(TimeEntry).filter(
+            org_scope(TimeEntry),
+            TimeEntry.cleaner_id == current_user.cleaner_id,
+            TimeEntry.clock_out_at.isnot(None),
+            TimeEntry.clock_in_at >= lo,
+            TimeEntry.clock_in_at < hi,
+        ).all() if e.job_id
+    }
+
+    jobs = (
+        db.query(Job)
+        .options(joinedload(Job.property))
+        .filter(
+            org_scope(Job),
+            Job.scheduled_date >= today,
+            Job.scheduled_date <= week_end,
+            Job.status.in_(("scheduled", "in_progress")),
+        )
+        .order_by(Job.scheduled_date, Job.start_time)
+        .all()
+    )
+    upcoming = []
+    predicted_upcoming = 0.0
+    for j in jobs:
+        if current_user.cleaner_id not in (j.cleaner_ids or []):
+            continue
+        if j.id in punched_job_ids:
+            continue
+        prop = j.property
+        weekend = j.scheduled_date.weekday() >= 5
+        if j.job_type == "str_turnover":
+            kind = "rental"
+        elif j.job_type == "deep_clean":
+            kind = "deep"
+        else:
+            kind = "residential"
+        mode = (j.pay_mode or "auto").lower()
+        use_piece = (kind == "rental" and weekend) if mode == "auto" else (mode == "piece")
+
+        # Scheduled length in hours (start/end are NOT NULL on Job).
+        dur = (datetime.combine(j.scheduled_date, j.end_time)
+               - datetime.combine(j.scheduled_date, j.start_time)).total_seconds() / 3600.0
+        dur = max(0.0, dur)
+
+        bump = float(j.pay_rate_bump or 0.0)
+        unpriced = False
+        if use_piece:
+            rate = getattr(prop, "turnover_rate", None) if prop is not None else None
+            if rate is None:
+                unpriced = True
+                pay = 0.0
+            else:
+                pay = float(rate)
+        else:
+            if kind == "deep":
+                hourly = (current_user.pay_rate_deep if current_user.pay_rate_deep is not None
+                          else rates["deep_clean_rate"])
+            elif kind == "rental":
+                hourly = (current_user.pay_rate_rental if current_user.pay_rate_rental is not None
+                          else rates["rental_weekday_rate"])
+            else:
+                hourly = (current_user.pay_rate_residential if current_user.pay_rate_residential is not None
+                          else rates["residential_rate"])
+            pay = dur * (hourly + bump)
+
+        predicted_upcoming += pay
+        upcoming.append({
+            "id": j.id,
+            "date": j.scheduled_date.isoformat(),
+            "title": j.title,
+            "property_name": prop.name if prop else None,
+            "start_time": _fmt_time(j.start_time),
+            "end_time": _fmt_time(j.end_time),
+            "hours": round(dur, 2),
+            "piece": use_piece,
+            "bump": bump or 0.0,
+            "unpriced": unpriced,
+            "predicted_pay": round(pay, 2),
+        })
+
+    return {
+        "as_of": today.isoformat(),
+        "week_start": week_start.isoformat(),
+        "week_end": week_end.isoformat(),
+        "earned": earned,
+        "upcoming": upcoming,
+        "predicted_upcoming_total": round(predicted_upcoming, 2),
+        "predicted_week_total": round(earned["gross_pay"] + predicted_upcoming, 2),
+    }
+
+
 @router.post("/clock-in")
 def clock_in(
     body: ClockInBody,
@@ -273,8 +401,8 @@ def clock_in(
     current_user: User = Depends(require_role("cleaner")),
 ):
     """Start a punch. One open punch per cleaner — a second clock-in while
-    already on the clock is a 409 (clock out first). Phase 2a: recorded only,
-    never read by payroll."""
+    already on the clock is a 409 (clock out first). These punches are what
+    native payroll pays from."""
     _require_crew_id(current_user)
     oid = resolve_org_id(org_id, db)
     org_scope = lambda model: or_(model.org_id == oid, model.org_id.is_(None))
@@ -403,108 +531,6 @@ def set_entry_miles(
 
 # ── Reconciliation (office view) ─────────────────────────────────────────────
 
-@router.get("/reconciliation", dependencies=[Depends(require_role("admin", "manager"))])
-async def reconciliation(
-    start: str,
-    end: str,
-    db: Session = Depends(get_db),
-    org_id: int = Depends(current_org_id),
-):
-    """Native clock hours vs Connecteam's hours, per cleaner, for a date range —
-    the proof step before payroll ever depends on the native clock. Read-only:
-    reads Connecteam the same way payroll does (its official timesheet totals,
-    falling back to punch-summed hours) and never writes it. If Connecteam isn't
-    configured, returns native hours alone with connecteam_configured=false."""
-    try:
-        d0 = datetime.strptime(start, "%Y-%m-%d").date()
-        d1 = datetime.strptime(end, "%Y-%m-%d").date()
-    except ValueError:
-        raise HTTPException(status_code=422, detail="Dates must be YYYY-MM-DD")
-    if d1 < d0:
-        raise HTTPException(status_code=422, detail="End date is before start date")
-    if (d1 - d0).days > 92:
-        raise HTTPException(status_code=422, detail="Range is at most 92 days (Connecteam's limit).")
-
-    oid = resolve_org_id(org_id, db)
-    org_scope = lambda model: or_(model.org_id == oid, model.org_id.is_(None))
-
-    # ── Native hours: closed punches whose clock-in falls in the range. ──
-    day_start = _business_day_bounds_utc(d0)[0]
-    day_end = _business_day_bounds_utc(d1)[1]
-    native = defaultdict(float)
-    for e in (
-        db.query(TimeEntry)
-        .filter(org_scope(TimeEntry),
-                TimeEntry.clock_out_at.isnot(None),
-                TimeEntry.clock_in_at >= day_start,
-                TimeEntry.clock_in_at < day_end)
-        .all()
-    ):
-        native[e.cleaner_id] += _entry_hours(e) or 0.0
-
-    # ── Connecteam hours (read-only), the same source payroll reconciles to. ──
-    connecteam: dict = {}
-    ct_error = None
-    configured = connecteam_is_configured()
-    if configured:
-        try:
-            totals: dict = {}
-            if (d1 - d0).days <= 45:   # Connecteam's official-totals window
-                try:
-                    totals = await get_timesheet_totals(start, end)
-                except Exception:
-                    totals = {}
-            if totals:
-                connecteam = {str(k): float((v or {}).get("hours") or 0.0) for k, v in totals.items()}
-            else:
-                agg = defaultdict(float)
-                for r in await get_time_activities(start, end):
-                    agg[str(r["userId"])] += r.get("netHours") or 0.0
-                connecteam = dict(agg)
-        except ConnecteamAuthError as ex:
-            ct_error = str(ex)
-        except Exception as ex:
-            ct_error = f"Connecteam error: {ex}"
-
-    # ── Names from BrightBase logins (crew who use the app have accounts). ──
-    ids = set(native) | set(connecteam)
-    names = {}
-    if ids:
-        for u in db.query(User).filter(User.cleaner_id.in_(ids)).all():
-            names[u.cleaner_id] = u.full_name or u.email
-
-    people = []
-    for cid in ids:
-        nh = round(native.get(cid, 0.0), 2)
-        ch = connecteam.get(cid)
-        ch = round(ch, 2) if ch is not None else None
-        people.append({
-            "cleaner_id": cid,
-            "name": names.get(cid) or cid,
-            "native_hours": nh,
-            "connecteam_hours": ch,
-            "delta_hours": round(nh - ch, 2) if ch is not None else None,
-            # Within 0.25h reads as agreement in the UI.
-            "match": ch is not None and abs(nh - ch) <= 0.25,
-        })
-    people.sort(key=lambda p: (p["name"] or "").lower())
-
-    tot_native = round(sum(p["native_hours"] for p in people), 2)
-    tot_ct = round(sum((p["connecteam_hours"] or 0.0) for p in people), 2)
-    return {
-        "start": start,
-        "end": end,
-        "connecteam_configured": configured,
-        "connecteam_error": ct_error,
-        "people": people,
-        "totals": {
-            "native_hours": tot_native,
-            "connecteam_hours": tot_ct if configured else None,
-            "delta_hours": round(tot_native - tot_ct, 2) if configured else None,
-        },
-    }
-
-
 # ── Crew admin: manage cleaners as native users (Connecteam-free) ────────────
 # The office manages the crew here — add a cleaner, set pay rates, and (crucial
 # for the Connecteam cutover) claim the crew IDs already sitting on scheduled
@@ -590,7 +616,7 @@ def resend_crew_invite(user_id: int, db: Session = Depends(get_db),
     if u.password_hash:
         raise HTTPException(status_code=409,
                             detail="This cleaner has already set their password.")
-    _send_crew_invite(u)
+    send_staff_invite(u)
     return _crew_row(u)
 
 
@@ -636,33 +662,10 @@ def add_crew(body: CrewCreate, db: Session = Depends(get_db),
         # numeric legacy IDs.
         u.cleaner_id = f"bb{u.id}"
     db.commit(); db.refresh(u)
-    _send_crew_invite(u)
+    send_staff_invite(u)
     return _crew_row(u)
 
 
-def _send_crew_invite(u: User) -> None:
-    """Email the cleaner a link to set their password. Best-effort — a mail
-    failure never fails the create; the office can resend."""
-    try:
-        token = make_invite_token(u.email)
-        link = f"{app_base_url().rstrip('/')}/accept-invite?token={token}"
-        name = (u.full_name or "there").split()[0]
-        from integrations.email import send_email
-        send_email(
-            to=u.email,
-            subject="You're set up on BrightBase — finish signing in",
-            html_body=(
-                f"<p>Hi {name},</p>"
-                f"<p>You've been added to the crew on BrightBase. Set your password to "
-                f"see your schedule and clock in from your phone. This link is good for "
-                f"7 days.</p>"
-                f"<p><a href=\"{link}\" style=\"display:inline-block;padding:10px 18px;"
-                f"background:#4f46e5;color:#fff;border-radius:8px;text-decoration:none;"
-                f"font-weight:600\">Set your password</a></p>"
-                f"<p style=\"color:#666;font-size:12px\">If you weren't expecting this, "
-                f"you can ignore it.</p>"
-            ),
-            text_body=f"Hi {name}, set your BrightBase password (good for 7 days): {link}",
-        )
-    except Exception:
-        log.exception("crew invite email failed for a new cleaner")
+# The invite email itself lives in modules/auth/router.py (send_staff_invite) —
+# one sender for both the crew add and the generic Users-screen invite, so the
+# wording and 7-day TTL can never drift apart.

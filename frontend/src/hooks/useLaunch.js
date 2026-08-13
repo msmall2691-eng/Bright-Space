@@ -3,16 +3,18 @@ import { get, post, patch } from '../api'
 import { toast } from '../utils/toastBus'
 
 /** The Launch flow drives ONE deal through the operational pipeline —
- *  Quote → Send → Accept → Schedule → Dispatch — in a single surface, opening
- *  at the deal's current stage. Every step wraps an endpoint that ALREADY
- *  exists; the stepper only sequences existing moves, so the business logic
- *  (and its guards) stays server-side and the risk stays in the UI.
+ *  Quote → Send → Accept → Schedule — in a single surface, opening at the
+ *  deal's current stage. Every step wraps an endpoint that ALREADY exists;
+ *  the stepper only sequences existing moves, so the business logic (and
+ *  its guards) stays server-side and the risk stays in the UI. Once a job
+ *  is scheduled with a crew assigned, the crew sees it natively on My Day —
+ *  there is no separate dispatch step.
  *
  *  Stage is DETECTED, not stored: we read /api/opportunities/{id}/details and
  *  infer which steps are done from the deal's quotes + jobs. That means the
  *  stepper stays correct even for deals advanced outside it. */
 
-export const LAUNCH_STEPS = ['quote', 'send', 'accept', 'schedule', 'dispatch']
+export const LAUNCH_STEPS = ['quote', 'send', 'accept', 'schedule']
 
 // How far along a quote's status implies the deal is. Mirrors the server's
 // quote lifecycle: draft → sent/viewed/changes → accepted → converted.
@@ -26,10 +28,6 @@ export function useLaunch(opportunityId) {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   const [busy, setBusy] = useState(false)
-  // /details doesn't expose a job's Connecteam dispatch flag, so a fresh
-  // dispatch can't be re-derived from a reload — track it locally so the
-  // Dispatch step reflects the action the operator just took.
-  const [dispatchedLocally, setDispatchedLocally] = useState(false)
 
   const load = useCallback(async () => {
     if (!opportunityId) return
@@ -71,16 +69,12 @@ export function useLaunch(opportunityId) {
       send: !!qs && qs !== 'draft',
       accept: qs === 'accepted' || qs === 'converted',
       schedule: !!(primaryJob && primaryJob.scheduled_date && primaryJob.status !== 'unscheduled'),
-      // Prefer the durable signal (a job with Connecteam shifts) over the
-      // local flag so a reload — or a deal dispatched elsewhere — reflects truth.
-      dispatch: dispatchedLocally
-        || jobs.some(j => (j.connecteam_shift_ids?.length || 0) > 0 || j.status === 'completed'),
     }
     return LAUNCH_STEPS.map(key => ({ key, done: !!done[key] }))
-  }, [primaryQuote, primaryJob, jobs, dispatchedLocally])
+  }, [primaryQuote, primaryJob])
 
   // Open at the first not-yet-done step.
-  const currentStep = steps.find(s => !s.done)?.key || 'dispatch'
+  const currentStep = steps.find(s => !s.done)?.key || 'schedule'
 
   const run = async (fn, okMsg) => {
     setBusy(true)
@@ -121,24 +115,9 @@ export function useLaunch(opportunityId) {
       return post(`/api/quotes/${primaryQuote.id}/convert-to-job`, body || {})
     }, 'Job scheduled')
 
-  const dispatchJob = () =>
-    run(async () => {
-      // dispatch_job returns 200 with connecteam.dispatched:false + a reason on
-      // a no-op (no crew, Connecteam not configured, inactive job). Only mark
-      // the step done when the push actually happened. A resync (already
-      // dispatched) returns a different shape with no `dispatched` key — treat
-      // that as success (the crew already has it); only an explicit false fails.
-      const res = await post(`/api/jobs/${primaryJob.id}/dispatch`, {})
-      const ct = res?.connecteam
-      if (ct && ct.dispatched === false) {
-        throw new Error(ct.reason ? `Crew not notified (${ct.reason.replace(/_/g, ' ')})` : 'Crew dispatch didn’t complete.')
-      }
-      setDispatchedLocally(true)
-    }, 'Sent to crew')
-
   return {
     detail, loading, error, busy,
     steps, currentStep, primaryQuote, primaryJob,
-    reload: load, sendQuote, acceptQuote, scheduleJob, dispatchJob,
+    reload: load, sendQuote, acceptQuote, scheduleJob,
   }
 }

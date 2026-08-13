@@ -14,7 +14,6 @@ const PAGE_TITLES = {
   '/billing': 'Quotes & Billing',
   '/schedule': 'Schedule',
   '/payroll': 'Payroll',
-  '/connecteam': 'Connecteam',
   '/comms': 'Messages',
   '/properties': 'Properties',
   '/recurring': 'Recurring',

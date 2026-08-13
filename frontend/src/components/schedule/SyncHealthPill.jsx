@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { CheckCircle2, RefreshCw, AlertTriangle, ChevronDown, Cloud, Users } from 'lucide-react'
+import { CheckCircle2, RefreshCw, AlertTriangle, ChevronDown, Cloud } from 'lucide-react'
 import { post } from '../../api'
 import { useSyncHealth } from '../../hooks/useSyncHealth'
 import { canEdit } from '../../utils/perms'
@@ -13,8 +13,8 @@ import { canEdit } from '../../utils/perms'
  *   • attention → amber  "N need attention"  (duplicates/orphans/disconnect)
  *
  * Clicking opens a small panel (the "accuracy panel") that breaks down what the
- * background automation is doing — Google/Connecteam connection, auto-flow
- * toggles, unsynced counts, and any integrity issues — plus a single "Sync now"
+ * background automation is doing — Google connection, auto-flow toggles,
+ * unsynced counts, and any integrity issues — plus a single "Sync now"
  * OVERRIDE. The override exists only for impatience/debugging; the copy makes
  * clear the schedule syncs on its own, so the operator stops feeling they must
  * click anything.
@@ -54,8 +54,7 @@ export default function SyncHealthPill({ refreshKey = 0, onForced, onOpenSetting
   if (!health) return null
 
   const overall = health.overall || 'ok'
-  const backlog = (health.google?.unsynced_count || 0) +
-    (health.connecteam?.auto_dispatch ? (health.connecteam?.unsynced_count || 0) : 0)
+  const backlog = health.google?.unsynced_count || 0
   const issues = (health.issues?.duplicate_jobs || 0) + (health.issues?.orphaned_shifts || 0)
 
   const style = {
@@ -93,7 +92,7 @@ export default function SyncHealthPill({ refreshKey = 0, onForced, onOpenSetting
 
             <p className="text-[12px] text-ink-3 mb-3 leading-snug">
               {health.auto_flow_on
-                ? 'The schedule syncs itself — feeds pull in, jobs post to Google & Connecteam, and both stay reconciled. No manual push needed.'
+                ? 'The schedule syncs itself — feeds pull in, jobs post to Google, and everything stays reconciled. No manual push needed.'
                 : 'Auto-sync is partly off, so some changes won’t flow on their own until it’s re-enabled in settings.'}
             </p>
 
@@ -102,11 +101,6 @@ export default function SyncHealthPill({ refreshKey = 0, onForced, onOpenSetting
                  note={health.google?.configured
                    ? (health.google?.unsynced_count ? `${health.google.unsynced_count} pending` : 'all posted')
                    : 'not connected'} />
-            <Row Icon={Users} label="Connecteam"
-                 ok={health.connecteam?.configured}
-                 note={!health.connecteam?.configured ? 'not connected'
-                   : !health.connecteam?.auto_dispatch ? 'manual mode'
-                   : (health.connecteam?.unsynced_count ? `${health.connecteam.unsynced_count} pending` : 'all posted')} />
 
             {issues > 0 && (
               <div className="mt-2 px-2 py-1.5 rounded-lg bg-amber-50 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-500/30 text-[12px] text-amber-800 dark:text-amber-300">

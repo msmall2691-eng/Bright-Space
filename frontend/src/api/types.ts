@@ -315,6 +315,52 @@ export interface paths {
         patch: operations["update_workspace_user_api_auth_users__user_id__patch"];
         trace?: never;
     };
+    "/api/auth/users/invite": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Invite User
+         * @description Admin adds a person directly (no self-signup + approval dance): creates a
+         *     passwordless invited account with the chosen role and emails them the same
+         *     single-use set-your-password link the crew flow uses. Cleaners invited here
+         *     get a crew ID minted (same as POST /api/crew) so they're assignable
+         *     immediately.
+         */
+        post: operations["invite_user_api_auth_users_invite_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/auth/users/{user_id}/resend-invite": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Resend User Invite
+         * @description Re-email the set-password link to anyone who hasn't activated yet — the
+         *     link expires after 7 days, or the first email got lost. 409 once a password
+         *     exists: resend must never become a password-reset backdoor.
+         */
+        post: operations["resend_user_invite_api_auth_users__user_id__resend_invite_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/auth/google-account": {
         parameters: {
             query?: never;
@@ -1308,12 +1354,12 @@ export interface paths {
          *
          *     The point: let the operator TRUST the schedule at a glance instead of
          *     clicking a pile of redundant 'push now' buttons. Rolls up, read-only:
-         *       - whether Google + Connecteam are connected and auto-flow is actually on
+         *       - whether Google is connected and auto-flow is actually on
          *         (all the background ticks that keep the schedule current);
-         *       - how many upcoming jobs aren't on Google / Connecteam yet (a backlog the
-         *         ticks will clear on their own — not something to push manually);
+         *       - how many upcoming jobs aren't on Google yet (a backlog the ticks will
+         *         clear on their own — not something to push manually);
          *       - the data-integrity issues the background audit already computes
-         *         (duplicate jobs, orphaned shifts) — the only things a human should act on.
+         *         (duplicate jobs) — the only things a human should act on.
          *     Never mutates.
          */
         get: operations["sync_health_api_jobs_sync_health_get"];
@@ -1391,46 +1437,20 @@ export interface paths {
          * @description One-click fix for the schedule "Needs attention" banner.
          *
          *     Pushes every upcoming unsynced job to Google Calendar (same logic as
-         *     /push-to-gcal) AND dispatches upcoming assigned jobs that have no
-         *     Connecteam shifts yet. Both paths are no-ops for jobs already synced,
-         *     so this is safe to call repeatedly. The background reconcile tick
-         *     (scheduler.sync_reconcile_tick) runs the same repairs automatically.
+         *     /push-to-gcal); a no-op for jobs already synced, so this is safe to call
+         *     repeatedly. The background reconcile tick (scheduler.sync_reconcile_tick)
+         *     runs the same repair automatically.
          *
-         *     Scoped to the caller's org (MT-2): both the GCal push and the Connecteam
-         *     dispatch/drift queries only touch this tenant's jobs, so this endpoint
-         *     can't be used to reach around push-to-gcal's own tenant scoping.
+         *     Connecteam removal (step 3): this endpoint's Connecteam half (outbox drain
+         *     → read-back → dispatch → drift repair) is retired along with the background
+         *     tick's — a blanket reconcile must not mass-push to a projection the crew no
+         *     longer works from. The per-job /dispatch tools remain until their UI goes.
+         *
+         *     Scoped to the caller's org (MT-2): the GCal push only touches this
+         *     tenant's jobs, so this endpoint can't be used to reach around
+         *     push-to-gcal's own tenant scoping.
          */
         post: operations["sync_reconcile_api_jobs_sync_reconcile_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/jobs/connecteam/readback-preview": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Connecteam Readback Preview
-         * @description Dry-run of the Connecteam read-back reconcile: compares our record to the
-         *     ACTUAL shifts in Connecteam and reports what a real sync would change,
-         *     mutating nothing. Shows:
-         *       - missing: active jobs whose draft shift(s) vanished from Connecteam
-         *         (would be recreated),
-         *       - partial: multi-shift jobs that lost some shifts (flagged for review),
-         *       - unrecognized: shifts in Connecteam not linked to any of your upcoming
-         *         jobs (manual shifts or orphans — never auto-deleted).
-         *
-         *     Note: Connecteam is a single shared account, so `unrecognized` can include
-         *     shifts belonging to other workspaces' jobs.
-         */
-        get: operations["connecteam_readback_preview_api_jobs_connecteam_readback_preview_get"];
-        put?: never;
-        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -1446,8 +1466,8 @@ export interface paths {
         };
         /**
          * Schedule Audit
-         * @description On-demand schedule audit: duplicate jobs + orphaned Connecteam shifts.
-         *     The same scan the background tick runs, exposed for a Settings/admin view.
+         * @description On-demand schedule audit: duplicate jobs. The same scan the background
+         *     tick runs, exposed for a Settings/admin view.
          */
         get: operations["schedule_audit_api_jobs_audit_get"];
         put?: never;
@@ -2004,49 +2024,6 @@ export interface paths {
         patch: operations["update_reminder_settings_api_jobs__job_id__reminder_settings_patch"];
         trace?: never;
     };
-    "/api/jobs/{job_id}/dispatch": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Dispatch Job
-         * @description Manually push this job's assigned cleaners to Connecteam NOW — the
-         *     operator-triggered dispatch that MANUAL mode holds for. An explicit action,
-         *     so it runs regardless of the auto-dispatch setting. Re-syncs instead of
-         *     duplicating if the job was already dispatched.
-         */
-        post: operations["dispatch_job_api_jobs__job_id__dispatch_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/jobs/{job_id}/undispatch": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Undispatch Job
-         * @description Pull this job's shifts back OFF Connecteam — undo a dispatch.
-         */
-        post: operations["undispatch_job_api_jobs__job_id__undispatch_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/jobs/{job_id}/invite-client": {
         parameters: {
             query?: never;
@@ -2401,33 +2378,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/payroll/source": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Get Payroll Source
-         * @description Which time source payroll reads: 'connecteam' (default) or 'native'.
-         */
-        get: operations["get_payroll_source_api_payroll_source_get"];
-        /**
-         * Set Payroll Source
-         * @description Switch payroll between Connecteam punches and the native time clock. Kept
-         *     behind this flag so the native source can be dark-tested against Connecteam
-         *     (via Crew Hours reconciliation) and cut over only once the numbers match.
-         *     Default stays 'connecteam' until an admin flips it.
-         */
-        put: operations["set_payroll_source_api_payroll_source_put"];
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/payroll/summary": {
         parameters: {
             query?: never;
@@ -2438,8 +2388,9 @@ export interface paths {
         /**
          * Payroll Summary
          * @description The payroll-ready breakdown for a pay period: per-crew hours split into
-         *     residential / rental-weekday / weekend-turnover buckets, mileage, and a
-         *     computed gross. This is the endpoint the Payroll page runs on.
+         *     residential / deep / rental-weekday / weekend-turnover buckets, mileage, and
+         *     a computed gross — from the native time clock. This is the endpoint the
+         *     Payroll page runs on.
          */
         get: operations["payroll_summary_api_payroll_summary_get"];
         put?: never;
@@ -2467,152 +2418,10 @@ export interface paths {
          *
          *     Defaults to a DRY RUN — it matches people and shows exactly what WOULD be
          *     sent (nothing is written to Square) so the operator can verify before
-         *     committing. Set dry_run=false to actually create the timecards.
+         *     committing. Set dry_run=false to actually create the timecards. Hours come
+         *     from the native BrightBase clock.
          */
         post: operations["send_to_square_api_payroll_send_to_square_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/payroll/timesheets": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Fetch Timesheets
-         * @description Legacy raw timesheet pull (kept for back-compat). New UI uses /summary.
-         */
-        get: operations["fetch_timesheets_api_payroll_timesheets_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/payroll/mileage": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Fetch Mileage
-         * @description Legacy mileage pull (kept for back-compat). New UI uses /summary.
-         */
-        get: operations["fetch_mileage_api_payroll_mileage_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/connecteam/team": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Team
-         * @description Everyone in Connecteam: name, phone, email, role, archived flag.
-         */
-        get: operations["team_api_connecteam_team_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/connecteam/jobs": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Jobs
-         * @description All Connecteam jobs (what crew clock into), with names + codes.
-         */
-        get: operations["jobs_api_connecteam_jobs_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/connecteam/schedule": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Schedule
-         * @description Scheduled shifts in the window, with assigned crew + job names resolved.
-         */
-        get: operations["schedule_api_connecteam_schedule_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/connecteam/timesheets-detailed": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Timesheets Detailed
-         * @description Every punch in the window with full detail: clock in/out, hours, breaks,
-         *     job, clock-in/out location, notes, mileage — grouped per crew member.
-         */
-        get: operations["timesheets_detailed_api_connecteam_timesheets_detailed_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/connecteam/pay-rates": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Pay Rates
-         * @description Connecteam's stored per-person pay rates (empty if the plan doesn't
-         *     expose them). Keyed by userId so the Payroll page can show them alongside
-         *     its own editable rates.
-         */
-        get: operations["pay_rates_api_connecteam_pay_rates_get"];
-        put?: never;
-        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -4385,81 +4194,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/settings/connecteam-status": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Connecteam Status
-         * @description Whether Connecteam is wired up + a masked hint of the saved key so the
-         *     Settings card can show "connected as scheduler 12345, key •••abcd".
-         *
-         *     Also returns the cached scheduler list (from the last successful
-         *     /connecteam/test) so the picker survives page loads without re-fetching
-         *     from Connecteam every time — dodges the rate-limit spiral.
-         */
-        get: operations["connecteam_status_api_settings_connecteam_status_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/settings/connecteam": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Save Connecteam Settings
-         * @description Save (or clear) the Connecteam credentials. A masked value ("••••abcd")
-         *     from the status endpoint is ignored so re-saving the form without retyping
-         *     the key doesn't overwrite it with the mask. `scheduler_id` and the legacy
-         *     `company_id` both write the same underlying `connecteam_company_id` row —
-         *     same value semantically, different name on the wire.
-         */
-        post: operations["save_connecteam_settings_api_settings_connecteam_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/settings/connecteam/test": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Test Connecteam
-         * @description Verify the saved credentials against Connecteam and return the list of
-         *     schedulers on the account so the operator can pick the right Scheduler ID.
-         *
-         *     Uses GET /me for the auth smoke test (Connecteam's recommended cheapest
-         *     endpoint) and GET /scheduler/v1/schedulers for the picker. Both go through
-         *     the same X-API-KEY header — if the key is wrong, /me 401s and we surface
-         *     that before ever hitting the scheduler list.
-         */
-        post: operations["test_connecteam_api_settings_connecteam_test_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/settings/square-status": {
         parameters: {
             query?: never;
@@ -4518,89 +4252,6 @@ export interface paths {
          *     operator can pick the right Location ID) + a team-member count.
          */
         post: operations["test_square_api_settings_square_test_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/settings/connecteam/push-open-shifts": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Push Open Shifts
-         * @description Kick off pushing the Bright Space schedule to Connecteam as OPEN shifts
-         *     (unassigned) so cleaners can self-claim them.
-         *
-         *     Runs asynchronously (T-20 Part B): this just validates the request,
-         *     writes a connecteam_push_runs row, and schedules the actual bulk-create
-         *     sweep as a background task, returning 202 + a run_id immediately. Poll
-         *     GET .../push-open-shifts/{run_id} for progress/result. The bulk POST to
-         *     Connecteam previously ran inline here and could block the request (and
-         *     on a single-worker deploy, every other request) for minutes.
-         *
-         *     - Skips cancelled / completed jobs and anything already dispatched
-         *       (connecteam_shift_ids populated) so re-clicking is idempotent.
-         *     - Records the returned shift id on Job.connecteam_shift_ids and logs an
-         *       integration event, matching the auto-dispatch path.
-         *     - Defaults to today → today + 14 days when no range is provided.
-         */
-        post: operations["push_open_shifts_api_settings_connecteam_push_open_shifts_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/settings/connecteam/push-open-shifts/{run_id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Get Push Open Shifts Status
-         * @description Poll the status of a push-open-shifts run started by the POST above.
-         */
-        get: operations["get_push_open_shifts_status_api_settings_connecteam_push_open_shifts__run_id__get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/settings/connecteam/job-match-preview": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Connecteam Job Match Preview
-         * @description Dry-run: how this workspace's properties will LINK to Connecteam Jobs.
-         *
-         *     Pushed shifts link to the Connecteam Job (from the account's Jobs list) whose
-         *     name matches the property (then its client) — see connecteam.match_job_id.
-         *     Fetches the SCHEDULER's live Jobs list (the same instance dispatch uses) and
-         *     shows, per active property, which Job it resolves to, so the operator can
-         *     confirm names line up and spot any that WON'T match (those fall back to a
-         *     free-text shift). Read-only — creates/changes nothing, and deliberately does
-         *     NOT seed the shared dispatch cache (this diagnostic must not perturb live
-         *     pushes).
-         */
-        get: operations["connecteam_job_match_preview_api_settings_connecteam_job_match_preview_get"];
-        put?: never;
-        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -5550,6 +5201,34 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/crew/my-week": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * My Week
+         * @description A cleaner's week of pay, so they can see what the week is shaping up to
+         *     be worth: what they've EARNED so far (from their closed punches, computed by
+         *     the exact same code the office's Payroll page runs — one pay-math
+         *     implementation, no drift) plus a PREDICTION for the rest of the week from
+         *     the jobs still assigned to them (scheduled length × their hourly rate + any
+         *     per-job bump; piece-rate turnovers at the property's flat rate).
+         *
+         *     Only ever returns the CALLER's own numbers — the full payroll breakdown
+         *     stays admin/manager-only.
+         */
+        get: operations["my_week_api_crew_my_week_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/crew/clock-in": {
         parameters: {
             query?: never;
@@ -5562,8 +5241,8 @@ export interface paths {
         /**
          * Clock In
          * @description Start a punch. One open punch per cleaner — a second clock-in while
-         *     already on the clock is a 409 (clock out first). Phase 2a: recorded only,
-         *     never read by payroll.
+         *     already on the clock is a 409 (clock out first). These punches are what
+         *     native payroll pays from.
          */
         post: operations["clock_in_api_crew_clock_in_post"];
         delete?: never;
@@ -5615,30 +5294,6 @@ export interface paths {
          *     the punch isn't theirs (or doesn't exist).
          */
         patch: operations["set_entry_miles_api_crew_entry__entry_id__miles_patch"];
-        trace?: never;
-    };
-    "/api/crew/reconciliation": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Reconciliation
-         * @description Native clock hours vs Connecteam's hours, per cleaner, for a date range —
-         *     the proof step before payroll ever depends on the native clock. Read-only:
-         *     reads Connecteam the same way payroll does (its official timesheet totals,
-         *     falling back to punch-summed hours) and never writes it. If Connecteam isn't
-         *     configured, returns native hours alone with connecteam_configured=false.
-         */
-        get: operations["reconciliation_api_crew_reconciliation_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
         trace?: never;
     };
     "/api/crew/roster": {
@@ -5961,12 +5616,6 @@ export interface components {
             sync_reconcile_enabled?: boolean | null;
             /** Gmail Live Sync */
             gmail_live_sync?: boolean | null;
-            /** Connecteam Auto Dispatch Enabled */
-            connecteam_auto_dispatch_enabled?: boolean | null;
-            /** Connecteam Outbox Enabled */
-            connecteam_outbox_enabled?: boolean | null;
-            /** Connecteam Auto Create Jobs Enabled */
-            connecteam_auto_create_jobs_enabled?: boolean | null;
             /** Customer Self Reschedule */
             customer_self_reschedule?: boolean | null;
             /** Turnover Lead Buffer Hours */
@@ -6247,17 +5896,6 @@ export interface components {
             note?: string | null;
             /** Miles */
             miles?: number | null;
-        };
-        /** ConnecteamConfig */
-        ConnecteamConfig: {
-            /** Api Key */
-            api_key?: string | null;
-            /** Company Id */
-            company_id?: string | null;
-            /** Scheduler Id */
-            scheduler_id?: string | null;
-            /** Timeclock Id */
-            timeclock_id?: string | null;
         };
         /** ContactPhoneCreate */
         ContactPhoneCreate: {
@@ -6666,6 +6304,18 @@ export interface components {
             /** Author */
             author?: string | null;
         };
+        /** InviteUser */
+        InviteUser: {
+            /** Email */
+            email: string;
+            /** Full Name */
+            full_name?: string | null;
+            /**
+             * Role
+             * @default member
+             */
+            role: string;
+        };
         /** InvoiceCreate */
         InvoiceCreate: {
             /** Client Id */
@@ -6762,6 +6412,8 @@ export interface components {
             job_type: string | null;
             /** Pay Mode */
             pay_mode?: string | null;
+            /** Pay Rate Bump */
+            pay_rate_bump?: number | null;
             /** Scheduled Date */
             scheduled_date: string;
             /** Start Time */
@@ -6822,6 +6474,8 @@ export interface components {
             job_type?: string | null;
             /** Pay Mode */
             pay_mode?: string | null;
+            /** Pay Rate Bump */
+            pay_rate_bump?: number | null;
             /** Property Id */
             property_id?: number | null;
             /**
@@ -7039,11 +6693,6 @@ export interface components {
             deep_clean_rate?: number | null;
             /** Mileage Rate */
             mileage_rate?: number | null;
-        };
-        /** PayrollSourceBody */
-        PayrollSourceBody: {
-            /** Source */
-            source: string;
         };
         /** PriorityRequest */
         PriorityRequest: {
@@ -7263,13 +6912,6 @@ export interface components {
             p256dh: string;
             /** Auth */
             auth: string;
-        };
-        /** PushOpenShiftsBody */
-        PushOpenShiftsBody: {
-            /** Start Date */
-            start_date?: string | null;
-            /** End Date */
-            end_date?: string | null;
         };
         /** QuickQuery */
         QuickQuery: {
@@ -8331,6 +7973,70 @@ export interface operations {
                 "application/json": components["schemas"]["AdminUserUpdate"];
             };
         };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    invite_user_api_auth_users_invite_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["InviteUser"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    resend_user_invite_api_auth_users__user_id__resend_invite_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                user_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
         responses: {
             /** @description Successful Response */
             200: {
@@ -10221,37 +9927,6 @@ export interface operations {
             };
         };
     };
-    connecteam_readback_preview_api_jobs_connecteam_readback_preview_get: {
-        parameters: {
-            query?: {
-                days?: number;
-            };
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
     schedule_audit_api_jobs_audit_get: {
         parameters: {
             query?: never;
@@ -11068,68 +10743,6 @@ export interface operations {
             };
         };
     };
-    dispatch_job_api_jobs__job_id__dispatch_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                job_id: number;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    undispatch_job_api_jobs__job_id__undispatch_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                job_id: number;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
     invite_client_api_jobs__job_id__invite_client_post: {
         parameters: {
             query?: never;
@@ -11724,59 +11337,6 @@ export interface operations {
             };
         };
     };
-    get_payroll_source_api_payroll_source_get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-        };
-    };
-    set_payroll_source_api_payroll_source_put: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["PayrollSourceBody"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
     payroll_summary_api_payroll_summary_get: {
         parameters: {
             query: {
@@ -11823,221 +11383,6 @@ export interface operations {
                 "application/json": components["schemas"]["SendToSquareBody"];
             };
         };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    fetch_timesheets_api_payroll_timesheets_get: {
-        parameters: {
-            query: {
-                /** @description YYYY-MM-DD */
-                start_date: string;
-                /** @description YYYY-MM-DD */
-                end_date: string;
-                employee_id?: string | null;
-            };
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    fetch_mileage_api_payroll_mileage_get: {
-        parameters: {
-            query: {
-                /** @description YYYY-MM-DD */
-                start_date: string;
-                /** @description YYYY-MM-DD */
-                end_date: string;
-                employee_id?: string | null;
-                /** @description Reimbursement rate per mile */
-                rate?: number;
-            };
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    team_api_connecteam_team_get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-        };
-    };
-    jobs_api_connecteam_jobs_get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-        };
-    };
-    schedule_api_connecteam_schedule_get: {
-        parameters: {
-            query: {
-                /** @description YYYY-MM-DD */
-                start_date: string;
-                /** @description YYYY-MM-DD */
-                end_date: string;
-            };
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    timesheets_detailed_api_connecteam_timesheets_detailed_get: {
-        parameters: {
-            query: {
-                /** @description YYYY-MM-DD */
-                start_date: string;
-                /** @description YYYY-MM-DD */
-                end_date: string;
-                employee_id?: string | null;
-            };
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    pay_rates_api_connecteam_pay_rates_get: {
-        parameters: {
-            query: {
-                /** @description YYYY-MM-DD */
-                start_date: string;
-                /** @description YYYY-MM-DD */
-                end_date: string;
-            };
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
         responses: {
             /** @description Successful Response */
             200: {
@@ -15014,79 +14359,6 @@ export interface operations {
             };
         };
     };
-    connecteam_status_api_settings_connecteam_status_get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-        };
-    };
-    save_connecteam_settings_api_settings_connecteam_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["ConnecteamConfig"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    test_connecteam_api_settings_connecteam_test_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-        };
-    };
     square_status_api_settings_square_status_get: {
         parameters: {
             query?: never;
@@ -15141,90 +14413,6 @@ export interface operations {
         };
     };
     test_square_api_settings_square_test_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-        };
-    };
-    push_open_shifts_api_settings_connecteam_push_open_shifts_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["PushOpenShiftsBody"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            202: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    get_push_open_shifts_status_api_settings_connecteam_push_open_shifts__run_id__get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                run_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    connecteam_job_match_preview_api_settings_connecteam_job_match_preview_get: {
         parameters: {
             query?: never;
             header?: never;
@@ -16573,6 +15761,26 @@ export interface operations {
             };
         };
     };
+    my_week_api_crew_my_week_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
     clock_in_api_crew_clock_in_post: {
         parameters: {
             query?: never;
@@ -16653,38 +15861,6 @@ export interface operations {
                 "application/json": components["schemas"]["EntryMilesBody"];
             };
         };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    reconciliation_api_crew_reconciliation_get: {
-        parameters: {
-            query: {
-                start: string;
-                end: string;
-            };
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
         responses: {
             /** @description Successful Response */
             200: {
