@@ -53,6 +53,10 @@ router = APIRouter()
 MILEAGE_RATE = 0.67  # IRS standard mileage rate per mile (default)
 DEFAULT_RESIDENTIAL_RATE = 25.0
 DEFAULT_RENTAL_WEEKDAY_RATE = 26.0
+# Deep cleans default to the residential rate until the shop sets a (higher)
+# deep rate in Settings — so an unconfigured deep clean never pays LESS than a
+# regular clean; the premium is opt-in.
+DEFAULT_DEEP_CLEAN_RATE = DEFAULT_RESIDENTIAL_RATE
 
 # Connecteam job-name keywords that mean "short-term rental turnover" when a
 # punch isn't linked to a CRM job. Deliberately broad — better to catch a
@@ -75,6 +79,7 @@ def _get_rates(db: Session) -> dict:
     return {
         "residential_rate": _rate(db, "pay_rate_residential", DEFAULT_RESIDENTIAL_RATE),
         "rental_weekday_rate": _rate(db, "pay_rate_rental_weekday", DEFAULT_RENTAL_WEEKDAY_RATE),
+        "deep_clean_rate": _rate(db, "pay_rate_deep_clean", DEFAULT_DEEP_CLEAN_RATE),
         "mileage_rate": _rate(db, "mileage_rate", MILEAGE_RATE),
     }
 
@@ -134,6 +139,7 @@ def get_pay_rates(db: Session = Depends(get_db)):
 class PayRates(BaseModel):
     residential_rate: Optional[float] = None
     rental_weekday_rate: Optional[float] = None
+    deep_clean_rate: Optional[float] = None
     mileage_rate: Optional[float] = None
 
 
@@ -143,6 +149,7 @@ def update_pay_rates(rates: PayRates, db: Session = Depends(get_db)):
     mapping = {
         "residential_rate": "pay_rate_residential",
         "rental_weekday_rate": "pay_rate_rental_weekday",
+        "deep_clean_rate": "pay_rate_deep_clean",
         "mileage_rate": "mileage_rate",
     }
     for field, key in mapping.items():
@@ -194,6 +201,8 @@ def _blank_emp(uid, name) -> dict:
         "unallocated_hours": 0.0,    # Connecteam total minus classified buckets
         "residential_hours": 0.0,
         "residential_pay": 0.0,
+        "deep_clean_hours": 0.0,     # native only; 0 on the Connecteam path
+        "deep_clean_pay": 0.0,
         "rental_weekday_hours": 0.0,
         "rental_weekday_pay": 0.0,
         "weekend_rental_hours": 0.0,
@@ -292,12 +301,33 @@ def _native_summary(db: Session, start_date: str, end_date: str, rates: dict, oi
         u = users.get(cid)
         res_rate = u.pay_rate_residential if (u and u.pay_rate_residential is not None) else rates["residential_rate"]
         rental_rate = u.pay_rate_rental if (u and u.pay_rate_rental is not None) else rates["rental_weekday_rate"]
+        deep_rate = u.pay_rate_deep if (u and u.pay_rate_deep is not None) else rates["deep_clean_rate"]
 
         job = e.job
         prop = job.property if job is not None else None
         d = _native_local_date(e.clock_in_at)
         weekend = _is_weekend(d)
-        kind = None if job is None else ("rental" if job.job_type == "str_turnover" else "residential")
+        # Classification by job_type: str_turnover → rental, deep_clean → deep,
+        # else residential.
+        if job is None:
+            kind = None
+        elif job.job_type == "str_turnover":
+            kind = "rental"
+        elif job.job_type == "deep_clean":
+            kind = "deep"
+        else:
+            kind = "residential"
+
+        # Effective pay mode: a per-job override (job.pay_mode) beats the
+        # automatic rule (weekend rental → piece; everything else hourly). Lets
+        # the office pay a specific weekend airbnb hourly, or force a piece rate.
+        job_pay_mode = (getattr(job, "pay_mode", None) or "auto").lower() if job is not None else "auto"
+        if job_pay_mode == "piece":
+            use_piece = True
+        elif job_pay_mode == "hourly":
+            use_piece = False
+        else:  # auto
+            use_piece = (kind == "rental" and weekend)
 
         detail = {
             "shift_id": f"native:{e.id}",
@@ -310,7 +340,7 @@ def _native_summary(db: Session, start_date: str, end_date: str, rates: dict, oi
             "property": prop.name if prop is not None else None,
             "shift_title": "",
             "job_label": (job.title if job is not None else "") or "",
-            "rate_pay": False,
+            "rate_pay": use_piece,
             "note": e.note or "",
             "pay": 0.0,
         }
@@ -321,17 +351,10 @@ def _native_summary(db: Session, start_date: str, end_date: str, rates: dict, oi
             emp["shifts"].append(detail)
             continue
 
-        if kind == "residential":
-            emp["residential_hours"] += hours
-            pay = hours * res_rate
-            emp["residential_pay"] += pay
-            detail["pay"] = round(pay, 2)
-        elif kind == "rental" and not weekend:
-            emp["rental_weekday_hours"] += hours
-            pay = hours * rental_rate
-            emp["rental_weekday_pay"] += pay
-            detail["pay"] = round(pay, 2)
-        else:  # rental + weekend → piece rate per distinct (property, date)
+        if use_piece:
+            # Piece rate per distinct (property, date) — the turnover model.
+            # Reached for a weekend rental (auto) or any job the office set to
+            # "piece". Non-weekend piece is allowed but rare.
             emp["weekend_rental_hours"] += hours
             key = prop.id if prop is not None else f"job:{job.id if job else 'x'}"
             seen = emp["_weekend_seen"].setdefault(key, set())
@@ -343,12 +366,30 @@ def _native_summary(db: Session, start_date: str, end_date: str, rates: dict, oi
                 if rate is None:
                     emp["weekend_unpriced_turnovers"] += 1
                     warnings.append(
-                        f"{emp['name']}: weekend turnover at {detail['property'] or 'unknown property'} "
+                        f"{emp['name']}: turnover at {detail['property'] or 'unknown property'} "
                         f"on {d.isoformat()} has no piece rate set — not included in pay."
                     )
                 else:
                     emp["weekend_pay"] += float(rate)
                     detail["pay"] = round(float(rate), 2)
+        elif kind == "deep":
+            # Deep cleans are hourly at the deep rate, weekday OR weekend.
+            emp["deep_clean_hours"] += hours
+            pay = hours * deep_rate
+            emp["deep_clean_pay"] += pay
+            detail["pay"] = round(pay, 2)
+        elif kind == "rental":
+            # Hourly rental: a weekday turnover (auto) or a weekend one the office
+            # set to hourly instead of piece.
+            emp["rental_weekday_hours"] += hours
+            pay = hours * rental_rate
+            emp["rental_weekday_pay"] += pay
+            detail["pay"] = round(pay, 2)
+        else:  # residential
+            emp["residential_hours"] += hours
+            pay = hours * res_rate
+            emp["residential_pay"] += pay
+            detail["pay"] = round(pay, 2)
         emp["shifts"].append(detail)
 
     out_emps = []
@@ -358,7 +399,8 @@ def _native_summary(db: Session, start_date: str, end_date: str, rates: dict, oi
         emp["total_hours"] = emp["computed_hours"]
         emp["hours_source"] = "native"
         emp["connecteam_hours"] = None
-        accounted = (emp["residential_hours"] + emp["rental_weekday_hours"]
+        accounted = (emp["residential_hours"] + emp["deep_clean_hours"]
+                     + emp["rental_weekday_hours"]
                      + emp["weekend_rental_hours"] + emp["unclassified_hours"])
         emp["unallocated_hours"] = round(emp["total_hours"] - accounted, 2)
         # Native mileage: crew-entered miles per punch × the Settings mileage
@@ -366,10 +408,11 @@ def _native_summary(db: Session, start_date: str, end_date: str, rates: dict, oi
         # formula the Connecteam path uses.
         emp["mileage_reimbursement"] = round(emp["miles"] * rates["mileage_rate"], 2)
         emp["gross_pay"] = round(
-            emp["residential_pay"] + emp["rental_weekday_pay"] + emp["weekend_pay"]
-            + emp["mileage_reimbursement"], 2
+            emp["residential_pay"] + emp["deep_clean_pay"] + emp["rental_weekday_pay"]
+            + emp["weekend_pay"] + emp["mileage_reimbursement"], 2
         )
         for k in ("total_hours", "residential_hours", "residential_pay",
+                  "deep_clean_hours", "deep_clean_pay",
                   "rental_weekday_hours", "rental_weekday_pay",
                   "weekend_rental_hours", "weekend_pay",
                   "unclassified_hours", "miles"):
@@ -385,6 +428,8 @@ def _native_summary(db: Session, start_date: str, end_date: str, rates: dict, oi
         "computed_hours": round(sum(e["computed_hours"] for e in out_emps), 2),
         "unallocated_hours": round(sum(e["unallocated_hours"] for e in out_emps), 2),
         "residential_hours": round(sum(e["residential_hours"] for e in out_emps), 2),
+        "deep_clean_hours": round(sum(e["deep_clean_hours"] for e in out_emps), 2),
+        "deep_clean_pay": round(sum(e["deep_clean_pay"] for e in out_emps), 2),
         "rental_weekday_hours": round(sum(e["rental_weekday_hours"] for e in out_emps), 2),
         "weekend_rental_hours": round(sum(e["weekend_rental_hours"] for e in out_emps), 2),
         "weekend_turnovers": sum(e["weekend_turnovers"] for e in out_emps),
@@ -627,6 +672,8 @@ async def payroll_summary(
         "computed_hours": round(sum(e["computed_hours"] for e in out_emps), 2),
         "unallocated_hours": round(sum(e["unallocated_hours"] for e in out_emps), 2),
         "residential_hours": round(sum(e["residential_hours"] for e in out_emps), 2),
+        "deep_clean_hours": round(sum(e["deep_clean_hours"] for e in out_emps), 2),
+        "deep_clean_pay": round(sum(e["deep_clean_pay"] for e in out_emps), 2),
         "rental_weekday_hours": round(sum(e["rental_weekday_hours"] for e in out_emps), 2),
         "weekend_rental_hours": round(sum(e["weekend_rental_hours"] for e in out_emps), 2),
         "weekend_turnovers": sum(e["weekend_turnovers"] for e in out_emps),

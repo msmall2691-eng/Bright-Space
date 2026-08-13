@@ -16,6 +16,7 @@ export default function JobEditModal({ job, properties = [], clients = [], onClo
   const [formData, setFormData] = useState({
     title: job?.title || '',
     job_type: job?.job_type || 'residential',
+    pay_mode: job?.pay_mode || 'auto',
     status: job?.status || 'scheduled',
     property_id: job?.property_id || '',
     address: job?.address || '',
@@ -293,6 +294,7 @@ export default function JobEditModal({ job, properties = [], clients = [], onClo
       const payload = {
         title: formData.title || (prop ? `Cleaning \u2014 ${prop.name}` : 'Cleaning'),
         job_type: formData.job_type || 'residential',
+        pay_mode: formData.pay_mode || 'auto',
         status: formData.status || 'scheduled',
         property_id: parseInt(formData.property_id),
         address: formData.address || prop?.address || '',
@@ -363,6 +365,7 @@ export default function JobEditModal({ job, properties = [], clients = [], onClo
           if (formData.address) extra.address = formData.address
           extra.notes = formData.notes
           if (formData.job_type) extra.job_type = formData.job_type
+          if (formData.pay_mode) extra.pay_mode = formData.pay_mode
           if (formData.status && formData.status !== job.status) extra.status = formData.status
           if (res?.job_id && Object.keys(extra).length) {
             await patch(`/api/jobs/${res.job_id}`, extra)
@@ -373,6 +376,7 @@ export default function JobEditModal({ job, properties = [], clients = [], onClo
           await patch(`/api/jobs/${job.id}`, {
             title: formData.title || undefined,
             job_type: formData.job_type || undefined,
+            pay_mode: formData.pay_mode || undefined,
             status: formData.status || undefined,
             address: formData.address || undefined,
             cleaner_ids: formData.cleaner_ids,
@@ -743,15 +747,34 @@ export default function JobEditModal({ job, properties = [], clients = [], onClo
                 onChange={e => setFormData(f => ({ ...f, job_type: e.target.value }))}
                 className="w-full px-3 py-3 border border-hairline rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent text-base bg-panel"
               >
-                {!['residential', 'commercial', 'str_turnover', 'one_time'].includes(formData.job_type) && (
+                {!['residential', 'deep_clean', 'commercial', 'str_turnover', 'one_time'].includes(formData.job_type) && (
                   <option value={formData.job_type}>{formData.job_type || '(unset)'}</option>
                 )}
                 <option value="residential">Residential</option>
+                <option value="deep_clean">Deep Clean</option>
                 <option value="commercial">Commercial</option>
                 <option value="str_turnover">STR Turnover</option>
                 <option value="one_time">One-time</option>
               </select>
             </div>
+
+            {/* Pay override — only for turnovers, where piece-vs-hourly is a real
+                choice (e.g. a weekend airbnb you'd rather pay hourly). */}
+            {formData.job_type === 'str_turnover' && (
+              <div>
+                <label className="block text-sm font-semibold text-ink-2 mb-2">Pay</label>
+                <select
+                  value={formData.pay_mode}
+                  onChange={e => setFormData(f => ({ ...f, pay_mode: e.target.value }))}
+                  className="w-full px-3 py-3 border border-hairline rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent text-base bg-panel"
+                >
+                  <option value="auto">Auto — weekend = piece rate, weekday = hourly</option>
+                  <option value="hourly">Hourly — pay by the hour even on a weekend</option>
+                  <option value="piece">Piece rate — per-property turnover rate</option>
+                </select>
+                <p className="text-xs text-ink-3 mt-1">Native payroll only — overrides how this turnover is paid.</p>
+              </div>
+            )}
 
             {/* Address — editable; pre-fills from the property when blank */}
             <div>

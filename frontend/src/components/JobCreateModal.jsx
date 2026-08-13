@@ -13,6 +13,7 @@ const JOB_DRAFT_KEY = 'brightbase_job_draft'
 
 const JOB_TYPES = [
   { value: 'residential',  label: 'Residential' },
+  { value: 'deep_clean',   label: 'Deep Clean' },
   { value: 'commercial',   label: 'Commercial' },
   { value: 'str_turnover', label: 'STR Turnover' },
 ]
@@ -57,7 +58,7 @@ function jobTypeFromProperty(propertyType) {
 }
 
 // Default visit length per service type (minutes); drives the auto-filled End.
-const JOB_DURATIONS = { residential: 180, commercial: 180, str_turnover: 180 }
+const JOB_DURATIONS = { residential: 180, deep_clean: 240, commercial: 180, str_turnover: 180 }
 
 // Quick-schedule default date: the next business day (skip Sat/Sun), so a fast
 // booking doesn't silently land on today.
@@ -362,7 +363,9 @@ export default function JobCreateModal({
         client_id: parseInt(activeClientId),
         name: newProp.name.trim(),
         address: newProp.address.trim() || '',
-        property_type: form.job_type === 'str' ? 'str' : form.job_type || 'residential',
+        // A deep clean is a residential property; only the JOB is priced as deep.
+        property_type: form.job_type === 'deep_clean' ? 'residential'
+          : (form.job_type === 'str' ? 'str' : form.job_type || 'residential'),
       })
       setProperties(ps => [created, ...ps])
       applyProperty(created)

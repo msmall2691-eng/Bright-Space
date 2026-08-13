@@ -5797,6 +5797,8 @@ export interface components {
             pay_rate_residential?: number | null;
             /** Pay Rate Rental */
             pay_rate_rental?: number | null;
+            /** Pay Rate Deep */
+            pay_rate_deep?: number | null;
         };
         /** AssignRequest */
         AssignRequest: {
@@ -6617,6 +6619,8 @@ export interface components {
              * @default residential
              */
             job_type: string | null;
+            /** Pay Mode */
+            pay_mode?: string | null;
             /** Scheduled Date */
             scheduled_date: string;
             /** Start Time */
@@ -6675,6 +6679,8 @@ export interface components {
             } | null;
             /** Job Type */
             job_type?: string | null;
+            /** Pay Mode */
+            pay_mode?: string | null;
             /** Property Id */
             property_id?: number | null;
             /**
@@ -6888,6 +6894,8 @@ export interface components {
             residential_rate?: number | null;
             /** Rental Weekday Rate */
             rental_weekday_rate?: number | null;
+            /** Deep Clean Rate */
+            deep_clean_rate?: number | null;
             /** Mileage Rate */
             mileage_rate?: number | null;
         };
