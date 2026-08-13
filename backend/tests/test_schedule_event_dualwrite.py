@@ -106,3 +106,23 @@ def test_event_carries_job_org(ctx, monkeypatch):
     monkeypatch.setenv("SCHEDULE_EVENT_LOG_ENABLED", "1")
     j = _job(db, c, p, scheduled_date=date.today() + timedelta(days=3), org_id=99999)
     assert _events(db, j.id)[0].org_id == 99999
+
+
+def test_listener_error_never_breaks_the_job_write(ctx, monkeypatch):
+    """Fail-safe (activation hardening): if the event-logging path raises, the
+    canonical Job write must still succeed and no exception may escape. Here
+    _snapshot (used to build the 'created' event) is forced to raise; the Job is
+    still created and simply isn't logged. This is what makes the log safe to
+    turn on in production — a bug in logging can never roll back a real Job."""
+    db, c, p = ctx
+    monkeypatch.setenv("SCHEDULE_EVENT_LOG_ENABLED", "1")
+    import services.schedule_events as se
+
+    def _boom(*a, **k):
+        raise RuntimeError("boom")
+    monkeypatch.setattr(se, "_snapshot", _boom)
+
+    future = date.today() + timedelta(days=5)
+    j = _job(db, c, p, scheduled_date=future, org_id=1)  # must NOT raise
+    assert j.id is not None            # the Job write succeeded
+    assert _events(db, j.id) == []     # the failing batch was dropped, nothing logged

@@ -23,10 +23,13 @@ out of router.py (R6 — it lives here), and never writes back from a projection
 from __future__ import annotations
 
 import datetime as _dt
+import logging
 
 from sqlalchemy import event, inspect
 
 from config import env_flag
+
+log = logging.getLogger("brightbase.schedule_events")
 
 # Fields whose change counts as a schedule mutation worth logging.
 _TRACKED = ("scheduled_date", "start_time", "end_time", "cleaner_ids", "status")
@@ -43,7 +46,9 @@ def _enabled() -> bool:
 def _json_safe(v):
     if isinstance(v, (_dt.date, _dt.time, _dt.datetime)):
         return v.isoformat()
-    return v
+    if v is None or isinstance(v, (str, int, float, bool, list, dict)):
+        return v
+    return str(v)  # last resort: a surprise value must never break JSON serialization
 
 
 def _snapshot(job) -> dict:
@@ -88,49 +93,63 @@ def install(session_factory=None) -> None:
     def _before_flush(session, flush_context, instances):  # noqa: ANN001
         if not _enabled():
             return
-        pending = session.info.setdefault(_INFO_KEY, [])
-        for obj in session.new:
-            if isinstance(obj, Job):
-                pending.append({"obj": obj, "event_type": "created",
-                                "payload": _snapshot(obj)})
-        for obj in session.dirty:
-            if isinstance(obj, Job) and session.is_modified(obj, include_collections=False):
-                changed = _diff(obj)
-                if changed:
-                    pending.append({"obj": obj,
-                                    "event_type": _classify(set(changed), obj.status),
-                                    "payload": changed})
-        for obj in session.deleted:
-            if isinstance(obj, Job):
-                # Capture ids now — the instance is expired after the delete flush.
-                pending.append({"obj": obj, "event_type": "deleted",
-                                "payload": _snapshot(obj),
-                                "job_id": obj.id, "org_id": getattr(obj, "org_id", None)})
+        try:
+            pending = session.info.setdefault(_INFO_KEY, [])
+            for obj in session.new:
+                if isinstance(obj, Job):
+                    pending.append({"obj": obj, "event_type": "created",
+                                    "payload": _snapshot(obj)})
+            for obj in session.dirty:
+                if isinstance(obj, Job) and session.is_modified(obj, include_collections=False):
+                    changed = _diff(obj)
+                    if changed:
+                        pending.append({"obj": obj,
+                                        "event_type": _classify(set(changed), obj.status),
+                                        "payload": changed})
+            for obj in session.deleted:
+                if isinstance(obj, Job):
+                    # Capture ids now — the instance is expired after the delete flush.
+                    pending.append({"obj": obj, "event_type": "deleted",
+                                    "payload": _snapshot(obj),
+                                    "job_id": obj.id, "org_id": getattr(obj, "org_id", None)})
+        except Exception:
+            # Fail-safe: the log must never break a canonical Job write. Drop this
+            # batch and let the Job flush proceed untouched.
+            log.exception("schedule_events before_flush failed; skipping this batch")
+            session.info.pop(_INFO_KEY, None)
 
     @event.listens_for(target, "after_flush")
     def _after_flush(session, flush_context):  # noqa: ANN001
         pending = session.info.pop(_INFO_KEY, None)
         if not pending:
             return
-        now = _dt.datetime.now(_dt.timezone.utc)
-        rows = []
-        for p in pending:
-            obj = p["obj"]
-            job_id = p.get("job_id") or getattr(obj, "id", None)  # populated post-insert
-            if job_id is None:
-                continue  # can't attribute the event — skip rather than write a broken row
-            rows.append({
-                "org_id": p.get("org_id", getattr(obj, "org_id", None)),
-                "job_id": job_id,
-                "event_type": p["event_type"],
-                "payload": p["payload"],
-                "actor": None,
-                "created_at": now,
-            })
-        if rows:
-            # Core insert (not ORM add) so it runs in THIS transaction without
-            # provoking another ORM flush / re-entering these listeners.
-            session.execute(ScheduleEvent.__table__.insert(), rows)
+        try:
+            now = _dt.datetime.now(_dt.timezone.utc)
+            rows = []
+            for p in pending:
+                obj = p["obj"]
+                job_id = p.get("job_id") or getattr(obj, "id", None)  # populated post-insert
+                if job_id is None:
+                    continue  # can't attribute the event — skip rather than write a broken row
+                rows.append({
+                    "org_id": p.get("org_id", getattr(obj, "org_id", None)),
+                    "job_id": job_id,
+                    "event_type": p["event_type"],
+                    "payload": p["payload"],
+                    "actor": None,
+                    "created_at": now,
+                })
+            if rows:
+                # Core insert (not ORM add) so it runs in THIS transaction without
+                # provoking another ORM flush / re-entering these listeners.
+                session.execute(ScheduleEvent.__table__.insert(), rows)
+        except Exception:
+            # Fail-safe: never let the log write break the Job write. Errors while
+            # BUILDING rows are swallowed here; the insert itself is made
+            # non-failing by dropping schedule_events' FKs (migration 074) and
+            # keeping payloads JSON-safe (_json_safe), so a Job write is not lost
+            # to the log in practice.
+            log.exception("schedule_events after_flush failed; log row(s) dropped")
 
     target._bb_schedule_events_installed = True
 

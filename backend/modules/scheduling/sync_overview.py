@@ -30,6 +30,8 @@ Center reuses the existing endpoints (`POST /api/settings/automation`,
 
 from __future__ import annotations
 
+from datetime import datetime, timedelta, timezone
+
 from sqlalchemy import or_, func
 from sqlalchemy.orm import Session
 
@@ -40,6 +42,7 @@ from database.models import (
     Property,
     RecurringSchedule,
     ConnecteamOutbox,
+    ScheduleEvent,
 )
 from utils.dates import business_today
 
@@ -79,7 +82,7 @@ def build_sync_overview(db: Session, org_id) -> dict:
         find_schedule_issues,
     )
     from modules.auth.router import resolve_org_id
-    from config import env_int
+    from config import env_int, env_flag
 
     oid = resolve_org_id(org_id, db)
     today = business_today().isoformat()
@@ -345,6 +348,34 @@ def build_sync_overview(db: Session, org_id) -> dict:
          "cadence_minutes": _m("GMAIL_WATCH_RENEW_INTERVAL_HOURS", 12) * 60, "enabled": True},
     ]
 
+    # ---- schedule_events log health (Phase 2 dual-write foundation) ----------
+    # An append-only mirror of every canonical Job mutation. Dark until
+    # SCHEDULE_EVENT_LOG_ENABLED flips on; read-only here. This block lets the
+    # operator WATCH it capturing against real data — the R8 "verify" surface
+    # before the Phase 3 reconciler ever reads the log.
+    def _log_scoped(q):
+        return q.filter(or_(ScheduleEvent.org_id == oid, ScheduleEvent.org_id.is_(None)))
+
+    log_total = _log_scoped(db.query(func.count(ScheduleEvent.id))).scalar() or 0
+    log_last = _log_scoped(db.query(func.max(ScheduleEvent.created_at))).scalar()
+    log_24h = _log_scoped(
+        db.query(func.count(ScheduleEvent.id))
+        .filter(ScheduleEvent.created_at >= datetime.now(timezone.utc) - timedelta(hours=24))
+    ).scalar() or 0
+    log_by_type = {
+        t: int(n) for t, n in _log_scoped(
+            db.query(ScheduleEvent.event_type, func.count(ScheduleEvent.id))
+            .group_by(ScheduleEvent.event_type)
+        ).all()
+    }
+    schedule_log = {
+        "enabled": bool(env_flag("SCHEDULE_EVENT_LOG_ENABLED", False)),
+        "total": int(log_total),
+        "last_event_at": _iso(log_last),
+        "events_24h": int(log_24h),
+        "by_type": log_by_type,
+    }
+
     # ---- integrity issues + overall verdict ----------------------------------
     issues = find_schedule_issues(db, oid)
     dup = issues["counts"]["duplicate_groups"]
@@ -429,4 +460,5 @@ def build_sync_overview(db: Session, org_id) -> dict:
         "attention": attention,
         "issues": {"duplicate_jobs": dup, "orphaned_shifts": orph},
         "background_jobs": background_jobs,
+        "schedule_log": schedule_log,
     }
