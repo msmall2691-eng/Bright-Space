@@ -10,12 +10,13 @@
  * The clock is what Payroll reads — the crew works fully native now.
  */
 import { useCallback, useEffect, useState } from 'react'
-import { MapPin, KeyRound, ParkingCircle, LogOut, RefreshCw, CalendarDays, Clock, Car, DollarSign, ChevronDown, Navigation, CheckCircle2, Camera, Users, Phone, ClipboardList, CalendarRange, CircleUserRound, Sun, Sparkles } from 'lucide-react'
+import { MapPin, KeyRound, ParkingCircle, LogOut, RefreshCw, CalendarDays, Clock, Car, DollarSign, ChevronDown, Navigation, CheckCircle2, Camera, Users, Phone, ClipboardList, CalendarRange, CircleUserRound, Sun, Sparkles, BookOpen } from 'lucide-react'
 import { get, post, patch, logout } from '../api'
 import { EmptyState, ErrorState, Skeleton } from '../components/ui'
 import JobPhotoSheet from '../components/crew/JobPhotoSheet'
 import CrewProfile from '../components/crew/CrewProfile'
 import CrewAvailability from '../components/crew/CrewAvailability'
+import CrewLearn from '../components/crew/CrewLearn'
 
 const SOFT = 'bg-panel rounded-xl border border-hairline shadow-glass-sm'
 
@@ -440,6 +441,7 @@ function dayLabel(iso) {
 const TABS = [
   { key: 'today', label: 'Today', icon: Sun },
   { key: 'schedule', label: 'Schedule', icon: CalendarRange },
+  { key: 'learn', label: 'Learn', icon: BookOpen },
   { key: 'me', label: 'Me', icon: CircleUserRound },
 ]
 
@@ -447,7 +449,7 @@ function CrewTabBar({ tab, setTab }) {
   return (
     <nav className="fixed bottom-0 inset-x-0 z-20 bg-panel/95 backdrop-blur border-t border-hairline"
       style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}>
-      <div className="max-w-lg mx-auto grid grid-cols-3">
+      <div className="max-w-lg mx-auto grid grid-cols-4">
         {TABS.map(({ key, label, icon: Icon }) => (
           <button key={key} onClick={() => setTab(key)}
             className={`py-2.5 flex flex-col items-center gap-0.5 text-[11px] font-semibold transition-colors ${
@@ -626,7 +628,7 @@ export default function MyDay() {
         <header className="bg-panel border-b border-hairline px-4 py-3 flex items-center justify-between">
           <div>
             <div className="text-sm font-bold text-ink">
-              {tab === 'schedule' ? 'My Schedule' : tab === 'me' ? 'Me' : 'My Day'}
+              {tab === 'schedule' ? 'My Schedule' : tab === 'me' ? 'Me' : tab === 'learn' ? 'Learn' : 'My Day'}
             </div>
             <div className="text-[12px] text-ink-3">{longDate}</div>
           </div>
@@ -782,6 +784,8 @@ export default function MyDay() {
             ))
           )
         )}
+
+        {tab === 'learn' && <CrewLearn />}
 
         {tab === 'me' && (
           <>

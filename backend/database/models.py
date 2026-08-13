@@ -825,6 +825,31 @@ class JobResponse(Base):
     )
 
 
+class CrewDoc(Base):
+    """One training / reference document for the crew (crew app Phase 5):
+    cleaning standards, chemical guides, onboarding steps, policies. The
+    office writes them (modules/crew_docs), cleaners read published ones in
+    the crew app's Learn tab. Plain text body rendered as-is — deliberately
+    no attachments or rich markup, so the library stays maintainable by one
+    person and readable on a phone in a driveway.
+    """
+    __tablename__ = "crew_docs"
+    org_id = Column(Integer, ForeignKey("orgs.id"), nullable=True, index=True)  # tenant scope (MT-1)
+
+    id = Column(Integer, primary_key=True, index=True)
+    title = Column(String(200), nullable=False)
+    body = Column(Text, nullable=False, default="")
+    # Optional external link (training video, manufacturer guide). A doc with
+    # a URL renders as an open-in-browser row in the Learn tab; body optional.
+    url = Column(String(500), nullable=True)
+    category = Column(String(40), nullable=False, default="how-to")
+    pinned = Column(Boolean, nullable=False, default=False)
+    published = Column(Boolean, nullable=False, default=True)
+    updated_by = Column(String, nullable=True)   # display name of last editor
+    created_at = Column(DateTime, default=_utcnow)
+    updated_at = Column(DateTime, default=_utcnow, onupdate=_utcnow)
+
+
 class CleanerAvailability(Base):
     """A cleaner's WEEKLY availability pattern, self-maintained from the crew
     app's Me tab (crew app Phase 4, owner decision #3: per-day AM / PM / Off).
