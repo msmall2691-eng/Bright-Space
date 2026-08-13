@@ -5336,6 +5336,65 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/crew/jobs/{job_id}/photos": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Job Photos
+         * @description Metadata only (no bytes) — the gallery fetches each image lazily via the
+         *     serve endpoint below, so listing stays cheap on a phone connection.
+         */
+        get: operations["list_job_photos_api_crew_jobs__job_id__photos_get"];
+        put?: never;
+        /**
+         * Upload Job Photo
+         * @description Attach one photo to a job. Cleaners only on their own assigned jobs
+         *     (404 otherwise); office roles on any job in the org.
+         *
+         *     The frontend downscales to ~1600px JPEG before posting, so the 5MB cap is
+         *     a backstop against raw phone originals, not the normal path. The stored
+         *     content type comes from sniffing the bytes, never the client's header.
+         *     An unknown `kind` is clamped to untagged rather than rejected — a photo
+         *     must never bounce over its label.
+         */
+        post: operations["upload_job_photo_api_crew_jobs__job_id__photos_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/crew/jobs/{job_id}/photos/{photo_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Serve Job Photo
+         * @description The image bytes. Same access rule as the list; a photo is immutable once
+         *     uploaded, so the browser may cache it privately for a day.
+         */
+        get: operations["serve_job_photo_api_crew_jobs__job_id__photos__photo_id__get"];
+        put?: never;
+        post?: never;
+        /**
+         * Delete Job Photo
+         * @description Office roles can remove any photo on the job; a cleaner only their own
+         *     uploads (the fat-finger case). Not-yours is a 404, same as everywhere else
+         *     in this module.
+         */
+        delete: operations["delete_job_photo_api_crew_jobs__job_id__photos__photo_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/crew/roster": {
         parameters: {
             query?: never;
@@ -5684,6 +5743,16 @@ export interface components {
              * Format: binary
              */
             file: string;
+        };
+        /** Body_upload_job_photo_api_crew_jobs__job_id__photos_post */
+        Body_upload_job_photo_api_crew_jobs__job_id__photos_post: {
+            /**
+             * File
+             * Format: binary
+             */
+            file: string;
+            /** Kind */
+            kind?: string;
         };
         /** BookingResponse */
         BookingResponse: {
@@ -15941,6 +16010,136 @@ export interface operations {
                 "application/json": components["schemas"]["MarkDoneBody"];
             };
         };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_job_photos_api_crew_jobs__job_id__photos_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                job_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    upload_job_photo_api_crew_jobs__job_id__photos_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                job_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": components["schemas"]["Body_upload_job_photo_api_crew_jobs__job_id__photos_post"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    serve_job_photo_api_crew_jobs__job_id__photos__photo_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                job_id: number;
+                photo_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_job_photo_api_crew_jobs__job_id__photos__photo_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                job_id: number;
+                photo_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
         responses: {
             /** @description Successful Response */
             200: {

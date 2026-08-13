@@ -2548,6 +2548,11 @@ def get_job_details(job_id: int, db: Session = Depends(get_db), org_id: int = De
 
     return {
         **_job_to_dict_enriched(db, job),
+        # Photos the office Complete modal stored inline on Job.photos (data
+        # URLs / pasted links) BEFORE the job_photos table existed. Emitted so
+        # the JobDetail gallery can finally show them — they used to be
+        # write-only. New photos live in job_photos (GET /api/crew/jobs/{id}/photos).
+        "photos_legacy": job.photos or [],
         "property": ({"id": job.property.id, "name": job.property.name, "address": job.property.address}
                      if job.property else None),
         "opportunity": ({"id": job.opportunity.id, "title": job.opportunity.title, "stage": job.opportunity.stage}

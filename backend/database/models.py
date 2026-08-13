@@ -1,6 +1,7 @@
 from sqlalchemy import (
     Column, Integer, String, Float, DateTime, Text, Date, Time, BigInteger,
-    JSON, ForeignKey, Boolean, UniqueConstraint, Index, Enum as SQLEnum, ARRAY, text
+    JSON, ForeignKey, Boolean, UniqueConstraint, Index, Enum as SQLEnum, ARRAY, text,
+    LargeBinary,
 )
 from sqlalchemy.orm import relationship, validates
 
@@ -749,6 +750,39 @@ class TimeEntry(Base):
               postgresql_where=text("clock_out_at IS NULL"),
               sqlite_where=text("clock_out_at IS NULL")),
     )
+
+
+class JobPhoto(Base):
+    """A before/after photo a cleaner (or the office) attached to a job.
+
+    Stored as bytes IN the database, deliberately: Railway's container disk is
+    ephemeral (a deploy would eat photos on the filesystem) and there is no
+    object store configured. The frontend downscales to ~1600px JPEG before
+    upload (~200-400KB), and the endpoint hard-caps size and count, so rows
+    stay small enough for Postgres to be the photo store at this shop's scale.
+
+    Its own table rather than the legacy Job.photos JSON blob: Job rows are
+    bulk-fetched constantly (Schedule, My Day, dashboards), and photo bytes
+    inlined there would ride along on every one of those queries. Here the
+    bytes load only when a single photo is actually served.
+    """
+    __tablename__ = "job_photos"
+    org_id = Column(Integer, ForeignKey("orgs.id"), nullable=True, index=True)  # tenant scope (MT-1)
+
+    id = Column(Integer, primary_key=True, index=True)
+    # Photos are completion evidence for one specific visit — no standalone
+    # value once the job row is gone, so they go with it.
+    job_id = Column(Integer, ForeignKey("jobs.id", ondelete="CASCADE"), nullable=False, index=True)
+    # Who took it (drives "you can delete your own"). SET NULL so removing a
+    # user never destroys the photo record.
+    uploaded_by = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    kind = Column(String(8), nullable=True)            # "before" | "after" | NULL (untagged)
+    content_type = Column(String(64), nullable=False)  # image/jpeg | image/png | image/webp
+    size_bytes = Column(Integer, nullable=False)
+    data = Column(LargeBinary, nullable=False)
+    created_at = Column(DateTime, default=_utcnow)
+
+    job = relationship("Job")
 
 
 class LeadIntake(Base):
