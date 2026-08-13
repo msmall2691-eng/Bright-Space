@@ -68,8 +68,15 @@ def test_overview_shape_and_directions(ctx):
     assert ch["connecteam"]["direction"] == "out"
     assert ch["airbnb"]["direction"] == "in"
     assert ch["recurring"]["direction"] == "internal"
-    # Every channel advertises the automation key its pause toggle posts.
+    # Connecteam removal step 3: the channel is a static retired marker — no
+    # toggle, no sync action, never drives the verdict.
+    assert ch["connecteam"]["status"] == "retired"
+    assert ch["connecteam"]["toggle_key"] is None
+    assert ch["connecteam"]["sync_action"] is None
+    # Every LIVE channel advertises the automation key its pause toggle posts.
     for chan in ov["channels"]:
+        if chan["key"] == "connecteam":
+            continue
         assert chan["toggle_key"]
         assert chan["status"] in {"ok", "syncing", "paused", "attention", "disconnected"}
 
@@ -78,8 +85,10 @@ def test_background_ticks_are_all_surfaced(ctx):
     db, c, p = ctx
     ov = build_sync_overview(db, 1)
     jobs = ov["background_jobs"]
-    # The "14 hidden hands" the operator couldn't see before.
-    assert len(jobs) == 14
+    # 13 background ticks after Connecteam-removal step 3 dropped the outbox
+    # drain (was the "14 hidden hands"; scheduling-invariants R1: down only).
+    assert len(jobs) == 13
+    assert not any(j["key"] == "connecteam_drain" for j in jobs)
     for j in jobs:
         assert j["name"] and isinstance(j["cadence_minutes"], int)
         assert j["group"] in {"scheduling", "health", "messaging", "other"}
@@ -88,10 +97,11 @@ def test_background_ticks_are_all_surfaced(ctx):
     autoassign = next(j for j in jobs if j["key"] == "str_autoassign")
     assert autoassign["enabled"] is False
     # Auto-pilot exposes the exact toggle set the master switch flips.
+    # (connecteam_auto_dispatch_enabled left the set with the retirement.)
     assert set(ov["auto_pilot"]["toggles"]) == {
         "gcal_auto_sync_enabled", "ical_auto_sync_enabled",
         "recurring_auto_generate_enabled", "sync_reconcile_enabled",
-        "connecteam_auto_dispatch_enabled", "calendar_source_of_truth",
+        "calendar_source_of_truth",
     }
 
 

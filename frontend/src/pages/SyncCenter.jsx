@@ -38,15 +38,15 @@ const SYNC_ENDPOINT = {
 }
 
 // The automation flags the master auto-pilot switch flips together — the ones
-// that pull, push, generate, dispatch, and reconcile on their own. Reconcile is
-// included so "auto-pilot off" actually stops the 30-min self-heal tick;
-// otherwise it would keep pushing to Google/Connecteam and "Manual syncs only"
-// would be a lie.
+// that pull, push, generate, and reconcile on their own. Reconcile is included
+// so "auto-pilot off" actually stops the 30-min self-heal tick; otherwise it
+// would keep pushing to Google and "Manual syncs only" would be a lie.
+// (connecteam_auto_dispatch_enabled left this list when the Connecteam channel
+// was retired — Connecteam-removal step 3.)
 const AUTOPILOT_KEYS = [
   'gcal_auto_sync_enabled',
   'ical_auto_sync_enabled',
   'recurring_auto_generate_enabled',
-  'connecteam_auto_dispatch_enabled',
   'sync_reconcile_enabled',
 ]
 
@@ -87,6 +87,8 @@ const STATUS = {
   paused:       { dot: 'bg-slate-400', text: 'text-ink-3', label: 'Paused' },
   attention:    { dot: 'bg-amber-500', text: 'text-amber-600', label: 'Needs attention' },
   disconnected: { dot: 'bg-red-500', text: 'text-red-600', label: 'Not connected' },
+  // Connecteam after removal step 3 — deliberately quiet, not alarming.
+  retired:      { dot: 'bg-slate-300', text: 'text-ink-3', label: 'Retired' },
 }
 
 function DirectionChip({ direction }) {

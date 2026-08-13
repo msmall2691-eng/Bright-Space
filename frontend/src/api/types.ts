@@ -1437,14 +1437,18 @@ export interface paths {
          * @description One-click fix for the schedule "Needs attention" banner.
          *
          *     Pushes every upcoming unsynced job to Google Calendar (same logic as
-         *     /push-to-gcal) AND dispatches upcoming assigned jobs that have no
-         *     Connecteam shifts yet. Both paths are no-ops for jobs already synced,
-         *     so this is safe to call repeatedly. The background reconcile tick
-         *     (scheduler.sync_reconcile_tick) runs the same repairs automatically.
+         *     /push-to-gcal); a no-op for jobs already synced, so this is safe to call
+         *     repeatedly. The background reconcile tick (scheduler.sync_reconcile_tick)
+         *     runs the same repair automatically.
          *
-         *     Scoped to the caller's org (MT-2): both the GCal push and the Connecteam
-         *     dispatch/drift queries only touch this tenant's jobs, so this endpoint
-         *     can't be used to reach around push-to-gcal's own tenant scoping.
+         *     Connecteam removal (step 3): this endpoint's Connecteam half (outbox drain
+         *     → read-back → dispatch → drift repair) is retired along with the background
+         *     tick's — a blanket reconcile must not mass-push to a projection the crew no
+         *     longer works from. The per-job /dispatch tools remain until their UI goes.
+         *
+         *     Scoped to the caller's org (MT-2): the GCal push only touches this
+         *     tenant's jobs, so this endpoint can't be used to reach around
+         *     push-to-gcal's own tenant scoping.
          */
         post: operations["sync_reconcile_api_jobs_sync_reconcile_post"];
         delete?: never;

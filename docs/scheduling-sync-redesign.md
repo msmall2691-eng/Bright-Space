@@ -12,7 +12,7 @@ mostly to make it **legible**.
 
 ---
 
-## Current state (running log — updated 2026-08-12)
+## Current state (running log — updated 2026-08-13)
 
 A living snapshot so a fresh session doesn't pay a reconstruction tax. This is the
 first thing to read; update it as state changes.
@@ -45,10 +45,15 @@ migration 068. Currently **dark**: `SCHEDULE_EVENT_LOG_ENABLED` defaults OFF.
   capturing against real data. Kill-switch: set `SCHEDULE_EVENT_LOG_ENABLED=0` in Railway
   (no redeploy). Code default stays OFF, so local/dev/tests remain dark.
 
-**R1 baseline:** re-verified **14** ticks @ `af379fa` (2026-08-12) — `main` advanced
-through #661 / #670 / #671 / #673 / #674 / #675 since the `06d7860` pin and **none
-touched `backend/scheduler.py`**, so the count is unchanged. The ratchet may only go
-down — `git grep -c '_scheduler\.add_job(' backend/scheduler.py`.
+**R1 baseline: 13 ticks (2026-08-13, Connecteam-removal step 3).** Was 14 (re-verified
+@ `af379fa`, 2026-08-12); the `connecteam_outbox_drain` tick is deleted and
+`sync_reconcile` is Google-only — the ratchet went DOWN for the first time. The
+Connecteam projection is retired: no drain, no reconcile half, no inline dispatch on
+job create, no recurring-generation/reschedule dispatch, no iCal turnover dispatch.
+The Sync Control Center shows the channel as a static "Retired" card; per-job manual
+dispatch endpoints remain until their UI is removed (steps 4–5). Crew schedule +
+time clock are native (My Day; payroll_source defaults native). Ratchet check:
+`git grep -c '_scheduler\.add_job(' backend/scheduler.py`.
 
 **⚠️ Open — Google Calendar durable idempotency token (BLOCKS the Phase 3 reconciler):**
 the GCal push calls `events().insert()` with no client-supplied event id, so a crash

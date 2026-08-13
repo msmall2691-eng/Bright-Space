@@ -25,16 +25,18 @@ const overview = (over = {}) => ({
     toggles: {
       gcal_auto_sync_enabled: true, ical_auto_sync_enabled: true,
       recurring_auto_generate_enabled: true, sync_reconcile_enabled: true,
-      connecteam_auto_dispatch_enabled: true, calendar_source_of_truth: 'brightbase',
+      calendar_source_of_truth: 'brightbase',
     },
   },
   channels: [
     { key: 'google', name: 'Google Calendar', icon: 'calendar', direction: 'out',
       authority: 'brightbase', connected: false, enabled: true, toggle_key: 'gcal_auto_sync_enabled',
       last_sync_at: null, backlog: 0, sync_action: 'gcal', status: 'disconnected', summary: 'Not connected' },
+    // Connecteam removal step 3: static retired card — no toggle, no sync action.
     { key: 'connecteam', name: 'Connecteam', icon: 'users', direction: 'out',
-      authority: 'brightbase', connected: true, enabled: true, toggle_key: 'connecteam_auto_dispatch_enabled',
-      last_sync_at: null, backlog: 0, sync_action: 'reconcile', status: 'ok', summary: 'Every crew shift is up to date' },
+      authority: 'brightbase', connected: false, enabled: false, toggle_key: null,
+      last_sync_at: null, backlog: 0, sync_action: null, status: 'retired',
+      summary: 'Retired — the crew schedule and time clock are native (My Day)' },
     { key: 'airbnb', name: 'Airbnb & rentals', icon: 'home', direction: 'in',
       authority: 'external', connected: true, enabled: true, toggle_key: 'ical_auto_sync_enabled',
       last_sync_at: null, backlog: 0, feed_count: 1,
@@ -77,11 +79,11 @@ describe('SyncCenter', () => {
     // The master switch is the first one in the DOM (banner precedes the grid).
     fireEvent.click(screen.getAllByRole('switch')[0])
     // sync_reconcile_enabled MUST be in the set — otherwise the 30-min reconcile
-    // tick keeps pushing to Google/Connecteam and "off" wouldn't actually pause.
+    // tick keeps pushing to Google and "off" wouldn't actually pause. Connecteam's
+    // flag left the set when the channel was retired (removal step 3).
     await waitFor(() => expect(post).toHaveBeenCalledWith('/api/settings/automation', {
       gcal_auto_sync_enabled: true, ical_auto_sync_enabled: true,
-      recurring_auto_generate_enabled: true, connecteam_auto_dispatch_enabled: true,
-      sync_reconcile_enabled: true,
+      recurring_auto_generate_enabled: true, sync_reconcile_enabled: true,
     }))
   })
 
