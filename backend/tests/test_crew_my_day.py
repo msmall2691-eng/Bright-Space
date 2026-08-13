@@ -242,6 +242,151 @@ def test_my_week_predicts_upcoming_and_excludes_punched_jobs(ids):
         app.dependency_overrides.pop(current_org_id, None)
 
 
+# ── Mark done (Phase 2c): POST /api/crew/jobs/{id}/complete ──────────────────
+
+def _as_cleaner(uid, crew_id):
+    app.dependency_overrides[get_current_user] = lambda: _Cleaner(uid, crew_id)
+    app.dependency_overrides[current_org_id] = lambda: 1
+    return TestClient(app)
+
+
+def _clear_overrides():
+    app.dependency_overrides.pop(get_current_user, None)
+    app.dependency_overrides.pop(current_org_id, None)
+
+
+def test_mark_done_completes_own_job_with_note_invoice_and_activity(ids):
+    """The embarrassing-if-broken path: cleaner marks their own job done →
+    status flips, the note is stored (on its own column, NOT Job.notes — crew
+    notes must never reach the invoice the client sees), the client timeline
+    gets ONE job_completed activity carrying the note, and ONE draft invoice
+    is created. Re-marking refreshes the note without duplicating either."""
+    from database.models import Activity, Invoice
+
+    crew = f"CT-{uuid.uuid4().hex[:6]}"
+    cid = _mk_client(ids)
+    pid = _mk_str_property(ids, cid)
+    jid = _mk_job(ids, cid, pid, [crew], offset_days=0)
+
+    # Count deltas, not absolutes: SQLite recycles deleted job IDs, so a fresh
+    # job can inherit orphaned Activity/Invoice rows from earlier tests.
+    db = SessionLocal()
+    pre_inv = db.query(Invoice).filter(Invoice.job_id == jid).count()
+    pre_act = db.query(Activity).filter(Activity.job_id == jid,
+                                        Activity.activity_type == "job_completed").count()
+    db.close()
+
+    api = _as_cleaner(9101, crew)
+    try:
+        res = api.post(f"/api/crew/jobs/{jid}/complete",
+                       json={"note": "  Lockbox was empty — left key under mat  "})
+        assert res.status_code == 200, res.text
+        row = res.json()
+        assert row["status"] == "completed"
+        assert row["completion_note"] == "Lockbox was empty — left key under mat"  # trimmed
+        assert row["completed_at"] is not None
+
+        db = SessionLocal()
+        j = db.query(Job).filter(Job.id == jid).first()
+        assert j.status == "completed"
+        assert j.completed_by == 9101              # forced to the caller, never client-supplied
+        assert j.completion_note.startswith("Lockbox")
+        assert not (j.notes or "")                 # crew note did NOT touch Job.notes
+
+        invoices = (db.query(Invoice).filter(Invoice.job_id == jid)
+                    .order_by(Invoice.id.desc()).all())
+        assert len(invoices) == pre_inv + 1 and invoices[0].status == "draft"
+        acts = (db.query(Activity)
+                .filter(Activity.job_id == jid,
+                        Activity.activity_type == "job_completed")
+                .order_by(Activity.id.desc()).all())
+        assert len(acts) == pre_act + 1
+        assert "Lockbox was empty" in acts[0].summary
+        assert acts[0].extra_data.get("note", "").startswith("Lockbox")
+        db.close()
+
+        # Idempotent re-mark with a fresh note: note refreshed, no dupes.
+        res2 = api.post(f"/api/crew/jobs/{jid}/complete", json={"note": "Also low on towels"})
+        assert res2.status_code == 200
+        assert res2.json()["completion_note"] == "Also low on towels"
+        db = SessionLocal()
+        assert db.query(Invoice).filter(Invoice.job_id == jid).count() == pre_inv + 1
+        assert db.query(Activity).filter(Activity.job_id == jid,
+                                         Activity.activity_type == "job_completed").count() == pre_act + 1
+        db.close()
+    finally:
+        _clear_overrides()
+        db = SessionLocal()
+        db.query(Invoice).filter(Invoice.job_id == jid).delete(synchronize_session=False)
+        db.query(Activity).filter(Activity.job_id == jid).delete(synchronize_session=False)
+        db.commit(); db.close()
+
+
+def test_mark_done_refuses_a_job_not_assigned_to_caller(ids):
+    """Object-level authorization — the check the office endpoint never had:
+    a valid cleaner token must not complete someone else's job. Reads as 404
+    so job IDs can't be probed."""
+    cid = _mk_client(ids)
+    pid = _mk_str_property(ids, cid)
+    jid = _mk_job(ids, cid, pid, ["CT-OTHER"], offset_days=0)
+
+    api = _as_cleaner(9102, "CT-NOT-ON-JOB")
+    try:
+        res = api.post(f"/api/crew/jobs/{jid}/complete", json={"note": "sneaky"})
+        assert res.status_code == 404
+        db = SessionLocal()
+        j = db.query(Job).filter(Job.id == jid).first()
+        assert j.status == "scheduled" and j.completion_note is None  # untouched
+        db.close()
+    finally:
+        _clear_overrides()
+
+
+def test_mark_done_refuses_cancelled_and_office_complete_refuses_cleaner(ids):
+    """Two guardrails: a cancelled job can't be 'completed' from the field, and
+    the office POST /api/jobs/{id}/complete no longer accepts cleaner tokens
+    (it has no assignment check — regression-lock the closed hole)."""
+    crew = f"CT-{uuid.uuid4().hex[:6]}"
+    cid = _mk_client(ids)
+    pid = _mk_str_property(ids, cid)
+    jid = _mk_job(ids, cid, pid, [crew], offset_days=0)
+    db = SessionLocal()
+    db.query(Job).filter(Job.id == jid).update({"status": "cancelled"})
+    db.commit(); db.close()
+
+    api = _as_cleaner(9103, crew)
+    try:
+        assert api.post(f"/api/crew/jobs/{jid}/complete").status_code == 400
+        assert api.post(f"/api/jobs/{jid}/complete", json={}).status_code == 403
+    finally:
+        _clear_overrides()
+
+
+def test_my_day_keeps_todays_completed_job_visible(ids):
+    """Marking done must not make the job vanish from the phone — today's list
+    keeps it (as status=completed, for the Done ✓ card); upcoming never shows
+    completed jobs."""
+    crew = f"CT-{uuid.uuid4().hex[:6]}"
+    cid = _mk_client(ids)
+    pid = _mk_str_property(ids, cid)
+    jid_today = _mk_job(ids, cid, pid, [crew], offset_days=0)
+    pid2 = _mk_str_property(ids, cid)
+    jid_future = _mk_job(ids, cid, pid2, [crew], offset_days=2)
+    db = SessionLocal()
+    db.query(Job).filter(Job.id.in_([jid_today, jid_future])).update(
+        {"status": "completed"}, synchronize_session=False)
+    db.commit(); db.close()
+
+    api = _as_cleaner(9104, crew)
+    try:
+        body = api.get("/api/crew/my-day").json()
+        today = {j["id"]: j for j in body["today"]}
+        assert jid_today in today and today[jid_today]["status"] == "completed"
+        assert jid_future not in {j["id"] for j in body["upcoming"]}
+    finally:
+        _clear_overrides()
+
+
 def test_my_week_requires_cleaner_role_and_crew_id():
     # Wrong role → 403 (the roster/payroll surface stays staff-only).
     class _Member(_PaidCleaner):

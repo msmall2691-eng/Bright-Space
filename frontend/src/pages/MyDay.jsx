@@ -10,7 +10,7 @@
  * The clock is what Payroll reads — the crew works fully native now.
  */
 import { useCallback, useEffect, useState } from 'react'
-import { MapPin, KeyRound, ParkingCircle, LogOut, RefreshCw, CalendarDays, Clock, Car, DollarSign, ChevronDown } from 'lucide-react'
+import { MapPin, KeyRound, ParkingCircle, LogOut, RefreshCw, CalendarDays, Clock, Car, DollarSign, ChevronDown, Navigation, CheckCircle2 } from 'lucide-react'
 import { get, post, patch, logout } from '../api'
 import { EmptyState, ErrorState, Skeleton } from '../components/ui'
 
@@ -33,6 +33,17 @@ function fmtClock(iso) {
   if (!iso) return ''
   try { return new Date(iso).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' }) }
   catch { return '' }
+}
+
+/** Directions deep-link for the phone's native maps app. iOS intercepts
+ *  maps.apple.com into Apple Maps; everything else gets the Google Maps
+ *  universal directions URL (opens the app on Android, the site on desktop). */
+function mapsUrl(address) {
+  const q = encodeURIComponent(address)
+  const ios = typeof navigator !== 'undefined' && /iPad|iPhone|iPod/.test(navigator.userAgent)
+  return ios
+    ? `https://maps.apple.com/?daddr=${q}`
+    : `https://www.google.com/maps/dir/?api=1&destination=${q}`
 }
 
 // One closed punch in the "Today's punches" recap, with an inline miles editor
@@ -164,8 +175,9 @@ function getPosition() {
   })
 }
 
-function JobCard({ job, clockable = false, activeEntry = null, onClockIn, onClockOut, busy = false }) {
+function JobCard({ job, clockable = false, activeEntry = null, onClockIn, onClockOut, onMarkDone, busy = false }) {
   const isTurnover = job.job_type === 'str_turnover'
+  const done = job.status === 'completed'
   const isActiveJob = clockable && activeEntry && activeEntry.job_id === job.id
   const someoneElseActive = clockable && activeEntry && activeEntry.job_id !== job.id
   return (
@@ -179,12 +191,21 @@ function JobCard({ job, clockable = false, activeEntry = null, onClockIn, onCloc
             {job.property_name || job.title}
           </div>
           {job.address && (
-            <div className="text-xs text-ink-3 mt-0.5 flex items-center gap-1">
-              <MapPin className="w-3 h-3 shrink-0" /> <span className="truncate">{job.address}</span>
-            </div>
+            /* Tap → the phone's maps app with directions. Generous hit area on
+               purpose: this is the most-used tap on the page from a car. */
+            <a href={mapsUrl(job.address)} target="_blank" rel="noopener noreferrer"
+              className="text-xs text-blue-600 dark:text-blue-400 mt-1 -mb-1 py-1 flex items-center gap-1 active:opacity-60">
+              <MapPin className="w-3 h-3 shrink-0" />
+              <span className="truncate underline decoration-blue-400/40 underline-offset-2">{job.address}</span>
+              <Navigation className="w-3 h-3 shrink-0 opacity-70" />
+            </a>
           )}
         </div>
-        {isTurnover && (
+        {done ? (
+          <span className="shrink-0 inline-flex items-center gap-1 rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-300 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide">
+            <CheckCircle2 className="w-3 h-3" /> Done
+          </span>
+        ) : isTurnover && (
           <span className="shrink-0 rounded-full bg-blue-500/10 text-blue-600 dark:text-blue-300 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide">
             Turnover
           </span>
@@ -221,24 +242,45 @@ function JobCard({ job, clockable = false, activeEntry = null, onClockIn, onCloc
         <div className="mt-2 text-[11px] text-ink-3">{job.crew_size} on this job</div>
       )}
 
-      {clockable && (
-        <div className="mt-3 border-t border-hairline pt-3">
+      {done && job.completion_note && (
+        <div className="mt-3 rounded-lg bg-emerald-500/10 border border-emerald-500/20 px-3 py-2 text-[12px] text-ink-2">
+          Your note: “{job.completion_note}”
+        </div>
+      )}
+
+      {clockable && !done && (
+        <div className="mt-3 border-t border-hairline pt-3 grid grid-cols-2 gap-2">
           {isActiveJob ? (
             <button onClick={onClockOut} disabled={busy}
-              className="w-full text-[13px] font-semibold bg-emerald-600 hover:bg-emerald-700 disabled:opacity-60 text-white py-2 rounded-lg transition-colors">
+              className="text-[13px] font-semibold bg-emerald-600 hover:bg-emerald-700 disabled:opacity-60 text-white py-2 rounded-lg transition-colors">
               Clock out
             </button>
           ) : someoneElseActive ? (
             <button disabled title="Clock out of your current job first"
-              className="w-full text-[13px] font-medium bg-panel border border-hairline text-ink-3 py-2 rounded-lg cursor-not-allowed">
+              className="text-[13px] font-medium bg-panel border border-hairline text-ink-3 py-2 rounded-lg cursor-not-allowed">
               Clock in
             </button>
           ) : (
             <button onClick={onClockIn} disabled={busy}
-              className="w-full text-[13px] font-semibold bg-blue-600 hover:bg-blue-700 disabled:opacity-60 text-white py-2 rounded-lg transition-colors">
+              className="text-[13px] font-semibold bg-blue-600 hover:bg-blue-700 disabled:opacity-60 text-white py-2 rounded-lg transition-colors">
               Clock in
             </button>
           )}
+          <button onClick={onMarkDone} disabled={busy}
+            className="text-[13px] font-semibold bg-panel border border-hairline text-ink-2 hover:bg-bg-2 disabled:opacity-60 py-2 rounded-lg transition-colors inline-flex items-center justify-center gap-1.5">
+            <CheckCircle2 className="w-4 h-4 text-emerald-600" /> Mark done
+          </button>
+        </div>
+      )}
+
+      {clockable && done && isActiveJob && (
+        /* Marked done but the punch is still open — keep clock-out reachable
+           right on the card (the green header bar has it too). */
+        <div className="mt-3 border-t border-hairline pt-3">
+          <button onClick={onClockOut} disabled={busy}
+            className="w-full text-[13px] font-semibold bg-emerald-600 hover:bg-emerald-700 disabled:opacity-60 text-white py-2 rounded-lg transition-colors">
+            Clock out
+          </button>
         </div>
       )}
     </div>
@@ -255,6 +297,9 @@ export default function MyDay() {
   // Clock-out miles prompt: opening the sheet, and the miles typed into it.
   const [clockOutOpen, setClockOutOpen] = useState(false)
   const [milesInput, setMilesInput] = useState('')
+  // Mark-done sheet: the job being completed (null = closed) + optional note.
+  const [markDoneJob, setMarkDoneJob] = useState(null)
+  const [doneNote, setDoneNote] = useState('')
 
   const [weekPay, setWeekPay] = useState(null)
 
@@ -315,6 +360,26 @@ export default function MyDay() {
     catch (e) { setActionError(e.detail || e.message || 'Could not clock out') }
     finally { setActionBusy(false) }
   }, [milesInput, fetchDay])
+
+  // Mark done is a two-step like clock-out: open the sheet (optional note),
+  // then confirm. POSTs to the crew-scoped completion endpoint — assignment
+  // is verified server-side; the office sees the note on the job + timeline.
+  const requestMarkDone = useCallback((job) => {
+    setDoneNote(''); setActionError(null); setMarkDoneJob(job)
+  }, [])
+
+  const confirmMarkDone = useCallback(async () => {
+    if (!markDoneJob) return
+    setActionBusy(true); setActionError(null)
+    try {
+      const note = doneNote.trim()
+      await post(`/api/crew/jobs/${markDoneJob.id}/complete`, note ? { note } : {})
+      setMarkDoneJob(null)
+      await fetchDay(true)
+    }
+    catch (e) { setActionError(e.detail || e.message || 'Could not mark the job done') }
+    finally { setActionBusy(false) }
+  }, [markDoneJob, doneNote, fetchDay])
 
   // Correct the miles on an already-closed punch (from the Today's punches list).
   const saveMiles = useCallback(async (entryId, miles) => {
@@ -427,6 +492,7 @@ export default function MyDay() {
                       activeEntry={active}
                       onClockIn={() => clockIn(j.id)}
                       onClockOut={requestClockOut}
+                      onMarkDone={() => requestMarkDone(j)}
                       busy={actionBusy}
                     />
                   ))}
@@ -504,6 +570,53 @@ export default function MyDay() {
               <button onClick={confirmClockOut} disabled={actionBusy}
                 className="flex-1 text-[13px] font-semibold bg-emerald-600 hover:bg-emerald-700 text-white py-2.5 rounded-lg disabled:opacity-60 transition-colors">
                 {actionBusy ? 'Clocking out…' : 'Clock out'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {markDoneJob && (
+        <div
+          className="fixed inset-0 z-30 flex items-end sm:items-center justify-center bg-black/40 px-4 pb-4 sm:pb-0"
+          onClick={() => { if (!actionBusy) setMarkDoneJob(null) }}>
+          <div
+            className="w-full max-w-sm bg-panel rounded-2xl border border-hairline shadow-glass p-5 space-y-4"
+            onClick={e => e.stopPropagation()}>
+            <div>
+              <div className="text-base font-bold text-ink">Mark done</div>
+              <div className="text-[13px] text-ink-3 mt-0.5 truncate">
+                {markDoneJob.property_name || markDoneJob.title}
+              </div>
+            </div>
+            {active && active.job_id === markDoneJob.id && (
+              <div className="text-[12px] text-amber-800 dark:text-amber-300 bg-amber-500/10 border border-amber-500/20 rounded-lg px-3 py-2">
+                You're still on the clock — remember to clock out when you leave.
+              </div>
+            )}
+            <label className="block">
+              <span className="text-[13px] font-medium text-ink-2">Anything for the office?</span>
+              <textarea
+                value={doneNote} onChange={e => setDoneNote(e.target.value)}
+                rows={3} maxLength={2000} autoFocus
+                placeholder="Optional — e.g. lockbox was empty, we're low on towels…"
+                className="mt-1.5 w-full rounded-lg border border-hairline bg-bg px-3 py-2.5 text-[13px] text-ink placeholder-ink-3 focus:outline-none focus:border-blue-400 resize-none"
+              />
+            </label>
+            {actionError && (
+              <div className="text-xs text-red-700 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
+                {actionError}
+              </div>
+            )}
+            <div className="flex gap-2">
+              <button onClick={() => setMarkDoneJob(null)} disabled={actionBusy}
+                className="flex-1 text-[13px] font-semibold bg-panel border border-hairline text-ink-2 py-2.5 rounded-lg hover:bg-bg-2 disabled:opacity-60 transition-colors">
+                Cancel
+              </button>
+              <button onClick={confirmMarkDone} disabled={actionBusy}
+                className="flex-1 text-[13px] font-semibold bg-emerald-600 hover:bg-emerald-700 text-white py-2.5 rounded-lg disabled:opacity-60 transition-colors inline-flex items-center justify-center gap-1.5">
+                <CheckCircle2 className="w-4 h-4" />
+                {actionBusy ? 'Saving…' : 'Mark done'}
               </button>
             </div>
           </div>
