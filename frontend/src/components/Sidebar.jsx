@@ -1,10 +1,11 @@
 import { useState, useEffect } from 'react'
 import { NavLink, useLocation } from 'react-router-dom'
 import {
-  Zap, X, LogOut, ChevronDown, PanelLeftClose, Search, Sparkles,
+  Zap, X, LogOut, ChevronDown, PanelLeftClose, Search, Sparkles, Star,
 } from 'lucide-react'
 import { logout } from '../api'
-import { NAV_SECTIONS, SETTINGS_ITEM } from '../nav/routes'
+import { NAV_SECTIONS, SETTINGS_ITEM, iconFor } from '../nav/routes'
+import { useFavorites, toggleFavorite, isFavorite } from '../nav/favorites'
 import Kbd from './ui/Kbd'
 
 /**
@@ -33,12 +34,20 @@ function SystemRow({ icon: Icon, label, hint, onClick }) {
   )
 }
 
-function NavRow({ item, badge }) {
+// A nav destination row. `pinnable` grows a hover-revealed star that pins the
+// page to Favorites; a favorite row (`pinned`) shows a filled star that unpins.
+// The star lives inside the NavLink, so it must swallow the click.
+function NavRow({ item, badge, pinnable = false, pinned = false }) {
+  const onStar = (e) => {
+    e.preventDefault()
+    e.stopPropagation()
+    toggleFavorite({ to: item.to, label: item.label, kind: item.kind || 'page' })
+  }
   return (
     <NavLink
       to={item.to}
       className={({ isActive }) =>
-        `${ROW} ${
+        `${ROW} group/row ${
           isActive
             ? 'bg-bg-3 font-semibold text-ink'
             : 'font-medium text-ink-2 hover:bg-bg-3/70 hover:text-ink'
@@ -57,6 +66,23 @@ function NavRow({ item, badge }) {
               </span>
             </span>
           )}
+          {pinned ? (
+            <button
+              onClick={onStar}
+              title="Remove from favorites"
+              className="hidden h-5 w-5 min-h-0 shrink-0 items-center justify-center rounded text-amber-500 opacity-0 transition-opacity hover:text-ink-2 focus-visible:opacity-100 group-hover/row:opacity-100 lg:flex"
+            >
+              <Star className="h-3.5 w-3.5 fill-current" />
+            </button>
+          ) : pinnable && !isFavorite(item.to) ? (
+            <button
+              onClick={onStar}
+              title="Add to favorites"
+              className="hidden h-5 w-5 min-h-0 shrink-0 items-center justify-center rounded text-ink-3 opacity-0 transition-opacity hover:text-amber-500 focus-visible:opacity-100 group-hover/row:opacity-100 lg:flex"
+            >
+              <Star className="h-3.5 w-3.5" />
+            </button>
+          ) : null}
         </>
       )}
     </NavLink>
@@ -66,6 +92,7 @@ function NavRow({ item, badge }) {
 export default function Sidebar({ open, onClose, collapsed, onCollapse, user, badges = {} }) {
   const location = useLocation()
   const [showUserMenu, setShowUserMenu] = useState(false)
+  const favorites = useFavorites()
 
   useEffect(() => {
     onClose()
@@ -133,6 +160,16 @@ export default function Sidebar({ open, onClose, collapsed, onCollapse, user, ba
 
         {/* Navigation */}
         <nav className="scrollbar-thin flex-1 overflow-y-auto overflow-x-hidden px-2 pb-2">
+          {favorites.length > 0 && (
+            <div className="mt-2">
+              <p className="px-2.5 pb-1 text-[11px] font-medium text-ink-3">Favorites</p>
+              <div className="space-y-px">
+                {favorites.map(f => (
+                  <NavRow key={f.to} item={{ ...f, icon: iconFor(f.to) }} pinned />
+                ))}
+              </div>
+            </div>
+          )}
           {visibleSections.map((section, i) => (
             <div key={section.label || i} className={section.label ? 'mt-5' : 'mt-1'}>
               {section.label && (
@@ -140,7 +177,7 @@ export default function Sidebar({ open, onClose, collapsed, onCollapse, user, ba
               )}
               <div className="space-y-px">
                 {section.items.map(item => (
-                  <NavRow key={item.to} item={item} badge={badges[item.to]} />
+                  <NavRow key={item.to} item={item} badge={badges[item.to]} pinnable />
                 ))}
               </div>
             </div>

@@ -1,23 +1,10 @@
 import { useState, useRef, useEffect, Fragment } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import {
-  Menu, Search, Sparkles, Plus, ChevronDown, PanelLeft,
-  Inbox, MessageSquare, CalendarDays, FileText, Users,
+  Menu, Search, Sparkles, Plus, ChevronDown, PanelLeft, Star,
 } from 'lucide-react'
-import { crumbsFor } from '../nav/routes'
-
-// The "+ New" quick-action menu — one tap from anywhere to start the work
-// the app revolves around: a lead, a message, a job, a quote, or a client.
-// Each item deep-links to the page that owns the create flow with the param
-// that auto-opens its modal (?new=1 / ?compose=1), so the menu never has to
-// mount those modals itself.
-const NEW_ACTIONS = [
-  { label: 'New lead',    icon: Inbox,         to: '/requests?new=1' },
-  { label: 'New message', icon: MessageSquare, to: '/comms?compose=1' },
-  { label: 'New job',     icon: CalendarDays,  to: '/schedule?new=1' },
-  { label: 'New quote',   icon: FileText,      to: '/billing?view=quotes&new=1' },
-  { label: 'New client',  icon: Users,         to: '/clients?new=1' },
-]
+import { crumbsFor, CREATE_ACTIONS } from '../nav/routes'
+import { useFavorites, toggleFavorite } from '../nav/favorites'
 
 function NewMenu() {
   const navigate = useNavigate()
@@ -52,7 +39,7 @@ function NewMenu() {
           role="menu"
           className="absolute right-0 z-50 mt-1.5 w-48 rounded-lg border border-hairline-2 bg-panel py-1 shadow-glass-lg"
         >
-          {NEW_ACTIONS.map(a => (
+          {CREATE_ACTIONS.map(a => (
             <button
               key={a.to}
               role="menuitem"
@@ -78,6 +65,20 @@ function NewMenu() {
 export default function Header({ onMenuToggle, sidebarCollapsed, onSidebarExpand }) {
   const location = useLocation()
   const crumbs = crumbsFor(location.pathname)
+  const favorites = useFavorites()
+  // Detail routes (crumb trail starts with a linked parent) can be pinned to
+  // the sidebar Favorites. Label comes from the page's own <h1> (the record's
+  // real name) at click time; the generic crumb label is the fallback.
+  const isDetail = Boolean(crumbs[0]?.to)
+  const isPinned = favorites.some(f => f.to === location.pathname)
+  const pinRecord = () => {
+    const h1 = document.querySelector('main h1')?.textContent?.trim()
+    toggleFavorite({
+      to: location.pathname,
+      label: h1 || crumbs[crumbs.length - 1]?.label || location.pathname,
+      kind: 'record',
+    })
+  }
 
   const openSearch = () => {
     window.dispatchEvent(new KeyboardEvent('keydown', { key: '/', metaKey: true, bubbles: true }))
@@ -128,6 +129,17 @@ export default function Header({ onMenuToggle, sidebarCollapsed, onSidebarExpand
             )
           })}
         </nav>
+        {isDetail && (
+          <button
+            onClick={pinRecord}
+            title={isPinned ? 'Remove from favorites' : 'Add to favorites'}
+            className={`flex h-6 w-6 min-h-0 shrink-0 items-center justify-center rounded-md transition-colors ${
+              isPinned ? 'text-amber-500 hover:text-ink-3' : 'text-ink-3 hover:text-amber-500'
+            }`}
+          >
+            <Star className={`h-3.5 w-3.5 ${isPinned ? 'fill-current' : ''}`} />
+          </button>
+        )}
       </div>
 
       <div className="flex shrink-0 items-center gap-1">

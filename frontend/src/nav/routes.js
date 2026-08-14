@@ -1,7 +1,7 @@
 import {
   LayoutDashboard, Sparkles, Users, Calendar, Receipt, LayoutGrid,
   DollarSign, MessageSquare, Home, Repeat, Settings, Inbox,
-  TrendingUp, Radar, Rows3, Filter, HardHat,
+  TrendingUp, Radar, Rows3, Filter, HardHat, CalendarDays, FileText, Star,
 } from 'lucide-react'
 
 /**
@@ -60,6 +60,35 @@ export const NAV_SECTIONS = [
 
 /** Settings lives in the sidebar footer, not a nav section. */
 export const SETTINGS_ITEM = { to: '/settings', icon: Settings, label: 'Settings' }
+
+/**
+ * The global create actions — shared by the topbar "+ New" menu and the quick
+ * switcher. Each deep-links to the page that owns the create flow with the
+ * param that auto-opens its modal (?new=1 / ?compose=1), so neither consumer
+ * has to mount those modals itself.
+ */
+export const CREATE_ACTIONS = [
+  { label: 'New lead',    icon: Inbox,         to: '/requests?new=1',            keywords: 'create lead request intake' },
+  { label: 'New message', icon: MessageSquare, to: '/comms?compose=1',           keywords: 'create message sms text compose' },
+  { label: 'New job',     icon: CalendarDays,  to: '/schedule?new=1',            keywords: 'create job visit book schedule appointment' },
+  { label: 'New quote',   icon: FileText,      to: '/billing?view=quotes&new=1', keywords: 'create quote estimate billing' },
+  { label: 'New client',  icon: Users,         to: '/clients?new=1',             keywords: 'create client customer contact person' },
+]
+
+/** Every nav destination as a flat list (pages the switcher can jump to). */
+export const NAV_ITEMS = [...NAV_SECTIONS.flatMap(s => s.items), SETTINGS_ITEM]
+
+/** Best icon for a path: exact nav match, else the detail route's parent icon. */
+export function iconFor(pathname) {
+  const exact = NAV_ITEMS.find(i => i.to === pathname)
+  if (exact) return exact.icon
+  for (const d of DETAIL_ROUTES) {
+    if (pathname.startsWith(d.prefix) && pathname.length > d.prefix.length) {
+      return NAV_ITEMS.find(i => i.to === d.parent)?.icon || Star
+    }
+  }
+  return Star
+}
 
 /** Flat lookup: path -> { label, section } for breadcrumbs. */
 const FLAT = new Map()

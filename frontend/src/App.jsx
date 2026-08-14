@@ -20,6 +20,7 @@ import CustomerPortal from './pages/CustomerPortal'
 import PortalVerify from './pages/PortalVerify'
 import AcceptInvite from './pages/AcceptInvite'
 import { useUnreadCount } from './hooks/useUnreadCount'
+import { recordVisit } from './nav/recents'
 import { playChime } from './utils/chime'
 import { notify } from './utils/notifications'
 import { pushToast } from './utils/toastBus'
@@ -152,6 +153,14 @@ export default function App() {
     window.addEventListener('bb:open-menu', open)
     return () => window.removeEventListener('bb:open-menu', open)
   }, [])
+
+  // Feed the quick switcher's Recents. Only meaningful inside the CRM shell —
+  // recordVisit itself skips login/public paths, and crew accounts never
+  // render a route the switcher could jump to.
+  useEffect(() => {
+    if (!user || user.status === 'pending' || user.role === 'cleaner') return
+    return recordVisit(location.pathname)
+  }, [location.pathname, user])
 
   useEffect(() => {
     const jwt = localStorage.getItem('brightbase_jwt')
