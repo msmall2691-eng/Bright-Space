@@ -17,6 +17,8 @@ import JobPhotoSheet from '../components/crew/JobPhotoSheet'
 import CrewProfile from '../components/crew/CrewProfile'
 import CrewAvailability from '../components/crew/CrewAvailability'
 import CrewLearn from '../components/crew/CrewLearn'
+import CrewMonth from '../components/crew/CrewMonth'
+import CrewCalendarSync from '../components/crew/CrewCalendarSync'
 
 const SOFT = 'bg-panel rounded-xl border border-hairline shadow-glass-sm'
 
@@ -504,6 +506,8 @@ export default function MyDay() {
   const [claimJob, setClaimJob] = useState(null)
   // Non-null = showing the offline cached copy saved at this timestamp.
   const [staleAt, setStaleAt] = useState(null)
+  // Schedule tab layout: the 2-week list or the month grid.
+  const [schedView, setSchedView] = useState('list')
 
   const [weekPay, setWeekPay] = useState(null)
 
@@ -799,7 +803,22 @@ export default function MyDay() {
           </>
         )}
 
-        {tab === 'schedule' && !loading && !error && data && (data.open_jobs || []).length > 0 && (
+        {tab === 'schedule' && (
+          <div className="flex gap-1.5 mb-1">
+            {[['list', 'Next 2 weeks'], ['month', 'Month']].map(([v, l]) => (
+              <button key={v} onClick={() => setSchedView(v)} aria-pressed={schedView === v}
+                className={`text-[12px] font-semibold px-3 py-1.5 rounded-full border transition-colors ${
+                  schedView === v ? 'bg-blue-600 border-blue-600 text-white'
+                    : 'bg-panel border-hairline text-ink-2'}`}>
+                {l}
+              </button>
+            ))}
+          </div>
+        )}
+
+        {tab === 'schedule' && schedView === 'month' && <CrewMonth />}
+
+        {tab === 'schedule' && schedView === 'list' && !loading && !error && data && (data.open_jobs || []).length > 0 && (
           <section>
             <h2 className="text-xs font-semibold uppercase tracking-wide text-ink-3 mb-2 flex items-center gap-1.5">
               <Sparkles className="w-3.5 h-3.5 text-amber-500" /> Up for grabs
@@ -812,7 +831,7 @@ export default function MyDay() {
           </section>
         )}
 
-        {tab === 'schedule' && !loading && !error && data && (
+        {tab === 'schedule' && schedView === 'list' && !loading && !error && data && (
           data.upcoming.length === 0 ? (
             (data.open_jobs || []).length > 0 ? null :
             <EmptyState icon={CalendarRange} title="Nothing else scheduled yet"
@@ -842,6 +861,7 @@ export default function MyDay() {
           <>
             <CrewProfile />
             <CrewAvailability />
+            <CrewCalendarSync />
             <WeekPayCard week={weekPay} />
             <button onClick={logout}
               className="w-full text-[13px] font-semibold bg-panel border border-hairline text-red-600 dark:text-red-400 py-2.5 rounded-lg hover:bg-bg-2 transition-colors inline-flex items-center justify-center gap-1.5">
