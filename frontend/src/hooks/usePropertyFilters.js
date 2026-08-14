@@ -11,17 +11,23 @@ const propType = (p) => (p?.property_type || '').toLowerCase()
  *  typeCounts: single pass over the full list producing
  *    `{ all, residential, commercial, str }` — recomputed only on data
  *    change so tab badges are cheap. */
-export function usePropertyFilters({ properties, currentType, search }) {
+// No door code AND no access notes on file — the crew card for any job here
+// shows "no access info". Batch-fill target (owner request, Aug 2026).
+export const missingAccess = (p) =>
+  !(p?.house_code || '').trim() && !(p?.access_notes || '').trim()
+
+export function usePropertyFilters({ properties, currentType, search, missingAccessOnly = false }) {
   const filteredProperties = useMemo(() => {
-    const base = currentType === 'all'
+    let base = currentType === 'all'
       ? properties
       : properties.filter(p => propType(p) === currentType)
+    if (missingAccessOnly) base = base.filter(missingAccess)
     const q = search.trim().toLowerCase()
     if (!q) return base
     return base.filter(p =>
       [p.name, p.address, p.client_name].some(v => (v || '').toLowerCase().includes(q)),
     )
-  }, [properties, currentType, search])
+  }, [properties, currentType, search, missingAccessOnly])
 
   const typeCounts = useMemo(() => {
     const counts = { all: properties.length, residential: 0, commercial: 0, str: 0 }
@@ -32,5 +38,8 @@ export function usePropertyFilters({ properties, currentType, search }) {
     return counts
   }, [properties])
 
-  return { filteredProperties, typeCounts }
+  const missingAccessCount = useMemo(
+    () => properties.filter(missingAccess).length, [properties])
+
+  return { filteredProperties, typeCounts, missingAccessCount }
 }

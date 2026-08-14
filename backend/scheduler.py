@@ -230,6 +230,16 @@ def job_sms_reminders_tick() -> dict:
     from services.reminder_service import send_due_reminders
     db = SessionLocal()
     try:
+        # Crew morning digest rides this tick (R1: no new ticks — this is a
+        # task on an existing one). Fully self-gated (push-enabled, 6-9am
+        # business window, once-per-day marker) and independent of the
+        # customer-SMS toggles below — Meg turning client texts off must not
+        # silence the crew's own 7am "your day at a glance".
+        try:
+            from services.crew_digest import send_crew_morning_digests
+            send_crew_morning_digests(db)
+        except Exception:
+            log.exception("crew digest pass failed (reminders tick continues)")
         # Env is an emergency-off, not a truthy/falsy default. `env_hard_off`
         # only triggers on explicit `0`/`false`/`no`/`off` — shared with
         # messaging_status so the tick and UI can't disagree on what
