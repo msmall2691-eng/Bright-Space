@@ -3,7 +3,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom'
 import {
   MoreVertical, Plus, Search, FileText, Archive, AlertCircle,
   Home, Building2, Wind, Zap, Mail, Phone, MapPin, X, MessageSquare, Globe,
-  Trash2, MessageCircle, Inbox, ChevronRight, Eye, Copy, UserPlus, ArrowUpRight,
+  Trash2, MessageCircle, Inbox, ChevronRight, Copy, UserPlus, ArrowUpRight,
 } from 'lucide-react'
 import { get, post, patch, del } from '../api'
 import { displayContactName } from '../utils/display'
@@ -137,7 +137,7 @@ const RequestCard = ({ intake, onViewDetails, onCreateQuote, onConvertToClient, 
   const [showMenu, setShowMenu] = useState(false)
 
   return (
-    <div className={`bg-panel rounded-lg border p-4 hover:shadow-md transition-all ${selected ? 'border-indigo-400 bg-indigo-50/30' : 'border-hairline'}`}>
+    <div className={`bg-panel rounded-lg border px-4 py-2.5 hover:bg-bg-2/60 transition-colors ${selected ? 'border-indigo-400 bg-indigo-50/30' : 'border-hairline'}`}>
       <div className="flex items-start justify-between gap-3 mb-3">
         <div className="flex items-start gap-3 flex-1 min-w-0">
           {/* Bulk-select checkbox */}
@@ -159,25 +159,26 @@ const RequestCard = ({ intake, onViewDetails, onCreateQuote, onConvertToClient, 
             <div className="flex items-center gap-2 mb-2 flex-wrap">
               <h3 className="font-semibold text-ink truncate">{displayContactName(intake)}</h3>
               <SourceChip source={intake.source || 'website'} />
-              <span className={`px-2 py-1 rounded-full text-xs font-medium whitespace-nowrap ${statusConfig.badge}`}>
+              <span className="inline-flex h-5 items-center gap-1.5 rounded-sm border border-hairline-2 bg-panel px-2 text-[11px] font-medium text-ink-2 whitespace-nowrap">
+                <span className={`h-1.5 w-1.5 rounded-full ${statusConfig.dot}`} />
                 {statusConfig.label}
               </span>
               {/* Read-receipt: the customer opened the quote we sent for this
                   request. Only meaningful pre-conversion (a converted lead is
                   already won). */}
               {intake.quote_viewed_at && displayStatus !== 'converted' && (
-                <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-[11px] font-medium whitespace-nowrap bg-indigo-100 text-indigo-700"
+                <span className="inline-flex h-5 items-center gap-1.5 rounded-sm border border-hairline-2 bg-panel px-2 text-[11px] font-medium text-ink-2 whitespace-nowrap"
                   title={`Customer opened the quote on ${new Date(intake.quote_viewed_at).toLocaleString()}`}>
-                  <Eye className="w-3 h-3 shrink-0" /> Quote opened
+                  <span className="h-1.5 w-1.5 rounded-full bg-indigo-500 shrink-0" /> Quote opened
                 </span>
               )}
               {/* Shares a name or address with another lead — the operator
                   can merge/archive from here. Same signal the backend uses to
                   auto-merge in-window; older matches surface here instead. */}
               {intake._possibleDuplicate && (
-                <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-[11px] font-medium whitespace-nowrap bg-amber-100 text-amber-700"
+                <span className="inline-flex h-5 items-center gap-1.5 rounded-sm border border-hairline-2 bg-panel px-2 text-[11px] font-medium text-ink-2 whitespace-nowrap"
                   title="Shares a name or address with another lead — check for a duplicate">
-                  <Copy className="w-3 h-3 shrink-0" /> Possible duplicate
+                  <span className="h-1.5 w-1.5 rounded-full bg-amber-500 shrink-0" /> Possible duplicate
                 </span>
               )}
             </div>
@@ -210,14 +211,16 @@ const RequestCard = ({ intake, onViewDetails, onCreateQuote, onConvertToClient, 
               {intake.requested_date && <span>• {formatDate(intake.requested_date)}</span>}
               {intake.frequency && <span>• {intake.frequency}</span>}
               {estimateText(intake.estimate_min, intake.estimate_max) ? (
-                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 font-semibold text-[11px]">
+                <span className="inline-flex h-5 items-center gap-1.5 rounded-sm border border-hairline-2 bg-panel px-2 text-[11px] font-medium text-ink-2">
+                  <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
                   {estimateText(intake.estimate_min, intake.estimate_max)}
                 </span>
               ) : ['str', 'commercial'].includes(intake.service_type) ? (
                 // STR / commercial are quoted by hand — the site shows no
                 // instant number, so make the blank estimate read as
                 // intentional rather than missing data.
-                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-violet-50 text-violet-700 font-semibold text-[11px]">
+                <span className="inline-flex h-5 items-center gap-1.5 rounded-sm border border-hairline-2 bg-panel px-2 text-[11px] font-medium text-ink-2">
+                  <span className="h-1.5 w-1.5 rounded-full bg-violet-500" />
                   Custom quote
                 </span>
               ) : (
@@ -695,7 +698,7 @@ export default function Requests() {
           ]}
           actions={
             <button onClick={() => setShowNewRequestModal(true)}
-              className="flex items-center gap-2 bg-white text-slate-900 hover:bg-white/90 px-3.5 py-2 rounded-xl text-xs font-semibold transition-colors">
+              className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white px-3 py-1.5 rounded-md text-xs font-medium transition-colors">
               <Plus className="w-4 h-4" /> New Request
             </button>
           }
