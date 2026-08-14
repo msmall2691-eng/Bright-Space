@@ -5492,6 +5492,50 @@ export interface paths {
         patch: operations["update_me_api_crew_me_patch"];
         trace?: never;
     };
+    "/api/crew/jobs/{job_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Crew Job Detail
+         * @description Full card context for ONE job — powers the tap-through from the month
+         *     view (and anywhere else a row needs to open). Assigned-only, 404 for
+         *     everyone else: even leads who can SEE the whole month only get names and
+         *     times for jobs that aren't theirs — access details stay need-to-know.
+         */
+        get: operations["crew_job_detail_api_crew_jobs__job_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/crew/weather": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Crew Weather
+         * @description Today's outlook for the crew greeting. {available: false} on ANY
+         *     problem — never an error the UI has to handle.
+         */
+        get: operations["crew_weather_api_crew_weather_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/crew/schedule-month": {
         parameters: {
             query?: never;
@@ -16666,6 +16710,57 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    crew_job_detail_api_crew_jobs__job_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                job_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    crew_weather_api_crew_weather_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
                 };
             };
         };
