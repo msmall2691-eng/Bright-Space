@@ -62,8 +62,8 @@ function StageDot({ stage }) {
 function SortHead({ label, col, sort, onSort, className = '' }) {
   const active = sort.key === col
   return (
-    <th className={`px-3 py-2 text-left font-semibold text-ink-3 select-none ${className}`}>
-      <button onClick={() => onSort(col)} className="inline-flex items-center gap-1 hover:text-ink-2 uppercase tracking-wide text-[11px]">
+    <th className={`bb-th text-left select-none ${className}`}>
+      <button onClick={() => onSort(col)} className="inline-flex min-h-0 items-center gap-1 text-[11px] font-medium hover:text-ink-2">
         {label}
         {active && (sort.dir === 'asc' ? <ArrowUp className="w-3 h-3" /> : <ArrowDown className="w-3 h-3" />)}
       </button>
@@ -127,7 +127,7 @@ export default function Deals() {
           ]}
           actions={
             <button onClick={reload}
-              className="flex items-center gap-1.5 bg-white/10 border border-white/15 text-white hover:bg-white/15 px-3.5 py-2 rounded-xl text-xs font-semibold transition-colors">
+              className="flex items-center gap-1.5 bg-panel border border-hairline-2 text-ink-2 hover:bg-bg-2 px-3 py-1.5 rounded-md text-xs font-medium transition-colors">
               <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} /> Refresh
             </button>
           }
@@ -164,16 +164,16 @@ export default function Deals() {
 
         <div className="rounded-xl border border-hairline bg-panel overflow-hidden">
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[820px] text-[13px]">
-              <thead className="bg-bg-2/60 border-b border-hairline text-[11px]">
+            <table className="bb-table min-w-[820px]">
+              <thead className="bg-panel">
                 <tr>
                   <SortHead label="Deal" col="client_name" sort={sort} onSort={onSort} />
                   <SortHead label="Stage" col="stage" sort={sort} onSort={onSort} />
                   <SortHead label="Amount" col="amount" sort={sort} onSort={onSort} className="text-right" />
-                  <th className="px-3 py-2 text-left font-semibold text-ink-3 uppercase tracking-wide text-[11px]">Quote</th>
-                  <th className="px-3 py-2 text-left font-semibold text-ink-3 uppercase tracking-wide text-[11px]">Work</th>
+                  <th className="bb-th">Quote</th>
+                  <th className="bb-th">Work</th>
                   <SortHead label="Age" col="age" sort={sort} onSort={onSort} />
-                  <th className="px-3 py-2 text-right font-semibold text-ink-3 uppercase tracking-wide text-[11px]">Action</th>
+                  <th className="bb-th text-right">Action</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-hairline">
@@ -185,24 +185,24 @@ export default function Deals() {
                   const to = d.kind === 'lead' ? `/requests/${d.lead_id}` : `/opportunities/${d.opportunity_id}`
                   return (
                     <tr key={d.id} className={`hover:bg-bg-2/50 transition-colors ${busyId === d.id ? 'opacity-60' : ''}`}>
-                      <td className="px-3 py-2.5 max-w-[280px]">
+                      <td className="bb-td max-w-[280px]">
                         <Link to={to} className="font-medium text-ink hover:text-indigo-600 truncate block">{d.title || 'Untitled'}</Link>
                         {d.client_name && <span className="text-[11px] text-ink-3 truncate block">{d.client_name}</span>}
                       </td>
-                      <td className="px-3 py-2.5"><StageDot stage={d.stage} /></td>
-                      <td className="px-3 py-2.5 text-right tabular-nums font-semibold text-ink-2">{money(d.amount)}</td>
-                      <td className="px-3 py-2.5">
+                      <td className="bb-td"><StageDot stage={d.stage} /></td>
+                      <td className="bb-td text-right tabular-nums font-semibold text-ink-2">{money(d.amount)}</td>
+                      <td className="bb-td">
                         {d.quote_status
                           ? <span className="text-[11px] px-1.5 py-0.5 rounded-full bg-bg-2 text-ink-2 border border-hairline capitalize">{String(d.quote_status).replace(/_/g, ' ')}</span>
                           : <span className="text-ink-3">—</span>}
                       </td>
-                      <td className="px-3 py-2.5">
+                      <td className="bb-td">
                         {d.job_state
                           ? <span className={`text-[12px] font-medium capitalize ${JOB_STATE_TONE[d.job_state] || 'text-ink-2'}`}>{d.job_state}</span>
                           : <span className="text-ink-3">—</span>}
                       </td>
-                      <td className="px-3 py-2.5 text-ink-3 tabular-nums whitespace-nowrap">{ageLabel(d.age_days)}</td>
-                      <td className="px-3 py-2.5 text-right">
+                      <td className="bb-td text-ink-3 tabular-nums">{ageLabel(d.age_days)}</td>
+                      <td className="bb-td text-right">
                         {d.kind === 'lead' ? (
                           <button onClick={() => triageLead(d)} disabled={busyId === d.id}
                             className="inline-flex items-center gap-1 text-[12px] font-semibold px-2.5 py-1 rounded-lg bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white">

@@ -180,6 +180,63 @@ body.theme-console .bb-surface-hover:hover {
   box-shadow: inset 0 0 0 1px rgba(99, 102, 241, 0.22);
 }
 
+/* ----------------------------------------------------------------------
+   List tables (Attio/Twenty-grade) — the shared vocabulary every list page's
+   table uses so they all read as one product. Compact fixed-rhythm rows,
+   sentence-case quiet column labels (no uppercase shouting), full-row hover
+   tint, and a summary footer. Cells opt out of the mobile 44px control
+   min-height via their own sizing; interactive touch targets inside cells
+   keep their padding.
+
+     <table class="bb-table">
+       <thead><tr><th class="bb-th">Name</th>…</tr></thead>
+       <tbody><tr class="bb-row"><td class="bb-td">…</td>…</tr></tbody>
+     </table>
+     <div class="bb-table-foot">128 clients</div>
+   ---------------------------------------------------------------------- */
+.bb-table { width: 100%; text-align: left; border-collapse: collapse; }
+.bb-th {
+  height: 32px;
+  padding: 0 12px;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--ink-3);
+  white-space: nowrap;
+  border-bottom: 1px solid var(--hairline-2);
+}
+.bb-td {
+  height: 36px;
+  padding: 4px 12px;
+  font-size: 13px;
+  color: var(--ink-2);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 320px;
+}
+/* Primary cell (the record's name) reads as the row's anchor. */
+.bb-td-primary { color: var(--ink); font-weight: 500; }
+.bb-row { border-bottom: 1px solid var(--hairline); cursor: pointer; }
+.bb-row:hover { background: color-mix(in srgb, var(--bg-2) 60%, transparent); }
+.bb-row-selected { background: var(--bg-2); }
+.bb-table-foot {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  height: 32px;
+  padding: 0 12px;
+  font-size: 11px;
+  color: var(--ink-3);
+  border-top: 1px solid var(--hairline);
+}
+.bb-check {
+  width: 14px;
+  height: 14px;
+  border-radius: 4px;
+  cursor: pointer;
+  accent-color: rgb(var(--accent-600));
+}
+
 /* App canvas — flat. The gaps between panels are plain surface (bg-bg), the
    Twenty way. The aurora + dot-grid are gone; only the Neon theme (below)
    still paints anything here. */
