@@ -46,7 +46,7 @@ export function InvoicingHeader({
                 </button>
               )}
               <button onClick={openNew}
-                className="flex items-center gap-2 bg-white/10 border border-white/15 text-white hover:bg-white/15 px-3.5 py-2 rounded-xl text-xs font-semibold transition-colors">
+                className="flex items-center gap-2 bg-panel border border-hairline-2 text-ink-2 hover:bg-bg-2 px-3 py-1.5 rounded-md text-xs font-medium transition-colors">
                 <Plus className="w-3.5 h-3.5" /> New invoice
               </button>
             </>
