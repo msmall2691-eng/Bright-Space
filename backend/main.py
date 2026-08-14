@@ -186,8 +186,12 @@ from modules.inbox.router import router as inbox_router
 app.include_router(inbox_router, prefix="/api/inbox", tags=["inbox"])
 app.include_router(schedule_router, prefix="/api/schedule", tags=["schedule"])
 app.include_router(portal_router, prefix="/api/portal", tags=["portal"])
-from modules.crew.router import router as crew_router
+from modules.crew.router import router as crew_router, public_calendar_router
 app.include_router(crew_router, prefix="/api/crew", tags=["crew"])
+# Per-cleaner iCal feeds — public by design (calendar apps can't send auth
+# headers; the unguessable per-user token IS the credential). Read-only
+# projection; exempted in auth.APIKeyMiddleware.
+app.include_router(public_calendar_router, prefix="/api/crew-cal", tags=["crew"])
 from modules.crew_docs.router import router as crew_docs_router
 app.include_router(crew_docs_router, prefix="/api/crew-docs", tags=["crew-docs"])
 # push_router sets its own /api/push prefix (like the auth webhook routers).

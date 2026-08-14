@@ -1159,6 +1159,178 @@ def update_me(
     return _me_row(u)
 
 
+# ── Month schedule (own jobs; whole crew for flagged leads) ──────────────────
+
+@router.get("/schedule-month")
+def schedule_month(
+    year: int,
+    month: int,
+    db: Session = Depends(get_db),
+    org_id: int = Depends(current_org_id),
+    current_user: User = Depends(require_role("cleaner")),
+):
+    """One calendar month of jobs for the crew app's Month view.
+
+    Everyone sees their OWN jobs. A lead the admin flagged
+    (can_view_full_schedule) also sees everyone else's — but those rows are
+    NAMES/TIMES ONLY: no door codes, no access notes, no client phone, no
+    office notes. Access details stay need-to-know, scoped to the jobs
+    you're actually on (security-roles: gate codes are the crown jewels).
+    """
+    _require_crew_id(current_user)
+    if not (1 <= month <= 12):
+        raise HTTPException(status_code=422, detail="month must be 1-12.")
+    oid = resolve_org_id(org_id, db)
+    first = date(year, month, 1)
+    last = date(year + (month == 12), (month % 12) + 1, 1) - timedelta(days=1)
+    see_all = bool(getattr(current_user, "can_view_full_schedule", False))
+
+    jobs = (db.query(Job)
+            .options(joinedload(Job.property))
+            .filter(or_(Job.org_id == oid, Job.org_id.is_(None)),
+                    Job.scheduled_date >= first,
+                    Job.scheduled_date <= last,
+                    Job.status.notin_(("cancelled",)))
+            .all())
+    if not see_all:
+        jobs = [j for j in jobs if current_user.cleaner_id in (j.cleaner_ids or [])]
+    names = _names_by_cleaner_id(db, jobs)
+
+    out = []
+    for j in sorted(jobs, key=lambda x: (x.scheduled_date, x.start_time is None, x.start_time)):
+        mine = current_user.cleaner_id in (j.cleaner_ids or [])
+        out.append({
+            "id": j.id,
+            "date": j.scheduled_date.isoformat(),
+            "start_time": _fmt_time(j.start_time),
+            "end_time": _fmt_time(j.end_time),
+            "title": j.title,
+            "property_name": j.property.name if j.property else None,
+            "status": j.status,
+            "mine": mine,
+            "cleaners": sorted(names.get(str(c), str(c)) for c in (j.cleaner_ids or [])),
+        })
+    return {"year": year, "month": month, "see_all": see_all, "jobs": out}
+
+
+# ── Personal calendar feed (subscribe from Google/Apple Calendar) ────────────
+# A read-only PROJECTION by construction: calendar apps PULL the .ics; we
+# never write to anyone's calendar, store no OAuth tokens, and run no sync
+# tick (scheduling-invariants R1/R2 clean). The token is the whole auth —
+# unguessable, per-user, revocable by rotation.
+
+def _ensure_calendar_token(db: Session, user_id: int) -> str:
+    # Always write through a freshly-fetched row — the auth dependency's
+    # object may be detached (or a test double).
+    row = db.query(User).filter(User.id == user_id).first()
+    if not row.calendar_token:
+        import secrets
+        row.calendar_token = secrets.token_urlsafe(24)
+        db.commit(); db.refresh(row)
+    return row.calendar_token
+
+
+@router.get("/me/calendar-link")
+def get_calendar_link(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_role("cleaner")),
+):
+    """The caller's personal feed URL (token minted on first ask)."""
+    _require_crew_id(current_user)
+    token = _ensure_calendar_token(db, current_user.id)
+    from config import app_base_url
+    return {"url": f"{app_base_url().rstrip('/')}/api/crew-cal/{token}.ics"}
+
+
+@router.post("/me/calendar-link/rotate")
+def rotate_calendar_link(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_role("cleaner")),
+):
+    """New secret, old URL dead — for a lost phone or an over-shared link."""
+    _require_crew_id(current_user)
+    import secrets
+    row = db.query(User).filter(User.id == current_user.id).first()
+    row.calendar_token = secrets.token_urlsafe(24)
+    db.commit()
+    from config import app_base_url
+    return {"url": f"{app_base_url().rstrip('/')}/api/crew-cal/{row.calendar_token}.ics"}
+
+
+def _ics_escape(s: str) -> str:
+    return (s or "").replace("\\", "\\\\").replace(";", "\\;").replace(",", "\\,").replace("\n", "\\n")
+
+
+def _ics_utc(d: date, t) -> str:
+    """Business-local date+time → UTC ICS stamp (DST handled by zoneinfo)."""
+    local = datetime.combine(d, t, tzinfo=business_tz())
+    return local.astimezone(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+
+
+# Public sub-router mounted at /api/crew-cal (auth exempt — calendar apps
+# can't send headers; the token IS the credential).
+public_calendar_router = APIRouter()
+
+
+@public_calendar_router.get("/{token}.ics")
+def personal_ics_feed(token: str, db: Session = Depends(get_db)):
+    """The subscribed feed: this cleaner's jobs, -7 to +60 days.
+
+    Deliberately NO door codes, access notes, or office notes — people share
+    calendars, and a feed URL forwards. Details live in the app.
+    """
+    token = (token or "").strip()
+    user = (db.query(User)
+            .filter(User.calendar_token == token, User.cleaner_id.isnot(None))
+            .first()) if len(token) >= 16 else None
+    if not user or not getattr(user, "active", True):
+        raise HTTPException(status_code=404, detail="Unknown calendar.")
+
+    today = business_today()
+    jobs = (db.query(Job)
+            .options(joinedload(Job.property))
+            .filter(or_(Job.org_id == user.org_id, Job.org_id.is_(None)),  # MT-2 scope
+                    Job.scheduled_date >= today - timedelta(days=7),
+                    Job.scheduled_date <= today + timedelta(days=60),
+                    Job.status.notin_(("cancelled",)))
+            .all())
+    mine = [j for j in jobs if user.cleaner_id in (j.cleaner_ids or [])]
+
+    lines = [
+        "BEGIN:VCALENDAR",
+        "VERSION:2.0",
+        "PRODID:-//BrightBase//Crew Schedule//EN",
+        "CALSCALE:GREGORIAN",
+        "METHOD:PUBLISH",
+        f"X-WR-CALNAME:{_ics_escape('Work — The Maine Cleaning Co.')}",
+    ]
+    for j in mine:
+        where = (j.property.name if j.property else None) or j.title
+        addr = (j.property.address if j.property else None) or (j.address or "")
+        stamp = (j.updated_at or j.created_at)
+        lines += [
+            "BEGIN:VEVENT",
+            f"UID:job-{j.id}@brightbase",
+            f"DTSTAMP:{stamp.strftime('%Y%m%dT%H%M%SZ') if stamp else '19700101T000000Z'}",
+            f"SUMMARY:{_ics_escape(f'Clean — {where}')}",
+        ]
+        if j.start_time:
+            lines.append(f"DTSTART:{_ics_utc(j.scheduled_date, j.start_time)}")
+            lines.append(f"DTEND:{_ics_utc(j.scheduled_date, j.end_time or j.start_time)}")
+        else:
+            lines.append(f"DTSTART;VALUE=DATE:{j.scheduled_date.strftime('%Y%m%d')}")
+        if addr:
+            lines.append(f"LOCATION:{_ics_escape(addr)}")
+        lines.append(f"DESCRIPTION:{_ics_escape('Details, door codes and checklists are in BrightBase.')}")
+        if j.status == "completed":
+            lines.append("STATUS:CONFIRMED")
+        lines.append("END:VEVENT")
+    lines.append("END:VCALENDAR")
+    body = "\r\n".join(lines) + "\r\n"
+    return Response(content=body, media_type="text/calendar",
+                    headers={"Cache-Control": "private, max-age=300"})
+
+
 # ── Training / docs library, read side (crew app Phase 5) ────────────────────
 
 @router.get("/docs")
@@ -1493,6 +1665,8 @@ def _crew_row(u: User) -> dict:
         "status": u.status or "active",
         # True once they've set a password (accepted the invite) or logged in.
         "activated": bool(u.password_hash) or u.last_login_at is not None,
+        # Lead flag: their crew app shows the whole month schedule.
+        "can_view_full_schedule": bool(getattr(u, "can_view_full_schedule", False)),
     }
 
 

@@ -5492,6 +5492,72 @@ export interface paths {
         patch: operations["update_me_api_crew_me_patch"];
         trace?: never;
     };
+    "/api/crew/schedule-month": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Schedule Month
+         * @description One calendar month of jobs for the crew app's Month view.
+         *
+         *     Everyone sees their OWN jobs. A lead the admin flagged
+         *     (can_view_full_schedule) also sees everyone else's — but those rows are
+         *     NAMES/TIMES ONLY: no door codes, no access notes, no client phone, no
+         *     office notes. Access details stay need-to-know, scoped to the jobs
+         *     you're actually on (security-roles: gate codes are the crown jewels).
+         */
+        get: operations["schedule_month_api_crew_schedule_month_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/crew/me/calendar-link": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Calendar Link
+         * @description The caller's personal feed URL (token minted on first ask).
+         */
+        get: operations["get_calendar_link_api_crew_me_calendar_link_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/crew/me/calendar-link/rotate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Rotate Calendar Link
+         * @description New secret, old URL dead — for a lost phone or an over-shared link.
+         */
+        post: operations["rotate_calendar_link_api_crew_me_calendar_link_rotate_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/crew/docs": {
         parameters: {
             query?: never;
@@ -5659,6 +5725,29 @@ export interface paths {
          *     (see /unclaimed-ids). No Connecteam involved.
          */
         post: operations["add_crew_api_crew_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/crew-cal/{token}.ics": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Personal Ics Feed
+         * @description The subscribed feed: this cleaner's jobs, -7 to +60 days.
+         *
+         *     Deliberately NO door codes, access notes, or office notes — people share
+         *     calendars, and a feed URL forwards. Details live in the app.
+         */
+        get: operations["personal_ics_feed_api_crew_cal__token__ics_get"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -5900,6 +5989,8 @@ export interface components {
             pay_rate_rental?: number | null;
             /** Pay Rate Deep */
             pay_rate_deep?: number | null;
+            /** Can View Full Schedule */
+            can_view_full_schedule?: boolean | null;
         };
         /** AssignRequest */
         AssignRequest: {
@@ -16579,6 +16670,78 @@ export interface operations {
             };
         };
     };
+    schedule_month_api_crew_schedule_month_get: {
+        parameters: {
+            query: {
+                year: number;
+                month: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_calendar_link_api_crew_me_calendar_link_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    rotate_calendar_link_api_crew_me_calendar_link_rotate_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
     list_crew_docs_api_crew_docs_get: {
         parameters: {
             query?: never;
@@ -16799,6 +16962,37 @@ export interface operations {
                 "application/json": components["schemas"]["CrewCreate"];
             };
         };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    personal_ics_feed_api_crew_cal__token__ics_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                token: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
         responses: {
             /** @description Successful Response */
             200: {

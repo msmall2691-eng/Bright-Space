@@ -703,6 +703,9 @@ class AdminUserUpdate(BaseModel):
     pay_rate_residential: Optional[float] = None
     pay_rate_rental: Optional[float] = None
     pay_rate_deep: Optional[float] = None
+    # Crew lead flag: this cleaner's app shows the WHOLE month schedule
+    # (names/times only). Admin-set here only — never self-service.
+    can_view_full_schedule: Optional[bool] = None
 
 
 def _user_row(db: Session, u: User) -> dict:
@@ -725,6 +728,7 @@ def _user_row(db: Session, u: User) -> dict:
         "pay_rate_residential": u.pay_rate_residential,
         "pay_rate_rental": u.pay_rate_rental,
         "pay_rate_deep": u.pay_rate_deep,
+        "can_view_full_schedule": bool(getattr(u, "can_view_full_schedule", False)),
         "last_login_at": u.last_login_at.isoformat() if u.last_login_at else None,
         "created_at": u.created_at.isoformat() if u.created_at else None,
     }
@@ -903,6 +907,8 @@ def update_workspace_user(user_id: int, data: AdminUserUpdate, db: Session = Dep
             if _val is not None and _val < 0:
                 raise HTTPException(status_code=422, detail=f"{_attr} cannot be negative")
             setattr(u, _attr, _val)
+    if data.can_view_full_schedule is not None:
+        u.can_view_full_schedule = data.can_view_full_schedule
     db.commit()
     logger.info(f"[auth] {current_user.email} updated user {u.email}: "
                 f"role={data.role!r} active={data.active!r} cleaner_id={data.cleaner_id!r}")

@@ -162,6 +162,14 @@ class User(Base):
     # 082) — on file for people working alone in clients' homes.
     emergency_contact_name = Column(String, nullable=True)
     emergency_contact_phone = Column(String, nullable=True)
+    # Crew app: a lead cleaner the admin flagged can see the WHOLE month
+    # schedule (titles/times/names only — access details stay need-to-know,
+    # own jobs only). Admin-set via the users PATCH; never self-service.
+    can_view_full_schedule = Column(Boolean, default=False, nullable=False)
+    # Secret token for the personal read-only iCal feed (/api/crew-cal/
+    # {token}.ics) that cleaners subscribe to from Google/Apple Calendar.
+    # Unguessable, revocable by rotation; NULL until first requested.
+    calendar_token = Column(String(64), nullable=True, unique=True, index=True)
 
     client = relationship("Client", back_populates="user", foreign_keys="User.client_id")
     # User.jobs_assigned was dropped by migration 040 — its FK column

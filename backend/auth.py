@@ -53,6 +53,10 @@ _PUBLIC_PREFIXES = (
     "/api/agents",
     "/api/quotes/public/",
     "/api/jobs/public/",
+    # Per-cleaner iCal feeds: Google/Apple Calendar fetch these with no auth
+    # headers — the unguessable per-user token in the path is the credential
+    # (revocable by rotation). Read-only text/calendar bytes.
+    "/api/crew-cal/",
     # Customer self-service portal — passwordless. request-link/verify are open
     # (rate-limited); the data endpoints enforce a portal-session token in the
     # portal router's own dependency, not the staff API key.

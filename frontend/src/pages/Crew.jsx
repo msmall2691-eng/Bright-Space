@@ -257,6 +257,13 @@ export default function Crew() {
                         )}
                       </div>
                     </div>
+                    <label className="flex items-center gap-2 mb-2 text-[12px] font-medium text-ink-2 cursor-pointer">
+                      <input type="checkbox"
+                        checked={!!row.can_view_full_schedule}
+                        disabled={busyId === row.id}
+                        onChange={(e) => savePatch(row.id, { can_view_full_schedule: e.target.checked })} />
+                      Lead — sees the whole crew's schedule (names &amp; times only, never door codes)
+                    </label>
                     <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
                       <label className="block">
                         <span className="text-[11px] text-ink-3">Crew ID</span>
