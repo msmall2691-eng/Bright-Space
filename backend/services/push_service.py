@@ -75,6 +75,51 @@ def _send_one(subscription: dict, payload: str, ttl: int = 43200) -> int:
         return 0
 
 
+def notify_user(
+    user_id: int,
+    title: str,
+    body: str,
+    *,
+    url: str = "/",
+    tag: Optional[str] = None,
+) -> int:
+    """Send to ONE user's devices (crew morning digest etc.). Same contract
+    as notify_staff: own short-lived session, best-effort, prunes dead
+    endpoints, returns successful-send count, no-op when push is off."""
+    if not push_enabled():
+        return 0
+    try:
+        from database.db import SessionLocal
+        from database.models import PushSubscription
+    except Exception:
+        return 0
+    session = SessionLocal()
+    try:
+        subs = session.query(PushSubscription).filter(
+            PushSubscription.user_id == user_id).all()
+        if not subs:
+            return 0
+        payload = json.dumps({"title": title, "body": body, "url": url, "tag": tag})
+        sent, dead = 0, []
+        for s in subs:
+            status = _send_one({"endpoint": s.endpoint,
+                                "keys": {"p256dh": s.p256dh, "auth": s.auth}}, payload)
+            if status == 200:
+                sent += 1
+            elif status in (404, 410):
+                dead.append(s.id)
+        if dead:
+            session.query(PushSubscription).filter(
+                PushSubscription.id.in_(dead)).delete(synchronize_session=False)
+            session.commit()
+        return sent
+    except Exception as e:  # pragma: no cover - defensive
+        logger.warning("[push] notify_user failed: %s", e)
+        return 0
+    finally:
+        session.close()
+
+
 def notify_staff(
     db: Optional[Session],
     title: str,

@@ -502,6 +502,8 @@ export default function MyDay() {
   const [declineReason, setDeclineReason] = useState('')
   // Claim confirm sheet: the open job being claimed (null = closed).
   const [claimJob, setClaimJob] = useState(null)
+  // Non-null = showing the offline cached copy saved at this timestamp.
+  const [staleAt, setStaleAt] = useState(null)
 
   const [weekPay, setWeekPay] = useState(null)
 
@@ -512,8 +514,28 @@ export default function MyDay() {
     get('/api/crew/my-week').then(setWeekPay).catch(() => {})
     // days=14 (the endpoint's max) so the Schedule tab shows two weeks out.
     return get('/api/crew/my-day?days=14')
-      .then(setData)
-      .catch(e => { if (!silent) setError(e) })
+      .then(d => {
+        setData(d); setStaleAt(null)
+        // Offline resilience: keep the last good day on the device, so one
+        // bar of service in a driveway still shows the schedule + door
+        // codes (which matter most exactly where signal is worst).
+        try {
+          localStorage.setItem('bb_myday_cache',
+            JSON.stringify({ data: d, savedAt: Date.now() }))
+        } catch { /* storage full/blocked — cache is a bonus, not a need */ }
+      })
+      .catch(e => {
+        // Server unreachable → fall back to the cached copy instead of a
+        // dead error screen. Actions still fail loudly; reading works.
+        try {
+          const c = JSON.parse(localStorage.getItem('bb_myday_cache') || 'null')
+          if (c?.data) {
+            setData(c.data); setStaleAt(c.savedAt); setError(null)
+            return
+          }
+        } catch { /* corrupt cache — fall through to the error */ }
+        if (!silent) setError(e)
+      })
       .finally(() => { if (!silent) setLoading(false) })
   }, [])
 
@@ -654,6 +676,17 @@ export default function MyDay() {
             <RefreshCw className="w-4 h-4" />
           </button>
         </header>
+
+        {staleAt && (
+          /* Offline fallback in effect: reading works from the cached copy;
+             buttons will fail until service returns. Tapping retries. */
+          <button onClick={() => fetchDay()}
+            className="w-full bg-amber-500/15 border-b border-amber-500/30 text-amber-800 dark:text-amber-300 px-4 py-2 text-[12px] font-medium text-left">
+            No connection — showing your schedule saved at{' '}
+            {new Date(staleAt).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}.
+            Tap to retry.
+          </button>
+        )}
 
         {active && (
           <div className="bg-emerald-600 text-white px-4 py-2.5 flex items-center justify-between gap-3">

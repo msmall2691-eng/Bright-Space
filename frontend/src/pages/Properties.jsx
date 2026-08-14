@@ -78,7 +78,8 @@ export default function Properties() {
     return client?.name || `Client #${id}`
   }
 
-  const { filteredProperties, typeCounts } = usePropertyFilters({ properties, currentType, search })
+  const [missingAccessOnly, setMissingAccessOnly] = useState(false)
+  const { filteredProperties, typeCounts, missingAccessCount } = usePropertyFilters({ properties, currentType, search, missingAccessOnly })
 
   const save = async () => {
     const result = await saveProperty({ selected, form })
@@ -163,6 +164,18 @@ export default function Properties() {
         </div>
 
         <div className="flex-1 flex flex-col min-h-0 px-4 sm:px-8 pb-4 sm:pb-6">
+          {missingAccessCount > 0 && (
+            /* The batch-fill sweep: every property here shows crew "no access
+               info on file". One chip, then work the list down to zero. */
+            <button onClick={() => setMissingAccessOnly(v => !v)} aria-pressed={missingAccessOnly}
+              className={`self-start mb-2 inline-flex items-center gap-1.5 text-[12px] font-semibold px-3 py-1.5 rounded-full border transition-colors ${
+                missingAccessOnly
+                  ? 'bg-amber-500 border-amber-500 text-white'
+                  : 'bg-amber-50 border-amber-300 text-amber-800 hover:bg-amber-100'}`}>
+              🔑 Missing access info ({missingAccessCount})
+              {missingAccessOnly && <span className="opacity-80">· showing only these</span>}
+            </button>
+          )}
           <BulkActionBar
             filteredProperties={filteredProperties}
             selectedIds={selectedIds}
