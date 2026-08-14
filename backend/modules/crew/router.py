@@ -2106,6 +2106,153 @@ def text_client(
     return {"sent": True, "preview": msg_body}
 
 
+# ── Ask (grounded crew assistant) ────────────────────────────────────────────
+# A quiet Q&A box in the Learn tab — NOT a floating widget (owner: "no AI
+# badges get in the way"). Answers come ONLY from what this cleaner can
+# already see: their own jobs (with codes/wifi/house notes), published
+# company docs, their private notes, today's weather. The context is built
+# server-side from the same queries the crew endpoints use, so the model
+# can never be tricked into fetching someone else's data — there's nothing
+# else in the prompt to leak.
+
+ASK_SYSTEM = """You are the in-app helper inside a cleaning company's crew app.
+The person asking is a cleaner on the crew, often on a phone, sometimes mid-job.
+
+Rules:
+- Answer ONLY from the CONTEXT below. If the answer isn't there, say you
+  don't have it and point them to the right place: schedule/job questions →
+  the office (Me tab → Message the office); how-to questions → the Learn tab
+  guides.
+- Be brief and concrete — a phone answer, not an essay. Bullet lists only
+  when listing jobs.
+- NEVER invent door codes, addresses, times, or prices. Quote them exactly
+  from the context or say you don't have them.
+- Do not discuss pay rates, other cleaners' schedules beyond names shown,
+  or anything not in the context."""
+
+
+def build_ask_context(db: Session, current_user: User) -> str:
+    """Everything THIS cleaner may see, as one prompt block. Pure read;
+    capped so the request stays fast on a phone connection."""
+    today = business_today()
+    parts = [f"Today is {today.strftime('%A, %B %d, %Y')}.",
+             f"The cleaner's name is {getattr(current_user, 'full_name', None) or current_user.email}."]
+
+    org_scope = or_(Job.org_id == current_user.org_id, Job.org_id.is_(None))
+    jobs = (db.query(Job)
+            .options(joinedload(Job.property), joinedload(Job.client))
+            .filter(org_scope,
+                    Job.scheduled_date >= today,
+                    Job.scheduled_date <= today + timedelta(days=14),
+                    Job.status.notin_(("cancelled",)))
+            .order_by(Job.scheduled_date, Job.start_time)
+            .all())
+    mine = [j for j in jobs if current_user.cleaner_id in (j.cleaner_ids or [])]
+    names = _names_by_cleaner_id(db, mine)
+    house_notes = _shared_notes_by_property(db, mine)
+    if mine:
+        parts.append("THEIR JOBS (next 14 days):")
+        for j in mine[:30]:
+            r = _job_row(j, names, current_user.cleaner_id,
+                         house_notes=house_notes.get(j.property_id))
+            line = (f"- {r['scheduled_date']} {r['start_time'] or ''}-{r['end_time'] or ''} "
+                    f"{r['property_name'] or r['title']} at {r['address'] or 'address TBD'}."
+                    f" Client: {r['client_name'] or 'n/a'}."
+                    + (f" Door code: {r['house_code']}." if r['house_code'] else "")
+                    + (f" Access: {r['access_notes']}." if r['access_notes'] else "")
+                    + (f" WiFi: {r['wifi_ssid']} / {r['wifi_password']}." if r['wifi_ssid'] else "")
+                    + (f" Teammates: {', '.join(r['teammates'])}." if r['teammates'] else "")
+                    + (f" Office notes: {r['notes']}" if r['notes'] else "")
+                    + ((" House notes: " + " | ".join(n['body'] for n in r['house_notes']))
+                       if r['house_notes'] else ""))
+            parts.append(line)
+    else:
+        parts.append("THEIR JOBS: none scheduled in the next 14 days.")
+
+    docs = (db.query(CrewDoc)
+            .filter(or_(CrewDoc.org_id == current_user.org_id, CrewDoc.org_id.is_(None)),
+                    CrewDoc.published.is_(True), CrewDoc.owner_user_id.is_(None))
+            .order_by(CrewDoc.pinned.desc(), CrewDoc.updated_at.desc())
+            .limit(20).all())
+    if docs:
+        parts.append("COMPANY GUIDES:")
+        budget = 9000
+        for d in docs:
+            body = (d.body or "")[:1200]
+            if budget - len(body) < 0:
+                break
+            budget -= len(body)
+            parts.append(f"## {d.title}\n{body}")
+
+    notes = (db.query(CrewDoc)
+             .filter(CrewDoc.owner_user_id == current_user.id)
+             .order_by(CrewDoc.updated_at.desc()).limit(10).all())
+    if notes:
+        parts.append("THEIR PRIVATE NOTES:")
+        for n in notes:
+            parts.append(f"## {n.title}\n{(n.body or '')[:600]}")
+
+    try:
+        wx = _WEATHER_CACHE.get("data")
+        if wx and wx.get("available"):
+            parts.append(f"WEATHER today: {wx['temp_f']}°F now, high {wx['high_f']}°F, "
+                         f"{wx.get('summary', '')}, {wx.get('precip_chance', 0)}% precip chance.")
+    except Exception:
+        pass
+
+    return "\n".join(parts)
+
+
+class AskBody(BaseModel):
+    question: str
+    history: Optional[list] = None    # [{role: 'user'|'assistant', content: str}]
+
+
+@router.post("/ask")
+def crew_ask(
+    body: AskBody,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_role("cleaner")),
+):
+    _require_crew_id(current_user)
+    q = (body.question or "").strip()
+    if not q:
+        raise HTTPException(status_code=422, detail="Ask something first.")
+    if len(q) > 500:
+        raise HTTPException(status_code=422, detail="Keep it under 500 characters.")
+
+    from modules.ai.router import _anthropic_client
+    client = _anthropic_client()
+    if client is None:
+        raise HTTPException(status_code=409,
+                            detail="The helper isn't set up yet — message the office instead.")
+
+    context = build_ask_context(db, current_user)
+    messages = []
+    for h in (body.history or [])[-6:]:
+        role = h.get("role") if isinstance(h, dict) else None
+        content = (h.get("content") or "").strip()[:1000] if isinstance(h, dict) else ""
+        if role in ("user", "assistant") and content:
+            messages.append({"role": role, "content": content})
+    messages.append({"role": "user", "content": q})
+
+    import os
+    model = os.getenv("CREW_ASSISTANT_MODEL", "claude-haiku-4-5-20251001")
+    try:
+        resp = client.messages.create(
+            model=model,
+            max_tokens=500,
+            system=f"{ASK_SYSTEM}\n\nCONTEXT:\n{context}",
+            messages=messages,
+        )
+        answer = "".join(b.text for b in resp.content if getattr(b, "type", "") == "text").strip()
+    except Exception:
+        log.exception("crew ask failed")
+        raise HTTPException(status_code=502,
+                            detail="The helper couldn't answer right now — try again or message the office.")
+    return {"answer": answer or "I don't have that — try messaging the office from the Me tab."}
+
+
 # ── Training / docs library, read side (crew app Phase 5) ────────────────────
 
 @router.get("/docs")

@@ -9,6 +9,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { ArrowLeft, BookOpen, ExternalLink, Pin, Plus, StickyNote, Trash2 } from 'lucide-react'
 import { get, post, patch, del } from '../../api'
+import CrewAsk from './CrewAsk'
 
 /** "My notes" — the cleaner's PRIVATE notes (nobody else sees them, not
  *  even the office). Product codes, gate quirks, personal reminders. */
@@ -179,6 +180,7 @@ export default function CrewLearn() {
   if (docs.length === 0) {
     return (
       <div className="space-y-4">
+        <CrewAsk />
         <MyNotes />
         <div className="text-center py-8">
           <BookOpen className="w-7 h-7 text-ink-3 mx-auto mb-2" />
@@ -193,6 +195,8 @@ export default function CrewLearn() {
 
   return (
     <div className="space-y-3">
+      <CrewAsk />
+
       {cats.length > 2 && (
         <div className="flex gap-1.5 overflow-x-auto pb-0.5 -mx-1 px-1">
           {cats.map(c => (
