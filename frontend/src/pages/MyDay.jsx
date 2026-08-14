@@ -10,7 +10,7 @@
  * The clock is what Payroll reads — the crew works fully native now.
  */
 import { useCallback, useEffect, useState } from 'react'
-import { MapPin, KeyRound, ParkingCircle, LogOut, RefreshCw, CalendarDays, Clock, Car, DollarSign, ChevronDown, Navigation, CheckCircle2, Camera, Users, Phone, ClipboardList, CalendarRange, CircleUserRound, Sun, Sparkles, BookOpen } from 'lucide-react'
+import { MapPin, KeyRound, ParkingCircle, LogOut, RefreshCw, CalendarDays, Clock, Car, DollarSign, ChevronDown, Navigation, CheckCircle2, Camera, Users, Phone, ClipboardList, CalendarRange, CircleUserRound, Sun, Sparkles, BookOpen, Wifi, Home } from 'lucide-react'
 import { get, post, patch, logout } from '../api'
 import { EmptyState, ErrorState, Skeleton } from '../components/ui'
 import JobPhotoSheet from '../components/crew/JobPhotoSheet'
@@ -21,6 +21,7 @@ import CrewMonth from '../components/crew/CrewMonth'
 import CrewCalendarSync from '../components/crew/CrewCalendarSync'
 import CrewTimeOff from '../components/crew/CrewTimeOff'
 import CrewMessagesCard from '../components/crew/CrewMessages'
+import PropertySheet from '../components/crew/PropertySheet'
 
 const SOFT = 'bg-panel rounded-xl border border-hairline shadow-glass-sm'
 
@@ -289,7 +290,7 @@ function GreetingHero({ firstName, jobCount }) {
   )
 }
 
-function JobCard({ job, clockable = false, activeEntry = null, onClockIn, onClockOut, onMarkDone, onPhotos, onRespond, onDecline, onClaim, onTextClient, busy = false }) {
+function JobCard({ job, clockable = false, activeEntry = null, onClockIn, onClockOut, onMarkDone, onPhotos, onRespond, onDecline, onClaim, onTextClient, onHouseInfo, busy = false }) {
   const isTurnover = job.job_type === 'str_turnover'
   const done = job.status === 'completed'
   const isActiveJob = clockable && activeEntry && activeEntry.job_id === job.id
@@ -374,7 +375,7 @@ function JobCard({ job, clockable = false, activeEntry = null, onClockIn, onCloc
         </div>
       )}
 
-      {(job.access_notes || job.parking_notes || job.house_code) && (
+      {(job.access_notes || job.parking_notes || job.house_code || job.wifi_ssid) && (
         <div className="mt-3 space-y-1.5 border-t border-hairline pt-3">
           {job.house_code && !job.turnover_line?.includes(job.house_code) && (
             <div className="text-[13px] text-ink-2 flex items-start gap-1.5">
@@ -391,7 +392,41 @@ function JobCard({ job, clockable = false, activeEntry = null, onClockIn, onCloc
               <ParkingCircle className="w-3.5 h-3.5 mt-0.5 shrink-0 text-ink-3" /> {job.parking_notes}
             </div>
           )}
+          {job.wifi_ssid && (
+            /* WiFi rides the offline cache — at a dead-zone house these
+               credentials ARE the fix. Tap copies the password. */
+            <button
+              onClick={() => { try { navigator.clipboard.writeText(job.wifi_password || job.wifi_ssid) } catch { /* noop */ } }}
+              className="text-[13px] text-ink-2 flex items-start gap-1.5 active:opacity-60 text-left">
+              <Wifi className="w-3.5 h-3.5 mt-0.5 shrink-0 text-ink-3" />
+              <span>
+                {job.wifi_ssid}
+                {job.wifi_password && <span className="font-mono"> · {job.wifi_password}</span>}
+                <span className="text-[10px] text-ink-3"> (tap to copy)</span>
+              </span>
+            </button>
+          )}
         </div>
+      )}
+
+      {job.house_notes?.length > 0 && (
+        /* Crew-sourced, office-shared house knowledge — "upstairs drain
+           clogs". Rides the payload (and offline cache), newest first. */
+        <div className="mt-3 rounded-lg bg-amber-500/5 border border-amber-500/20 px-3 py-2 space-y-1">
+          <div className="text-[10px] font-bold uppercase tracking-wide text-amber-700 dark:text-amber-400">House notes</div>
+          {job.house_notes.map((n, i) => (
+            <div key={i} className="text-[12px] text-ink-2">
+              {n.body}{n.author_name && <span className="text-ink-3"> — {n.author_name}</span>}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {!job.open && job.property_id && !done && onHouseInfo && (
+        <button onClick={onHouseInfo}
+          className="mt-2 text-[12px] font-semibold text-blue-600 dark:text-blue-400 inline-flex items-center gap-1 active:opacity-60">
+          <Home className="w-3.5 h-3.5" /> House photos &amp; notes ›
+        </button>
       )}
 
       {job.notes && (
@@ -542,6 +577,8 @@ export default function MyDay() {
   const [staleAt, setStaleAt] = useState(null)
   // Schedule tab layout: the 2-week list or the month grid.
   const [schedView, setSchedView] = useState('list')
+  // House photos & notes sheet: the job whose property is open (null = closed).
+  const [houseJob, setHouseJob] = useState(null)
   // Structured client-text sheet: the job being texted about (null = closed).
   const [textJob, setTextJob] = useState(null)
   const [textNote, setTextNote] = useState('')
@@ -822,6 +859,7 @@ export default function MyDay() {
                       onRespond={(resp) => respond(j, resp)}
                       onDecline={() => requestDecline(j)}
                       onTextClient={() => { setTextNote(''); setTextSent(null); setActionError(null); setTextJob(j) }}
+                      onHouseInfo={() => setHouseJob(j)}
                       busy={actionBusy}
                     />
                   ))}
@@ -902,6 +940,7 @@ export default function MyDay() {
                       onRespond={(resp) => respond(j, resp)}
                       onDecline={() => requestDecline(j)}
                       onTextClient={() => { setTextNote(''); setTextSent(null); setActionError(null); setTextJob(j) }}
+                      onHouseInfo={() => setHouseJob(j)}
                       busy={actionBusy} />
                   ))}
                 </div>
@@ -983,6 +1022,12 @@ export default function MyDay() {
 
       {photoJob && (
         <JobPhotoSheet job={photoJob} onClose={() => setPhotoJob(null)} />
+      )}
+
+      {houseJob && (
+        <PropertySheet propertyId={houseJob.property_id}
+          propertyName={houseJob.property_name}
+          onClose={() => setHouseJob(null)} />
       )}
 
       {textJob && (() => {

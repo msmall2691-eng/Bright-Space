@@ -5433,6 +5433,97 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/crew/properties/{property_id}/notes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Property Notes
+         * @description Shared notes + the caller's own pending ones. Office sees everything
+         *     (that's how pending notes get reviewed and shared).
+         */
+        get: operations["property_notes_api_crew_properties__property_id__notes_get"];
+        put?: never;
+        /**
+         * Add Property Note
+         * @description Crew notes arrive UNSHARED (author + office only) and ping the office
+         *     for review; office-authored notes are shared immediately.
+         */
+        post: operations["add_property_note_api_crew_properties__property_id__notes_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/crew/properties/{property_id}/notes/{note_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Delete Property Note
+         * @description Office deletes anything; a cleaner only their own not-yet-shared note
+         *     (shared notes are crew infrastructure now — office's call).
+         */
+        delete: operations["delete_property_note_api_crew_properties__property_id__notes__note_id__delete"];
+        options?: never;
+        head?: never;
+        /**
+         * Share Property Note
+         * @description Office-only: flip shared on/off — sharing is the curation step.
+         */
+        patch: operations["share_property_note_api_crew_properties__property_id__notes__note_id__patch"];
+        trace?: never;
+    };
+    "/api/crew/properties/{property_id}/photos": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Property Photos */
+        get: operations["list_property_photos_api_crew_properties__property_id__photos_get"];
+        put?: never;
+        /**
+         * Upload Property Photo
+         * @description Reference photo ("master bed — 4 pillows"). Same caps as job photos;
+         *     the client downscales before upload.
+         */
+        post: operations["upload_property_photo_api_crew_properties__property_id__photos_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/crew/properties/{property_id}/photos/{photo_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Property Photo Content */
+        get: operations["property_photo_content_api_crew_properties__property_id__photos__photo_id__get"];
+        put?: never;
+        post?: never;
+        /** Delete Property Photo */
+        delete: operations["delete_property_photo_api_crew_properties__property_id__photos__photo_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/crew/jobs/{job_id}/photos": {
         parameters: {
             query?: never;
@@ -6295,6 +6386,19 @@ export interface components {
             file: string;
             /** Kind */
             kind?: string;
+        };
+        /** Body_upload_property_photo_api_crew_properties__property_id__photos_post */
+        Body_upload_property_photo_api_crew_properties__property_id__photos_post: {
+            /**
+             * File
+             * Format: binary
+             */
+            file: string;
+            /**
+             * Caption
+             * @default
+             */
+            caption: string;
         };
         /** BookingResponse */
         BookingResponse: {
@@ -7350,6 +7454,11 @@ export interface components {
              */
             body: string;
         };
+        /** NoteBody */
+        NoteBody: {
+            /** Body */
+            body: string;
+        };
         /** OffPhaseCleanupApply */
         OffPhaseCleanupApply: {
             /** Job Ids */
@@ -7559,6 +7668,10 @@ export interface components {
             check_out_time?: string | null;
             /** House Code */
             house_code?: string | null;
+            /** Wifi Ssid */
+            wifi_ssid?: string | null;
+            /** Wifi Password */
+            wifi_password?: string | null;
             /** Timezone */
             timezone?: string | null;
             /** Business Name */
@@ -16760,6 +16873,272 @@ export interface operations {
                 "application/json": components["schemas"]["RespondBody"];
             };
         };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    property_notes_api_crew_properties__property_id__notes_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                property_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    add_property_note_api_crew_properties__property_id__notes_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                property_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["NoteBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_property_note_api_crew_properties__property_id__notes__note_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                property_id: number;
+                note_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    share_property_note_api_crew_properties__property_id__notes__note_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                property_id: number;
+                note_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    [key: string]: unknown;
+                };
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_property_photos_api_crew_properties__property_id__photos_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                property_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    upload_property_photo_api_crew_properties__property_id__photos_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                property_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": components["schemas"]["Body_upload_property_photo_api_crew_properties__property_id__photos_post"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    property_photo_content_api_crew_properties__property_id__photos__photo_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                property_id: number;
+                photo_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_property_photo_api_crew_properties__property_id__photos__photo_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                property_id: number;
+                photo_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
         responses: {
             /** @description Successful Response */
             200: {

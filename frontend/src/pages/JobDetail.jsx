@@ -3,7 +3,7 @@ import { useParams, useNavigate, Link } from 'react-router-dom'
 import {
   ArrowLeft, Building2, MapPin, Receipt, FileText, TrendingUp, Calendar, Send, Plus, CalendarPlus, KeyRound,
 } from 'lucide-react'
-import { get, patch, post, download } from '../api'
+import { get, patch, post, del, download } from '../api'
 import { toast } from '../utils/toastBus'
 import { formatDateShort as fmtDate } from '../utils/format'
 import { canEdit } from '../utils/perms'
@@ -14,11 +14,43 @@ import InlineSelect from '../components/InlineSelect'
  *  nothing when there's nothing on file, which read as "the app is broken"
  *  (owner bug report, Aug 2026). Missing fields render as amber fill-me
  *  inputs; a save PATCHes the property, so every future job there has it. */
+const ACCESS_FIELDS = [
+  ['house_code', 'Door code', 'e.g. 4251#'],
+  ['access_notes', 'Access notes', 'e.g. key in lockbox by side door'],
+  ['wifi_ssid', 'WiFi network', 'e.g. SeasideCottage'],
+  ['wifi_password', 'WiFi password', 'shown on crew cards + offline'],
+]
+
 function PropertyAccessCard({ property, canEdit: editable }) {
-  const [vals, setVals] = useState({ house_code: property.house_code || '', access_notes: property.access_notes || '' })
-  const [saved, setSaved] = useState({ house_code: property.house_code || '', access_notes: property.access_notes || '' })
+  const initial = Object.fromEntries(ACCESS_FIELDS.map(([f]) => [f, property[f] || '']))
+  const [vals, setVals] = useState(initial)
+  const [saved, setSaved] = useState(initial)
   const [busy, setBusy] = useState(false)
+  const [notes, setNotes] = useState(null)
   const missing = !saved.house_code && !saved.access_notes
+
+  useEffect(() => {
+    get(`/api/crew/properties/${property.id}/notes`).then(setNotes).catch(() => setNotes([]))
+  }, [property.id])
+
+  const toggleShare = async (n) => {
+    try {
+      const updated = await patch(`/api/crew/properties/${property.id}/notes/${n.id}`, { shared: !n.shared })
+      setNotes(ns => ns.map(x => (x.id === n.id ? updated : x)))
+      toast.success(updated.shared ? 'Shared with the whole crew' : 'Unshared')
+    } catch (e) {
+      toast.error(e.detail || e.message || 'Could not update')
+    }
+  }
+
+  const removeNote = async (n) => {
+    try {
+      await del(`/api/crew/properties/${property.id}/notes/${n.id}`)
+      setNotes(ns => ns.filter(x => x.id !== n.id))
+    } catch (e) {
+      toast.error(e.detail || e.message || 'Could not delete')
+    }
+  }
 
   const save = async (field) => {
     const v = vals[field].trim()
@@ -46,12 +78,12 @@ function PropertyAccessCard({ property, canEdit: editable }) {
           Nothing on file — crew cards show no door code for this property.
         </p>
       )}
-      {['house_code', 'access_notes'].map(field => (
+      {ACCESS_FIELDS.map(([field, label, ph]) => (
         <label key={field} className="block">
-          <span className="text-[11px] text-ink-3">{field === 'house_code' ? 'Door code' : 'Access notes'}</span>
+          <span className="text-[11px] text-ink-3">{label}</span>
           {editable ? (
             <input value={vals[field]} disabled={busy}
-              placeholder={field === 'house_code' ? 'e.g. 4251#' : 'e.g. key in lockbox by side door'}
+              placeholder={ph}
               onChange={e => setVals(s => ({ ...s, [field]: e.target.value }))}
               onBlur={() => save(field)}
               onKeyDown={e => { if (e.key === 'Enter') e.target.blur() }}
@@ -61,6 +93,35 @@ function PropertyAccessCard({ property, canEdit: editable }) {
           )}
         </label>
       ))}
+
+      {notes?.length > 0 && (
+        /* Crew-sourced house notes: SHARE is the curation step — until then a
+           note is author+office only. */
+        <div className="border-t border-hairline pt-2 space-y-1.5">
+          <div className="text-[10px] uppercase tracking-wide text-ink-3">House notes from the crew</div>
+          {notes.map(n => (
+            <div key={n.id} className="text-[12px] text-ink-2">
+              {n.body}
+              <div className="flex items-center gap-2 mt-0.5">
+                <span className="text-[10px] text-ink-3">{n.author_name}</span>
+                {editable && (
+                  <>
+                    <button onClick={() => toggleShare(n)}
+                      className={`text-[10px] font-semibold rounded-full px-1.5 py-0.5 border ${
+                        n.shared
+                          ? 'text-emerald-700 bg-emerald-50 border-emerald-300'
+                          : 'text-amber-700 bg-amber-50 border-amber-300'}`}>
+                      {n.shared ? 'Shared ✓ (tap to unshare)' : 'Share with crew'}
+                    </button>
+                    <button onClick={() => removeNote(n)}
+                      className="text-[10px] text-red-600 underline underline-offset-2">delete</button>
+                  </>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   )
 }
