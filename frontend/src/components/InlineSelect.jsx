@@ -27,10 +27,10 @@ export default function InlineSelect({ value, options, onSelect, disabled = fals
         disabled={disabled}
         onClick={() => setOpen(o => !o)}
         title={disabled ? undefined : 'Click to change'}
-        className={`text-[10px] px-2 py-0.5 rounded-full border capitalize font-medium transition
-          ${current?.chipClass || 'bg-bg-2 text-ink-3 border-hairline'}
-          ${disabled ? '' : 'cursor-pointer hover:ring-1 hover:ring-blue-300'}`}
+        className={`inline-flex h-5 min-h-0 items-center gap-1.5 whitespace-nowrap rounded-sm border border-hairline-2 bg-panel px-2 text-[11px] font-medium capitalize leading-none text-ink-2 transition
+          ${disabled ? '' : 'cursor-pointer hover:bg-bg-2'}`}
       >
+        <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${current?.dot || 'bg-ink-3'}`} aria-hidden />
         {current?.label || value || '—'}
       </button>
       {open && !disabled && (
