@@ -1596,6 +1596,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/jobs/time-off/{time_off_id}/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Set Time Off Status
+         * @description Approve or deny a crew-submitted time-off request (migration 089).
+         *
+         *     Approving makes it real time off (top-priority in every availability
+         *     surface); denying keeps the row for the cleaner's own history but it
+         *     never blocks scheduling. Either way the requester's phone gets a push.
+         */
+        patch: operations["set_time_off_status_api_jobs_time_off__time_off_id__status_patch"];
+        trace?: never;
+    };
     "/api/jobs/time-off/{time_off_id}": {
         parameters: {
             query?: never;
@@ -5602,6 +5626,161 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/crew/me/time-off": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * My Time Off
+         * @description The caller's own entries — approved, requested, and denied — newest
+         *     range first, so the Me tab can show request history with status chips.
+         */
+        get: operations["my_time_off_api_crew_me_time_off_get"];
+        put?: never;
+        /**
+         * Request Time Off
+         * @description Submit a time-off REQUEST. It lands status='requested' — visible to
+         *     the office (push + Availability panel) but it does NOT count as off
+         *     anywhere until approved. Same-week emergencies are still a phone call;
+         *     this is for planning ahead.
+         */
+        post: operations["request_time_off_api_crew_me_time_off_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/crew/me/time-off/{entry_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Cancel Time Off Request
+         * @description Withdraw your own PENDING request. Approved time off belongs to the
+         *     office's calendar — changing that is a conversation, not a tap.
+         */
+        delete: operations["cancel_time_off_request_api_crew_me_time_off__entry_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/crew/my-docs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List My Docs
+         * @description The caller's PRIVATE notes — owner-scoped rows nobody else lists,
+         *     including the office.
+         */
+        get: operations["list_my_docs_api_crew_my_docs_get"];
+        put?: never;
+        /** Create My Doc */
+        post: operations["create_my_doc_api_crew_my_docs_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/crew/my-docs/{doc_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Delete My Doc */
+        delete: operations["delete_my_doc_api_crew_my_docs__doc_id__delete"];
+        options?: never;
+        head?: never;
+        /** Update My Doc */
+        patch: operations["update_my_doc_api_crew_my_docs__doc_id__patch"];
+        trace?: never;
+    };
+    "/api/crew/messages": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * My Messages
+         * @description The caller's thread with the office (oldest first). Loading it marks
+         *     the office's messages read.
+         */
+        get: operations["my_messages_api_crew_messages_get"];
+        put?: never;
+        /** Send Message To Office */
+        post: operations["send_message_to_office_api_crew_messages_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/crew/messages/{user_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Office Thread */
+        get: operations["office_thread_api_crew_messages__user_id__get"];
+        put?: never;
+        /** Office Reply */
+        post: operations["office_reply_api_crew_messages__user_id__post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/crew/jobs/{job_id}/notify-client": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Text Client
+         * @description Send one structured text to the job's client, from the business number.
+         *
+         *     Guardrails: assigned-only; template vocabulary fixed; "on the way" only
+         *     on the job's day, "tomorrow" only the day before; ONE send per (job,
+         *     template) — the guard is the activity log, which also gives the office
+         *     the paper trail; the personal line is sanitized and clamped to 160 chars
+         *     and always rides inside the template, never instead of it.
+         */
+        post: operations["text_client_api_crew_jobs__job_id__notify_client_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/crew/docs": {
         parameters: {
             query?: never;
@@ -6309,6 +6488,13 @@ export interface components {
         ClientNoteRequest: {
             /** Body */
             body: string;
+        };
+        /** ClientTextBody */
+        ClientTextBody: {
+            /** Template */
+            template: string;
+            /** Note */
+            note?: string | null;
         };
         /** ClientUpdate */
         ClientUpdate: {
@@ -7100,6 +7286,11 @@ export interface components {
             /** Duplicate Id */
             duplicate_id: number;
         };
+        /** MessageBody */
+        MessageBody: {
+            /** Body */
+            body: string;
+        };
         /**
          * MessageRead
          * @description Mirrors the dict returned by ``msg_to_dict``.
@@ -7148,6 +7339,16 @@ export interface components {
             customer_sms_reminders?: boolean | null;
             /** Invoice Dunning */
             invoice_dunning?: boolean | null;
+        };
+        /** MyDocBody */
+        MyDocBody: {
+            /** Title */
+            title: string;
+            /**
+             * Body
+             * @default
+             */
+            body: string;
         };
         /** OffPhaseCleanupApply */
         OffPhaseCleanupApply: {
@@ -8016,6 +8217,20 @@ export interface components {
             end_date: string;
             /** Reason */
             reason?: string | null;
+        };
+        /** TimeOffRequestBody */
+        TimeOffRequestBody: {
+            /** Start Date */
+            start_date: string;
+            /** End Date */
+            end_date: string;
+            /** Reason */
+            reason?: string | null;
+        };
+        /** TimeOffStatusBody */
+        TimeOffStatusBody: {
+            /** Status */
+            status: string;
         };
         /** UnlinkCalendarsRequest */
         UnlinkCalendarsRequest: {
@@ -10631,6 +10846,41 @@ export interface operations {
         responses: {
             /** @description Successful Response */
             201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    set_time_off_status_api_jobs_time_off__time_off_id__status_patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                time_off_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TimeOffStatusBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -16833,6 +17083,363 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+        };
+    };
+    my_time_off_api_crew_me_time_off_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    request_time_off_api_crew_me_time_off_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TimeOffRequestBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    cancel_time_off_request_api_crew_me_time_off__entry_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                entry_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_my_docs_api_crew_my_docs_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    create_my_doc_api_crew_my_docs_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MyDocBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_my_doc_api_crew_my_docs__doc_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                doc_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_my_doc_api_crew_my_docs__doc_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                doc_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MyDocBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    my_messages_api_crew_messages_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    send_message_to_office_api_crew_messages_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MessageBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    office_thread_api_crew_messages__user_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                user_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    office_reply_api_crew_messages__user_id__post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                user_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MessageBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    text_client_api_crew_jobs__job_id__notify_client_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                job_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ClientTextBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

@@ -19,6 +19,8 @@ import CrewAvailability from '../components/crew/CrewAvailability'
 import CrewLearn from '../components/crew/CrewLearn'
 import CrewMonth from '../components/crew/CrewMonth'
 import CrewCalendarSync from '../components/crew/CrewCalendarSync'
+import CrewTimeOff from '../components/crew/CrewTimeOff'
+import CrewMessagesCard from '../components/crew/CrewMessages'
 
 const SOFT = 'bg-panel rounded-xl border border-hairline shadow-glass-sm'
 
@@ -287,7 +289,7 @@ function GreetingHero({ firstName, jobCount }) {
   )
 }
 
-function JobCard({ job, clockable = false, activeEntry = null, onClockIn, onClockOut, onMarkDone, onPhotos, onRespond, onDecline, onClaim, busy = false }) {
+function JobCard({ job, clockable = false, activeEntry = null, onClockIn, onClockOut, onMarkDone, onPhotos, onRespond, onDecline, onClaim, onTextClient, busy = false }) {
   const isTurnover = job.job_type === 'str_turnover'
   const done = job.status === 'completed'
   const isActiveJob = clockable && activeEntry && activeEntry.job_id === job.id
@@ -336,13 +338,14 @@ function JobCard({ job, clockable = false, activeEntry = null, onClockIn, onCloc
           {job.client_name && (
             <div className="text-[13px] text-ink-2 flex items-center gap-1.5 flex-wrap">
               <span className="text-ink-3">For</span> {job.client_name}
-              {job.client_phone && (
-                /* Direct line to the customer — the owner's explicit call, so
-                   "I'm outside" texts don't have to route through the office. */
-                <a href={`tel:${job.client_phone}`}
-                  className="inline-flex items-center gap-1 text-blue-600 dark:text-blue-400 active:opacity-60">
-                  <Phone className="w-3 h-3" /> {job.client_phone}
-                </a>
+              {job.can_text_client && !done && onTextClient && (
+                /* No raw numbers on crew phones (owner's updated call):
+                   texts go out structured, from the business line, logged
+                   where the office reads them. */
+                <button onClick={onTextClient}
+                  className="inline-flex items-center gap-1 text-[12px] font-semibold text-blue-600 dark:text-blue-400 bg-blue-500/10 border border-blue-500/20 rounded-full px-2 py-0.5 active:opacity-60">
+                  <Phone className="w-3 h-3" /> Text client
+                </button>
               )}
             </div>
           )}
@@ -539,6 +542,10 @@ export default function MyDay() {
   const [staleAt, setStaleAt] = useState(null)
   // Schedule tab layout: the 2-week list or the month grid.
   const [schedView, setSchedView] = useState('list')
+  // Structured client-text sheet: the job being texted about (null = closed).
+  const [textJob, setTextJob] = useState(null)
+  const [textNote, setTextNote] = useState('')
+  const [textSent, setTextSent] = useState(null)   // backend's sent preview
 
   const [weekPay, setWeekPay] = useState(null)
 
@@ -658,6 +665,19 @@ export default function MyDay() {
 
   const requestDecline = useCallback((job) => {
     setDeclineReason(''); setActionError(null); setDeclineJob(job)
+  }, [])
+
+  const sendClientText = useCallback(async (job, template, note) => {
+    setActionBusy(true); setActionError(null)
+    try {
+      const r = await post(`/api/crew/jobs/${job.id}/notify-client`,
+        note ? { template, note } : { template })
+      setTextSent(r.preview || 'Sent!')
+    } catch (e) {
+      setActionError(e.detail || e.message || 'Could not send')
+    } finally {
+      setActionBusy(false)
+    }
   }, [])
 
   // Claim an open job — the confirm sheet's Claim button. First tap wins is
@@ -801,6 +821,7 @@ export default function MyDay() {
                       onPhotos={() => setPhotoJob(j)}
                       onRespond={(resp) => respond(j, resp)}
                       onDecline={() => requestDecline(j)}
+                      onTextClient={() => { setTextNote(''); setTextSent(null); setActionError(null); setTextJob(j) }}
                       busy={actionBusy}
                     />
                   ))}
@@ -880,6 +901,7 @@ export default function MyDay() {
                     <JobCard key={j.id} job={j}
                       onRespond={(resp) => respond(j, resp)}
                       onDecline={() => requestDecline(j)}
+                      onTextClient={() => { setTextNote(''); setTextSent(null); setActionError(null); setTextJob(j) }}
                       busy={actionBusy} />
                   ))}
                 </div>
@@ -893,6 +915,8 @@ export default function MyDay() {
         {tab === 'me' && (
           <>
             <CrewProfile />
+            <CrewMessagesCard />
+            <CrewTimeOff />
             <CrewAvailability />
             <CrewCalendarSync />
             <WeekPayCard week={weekPay} />
@@ -960,6 +984,81 @@ export default function MyDay() {
       {photoJob && (
         <JobPhotoSheet job={photoJob} onClose={() => setPhotoJob(null)} />
       )}
+
+      {textJob && (() => {
+        const tomorrow = (() => {
+          const d = new Date(`${data?.as_of}T12:00`); d.setDate(d.getDate() + 1)
+          return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+        })()
+        const canOnTheWay = textJob.scheduled_date === data?.as_of
+        const canTomorrow = textJob.scheduled_date === tomorrow
+        return (
+          <div className="fixed inset-0 z-30 flex items-end sm:items-center justify-center bg-black/40 px-4 pb-4 sm:pb-0"
+            onClick={() => { if (!actionBusy) setTextJob(null) }}>
+            <div className="w-full max-w-sm bg-panel rounded-2xl border border-hairline shadow-glass p-5 space-y-3"
+              onClick={e => e.stopPropagation()}>
+              <div>
+                <div className="text-base font-bold text-ink">Text {textJob.client_name || 'the client'}</div>
+                <div className="text-[11px] text-ink-3 mt-0.5">
+                  Sent from the company number and logged for the office — their
+                  number stays private.
+                </div>
+              </div>
+              {textSent ? (
+                <>
+                  <div className="text-[12.5px] text-ink-2 bg-emerald-500/10 border border-emerald-500/20 rounded-lg px-3 py-2">
+                    Sent ✓ &nbsp;“{textSent}”
+                  </div>
+                  <button onClick={() => setTextJob(null)}
+                    className="w-full text-[13px] font-semibold bg-panel border border-hairline text-ink-2 py-2.5 rounded-lg hover:bg-bg-2 transition-colors">
+                    Done
+                  </button>
+                </>
+              ) : (
+                <>
+                  {!canOnTheWay && !canTomorrow ? (
+                    <p className="text-[12.5px] text-ink-3">
+                      Texts unlock the day before ("see you tomorrow") and the
+                      day of ("on the way").
+                    </p>
+                  ) : (
+                    <>
+                      <label className="block">
+                        <span className="text-[12px] font-medium text-ink-2">Add a personal line (optional)</span>
+                        <input value={textNote} maxLength={160}
+                          onChange={e => setTextNote(e.target.value)}
+                          placeholder="e.g. It's Sarah and Meg today!"
+                          className="mt-1 w-full rounded-lg border border-hairline bg-bg px-3 py-2 text-[13px] text-ink focus:outline-none focus:border-blue-400" />
+                      </label>
+                      <div className="space-y-2">
+                        {canOnTheWay && (
+                          <button onClick={() => sendClientText(textJob, 'on_the_way', textNote.trim() || undefined)}
+                            disabled={actionBusy}
+                            className="w-full text-[13px] font-semibold bg-blue-600 hover:bg-blue-700 text-white py-2.5 rounded-lg disabled:opacity-60 transition-colors">
+                            {actionBusy ? 'Sending…' : "🚗 We're on the way"}
+                          </button>
+                        )}
+                        {canTomorrow && (
+                          <button onClick={() => sendClientText(textJob, 'tomorrow', textNote.trim() || undefined)}
+                            disabled={actionBusy}
+                            className="w-full text-[13px] font-semibold bg-blue-600 hover:bg-blue-700 text-white py-2.5 rounded-lg disabled:opacity-60 transition-colors">
+                            {actionBusy ? 'Sending…' : '👋 Looking forward to tomorrow'}
+                          </button>
+                        )}
+                      </div>
+                    </>
+                  )}
+                  {actionError && (
+                    <div className="text-xs text-red-700 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
+                      {actionError}
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
+          </div>
+        )
+      })()}
 
       {claimJob && (
         <div

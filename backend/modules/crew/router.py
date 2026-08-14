@@ -34,8 +34,8 @@ from sqlalchemy.orm import Session, joinedload
 
 from database.db import get_db
 from database.models import (
-    CleanerAvailability, CleanerWeekAvailability, CrewDoc, Job, JobPhoto,
-    JobResponse, User, TimeEntry,
+    CleanerAvailability, CleanerTimeOff, CleanerWeekAvailability, CrewDoc,
+    CrewMessage, Job, JobPhoto, JobResponse, User, TimeEntry,
 )
 from modules.auth.router import require_role, current_org_id, resolve_org_id, send_staff_invite
 from modules.scheduling.completion import auto_create_draft_invoice
@@ -91,11 +91,12 @@ def _job_row(job: Job, names_by_cid: dict | None = None, self_cid: str | None = 
         "house_code": (prop.house_code if prop else None) or None,
         "turnover_line": _turnover_line(job),
         "checklist_template": (prop.checklist_template if prop else None) or None,
-        # Who the customer is + how to reach them — the owner's explicit call
-        # (crew handle "I'm outside" texts themselves). Name and phone only;
-        # nothing billing-shaped.
+        # Who the customer is. Their NUMBER is deliberately absent (owner
+        # reversed the Phase-1 call, Aug 2026): crew reach customers through
+        # the structured-text endpoint below — from the BUSINESS number,
+        # logged in the conversation — never a personal phone-to-phone line.
         "client_name": client.name if client else None,
-        "client_phone": (client.phone if client else None) or None,
+        "can_text_client": bool(client and (client.phone or "").strip()),
         "crew_size": len(job.cleaner_ids or []),
         # The OTHER people on this job, as display names (crew-ID strings mean
         # nothing to a human). Resolved from the map my-day builds in one query.
@@ -313,7 +314,7 @@ def my_day(
             continue
         row = _job_row(j, names, current_user.cleaner_id)
         row.update({"open": True, "house_code": None, "access_notes": None,
-                    "parking_notes": None, "client_phone": None,
+                    "parking_notes": None, "can_text_client": False,
                     "checklist_template": None, "turnover_line": "",
                     "notes": None})   # office notes can carry access details
         open_jobs.append(row)
@@ -1416,6 +1417,417 @@ def personal_ics_feed(token: str, db: Session = Depends(get_db)):
                     headers={"Cache-Control": "private, max-age=300"})
 
 
+# ── Time-off requests (crew-submitted, office-approved) ──────────────────────
+
+class TimeOffRequestBody(BaseModel):
+    start_date: str
+    end_date: str
+    reason: Optional[str] = None
+
+
+@router.get("/me/time-off")
+def my_time_off(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_role("cleaner")),
+):
+    """The caller's own entries — approved, requested, and denied — newest
+    range first, so the Me tab can show request history with status chips."""
+    _require_crew_id(current_user)
+    rows = (db.query(CleanerTimeOff)
+            .filter(CleanerTimeOff.cleaner_id == current_user.cleaner_id,
+                    CleanerTimeOff.end_date >= business_today() - timedelta(days=30))
+            .order_by(CleanerTimeOff.start_date.desc())
+            .all())
+    return [{
+        "id": t.id,
+        "start_date": t.start_date.isoformat(),
+        "end_date": t.end_date.isoformat(),
+        "reason": t.reason,
+        "status": getattr(t, "status", None) or "approved",
+    } for t in rows]
+
+
+@router.post("/me/time-off", status_code=201)
+def request_time_off(
+    body: TimeOffRequestBody,
+    db: Session = Depends(get_db),
+    org_id: int = Depends(current_org_id),
+    current_user: User = Depends(require_role("cleaner")),
+):
+    """Submit a time-off REQUEST. It lands status='requested' — visible to
+    the office (push + Availability panel) but it does NOT count as off
+    anywhere until approved. Same-week emergencies are still a phone call;
+    this is for planning ahead."""
+    _require_crew_id(current_user)
+    oid = resolve_org_id(org_id, db)
+    start, end = _to_date(body.start_date), _to_date(body.end_date)
+    if start is None or end is None:
+        raise HTTPException(status_code=422, detail="Dates must be YYYY-MM-DD.")
+    if end < start:
+        raise HTTPException(status_code=422, detail="End date must be on or after the start.")
+    if start < business_today():
+        raise HTTPException(status_code=422, detail="Time off starts today or later.")
+    if (end - start).days > 60:
+        raise HTTPException(status_code=422, detail="That's more than 60 days — talk to the office directly.")
+    reason = _sanitize_note(body.reason)
+    who = getattr(current_user, "full_name", None) or current_user.email
+    row = CleanerTimeOff(
+        org_id=oid, cleaner_id=current_user.cleaner_id, cleaner_name=who,
+        start_date=start, end_date=end, reason=reason,
+        status="requested", requested_by_user_id=current_user.id,
+    )
+    db.add(row); db.commit(); db.refresh(row)
+    try:
+        from services.push_service import notify_staff
+        rng = start.isoformat() if start == end else f"{start.isoformat()} – {end.isoformat()}"
+        notify_staff(
+            db, "Time-off request",
+            f"{who} asked for {rng}" + (f': "{reason}"' if reason else "") + ". Approve or deny in Schedule → time off.",
+            url="/schedule?tab=availability", tag=f"timeoff-req-{row.id}", org_id=oid,
+        )
+    except Exception:
+        log.exception("push notify failed on request_time_off")
+    return {"id": row.id, "status": "requested"}
+
+
+@router.delete("/me/time-off/{entry_id}")
+def cancel_time_off_request(
+    entry_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_role("cleaner")),
+):
+    """Withdraw your own PENDING request. Approved time off belongs to the
+    office's calendar — changing that is a conversation, not a tap."""
+    _require_crew_id(current_user)
+    row = (db.query(CleanerTimeOff)
+           .filter(CleanerTimeOff.id == entry_id,
+                   CleanerTimeOff.cleaner_id == current_user.cleaner_id)
+           .first())
+    if not row:
+        raise HTTPException(status_code=404, detail="Request not found.")
+    if (getattr(row, "status", None) or "approved") != "requested":
+        raise HTTPException(status_code=409, detail="Only pending requests can be withdrawn — call the office.")
+    db.delete(row); db.commit()
+    return {"ok": True}
+
+
+# ── Private notes (owner-only crew docs) ─────────────────────────────────────
+
+def _my_doc_dict(d: CrewDoc) -> dict:
+    return {"id": d.id, "title": d.title, "body": d.body or "",
+            "updated_at": _iso_utc(d.updated_at)}
+
+
+class MyDocBody(BaseModel):
+    title: str
+    body: str = ""
+
+
+@router.get("/my-docs")
+def list_my_docs(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_role("cleaner")),
+):
+    """The caller's PRIVATE notes — owner-scoped rows nobody else lists,
+    including the office."""
+    rows = (db.query(CrewDoc)
+            .filter(CrewDoc.owner_user_id == current_user.id)
+            .order_by(CrewDoc.updated_at.desc())
+            .all())
+    return [_my_doc_dict(d) for d in rows]
+
+
+@router.post("/my-docs", status_code=201)
+def create_my_doc(
+    body: MyDocBody,
+    db: Session = Depends(get_db),
+    org_id: int = Depends(current_org_id),
+    current_user: User = Depends(require_role("cleaner")),
+):
+    title = (body.title or "").strip()[:200]
+    if not title:
+        raise HTTPException(status_code=422, detail="Title is required.")
+    d = CrewDoc(org_id=resolve_org_id(org_id, db), owner_user_id=current_user.id,
+                title=title, body=(body.body or "").replace("\r\n", "\n").strip()[:20000],
+                category="other", pinned=False, published=False,
+                created_at=_now_naive_utc(), updated_at=_now_naive_utc())
+    db.add(d); db.commit(); db.refresh(d)
+    return _my_doc_dict(d)
+
+
+@router.patch("/my-docs/{doc_id}")
+def update_my_doc(
+    doc_id: int,
+    body: MyDocBody,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_role("cleaner")),
+):
+    d = db.query(CrewDoc).filter(CrewDoc.id == doc_id,
+                                 CrewDoc.owner_user_id == current_user.id).first()
+    if not d:
+        raise HTTPException(status_code=404, detail="Note not found.")
+    title = (body.title or "").strip()[:200]
+    if not title:
+        raise HTTPException(status_code=422, detail="Title is required.")
+    d.title = title
+    d.body = (body.body or "").replace("\r\n", "\n").strip()[:20000]
+    d.updated_at = _now_naive_utc()
+    db.commit(); db.refresh(d)
+    return _my_doc_dict(d)
+
+
+@router.delete("/my-docs/{doc_id}")
+def delete_my_doc(
+    doc_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_role("cleaner")),
+):
+    n = (db.query(CrewDoc)
+         .filter(CrewDoc.id == doc_id, CrewDoc.owner_user_id == current_user.id)
+         .delete(synchronize_session=False))
+    db.commit()
+    if not n:
+        raise HTTPException(status_code=404, detail="Note not found.")
+    return {"ok": True}
+
+
+# ── Office chat (one thread per cleaner) ─────────────────────────────────────
+
+def _msg_dict(m: CrewMessage) -> dict:
+    return {"id": m.id, "sender": m.sender, "sender_name": m.sender_name,
+            "body": m.body, "created_at": _iso_utc(m.created_at)}
+
+
+class MessageBody(BaseModel):
+    body: str
+
+
+@router.get("/messages")
+def my_messages(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_role("cleaner")),
+):
+    """The caller's thread with the office (oldest first). Loading it marks
+    the office's messages read."""
+    rows = (db.query(CrewMessage)
+            .filter(CrewMessage.user_id == current_user.id)
+            .order_by(CrewMessage.created_at.asc())
+            .limit(200).all())
+    now = _now_naive_utc()
+    dirty = False
+    for m in rows:
+        if m.sender == "office" and m.read_at is None:
+            m.read_at = now; dirty = True
+    if dirty:
+        db.commit()
+    return [_msg_dict(m) for m in rows]
+
+
+@router.post("/messages", status_code=201)
+def send_message_to_office(
+    body: MessageBody,
+    db: Session = Depends(get_db),
+    org_id: int = Depends(current_org_id),
+    current_user: User = Depends(require_role("cleaner")),
+):
+    text = _sanitize_note(body.body)
+    if not text:
+        raise HTTPException(status_code=422, detail="Say something first.")
+    who = getattr(current_user, "full_name", None) or current_user.email
+    m = CrewMessage(org_id=resolve_org_id(org_id, db), user_id=current_user.id,
+                    sender="cleaner", sender_name=who, body=text,
+                    created_at=_now_naive_utc())
+    db.add(m); db.commit(); db.refresh(m)
+    try:
+        from services.push_service import notify_staff
+        notify_staff(db, f"Message from {who}",
+                     text if len(text) <= 120 else text[:117] + "…",
+                     url="/crew", tag=f"crew-msg-{current_user.id}",
+                     org_id=m.org_id)
+    except Exception:
+        log.exception("push notify failed on send_message_to_office")
+    return _msg_dict(m)
+
+
+# Office side of the same thread (Crew page drawer).
+
+@router.get("/messages/{user_id}", dependencies=[Depends(require_role("admin", "manager"))])
+def office_thread(user_id: int, db: Session = Depends(get_db), org_id: int = Depends(current_org_id)):
+    oid = resolve_org_id(org_id, db)
+    rows = (db.query(CrewMessage)
+            .filter(CrewMessage.user_id == user_id,
+                    or_(CrewMessage.org_id == oid, CrewMessage.org_id.is_(None)))
+            .order_by(CrewMessage.created_at.asc())
+            .limit(200).all())
+    now = _now_naive_utc()
+    dirty = False
+    for m in rows:
+        if m.sender == "cleaner" and m.read_at is None:
+            m.read_at = now; dirty = True
+    if dirty:
+        db.commit()
+    return [_msg_dict(m) for m in rows]
+
+
+@router.post("/messages/{user_id}", status_code=201)
+def office_reply(
+    user_id: int,
+    body: MessageBody,
+    db: Session = Depends(get_db),
+    org_id: int = Depends(current_org_id),
+    current_user: User = Depends(require_role("admin", "manager")),
+):
+    text = _sanitize_note(body.body)
+    if not text:
+        raise HTTPException(status_code=422, detail="Say something first.")
+    target = db.query(User).filter(User.id == user_id, User.role == "cleaner").first()
+    if not target:
+        raise HTTPException(status_code=404, detail="Cleaner not found.")
+    who = getattr(current_user, "full_name", None) or current_user.email
+    m = CrewMessage(org_id=resolve_org_id(org_id, db), user_id=user_id,
+                    sender="office", sender_name=who, body=text,
+                    created_at=_now_naive_utc())
+    db.add(m); db.commit(); db.refresh(m)
+    try:
+        from services.push_service import notify_user
+        notify_user(user_id, "Message from the office",
+                    text if len(text) <= 120 else text[:117] + "…",
+                    url="/my-day", tag=f"office-msg-{user_id}")
+    except Exception:
+        log.exception("push notify failed on office_reply")
+    return _msg_dict(m)
+
+
+# ── Structured client texts (no numbers on crew phones) ──────────────────────
+# The owner's updated call (Aug 2026, reversing Phase 1): crew never see the
+# customer's number. Instead they send TEMPLATED texts from the BUSINESS
+# number — logged in the same comms conversation the office reads — with an
+# optional short personal line.
+
+TEXT_TEMPLATES = ("on_the_way", "tomorrow")
+
+
+class ClientTextBody(BaseModel):
+    template: str
+    note: Optional[str] = None      # one personal sentence, clamped
+
+
+def _compose_client_text(template: str, job: Job, cleaner_name: str, note: "str | None") -> str:
+    from config import DEFAULT_COMPANY_NAME
+    import os
+    company = os.getenv("COMPANY_NAME", DEFAULT_COMPANY_NAME)
+    client_first = ((job.client.name if job.client else "") or "").strip().split(" ")[0]
+    hi = f"Hi {client_first}! " if client_first else "Hi! "
+    if template == "on_the_way":
+        msg = f"{hi}{cleaner_name} from {company} is on the way now. See you soon!"
+    else:
+        # Customer-facing 12-hour time ("1 PM"), not the app's 24h format.
+        t = job.start_time
+        when = ((f"{t.hour % 12 or 12}:{t.minute:02d} " if t.minute else f"{t.hour % 12 or 12} ")
+                + ("AM" if t.hour < 12 else "PM")) if t else "as scheduled"
+        msg = (f"{hi}A friendly reminder — {company} will be there tomorrow at {when}. "
+               f"Looking forward to it!")
+    if note:
+        msg += f" {note}"
+    msg += " Reply here if you need anything."
+    return msg
+
+
+@router.post("/jobs/{job_id}/notify-client")
+def text_client(
+    job_id: int,
+    body: ClientTextBody,
+    db: Session = Depends(get_db),
+    org_id: int = Depends(current_org_id),
+    current_user: User = Depends(require_role("cleaner")),
+):
+    """Send one structured text to the job's client, from the business number.
+
+    Guardrails: assigned-only; template vocabulary fixed; "on the way" only
+    on the job's day, "tomorrow" only the day before; ONE send per (job,
+    template) — the guard is the activity log, which also gives the office
+    the paper trail; the personal line is sanitized and clamped to 160 chars
+    and always rides inside the template, never instead of it.
+    """
+    _require_crew_id(current_user)
+    oid = resolve_org_id(org_id, db)
+    template = (body.template or "").strip().lower()
+    if template not in TEXT_TEMPLATES:
+        raise HTTPException(status_code=422, detail="Unknown message type.")
+
+    job = (db.query(Job)
+           .options(joinedload(Job.client), joinedload(Job.property))
+           .filter(or_(Job.org_id == oid, Job.org_id.is_(None)), Job.id == job_id)
+           .first())
+    if not job or current_user.cleaner_id not in (job.cleaner_ids or []):
+        raise HTTPException(status_code=404, detail="Job not found.")
+    phone = ((job.client.phone if job.client else "") or "").strip()
+    if not phone:
+        raise HTTPException(status_code=409, detail="This client has no phone on file — tell the office.")
+
+    today = business_today()
+    if template == "on_the_way" and job.scheduled_date != today:
+        raise HTTPException(status_code=409, detail='"On the way" only works on the day of the job.')
+    if template == "tomorrow" and job.scheduled_date != today + timedelta(days=1):
+        raise HTTPException(status_code=409, detail="That job isn't tomorrow.")
+
+    from database.models import Activity
+    already = db.query(Activity).filter(
+        Activity.job_id == job.id,
+        Activity.activity_type == "crew_client_text",
+    ).all()
+    if any((a.extra_data or {}).get("template") == template for a in already):
+        raise HTTPException(status_code=409, detail="That message was already sent for this job.")
+
+    note = _sanitize_note(body.note)
+    if note:
+        note = note[:160]
+    who_first = ((getattr(current_user, "full_name", None) or "").strip().split(" ")[0]
+                 or "Your cleaner")
+    msg_body = _compose_client_text(template, job, who_first, note)
+
+    from integrations.twilio_client import send_sms
+    from modules.comms.router import (
+        _normalize_contact, find_or_create_conversation, _apply_outbound,
+    )
+    from database.models import Message
+    to = _normalize_contact(phone)
+    try:
+        result = send_sms(to=to, body=msg_body)
+    except ValueError as e:
+        raise HTTPException(status_code=409, detail="Texting isn't set up yet — tell the office.")
+    except Exception:
+        log.exception("crew client text failed")
+        raise HTTPException(status_code=502, detail="Couldn't send right now — try again or call the office.")
+
+    # Log into the same conversation thread the office reads, then the job
+    # timeline (which is also the once-per-template guard).
+    try:
+        import os
+        conv = find_or_create_conversation(db, channel="sms", client_id=job.client_id,
+                                           external_contact=to)
+        m = Message(client_id=job.client_id, conversation_id=conv.id, channel="sms",
+                    direction="outbound",
+                    from_addr=_normalize_contact(os.getenv("TWILIO_PHONE_NUMBER", "")),
+                    to_addr=to, body=msg_body,
+                    status=result.get("status", "sent"), external_id=result.get("sid"))
+        db.add(m); db.flush()
+        _apply_outbound(conv, m)
+        from utils.activity_logger import log_activity
+        log_activity(db, "crew_client_text", job_id=job.id, client_id=job.client_id,
+                     actor=who_first,
+                     summary=f"{who_first} texted the client ({'on the way' if template == 'on_the_way' else 'tomorrow reminder'})",
+                     extra_data={"template": template, "sid": result.get("sid")})
+        db.commit()
+    except Exception:
+        log.exception("crew client text sent (sid=%s) but logging failed", result.get("sid"))
+        try:
+            db.rollback()
+        except Exception:
+            pass
+    return {"sent": True, "preview": msg_body}
+
+
 # ── Training / docs library, read side (crew app Phase 5) ────────────────────
 
 @router.get("/docs")
@@ -1429,7 +1841,8 @@ def list_crew_docs(
     oid = resolve_org_id(org_id, db)
     rows = (db.query(CrewDoc)
             .filter(or_(CrewDoc.org_id == oid, CrewDoc.org_id.is_(None)),
-                    CrewDoc.published.is_(True))
+                    CrewDoc.published.is_(True),
+                    CrewDoc.owner_user_id.is_(None))   # company docs only here
             .order_by(CrewDoc.pinned.desc(), CrewDoc.updated_at.desc())
             .all())
     return [

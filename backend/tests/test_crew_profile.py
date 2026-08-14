@@ -128,7 +128,10 @@ def test_my_day_shows_teammates_and_client(me_user):
         # the caller themself is excluded.
         assert row["teammates"] == sorted(["Sasha Lee", "CT-ghost"])
         assert row["client_name"].startswith("Waterview")
-        assert row["client_phone"] == "207-555-0155"
+        # Numbers never reach crew (owner reversed the Phase-1 call, Aug
+        # 2026) — the structured-text flag stands in for the raw phone.
+        assert "client_phone" not in row
+        assert row["can_text_client"] is True
         assert row["crew_size"] == 3
     finally:
         _clear()

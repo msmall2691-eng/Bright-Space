@@ -299,6 +299,9 @@ def _find_unavailable_cleaners(db: Session, *, cleaner_ids, scheduled_date, org_
         CleanerTimeOff.cleaner_id.in_(ids),
         CleanerTimeOff.start_date <= d,
         CleanerTimeOff.end_date >= d,
+        # Crew-submitted requests (migration 089) only count once APPROVED —
+        # a pending ask must not block scheduling.
+        CleanerTimeOff.status == "approved",
     )
     if isinstance(org_id, int):
         q = q.filter(CleanerTimeOff.org_id == org_id)
@@ -1498,6 +1501,9 @@ def _timeoff_to_dict(t: CleanerTimeOff) -> dict:
         "start_date": t.start_date.isoformat() if t.start_date else None,
         "end_date": t.end_date.isoformat() if t.end_date else None,
         "reason": t.reason,
+        # 'approved' (office-entered or approved request) | 'requested' |
+        # 'denied'. Only approved rows count as off anywhere.
+        "status": getattr(t, "status", None) or "approved",
     }
 
 
@@ -1541,6 +1547,7 @@ def cleaner_availability(
     # 1) Time-off: everyone off that day.
     off_rows = db.query(CleanerTimeOff).filter(
         CleanerTimeOff.start_date <= d, CleanerTimeOff.end_date >= d,
+        CleanerTimeOff.status == "approved",   # pending requests aren't off yet
         or_(CleanerTimeOff.org_id == oid, CleanerTimeOff.org_id.is_(None)),  # MT-2 tenant scope
     ).all()
     off_by_id = {str(r.cleaner_id): r for r in off_rows}
@@ -1747,6 +1754,52 @@ def create_time_off(data: TimeOffCreate, db: Session = Depends(get_db), org_id: 
     db.add(row)
     db.commit()
     db.refresh(row)
+    return _timeoff_to_dict(row)
+
+
+class TimeOffStatusBody(BaseModel):
+    status: str    # "approved" | "denied"
+
+
+@router.patch("/time-off/{time_off_id}/status", dependencies=[Depends(require_role("admin", "manager"))])
+def set_time_off_status(
+    time_off_id: int,
+    data: TimeOffStatusBody,
+    db: Session = Depends(get_db),
+    org_id: int = Depends(current_org_id),
+):
+    """Approve or deny a crew-submitted time-off request (migration 089).
+
+    Approving makes it real time off (top-priority in every availability
+    surface); denying keeps the row for the cleaner's own history but it
+    never blocks scheduling. Either way the requester's phone gets a push.
+    """
+    status = (data.status or "").strip().lower()
+    if status not in ("approved", "denied"):
+        raise HTTPException(status_code=422, detail="status must be 'approved' or 'denied'.")
+    oid = resolve_org_id(org_id, db)
+    row = db.query(CleanerTimeOff).filter(
+        CleanerTimeOff.id == time_off_id,
+        or_(CleanerTimeOff.org_id == oid, CleanerTimeOff.org_id.is_(None)),
+    ).first()
+    if not row:
+        raise HTTPException(status_code=404, detail="Time-off entry not found.")
+    row.status = status
+    db.commit(); db.refresh(row)
+    if row.requested_by_user_id:
+        try:
+            from services.push_service import notify_user
+            rng = (row.start_date.isoformat() if row.start_date == row.end_date
+                   else f"{row.start_date.isoformat()} – {row.end_date.isoformat()}")
+            notify_user(
+                row.requested_by_user_id,
+                "Time off " + ("approved ✓" if status == "approved" else "not approved"),
+                f"Your request for {rng} was {status}."
+                + ("" if status == "approved" else " Talk to the office if you need it."),
+                url="/my-day", tag=f"timeoff-{row.id}",
+            )
+        except Exception:
+            logger.exception("push notify failed on set_time_off_status")
     return _timeoff_to_dict(row)
 
 

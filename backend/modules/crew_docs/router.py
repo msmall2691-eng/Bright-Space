@@ -97,7 +97,10 @@ def list_docs(db: Session = Depends(get_db), org_id: int = Depends(current_org_i
     """Everything, including unpublished drafts — this is the office list."""
     oid = resolve_org_id(org_id, db)
     rows = (db.query(CrewDoc)
-            .filter(or_(CrewDoc.org_id == oid, CrewDoc.org_id.is_(None)))
+            .filter(or_(CrewDoc.org_id == oid, CrewDoc.org_id.is_(None)),
+                    # Private notes (owner_user_id set, migration 089) are
+                    # the cleaner's own — invisible even to the office.
+                    CrewDoc.owner_user_id.is_(None))
             .order_by(CrewDoc.pinned.desc(), CrewDoc.updated_at.desc())
             .all())
     return [_doc_dict(d) for d in rows]

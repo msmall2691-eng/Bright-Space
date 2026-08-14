@@ -845,6 +845,10 @@ class CrewDoc(Base):
     org_id = Column(Integer, ForeignKey("orgs.id"), nullable=True, index=True)  # tenant scope (MT-1)
 
     id = Column(Integer, primary_key=True, index=True)
+    # NULL = a company doc (office-authored, crew-readable). Set = a PRIVATE
+    # note owned by that user: visible ONLY to them — excluded from the
+    # office list AND the crew feed (migration 089).
+    owner_user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=True, index=True)
     title = Column(String(200), nullable=False)
     body = Column(Text, nullable=False, default="")
     # Optional external link (training video, manufacturer guide). A doc with
@@ -887,6 +891,24 @@ class CleanerWeekAvailability(Base):
     __table_args__ = (
         UniqueConstraint("cleaner_id", "week_start", name="uq_cleaner_week_availability"),
     )
+
+
+class CrewMessage(Base):
+    """One message in a cleaner↔office thread (crew app: "chat message the
+    office"). One thread per cleaner user; sender says which side wrote it.
+    Push notifications carry attention both ways (notify_staff on crew
+    sends, notify_user on office replies); read_at is set when the other
+    side loads the thread."""
+    __tablename__ = "crew_messages"
+    org_id = Column(Integer, ForeignKey("orgs.id"), nullable=True, index=True)  # tenant scope (MT-1)
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    sender = Column(String(8), nullable=False)      # "cleaner" | "office"
+    sender_name = Column(String, nullable=True)
+    body = Column(Text, nullable=False)
+    created_at = Column(DateTime, default=_utcnow)
+    read_at = Column(DateTime, nullable=True)
 
 
 class CleanerAvailability(Base):
@@ -1463,6 +1485,12 @@ class CleanerTimeOff(Base):
     start_date = Column(Date, nullable=False)
     end_date = Column(Date, nullable=False)
     reason = Column(String, nullable=True)         # "vacation" | "sick" | free text
+    # Crew-app requests (migration 089): office-created rows default
+    # 'approved' (the historical behavior); crew-submitted rows arrive
+    # 'requested' and only count as OFF once the office approves. 'denied'
+    # rows are kept for the cleaner's own history, never for scheduling.
+    status = Column(String(12), nullable=False, default="approved")
+    requested_by_user_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     created_at = Column(DateTime, default=_utcnow)
 
     __table_args__ = (

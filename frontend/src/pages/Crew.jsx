@@ -17,6 +17,81 @@ import { get, post, patch } from '../api'
 import { PageHeader, EmptyState, ErrorState, Skeleton } from '../components/ui'
 import { pushToast } from '../utils/toastBus'
 import CrewDocsAdmin from '../components/crew/CrewDocsAdmin'
+import { MessageSquare, Send, X } from 'lucide-react'
+
+/** Office side of the cleaner↔office thread (crew app "message the office").
+ *  One drawer per cleaner; replies push to their phone. */
+function OfficeCrewThread({ user, onClose }) {
+  const [msgs, setMsgs] = useState(null)
+  const [draft, setDraft] = useState('')
+  const [busy, setBusy] = useState(false)
+
+  const load = useCallback(() => {
+    get(`/api/crew/messages/${user.id}`).then(setMsgs).catch(() => setMsgs([]))
+  }, [user.id])
+  useEffect(() => { load() }, [load])
+
+  const send = async () => {
+    const text = draft.trim()
+    if (!text) return
+    setBusy(true)
+    try {
+      await post(`/api/crew/messages/${user.id}`, { body: text })
+      setDraft(''); load()
+    } catch (e) {
+      pushToast({ type: 'error', message: e.detail || e.message || 'Could not send' })
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-40 flex justify-end bg-black/30" onClick={onClose}>
+      <div className="w-full max-w-md h-full bg-panel border-l border-hairline flex flex-col"
+        onClick={e => e.stopPropagation()}>
+        <div className="px-4 py-3 border-b border-hairline flex items-center justify-between">
+          <div>
+            <div className="text-[15px] font-bold text-ink">{user.full_name || user.email}</div>
+            <div className="text-[11px] text-ink-3">Replies ping their phone</div>
+          </div>
+          <button onClick={onClose} aria-label="Close"
+            className="grid place-items-center w-8 h-8 rounded-lg bg-bg-2 text-ink-3">
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+        <div className="flex-1 overflow-y-auto px-4 py-4 space-y-2">
+          {!msgs && <div className="h-24 rounded-xl bg-bg-2 animate-pulse" />}
+          {msgs?.length === 0 && (
+            <p className="text-[12.5px] text-ink-3 text-center pt-8">No messages yet.</p>
+          )}
+          {(msgs || []).map(m => (
+            <div key={m.id} className={`max-w-[85%] ${m.sender === 'office' ? 'ml-auto' : ''}`}>
+              <div className={`rounded-2xl px-3.5 py-2 text-[13.5px] whitespace-pre-wrap ${
+                m.sender === 'office'
+                  ? 'bg-indigo-600 text-white rounded-br-md'
+                  : 'bg-bg-2 border border-hairline text-ink rounded-bl-md'}`}>
+                {m.body}
+              </div>
+              <div className={`text-[10px] text-ink-3 mt-0.5 ${m.sender === 'office' ? 'text-right' : ''}`}>
+                {m.created_at ? new Date(m.created_at).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : ''}
+              </div>
+            </div>
+          ))}
+        </div>
+        <div className="border-t border-hairline px-3 py-2.5 flex items-end gap-2">
+          <textarea value={draft} rows={1} maxLength={2000}
+            onChange={e => setDraft(e.target.value)}
+            placeholder={`Message ${(user.full_name || '').split(' ')[0] || 'them'}…`}
+            className="flex-1 resize-none rounded-xl border border-hairline bg-bg px-3 py-2.5 text-[14px] text-ink focus:outline-none focus:border-indigo-400" />
+          <button onClick={send} disabled={busy || !draft.trim()} aria-label="Send"
+            className="grid place-items-center w-10 h-10 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white disabled:opacity-50 transition-colors">
+            <Send className="w-4 h-4" />
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
 
 const numOrNull = (v) => {
   const s = String(v ?? '').trim()
@@ -41,6 +116,7 @@ export default function Crew() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   const [busyId, setBusyId] = useState(null)
+  const [threadUser, setThreadUser] = useState(null)   // office↔cleaner chat drawer
 
   // Add-cleaner form
   const [fullName, setFullName] = useState('')
@@ -257,7 +333,11 @@ export default function Crew() {
                         )}
                       </div>
                     </div>
-                    <label className="flex items-center gap-2 mb-2 text-[12px] font-medium text-ink-2 cursor-pointer">
+                    <button onClick={() => setThreadUser(row)}
+                      className="mb-2 inline-flex items-center gap-1.5 text-[12px] font-semibold text-indigo-600 bg-indigo-50 border border-indigo-200 rounded-lg px-2.5 py-1.5 hover:bg-indigo-100 transition-colors">
+                      <MessageSquare className="w-3.5 h-3.5" /> Message
+                    </button>
+                    <label className="flex items-center gap-2 mb-2 text-[12px] font-medium text-ink-2 cursor-pointer ml-3">
                       <input type="checkbox"
                         checked={!!row.can_view_full_schedule}
                         disabled={busyId === row.id}
@@ -292,6 +372,7 @@ export default function Crew() {
 
         <CrewDocsAdmin />
       </div>
+      {threadUser && <OfficeCrewThread user={threadUser} onClose={() => setThreadUser(null)} />}
     </div>
   )
 }

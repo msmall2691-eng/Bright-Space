@@ -267,6 +267,16 @@ export function AvailabilityPanel() {
     }
   }
 
+  const setStatus = async (id, status) => {
+    try {
+      const updated = await patch(`/api/jobs/time-off/${id}/status`, { status })
+      setEntries(entries.map(e => (e.id === id ? updated : e)))
+      toast.success(status === 'approved' ? 'Approved — they got a ping' : 'Denied — they got a ping')
+    } catch (e) {
+      toast.error(e.message || 'Could not update')
+    }
+  }
+
   return (
     <div className="p-4 sm:p-6 max-w-3xl mx-auto">
       <h1 className="text-lg font-bold text-ink mb-1">Cleaner availability</h1>
@@ -325,10 +335,36 @@ export function AvailabilityPanel() {
                 <span className="text-sm font-semibold text-ink">{e.cleaner_name || empName(e.cleaner_id)}</span>
                 <span className="text-xs text-ink-3 ml-2">{e.start_date} → {e.end_date}</span>
                 {e.reason && <span className="text-[11px] text-ink-3 ml-2 capitalize">· {e.reason}</span>}
+                {e.status === 'requested' && (
+                  <span className="text-[10px] font-bold uppercase tracking-wide text-amber-700 bg-amber-50 border border-amber-300 rounded-full px-1.5 py-0.5 ml-2">
+                    Requested
+                  </span>
+                )}
+                {e.status === 'denied' && (
+                  <span className="text-[10px] font-bold uppercase tracking-wide text-ink-3 bg-bg-2 border border-hairline rounded-full px-1.5 py-0.5 ml-2">
+                    Denied
+                  </span>
+                )}
               </div>
-              <button onClick={() => remove(e.id)} className="text-ink-3 hover:text-red-500 p-1" aria-label="Remove">
-                <Trash2 className="w-4 h-4" />
-              </button>
+              <div className="flex items-center gap-1">
+                {e.status === 'requested' && (
+                  /* Crew-submitted ask (migration 089): decide it here. The
+                     requester's phone gets a push either way. */
+                  <>
+                    <button onClick={() => setStatus(e.id, 'approved')}
+                      className="text-[11px] font-semibold text-emerald-700 bg-emerald-50 border border-emerald-300 rounded-lg px-2 py-1 hover:bg-emerald-100">
+                      Approve
+                    </button>
+                    <button onClick={() => setStatus(e.id, 'denied')}
+                      className="text-[11px] font-semibold text-ink-2 bg-bg-2 border border-hairline rounded-lg px-2 py-1 hover:bg-bg-3">
+                      Deny
+                    </button>
+                  </>
+                )}
+                <button onClick={() => remove(e.id)} className="text-ink-3 hover:text-red-500 p-1" aria-label="Remove">
+                  <Trash2 className="w-4 h-4" />
+                </button>
+              </div>
             </li>
           ))}
         </ul>
