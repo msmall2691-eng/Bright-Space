@@ -43,7 +43,7 @@ export default function BottomNav() {
         {PRIMARY_TABS.map(tab => (
           <NavLink key={tab.to} to={tab.to}
             className={({ isActive }) =>
-              `relative flex flex-col items-center justify-center gap-1 py-2 px-2 flex-1 min-h-[3.5rem] transition-colors ${
+              `relative flex flex-col items-center justify-center gap-1 py-2 px-2 flex-1 min-h-[3.5rem] no-underline transition-colors ${
                 isActive ? 'text-indigo-600' : 'text-ink-3 active:text-ink'}`}>
             {({ isActive }) => (
               <>

@@ -10,6 +10,9 @@ export default {
       colors: {
         // Design tokens from index.css — use these instead of zinc/blue literals
         // so the app respects the paper/dark theme toggle.
+        // App frame behind the sidebar + content sheet (Twenty-style gray
+        // ground). Falls back to --bg-2 under any theme that predates it.
+        frame:     'var(--frame, var(--bg-2))',
         bg:        'var(--bg)',
         'bg-2':    'var(--bg-2)',
         'bg-3':    'var(--bg-3)',

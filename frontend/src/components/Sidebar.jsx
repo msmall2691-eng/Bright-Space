@@ -1,208 +1,183 @@
 import { useState, useEffect } from 'react'
 import { NavLink, useLocation } from 'react-router-dom'
 import {
-  LayoutDashboard, Sparkles, Users, Calendar, Receipt, LayoutGrid,
-  DollarSign, MessageSquare, Zap, Home, Repeat, Settings, X, Inbox,
-  LogOut, ChevronDown, TrendingUp, PanelLeftClose, Pin, Radar, Rows3, Filter, HardHat,
+  Zap, X, LogOut, ChevronDown, PanelLeftClose, Search, Sparkles,
 } from 'lucide-react'
 import { logout } from '../api'
+import { NAV_SECTIONS, SETTINGS_ITEM } from '../nav/routes'
+import Kbd from './ui/Kbd'
 
-// Navigation reorganized around the three pillars the business runs on:
-// Leads (win the work), Customers (talk to them), and Scheduling (get it
-// done). Home + the AI Assistant sit up top; Team and Settings anchor the
-// bottom. Owner Dashboard is admin/manager-only (backend 403s viewers on
-// /api/dashboard/owner) — the `roles` gate below hides the link for
-// viewer/cleaner accounts so they don't see a route that only 403s.
-const nav = [
-  { to: '/dashboard',   icon: LayoutDashboard, label: 'Home' },
-  { to: '/owner',       icon: TrendingUp,      label: 'Owner',       roles: ['admin', 'manager'] },
-  { to: '/workspace',   icon: Sparkles,        label: 'Assistant' },
-  { divider: true, label: 'Leads' },
-  { to: '/deals',       icon: Rows3,           label: 'Deals' },
-  { to: '/requests',    icon: Inbox,           label: 'Requests' },
-  { to: '/pipeline',    icon: LayoutGrid,      label: 'Pipeline' },
-  { to: '/funnel',      icon: Filter,          label: 'Quote funnel', roles: ['admin', 'manager'] },
-  { to: '/billing',     icon: Receipt,         label: 'Quotes & Billing' },
-  { divider: true, label: 'Customers' },
-  { to: '/comms',       icon: MessageSquare,   label: 'Messages' },
-  { to: '/clients',     icon: Users,           label: 'Clients' },
-  { to: '/properties',  icon: Home,            label: 'Properties' },
-  { divider: true, label: 'Scheduling' },
-  { to: '/schedule',    icon: Calendar,        label: 'Schedule' },
-  { to: '/recurring',   icon: Repeat,          label: 'Recurring' },
-  { to: '/sync',        icon: Radar,           label: 'Sync',        roles: ['admin', 'manager', 'viewer'] },
-  { divider: true, label: 'Team' },
-  { to: '/crew',        icon: HardHat,         label: 'Crew',        roles: ['admin', 'manager'] },
-  { to: '/payroll',     icon: DollarSign,      label: 'Payroll' },
-  { divider: true, label: 'Settings' },
-  { to: '/settings',    icon: Settings,        label: 'Settings' },
-]
+/**
+ * Sidebar — the quiet Notion/Twenty-style nav. It sits directly on the app
+ * frame (no panel background, no border on desktop); the content "sheet" to
+ * its right provides the contrast. Always fully labeled on desktop — the old
+ * 76px icon rail + hover-peek machinery is gone (one owner using this daily
+ * shouldn't have to re-discover nav by hovering). `collapsed` hides it
+ * entirely; the topbar shows a reopen button (state lives in App.jsx so both
+ * can see it). Mobile keeps the slide-in drawer + backdrop.
+ */
 
-export default function Sidebar({ open, onClose, user, badges = {} }) {
+// Row shell shared by nav items and the Search/Ask AI system rows: compact on
+// desktop (the base layer's 44px touch min-height is relaxed via lg:min-h-8),
+// full touch size on mobile.
+const ROW =
+  'flex w-full items-center gap-2.5 rounded-md px-2.5 py-2.5 lg:py-1 lg:min-h-[30px] text-[13px] select-none no-underline transition-colors duration-100'
+
+function SystemRow({ icon: Icon, label, hint, onClick }) {
+  return (
+    <button onClick={onClick} className={`${ROW} font-medium text-ink-2 hover:bg-bg-3/70 hover:text-ink`}>
+      <Icon className="h-4 w-4 shrink-0 text-ink-3" />
+      <span className="flex-1 truncate text-left">{label}</span>
+      {hint && <Kbd>{hint}</Kbd>}
+    </button>
+  )
+}
+
+function NavRow({ item, badge }) {
+  return (
+    <NavLink
+      to={item.to}
+      className={({ isActive }) =>
+        `${ROW} ${
+          isActive
+            ? 'bg-bg-3 font-semibold text-ink'
+            : 'font-medium text-ink-2 hover:bg-bg-3/70 hover:text-ink'
+        }`
+      }
+    >
+      {({ isActive }) => (
+        <>
+          <item.icon className={`h-4 w-4 shrink-0 ${isActive ? 'text-ink' : 'text-ink-3'}`} />
+          <span className="flex-1 truncate">{item.label}</span>
+          {badge > 0 && (
+            <span className="flex items-center gap-1.5">
+              <span className="h-1.5 w-1.5 rounded-full bg-red-500" />
+              <span className="text-[11px] font-semibold tabular-nums text-ink-3">
+                {badge > 99 ? '99+' : badge}
+              </span>
+            </span>
+          )}
+        </>
+      )}
+    </NavLink>
+  )
+}
+
+export default function Sidebar({ open, onClose, collapsed, onCollapse, user, badges = {} }) {
   const location = useLocation()
   const [showUserMenu, setShowUserMenu] = useState(false)
-  // Desktop frame is a slim ICON RAIL by default; it expands to the full
-  // labeled panel on hover (as a floating overlay, so page content never
-  // reflows). `pinned` locks it open — persisted so the choice sticks. New
-  // users get the rail (null → rail); returning users keep their pick.
-  const [pinned, setPinned] = useState(() => {
-    try { return localStorage.getItem('bb_sidebar_pinned') === '1' } catch { return false }
-  })
-  const [hovered, setHovered] = useState(false)
-  const togglePinned = () => setPinned(p => {
-    try { localStorage.setItem('bb_sidebar_pinned', p ? '0' : '1') } catch { /* ignore */ }
-    return !p
-  })
 
   useEffect(() => {
     onClose()
     setShowUserMenu(false)
   }, [location.pathname, onClose])
 
-  // "expanded" = labels + full width are showing (pinned open, or hover-peeked).
-  // "railVisual" = the icon-only slim state (desktop, not expanded).
-  const expanded = pinned || hovered
-  const labelHide = expanded ? '' : 'lg:hidden'
-  const overlay = hovered && !pinned  // floating over content (not reserving width)
+  const openSearch = () => {
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: '/', metaKey: true, bubbles: true }))
+  }
+  const openAssistant = () => {
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'k', metaKey: true, bubbles: true }))
+  }
+
+  const visibleSections = NAV_SECTIONS.map(section => ({
+    ...section,
+    items: section.items.filter(item => !item.roles || (user?.role && item.roles.includes(user.role))),
+  })).filter(section => section.items.length > 0)
 
   return (
     <>
       {/* Mobile backdrop */}
       {open && (
-        <div className="fixed inset-0 bg-black/30 backdrop-blur-sm z-40 lg:hidden" onClick={onClose} />
+        <div className="fixed inset-0 z-40 bg-black/30 backdrop-blur-sm lg:hidden" onClick={onClose} />
       )}
 
-      {/* In-flow desktop spacer — reserves the rail's footprint so the fixed
-          aside can float/expand on hover WITHOUT reflowing the page. Width
-          tracks the pinned state only (never hover), so peeking is overlay. */}
-      <div
-        aria-hidden
-        className={`hidden lg:block shrink-0 transition-[width] duration-200 ease-in-out ${pinned ? 'lg:w-[260px]' : 'lg:w-[76px]'}`}
-      />
-
       <aside
-        onMouseEnter={() => setHovered(true)}
-        onMouseLeave={() => { if (!showUserMenu) setHovered(false) }}
         className={`
-          no-print group/rail
-          fixed inset-y-0 left-0 z-50 w-[260px]
-          bg-panel/70 backdrop-blur-2xl border-r border-hairline
-          flex flex-col transform transition-[transform,width,box-shadow] duration-200 ease-in-out
-          lg:translate-x-0 ${expanded ? 'lg:w-[260px]' : 'lg:w-[76px]'}
-          ${overlay ? 'lg:shadow-[0_24px_60px_-20px_rgba(79,70,229,0.45)]' : ''}
+          no-print fixed inset-y-0 left-0 z-50 flex w-[264px] flex-col
+          border-r border-hairline bg-panel
+          transition-transform duration-200 ease-in-out
           ${open ? 'translate-x-0' : '-translate-x-full'}
+          lg:static lg:z-auto lg:w-60 lg:translate-x-0 lg:border-r-0 lg:bg-transparent
+          ${collapsed ? 'lg:hidden' : 'lg:flex'}
         `}
       >
-        {/* Logo area */}
-        <div className={`h-16 flex items-center border-b border-hairline ${expanded ? 'justify-between px-4' : 'lg:justify-center lg:px-2 px-4 justify-between'}`}>
-          <div className="flex items-center gap-3 min-w-0">
-            <div className="w-9 h-9 rounded-xl bg-indigo-600 flex items-center justify-center shrink-0">
-              <Zap className="w-[18px] h-[18px] text-white" />
+        {/* Workspace row */}
+        <div className="flex h-12 shrink-0 items-center justify-between pl-3.5 pr-2">
+          <div className="flex min-w-0 items-center gap-2.5">
+            <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-ink">
+              <Zap className="h-3.5 w-3.5 text-bg" />
             </div>
-            <div className={`flex-1 min-w-0 ${labelHide}`}>
-              <span className="text-[14px] font-bold text-ink tracking-tight leading-none block">BrightBase</span>
-              <p className="text-[11px] text-ink-3 leading-none mt-0.5">Maine Cleaning</p>
-            </div>
+            <span className="truncate text-[13px] font-semibold tracking-tight text-ink">BrightBase</span>
           </div>
-          {/* Desktop pin toggle — only while expanded (pinned or peeking). */}
+          {/* Desktop: collapse. Mobile: close drawer. */}
           <button
-            onClick={togglePinned}
-            title={pinned ? 'Unpin — collapse to rail' : 'Pin sidebar open'}
-            className={`hidden lg:flex p-1.5 rounded-lg text-ink-3 hover:text-ink-2 hover:bg-bg-2 transition-colors ${expanded ? '' : 'lg:hidden'} ${pinned ? '' : 'text-ink-3'}`}
+            onClick={onCollapse}
+            title="Hide sidebar"
+            className="hidden h-7 w-7 min-h-0 items-center justify-center rounded-md text-ink-3 transition-colors hover:bg-bg-3/70 hover:text-ink-2 lg:flex"
           >
-            {pinned ? <PanelLeftClose className="w-[18px] h-[18px]" /> : <Pin className="w-[18px] h-[18px]" />}
+            <PanelLeftClose className="h-4 w-4" />
           </button>
-          {/* Mobile drawer close */}
           <button
             onClick={onClose}
-            className="lg:hidden p-2 rounded-lg text-ink-3 hover:text-ink-2 hover:bg-bg-2 transition-colors"
+            className="flex h-9 w-9 items-center justify-center rounded-md text-ink-3 transition-colors hover:bg-bg-2 hover:text-ink-2 lg:hidden"
           >
-            <X className="w-5 h-5" />
+            <X className="h-5 w-5" />
           </button>
         </div>
 
+        {/* System rows */}
+        <div className="shrink-0 space-y-px px-2 pb-1">
+          <SystemRow icon={Search} label="Search" hint="⌘/" onClick={openSearch} />
+          <SystemRow icon={Sparkles} label="Ask AI" hint="⌘K" onClick={openAssistant} />
+        </div>
+
         {/* Navigation */}
-        <nav className="flex-1 py-2 overflow-y-auto overflow-x-hidden scrollbar-thin">
-          {nav
-            .filter(item => !item.roles || (user?.role && item.roles.includes(user.role)))
-            .map((item, i) =>
-            item.divider ? (
-              <div key={i} className={`px-4 pt-3.5 pb-1 lg:pt-5 lg:pb-2 ${expanded ? '' : 'lg:px-3 lg:pt-3 lg:pb-1'}`}>
-                <span className={`text-[11px] font-bold text-ink-3 uppercase tracking-wider ${labelHide}`}>{item.label}</span>
-                {/* Rail mode: a hairline stands in for the section label so the
-                    groups still read as groups when collapsed. */}
-                {!expanded && <span className="hidden lg:block h-px bg-hairline" />}
+        <nav className="scrollbar-thin flex-1 overflow-y-auto overflow-x-hidden px-2 pb-2">
+          {visibleSections.map((section, i) => (
+            <div key={section.label || i} className={section.label ? 'mt-5' : 'mt-1'}>
+              {section.label && (
+                <p className="px-2.5 pb-1 text-[11px] font-medium text-ink-3">{section.label}</p>
+              )}
+              <div className="space-y-px">
+                {section.items.map(item => (
+                  <NavRow key={item.to} item={item} badge={badges[item.to]} />
+                ))}
               </div>
-            ) : (
-              <NavLink
-                key={item.to}
-                to={item.to}
-                title={expanded ? undefined : item.label}
-                className={({ isActive }) =>
-                  `group relative flex items-center gap-3 px-3 py-2.5 lg:py-2 mx-2 my-0.5 rounded-lg transition-colors text-[13px] select-none ${expanded ? '' : 'lg:justify-center lg:px-0 lg:mx-2'} ${
-                    isActive
-                      ? 'bb-nav-active bg-indigo-50 dark:bg-indigo-500/10 text-indigo-700 dark:text-indigo-300 font-semibold'
-                      : 'text-ink-2 font-medium hover:text-ink hover:bg-bg-2/70'
-                  }`
-                }
-              >
-                {({ isActive }) => {
-                  const badge = badges[item.to]
-                  return (
-                    <>
-                      {isActive && <span className="absolute left-0 top-1.5 bottom-1.5 w-0.5 rounded-full bg-indigo-600" />}
-                      <span className="relative shrink-0">
-                        <item.icon className={`w-[18px] h-[18px] ${isActive ? 'text-indigo-600' : 'text-ink-3 group-hover:text-ink-2'}`} />
-                        {/* Rail: badge shrinks to a dot on the icon corner. */}
-                        {badge > 0 && !expanded && (
-                          <span className="hidden lg:block absolute -top-1 -right-1 w-2 h-2 rounded-full bg-red-500 ring-2 ring-panel" />
-                        )}
-                      </span>
-                      <span className={`truncate flex-1 ${labelHide}`}>{item.label}</span>
-                      {badge > 0 && (
-                        <span className={`inline-flex items-center justify-center min-w-[18px] h-[18px] px-1.5 rounded-full text-[10px] font-bold bg-red-500 text-white ${labelHide}`}>
-                          {badge > 99 ? '99+' : badge}
-                        </span>
-                      )}
-                    </>
-                  )
-                }}
-              </NavLink>
-            )
-          )}
+            </div>
+          ))}
         </nav>
 
-        {/* Footer / user */}
-        <div className="px-3 py-3 border-t border-hairline">
+        {/* Footer: Settings + user */}
+        <div className="shrink-0 space-y-px border-t border-hairline px-2 py-2 lg:border-t-0 lg:pt-0">
+          <NavRow item={SETTINGS_ITEM} />
           <div className="relative">
             <button
-              onClick={() => setShowUserMenu(!showUserMenu)}
-              title={expanded ? undefined : (user?.email?.split('@')[0] || 'Account')}
-              className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg hover:bg-bg-2 transition-all text-left group ${expanded ? '' : 'lg:justify-center lg:px-0'}`}
+              onClick={() => setShowUserMenu(v => !v)}
+              className={`${ROW} group text-left hover:bg-bg-3/70`}
             >
-              <div className="w-8 h-8 rounded-full bg-indigo-600 flex items-center justify-center flex-shrink-0">
-                <span className="text-[12px] font-bold text-white">
-                  {user?.email?.[0]?.toUpperCase() || 'A'}
-                </span>
+              <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-bg-3 text-[11px] font-bold text-ink-2">
+                {user?.email?.[0]?.toUpperCase() || 'A'}
               </div>
-              <div className={`flex-1 min-w-0 ${labelHide}`}>
-                <span className="text-[12px] text-ink font-semibold truncate block">
+              <div className="min-w-0 flex-1">
+                <span className="block truncate text-[12px] font-semibold text-ink">
                   {user?.email?.split('@')[0] || 'Admin'}
                 </span>
-                <span className="text-[10px] text-ink-3 truncate block capitalize">
+                <span className="block truncate text-[10px] capitalize leading-tight text-ink-3">
                   {user?.role || 'User'}
                 </span>
               </div>
-              <ChevronDown className={`w-4 h-4 text-ink-3 transition-transform duration-200 ${showUserMenu ? 'rotate-180' : ''} ${labelHide}`} />
+              <ChevronDown
+                className={`h-4 w-4 text-ink-3 transition-transform duration-200 ${showUserMenu ? 'rotate-180' : ''}`}
+              />
             </button>
 
             {showUserMenu && (
-              <div className="absolute bottom-full left-0 right-0 mb-2 bg-panel/95 backdrop-blur-lg border border-hairline rounded-lg shadow-glass py-1 z-50 min-w-[160px]">
+              <div className="absolute bottom-full left-0 right-0 z-50 mb-1.5 min-w-[160px] rounded-lg border border-hairline-2 bg-panel py-1 shadow-glass">
                 <button
                   onClick={() => { setShowUserMenu(false); logout() }}
-                  className="w-full flex items-center gap-2.5 px-3 py-2.5 text-[12px] text-ink-2 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-500/10 transition-colors font-medium"
+                  className="flex w-full items-center gap-2.5 px-3 py-2 text-[12px] font-medium text-ink-2 transition-colors hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-500/10"
                 >
-                  <LogOut className="w-4 h-4" />
+                  <LogOut className="h-4 w-4" />
                   <span>Log out</span>
                 </button>
               </div>
