@@ -321,6 +321,9 @@ def my_day(
     return {
         "as_of": today.isoformat(),
         "crew_id": current_user.cleaner_id,
+        # For the Today greeting ("Good morning, Sarah").
+        "first_name": ((getattr(current_user, "full_name", None) or "").strip().split(" ")[0]
+                       or (getattr(current_user, "email", "") or "").split("@")[0]),
         "today": [_job_row(j, names, current_user.cleaner_id, my_responses.get(j.id))
                   for j in today_jobs],
         "upcoming": [_job_row(j, names, current_user.cleaner_id, my_responses.get(j.id))
@@ -1157,6 +1160,88 @@ def update_me(
 
     db.commit(); db.refresh(u)
     return _me_row(u)
+
+
+# ── Single-job detail (assigned only) ────────────────────────────────────────
+
+@router.get("/jobs/{job_id}")
+def crew_job_detail(
+    job_id: int,
+    db: Session = Depends(get_db),
+    org_id: int = Depends(current_org_id),
+    current_user: User = Depends(require_role("cleaner")),
+):
+    """Full card context for ONE job — powers the tap-through from the month
+    view (and anywhere else a row needs to open). Assigned-only, 404 for
+    everyone else: even leads who can SEE the whole month only get names and
+    times for jobs that aren't theirs — access details stay need-to-know."""
+    _require_crew_id(current_user)
+    oid = resolve_org_id(org_id, db)
+    job = (db.query(Job)
+           .options(joinedload(Job.property), joinedload(Job.client))
+           .filter(or_(Job.org_id == oid, Job.org_id.is_(None)), Job.id == job_id)
+           .first())
+    if not job or current_user.cleaner_id not in (job.cleaner_ids or []):
+        raise HTTPException(status_code=404, detail="Job not found.")
+    my_resp = (db.query(JobResponse)
+               .filter(JobResponse.job_id == job.id,
+                       JobResponse.cleaner_id == current_user.cleaner_id)
+               .first())
+    return _job_row(job, _names_by_cleaner_id(db, [job]), current_user.cleaner_id, my_resp)
+
+
+# ── Weather (Today-tab greeting) ─────────────────────────────────────────────
+# Open-Meteo: free, keyless, and fail-soft — a weather hiccup must never
+# break the schedule screen. Cached in-process for 30 minutes per worker.
+
+_WEATHER_CACHE: dict = {"at": None, "data": None}
+_WEATHER_CODES = {
+    0: "clear", 1: "mostly clear", 2: "partly cloudy", 3: "overcast",
+    45: "foggy", 48: "foggy", 51: "drizzle", 53: "drizzle", 55: "drizzle",
+    61: "light rain", 63: "rain", 65: "heavy rain", 66: "freezing rain",
+    67: "freezing rain", 71: "light snow", 73: "snow", 75: "heavy snow",
+    77: "snow", 80: "showers", 81: "showers", 82: "heavy showers",
+    85: "snow showers", 86: "snow showers", 95: "thunderstorms",
+    96: "thunderstorms", 99: "thunderstorms",
+}
+
+
+@router.get("/weather")
+def crew_weather(current_user: User = Depends(require_role("cleaner"))):
+    """Today's outlook for the crew greeting. {available: false} on ANY
+    problem — never an error the UI has to handle."""
+    import os
+    now = datetime.now(timezone.utc)
+    if _WEATHER_CACHE["at"] and (now - _WEATHER_CACHE["at"]).total_seconds() < 1800:
+        return _WEATHER_CACHE["data"]
+    lat = os.getenv("WEATHER_LAT", "43.66")    # Portland, ME defaults
+    lon = os.getenv("WEATHER_LON", "-70.26")
+    try:
+        import httpx
+        r = httpx.get(
+            "https://api.open-meteo.com/v1/forecast",
+            params={
+                "latitude": lat, "longitude": lon,
+                "current": "temperature_2m,weather_code",
+                "daily": "temperature_2m_max,precipitation_probability_max",
+                "temperature_unit": "fahrenheit",
+                "timezone": "auto", "forecast_days": 1,
+            },
+            timeout=4.0,
+        )
+        r.raise_for_status()
+        d = r.json()
+        data = {
+            "available": True,
+            "temp_f": round(d["current"]["temperature_2m"]),
+            "high_f": round(d["daily"]["temperature_2m_max"][0]),
+            "precip_chance": int(d["daily"]["precipitation_probability_max"][0] or 0),
+            "summary": _WEATHER_CODES.get(d["current"]["weather_code"], ""),
+        }
+    except Exception:
+        data = {"available": False}
+    _WEATHER_CACHE.update({"at": now, "data": data})
+    return data
 
 
 # ── Month schedule (own jobs; whole crew for flagged leads) ──────────────────

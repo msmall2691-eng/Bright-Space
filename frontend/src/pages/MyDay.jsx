@@ -226,8 +226,8 @@ function RespondRow({ job, onRespond, onDecline, busy }) {
   const r = job.my_response
   if (!r || changing) {
     return (
-      <div className="mt-3 border-t border-hairline pt-3">
-        <div className="text-[11px] text-ink-3 mb-1.5">Can you make this job?</div>
+      <div className="mt-3 rounded-xl border border-blue-300/60 bg-blue-500/5 p-2.5">
+        <div className="text-[11px] font-semibold text-ink-2 mb-1.5">Can you make this job?</div>
         <div className="grid grid-cols-2 gap-2">
           <button onClick={() => { setChanging(false); onRespond('accepted') }} disabled={busy}
             className="text-[13px] font-semibold bg-emerald-600 hover:bg-emerald-700 disabled:opacity-60 text-white py-2 rounded-lg transition-colors inline-flex items-center justify-center gap-1.5">
@@ -255,6 +255,34 @@ function RespondRow({ job, onRespond, onDecline, busy }) {
         className="shrink-0 font-semibold underline underline-offset-2 opacity-80 hover:opacity-100">
         Change
       </button>
+    </div>
+  )
+}
+
+/** The personal top-of-Today line: name, job count, and (fail-soft) the
+ *  weather — the "should I bring a rain jacket" answer before the drive. */
+function GreetingHero({ firstName, jobCount }) {
+  const [wx, setWx] = useState(null)
+  useEffect(() => {
+    let cancelled = false
+    get('/api/crew/weather')
+      .then(d => { if (!cancelled && d?.available) setWx(d) })
+      .catch(() => {})
+    return () => { cancelled = true }
+  }, [])
+  const h = new Date().getHours()
+  const timeOfDay = h < 12 ? 'morning' : h < 17 ? 'afternoon' : 'evening'
+  return (
+    <div className="mb-1">
+      <div className="text-[17px] font-bold text-ink">
+        Good {timeOfDay}{firstName ? `, ${firstName}` : ''}
+        {timeOfDay === 'morning' ? ' ☀️' : ''}
+      </div>
+      <div className="text-[12px] text-ink-3">
+        {jobCount === 0 ? 'Nothing on the books today.'
+          : `${jobCount} job${jobCount > 1 ? 's' : ''} today.`}
+        {wx && ` ${wx.temp_f}° now, high ${wx.high_f}°${wx.summary ? `, ${wx.summary}` : ''}${wx.precip_chance >= 40 ? ` — ${wx.precip_chance}% chance of rain` : ''}.`}
+      </div>
     </div>
   )
 }
@@ -295,6 +323,13 @@ function JobCard({ job, clockable = false, activeEntry = null, onClockIn, onCloc
           </span>
         )}
       </div>
+
+      {/* The unanswered ask lives at the TOP of the card, not buried under
+          notes/checklist blocks (owner: "I don't see it to accept"). Once
+          answered it collapses to the small chip, still up here. */}
+      {!done && onRespond && (
+        <RespondRow job={job} onRespond={onRespond} onDecline={onDecline} busy={busy} />
+      )}
 
       {(job.client_name || (job.teammates && job.teammates.length > 0)) && (
         <div className="mt-2 space-y-1">
@@ -370,10 +405,6 @@ function JobCard({ job, clockable = false, activeEntry = null, onClockIn, onCloc
         <div className="mt-3 rounded-lg bg-emerald-500/10 border border-emerald-500/20 px-3 py-2 text-[12px] text-ink-2">
           Your note: “{job.completion_note}”
         </div>
-      )}
-
-      {!done && onRespond && (
-        <RespondRow job={job} onRespond={onRespond} onDecline={onDecline} busy={busy} />
       )}
 
       {onClaim && (
@@ -745,6 +776,8 @@ export default function MyDay() {
 
         {tab === 'today' && !loading && !error && data && (
           <>
+            <GreetingHero firstName={data.first_name} jobCount={(data.today || []).length} />
+
             <section>
               <div className="flex items-center justify-between mb-2">
                 <h2 className="text-xs font-semibold uppercase tracking-wide text-ink-3">Today</h2>
