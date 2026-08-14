@@ -69,6 +69,8 @@ class PropertyUpdate(BaseModel):
     check_in_time: Optional[str] = None
     check_out_time: Optional[str] = None
     house_code: Optional[str] = None
+    wifi_ssid: Optional[str] = None
+    wifi_password: Optional[str] = None
     timezone: Optional[str] = None
     business_name: Optional[str] = None
     hours_of_operation: Optional[str] = None
@@ -217,6 +219,8 @@ def prop_to_dict(p: Property, include_icals: bool = True, turnovers_next_30d: Op
         "check_in_time": p.check_in_time,
         "check_out_time": p.check_out_time,
         "house_code": p.house_code,
+        "wifi_ssid": getattr(p, 'wifi_ssid', None),
+        "wifi_password": getattr(p, 'wifi_password', None),
         "timezone": getattr(p, 'timezone', None),
         "business_name": getattr(p, 'business_name', None),
         "hours_of_operation": getattr(p, 'hours_of_operation', None),

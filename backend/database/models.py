@@ -315,6 +315,10 @@ class Property(Base):
 
     access_notes = Column(Text, nullable=True)      # "Side door, lockbox 4251"
     parking_notes = Column(Text, nullable=True)     # Parking information
+    # Guest WiFi (migration 090): on crew job cards AND in the offline cache,
+    # so a cleaner in a dead zone can read the credentials and get online.
+    wifi_ssid = Column(String(120), nullable=True)
+    wifi_password = Column(String(120), nullable=True)
     notes = Column(Text, nullable=True)
 
     # STR property specific fields (NULL for residential/commercial)
@@ -891,6 +895,49 @@ class CleanerWeekAvailability(Base):
     __table_args__ = (
         UniqueConstraint("cleaner_id", "week_start", name="uq_cleaner_week_availability"),
     )
+
+
+class PropertyCrewNote(Base):
+    """Field knowledge about ONE property, written by the crew who clean it
+    ("the upstairs drain clogs", "spare linens in the basement"). A note
+    starts visible to its author + the office; the office can mark it SHARED
+    so every cleaner working that property sees it on their card. Rentals
+    are the heavy users — recurring houses accumulate quirks.
+    """
+    __tablename__ = "property_crew_notes"
+    org_id = Column(Integer, ForeignKey("orgs.id"), nullable=True, index=True)  # tenant scope (MT-1)
+
+    id = Column(Integer, primary_key=True, index=True)
+    property_id = Column(Integer, ForeignKey("properties.id", ondelete="CASCADE"),
+                         nullable=False, index=True)
+    author_user_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    author_name = Column(String, nullable=True)
+    body = Column(Text, nullable=False)
+    shared = Column(Boolean, nullable=False, default=False)   # office-promoted
+    created_at = Column(DateTime, default=_utcnow)
+    updated_at = Column(DateTime, default=_utcnow, onupdate=_utcnow)
+
+
+class PropertyPhoto(Base):
+    """A REFERENCE photo for a property — how the beds are staged, where the
+    supplies live — viewed by every cleaner before/while cleaning there.
+    Distinct from JobPhoto (one visit's before/after evidence): these
+    persist across visits. Bytes in-DB for the same reasons as JobPhoto
+    (ephemeral container disk, no object store, downscaled uploads); they
+    load only when the gallery sheet is actually opened, never on my-day.
+    """
+    __tablename__ = "property_photos"
+    org_id = Column(Integer, ForeignKey("orgs.id"), nullable=True, index=True)  # tenant scope (MT-1)
+
+    id = Column(Integer, primary_key=True, index=True)
+    property_id = Column(Integer, ForeignKey("properties.id", ondelete="CASCADE"),
+                         nullable=False, index=True)
+    uploaded_by = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    caption = Column(String(200), nullable=True)      # "Master bed — 4 pillows, throw folded"
+    content_type = Column(String(64), nullable=False)
+    size_bytes = Column(Integer, nullable=False)
+    data = Column(LargeBinary, nullable=False)
+    created_at = Column(DateTime, default=_utcnow)
 
 
 class CrewMessage(Base):

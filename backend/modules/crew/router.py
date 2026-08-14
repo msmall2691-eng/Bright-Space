@@ -35,9 +35,12 @@ from sqlalchemy.orm import Session, joinedload
 from database.db import get_db
 from database.models import (
     CleanerAvailability, CleanerTimeOff, CleanerWeekAvailability, CrewDoc,
-    CrewMessage, Job, JobPhoto, JobResponse, User, TimeEntry,
+    CrewMessage, Job, JobPhoto, JobResponse, PropertyCrewNote, PropertyPhoto,
+    User, TimeEntry,
 )
-from modules.auth.router import require_role, current_org_id, resolve_org_id, send_staff_invite
+from modules.auth.router import (
+    get_current_user, require_role, current_org_id, resolve_org_id, send_staff_invite,
+)
 from modules.scheduling.completion import auto_create_draft_invoice
 from utils.activity_logger import log_job_status_change
 from utils.dates import business_today, business_tz, week_monday
@@ -67,11 +70,13 @@ def _turnover_line(job: Job) -> str:
 
 
 def _job_row(job: Job, names_by_cid: dict | None = None, self_cid: str | None = None,
-             my_response: "JobResponse | None" = None) -> dict:
+             my_response: "JobResponse | None" = None,
+             house_notes: "list | None" = None) -> dict:
     prop = job.property
     client = job.client
     return {
         "id": job.id,
+        "property_id": job.property_id,
         "title": job.title,
         "job_type": job.job_type,
         "status": job.status,
@@ -89,6 +94,13 @@ def _job_row(job: Job, names_by_cid: dict | None = None, self_cid: str | None = 
         "access_notes": (prop.access_notes if prop else None) or None,
         "parking_notes": (prop.parking_notes if prop else None) or None,
         "house_code": (prop.house_code if prop else None) or None,
+        # Guest WiFi rides the card AND the offline cache — at a dead-zone
+        # house, these credentials ARE the connectivity fix.
+        "wifi_ssid": (getattr(prop, "wifi_ssid", None) if prop else None) or None,
+        "wifi_password": (getattr(prop, "wifi_password", None) if prop else None) or None,
+        # Office-SHARED house notes ("upstairs drain clogs") inline so
+        # they're readable offline too. Author-only notes don't ride here.
+        "house_notes": house_notes or [],
         "turnover_line": _turnover_line(job),
         "checklist_template": (prop.checklist_template if prop else None) or None,
         # Who the customer is. Their NUMBER is deliberately absent (owner
@@ -114,6 +126,26 @@ def _job_row(job: Job, names_by_cid: dict | None = None, self_cid: str | None = 
         "completed_at": _iso_utc(job.completed_at),
         "completion_note": job.completion_note,
     }
+
+
+def _shared_notes_by_property(db: Session, jobs) -> dict:
+    """property_id → [{body, author_name}] for office-SHARED notes, one
+    batched query, newest first, capped at 5 per property (the card is a
+    phone screen, not an archive)."""
+    pids = {j.property_id for j in jobs if j.property_id}
+    if not pids:
+        return {}
+    rows = (db.query(PropertyCrewNote)
+            .filter(PropertyCrewNote.property_id.in_(pids),
+                    PropertyCrewNote.shared.is_(True))
+            .order_by(PropertyCrewNote.created_at.desc())
+            .all())
+    out: dict = {}
+    for n in rows:
+        bucket = out.setdefault(n.property_id, [])
+        if len(bucket) < 5:
+            bucket.append({"body": n.body, "author_name": n.author_name})
+    return out
 
 
 def _names_by_cleaner_id(db: Session, jobs) -> dict:
@@ -263,6 +295,7 @@ def my_day(
     # upcoming preview they'd be noise.
     upcoming_jobs = [j for j in mine if j.scheduled_date != today and j.status != "completed"]
     names = _names_by_cleaner_id(db, mine)
+    house_notes = _shared_notes_by_property(db, mine)
     # The caller's own accept/decline answers for the window, one query.
     my_responses = {
         r.job_id: r
@@ -316,7 +349,8 @@ def my_day(
         row.update({"open": True, "house_code": None, "access_notes": None,
                     "parking_notes": None, "can_text_client": False,
                     "checklist_template": None, "turnover_line": "",
-                    "notes": None})   # office notes can carry access details
+                    "notes": None, "wifi_ssid": None, "wifi_password": None,
+                    "house_notes": []})   # offers carry no house internals
         open_jobs.append(row)
 
     return {
@@ -325,9 +359,11 @@ def my_day(
         # For the Today greeting ("Good morning, Sarah").
         "first_name": ((getattr(current_user, "full_name", None) or "").strip().split(" ")[0]
                        or (getattr(current_user, "email", "") or "").split("@")[0]),
-        "today": [_job_row(j, names, current_user.cleaner_id, my_responses.get(j.id))
+        "today": [_job_row(j, names, current_user.cleaner_id, my_responses.get(j.id),
+                           house_notes=house_notes.get(j.property_id))
                   for j in today_jobs],
-        "upcoming": [_job_row(j, names, current_user.cleaner_id, my_responses.get(j.id))
+        "upcoming": [_job_row(j, names, current_user.cleaner_id, my_responses.get(j.id),
+                              house_notes=house_notes.get(j.property_id))
                      for j in upcoming_jobs],
         "open_jobs": open_jobs,
         "clock": {
@@ -896,6 +932,248 @@ def respond_to_job(
 
     return {"job_id": job.id, "response": row.response, "reason": row.reason,
             "updated_at": _iso_utc(row.updated_at)}
+
+
+# ── Property house notes + reference photos (rental pack, migration 090) ────
+# Access rule: a cleaner touches a property's notes/photos iff they're
+# assigned to ANY non-cancelled job there (they clean that house — they know
+# it). Office roles pass on role alone. 404 either way for outsiders.
+
+def _property_or_404(db: Session, oid: int, property_id: int, current_user: User):
+    from database.models import Property
+    prop = db.query(Property).filter(
+        Property.id == property_id,
+        or_(Property.org_id == oid, Property.org_id.is_(None))).first()
+    if not prop:
+        raise HTTPException(status_code=404, detail="Property not found.")
+    if current_user.role == "cleaner":
+        _require_crew_id(current_user)
+        assignments = db.query(Job.cleaner_ids).filter(
+            or_(Job.org_id == oid, Job.org_id.is_(None)),
+            Job.property_id == property_id,
+            Job.status != "cancelled",
+        ).all()
+        if not any(current_user.cleaner_id in (ids or []) for (ids,) in assignments):
+            raise HTTPException(status_code=404, detail="Property not found.")
+    return prop
+
+
+def _note_dict(n: PropertyCrewNote, current_user: User) -> dict:
+    return {"id": n.id, "body": n.body, "author_name": n.author_name,
+            "shared": bool(n.shared), "mine": n.author_user_id == current_user.id,
+            "created_at": _iso_utc(n.created_at)}
+
+
+class NoteBody(BaseModel):
+    body: str
+
+
+@router.get("/properties/{property_id}/notes",
+            dependencies=[Depends(require_role("cleaner", "admin", "manager"))])
+def property_notes(
+    property_id: int,
+    db: Session = Depends(get_db),
+    org_id: int = Depends(current_org_id),
+    current_user: User = Depends(get_current_user),
+):
+    """Shared notes + the caller's own pending ones. Office sees everything
+    (that's how pending notes get reviewed and shared)."""
+    oid = resolve_org_id(org_id, db)
+    _property_or_404(db, oid, property_id, current_user)
+    q = db.query(PropertyCrewNote).filter(PropertyCrewNote.property_id == property_id)
+    if current_user.role == "cleaner":
+        q = q.filter(or_(PropertyCrewNote.shared.is_(True),
+                         PropertyCrewNote.author_user_id == current_user.id))
+    rows = q.order_by(PropertyCrewNote.shared.desc(),
+                      PropertyCrewNote.created_at.desc()).all()
+    return [_note_dict(n, current_user) for n in rows]
+
+
+@router.post("/properties/{property_id}/notes", status_code=201,
+             dependencies=[Depends(require_role("cleaner", "admin", "manager"))])
+def add_property_note(
+    property_id: int,
+    body: NoteBody,
+    db: Session = Depends(get_db),
+    org_id: int = Depends(current_org_id),
+    current_user: User = Depends(get_current_user),
+):
+    """Crew notes arrive UNSHARED (author + office only) and ping the office
+    for review; office-authored notes are shared immediately."""
+    oid = resolve_org_id(org_id, db)
+    prop = _property_or_404(db, oid, property_id, current_user)
+    text = _sanitize_note(body.body)
+    if not text:
+        raise HTTPException(status_code=422, detail="Write the note first.")
+    who = getattr(current_user, "full_name", None) or current_user.email
+    is_office = current_user.role != "cleaner"
+    n = PropertyCrewNote(org_id=oid, property_id=property_id,
+                         author_user_id=current_user.id, author_name=who,
+                         body=text, shared=is_office,
+                         created_at=_now_naive_utc(), updated_at=_now_naive_utc())
+    db.add(n); db.commit(); db.refresh(n)
+    if not is_office:
+        try:
+            from services.push_service import notify_staff
+            notify_staff(db, "House note to review",
+                         f"{who} on {prop.name or prop.address}: "
+                         + (text if len(text) <= 100 else text[:97] + "…"),
+                         url=f"/properties/{property_id}",
+                         tag=f"prop-note-{n.id}", org_id=oid)
+        except Exception:
+            log.exception("push notify failed on add_property_note")
+    return _note_dict(n, current_user)
+
+
+@router.patch("/properties/{property_id}/notes/{note_id}")
+def share_property_note(
+    property_id: int,
+    note_id: int,
+    body: dict,
+    db: Session = Depends(get_db),
+    org_id: int = Depends(current_org_id),
+    current_user: User = Depends(require_role("admin", "manager")),
+):
+    """Office-only: flip shared on/off — sharing is the curation step."""
+    oid = resolve_org_id(org_id, db)
+    n = db.query(PropertyCrewNote).filter(
+        PropertyCrewNote.id == note_id,
+        PropertyCrewNote.property_id == property_id,
+        or_(PropertyCrewNote.org_id == oid, PropertyCrewNote.org_id.is_(None))).first()
+    if not n:
+        raise HTTPException(status_code=404, detail="Note not found.")
+    if "shared" in body:
+        n.shared = bool(body["shared"])
+        n.updated_at = _now_naive_utc()
+        db.commit(); db.refresh(n)
+    return _note_dict(n, current_user)
+
+
+@router.delete("/properties/{property_id}/notes/{note_id}",
+               dependencies=[Depends(require_role("cleaner", "admin", "manager"))])
+def delete_property_note(
+    property_id: int,
+    note_id: int,
+    db: Session = Depends(get_db),
+    org_id: int = Depends(current_org_id),
+    current_user: User = Depends(get_current_user),
+):
+    """Office deletes anything; a cleaner only their own not-yet-shared note
+    (shared notes are crew infrastructure now — office's call)."""
+    oid = resolve_org_id(org_id, db)
+    n = db.query(PropertyCrewNote).filter(
+        PropertyCrewNote.id == note_id,
+        PropertyCrewNote.property_id == property_id,
+        or_(PropertyCrewNote.org_id == oid, PropertyCrewNote.org_id.is_(None))).first()
+    if not n:
+        raise HTTPException(status_code=404, detail="Note not found.")
+    if current_user.role == "cleaner" and (n.author_user_id != current_user.id or n.shared):
+        raise HTTPException(status_code=403, detail="Shared notes are managed by the office.")
+    db.delete(n); db.commit()
+    return {"ok": True}
+
+
+def _prop_photo_row(p: PropertyPhoto, current_user: User, names: dict) -> dict:
+    return {"id": p.id, "property_id": p.property_id, "caption": p.caption,
+            "content_type": p.content_type, "size_bytes": p.size_bytes,
+            "created_at": _iso_utc(p.created_at),
+            "uploaded_by_name": names.get(p.uploaded_by),
+            "mine": p.uploaded_by == current_user.id,
+            "url": f"/api/crew/properties/{p.property_id}/photos/{p.id}"}
+
+
+_MAX_PROP_PHOTOS = 40
+
+
+@router.get("/properties/{property_id}/photos",
+            dependencies=[Depends(require_role("cleaner", "admin", "manager"))])
+def list_property_photos(
+    property_id: int,
+    db: Session = Depends(get_db),
+    org_id: int = Depends(current_org_id),
+    current_user: User = Depends(get_current_user),
+):
+    oid = resolve_org_id(org_id, db)
+    _property_or_404(db, oid, property_id, current_user)
+    rows = (db.query(PropertyPhoto)
+            .filter(PropertyPhoto.property_id == property_id)
+            .order_by(PropertyPhoto.created_at.desc()).all())
+    ids = {p.uploaded_by for p in rows if p.uploaded_by}
+    names = ({r[0]: (r[1] or r[2]) for r in
+              db.query(User.id, User.full_name, User.email).filter(User.id.in_(ids)).all()}
+             if ids else {})
+    return [_prop_photo_row(p, current_user, names) for p in rows]
+
+
+@router.get("/properties/{property_id}/photos/{photo_id}",
+            dependencies=[Depends(require_role("cleaner", "admin", "manager"))])
+def property_photo_content(
+    property_id: int,
+    photo_id: int,
+    db: Session = Depends(get_db),
+    org_id: int = Depends(current_org_id),
+    current_user: User = Depends(get_current_user),
+):
+    oid = resolve_org_id(org_id, db)
+    _property_or_404(db, oid, property_id, current_user)
+    p = db.query(PropertyPhoto).filter(PropertyPhoto.id == photo_id,
+                                       PropertyPhoto.property_id == property_id).first()
+    if not p:
+        raise HTTPException(status_code=404, detail="Photo not found.")
+    return Response(content=p.data, media_type=p.content_type,
+                    headers={"Cache-Control": "private, max-age=86400"})
+
+
+@router.post("/properties/{property_id}/photos",
+             dependencies=[Depends(require_role("cleaner", "admin", "manager"))])
+async def upload_property_photo(
+    property_id: int,
+    file: UploadFile = File(...),
+    caption: str = Form(""),
+    db: Session = Depends(get_db),
+    org_id: int = Depends(current_org_id),
+    current_user: User = Depends(get_current_user),
+):
+    """Reference photo ("master bed — 4 pillows"). Same caps as job photos;
+    the client downscales before upload."""
+    oid = resolve_org_id(org_id, db)
+    _property_or_404(db, oid, property_id, current_user)
+    data = await file.read()
+    ctype = _sniff_image_mime(data)
+    if ctype is None:
+        raise HTTPException(status_code=422, detail="JPEG, PNG or WebP only.")
+    if len(data) > _MAX_PHOTO_BYTES:
+        raise HTTPException(status_code=413, detail="Photo too large (5MB max).")
+    count = db.query(PropertyPhoto).filter(PropertyPhoto.property_id == property_id).count()
+    if count >= _MAX_PROP_PHOTOS:
+        raise HTTPException(status_code=409, detail="This property's gallery is full — remove old photos first.")
+    p = PropertyPhoto(org_id=oid, property_id=property_id, uploaded_by=current_user.id,
+                      caption=(caption or "").strip()[:200] or None,
+                      content_type=ctype, size_bytes=len(data), data=data,
+                      created_at=_now_naive_utc())
+    db.add(p); db.commit(); db.refresh(p)
+    return _prop_photo_row(p, current_user, {current_user.id: getattr(current_user, "full_name", None)})
+
+
+@router.delete("/properties/{property_id}/photos/{photo_id}",
+               dependencies=[Depends(require_role("cleaner", "admin", "manager"))])
+def delete_property_photo(
+    property_id: int,
+    photo_id: int,
+    db: Session = Depends(get_db),
+    org_id: int = Depends(current_org_id),
+    current_user: User = Depends(get_current_user),
+):
+    oid = resolve_org_id(org_id, db)
+    _property_or_404(db, oid, property_id, current_user)
+    p = db.query(PropertyPhoto).filter(PropertyPhoto.id == photo_id,
+                                       PropertyPhoto.property_id == property_id).first()
+    if not p:
+        raise HTTPException(status_code=404, detail="Photo not found.")
+    if current_user.role == "cleaner" and p.uploaded_by != current_user.id:
+        raise HTTPException(status_code=403, detail="Only your own photos.")
+    db.delete(p); db.commit()
+    return {"ok": True}
 
 
 # ── Job photos ───────────────────────────────────────────────────────────────
