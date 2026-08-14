@@ -6,9 +6,99 @@
  * bulleted step — readable in a driveway with gloves on. Content comes from
  * the office (Crew page → Crew docs); drafts never appear here.
  */
-import { useEffect, useMemo, useState } from 'react'
-import { ArrowLeft, BookOpen, ExternalLink, Pin } from 'lucide-react'
-import { get } from '../../api'
+import { useCallback, useEffect, useMemo, useState } from 'react'
+import { ArrowLeft, BookOpen, ExternalLink, Pin, Plus, StickyNote, Trash2 } from 'lucide-react'
+import { get, post, patch, del } from '../../api'
+
+/** "My notes" — the cleaner's PRIVATE notes (nobody else sees them, not
+ *  even the office). Product codes, gate quirks, personal reminders. */
+function MyNotes() {
+  const [notes, setNotes] = useState(null)
+  const [editing, setEditing] = useState(null)   // null | 'new' | note
+  const [form, setForm] = useState({ title: '', body: '' })
+  const [busy, setBusy] = useState(false)
+
+  const load = useCallback(() => {
+    get('/api/crew/my-docs').then(setNotes).catch(() => setNotes([]))
+  }, [])
+  useEffect(() => { load() }, [load])
+
+  const save = async () => {
+    if (!form.title.trim()) return
+    setBusy(true)
+    try {
+      if (editing === 'new') await post('/api/crew/my-docs', form)
+      else await patch(`/api/crew/my-docs/${editing.id}`, form)
+      setEditing(null); load()
+    } catch { /* keep the sheet open; retry is natural */ }
+    finally { setBusy(false) }
+  }
+
+  const remove = async (id) => {
+    setBusy(true)
+    try { await del(`/api/crew/my-docs/${id}`); setEditing(null); load() }
+    catch { /* noop */ }
+    finally { setBusy(false) }
+  }
+
+  return (
+    <div className="space-y-2">
+      <div className="flex items-center justify-between">
+        <div className="text-[11px] font-semibold uppercase tracking-wide text-ink-3 flex items-center gap-1">
+          <StickyNote className="w-3.5 h-3.5" /> My notes · only you see these
+        </div>
+        <button onClick={() => { setForm({ title: '', body: '' }); setEditing('new') }}
+          className="text-[12px] font-semibold text-blue-600 dark:text-blue-400 inline-flex items-center gap-0.5">
+          <Plus className="w-3.5 h-3.5" /> New
+        </button>
+      </div>
+      {(notes || []).map(n => (
+        <button key={n.id} onClick={() => { setForm({ title: n.title, body: n.body }); setEditing(n) }}
+          className="w-full text-left bg-panel border border-hairline rounded-xl px-3.5 py-2.5 active:scale-[0.99] transition-transform">
+          <div className="text-[13px] font-semibold text-ink truncate">{n.title}</div>
+          {n.body && <div className="text-[11.5px] text-ink-3 truncate">{n.body.split('\n')[0]}</div>}
+        </button>
+      ))}
+      {notes?.length === 0 && (
+        <p className="text-[12px] text-ink-3">
+          Product codes, gate quirks, reminders — anything you want to keep handy.
+        </p>
+      )}
+      {editing !== null && (
+        <div className="fixed inset-0 z-30 flex items-end sm:items-center justify-center bg-black/40 px-4 pb-4 sm:pb-0"
+          onClick={() => { if (!busy) setEditing(null) }}>
+          <div className="w-full max-w-sm bg-panel rounded-2xl border border-hairline shadow-glass p-4 space-y-2.5"
+            onClick={e => e.stopPropagation()}>
+            <input value={form.title} maxLength={200} autoFocus
+              onChange={e => setForm(f => ({ ...f, title: e.target.value }))}
+              placeholder="Title"
+              className="w-full rounded-lg border border-hairline bg-bg px-3 py-2 text-[14px] font-semibold text-ink focus:outline-none focus:border-blue-400" />
+            <textarea value={form.body} rows={6} maxLength={20000}
+              onChange={e => setForm(f => ({ ...f, body: e.target.value }))}
+              placeholder="Your note — private to you."
+              className="w-full rounded-lg border border-hairline bg-bg px-3 py-2 text-[13px] text-ink leading-relaxed focus:outline-none focus:border-blue-400 resize-none" />
+            <div className="flex items-center justify-between gap-2">
+              {editing !== 'new' ? (
+                <button onClick={() => remove(editing.id)} disabled={busy}
+                  className="text-red-600 p-1.5" title="Delete"><Trash2 className="w-4 h-4" /></button>
+              ) : <span />}
+              <div className="flex gap-2">
+                <button onClick={() => setEditing(null)} disabled={busy}
+                  className="text-[13px] font-semibold bg-panel border border-hairline text-ink-2 px-3.5 py-2 rounded-lg hover:bg-bg-2 disabled:opacity-60 transition-colors">
+                  Cancel
+                </button>
+                <button onClick={save} disabled={busy || !form.title.trim()}
+                  className="text-[13px] font-semibold bg-blue-600 hover:bg-blue-700 text-white px-3.5 py-2 rounded-lg disabled:opacity-60 transition-colors">
+                  {busy ? 'Saving…' : 'Save'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
 
 const CAT_LABELS = {
   training: 'Training', 'how-to': 'How-to', products: 'Products',
@@ -88,12 +178,15 @@ export default function CrewLearn() {
 
   if (docs.length === 0) {
     return (
-      <div className="text-center py-12">
-        <BookOpen className="w-7 h-7 text-ink-3 mx-auto mb-2" />
-        <p className="text-[14px] font-semibold text-ink">No guides yet</p>
-        <p className="text-[12px] text-ink-3 mt-1">
-          The office hasn't posted any training docs — check back soon.
-        </p>
+      <div className="space-y-4">
+        <MyNotes />
+        <div className="text-center py-8">
+          <BookOpen className="w-7 h-7 text-ink-3 mx-auto mb-2" />
+          <p className="text-[14px] font-semibold text-ink">No guides yet</p>
+          <p className="text-[12px] text-ink-3 mt-1">
+            The office hasn't posted any training docs — check back soon.
+          </p>
+        </div>
       </div>
     )
   }
@@ -112,6 +205,11 @@ export default function CrewLearn() {
           ))}
         </div>
       )}
+      <MyNotes />
+
+      <div className="text-[11px] font-semibold uppercase tracking-wide text-ink-3 pt-1">
+        Company guides
+      </div>
       <div className="space-y-2">
         {shown.map(d => (
           <button key={d.id} onClick={() => setOpen(d)}

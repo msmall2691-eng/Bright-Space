@@ -101,7 +101,8 @@ def test_open_listing_hides_access_and_claim_wins_once(ids):
         # An offer, not a work order: access details + customer phone hidden.
         assert row["house_code"] is None
         assert row["access_notes"] is None
-        assert row["client_phone"] is None
+        assert "client_phone" not in row          # numbers never reach crew
+        assert row["can_text_client"] is False    # offers can't text either
         assert row["open"] is True
 
         r = api.post(f"/api/crew/jobs/{jid}/claim")
