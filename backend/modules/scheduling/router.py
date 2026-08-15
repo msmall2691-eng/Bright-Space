@@ -2655,7 +2655,8 @@ def get_job(job_id: int, db: Session = Depends(get_db), org_id: int = Depends(cu
 
 
 @router.get("/{job_id}/details", dependencies=[Depends(require_role("admin", "manager", "viewer", "cleaner"))])
-def get_job_details(job_id: int, db: Session = Depends(get_db), org_id: int = Depends(current_org_id)):
+def get_job_details(job_id: int, db: Session = Depends(get_db), org_id: int = Depends(current_org_id),
+                    current_user=Depends(get_current_user)):
     """Full job record for the detail page: the job plus its linked records
     (client, opportunity, property, originating quote), related invoices, and
     the job-scoped activity timeline."""
@@ -2718,8 +2719,17 @@ def get_job_details(job_id: int, db: Session = Depends(get_db), org_id: int = De
                       # missing door code from the job page (owner bug
                       # report: crew cards looked broken when the property
                       # simply had no code on file) — and fill it in place.
-                      "house_code": job.property.house_code,
-                      "access_notes": job.property.access_notes}
+                      # BB-SEC-12: for a CLEANER these ride only on their own
+                      # assigned jobs — this office endpoint used to hand any
+                      # cleaner any org job's door code by id. Office roles
+                      # are unchanged; the crew app (/api/crew/*) enforces the
+                      # same assigned-only rule for its own payloads.
+                      **({"house_code": job.property.house_code,
+                          "access_notes": job.property.access_notes}
+                         if (getattr(current_user, "role", None) != "cleaner"
+                             or str(getattr(current_user, "cleaner_id", "")) in
+                                [str(c) for c in (job.cleaner_ids or [])])
+                         else {"house_code": None, "access_notes": None})}
                      if job.property else None),
         "opportunity": ({"id": job.opportunity.id, "title": job.opportunity.title, "stage": job.opportunity.stage}
                         if job.opportunity else None),
