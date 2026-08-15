@@ -318,3 +318,45 @@ def test_turnovers_next_30d_counts_only_upcoming_uncancelled_turnovers():
         assert mine["turnovers_next_30d"] == 1
     finally:
         _cleanup_property(db, c, p)
+
+
+def test_create_property_response_computes_turnovers_next_30d():
+    """POST /api/properties used to hardcode turnovers_next_30d=0 in its
+    response. The dedup path returns an EXISTING property that can already
+    have upcoming turnovers, so the create response must compute the count
+    the same way the GETs do (same helper)."""
+    db = SessionLocal()
+    c, p = _seed_property(db)
+    today = date.today()
+    db.add(Job(client_id=c.id, property_id=p.id, title="T-create", job_type="str_turnover",
+               scheduled_date=today + timedelta(days=4), start_time=time(10, 0),
+               end_time=time(13, 0), status="scheduled"))
+    db.commit()
+    fresh_id = None
+    try:
+        # Dedup path: same client + same normalized address returns the
+        # existing row — with the real count, not 0.
+        r = client.post("/api/properties", json={
+            "client_id": c.id, "name": "Health House", "address": p.address,
+            "property_type": "str",
+        })
+        assert r.status_code == 201, r.text
+        body = r.json()
+        assert body["id"] == p.id
+        assert body["turnovers_next_30d"] == 1
+
+        # Genuinely-new create: computed (trivially 0 — no jobs yet), and the
+        # non-str convention (None) still holds via the shared helper call.
+        r2 = client.post("/api/properties", json={
+            "client_id": c.id, "name": "Fresh House",
+            "address": f"2 Fresh Way {uuid.uuid4().hex[:6]}",
+            "property_type": "str",
+        })
+        assert r2.status_code == 201, r2.text
+        fresh_id = r2.json()["id"]
+        assert r2.json()["turnovers_next_30d"] == 0
+    finally:
+        if fresh_id:
+            db.query(Property).filter(Property.id == fresh_id).delete(synchronize_session=False)
+            db.commit()
+        _cleanup_property(db, c, p)

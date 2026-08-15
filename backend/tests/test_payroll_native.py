@@ -574,3 +574,27 @@ def test_native_send_to_square_dry_run(ids, monkeypatch):
 
 def body_rates_mileage(api):
     return api.get("/api/payroll/rates").json()["mileage_rate"]
+
+
+def test_native_shift_detail_carries_job_and_property_ids(ids):
+    """The payroll UI links each shift row to its job/property record, so the
+    /summary shift payload must carry ids alongside the display strings — and
+    null them for an unlinked punch (nothing to link to)."""
+    cid = f"CT-{uuid.uuid4().hex[:6]}"
+    _mk_cleaner(ids, cid)
+    jid = _mk_job(ids, "residential")
+    pid = ids["properties"][-1]
+    e_linked = _mk_entry(ids, cid, _dt(2026, 1, 5, 9), _dt(2026, 1, 5, 12), job_id=jid)
+    e_unlinked = _mk_entry(ids, cid, _dt(2026, 1, 5, 13), _dt(2026, 1, 5, 14), job_id=None)
+    api = _admin_api()
+    try:
+        emp = _emp(_summary(api, "2026-01-05", "2026-01-05"), cid)
+        by_id = {s["shift_id"]: s for s in emp["shifts"]}
+        linked = by_id[f"native:{e_linked}"]
+        assert linked["job_id"] == jid
+        assert linked["property_id"] == pid
+        unlinked = by_id[f"native:{e_unlinked}"]
+        assert unlinked["job_id"] is None
+        assert unlinked["property_id"] is None
+    finally:
+        _clear()

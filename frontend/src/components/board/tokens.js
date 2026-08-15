@@ -9,15 +9,17 @@
  * nails the dark iOS look under `theme-console`.
  */
 
-// Tag pills (TURNO, OVERDUE, RECURRING, …).
+// Row tags ("Turnover", "Needs cleaner", …) — text color only. The tinted
+// pill backgrounds are gone: tags render as a dot + word (see OpsBoard's
+// Tag), per the owner's explicit veto of the bubble labels.
 export const TAG_TONE = {
-  rose: 'bg-rose-500/10 text-rose-600 dark:text-rose-300',
-  amber: 'bg-amber-500/10 text-amber-600 dark:text-amber-300',
-  emerald: 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-300',
-  blue: 'bg-blue-500/10 text-blue-600 dark:text-blue-300',
-  indigo: 'bg-indigo-500/10 text-indigo-600 dark:text-indigo-300',
-  violet: 'bg-violet-500/10 text-violet-600 dark:text-violet-300',
-  gray: 'bg-bg-2 text-ink-3',
+  rose: 'text-rose-600 dark:text-rose-300',
+  amber: 'text-amber-600 dark:text-amber-300',
+  emerald: 'text-emerald-600 dark:text-emerald-300',
+  blue: 'text-blue-600 dark:text-blue-300',
+  indigo: 'text-indigo-600 dark:text-indigo-300',
+  violet: 'text-violet-600 dark:text-violet-300',
+  gray: 'text-ink-3',
 }
 
 // Severity → the little leading dot + the filter-chip accent.

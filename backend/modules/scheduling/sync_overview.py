@@ -166,6 +166,10 @@ def build_sync_overview(db: Session, org_id) -> dict:
             "property": prop_name or f"Property #{ical.property_id}",
             "source": ical.source or "ical",
             "last_synced_at": _iso(ical.last_synced_at),
+            # Event count from the feed's last known-good sync (see the
+            # partial-fetch guard in integrations/ical_sync.py) — lets the
+            # Sync Center row say "31 events" instead of just a timestamp.
+            "last_events_seen": ical.last_events_seen,
             "status": st or "pending",
             "error": ical.last_sync_error if st in ("failed", "retrying") else None,
         })

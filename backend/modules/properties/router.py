@@ -260,6 +260,11 @@ def prop_to_dict(p: Property, include_icals: bool = True, turnovers_next_30d: Op
                 "last_sync_status": pi.last_sync_status,
                 "last_sync_error": pi.last_sync_error,
                 "sync_retry_count": pi.sync_retry_count or 0,
+                # Event count from the last known-good sync (migration 052 —
+                # written by ical_sync's partial-fetch guard, so it's the
+                # trusted baseline, not a possibly-truncated read). Surfaces
+                # "what did this feed actually produce?" in the UI.
+                "last_events_seen": pi.last_events_seen,
             }
             for pi in (p.property_icals or [])
         ]
@@ -321,15 +326,25 @@ def create_property(data: PropertyCreate, db: Session = Depends(get_db), org_id:
         target = _property_key(d.get("address"), d.get("city"), d.get("state"), d.get("zip_code"))
         for p in db.query(Property).filter(Property.client_id == d["client_id"]).all():
             if _property_key(p.address, p.city, p.state, p.zip_code) == target:
+                # Compute for real (same helper as the GETs) — this dedup path
+                # returns an EXISTING property that may already have upcoming
+                # turnovers, so a hardcoded 0 here lied to the caller.
                 return prop_to_dict(
-                    p, turnovers_next_30d=(0 if p.property_type == "str" else None)
+                    p,
+                    turnovers_next_30d=(
+                        _turnovers_next_30d(db, p.id) if p.property_type == "str" else None
+                    ),
                 )
     prop = Property(**d)
     prop.org_id = org_id  # MT-2: stamp the caller's workspace
     db.add(prop)
     db.commit()
     db.refresh(prop)
-    return prop_to_dict(prop, turnovers_next_30d=(0 if prop.property_type == "str" else None))
+    # Same computation as GET /{id} (trivially 0 for a brand-new property, but
+    # keeping the one helper means the create response can't drift from the
+    # detail/list shape).
+    n30 = _turnovers_next_30d(db, prop.id) if prop.property_type == "str" else None
+    return prop_to_dict(prop, turnovers_next_30d=n30)
 
 
 @router.get("/lookup-specs", dependencies=[Depends(require_role("admin", "manager"))])

@@ -261,6 +261,11 @@ def _native_summary(db: Session, start_date: str, end_date: str, rates: dict, oi
             "miles": round(e.miles or 0.0, 1),
             "kind": kind or "unclassified",
             "source": "native_job" if job is not None else "unlinked",
+            # Ids alongside the display strings so the payroll UI can link a
+            # shift row to its job/property record instead of dead-ending at a
+            # label (an unlinked punch has neither).
+            "job_id": job.id if job is not None else None,
+            "property_id": prop.id if prop is not None else None,
             "property": prop.name if prop is not None else None,
             "shift_title": "",
             "job_label": (job.title if job is not None else "") or "",
