@@ -103,14 +103,30 @@ FLAT.set('/settings', { label: 'Settings', section: null })
  * Client"), which beats the old header's blank 'BrightBase' fallback.
  */
 const DETAIL_ROUTES = [
-  { prefix: '/clients/',       parent: '/clients',    label: 'Client' },
-  { prefix: '/requests/',      parent: '/requests',   label: 'Request' },
+  // `record`: the backend record type for /api/ai/quick record context.
+  // Absent (opportunities) = no backend type — recordFromPath skips it.
+  { prefix: '/clients/',       parent: '/clients',    label: 'Client',   record: 'client' },
+  { prefix: '/requests/',      parent: '/requests',   label: 'Request',  record: 'lead' },
   { prefix: '/opportunities/', parent: '/deals',      label: 'Deal' },
-  { prefix: '/jobs/',          parent: '/schedule',   label: 'Job' },
-  { prefix: '/quotes/',        parent: '/billing',    label: 'Quote' },
-  { prefix: '/invoices/',      parent: '/billing',    label: 'Invoice' },
-  { prefix: '/properties/',    parent: '/properties', label: 'Property' },
+  { prefix: '/jobs/',          parent: '/schedule',   label: 'Job',      record: 'job' },
+  { prefix: '/quotes/',        parent: '/billing',    label: 'Quote',    record: 'quote' },
+  { prefix: '/invoices/',      parent: '/billing',    label: 'Invoice',  record: 'invoice' },
+  { prefix: '/properties/',    parent: '/properties', label: 'Property', record: 'property' },
 ]
+
+/**
+ * Which record a detail page shows, for AI record context.
+ * '/clients/12' -> { type: 'client', id: 12 }; list pages, sub-routes
+ * (e.g. /properties/12/icals), and typeless details (deals) -> null.
+ */
+export function recordFromPath(pathname) {
+  for (const d of DETAIL_ROUTES) {
+    if (!d.record || !pathname.startsWith(d.prefix)) continue
+    const rest = pathname.slice(d.prefix.length)
+    if (/^\d+$/.test(rest)) return { type: d.record, id: Number(rest) }
+  }
+  return null
+}
 
 /** Routes reachable outside the nav (redirect targets, internal pages). */
 const EXTRA_ROUTES = {

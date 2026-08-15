@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { useParams, useNavigate, Link } from 'react-router-dom'
 import {
   ArrowLeft, Building2, MapPin, TrendingUp, Calendar, FileText, Inbox,
-  Mail, MessageSquare, ChevronRight, Send, Eye, Download, Link2, Check,
+  Mail, MessageSquare, ChevronRight, Send, Eye, Download, Link2, Check, Sparkles,
 } from 'lucide-react'
 import { get, patch, post } from '../api'
 import { toast } from '../utils/toastBus'
@@ -151,6 +151,30 @@ export default function QuoteDetail() {
     })
     setSendOpen(true)
   }
+  // AI follow-up nudge — mirrors the invoice "Draft reminder" flow: the draft
+  // lands in the send panel's personal note for review; nothing is sent. The
+  // endpoint answers {subject, message, error?} and only for sent/viewed quotes.
+  const [drafting, setDrafting] = useState(false)
+  const draftFollowup = async () => {
+    if (drafting) return
+    setDrafting(true)
+    try {
+      const res = await post(`/api/ai/draft-quote-followup/${id}`, { channel: 'email' })
+      if (res?.message) {
+        if (!sendOpen) openSend()
+        setSendForm(f => ({
+          ...f,
+          custom_message: res.message,
+          ...(res.subject ? { subject: res.subject } : {}),
+        }))
+        toast.success('Draft ready — review before sending')
+      } else {
+        toast.error(res?.error || 'Could not draft a follow-up')
+      }
+    } catch (e) { toast.error(e.message || 'Could not draft a follow-up') }
+    setDrafting(false)
+  }
+
   const doSend = async () => {
     setSending(true)
     try {
@@ -223,6 +247,11 @@ export default function QuoteDetail() {
               <ToolbarButton icon={Send} label={quote.status === 'draft' ? 'Send' : quote.status === 'changes_requested' ? 'Send revised' : 'Resend'} onClick={openSend} primary
                 disabled={sendDisabled}
                 title={sendTitle} />
+              {['sent', 'viewed'].includes(quote.status) && (
+                <ToolbarButton icon={Sparkles} label={drafting ? 'Drafting…' : 'Draft follow-up'}
+                  onClick={draftFollowup} disabled={drafting}
+                  title="AI-draft a friendly nudge — lands in the send panel for review" />
+              )}
               <ToolbarButton icon={Eye} label="Preview" onClick={preview} />
               <ToolbarButton icon={Download} label="Download PDF" onClick={downloadPdf} />
               <ToolbarButton icon={copied ? Check : Link2} label={copied ? 'Copied' : 'Copy link'} onClick={copyLink} />

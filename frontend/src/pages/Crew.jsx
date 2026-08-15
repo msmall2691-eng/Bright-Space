@@ -344,6 +344,41 @@ export default function Crew() {
                         onChange={(e) => savePatch(row.id, { can_view_full_schedule: e.target.checked })} />
                       Lead — sees the whole crew's schedule (names &amp; times only, never door codes)
                     </label>
+                    {/* Name + email — same inline save-on-blur path as crew ID and
+                        pay rates (admin PATCH /api/auth/users/{id}); the backend
+                        422s on blank/invalid and 409s on a duplicate email, and
+                        savePatch toasts that message and resyncs. */}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 mb-2.5">
+                      <label className="block">
+                        <span className="text-[11px] text-ink-3">Name</span>
+                        <input
+                          key={`${row.id}-name-${row.full_name || ''}`}
+                          defaultValue={row.full_name || ''}
+                          placeholder="Full name"
+                          disabled={busyId === row.id}
+                          onBlur={(e) => {
+                            const v = e.target.value.trim()
+                            if (v !== (row.full_name || '')) savePatch(row.id, { full_name: v })
+                          }}
+                          className="mt-0.5 w-full bg-panel border border-hairline rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                        />
+                      </label>
+                      <label className="block">
+                        <span className="text-[11px] text-ink-3">Email</span>
+                        <input
+                          key={`${row.id}-email-${row.email || ''}`}
+                          type="email"
+                          defaultValue={row.email || ''}
+                          placeholder="cleaner@email.com"
+                          disabled={busyId === row.id}
+                          onBlur={(e) => {
+                            const v = e.target.value.trim()
+                            if (v !== (row.email || '')) savePatch(row.id, { email: v })
+                          }}
+                          className="mt-0.5 w-full bg-panel border border-hairline rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                        />
+                      </label>
+                    </div>
                     <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
                       <label className="block">
                         <span className="text-[11px] text-ink-3">Crew ID</span>

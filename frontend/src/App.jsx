@@ -250,14 +250,14 @@ export default function App() {
         onCollapse={() => setCollapsed(true)}
         user={user}
       />
-      <div className="flex flex-col flex-1 overflow-hidden min-w-0 lg:py-2 lg:pr-2 lg:pl-0.5">
-        <div className="flex flex-col flex-1 overflow-hidden bg-bg lg:rounded-lg lg:border lg:border-hairline-2 lg:shadow-glass-sm">
+      <div className="flex flex-col flex-1 overflow-hidden min-w-0 shell:py-2 shell:pr-2 shell:pl-0.5">
+        <div className="flex flex-col flex-1 overflow-hidden bg-bg shell:rounded-lg shell:border shell:border-hairline-2 shell:shadow-glass-sm">
         <Header
           onMenuToggle={() => setSidebarOpen(true)}
           sidebarCollapsed={sidebarCollapsed}
           onSidebarExpand={() => setCollapsed(false)}
         />
-        <main className="flex-1 overflow-auto bg-bg bb-app-canvas pb-bottomnav lg:pb-0 scroll-smooth-mobile">
+        <main className="flex-1 overflow-auto bg-bg bb-app-canvas pb-bottomnav shell:pb-0 scroll-smooth-mobile">
           <ErrorBoundary>
           <Suspense fallback={<PageLoader />}>
             <Routes>

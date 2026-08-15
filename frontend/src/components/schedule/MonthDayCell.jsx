@@ -167,44 +167,49 @@ function MonthDayCell({
                 e.stopPropagation()
                 onJobClick?.(j)
               }}
-              className={`group/chip flex items-center gap-1.5 text-[11px] sm:text-[12px] pl-1.5 pr-1 py-1 rounded-md leading-tight cursor-grab active:cursor-grabbing transition-colors ${
+              className={`group/chip block overflow-hidden pl-1.5 pr-1.5 py-1 rounded-md leading-tight cursor-grab active:cursor-grabbing transition-colors ${
                 isCancelled ? 'bg-bg-2 text-ink-3 line-through' :
                 isDuplicate ? 'bg-red-50 text-red-700 ring-1 ring-red-200 dark:bg-red-500/10' :
                 `${tc.pill} ${tc.pillHover}`
               }`}
               title={`${chipTime ? chipTime + ' · ' : ''}${j.title}${j.client_name ? ' · ' + j.client_name : ''}${crew ? ' · assigned' : ' · needs a cleaner'}${j.recurring_schedule_id ? ' (recurring)' : ''} — press-and-hold to reschedule`}
             >
-              {/* Type accent — a single small dot. Keeps colorblind-safe type
-                  identity without a second full-color fill fighting the pill. */}
-              <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${tc.dot}`} />
-              {isDuplicate && <span className="shrink-0 text-red-500" title="Duplicate turnover detected">⚠</span>}
-              {j.is_immediate_turnover && (
-                <Zap className="w-2.5 h-2.5 shrink-0 text-red-600" title="Immediate turnover — same-day check-in" />
-              )}
-              {!j.is_immediate_turnover && j.turnover_lead_warning && (
-                <Zap className="w-2.5 h-2.5 shrink-0 text-amber-600"
-                     title={`Tight turnaround — only ~${Math.max(0, Math.round(j.turnover_lead_hours))}h before the next guest checks in`} />
-              )}
-              {j.recurring_schedule_id && <RotateCw className="w-2.5 h-2.5 shrink-0 opacity-50" title="Recurring" />}
-              {chipTime && <span className="font-semibold tabular-nums shrink-0 text-ink-2">{chipTime}</span>}
-              {/* The name is the point of the chip — it takes all remaining
-                  width (min-w-0 so truncate actually engages) instead of
-                  being squeezed out by the fixed time/icons. */}
-              <span className="flex-1 min-w-0 truncate text-ink font-medium">{chipWho}</span>
-              {!isCancelled && (
-                crew ? (
-                  <span className="ml-auto shrink-0 inline-flex items-center justify-center h-[16px] min-w-[16px] px-1 rounded-full bg-ink/5 dark:bg-white/10 text-[8px] font-semibold text-ink-2 leading-none"
-                    title={`Assigned${crew.count > 1 ? ` · ${crew.count} cleaners` : ''}`}>
-                    {crew.initials}{crew.count > 1 ? `+${crew.count - 1}` : ''}
-                  </span>
-                ) : (
-                  // Calm "needs a cleaner" cue — a soft amber dot instead of a
-                  // loud circled "?" on every unassigned job (the screenful of
-                  // question marks the operator was drowning in).
-                  <span className="ml-auto shrink-0 w-[7px] h-[7px] rounded-full bg-amber-400 ring-2 ring-amber-200/70 dark:ring-amber-500/25"
-                    title="Needs a cleaner" />
-                )
-              )}
+              {/* Two lines: WHO on top at full width, everything else below.
+                  One line could never fit dot+time+icons+name+badge in a
+                  ~125px month cell — the name always lost and the owner saw
+                  a wall of bare times ("10:00 S…"). The name is the thing
+                  she scans for; it gets the whole first line. */}
+              <div className="flex items-center gap-1.5">
+                <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${tc.dot}`} />
+                {isDuplicate && <span className="shrink-0 text-red-500" title="Duplicate turnover detected">⚠</span>}
+                <span className="flex-1 min-w-0 truncate text-[12px] text-ink font-medium">{chipWho}</span>
+              </div>
+              <div className="mt-0.5 flex min-w-0 items-center gap-1 text-[10.5px] text-ink-2">
+                {chipTime && <span className="font-semibold tabular-nums shrink-0">{chipTime}</span>}
+                {j.is_immediate_turnover && (
+                  <Zap className="w-2.5 h-2.5 shrink-0 text-red-600" title="Immediate turnover — same-day check-in" />
+                )}
+                {!j.is_immediate_turnover && j.turnover_lead_warning && (
+                  <Zap className="w-2.5 h-2.5 shrink-0 text-amber-600"
+                       title={`Tight turnaround — only ~${Math.max(0, Math.round(j.turnover_lead_hours))}h before the next guest checks in`} />
+                )}
+                {j.recurring_schedule_id && <RotateCw className="w-2.5 h-2.5 shrink-0 opacity-50" title="Recurring" />}
+                <span className="flex-1" />
+                {!isCancelled && (
+                  crew ? (
+                    <span className="shrink-0 inline-flex items-center justify-center h-[15px] min-w-[15px] px-1 rounded-full bg-ink/5 dark:bg-white/10 text-[8px] font-semibold text-ink-2 leading-none"
+                      title={`Assigned${crew.count > 1 ? ` · ${crew.count} cleaners` : ''}`}>
+                      {crew.initials}{crew.count > 1 ? `+${crew.count - 1}` : ''}
+                    </span>
+                  ) : (
+                    // Calm "needs a cleaner" cue — a soft amber dot instead of a
+                    // loud circled "?" on every unassigned job (the screenful of
+                    // question marks the operator was drowning in).
+                    <span className="shrink-0 w-[7px] h-[7px] rounded-full bg-amber-400 ring-2 ring-amber-200/70 dark:ring-amber-500/25"
+                      title="Needs a cleaner" />
+                  )
+                )}
+              </div>
             </div>
           )
         })}

@@ -49,6 +49,60 @@ function matchesQuery(it, q) {
   return hay.includes(q)
 }
 
+function fmtBriefTime(iso) {
+  if (!iso) return ''
+  try {
+    return new Date(iso).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })
+  } catch { return '' }
+}
+
+/* ── Daily brief strip ────────────────────────────────────────────────────── */
+/** Quiet one-paragraph AI morning brief. Self-contained on purpose: it does
+ *  its own fetch (once, on mount — the backend caches the prose per business
+ *  day, so this is cheap) and on ANY failure renders nothing at all. The
+ *  board's real data must never sit behind, or visually blame, a nicety. */
+function DailyBrief() {
+  const [brief, setBrief] = useState(null)     // { brief, generated_at }
+  const [state, setState] = useState('loading') // loading | ready | hidden
+  const [refreshing, setRefreshing] = useState(false)
+
+  const fetchBrief = useCallback(async (refresh) => {
+    try {
+      const res = await get(`/api/ai/daily-brief${refresh ? '?refresh=1' : ''}`)
+      if (res?.brief) { setBrief(res); setState('ready') } else { setState('hidden') }
+    } catch {
+      setState('hidden')
+    }
+  }, [])
+
+  useEffect(() => { fetchBrief(false) }, [fetchBrief])
+
+  if (state === 'hidden') return null
+  return (
+    <div className="mt-3 flex items-start gap-2.5 rounded-lg border border-hairline bg-panel px-4 py-3">
+      <Sparkles className="mt-0.5 h-3.5 w-3.5 shrink-0 text-ink-3" />
+      {state === 'loading' ? (
+        <div className="h-3.5 w-full max-w-xl animate-pulse self-center rounded bg-bg-2" />
+      ) : (
+        <>
+          <p className="min-w-0 flex-1 text-[13px] leading-relaxed text-ink-2">{brief.brief}</p>
+          <div className="flex shrink-0 items-center gap-2 pt-px">
+            <span className="text-[11px] tabular-nums text-ink-3">{fmtBriefTime(brief.generated_at)}</span>
+            <button
+              onClick={async () => { setRefreshing(true); await fetchBrief(true); setRefreshing(false) }}
+              disabled={refreshing}
+              aria-label="Refresh brief"
+              title="Regenerate today's brief"
+              className="text-ink-3 transition-colors hover:text-ink disabled:opacity-50">
+              <RefreshCw className={`h-3 w-3 ${refreshing ? 'animate-spin' : ''}`} />
+            </button>
+          </div>
+        </>
+      )}
+    </div>
+  )
+}
+
 /* ── Small pieces ─────────────────────────────────────────────────────────── */
 
 function Tag({ tag }) {
@@ -346,6 +400,8 @@ export default function OpsBoard() {
             </button>
           </div>
         </header>
+
+        <DailyBrief />
 
         {note && (
           <div className="mt-3 flex items-center gap-2 rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-[12px] font-medium text-emerald-700 dark:text-emerald-300">

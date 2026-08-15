@@ -23,11 +23,18 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel
-from sqlalchemy.orm import Session
+from sqlalchemy import func, or_
+from sqlalchemy.orm import Session, joinedload
 
 from database.db import get_db
 from database.models import Client, Job, RecurringSchedule, Property, Invoice, Quote
-from modules.auth.router import get_current_user
+from modules.auth.router import get_current_user, current_org_id
+from ratelimit import rate_limit
+# The 24h staleness verdict must be THE one the Properties page shows — a
+# duplicated cutoff here would eventually drift and the alert list would
+# disagree with the page it links to.
+from modules.properties.router import _property_ical_health
+from services.turnover_coverage import compute_turnover_coverage
 from agents.tools import get_tools_for_agent, execute_tool, load_agent_roster
 from utils.dates import business_today
 
@@ -53,6 +60,13 @@ _TIER_MODEL_IDS = {
 class QuickQuery(BaseModel):
     question: str
     page_context: Optional[str] = None
+    # Which record the user is looking at when they ask ("this client",
+    # "why hasn't she paid?"). Optional — the command bar works anywhere;
+    # when present, a compact org-scoped summary of the record is injected
+    # into the prompt so the model doesn't burn tool calls rediscovering
+    # what's already on screen.
+    record_type: Optional[str] = None
+    record_id: Optional[int] = None
 
 
 def _anthropic_client():
@@ -266,10 +280,228 @@ def route_message(body: RouteRequest, user=Depends(get_current_user)):
 
 # ── POST /api/ai/quick ──────────────────────────────────────────────────────
 
+# Record types the command bar may name. An unlisted type is ignored (no
+# context, no error) — the bar must keep answering the question either way.
+_RECORD_TYPES = ("client", "property", "job", "quote", "invoice", "lead",
+                 "conversation")
+
+
+def _org(model, org_id: int):
+    """The repo's standard tenant filter (MT-3): rows from before the
+    multi-tenant migration carry org_id NULL and belong to the default
+    workspace, so a bare == would hide them (same or_-NULL shape as
+    quoting's _get_quote_or_404 and crew's build_ask_context)."""
+    return or_(model.org_id == org_id, model.org_id.is_(None))
+
+
+def _fmt_money(amount) -> str:
+    return f"${(amount or 0):,.2f}"
+
+
+def _next_visits(db: Session, org_id: int, *, client_id=None, property_id=None,
+                 limit: int = 3):
+    """Next few upcoming visit lines for a client or property. Visit dates are
+    calendar dates — rendered as-is, never converted through a timezone."""
+    q = db.query(Job).filter(
+        _org(Job, org_id),
+        Job.scheduled_date >= business_today(),
+        Job.status.notin_(["cancelled", "completed"]),
+    )
+    if client_id is not None:
+        q = q.filter(Job.client_id == client_id)
+    if property_id is not None:
+        q = q.filter(Job.property_id == property_id)
+    jobs = q.order_by(Job.scheduled_date, Job.start_time).limit(limit).all()
+    return [
+        f"  - {j.scheduled_date}"
+        + (f" {str(j.start_time)[:5]}" if j.start_time else "")
+        + f" — {j.title or j.job_type} ({j.status})"
+        for j in jobs
+    ]
+
+
+def _build_record_context(db: Session, org_id: int, record_type: str,
+                          record_id: int) -> Optional[str]:
+    """Compact plain-text summary of one record for the quick prompt.
+
+    Every lookup is org-scoped; a record that doesn't exist OR belongs to
+    another tenant returns None with no distinction — the prompt simply gets
+    no context, so a probing caller can't learn whether an id exists.
+
+    SECURITY: property blocks NEVER include access details (house codes,
+    lockbox locations in access_notes, wifi credentials). Those are the crown
+    jewels — they must not enter any AI prompt, matching the crew month/iCal
+    feed exclusion. The model can't leak what it was never given.
+    """
+    if record_type == "client":
+        c = (db.query(Client)
+             .filter(Client.id == record_id, _org(Client, org_id)).first())
+        if not c:
+            return None
+        lines = [f"Client: {c.name} (status: {c.status or 'unknown'})"]
+        contact = " · ".join(x for x in [c.phone, c.email] if x)
+        if contact:
+            lines.append(f"Contact: {contact}")
+        props = (db.query(Property.name)
+                 .filter(Property.client_id == c.id, _org(Property, org_id))
+                 .limit(5).all())
+        if props:
+            lines.append("Properties: " + ", ".join(p[0] for p in props))
+        open_total = (db.query(func.coalesce(func.sum(Invoice.total), 0.0))
+                      .filter(Invoice.client_id == c.id, _org(Invoice, org_id),
+                              Invoice.status.in_(["sent", "overdue"]))
+                      .scalar())
+        if open_total:
+            lines.append(f"Open invoice total: {_fmt_money(open_total)}")
+        visits = _next_visits(db, org_id, client_id=c.id)
+        if visits:
+            lines.append("Next visits:")
+            lines.extend(visits)
+        return "\n".join(lines)
+
+    if record_type == "property":
+        p = (db.query(Property).options(joinedload(Property.property_icals))
+             .filter(Property.id == record_id, _org(Property, org_id)).first())
+        if not p:
+            return None
+        lines = [f"Property: {p.name} ({p.property_type})"]
+        addr = ", ".join(x for x in [p.address, p.city, p.state] if x)
+        if addr:
+            lines.append(f"Address: {addr}")
+        owner = (db.query(Client)
+                 .filter(Client.id == p.client_id, _org(Client, org_id)).first())
+        if owner:
+            lines.append(f"Client: {owner.name}")
+        if p.property_type == "str":
+            lines.append(f"Turnover feed health: {_property_ical_health(p)}")
+        visits = _next_visits(db, org_id, property_id=p.id)
+        if visits:
+            lines.append("Next visits:")
+            lines.extend(visits)
+        # Deliberately NOT included: access_notes, house_code, wifi_* — see
+        # the docstring. Add nothing from that field family here.
+        return "\n".join(lines)
+
+    if record_type == "job":
+        j = db.query(Job).filter(Job.id == record_id, _org(Job, org_id)).first()
+        if not j:
+            return None
+        lines = [f"Job: {j.title or j.job_type} (status: {j.status})"]
+        when = " ".join(x for x in [
+            str(j.scheduled_date) if j.scheduled_date else None,
+            f"{str(j.start_time)[:5]}–{str(j.end_time)[:5]}"
+            if j.start_time and j.end_time else None,
+        ] if x)
+        if when:
+            lines.append(f"Scheduled: {when}")
+        c = (db.query(Client)
+             .filter(Client.id == j.client_id, _org(Client, org_id)).first())
+        if c:
+            lines.append(f"Client: {c.name}")
+        p = (db.query(Property)
+             .filter(Property.id == j.property_id, _org(Property, org_id)).first())
+        if p:
+            lines.append(f"Property: {p.name}")
+        cleaners = j.cleaner_ids or []
+        lines.append("Assigned: " + (", ".join(str(x) for x in cleaners)
+                                     if cleaners else "nobody yet"))
+        return "\n".join(lines)
+
+    if record_type == "quote":
+        q = db.query(Quote).filter(Quote.id == record_id, _org(Quote, org_id)).first()
+        if not q:
+            return None
+        lines = [f"Quote {q.quote_number} (status: {q.status})",
+                 f"Amount: {_fmt_money(q.total)}"]
+        c = (db.query(Client)
+             .filter(Client.id == q.client_id, _org(Client, org_id)).first())
+        if c:
+            lines.append(f"Client: {c.name}")
+        age = _age_days(q.sent_at or q.created_at)
+        if age is not None:
+            lines.append(f"Age: {age} day(s) since "
+                         + ("sent" if q.sent_at else "created"))
+        return "\n".join(lines)
+
+    if record_type == "invoice":
+        inv = (db.query(Invoice)
+               .filter(Invoice.id == record_id, _org(Invoice, org_id)).first())
+        if not inv:
+            return None
+        lines = [f"Invoice {inv.invoice_number or f'INV-{inv.id}'} "
+                 f"(status: {inv.status})",
+                 f"Amount: {_fmt_money(inv.total)}"]
+        if inv.due_date:
+            lines.append(f"Due: {inv.due_date}")
+        c = (db.query(Client)
+             .filter(Client.id == inv.client_id, _org(Client, org_id)).first())
+        if c:
+            lines.append(f"Client: {c.name}")
+        return "\n".join(lines)
+
+    if record_type == "lead":
+        from database.models import LeadIntake
+        o = (db.query(LeadIntake)
+             .filter(LeadIntake.id == record_id, _org(LeadIntake, org_id)).first())
+        if not o:
+            return None
+        lines = [f"Lead: {o.name} (status: {o.status or 'new'})"]
+        contact = " · ".join(x for x in [o.phone, o.email] if x)
+        if contact:
+            lines.append(f"Contact: {contact}")
+        svc = o.requested_service or o.service_type
+        if svc:
+            lines.append(f"Requested service: {svc}")
+        age = _age_days(o.created_at)
+        if age is not None:
+            lines.append(f"Age: {age} day(s) since submitted")
+        return "\n".join(lines)
+
+    if record_type == "conversation":
+        from database.models import Conversation, Message
+        conv = (db.query(Conversation)
+                .filter(Conversation.id == record_id,
+                        _org(Conversation, org_id)).first())
+        if not conv:
+            return None
+        c = (db.query(Client)
+             .filter(Client.id == conv.client_id, _org(Client, org_id)).first()
+             if conv.client_id else None)
+        who = (c.name if c else None) or conv.external_contact or "unknown contact"
+        lines = [f"Conversation ({conv.channel}) with {who}"]
+        msgs = (db.query(Message)
+                .filter(Message.conversation_id == conv.id,
+                        Message.is_internal_note.isnot(True))
+                .order_by(Message.created_at.desc()).limit(3).all())
+        for m in reversed(msgs):
+            body_txt = (m.body or "").strip().replace("\n", " ")[:100]
+            if body_txt:
+                lines.append(
+                    f"  {'customer' if m.direction == 'inbound' else 'us'}: {body_txt}")
+        return "\n".join(lines)
+
+    return None
+
+
+def _age_days(ts) -> Optional[int]:
+    """Whole days since a stored timestamp; None when unset. Naive rows are
+    UTC by convention (_utcnow default) — normalize so the subtraction can't
+    raise on mixed tz-awareness."""
+    if not ts:
+        return None
+    from datetime import datetime, timezone
+    if ts.tzinfo is None:
+        ts = ts.replace(tzinfo=timezone.utc)
+    return max((datetime.now(timezone.utc) - ts).days, 0)
+
+
 @router.post("/quick")
 def quick_query(body: QuickQuery, db: Session = Depends(get_db),
-                user=Depends(get_current_user)):
-    """One-shot question answered with live business data. Returns {answer}."""
+                user=Depends(get_current_user),
+                org_id: int = Depends(current_org_id)):
+    """One-shot question answered with live business data. Returns {answer}.
+    Owner-side only: get_current_user gates it (JWT or master API key) and
+    current_org_id pins the tenant for the record-context lookups."""
     client = _anthropic_client()
     if client is None:
         return {"answer": "The AI assistant isn't configured yet (missing "
@@ -304,6 +536,15 @@ def quick_query(body: QuickQuery, db: Session = Depends(get_db),
         "and which button to use."
     )
     ctx = f"[Current page: {body.page_context}]\n\n" if body.page_context else ""
+    if body.record_type and body.record_id:
+        rt = body.record_type.strip().lower()
+        # Unknown type / unknown id / another tenant's record all degrade the
+        # same way — no context block — so the command bar never errors on a
+        # stale id and never confirms whether a probed id exists.
+        record_ctx = (_build_record_context(db, org_id, rt, body.record_id)
+                      if rt in _RECORD_TYPES else None)
+        if record_ctx:
+            ctx += f"[Record context]\n{record_ctx}\n\n"
     try:
         answer = _run_tool_loop(client, system, f"{ctx}{body.question.strip()}")
         return {"answer": answer or "I couldn't find an answer to that.",
@@ -860,6 +1101,190 @@ def _fallback_reminder(name, inv: Invoice, od: Optional[int]) -> dict:
     return {"subject": f"Reminder: invoice {num}", "message": body}
 
 
+# ── POST /api/ai/draft-quote-followup/{quote_id} ────────────────────────────
+# Nudge a customer sitting on a sent/viewed quote. Review-first like every
+# draft endpoint here: returns {subject, message}, sends nothing. Defaults to
+# SMS shape — a follow-up nudge is a text-length message; the first outreach
+# (draft-lead-reply) defaults to email because it carries the full pitch.
+
+class DraftNudgeRequest(BaseModel):
+    channel: Optional[str] = "sms"       # "sms" | "email"
+    instruction: Optional[str] = None    # optional steering, e.g. "mention we can adjust scope"
+
+
+@router.post("/draft-quote-followup/{quote_id}")
+def draft_quote_followup(quote_id: int, body: DraftNudgeRequest = DraftNudgeRequest(),
+                         db: Session = Depends(get_db),
+                         org_id: int = Depends(current_org_id)):
+    """Draft a short, friendly follow-up on a quote the customer hasn't
+    answered. Returns {subject, message} (SMS drafts carry an empty subject).
+    Only sent/viewed quotes qualify — a draft was never seen by the customer
+    and an accepted/declined one already got its answer, so a nudge would
+    read as either confusing or pushy."""
+    quote = (db.query(Quote)
+             .filter(Quote.id == quote_id, _org(Quote, org_id)).first())
+    if not quote:
+        # Wrong org and nonexistent look identical on purpose (no existence
+        # leak) — same error envelope the other draft endpoints use.
+        return {"subject": "", "message": "", "error": "Quote not found"}
+    if quote.status not in ("sent", "viewed"):
+        return {"subject": "", "message": "",
+                "error": "Only sent or viewed quotes can be followed up on"}
+    client = db.query(Client).filter(Client.id == quote.client_id,
+                                     _org(Client, org_id)).first()
+    channel = (body.channel or "sms").lower()
+    if channel not in ("email", "sms"):
+        channel = "sms"
+    return _draft_quote_followup(quote, client, channel,
+                                 (body.instruction or "").strip() or None,
+                                 _anthropic_client())
+
+
+def _draft_quote_followup(quote, client, channel: str, instruction,
+                          client_ai) -> dict:
+    """Uses the cheapest tier (haiku) — like enrich, this is a
+    write-three-sentences-from-facts task, not reasoning; the deterministic
+    fallback below covers a missing key or a failed call."""
+    name = _client_first_name(client)
+    amount = f"${(quote.total or 0):,.2f}"
+    age = _age_days(quote.sent_at or quote.created_at)
+    if client_ai is None:
+        return _fallback_quote_followup(name, quote, amount, age, channel)
+
+    facts = {
+        "client_first_name": name,
+        "quote_number": quote.quote_number,
+        "amount": amount,
+        "days_since_sent": age,
+        "status": quote.status,   # "viewed" means they opened it — mentionable
+        "service": quote.service_type,
+    }
+    if instruction:
+        facts["operator_instruction"] = instruction
+    shape = ("Write a friendly SMS (1-3 sentences, under 300 characters, NO "
+             "subject line)." if channel == "sms" else
+             "Write a short, warm email (a subject line + 2-4 sentences).")
+    system = (
+        "You write a follow-up nudge from Maine Cleaning Co, a cleaning "
+        f"business, about a quote the customer hasn't responded to. {shape} "
+        "Address them by first name, reference the quote number and amount, "
+        "offer to answer questions or adjust the quote, and end with a light "
+        "call to action. Never pressure, never invent new prices or "
+        "discounts. Respond with ONLY a JSON object: "
+        '{"subject": string, "message": string}.'
+    )
+    try:
+        resp = client_ai.messages.create(
+            model=_TIER_MODEL_IDS["haiku"], max_tokens=400, system=system,
+            messages=[{"role": "user", "content": json.dumps(facts, default=str)}],
+        )
+        text = "".join(b.text for b in resp.content if b.type == "text")
+        data = json.loads(_strip_json(text))
+        msg = (data.get("message") or "").strip()
+        if not msg:
+            return _fallback_quote_followup(name, quote, amount, age, channel)
+        subject = "" if channel == "sms" else (
+            data.get("subject") or f"Following up on quote {quote.quote_number}").strip()
+        return {"subject": subject, "message": msg}
+    except Exception:
+        logger.exception("ai quote-followup draft failed; using fallback")
+        return _fallback_quote_followup(name, quote, amount, age, channel)
+
+
+def _fallback_quote_followup(name, quote, amount: str, age: Optional[int],
+                             channel: str) -> dict:
+    ago = f" {age} days ago" if age else ""
+    if channel == "sms":
+        return {"subject": "", "message":
+                f"Hi {name}! Just checking in on quote {quote.quote_number} "
+                f"({amount}) we sent{ago}. Happy to answer any questions or "
+                f"adjust it — just reply here. – Maine Cleaning Co."}
+    return {"subject": f"Following up on quote {quote.quote_number}",
+            "message": f"Hi {name},\n\nJust checking in on quote "
+                       f"{quote.quote_number} for {amount} we sent{ago}. "
+                       f"If you have any questions or would like us to adjust "
+                       f"anything, just reply here — happy to help.\n\n"
+                       f"Warmly,\nMaine Cleaning Co."}
+
+
+# ── POST /api/ai/draft-review-request/{job_id} ──────────────────────────────
+
+@router.post("/draft-review-request/{job_id}")
+def draft_review_request(job_id: int, body: DraftNudgeRequest = DraftNudgeRequest(),
+                         db: Session = Depends(get_db),
+                         org_id: int = Depends(current_org_id)):
+    """Draft a warm review-request note for a completed job. Returns
+    {subject, message}; nothing is sent. Completed jobs only — asking for a
+    review on a job that hasn't happened yet would go to a customer who has
+    nothing to review."""
+    job = db.query(Job).filter(Job.id == job_id, _org(Job, org_id)).first()
+    if not job:
+        return {"subject": "", "message": "", "error": "Job not found"}
+    if job.status != "completed":
+        return {"subject": "", "message": "",
+                "error": "Only completed jobs can get a review request"}
+    client = db.query(Client).filter(Client.id == job.client_id,
+                                     _org(Client, org_id)).first()
+    channel = (body.channel or "sms").lower()
+    if channel not in ("email", "sms"):
+        channel = "sms"
+    return _draft_review_request(job, client, channel, _anthropic_client())
+
+
+def _draft_review_request(job, client, channel: str, client_ai) -> dict:
+    """Haiku tier for the same reason as _draft_quote_followup."""
+    name = _client_first_name(client)
+    service_date = str(job.scheduled_date) if job.scheduled_date else None
+    if client_ai is None:
+        return _fallback_review_request(name, service_date, channel)
+
+    facts = {
+        "client_first_name": name,
+        "service_date": service_date,
+        "service": job.title or job.job_type,
+    }
+    shape = ("Write a friendly SMS (2-3 sentences, under 300 characters, NO "
+             "subject line)." if channel == "sms" else
+             "Write a short, warm email (a subject line + 2-3 sentences).")
+    system = (
+        "You write a review request from Maine Cleaning Co, a cleaning "
+        f"business, to a customer whose cleaning was just completed. {shape} "
+        "Thank them by first name, reference the service date, and warmly ask "
+        "them to leave a review if they were happy with the clean. Don't "
+        "include a link (the operator adds it), don't offer incentives, and "
+        "don't sound like a form letter. Respond with ONLY a JSON object: "
+        '{"subject": string, "message": string}.'
+    )
+    try:
+        resp = client_ai.messages.create(
+            model=_TIER_MODEL_IDS["haiku"], max_tokens=400, system=system,
+            messages=[{"role": "user", "content": json.dumps(facts, default=str)}],
+        )
+        text = "".join(b.text for b in resp.content if b.type == "text")
+        data = json.loads(_strip_json(text))
+        msg = (data.get("message") or "").strip()
+        if not msg:
+            return _fallback_review_request(name, service_date, channel)
+        subject = "" if channel == "sms" else (
+            data.get("subject") or "How did we do?").strip()
+        return {"subject": subject, "message": msg}
+    except Exception:
+        logger.exception("ai review-request draft failed; using fallback")
+        return _fallback_review_request(name, service_date, channel)
+
+
+def _fallback_review_request(name, service_date: Optional[str],
+                             channel: str) -> dict:
+    on = f" on {service_date}" if service_date else ""
+    body = (f"Hi {name}, thank you for having us clean{on}! If you were happy "
+            f"with how everything turned out, we'd be so grateful if you left "
+            f"us a quick review — it means a lot to our small team. "
+            f"– Maine Cleaning Co.")
+    if channel == "sms":
+        return {"subject": "", "message": body}
+    return {"subject": "How did we do?", "message": body}
+
+
 # ── GET /api/ai/overdue-reminders ───────────────────────────────────────────
 
 # Bound the batch so a huge AR backlog can't blow up latency/cost with one call.
@@ -906,21 +1331,28 @@ def overdue_reminders(db: Session = Depends(get_db), user=Depends(get_current_us
 # ── GET /api/ai/followup-check ──────────────────────────────────────────────
 
 @router.get("/followup-check")
-def followup_check(db: Session = Depends(get_db), user=Depends(get_current_user)):
+def followup_check(db: Session = Depends(get_db), user=Depends(get_current_user),
+                   org_id: int = Depends(current_org_id)):
     """Deterministic scan for things needing attention. {total, followups[]}."""
-    return _compute_followups(db)
+    return _compute_followups(db, org_id)
 
 
-def _compute_followups(db: Session) -> dict:
+def _compute_followups(db: Session, org_id: int) -> dict:
     """Build the prioritized list of items needing attention. Pure DB reads;
-    each entry has title / detail / action / severity ('high' | 'medium')."""
+    each entry has title / detail / action / severity ('high'|'medium'|'low')
+    and an href landing on the queue where the operator can act.
+
+    Every scan is org-scoped (MT-3) via the same NULL-tolerant filter the
+    routers use — this list aggregates invoices, jobs, and leads across the
+    whole business, so an unscoped scan here would quietly leak another
+    tenant's counts into the alert bell."""
     today = business_today().isoformat()
     soon = (business_today() + timedelta(days=2)).isoformat()
     items = []
 
     # Overdue invoices (explicitly overdue, or sent + past due date).
     overdue = db.query(Invoice).filter(
-        Invoice.status.in_(["sent", "overdue"])
+        Invoice.status.in_(["sent", "overdue"]), _org(Invoice, org_id)
     ).all()
     overdue = [i for i in overdue if i.status == "overdue"
                or (i.due_date and str(i.due_date) < today)]
@@ -937,9 +1369,58 @@ def _compute_followups(db: Session) -> dict:
             "href": "/billing?view=invoices&status=overdue",
         })
 
+    # Guest checkouts with no turnover scheduled — the highest-stakes gap in
+    # the business: a missed turnover means a guest walks into a dirty rental.
+    # Same computation as the 5:30am scheduler safety net (services/
+    # turnover_coverage.py) — shared so this scan and the tick can never
+    # disagree on what "covered" means. Feed outages are surfaced by the
+    # feed-health scan below, so only concrete missing checkouts count here.
+    coverage = compute_turnover_coverage(db, org_id=org_id)
+    gaps = [f for f in coverage["flagged"] if f["missing"]]
+    if gaps:
+        n_missing = sum(len(f["missing"]) for f in gaps)
+        names = ", ".join(f["property"] for f in gaps[:3])
+        more = f" +{len(gaps) - 3} more" if len(gaps) > 3 else ""
+        items.append({
+            "title": f"{n_missing} guest checkout(s) with no turnover",
+            "detail": f"Upcoming checkouts at {names}{more} have no turnover "
+                      "scheduled.",
+            "action": "Schedule the missing turnovers",
+            "severity": "high",
+            "href": "/schedule",
+        })
+
+    # STR properties whose booking feed can't be trusted: no iCal feed at all,
+    # or every feed stale/failing per the SAME 24h rollup the Properties page
+    # shows (_property_ical_health). A dead feed means new reservations stop
+    # arriving, so the coverage scan above can go green while a guest is
+    # actually booked — this is its early-warning companion.
+    strs = (db.query(Property).options(joinedload(Property.property_icals))
+            .filter(Property.property_type == "str",
+                    Property.active == True,  # noqa: E712
+                    _org(Property, org_id)).all())
+    unhealthy = [p for p in strs
+                 if _property_ical_health(p) in ("no_feed", "stale")]
+    if unhealthy:
+        no_feed = sum(1 for p in unhealthy
+                      if _property_ical_health(p) == "no_feed")
+        parts = [x for x in [
+            f"{no_feed} with no feed" if no_feed else None,
+            f"{len(unhealthy) - no_feed} stale" if len(unhealthy) - no_feed else None,
+        ] if x]
+        items.append({
+            "title": f"{len(unhealthy)} rental feed(s) need attention",
+            "detail": f"STR properties whose turnover feed can't be trusted "
+                      f"({', '.join(parts)}).",
+            "action": "Fix the feeds on the Properties page",
+            "severity": "medium",
+            "href": "/properties",
+        })
+
     # Upcoming jobs with no cleaner assigned.
     upcoming = db.query(Job).filter(
-        Job.scheduled_date >= today, Job.status == "scheduled"
+        Job.scheduled_date >= today, Job.status == "scheduled",
+        _org(Job, org_id)
     ).all()
     unassigned = [j for j in upcoming if not (j.cleaner_ids or [])]
     if unassigned:
@@ -967,7 +1448,9 @@ def _compute_followups(db: Session) -> dict:
 
     # Active recurring schedules with no upcoming jobs generated.
     empty_recurring = []
-    for s in db.query(RecurringSchedule).filter(RecurringSchedule.active == True).all():
+    for s in db.query(RecurringSchedule).filter(
+            RecurringSchedule.active == True,  # noqa: E712
+            _org(RecurringSchedule, org_id)).all():
         cnt = db.query(Job).filter(
             Job.recurring_schedule_id == s.id, Job.scheduled_date >= today
         ).count()
@@ -990,6 +1473,7 @@ def _compute_followups(db: Session) -> dict:
     stale_drafts = db.query(Quote).filter(
         Quote.status == "draft",
         Quote.created_at < draft_cutoff,
+        _org(Quote, org_id),
     ).count()
     if stale_drafts:
         items.append({
@@ -1001,7 +1485,8 @@ def _compute_followups(db: Session) -> dict:
         })
 
     # New leads (likely awaiting follow-up).
-    leads = db.query(Client).filter(Client.status == "lead").count()
+    leads = db.query(Client).filter(Client.status == "lead",
+                                    _org(Client, org_id)).count()
     if leads:
         items.append({
             "title": f"{leads} open lead(s)",
@@ -1011,7 +1496,198 @@ def _compute_followups(db: Session) -> dict:
             "href": "/clients?status=lead",
         })
 
+    # Completed jobs never invoiced — literally unbilled money. Invoices link
+    # to jobs by Invoice.job_id (auto_create_draft_invoice keys its
+    # idempotency off it), so "never invoiced" = no invoice row referencing
+    # the job. A hand-made client-level invoice with job_id NULL won't match —
+    # that's deliberate: if the owner bills that way she should still link the
+    # job, or the completion→invoice pipeline silently loses track of what's
+    # been billed. ~3-day grace: completion auto-creates a draft invoice, so
+    # anything older is a path that bypassed it (crash, legacy row, manual
+    # status flip) and needs a human.
+    unbilled_cutoff = business_today() - timedelta(days=3)
+    unbilled = (db.query(func.count(Job.id))
+                .outerjoin(Invoice, Invoice.job_id == Job.id)
+                .filter(Job.status == "completed",
+                        Job.scheduled_date.isnot(None),
+                        Job.scheduled_date < unbilled_cutoff,
+                        _org(Job, org_id),
+                        Invoice.id.is_(None))
+                .scalar() or 0)
+    if unbilled:
+        items.append({
+            "title": f"{unbilled} completed job(s) never invoiced",
+            "detail": f"Jobs completed more than 3 days ago with no invoice — "
+                      f"unbilled work.",
+            "action": "Create the missing invoices",
+            "severity": "medium",
+            "href": "/billing?view=invoices",
+        })
+
+    # Clients gone quiet: active clients with no visit in 60 days and nothing
+    # coming up — the churn you don't notice until the revenue is gone. One
+    # aggregate over a grouped subquery (no per-client queries): the newest
+    # non-cancelled job date per client already answers both "recent?" and
+    # "upcoming?" (an upcoming date is > today, so it can't be < the cutoff).
+    quiet_cutoff = business_today() - timedelta(days=60)
+    last_job = (db.query(Job.client_id,
+                         func.max(Job.scheduled_date).label("last_date"))
+                .filter(Job.status != "cancelled", _org(Job, org_id))
+                .group_by(Job.client_id).subquery())
+    quiet = (db.query(func.count(Client.id))
+             .outerjoin(last_job, last_job.c.client_id == Client.id)
+             .filter(Client.status == "active", _org(Client, org_id),
+                     or_(last_job.c.last_date.is_(None),
+                         last_job.c.last_date < quiet_cutoff))
+             .scalar() or 0)
+    if quiet:
+        # Cap the surfaced number — "217 quiet clients" after a data import
+        # is a wall, not a nudge; the list page has the real count.
+        shown = f"{min(quiet, 25)}{'+' if quiet > 25 else ''}"
+        items.append({
+            "title": f"{shown} client(s) gone quiet",
+            "detail": f"{shown} active client(s) with no visit in 60+ days "
+                      "and nothing scheduled.",
+            "action": "Reach out before they drift away",
+            "severity": "low",
+            "href": "/clients?status=active",
+        })
+
     # High severity first, then medium; preserve insertion order within a tier.
     order = {"high": 0, "medium": 1, "low": 2}
     items.sort(key=lambda f: order.get(f["severity"], 3))
     return {"total": len(items), "followups": items}
+
+
+# ── GET /api/ai/daily-brief ─────────────────────────────────────────────────
+#
+# One warm paragraph for the top of the Ops Board: "here's what today looks
+# like and what to do first." Built from the SAME followup items the alert
+# bell shows (so the brief and the bell can never disagree) plus a compact
+# org-scoped business snapshot, summarized once per business day by the
+# cheapest tier (haiku) — this is a summarize-what's-here task, not reasoning.
+#
+# Cache: one model call per org per business day, in a module-level dict.
+# In-memory is a deliberate tradeoff: with UVICORN_WORKERS=4 each worker keeps
+# its own cache, so the worst case is one haiku call per worker per day —
+# pennies — and the cache resets on deploy, which is fine (the brief just
+# regenerates). AppSetting was considered and rejected: it's a global (not
+# org-scoped) kv table, so a durable cache would need composite keys plus
+# stale-row cleanup for a value that's worthless after midnight anyway.
+_BRIEF_CACHE: dict = {}  # {(org_id, iso_date): {"brief", "generated_at", "ai"}}
+
+
+def _org_business_snapshot(db: Session, org_id: int) -> dict:
+    """Org-scoped twin of agents/tools.py get_business_snapshot. The agent
+    tool queries the whole DB (the agent chat is single-tenant by design);
+    this endpoint serves a specific org's board, so every count here carries
+    the standard MT-3 filter — replicated rather than imported so the tool's
+    unscoped queries can't quietly become the brief's."""
+    today = business_today().isoformat()
+    week_end = (business_today() + timedelta(days=7)).isoformat()
+    return {
+        "date_today": today,
+        "clients_active": db.query(Client).filter(
+            Client.status == "active", _org(Client, org_id)).count(),
+        "clients_leads": db.query(Client).filter(
+            Client.status == "lead", _org(Client, org_id)).count(),
+        "jobs_today": db.query(Job).filter(
+            Job.scheduled_date == today, _org(Job, org_id)).count(),
+        "jobs_this_week": db.query(Job).filter(
+            Job.scheduled_date >= today, Job.scheduled_date <= week_end,
+            Job.status == "scheduled", _org(Job, org_id)).count(),
+        "active_recurring_schedules": db.query(RecurringSchedule).filter(
+            RecurringSchedule.active == True,  # noqa: E712
+            _org(RecurringSchedule, org_id)).count(),
+        "outstanding_invoices": sum(
+            i.total or 0
+            for i in db.query(Invoice).filter(
+                Invoice.status.in_(["sent", "overdue"]),
+                _org(Invoice, org_id)).all()
+        ),
+    }
+
+
+def _fallback_brief(items: list) -> str:
+    """One deterministic line from the top-severity items — the brief strip
+    must still say something true when the model is unavailable."""
+    if not items:
+        return "Nothing needs attention today — you're all caught up."
+    top = "; ".join(i["title"] for i in items[:3])
+    n = len(items)
+    return (f"{n} thing{'s need' if n != 1 else ' needs'} attention today: "
+            f"{top}.")
+
+
+def _generate_brief(db: Session, org_id: int, items: list) -> dict:
+    """Produce the cached portion of the daily brief: {brief, generated_at,
+    ai}. Falls back to the templated line on any model problem — the board
+    must never show an error because a nicety failed."""
+    from datetime import datetime, timezone
+    generated_at = datetime.now(timezone.utc).isoformat()
+    client = _anthropic_client()
+    if client is None:
+        # Cached like a real brief: without a key every board load would
+        # re-check the env for nothing. ?refresh=1 busts it once configured.
+        return {"brief": _fallback_brief(items), "generated_at": generated_at,
+                "ai": False}
+
+    payload = {
+        "business": _org_business_snapshot(db, org_id),
+        # Only the fields the model should narrate — hrefs/actions are UI
+        # plumbing that would just tempt it into inventing link text.
+        "needs_attention": [{"title": i["title"], "detail": i["detail"],
+                             "severity": i["severity"]} for i in items],
+    }
+    system = (
+        "You write a short morning brief for the owner of a small cleaning "
+        "business. From the JSON payload (today's business snapshot + a "
+        "prioritized needs-attention list), write 3-5 plain-English "
+        "sentences: what needs attention today, most urgent first, with the "
+        "concrete names and numbers from the data. Warm and direct, like a "
+        "capable office manager. No markdown, no headers, no bullet points, "
+        "no emoji. Never invent facts, names, or numbers that aren't in the "
+        "payload. If nothing needs attention, say so briefly and note the "
+        "day's schedule."
+    )
+    try:
+        resp = client.messages.create(
+            model=_TIER_MODEL_IDS["haiku"], max_tokens=300, system=system,
+            messages=[{"role": "user", "content": json.dumps(payload, default=str)}],
+        )
+        text = "".join(b.text for b in resp.content if b.type == "text").strip()
+        if not text:
+            return {"brief": _fallback_brief(items),
+                    "generated_at": generated_at, "ai": False}
+        return {"brief": text, "generated_at": generated_at, "ai": True}
+    except Exception:
+        logger.exception("daily brief generation failed; using fallback")
+        return {"brief": _fallback_brief(items), "generated_at": generated_at,
+                "ai": False}
+
+
+# Modest per-IP limit: the board fetches this once per mount (cached — free),
+# but ?refresh=1 forces a model call, so a stuck refresh-clicker (or a
+# scripted loop) shouldn't be able to burn tokens unbounded.
+@router.get("/daily-brief",
+            dependencies=[Depends(rate_limit(30, 3600, "ai_daily_brief"))])
+def daily_brief(refresh: int = 0, db: Session = Depends(get_db),
+                user=Depends(get_current_user),
+                org_id: int = Depends(current_org_id)):
+    """Once-a-day AI brief for the Ops Board strip.
+    {brief, generated_at, ai, items}. `items` is the live followup list (same
+    shape as /followup-check) so the strip's caller doesn't need a second
+    request — the ITEMS are recomputed every call (cheap DB scans, and they
+    must reflect reality e.g. right after an invoice is paid); only the
+    model-written PROSE is cached per business day. ?refresh=1 regenerates
+    the prose."""
+    items = _compute_followups(db, org_id)["followups"]
+    key = (org_id, business_today().isoformat())
+    if refresh:
+        _BRIEF_CACHE.pop(key, None)
+    cached = _BRIEF_CACHE.get(key)
+    if cached is None:
+        cached = _generate_brief(db, org_id, items)
+        _BRIEF_CACHE[key] = cached
+    return {"brief": cached["brief"], "generated_at": cached["generated_at"],
+            "ai": cached["ai"], "items": items}

@@ -19,10 +19,10 @@ import Kbd from './ui/Kbd'
  */
 
 // Row shell shared by nav items and the Search/Ask AI system rows: compact on
-// desktop (the base layer's 44px touch min-height is relaxed via lg:min-h-8),
+// desktop (the base layer's 44px touch min-height is relaxed via shell:min-h-8),
 // full touch size on mobile.
 const ROW =
-  'flex w-full items-center gap-2.5 rounded-md px-2.5 py-2.5 lg:py-1 lg:min-h-[30px] text-[13px] select-none no-underline transition-colors duration-100'
+  'flex w-full items-center gap-2.5 rounded-md px-2.5 py-2.5 shell:py-1 shell:min-h-[30px] text-[13px] select-none no-underline transition-colors duration-100'
 
 function SystemRow({ icon: Icon, label, hint, onClick }) {
   return (
@@ -70,7 +70,7 @@ function NavRow({ item, badge, pinnable = false, pinned = false }) {
             <button
               onClick={onStar}
               title="Remove from favorites"
-              className="hidden h-5 w-5 min-h-0 shrink-0 items-center justify-center rounded text-amber-500 opacity-0 transition-opacity hover:text-ink-2 focus-visible:opacity-100 group-hover/row:opacity-100 lg:flex"
+              className="hidden h-5 w-5 min-h-0 shrink-0 items-center justify-center rounded text-amber-500 opacity-0 transition-opacity hover:text-ink-2 focus-visible:opacity-100 group-hover/row:opacity-100 shell:flex"
             >
               <Star className="h-3.5 w-3.5 fill-current" />
             </button>
@@ -78,7 +78,7 @@ function NavRow({ item, badge, pinnable = false, pinned = false }) {
             <button
               onClick={onStar}
               title="Add to favorites"
-              className="hidden h-5 w-5 min-h-0 shrink-0 items-center justify-center rounded text-ink-3 opacity-0 transition-opacity hover:text-amber-500 focus-visible:opacity-100 group-hover/row:opacity-100 lg:flex"
+              className="hidden h-5 w-5 min-h-0 shrink-0 items-center justify-center rounded text-ink-3 opacity-0 transition-opacity hover:text-amber-500 focus-visible:opacity-100 group-hover/row:opacity-100 shell:flex"
             >
               <Star className="h-3.5 w-3.5" />
             </button>
@@ -115,7 +115,7 @@ export default function Sidebar({ open, onClose, collapsed, onCollapse, user, ba
     <>
       {/* Mobile backdrop */}
       {open && (
-        <div className="fixed inset-0 z-40 bg-black/30 backdrop-blur-sm lg:hidden" onClick={onClose} />
+        <div className="fixed inset-0 z-40 bg-black/30 backdrop-blur-sm shell:hidden" onClick={onClose} />
       )}
 
       <aside
@@ -124,8 +124,8 @@ export default function Sidebar({ open, onClose, collapsed, onCollapse, user, ba
           border-r border-hairline bg-panel
           transition-transform duration-200 ease-in-out
           ${open ? 'translate-x-0' : '-translate-x-full'}
-          lg:static lg:z-auto lg:w-60 lg:translate-x-0 lg:border-r-0 lg:bg-transparent
-          ${collapsed ? 'lg:hidden' : 'lg:flex'}
+          shell:static shell:z-auto shell:w-60 shell:translate-x-0 shell:border-r-0 shell:bg-transparent
+          ${collapsed ? 'shell:hidden' : 'shell:flex'}
         `}
       >
         {/* Workspace row */}
@@ -140,13 +140,13 @@ export default function Sidebar({ open, onClose, collapsed, onCollapse, user, ba
           <button
             onClick={onCollapse}
             title="Hide sidebar"
-            className="hidden h-7 w-7 min-h-0 items-center justify-center rounded-md text-ink-3 transition-colors hover:bg-bg-3/70 hover:text-ink-2 lg:flex"
+            className="hidden h-7 w-7 min-h-0 items-center justify-center rounded-md text-ink-3 transition-colors hover:bg-bg-3/70 hover:text-ink-2 shell:flex"
           >
             <PanelLeftClose className="h-4 w-4" />
           </button>
           <button
             onClick={onClose}
-            className="flex h-9 w-9 items-center justify-center rounded-md text-ink-3 transition-colors hover:bg-bg-2 hover:text-ink-2 lg:hidden"
+            className="flex h-9 w-9 items-center justify-center rounded-md text-ink-3 transition-colors hover:bg-bg-2 hover:text-ink-2 shell:hidden"
           >
             <X className="h-5 w-5" />
           </button>
@@ -185,7 +185,7 @@ export default function Sidebar({ open, onClose, collapsed, onCollapse, user, ba
         </nav>
 
         {/* Footer: Settings + user */}
-        <div className="shrink-0 space-y-px border-t border-hairline px-2 py-2 lg:border-t-0 lg:pt-0">
+        <div className="shrink-0 space-y-px border-t border-hairline px-2 py-2 shell:border-t-0 shell:pt-0">
           <NavRow item={SETTINGS_ITEM} />
           <div className="relative">
             <button

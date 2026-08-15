@@ -381,6 +381,31 @@ export default function Quoting() {
     setPanel('send')
   }
 
+  // AI "Draft follow-up" — same review-first pattern as the invoice reminder:
+  // the draft lands in the send panel's personal note (and subject) for review;
+  // nothing is sent until the owner hits Send. Endpoint answers
+  // {subject, message, error?} and only works for sent/viewed quotes.
+  const [draftingFollowUpId, setDraftingFollowUpId] = useState(null)
+  const draftFollowUp = async (q) => {
+    if (draftingFollowUpId) return
+    setDraftingFollowUpId(q.id)
+    try {
+      const res = await post(`/api/ai/draft-quote-followup/${q.id}`, { channel: 'email' })
+      if (res?.message) {
+        openSendPanel(q)
+        setSendForm(f => ({
+          ...f,
+          custom_message: res.message,
+          ...(res.subject ? { subject: res.subject } : {}),
+        }))
+        showToast('Draft ready — review before sending')
+      } else {
+        showToast(res?.error || 'Could not draft a follow-up')
+      }
+    } catch (e) { showToast(e.message || 'Could not draft a follow-up') }
+    setDraftingFollowUpId(null)
+  }
+
   const save = async () => {
     let clientId = form.client_id
     // No client picked yet, but we have new-client details (e.g. a fresh
@@ -720,6 +745,8 @@ export default function Quoting() {
                 onOpenQuote={openQuoteForm}
                 onSendFollowUp={sendFollowUp}
                 onOpenSendPanel={openSendPanel}
+                onDraftFollowUp={draftFollowUp}
+                drafting={draftingFollowUpId === q.id}
               />
             ))}
           </div>

@@ -93,7 +93,7 @@ export default function Header({ onMenuToggle, sidebarCollapsed, onSidebarExpand
         {/* Mobile: open the drawer */}
         <button
           onClick={onMenuToggle}
-          className="-ml-1 flex h-9 w-9 items-center justify-center rounded-md text-ink-3 transition-colors hover:bg-bg-2 hover:text-ink-2 lg:hidden"
+          className="-ml-1 flex h-9 w-9 items-center justify-center rounded-md text-ink-3 transition-colors hover:bg-bg-2 hover:text-ink-2 shell:hidden"
         >
           <Menu className="h-5 w-5" />
         </button>
@@ -102,7 +102,7 @@ export default function Header({ onMenuToggle, sidebarCollapsed, onSidebarExpand
           <button
             onClick={onSidebarExpand}
             title="Show sidebar"
-            className="hidden h-7 w-7 min-h-0 items-center justify-center rounded-md text-ink-3 transition-colors hover:bg-bg-2 hover:text-ink-2 lg:flex"
+            className="hidden h-7 w-7 min-h-0 items-center justify-center rounded-md text-ink-3 transition-colors hover:bg-bg-2 hover:text-ink-2 shell:flex"
           >
             <PanelLeft className="h-4 w-4" />
           </button>

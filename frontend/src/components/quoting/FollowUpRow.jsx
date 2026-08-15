@@ -1,7 +1,8 @@
-import { Send, Clock, MapPin, Calendar } from 'lucide-react'
+import { Send, Clock, MapPin, Calendar, Sparkles } from 'lucide-react'
 
 /** Single row on the Follow-ups tab. Renders the "waiting X hours"
- *  chip + one-click Send follow-up + Options (opens full send panel). */
+ *  chip + one-click Send follow-up + AI Draft follow-up (lands in the
+ *  send panel for review) + Options (opens full send panel). */
 export default function FollowUpRow({
   q,
   canEdit,
@@ -10,6 +11,8 @@ export default function FollowUpRow({
   onOpenQuote,
   onSendFollowUp,
   onOpenSendPanel,
+  onDraftFollowUp,
+  drafting,
 }) {
   const h = q.hours_waiting || 0
   const waited = h >= 48 ? `${Math.round(h / 24)}d` : `${Math.round(h)}h`
@@ -39,6 +42,11 @@ export default function FollowUpRow({
             <button onClick={() => onSendFollowUp(q)} disabled={nudging === q.id}
               className="flex items-center gap-1 text-xs px-2.5 py-1.5 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white rounded-lg transition-colors">
               <Send className="w-3 h-3" /> {nudging === q.id ? 'Sending…' : 'Send follow-up'}
+            </button>
+            <button onClick={() => onDraftFollowUp(q)} disabled={drafting}
+              title="AI-draft a friendly nudge — lands in the send panel for review"
+              className="flex items-center gap-1 text-xs px-2.5 py-1.5 bg-bg-2 hover:bg-hairline disabled:opacity-50 text-ink-2 border border-hairline rounded-lg transition-colors">
+              <Sparkles className="w-3 h-3" /> {drafting ? 'Drafting…' : 'Draft follow-up'}
             </button>
             <button onClick={() => onOpenSendPanel(q)}
               className="flex items-center gap-1 text-xs px-2.5 py-1.5 bg-bg-2 hover:bg-hairline text-ink-2 border border-hairline rounded-lg transition-colors">

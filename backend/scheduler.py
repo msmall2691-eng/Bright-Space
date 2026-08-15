@@ -453,79 +453,36 @@ def turnover_coverage_tick() -> dict:
     active turnover. Read-only — the iCal tick already syncs feeds; this just
     verifies coverage and logs LOUDLY (ERROR) if any property is missing a
     turnover, so a gap is caught automatically instead of only when someone opens
-    "Check all turnovers". Gated by turnover_coverage_check_enabled /
+    "Check all turnovers". The coverage computation itself lives in
+    services/turnover_coverage.py — the AI follow-up scan reads the SAME
+    function, so the tick and the in-app alert list can never disagree on what
+    "covered" means. Gated by turnover_coverage_check_enabled /
     TURNOVER_COVERAGE_CHECK_ENABLED."""
-    from datetime import date
-    from database.models import Property, PropertyIcal, ICalEvent, Job
+    from services.turnover_coverage import compute_turnover_coverage
     db = SessionLocal()
     try:
         if not _db_flag(db, "turnover_coverage_check_enabled",
                         env_flag("TURNOVER_COVERAGE_CHECK_ENABLED", True)):
             return {"skipped": True, "reason": "disabled"}
 
-        today = business_today().isoformat()
-
-        def _d(x):
-            return x if isinstance(x, str) else (x.isoformat() if x else None)
-
-        prop_ids = [
-            r[0] for r in (
-                db.query(Property.id)
-                .join(PropertyIcal, PropertyIcal.property_id == Property.id)
-                .filter(Property.active == True, PropertyIcal.active == True)
-                .distinct()
-                .all()
+        result = compute_turnover_coverage(db)  # org_id=None: audit every tenant
+        for entry in result["flagged"]:
+            if entry["missing"]:
+                log.error(
+                    f"[turnover-coverage] {entry['property']}: "
+                    f"{len(entry['missing'])} upcoming checkout(s) with NO turnover: {entry['missing']}"
+                )
+            if entry.get("feed_errors"):
+                log.error(
+                    f"[turnover-coverage] {entry['property']}: feed sync failing "
+                    f"({entry['feed_errors']}) — coverage may be understated until it recovers"
+                )
+        if not result["flagged"]:
+            log.info(
+                f"[turnover-coverage] all upcoming checkouts covered across "
+                f"{result['properties_checked']} STR property(ies)"
             )
-        ]
-
-        flagged = []
-        total_missing = 0
-        for pid in prop_ids:
-            prop = db.query(Property).filter(Property.id == pid).first()
-            expected = {
-                _d(e.checkout_date) for e in db.query(ICalEvent).filter(
-                    ICalEvent.property_id == pid).all()
-                if getattr(e, "event_type", "reservation") == "reservation"
-                and e.checkout_date and _d(e.checkout_date) >= today
-            }
-            active = {
-                _d(j.scheduled_date) for j in db.query(Job).filter(
-                    Job.property_id == pid,
-                    Job.job_type == "str_turnover",
-                    Job.status.notin_(["cancelled"]),
-                    Job.scheduled_date.isnot(None),
-                ).all()
-                if j.scheduled_date and _d(j.scheduled_date) >= today
-            }
-            missing = sorted(expected - active)
-            # A failing feed makes "expected" stale — a brand-new reservation
-            # won't be in ICalEvent yet — so coverage can't be trusted. Treat a
-            # feed outage as unhealthy too (mirrors turnover_sweep), so an outage
-            # can't produce a false all-clear while a turnover is actually missing.
-            failed_feeds = [
-                (pi.source or "feed") for pi in (prop.property_icals or [])
-                if getattr(pi, "active", True) and pi.last_sync_status in ("failed", "retrying")
-            ]
-            if missing or failed_feeds:
-                name = prop.name if prop else str(pid)
-                total_missing += len(missing)
-                entry = {"property_id": pid, "property": name, "missing": missing}
-                if failed_feeds:
-                    entry["feed_errors"] = failed_feeds
-                flagged.append(entry)
-                if missing:
-                    log.error(
-                        f"[turnover-coverage] {name}: "
-                        f"{len(missing)} upcoming checkout(s) with NO turnover: {missing}"
-                    )
-                if failed_feeds:
-                    log.error(
-                        f"[turnover-coverage] {name}: feed sync failing ({failed_feeds}) — "
-                        f"coverage may be understated until it recovers"
-                    )
-        if not flagged:
-            log.info(f"[turnover-coverage] all upcoming checkouts covered across {len(prop_ids)} STR property(ies)")
-        return {"properties_checked": len(prop_ids), "missing_total": total_missing, "flagged": flagged}
+        return result
     except Exception as e:
         log.error(f"[turnover-coverage] check failed: {e}")
         return {"error": str(e)}

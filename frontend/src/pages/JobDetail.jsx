@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { useParams, useNavigate, Link } from 'react-router-dom'
 import {
   ArrowLeft, Building2, MapPin, Receipt, FileText, TrendingUp, Calendar, Send, Plus, CalendarPlus, KeyRound,
+  Sparkles, Copy, Check, X,
 } from 'lucide-react'
 import { get, patch, post, del, download } from '../api'
 import { toast } from '../utils/toastBus'
@@ -184,6 +185,51 @@ function LinkedCard({ icon: Icon, label, to, primary, secondary }) {
   return to ? <Link to={to}>{inner}</Link> : inner
 }
 
+/** Review-request draft, presented like the invoice chaser presents its
+ *  drafts: a modal with the editable text. Jobs have no send flow, so the
+ *  only affordance is Copy — the operator pastes it into SMS/email along
+ *  with the review link. Nothing is sent from here. */
+function ReviewDraftModal({ draft, onClose }) {
+  const [text, setText] = useState(draft.message)
+  const [copied, setCopied] = useState(false)
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(text)
+      setCopied(true); setTimeout(() => setCopied(false), 2000)
+    } catch { toast.error('Could not copy to clipboard') }
+  }
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4" onClick={onClose}>
+      <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" />
+      <div className="relative w-full max-w-md bg-panel rounded-2xl shadow-2xl border border-hairline overflow-hidden"
+        onClick={e => e.stopPropagation()}>
+        <div className="flex items-start justify-between px-5 py-4 border-b border-hairline">
+          <div className="flex items-center gap-2.5 min-w-0">
+            <Sparkles className="w-5 h-5 text-amber-500 shrink-0" />
+            <div className="min-w-0">
+              <h2 className="text-sm font-semibold text-ink">Review request draft</h2>
+              <p className="text-[12px] text-ink-3 mt-0.5">Edit if needed, then copy it into a text or email — add your review link.</p>
+            </div>
+          </div>
+          <button onClick={onClose} className="p-1 text-ink-3 hover:text-ink-2 shrink-0">
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+        <div className="p-4">
+          <textarea value={text} onChange={e => setText(e.target.value)} rows={5}
+            className="w-full bg-bg border border-hairline rounded-lg px-3 py-2 text-base sm:text-[13px] text-ink focus:outline-none focus:border-indigo-400 resize-none" />
+          <div className="flex justify-end mt-2">
+            <button onClick={copy}
+              className="inline-flex min-h-11 sm:min-h-0 items-center gap-1.5 bg-panel border border-hairline-2 text-ink-2 hover:bg-bg-2 rounded-md text-xs font-medium px-3 py-1.5 transition-colors">
+              {copied ? <><Check className="w-3.5 h-3.5 text-emerald-500" /> Copied</> : <><Copy className="w-3.5 h-3.5" /> Copy message</>}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 export default function JobDetail() {
   const { id } = useParams()
   const navigate = useNavigate()
@@ -248,6 +294,21 @@ export default function JobDetail() {
     finally { setSavingNote(false) }
   }
 
+  // AI review-request nudge (completed jobs only) — same review-first draft
+  // pattern as the invoice reminder: {subject, message, error?}, sends nothing.
+  const [draftingReview, setDraftingReview] = useState(false)
+  const [reviewDraft, setReviewDraft] = useState(null)
+  const draftReviewRequest = async () => {
+    if (draftingReview) return
+    setDraftingReview(true)
+    try {
+      const res = await post(`/api/ai/draft-review-request/${id}`, { channel: 'sms' })
+      if (res?.message) setReviewDraft(res)
+      else toast.error(res?.error || 'Could not draft a review request')
+    } catch (e) { toast.error(e.message || 'Could not draft a review request') }
+    setDraftingReview(false)
+  }
+
   const addToCalendar = async () => {
     try {
       await download(`/api/reminders/jobs/${id}/invite.ics`, `cleaning-${id}.ics`)
@@ -290,6 +351,11 @@ export default function JobDetail() {
       </div>
     )
   }
+
+  // The reschedule-request banner's approve/dismiss buttons gate on this;
+  // it was referenced without ever being defined (a latent ReferenceError
+  // whenever a customer reschedule request was pending).
+  const editable = canEdit()
 
   return (
     <div className="h-full overflow-y-auto">
@@ -494,6 +560,13 @@ export default function JobDetail() {
                     <Plus className="w-3.5 h-3.5" /> New invoice
                   </button>
                 )}
+                {job.status === 'completed' && (
+                  <button onClick={draftReviewRequest} disabled={draftingReview}
+                    title="AI-draft a thank-you + review ask to copy into a text or email"
+                    className="w-full flex items-center justify-center gap-1.5 bg-bg-2 hover:bg-bg-3 border border-hairline disabled:opacity-50 text-ink-2 px-3 py-2 rounded-lg text-[12px] font-medium transition-colors">
+                    <Sparkles className="w-3.5 h-3.5" /> {draftingReview ? 'Drafting…' : 'Draft review request'}
+                  </button>
+                )}
               </div>
             )}
           </div>
@@ -559,6 +632,7 @@ export default function JobDetail() {
           </div>
         </div>
       </div>
+      {reviewDraft && <ReviewDraftModal draft={reviewDraft} onClose={() => setReviewDraft(null)} />}
     </div>
   )
 }
