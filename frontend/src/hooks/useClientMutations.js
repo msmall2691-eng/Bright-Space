@@ -97,15 +97,35 @@ export function useClientMutations({
     setImporting(false); e.target.value = ''
   }
 
+  // The backend hard-deletes the client AND cascades over everything attached
+  // (properties, jobs, quotes, invoices, conversations, activity history) with
+  // no dependent-record guard — the confirm has to carry the full weight.
   const deleteClient = async (id) => {
-    if (!(await confirmDialog('Delete this client?', { confirmLabel: 'Delete', danger: true }))) return
-    await del(`/api/clients/${id}`); await load(); setShowForm(false); resetPhones()
+    const ok = await confirmDialog(
+      'This permanently deletes the client and everything attached to them — ' +
+      'their properties, jobs, quotes, invoices, and message history. It cannot be undone.\n\n' +
+      'To keep the history, set their status to Inactive instead.',
+      { title: 'Delete client?', confirmLabel: 'Delete permanently', danger: true }
+    )
+    if (!ok) return
+    try {
+      await del(`/api/clients/${id}`)
+      await load(); setShowForm(false); setSelected(null); resetPhones()
+    } catch (e) {
+      toast.error('Could not delete: ' + (e?.message || 'unknown error'))
+    }
   }
 
   const bulkDelete = async () => {
     const ids = Array.from(selectedIds)
     if (ids.length === 0) return
-    if (!(await confirmDialog(`Delete ${ids.length} client${ids.length === 1 ? '' : 's'}? This cannot be undone.`, { confirmLabel: 'Delete', danger: true }))) return
+    const ok = await confirmDialog(
+      `Permanently delete ${ids.length} client${ids.length === 1 ? '' : 's'}? ` +
+      `Each client's properties, jobs, quotes, invoices, and message history are deleted with them. ` +
+      `This cannot be undone.`,
+      { title: `Delete ${ids.length} client${ids.length === 1 ? '' : 's'}?`, confirmLabel: 'Delete permanently', danger: true }
+    )
+    if (!ok) return
     setBulkDeleting(true)
     try {
       const results = await Promise.allSettled(ids.map(id => del(`/api/clients/${id}`)))

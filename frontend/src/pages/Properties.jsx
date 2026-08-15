@@ -43,6 +43,7 @@ export default function Properties() {
     addIcal: mutateAddIcal,
     removeIcal: mutateRemoveIcal,
     syncOne, syncAll, runSweep, rebuildOne,
+    deactivateOne,
     bulkDelete: mutateBulkDelete,
   } = usePropertyMutations({ load })
 
@@ -250,6 +251,7 @@ export default function Properties() {
                 syncOne={syncOne}
                 navigate={navigate}
                 openEdit={openEdit}
+                deactivateOne={deactivateOne}
                 icalForm={icalForm}
                 setIcalForm={setIcalForm}
                 showIcalForm={showIcalForm}

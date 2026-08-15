@@ -2,10 +2,11 @@ import { useState, useEffect, useCallback } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import {
   Inbox, Phone, Mail, MapPin, Calendar, DollarSign, FileText,
-  UserPlus, Save, Loader2, Home, Building2, Wind,
+  UserPlus, Save, Loader2, Home, Building2, Wind, Archive, ArchiveRestore, Trash2,
 } from 'lucide-react'
-import { get, post, patch } from '../api'
+import { get, post, patch, del } from '../api'
 import { toast } from '../utils/toastBus'
+import { confirmDialog } from '../utils/confirmBus'
 import { Card, StatusBadge, Button, EmptyState } from '../components/ui'
 import RecordShell from '../components/ui/RecordShell'
 
@@ -77,6 +78,43 @@ export default function RequestDetail() {
     }
   }
 
+  // Archive is a status flip (PATCH) — fully reversible, so no dialog; the
+  // same button unarchives (back to "reviewed") when the lead is archived.
+  const [busy, setBusy] = useState(false)
+  const toggleArchived = async () => {
+    const next = lead.status === 'archived' ? 'reviewed' : 'archived'
+    setBusy(true)
+    try {
+      await patch(`/api/intake/${id}`, { status: next })
+      toast.success(next === 'archived' ? 'Request archived' : 'Request unarchived')
+      await load()
+    } catch (e) {
+      toast.error(e?.message || 'Could not update this request')
+    }
+    setBusy(false)
+  }
+
+  // DELETE /api/intake/{id} is a HARD delete — the original inquiry is gone
+  // for good. Records already created from it (client / quote / deal) survive.
+  const deleteRequest = async () => {
+    const ok = await confirmDialog(
+      'Permanently delete this request? The original inquiry — message, contact details, and ' +
+      'estimate — is erased and cannot be recovered.\n\n' +
+      'Anything already created from it (client, quote, deal) is kept.',
+      { title: 'Delete request?', confirmLabel: 'Delete permanently', danger: true }
+    )
+    if (!ok) return
+    setBusy(true)
+    try {
+      await del(`/api/intake/${id}`)
+      toast.success('Request deleted')
+      navigate('/requests')
+    } catch (e) {
+      toast.error(e?.message || 'Could not delete this request')
+      setBusy(false)
+    }
+  }
+
   const convertToQuote = async () => {
     setConverting('quote')
     try {
@@ -144,6 +182,20 @@ export default function RequestDetail() {
       related={related}
       actions={
         <>
+          {/* Delete is hard on the backend — red text on a secondary surface,
+              kept left of (and visually apart from) the safe actions. */}
+          <button onClick={deleteRequest} disabled={busy || !!converting}
+            className="inline-flex items-center justify-center gap-2 rounded-lg font-medium px-3.5 py-2 text-sm text-red-600 hover:text-red-700 bg-panel border border-hairline hover:border-red-300 disabled:opacity-50 transition-colors">
+            <Trash2 className="w-4 h-4" /> Delete
+          </button>
+          <Button variant="secondary" onClick={toggleArchived} disabled={busy || !!converting}
+            title={lead.status === 'archived'
+              ? 'Put this request back in the active list'
+              : 'Set aside without deleting — you can unarchive it any time'}>
+            {lead.status === 'archived'
+              ? <><ArchiveRestore className="w-4 h-4" /> Unarchive</>
+              : <><Archive className="w-4 h-4" /> Archive</>}
+          </Button>
           <Button variant="secondary" onClick={convertToClient} disabled={!!converting}>
             {converting === 'client' ? <Loader2 className="w-4 h-4 animate-spin" /> : <UserPlus className="w-4 h-4" />}
             Convert to client

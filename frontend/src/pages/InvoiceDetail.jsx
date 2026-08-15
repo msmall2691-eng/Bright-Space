@@ -1,10 +1,11 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useParams, useNavigate, Link } from 'react-router-dom'
 import {
-  ArrowLeft, Building2, TrendingUp, Calendar, FileText, Receipt, CheckCircle, Send,
+  ArrowLeft, Building2, TrendingUp, Calendar, FileText, Receipt, CheckCircle, Send, Trash2,
 } from 'lucide-react'
-import { get, patch, post } from '../api'
+import { get, patch, post, del } from '../api'
 import { toast } from '../utils/toastBus'
+import { confirmDialog } from '../utils/confirmBus'
 import { formatDateShort as fmtDate } from '../utils/format'
 import { canEdit } from '../utils/perms'
 import InlineSelect from '../components/InlineSelect'
@@ -86,6 +87,32 @@ export default function InvoiceDetail() {
     } catch { toast.error('Could not send invoice') } finally { setActing(false) }
   }
 
+  // DELETE /api/invoices/{id} is a HARD delete with no backend guard — it
+  // removes even a paid invoice and its payment record. The confirm has to
+  // say so plainly.
+  const deleteInvoice = async () => {
+    const paid = inv.status === 'paid'
+    const ok = await confirmDialog(
+      `Permanently delete invoice ${inv.invoice_number || ''}?\n\n` +
+      (paid
+        ? 'This invoice is PAID — deleting it erases the record of that payment from BrightBase. '
+        : '') +
+      'The invoice is removed entirely and cannot be recovered. If it was sent to the client, ' +
+      'their copy stops working.',
+      { title: 'Delete invoice?', confirmLabel: 'Delete permanently', danger: true }
+    )
+    if (!ok) return
+    setActing(true)
+    try {
+      await del(`/api/invoices/${id}`)
+      toast.success('Invoice deleted')
+      navigate('/billing?view=invoices')
+    } catch (e) {
+      toast.error(e?.message || 'Could not delete invoice')
+      setActing(false)
+    }
+  }
+
   if (loading) return <RecordSkeleton />
   if (notFound || !inv) {
     return (
@@ -150,6 +177,18 @@ export default function InvoiceDetail() {
                 <button onClick={markPaid} disabled={acting}
                   className="w-full flex items-center justify-center gap-1.5 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white px-3 py-2 rounded-lg text-[12px] font-medium transition-colors">
                   <CheckCircle className="w-3.5 h-3.5" /> Mark paid
+                </button>
+              </div>
+            )}
+
+            {/* Delete is hard on the backend (no guard, even for paid) — kept
+                in its own section, red text on a secondary surface, away from
+                the safe actions. */}
+            {canEdit() && (
+              <div className="border-t border-hairline pt-3">
+                <button onClick={deleteInvoice} disabled={acting}
+                  className="w-full flex items-center justify-center gap-1.5 bg-bg-2 border border-hairline hover:border-red-300 disabled:opacity-50 text-red-600 hover:text-red-700 px-3 py-2 rounded-lg text-[12px] font-medium transition-colors">
+                  <Trash2 className="w-3.5 h-3.5" /> Delete invoice
                 </button>
               </div>
             )}

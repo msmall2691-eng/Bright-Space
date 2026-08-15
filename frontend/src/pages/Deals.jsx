@@ -14,7 +14,9 @@
  */
 import { useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { LayoutGrid, RefreshCw, Search, ArrowUp, ArrowDown, ArrowRight, Rocket } from 'lucide-react'
+import { LayoutGrid, RefreshCw, Search, ArrowUp, ArrowDown, ArrowRight, Rocket, Trash2 } from 'lucide-react'
+import { del } from '../api'
+import { confirmDialog } from '../utils/confirmBus'
 import PageHero from '../components/ui/PageHero'
 import { useDeals } from '../hooks/useDeals'
 import LaunchStepper from '../components/launch/LaunchStepper'
@@ -72,12 +74,37 @@ function SortHead({ label, col, sort, onSort, className = '' }) {
 }
 
 export default function Deals() {
-  const { deals, loading, error, busyId, reload, moveStage, triageLead } = useDeals()
+  const { deals, loading, error, busyId, reload, moveStage, triageLead, setError } = useDeals()
   const [stageFilter, setStageFilter] = useState('all')
   const [search, setSearch] = useState('')
   const [sort, setSort] = useState({ key: 'stage', dir: 'asc' })
   // The deal card currently open in the Launch stepper (null = closed).
   const [launching, setLaunching] = useState(null)
+  const [deletingId, setDeletingId] = useState(null)
+
+  // Both row kinds hard-delete on the backend: an inbox lead via
+  // DELETE /api/intake/{id} (the inquiry itself is erased), a deal via
+  // DELETE /api/opportunities/{id} (the deal record goes; quotes, jobs, and
+  // invoices created from it are kept). Confirmed through the global dialog.
+  const removeDeal = async (d) => {
+    const isLead = d.kind === 'lead'
+    const ok = await confirmDialog(
+      isLead
+        ? 'Permanently delete this request? The original inquiry — message, contact details, and estimate — is erased and cannot be recovered.'
+        : 'Permanently delete this deal? Its record and stage history are erased and cannot be recovered.\n\nThe client and any quotes, jobs, or invoices created from it are kept.',
+      { title: isLead ? 'Delete request?' : 'Delete deal?', confirmLabel: 'Delete permanently', danger: true }
+    )
+    if (!ok) return
+    setDeletingId(d.id)
+    try {
+      await del(isLead ? `/api/intake/${d.lead_id}` : `/api/opportunities/${d.opportunity_id}`)
+      await reload()
+    } catch (e) {
+      setError(e?.message || 'Could not delete — nothing was changed.')
+    } finally {
+      setDeletingId(null)
+    }
+  }
 
   const onSort = (key) =>
     setSort(s => s.key === key ? { key, dir: s.dir === 'asc' ? 'desc' : 'asc' } : { key, dir: 'asc' })
@@ -203,28 +230,38 @@ export default function Deals() {
                       </td>
                       <td className="bb-td text-ink-3 tabular-nums">{ageLabel(d.age_days)}</td>
                       <td className="bb-td text-right">
-                        {d.kind === 'lead' ? (
-                          <button onClick={() => triageLead(d)} disabled={busyId === d.id}
-                            className="inline-flex items-center gap-1 text-[12px] font-semibold px-2.5 py-1 rounded-lg bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white">
-                            Qualify <ArrowRight className="w-3 h-3" />
+                        <div className="inline-flex items-center gap-1.5">
+                          {d.kind === 'lead' ? (
+                            <button onClick={() => triageLead(d)} disabled={busyId === d.id || deletingId === d.id}
+                              className="inline-flex items-center gap-1 text-[12px] font-semibold px-2.5 py-1 rounded-lg bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white">
+                              Qualify <ArrowRight className="w-3 h-3" />
+                            </button>
+                          ) : (
+                            <>
+                              <select value={d.stage} onChange={e => moveStage(d, e.target.value)} disabled={busyId === d.id || deletingId === d.id}
+                                aria-label="Move deal to stage"
+                                className="text-[12px] bg-bg-2 border border-hairline rounded-md px-2 py-1 text-ink-2 focus:outline-none focus:border-indigo-400">
+                                {MOVE_STAGES.map(s => (
+                                  <option key={s.key} value={s.key}>{s.key === d.stage ? `● ${s.label}` : `Move to ${s.label}`}</option>
+                                ))}
+                              </select>
+                              {d.stage !== 'lost' && (
+                                <button onClick={() => setLaunching(d)} title="Launch this deal"
+                                  className="inline-flex items-center gap-1 text-[12px] font-semibold px-2 py-1 rounded-md border border-indigo-200 dark:border-indigo-500/30 text-indigo-600 dark:text-indigo-300 hover:bg-indigo-50 dark:hover:bg-indigo-500/10">
+                                  <Rocket className="w-3 h-3" /> Launch
+                                </button>
+                              )}
+                            </>
+                          )}
+                          {/* Quiet red icon, spaced from the primary action — a hard
+                              delete on both row kinds, confirmed via the global dialog. */}
+                          <button onClick={() => removeDeal(d)} disabled={busyId === d.id || deletingId === d.id}
+                            title={d.kind === 'lead' ? 'Delete this request' : 'Delete this deal'}
+                            aria-label={`Delete ${d.title || (d.kind === 'lead' ? 'request' : 'deal')}`}
+                            className="inline-flex items-center justify-center w-7 h-7 rounded-md text-ink-3 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-500/10 disabled:opacity-50 transition-colors">
+                            <Trash2 className="w-3.5 h-3.5" />
                           </button>
-                        ) : (
-                          <div className="inline-flex items-center gap-1.5">
-                            <select value={d.stage} onChange={e => moveStage(d, e.target.value)} disabled={busyId === d.id}
-                              aria-label="Move deal to stage"
-                              className="text-[12px] bg-bg-2 border border-hairline rounded-md px-2 py-1 text-ink-2 focus:outline-none focus:border-indigo-400">
-                              {MOVE_STAGES.map(s => (
-                                <option key={s.key} value={s.key}>{s.key === d.stage ? `● ${s.label}` : `Move to ${s.label}`}</option>
-                              ))}
-                            </select>
-                            {d.stage !== 'lost' && (
-                              <button onClick={() => setLaunching(d)} title="Launch this deal"
-                                className="inline-flex items-center gap-1 text-[12px] font-semibold px-2 py-1 rounded-md border border-indigo-200 dark:border-indigo-500/30 text-indigo-600 dark:text-indigo-300 hover:bg-indigo-50 dark:hover:bg-indigo-500/10">
-                                <Rocket className="w-3 h-3" /> Launch
-                              </button>
-                            )}
-                          </div>
-                        )}
+                        </div>
                       </td>
                     </tr>
                   )

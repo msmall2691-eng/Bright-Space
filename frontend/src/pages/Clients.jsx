@@ -422,6 +422,8 @@ export default function Clients() {
                 toggleSelect={toggleSelect}
                 setJobClient={setJobClient}
                 navigate={navigate}
+                openEdit={openEdit}
+                deleteClient={deleteClient}
               />
             ))}
             {filtered.length === 0 && (
@@ -450,6 +452,8 @@ export default function Clients() {
             search={search}
             statusFilter={statusFilter}
             openNew={openNew}
+            openEdit={openEdit}
+            deleteClient={deleteClient}
           />
         )}
         </div>

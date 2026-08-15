@@ -2,7 +2,7 @@ import { AlertCircle, CheckCircle, Trash2, X } from 'lucide-react'
 
 /** Selection + bulk action row above the property list.
  *  Left: "Select all (N)" checkbox. Right (when any row is selected):
- *  N selected · Hard delete toggle · Clear · Archive/Delete button. */
+ *  N selected · Hard delete toggle · Clear · Deactivate/Delete button. */
 export function BulkActionBar({
   filteredProperties,
   selectedIds, toggleSelectAll, clearSelection,
@@ -39,8 +39,8 @@ export function BulkActionBar({
             className="flex items-center gap-1.5 bg-red-600 hover:bg-red-700 disabled:bg-red-300 text-white px-3 py-1.5 rounded-lg text-xs font-medium transition-colors">
             <Trash2 className="w-3.5 h-3.5" />
             {bulkDeleting
-              ? 'Deleting...'
-              : `${hardDelete ? 'Hard delete' : 'Archive'} ${selectedIds.size}`}
+              ? (hardDelete ? 'Deleting...' : 'Deactivating...')
+              : `${hardDelete ? 'Hard delete' : 'Deactivate'} ${selectedIds.size}`}
           </button>
         </div>
       )}

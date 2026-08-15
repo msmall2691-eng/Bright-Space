@@ -21,6 +21,7 @@ export function PropertyRow({
   syncing, syncOne,
   navigate,
   openEdit,
+  deactivateOne,
   icalForm, setIcalForm,
   showIcalForm, setShowIcalForm,
   addIcal, removeIcal,
@@ -154,6 +155,13 @@ export function PropertyRow({
             <button onClick={(e) => { e.stopPropagation(); openEdit(p) }}
               className="text-xs text-ink-3 hover:text-ink bg-bg-2 hover:bg-bg-2 px-3 py-1.5 rounded-lg transition-colors">
               Edit
+            </button>
+            {/* Honest label: the backend's DELETE is a soft deactivate
+                (active=false) — jobs and history stay, so no "Delete" here. */}
+            <button onClick={(e) => { e.stopPropagation(); deactivateOne(p) }}
+              title={`Deactivate ${p.name} — hides it from lists, keeps its jobs and history`}
+              className="text-xs text-red-600 hover:text-red-700 border border-hairline hover:border-red-300 hover:bg-red-50 dark:hover:bg-red-500/10 px-3 py-1.5 rounded-lg transition-colors">
+              Deactivate
             </button>
           </div>
         </div>
