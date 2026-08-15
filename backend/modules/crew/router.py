@@ -89,6 +89,15 @@ def _job_row(job: Job, names_by_cid: dict | None = None, self_cid: str | None = 
         # tall ladder". Was never sent to crew before Aug 2026 (owner bug
         # report: "I'm still not seeing notes").
         "notes": (job.notes or "").strip() or None,
+        # Structured house specs (enrichment columns) + type — the crew house
+        # preview's "3 bd · 2.5 ba · 1,850 sqft" line. Read-only context; the
+        # client renders only the fields that are present. Not access details,
+        # so they may ride open-job offers like the address does.
+        "property_type": prop.property_type if prop else None,
+        "bedrooms": prop.bedrooms if prop else None,
+        "bathrooms": prop.bathrooms if prop else None,
+        "square_footage": prop.square_footage if prop else None,
+        "year_built": prop.year_built if prop else None,
         # Crew-relevant property context only — no billing/client-financial
         # data belongs in this response.
         "access_notes": (prop.access_notes if prop else None) or None,

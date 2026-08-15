@@ -55,6 +55,22 @@ function mapsUrl(address) {
     : `https://www.google.com/maps/dir/?api=1&destination=${q}`
 }
 
+/** "Vacation rental · 3 bd · 2.5 ba · 1,850 sqft · built 1987" for the card's
+ *  house preview — only fields on file, never dashes for unknowns. Null (no
+ *  line at all) for a plain residential house with no specs recorded. */
+const PROPERTY_TYPE_LABELS = { str: 'Vacation rental', commercial: 'Commercial', residential: 'Residential' }
+
+function houseSpecsLine(job) {
+  const parts = []
+  if (job.bedrooms != null) parts.push(`${job.bedrooms} bd`)
+  if (job.bathrooms != null) parts.push(`${job.bathrooms} ba`)
+  if (job.square_footage != null) parts.push(`${Number(job.square_footage).toLocaleString()} sqft`)
+  if (job.year_built != null) parts.push(`built ${job.year_built}`)
+  const type = PROPERTY_TYPE_LABELS[job.property_type]
+  if (parts.length === 0 && (!type || job.property_type === 'residential')) return null
+  return [type, ...parts].filter(Boolean).join(' · ')
+}
+
 // One closed punch in the "Today's punches" recap, with an inline miles editor
 // (miles are entered per job). Tapping the miles value opens a small number
 // field that PATCHes the entry — the safety net for a clock-out where miles
@@ -293,6 +309,7 @@ function GreetingHero({ firstName, jobCount }) {
 function JobCard({ job, clockable = false, activeEntry = null, onClockIn, onClockOut, onMarkDone, onPhotos, onRespond, onDecline, onClaim, onTextClient, onHouseInfo, busy = false }) {
   const isTurnover = job.job_type === 'str_turnover'
   const done = job.status === 'completed'
+  const houseLine = houseSpecsLine(job)
   const isActiveJob = clockable && activeEntry && activeEntry.job_id === job.id
   const someoneElseActive = clockable && activeEntry && activeEntry.job_id !== job.id
   return (
@@ -362,6 +379,20 @@ function JobCard({ job, clockable = false, activeEntry = null, onClockIn, onCloc
       {job.turnover_line && (
         <div className="mt-3 rounded-lg bg-bg border border-hairline px-3 py-2 text-[13px] text-ink-2">
           {job.turnover_line}
+        </div>
+      )}
+
+      {houseLine && (
+        /* The house preview: type + structured specs, only what's on file.
+           Heads the house cluster — access details, house notes, and the
+           photos & notes sheet follow right below. Codes stay exactly where
+           they were (visible on the card, the page's access convention). */
+        <div className="mt-3">
+          <div className="text-[10px] font-bold uppercase tracking-wide text-ink-3">The house</div>
+          <div className="mt-0.5 text-[13px] text-ink-2 flex items-start gap-1.5">
+            <Home className="w-3.5 h-3.5 mt-0.5 shrink-0 text-ink-3" />
+            <span>{houseLine}</span>
+          </div>
         </div>
       )}
 
