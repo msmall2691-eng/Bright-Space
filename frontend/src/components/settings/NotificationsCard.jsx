@@ -1,12 +1,21 @@
 import { useEffect, useState } from 'react'
 import { Bell, BellOff, Smartphone } from 'lucide-react'
 import { get } from '../../api'
-import { pushSupported, getPushState, enablePush, disablePush, sendTestPush } from '../../utils/push'
+import {
+  pushSupported, getPushState, enablePush, disablePush, sendTestPush,
+  isAppInstalled, mobilePlatform,
+} from '../../utils/push'
 
 /** Push-notification opt-in for this device. Renders a single toggle that
  *  subscribes/unsubscribes the browser and a "Send test" button once on.
- *  Hidden entirely when the browser can't do push. When the server has no
- *  VAPID keys, the toggle stays visible but explains it's not set up yet. */
+ *
+ *  Owner report: "I'm still not seeing settings for notifications either" —
+ *  this card used to return null outright when the browser can't do push
+ *  (e.g. iOS Safari not installed to the Home Screen, where the Push API
+ *  simply isn't exposed to a regular tab). Silently vanishing reads as "this
+ *  feature doesn't exist" rather than "install the app first" — now it stays
+ *  visible and explains why, with the same platform-detected copy the crew
+ *  setup card uses, instead of disappearing. */
 export default function NotificationsCard({ toast }) {
   const [state, setState] = useState(null)   // null = loading
   const [busy, setBusy] = useState(false)
@@ -20,7 +29,59 @@ export default function NotificationsCard({ toast }) {
     get('/api/push/status').then(setDiag).catch(() => {})
   }, [])
 
-  if (state && state.supported === false) return null   // no push on this browser → hide
+  if (state && state.supported === false) {
+    const installed = isAppInstalled()
+    const os = mobilePlatform()
+    // Installing would fix an iOS/Android browser tab; on desktop, or once
+    // already installed, it's just an unsupported browser — don't suggest a
+    // step that won't help.
+    const canFixByInstalling = !installed && (os === 'ios' || os === 'android')
+    return (
+      <div>
+        <h2 className="text-lg font-bold text-ink mb-4">Notifications</h2>
+        <div className="bg-panel rounded-xl border border-hairline p-5">
+          <div className="flex items-start gap-3">
+            <span className="mt-0.5 w-9 h-9 rounded-lg bg-bg-2 flex items-center justify-center shrink-0">
+              <Smartphone className="w-4 h-4 text-ink-3" />
+            </span>
+            <span>
+              <span className="block text-sm font-semibold text-ink">Push notifications</span>
+              <span className="block text-xs text-ink-3 mt-0.5 leading-relaxed">
+                {canFixByInstalling ? (
+                  os === 'ios' ? (<>
+                    This browser can't receive notifications until the app is saved to your
+                    Home Screen. In Safari, tap <span className="font-semibold">Share</span>
+                    {' '}(the square with the up arrow) → <span className="font-semibold">Add to Home Screen</span>,
+                    then open it from there and turn notifications on.
+                  </>) : (<>
+                    This browser can't receive notifications until the app is installed. In
+                    Chrome, tap the <span className="font-semibold">⋮ menu</span> →{' '}
+                    <span className="font-semibold">Add to Home screen</span> (or{' '}
+                    <span className="font-semibold">Install app</span>), then open it from
+                    there and turn notifications on.
+                  </>)
+                ) : (
+                  'This browser doesn\'t support notifications. Try a current version of Chrome, Safari, or Edge.'
+                )}
+              </span>
+            </span>
+          </div>
+          {diag && (
+            <ul className="mt-3 space-y-1 text-xs text-ink-2">
+              <li className="flex items-center gap-2">
+                <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${diag.server_configured ? 'bg-emerald-500' : 'bg-amber-500'}`} />
+                Server {diag.server_configured ? 'configured' : 'not configured — add VAPID_PUBLIC_KEY / VAPID_PRIVATE_KEY in Railway'}
+              </li>
+              <li className="flex items-center gap-2">
+                <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${diag.org_devices > 0 ? 'bg-emerald-500' : 'bg-gray-400'}`} />
+                {diag.org_devices} device{diag.org_devices === 1 ? '' : 's'} enrolled across the team
+              </li>
+            </ul>
+          )}
+        </div>
+      </div>
+    )
+  }
 
   const on = !!state?.subscribed
   const serverReady = !!state?.enabledOnServer
