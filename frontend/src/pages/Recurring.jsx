@@ -1146,6 +1146,139 @@ function SeriesDetail({ id, onBack, onChanged, toast }) {
 }
 
 // ─── Root page ───────────────────────────────────────────────────────────
+// ─── Recurring Doctor: health-scan panel ─────────────────────────────────
+// Renders GET /api/recurring/cleanup/health (read-only server audit) and
+// offers the one-tap fix per problem code. Every fix goes through the normal
+// endpoints and asks first; destructive ones get the danger confirm.
+const SEVERITY_DOT = { error: 'bg-red-500', warn: 'bg-amber-500', info: 'bg-gray-400' }
+
+function HealthPanel({ onClose, onChanged, onOpenSeries, onOpenDuplicates }) {
+  const [report, setReport] = useState(null)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState('')
+  const [busyId, setBusyId] = useState(null)
+
+  const scan = useCallback(async () => {
+    setLoading(true); setError('')
+    try {
+      setReport(await get('/api/recurring/cleanup/health'))
+    } catch (e) {
+      setError(e.message || 'Health scan failed')
+    } finally {
+      setLoading(false)
+    }
+  }, [])
+  useEffect(() => { scan() }, [scan])
+
+  const act = async (issue, fn, doneMsg) => {
+    setBusyId(issue.schedule_id)
+    try {
+      await fn()
+      if (doneMsg) toast.success(doneMsg)
+      onChanged?.()
+      await scan()
+    } catch (e) {
+      toast.error(e.message || 'That fix failed')
+    } finally {
+      setBusyId(null)
+    }
+  }
+
+  // One primary fix per problem code (the scan's `suggestion` is the label's
+  // tooltip). Rename is computed here from client + cadence rather than parsed
+  // out of the suggestion string.
+  const fixFor = (issue, prob) => {
+    const id = issue.schedule_id
+    switch (prob.code) {
+      case 'junk_title': {
+        const better = issue.client_name ? `${issue.client_name} — ${issue.cadence}` : issue.cadence
+        return { short: `Rename to “${better}”`, run: () => act(issue, async () => {
+          await patch(`/api/recurring/${id}`, { title: better })
+        }, 'Renamed') }
+      }
+      case 'ended_but_active':
+        return { short: 'Mark ended', run: () => act(issue, async () => {
+          await patch(`/api/recurring/${id}`, { active: false })
+        }, 'Marked ended — history kept') }
+      case 'active_no_upcoming':
+        return { short: 'Generate visits', run: () => act(issue, async () => {
+          const r = await post(`/api/recurring/${id}/generate`)
+          toast.success(`Generated ${r?.created ?? r?.generated ?? ''} visits`.replace('  ', ' '))
+        }) }
+      case 'stale_paused':
+        return { short: 'Cancel series', danger: true, run: async () => {
+          const ok = await confirmDialog(
+            `Cancel “${issue.title || 'Untitled'}” for ${issue.client_name || 'this client'}? ` +
+            'It disappears from this list; completed visits and history are kept. It cannot be resumed.',
+            { title: 'Cancel series?', confirmLabel: 'Cancel series', danger: true },
+          )
+          if (!ok) return
+          act(issue, () => del(`/api/recurring/${id}`), 'Series cancelled')
+        } }
+      case 'duplicate':
+        return { short: 'Review duplicates', run: () => { onClose(); onOpenDuplicates() } }
+      default:
+        return { short: 'Open series', run: () => { onClose(); onOpenSeries(id) } }
+    }
+  }
+
+  return (
+    <ModalShell title="Recurring health check" onClose={onClose} wide>
+      {loading ? (
+        <div className="text-center text-ink-3 py-10 text-sm">Scanning every series…</div>
+      ) : error ? (
+        <div className="p-3 bg-red-50 border border-red-200 text-red-700 dark:bg-red-950 dark:border-red-800 dark:text-red-300 rounded text-sm">{error}</div>
+      ) : (
+        <>
+          <p className="text-[13px] text-ink-2">
+            Scanned <b className="text-ink">{report.scanned}</b> series —{' '}
+            <b className="text-ink">{report.healthy}</b> healthy,{' '}
+            <b className="text-ink">{report.issues.length}</b> need{report.issues.length === 1 ? 's' : ''} attention.
+            Nothing below changes without your confirm.
+          </p>
+          {report.issues.length === 0 && (
+            <EmptyState icon={Repeat} title="All series healthy"
+              description="No duplicates, ghosts, or broken links found." compact />
+          )}
+          {report.issues.map(issue => (
+            <section key={issue.schedule_id} className="rounded-md border border-hairline bg-bg-2/40 p-3">
+              <header className="flex items-baseline justify-between gap-3 flex-wrap">
+                <div className="text-sm font-semibold text-ink min-w-0 truncate">
+                  {issue.title || 'Untitled'}
+                  <span className="font-normal text-ink-3"> · {issue.client_name || 'Unknown client'} · {issue.cadence}</span>
+                </div>
+                <span className="shrink-0 text-[12px] text-ink-3">
+                  {issue.upcoming_job_count} upcoming
+                </span>
+              </header>
+              <ul className="mt-2 space-y-1.5">
+                {issue.problems.map(prob => {
+                  const fix = fixFor(issue, prob)
+                  return (
+                    <li key={prob.code} className="flex items-start gap-2 text-[13px] text-ink-2">
+                      <span className={`mt-1.5 h-1.5 w-1.5 rounded-full shrink-0 ${SEVERITY_DOT[prob.severity] || 'bg-gray-400'}`} />
+                      <span className="min-w-0 flex-1" title={prob.suggestion}>{prob.message}</span>
+                      <button
+                        onClick={fix.run}
+                        disabled={busyId === issue.schedule_id}
+                        className={`shrink-0 text-[12px] font-medium underline underline-offset-2 disabled:opacity-50 ${
+                          fix.danger ? 'text-red-600 hover:text-red-700' : 'text-ink-2 hover:text-ink'
+                        }`}>
+                        {fix.short}
+                      </button>
+                    </li>
+                  )
+                })}
+              </ul>
+            </section>
+          ))}
+        </>
+      )}
+    </ModalShell>
+  )
+}
+
+
 export default function Recurring() {
   const [params, setParams] = useSearchParams()
   const seriesId = params.get('series')
@@ -1273,6 +1406,7 @@ export default function Recurring() {
   // "Skip this group" (false positive) persists per-group in localStorage so
   // the banner count and pills stop nagging about it.
   const [reviewOpen, setReviewOpen] = useState(false)
+  const [healthOpen, setHealthOpen] = useState(false)
   const [reviewedKeys, setReviewedKeys] = useState(() => loadReviewedDupKeys())
   const toggleReviewed = useCallback((key) => {
     setReviewedKeys(prev => {
@@ -1317,6 +1451,10 @@ export default function Recurring() {
             <Button variant="secondary" size="sm" onClick={cleanupDuplicates} disabled={cleaning}
               title="Find and remove off-cadence duplicate visits left by the old biweekly bug">
               <Sparkles className="w-4 h-4 mr-1" /> {cleaning ? 'Checking…' : 'Clean up duplicates'}
+            </Button>
+            <Button variant="secondary" size="sm" onClick={() => setHealthOpen(true)}
+              title="Scan every series for duplicates, ghosts, missing times, and broken links">
+              <AlertTriangle className="w-4 h-4 mr-1" /> Health check
             </Button>
             <Button variant="primary" size="sm" onClick={openCreate}>
               <Plus className="w-4 h-4 mr-1" /> New series
@@ -1422,6 +1560,14 @@ export default function Recurring() {
           </ul>
         )}
       </div>
+      {healthOpen && (
+        <HealthPanel
+          onClose={() => setHealthOpen(false)}
+          onChanged={loadList}
+          onOpenSeries={openSeries}
+          onOpenDuplicates={() => setReviewOpen(true)}
+        />
+      )}
       {reviewOpen && (
         <DuplicateReviewPanel
           schedules={schedules}
