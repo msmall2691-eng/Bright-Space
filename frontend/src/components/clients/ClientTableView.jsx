@@ -15,10 +15,15 @@ export function ClientTableView({
   updateStatus,
   setJobClient,
   navigate,
+  onRowOpen,
+  peekId,
   search,
   statusFilter,
   openNew,
 }) {
+  // Row click peeks (side panel) when the page provides onRowOpen; falls
+  // back to the old full navigation otherwise.
+  const openRow = onRowOpen || ((c) => navigate(`/clients/${c.id}`))
   return (
     <div className="overflow-auto flex-1 border border-hairline rounded-lg bg-panel flex flex-col">
       <div className="flex-1 overflow-auto">
@@ -41,8 +46,8 @@ export function ClientTableView({
         </thead>
         <tbody>
           {filtered.map(c => (
-            <tr key={c.id} onClick={() => navigate(`/clients/${c.id}`)}
-              className={`bb-row ${selectedIds.has(c.id) ? 'bb-row-selected' : ''}`}>
+            <tr key={c.id} onClick={() => openRow(c)}
+              className={`bb-row ${selectedIds.has(c.id) || peekId === c.id ? 'bb-row-selected' : ''}`}>
               <td className="bb-td !px-3" onClick={(e) => e.stopPropagation()}>
                 <input
                   type="checkbox"

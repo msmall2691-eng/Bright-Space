@@ -58,6 +58,7 @@ function computeRealNamedDupPairs(rows) {
 import { ImportResultBanner } from '../components/clients/ImportResultBanner'
 import { ClientCardRow } from '../components/clients/ClientCardRow'
 import { ClientTableView } from '../components/clients/ClientTableView'
+import ClientPeek from '../components/clients/ClientPeek'
 import { ClientsToolbar } from '../components/clients/ClientsToolbar'
 
 /** Banner that appears when a CRM Health bucket is being filtered.
@@ -195,6 +196,9 @@ function BucketFilterBanner({
 
 export default function Clients() {
   const navigate = useNavigate()
+  // Record peek — table row click previews the client in a side panel
+  // instead of navigating away (↑/↓ move through the filtered list).
+  const [peekId, setPeekId] = useState(null)
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState('')
   const { clients, setClients, filtered: baseFiltered, statusCounts, load } = useClients(statusFilter, search)
@@ -441,6 +445,8 @@ export default function Clients() {
             updateStatus={updateStatus}
             setJobClient={setJobClient}
             navigate={navigate}
+            onRowOpen={(c) => setPeekId(c.id)}
+            peekId={peekId}
             search={search}
             statusFilter={statusFilter}
             openNew={openNew}
@@ -448,6 +454,20 @@ export default function Clients() {
         )}
         </div>
       </div>
+
+      {peekId && (() => {
+        const idx = filtered.findIndex(c => c.id === peekId)
+        return (
+          <ClientPeek
+            clientId={peekId}
+            onClose={() => setPeekId(null)}
+            onPrev={() => idx > 0 && setPeekId(filtered[idx - 1].id)}
+            onNext={() => idx < filtered.length - 1 && setPeekId(filtered[idx + 1].id)}
+            hasPrev={idx > 0}
+            hasNext={idx >= 0 && idx < filtered.length - 1}
+          />
+        )
+      })()}
 
       {showForm && (
         <ClientForm
