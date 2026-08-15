@@ -277,6 +277,8 @@ export default function Payroll() {
                 </div>
               )}
             </div>
+
+            <MileagePanel startDate={startDate} endDate={endDate} />
           </>
         )}
       </div>
@@ -462,6 +464,127 @@ function SquarePanel({ square, onClose, onConfirm }) {
       )}
 
       {square.busy && !d && <div className="text-sm text-ink-3">Working…</div>}
+    </div>
+  )
+}
+
+// ── Pre-calculated drive mileage (display only — never added to pay) ────────
+// Chains each cleaner's scheduled jobs for the period: home → first job →
+// between houses → back home, with per-leg distances from the backend
+// (road distance when the Google key is set, straight-line × 1.3 labeled
+// "est." otherwise). Quiet reference numbers for setting reimbursements —
+// gross pay still runs on the miles crew enter at clock-out.
+function MileagePanel({ startDate, endDate }) {
+  const [open, setOpen] = useState(false)
+  const [rep, setRep] = useState(null)
+  const [loading, setLoading] = useState(false)
+  const [err, setErr] = useState('')
+  const [exp, setExp] = useState({})
+
+  useEffect(() => {
+    if (!open) return
+    setLoading(true); setErr('')
+    get(`/api/payroll/mileage?start_date=${startDate}&end_date=${endDate}`)
+      .then(setRep)
+      .catch(e => setErr(String(e.message || e)))
+      .finally(() => setLoading(false))
+  }, [open, startDate, endDate])
+
+  return (
+    <div className="bg-panel border border-hairline rounded-xl">
+      <button onClick={() => setOpen(o => !o)} className="w-full flex items-center justify-between p-4 text-left">
+        <div className="flex items-center gap-2 font-medium text-ink">
+          <Car className="w-4 h-4 text-ink-3" />Drive mileage
+          <span className="text-xs text-ink-3 font-normal">home → first job → between houses · reference only, not added to pay</span>
+        </div>
+        <ChevronDown className={`w-4 h-4 text-ink-3 transition-transform ${open ? 'rotate-180' : ''}`} />
+      </button>
+
+      {open && (
+        <div className="border-t border-hairline p-4 space-y-3">
+          {err && <div className="text-sm text-red-400">{err}</div>}
+          {loading && <div className="text-sm text-ink-3">Calculating…</div>}
+          {!loading && rep && rep.cleaners.length === 0 && (
+            <div className="text-sm text-ink-3">No scheduled jobs with assigned crew in this period.</div>
+          )}
+
+          {!loading && rep && rep.cleaners.map(c => (
+            <div key={c.cleaner_id} className="border border-hairline rounded-lg">
+              <button
+                onClick={() => setExp(x => ({ ...x, [c.cleaner_id]: !x[c.cleaner_id] }))}
+                className="w-full flex items-center justify-between gap-3 px-3 py-2 text-left hover:bg-bg-2/60 transition-colors">
+                <div className="flex items-center gap-1.5 min-w-0 text-sm">
+                  <User className="w-3.5 h-3.5 text-ink-3 shrink-0" />
+                  <span className="text-ink truncate">{c.name}</span>
+                  {!c.has_home && <span className="text-[11px] text-ink-3">· no home address, between houses only</span>}
+                </div>
+                <div className="flex items-center gap-2 shrink-0 tabular-nums text-sm">
+                  <span className="font-medium text-ink">{c.total_miles.toFixed(1)} mi</span>
+                  {c.estimated && <span className="text-[11px] text-ink-3">est.</span>}
+                  {c.return_miles > 0 && (
+                    <span className="text-[11px] text-ink-3">incl. {c.return_miles.toFixed(1)} back home</span>
+                  )}
+                  <ChevronDown className={`w-3.5 h-3.5 text-ink-3 transition-transform ${exp[c.cleaner_id] ? 'rotate-180' : ''}`} />
+                </div>
+              </button>
+              {exp[c.cleaner_id] && (
+                <div className="border-t border-hairline bg-bg-2/30 px-3 py-2 space-y-2">
+                  {c.days.map(day => (
+                    <div key={day.date}>
+                      <div className="flex items-center justify-between text-xs text-ink-3 mb-1 tabular-nums">
+                        <span>{day.date}</span>
+                        <span>{day.miles.toFixed(1)} mi</span>
+                      </div>
+                      <div className="space-y-0.5">
+                        {day.legs.map((l, i) => (
+                          <div key={i} className="flex items-center justify-between gap-2 text-sm tabular-nums">
+                            <span className="text-ink-2 truncate">
+                              {l.from} → {l.to_property_id
+                                ? <Link to={`/properties/${l.to_property_id}`} className="text-ink hover:text-indigo-600 no-underline">{l.to}</Link>
+                                : l.to}
+                              {l.kind === 'return_home' && <span className="text-[11px] text-ink-3"> · back home</span>}
+                            </span>
+                            <span className="text-ink-2 shrink-0">
+                              {l.miles.toFixed(1)} mi{l.estimated && <span className="text-[11px] text-ink-3"> est.</span>}
+                            </span>
+                          </div>
+                        ))}
+                        {day.legs.length === 0 && (
+                          <div className="text-xs text-ink-3">One stop — no drive legs to measure.</div>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                  {c.unknown_stops > 0 && (
+                    <div className="flex items-center gap-1.5 text-xs text-ink-3">
+                      <span className="w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0" aria-hidden="true" />
+                      {c.unknown_stops} stop{c.unknown_stops === 1 ? '' : 's'} without map coordinates skipped.
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          ))}
+
+          {!loading && rep && (
+            <div className="text-xs text-ink-3 space-y-1">
+              {rep.cleaners.length > 0 && (
+                <div className="tabular-nums">
+                  Total {rep.totals.miles.toFixed(1)} mi ({rep.totals.work_miles.toFixed(1)} working + {rep.totals.return_miles.toFixed(1)} back home)
+                  {rep.method === 'estimated' && ' · straight-line estimates × 1.3 road factor'}
+                </div>
+              )}
+              {rep.notes.map((n, i) => (
+                <div key={i} className="flex items-start gap-1.5">
+                  <span className="w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0 mt-1" aria-hidden="true" />
+                  <span>{n}</span>
+                </div>
+              ))}
+              <div>These are scheduled-route estimates for reference — reimbursement still pays on the miles crew enter at clock-out.</div>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   )
 }

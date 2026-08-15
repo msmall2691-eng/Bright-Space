@@ -171,6 +171,15 @@ class User(Base):
     # Unguessable, revocable by rotation; NULL until first requested.
     calendar_token = Column(String(64), nullable=True, unique=True, index=True)
 
+    # Cleaner home address, office-entered (migration 092) — the start/end of
+    # the pre-calculated mileage chain (home → first job → between houses).
+    # home_lat/home_lng cache the geocode result (services/geocoding.py) so
+    # each address hits Google once; cleared whenever home_address changes.
+    # Office-facing only: this never rides any crew/customer payload.
+    home_address = Column(String(400), nullable=True)
+    home_lat = Column(Float, nullable=True)
+    home_lng = Column(Float, nullable=True)
+
     client = relationship("Client", back_populates="user", foreign_keys="User.client_id")
     # User.jobs_assigned was dropped by migration 040 — its FK column
     # (Job.assigned_cleaner_user_id) was never wired up; Job.cleaner_ids is
@@ -301,6 +310,11 @@ class Property(Base):
     city = Column(String)
     state = Column(String)
     zip_code = Column(String)
+    # Cached geocode of the address (migration 092), filled lazily the first
+    # time the payroll mileage report needs this stop (services/geocoding.py).
+    # NULL = not geocoded yet. Not office-editable directly — derived data.
+    lat = Column(Float, nullable=True)
+    lng = Column(Float, nullable=True)
     # Constrained at the DB level via migration 006's CHECK constraint
     # (`ck_properties_property_type`) to one of: residential | commercial | str.
     property_type = Column(String, default="residential", nullable=False)

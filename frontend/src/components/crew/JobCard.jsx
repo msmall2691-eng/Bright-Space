@@ -9,11 +9,13 @@
  * Data comes exclusively from /api/crew/* payloads (assigned-cleaner-only;
  * the office job endpoints never feed this card).
  */
-import { useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   MapPin, KeyRound, ParkingCircle, ChevronDown, Navigation, CheckCircle2,
-  Camera, Users, Phone, ClipboardList, Sparkles, Wifi, Home,
+  Camera, Users, Phone, ClipboardList, Sparkles, Wifi, Home, Copy, Check,
+  QrCode,
 } from 'lucide-react'
+import { wifiQrPayload, qrMatrix, qrSvgPath } from './wifiQr'
 
 export const SOFT = 'bg-panel rounded-xl border border-hairline shadow-glass-sm'
 
@@ -83,6 +85,118 @@ function ChecklistBlock({ template }) {
           ))}
         </div>
       )}
+    </div>
+  )
+}
+
+/** Copy `text` to the clipboard: navigator.clipboard where available (needs a
+ *  secure context), else the old textarea/execCommand fallback. Resolves true
+ *  on success. Credentials never leave the device — no logging, no URL. */
+function copyToClipboard(text) {
+  const legacy = () => {
+    try {
+      const ta = document.createElement('textarea')
+      ta.value = text
+      ta.setAttribute('readonly', '')
+      ta.style.position = 'fixed'
+      ta.style.opacity = '0'
+      document.body.appendChild(ta)
+      ta.focus()
+      ta.select()
+      const ok = document.execCommand('copy')
+      ta.remove()
+      return ok
+    } catch {
+      return false
+    }
+  }
+  if (navigator.clipboard?.writeText) {
+    return navigator.clipboard.writeText(text).then(() => true).catch(() => legacy())
+  }
+  return Promise.resolve(legacy())
+}
+
+/** One tappable WiFi credential row — the WHOLE row copies (gloved thumbs),
+ *  with a quiet Copy affordance that flips to "Copied" for a moment. */
+function CopyRow({ label, value, mono = false }) {
+  const [copied, setCopied] = useState(false)
+  const timer = useRef(null)
+  useEffect(() => () => clearTimeout(timer.current), [])
+  const doCopy = async () => {
+    const ok = await copyToClipboard(value)
+    if (!ok) return
+    setCopied(true)
+    clearTimeout(timer.current)
+    timer.current = setTimeout(() => setCopied(false), 2000)
+  }
+  return (
+    <button onClick={doCopy}
+      className="w-full min-h-11 flex items-center justify-between gap-3 text-left active:opacity-60">
+      <span className="min-w-0 flex items-baseline gap-2">
+        <span className="text-[11px] text-ink-3 w-16 shrink-0">{label}</span>
+        <span className={`text-[13px] text-ink break-all ${mono ? 'font-mono' : 'font-semibold'}`}>
+          {value}
+        </span>
+      </span>
+      {copied ? (
+        <span className="shrink-0 inline-flex items-center gap-1 text-[12px] font-semibold text-emerald-600 dark:text-emerald-400">
+          <Check className="w-3.5 h-3.5" /> Copied
+        </span>
+      ) : (
+        <span className="shrink-0 inline-flex items-center gap-1 text-[12px] font-medium text-ink-2 border border-hairline-2 rounded-md px-2 py-1">
+          <Copy className="w-3.5 h-3.5" /> Copy
+        </span>
+      )}
+    </button>
+  )
+}
+
+/** House WiFi on the assigned-job card. Joining the customer's WiFi is the
+ *  crew data-saver (and often the only connectivity at a rural house), so this
+ *  is designed as the first move on arrival: one-tap copy for network and
+ *  password, plus an optional QR a teammate's phone can scan to join.
+ *  Everything is client-side from data the crew payload already served —
+ *  credentials never enter URLs, logs, or push payloads. */
+function WifiBlock({ ssid, password }) {
+  const [showQr, setShowQr] = useState(false)
+  // The QR is only computed when asked for (and memoized after that).
+  const qr = useMemo(() => {
+    if (!showQr) return null
+    const payload = wifiQrPayload(ssid, password)
+    return payload ? qrMatrix(payload) : null
+  }, [showQr, ssid, password])
+  return (
+    <div className="mt-3 border-t border-hairline pt-3">
+      <div className="text-[10px] font-bold uppercase tracking-wide text-ink-3 flex items-center gap-1.5">
+        <Wifi className="w-3.5 h-3.5" /> House WiFi
+      </div>
+      <p className="text-[11px] text-ink-3 mt-0.5">
+        Join the house WiFi before photos — it saves your data.
+      </p>
+      <div className="mt-1">
+        <CopyRow label="Network" value={ssid} />
+        {password && <CopyRow label="Password" value={password} mono />}
+      </div>
+      <button onClick={() => setShowQr(s => !s)}
+        className="min-h-11 text-[12px] font-medium text-ink-2 underline underline-offset-2 inline-flex items-center gap-1.5 active:opacity-60">
+        <QrCode className="w-3.5 h-3.5 text-ink-3" />
+        {showQr ? 'Hide the QR' : 'Show a QR for a teammate'}
+      </button>
+      {showQr && (qr ? (
+        <div className="flex flex-col items-start gap-1">
+          {/* Always black-on-white: cameras need the contrast, themes don't
+              apply to scannable codes. */}
+          <svg viewBox={`0 0 ${qr.length + 8} ${qr.length + 8}`}
+            className="w-44 h-44 rounded-lg border border-hairline"
+            style={{ background: '#fff' }} shapeRendering="crispEdges"
+            role="img" aria-label={`WiFi QR code for ${ssid}`}>
+            <path d={qrSvgPath(qr)} transform="translate(4 4)" fill="#000" />
+          </svg>
+          <p className="text-[10px] text-ink-3">Teammates scan it with their camera to join.</p>
+        </div>
+      ) : (
+        <p className="text-[11px] text-ink-3">Couldn't draw a QR — use the copy buttons above.</p>
+      ))}
     </div>
   )
 }
@@ -228,7 +342,7 @@ export default function JobCard({ job, clockable = false, activeEntry = null, on
         </div>
       )}
 
-      {(job.access_notes || job.parking_notes || job.house_code || job.wifi_ssid) && (
+      {(job.access_notes || job.parking_notes || job.house_code) && (
         <div className="mt-3 space-y-1.5 border-t border-hairline pt-3">
           {job.house_code && !job.turnover_line?.includes(job.house_code) && (
             <div className="text-[13px] text-ink-2 flex items-start gap-1.5">
@@ -245,21 +359,13 @@ export default function JobCard({ job, clockable = false, activeEntry = null, on
               <ParkingCircle className="w-3.5 h-3.5 mt-0.5 shrink-0 text-ink-3" /> {job.parking_notes}
             </div>
           )}
-          {job.wifi_ssid && (
-            /* WiFi rides the offline cache — at a dead-zone house these
-               credentials ARE the fix. Tap copies the password. */
-            <button
-              onClick={() => { try { navigator.clipboard.writeText(job.wifi_password || job.wifi_ssid) } catch { /* noop */ } }}
-              className="text-[13px] text-ink-2 flex items-start gap-1.5 active:opacity-60 text-left">
-              <Wifi className="w-3.5 h-3.5 mt-0.5 shrink-0 text-ink-3" />
-              <span>
-                {job.wifi_ssid}
-                {job.wifi_password && <span className="font-mono"> · {job.wifi_password}</span>}
-                <span className="text-[10px] text-ink-3"> (tap to copy)</span>
-              </span>
-            </button>
-          )}
         </div>
+      )}
+
+      {job.wifi_ssid && (
+        /* WiFi rides the offline cache — at a dead-zone house these
+           credentials ARE the fix, and joining is the crew data-saver. */
+        <WifiBlock ssid={job.wifi_ssid} password={job.wifi_password} />
       )}
 
       {job.house_notes?.length > 0 && (

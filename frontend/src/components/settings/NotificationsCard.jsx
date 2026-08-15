@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Bell, BellOff, Smartphone } from 'lucide-react'
+import { get } from '../../api'
 import { pushSupported, getPushState, enablePush, disablePush, sendTestPush } from '../../utils/push'
 
 /** Push-notification opt-in for this device. Renders a single toggle that
@@ -10,9 +11,13 @@ export default function NotificationsCard({ toast }) {
   const [state, setState] = useState(null)   // null = loading
   const [busy, setBusy] = useState(false)
 
+  // Server-side diagnostics (owner report: "I'm not getting notifications at
+  // all" — the why should be readable right here, not a debugging session).
+  const [diag, setDiag] = useState(null)
   useEffect(() => {
     if (!pushSupported()) { setState({ supported: false }); return }
     getPushState().then(setState).catch(() => setState({ supported: false }))
+    get('/api/push/status').then(setDiag).catch(() => {})
   }, [])
 
   if (state && state.supported === false) return null   // no push on this browser → hide
@@ -75,6 +80,26 @@ export default function NotificationsCard({ toast }) {
             }`} />
           </button>
         </div>
+
+        {/* Where-it-stands checklist: each hop of the pipeline as a quiet
+            dot+word line, so "not getting notifications" self-diagnoses. */}
+        <ul className="mt-3 space-y-1 text-xs text-ink-2">
+          <li className="flex items-center gap-2">
+            <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${serverReady ? 'bg-emerald-500' : 'bg-amber-500'}`} />
+            Server {serverReady ? 'configured' : 'not configured — add VAPID_PUBLIC_KEY / VAPID_PRIVATE_KEY in Railway'}
+          </li>
+          <li className="flex items-center gap-2">
+            <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${blocked ? 'bg-red-500' : on ? 'bg-emerald-500' : 'bg-gray-400'}`} />
+            This device: {blocked ? 'blocked in browser settings' : on ? 'receiving' : 'not enrolled yet'}
+          </li>
+          {diag && (
+            <li className="flex items-center gap-2">
+              <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${diag.org_devices > 0 ? 'bg-emerald-500' : 'bg-gray-400'}`} />
+              {diag.org_devices} device{diag.org_devices === 1 ? '' : 's'} enrolled across the team
+              {diag.my_devices > 0 ? ` · ${diag.my_devices} yours` : ''}
+            </li>
+          )}
+        </ul>
 
         {/* Status / help line */}
         {!serverReady ? (

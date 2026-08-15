@@ -258,6 +258,24 @@ export default function UsersAdmin() {
                       {rateField(u, 'pay_rate_residential', u.pay_rate_residential, 'Residential $/hr')}
                       {rateField(u, 'pay_rate_rental', u.pay_rate_rental, 'Rental $/hr')}
                       {rateField(u, 'pay_rate_deep', u.pay_rate_deep, 'Deep $/hr')}
+                      {/* Home address feeds the Payroll page's pre-calculated
+                          drive mileage (home → first job → between houses).
+                          Office-only — never shown to crew or customers. */}
+                      <label className="block col-span-2 sm:col-span-5">
+                        <span className={labelCls}>Home address <span className="font-normal">(for payroll drive mileage)</span></span>
+                        <input
+                          key={`${u.id}-home-${u.home_address || ''}`}
+                          type="text"
+                          defaultValue={u.home_address || ''}
+                          placeholder="e.g. 12 Main St, Brunswick, ME"
+                          disabled={busyId === u.id}
+                          onBlur={e => {
+                            const v = e.target.value.trim()
+                            if (v !== (u.home_address || '')) saveField(u, { home_address: v })
+                          }}
+                          className={inputCls}
+                        />
+                      </label>
                     </>
                   )}
                 </div>

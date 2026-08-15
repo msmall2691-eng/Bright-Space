@@ -414,16 +414,9 @@ body.accent-cyan {
     @apply block text-xs font-semibold text-neutral-700 uppercase tracking-wide mb-2;
   }
 
-  /* Badge Components */
-  .badge {
-    @apply inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold;
-  }
-
-  .badge-success { @apply bg-green-100 text-green-700; }
-  .badge-warning { @apply bg-amber-100 text-amber-700; }
-  .badge-danger { @apply bg-red-100 text-red-700; }
-  .badge-info { @apply bg-blue-100 text-blue-700; }
-  .badge-neutral { @apply bg-neutral-200 text-neutral-700; }
+  /* (Legacy .badge / .badge-* tinted pill classes removed — nothing in
+     src/ referenced them after the bubble sweep; status now renders via
+     components/ui StatusBadge's dot+word treatment.) */
 
   /* Section Container */
   .section {

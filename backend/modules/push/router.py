@@ -48,6 +48,25 @@ def vapid_public_key(_user: User = Depends(get_current_user)):
     return {"enabled": push_service.push_enabled(), "publicKey": push_service.get_public_key()}
 
 
+@router.get("/status")
+def push_status(
+    user: User = Depends(get_current_user),
+    org_id: int = Depends(current_org_id),
+    db: Session = Depends(get_db),
+):
+    """Diagnostics for the Settings panel (owner report: 'I'm not getting
+    notifications at all' — the answer should be readable in the app, not a
+    debugging session). Says whether the server is configured and how many
+    devices are registered for this user and org-wide."""
+    mine = db.query(PushSubscription).filter(PushSubscription.user_id == user.id).count()
+    org = db.query(PushSubscription).filter(PushSubscription.org_id == org_id).count()
+    return {
+        "server_configured": push_service.push_enabled(),
+        "my_devices": mine,
+        "org_devices": org,
+    }
+
+
 @router.post("/subscriptions")
 def subscribe(
     body: SubscribeBody,
