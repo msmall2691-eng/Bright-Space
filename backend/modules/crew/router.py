@@ -375,6 +375,15 @@ def my_day(
                               house_notes=house_notes.get(j.property_id))
                      for j in upcoming_jobs],
         "open_jobs": open_jobs,
+        # Unread office messages, so the crew app's Chat tab can badge without
+        # a second request. Reading the thread (GET /messages) marks them read.
+        "unread_messages": (
+            db.query(func.count(CrewMessage.id))
+            .filter(CrewMessage.user_id == current_user.id,
+                    CrewMessage.sender == "office",
+                    CrewMessage.read_at.is_(None))
+            .scalar() or 0
+        ),
         "clock": {
             "active": _entry_row(active) if active else None,
             "hours_today": hours_today,
@@ -1475,7 +1484,11 @@ def crew_job_detail(
                .filter(JobResponse.job_id == job.id,
                        JobResponse.cleaner_id == current_user.cleaner_id)
                .first())
-    return _job_row(job, _names_by_cleaner_id(db, [job]), current_user.cleaner_id, my_resp)
+    # Shared house notes ride the single-job payload too, so the month-view
+    # tap-through shows the same card my-day renders (nothing silently missing).
+    house_notes = _shared_notes_by_property(db, [job]).get(job.property_id)
+    return _job_row(job, _names_by_cleaner_id(db, [job]), current_user.cleaner_id, my_resp,
+                    house_notes=house_notes)
 
 
 # ── Weather (Today-tab greeting) ─────────────────────────────────────────────

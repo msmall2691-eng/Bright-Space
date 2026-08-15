@@ -460,6 +460,17 @@ def auto_assign_unassigned_turnovers(db: Session, *, dry_run: bool = False,
                 pass
     if not dry_run and assigned:
         db.commit()
+        # Auto-assignment is still an assignment: the picked cleaner's phone
+        # gets the same "new job for you" push as a manual assign (post-commit,
+        # best-effort, no access details in the payload).
+        try:
+            from services.crew_notify import notify_job_assigned
+            picked = {a["job_id"]: a["cleaner_id"] for a in assigned}
+            for job in jobs:
+                if job.id in picked:
+                    notify_job_assigned(db, job, [picked[job.id]])
+        except Exception:
+            logger.warning("assignment push after auto-assign failed", exc_info=True)
     return {
         "dry_run": dry_run,
         "candidates": len(roster),
@@ -1022,6 +1033,14 @@ def create_job(data: JobCreate, db: Session = Depends(get_db), org_id: int = Dep
     from utils.activity_logger import promote_client_from_lead
     promote_client_from_lead(db, job.client_id, reason="job_booked")
     db.commit()
+
+    # Ping the assigned crew's phones that a job landed on their list —
+    # event-driven at the write site (no polling tick, R1), post-commit so a
+    # push hiccup can't roll back the booking, and the payload carries no
+    # access details (see services/crew_notify.py).
+    if job.cleaner_ids:
+        from services.crew_notify import notify_job_assigned
+        notify_job_assigned(db, job, job.cleaner_ids)
 
     # (The old Visit dual-write was removed by migration 039; occurrences are
     # the Job row itself now.)
@@ -3066,6 +3085,16 @@ def update_job(job_id: int, data: JobUpdate, db: Session = Depends(get_db), org_
     if job.status != prev_status:
         log_job_status_change(db, job, prev_status)
         db.commit()
+
+    # Newly-ADDED cleaners get a "new job for you" push (event-driven at the
+    # assignment write, post-commit). Only the added set — an unrelated edit,
+    # or a cleaner already on the job, never re-pings the crew. Cancelled jobs
+    # don't announce themselves as new work.
+    if "cleaner_ids" in updates and job.status != "cancelled":
+        added_cleaners = {str(c) for c in (job.cleaner_ids or [])} - set(prev_cleaner_ids)
+        if added_cleaners:
+            from services.crew_notify import notify_job_assigned
+            notify_job_assigned(db, job, sorted(added_cleaners))
 
     # Auto-create a draft Invoice the first time a job lands on "completed".
     # Shared with complete_job() below — both are real "mark complete" paths

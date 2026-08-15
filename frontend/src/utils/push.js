@@ -6,7 +6,7 @@
 // so it can send. Unsubscribe reverses it. Everything degrades gracefully when
 // the browser doesn't support push or the server has no VAPID keys.
 
-import { post, api } from '../api'
+import { get, post, api } from '../api'
 
 export function pushSupported() {
   return (
@@ -43,8 +43,11 @@ export async function getPushState() {
   }
   let enabledOnServer = false
   try {
-    const res = await fetch('/api/push/vapid-public-key')
-    if (res.ok) enabledOnServer = !!(await res.json())?.enabled
+    // BB-CODE-06: must go through the authenticated client — /api/push/* sits
+    // behind APIKeyMiddleware (not in the public-prefix list), so a bare
+    // fetch() carries no JWT, 401s, and made this permanently report
+    // "not configured" even with VAPID keys set.
+    enabledOnServer = !!(await get('/api/push/vapid-public-key'))?.enabled
   } catch { /* offline / not logged in */ }
 
   const reg = await readyRegistration()
@@ -67,8 +70,8 @@ export async function getPushState() {
 export async function enablePush() {
   if (!pushSupported()) throw new Error('This browser doesn’t support push notifications.')
 
-  const keyRes = await fetch('/api/push/vapid-public-key')
-  const { enabled, publicKey } = keyRes.ok ? await keyRes.json() : {}
+  // BB-CODE-06: authenticated client, not a bare fetch — see getPushState.
+  const { enabled, publicKey } = await get('/api/push/vapid-public-key').catch(() => ({}))
   if (!enabled || !publicKey) {
     throw new Error('Push isn’t configured on the server yet (missing VAPID keys).')
   }
