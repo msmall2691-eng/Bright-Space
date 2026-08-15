@@ -362,9 +362,15 @@ export default function JobCreateModal({
         client_id: parseInt(activeClientId),
         name: newProp.name.trim(),
         address: newProp.address.trim() || '',
-        // A deep clean is a residential property; only the JOB is priced as deep.
-        property_type: form.job_type === 'deep_clean' ? 'residential'
-          : (form.job_type === 'str' ? 'str' : form.job_type || 'residential'),
+        // Job types and property types are different vocabularies: the job is
+        // 'str_turnover' but the PROPERTY is 'str' (ck_properties_property_type
+        // allows only residential|commercial|str). The old mapping passed the
+        // job type through verbatim, so creating a property from a turnover
+        // job hit the CHECK constraint and 500'd. A deep clean is a
+        // residential property; only the JOB is priced as deep.
+        property_type: (form.job_type === 'str_turnover' || form.job_type === 'str') ? 'str'
+          : form.job_type === 'commercial' ? 'commercial'
+          : 'residential',
       })
       setProperties(ps => [created, ...ps])
       applyProperty(created)
