@@ -12,7 +12,8 @@ import PageHeader from '../components/ui/PageHeader'
 import { toast } from '../utils/toastBus'
 import { confirmDialog } from '../utils/confirmBus'
 import {
-  seriesDupKey, suggestKeeper, loadReviewedDupKeys, saveReviewedDupKeys,
+  groupDuplicateSeries, isLiveSeries, suggestKeeper,
+  loadReviewedDupKeys, saveReviewedDupKeys,
 } from '../utils/recurringDuplicates'
 import { useEmployees } from '../hooks/useEmployees'
 import EndsPicker from '../components/schedule/EndsPicker'
@@ -557,6 +558,10 @@ function SeriesRow({ s, clientName, onOpen, isDuplicate }) {
     return up[0]?.date
   }, [s])
   const hasTime = !!s.start_time
+  // Active-but-past-its-end-date (how split retires a predecessor: only
+  // series_end_date is set, `active` stays true) reads as a quiet "Ended",
+  // not as a live series.
+  const live = isLiveSeries(s)
   return (
     <li>
       <button
@@ -568,12 +573,12 @@ function SeriesRow({ s, clientName, onOpen, isDuplicate }) {
             <div className="flex items-center gap-2 mb-1 flex-wrap">
               <h3 className="text-base font-semibold text-ink">{s.title || 'Untitled'}</h3>
               <span className="inline-flex h-5 items-center gap-1.5 rounded-sm border border-hairline-2 bg-panel px-2 text-[11px] font-medium text-ink-2">
-                <span className={`h-1.5 w-1.5 rounded-full ${s.active ? 'bg-emerald-500' : 'bg-gray-500'}`} />
-                {s.active ? 'Active' : 'Paused'}
+                <span className={`h-1.5 w-1.5 rounded-full ${live ? 'bg-emerald-500' : 'bg-gray-500'}`} />
+                {live ? 'Active' : s.active ? 'Ended' : 'Paused'}
               </span>
               {isDuplicate && (
                 <span className="inline-flex h-5 items-center gap-1.5 rounded-sm border border-hairline-2 bg-panel px-2 text-[11px] font-medium text-ink-2"
-                  title="Another active series for this client has the same cadence and day — likely a duplicate. Open both and pause or cancel one.">
+                  title="Another live series for this client has the same property, cadence, and time on an overlapping day — likely a duplicate. Open both and pause or cancel one.">
                   <span className="h-1.5 w-1.5 rounded-full bg-amber-500" />
                   Possible duplicate
                 </span>
@@ -593,7 +598,7 @@ function SeriesRow({ s, clientName, onOpen, isDuplicate }) {
               {hasTime
                 ? <> · {fmtTime(s.start_time)}–{fmtTime(s.end_time)}</>
                 : <> · <span className="text-amber-600 font-medium">no time set</span></>}
-              {next && s.active && <> · Next {fmtDate(next)}</>}
+              {next && live && <> · Next {fmtDate(next)}</>}
               <> · {s.upcoming_job_count || 0} upcoming</>
             </p>
           </div>
@@ -604,9 +609,11 @@ function SeriesRow({ s, clientName, onOpen, isDuplicate }) {
   )
 }
 
-// Duplicate grouping (same client + cadence + day) lives in
-// utils/recurringDuplicates.js — seriesDupKey is THE single definition,
-// shared by the list pills, the banner count, and the review panel below.
+// Duplicate grouping (same client + property + cadence + time, overlapping
+// days, LIVE series only) lives in utils/recurringDuplicates.js —
+// groupDuplicateSeries is THE single definition, shared by the list pills,
+// the banner count, and the review panel below, and aligned with the
+// backend's pre-create guard (services/recurring_guards.py).
 
 // ─── Duplicate review panel ──────────────────────────────────────────────
 // Groups "Possible duplicate" series side by side so the owner can pick the
@@ -621,22 +628,14 @@ function DuplicateReviewPanel({ schedules, clientsById, reviewedKeys, onToggleRe
   // on a series doesn't make its group vanish mid-review — the group stays
   // put and collapses to a quiet "Resolved" row once one active series is
   // left. Cards still render LIVE data from the schedules prop.
-  const [groups] = useState(() => {
-    const byKey = new Map()
-    for (const s of schedules) {
-      if (!s.active) continue
-      const k = seriesDupKey(s)
-      if (!byKey.has(k)) byKey.set(k, [])
-      byKey.get(k).push(s)
-    }
-    return [...byKey.entries()]
-      .filter(([, list]) => list.length > 1)
-      .map(([key, list]) => ({
-        key,
-        ids: list.map(s => s.id),
-        suggestion: suggestKeeper(list),
-      }))
-  })
+  const [groups] = useState(() =>
+    // Live series only, day sets matched by OVERLAP — the shared definition
+    // in groupDuplicateSeries (ended split-predecessors never show up here).
+    groupDuplicateSeries(schedules).map(g => ({
+      key: g.key,
+      ids: g.members.map(s => s.id),
+      suggestion: suggestKeeper(g.members),
+    })))
   const byId = useMemo(() => {
     const m = {}
     schedules.forEach(s => { m[s.id] = s })
@@ -688,13 +687,13 @@ function DuplicateReviewPanel({ schedules, clientsById, reviewedKeys, onToggleRe
   return (
     <ModalShell title="Review duplicates" onClose={onClose} wide>
       <p className="text-[13px] text-ink-2">
-        Each group below is the same client, cadence, and day. Pick the series to keep,
+        Each group below is the same client, property, cadence, and time on overlapping days. Pick the series to keep,
         then pause or cancel the extras — every action asks before it does anything, and
         visits already on the calendar are never touched.
       </p>
       {groups.length === 0 && (
         <EmptyState icon={Repeat} title="No duplicate groups"
-          description="No two active series share a client, cadence, and day." compact />
+          description="No two live series share a client, property, cadence, time, and day." compact />
       )}
       {groups.map(g => {
         const members = g.ids.map(id => byId[id]).filter(Boolean)
@@ -702,7 +701,7 @@ function DuplicateReviewPanel({ schedules, clientsById, reviewedKeys, onToggleRe
         if (!first) return null
         const clientName = clientsById[first.client_id]?.name || 'Unknown client'
         const skipped = reviewedKeys.has(g.key)
-        const activeMembers = members.filter(s => s.active && !actioned[s.id])
+        const activeMembers = members.filter(s => isLiveSeries(s) && !actioned[s.id])
         const keeperId = keeperByKey[g.key] ?? g.suggestion?.id
 
         if (skipped) {
@@ -749,7 +748,8 @@ function DuplicateReviewPanel({ schedules, clientsById, reviewedKeys, onToggleRe
             </header>
             <div className="mt-2.5 grid gap-2.5 sm:grid-cols-2">
               {members.map(s => {
-                const state = actioned[s.id] || (s.active ? 'active' : 'paused')
+                const state = actioned[s.id]
+                  || (isLiveSeries(s) ? 'active' : s.active ? 'ended' : 'paused')
                 const isKeeper = state === 'active' && s.id === keeperId
                 const suggested = g.suggestion?.id === s.id
                 const next = state === 'active' ? computeUpcoming(s, [], 1)[0]?.date : null
@@ -773,7 +773,9 @@ function DuplicateReviewPanel({ schedules, clientsById, reviewedKeys, onToggleRe
                         <span className={`h-1.5 w-1.5 rounded-full ${
                           state === 'active' ? 'bg-emerald-500'
                           : state === 'cancelled' ? 'bg-red-500' : 'bg-gray-500'}`} />
-                        {state === 'active' ? 'Active' : state === 'cancelled' ? 'Cancelled' : 'Paused'}
+                        {state === 'active' ? 'Active'
+                          : state === 'cancelled' ? 'Cancelled'
+                          : state === 'ended' ? 'Ended' : 'Paused'}
                       </span>
                     </div>
                     <div className="mt-2 space-y-0.5 text-[12px] text-ink-3">
@@ -819,7 +821,9 @@ function DuplicateReviewPanel({ schedules, clientsById, reviewedKeys, onToggleRe
                       <div className="mt-3 text-[11px] text-ink-3">
                         {state === 'cancelled'
                           ? 'Cancelled — no new visits will be generated.'
-                          : 'Paused — no new visits while paused; resume anytime from Manage.'}
+                          : state === 'ended'
+                            ? 'Ended — this series reached its end date; no new visits are generated.'
+                            : 'Paused — no new visits while paused; resume anytime from Manage.'}
                       </div>
                     )}
                   </div>
@@ -954,8 +958,8 @@ function SeriesDetail({ id, onBack, onChanged, toast }) {
           <div className="flex items-center gap-2 mb-1">
             <h1 className="text-xl sm:text-2xl font-bold text-ink">{schedule.title || 'Untitled'}</h1>
             <span className="inline-flex h-5 items-center gap-1.5 rounded-sm border border-hairline-2 bg-panel px-2 text-[11px] font-medium text-ink-2">
-              <span className={`h-1.5 w-1.5 rounded-full ${schedule.active ? 'bg-emerald-500' : 'bg-gray-500'}`} />
-              {schedule.active ? 'Active' : 'Paused'}
+              <span className={`h-1.5 w-1.5 rounded-full ${isLiveSeries(schedule) ? 'bg-emerald-500' : 'bg-gray-500'}`} />
+              {isLiveSeries(schedule) ? 'Active' : schedule.active ? 'Ended' : 'Paused'}
             </span>
           </div>
           <p className="text-sm text-ink-2">
@@ -1235,8 +1239,13 @@ export default function Recurring() {
 
   const filtered = useMemo(() => {
     return schedules.filter(s => {
-      if (filterStatus === 'active' && !s.active) return false
+      // "Active" means LIVE (active and not past its end date); an active row
+      // whose series_end_date has passed — how split retires a predecessor —
+      // is "Ended", its own quiet state, so retired series stop reading as
+      // live. The `active` column itself is untouched (display-only).
+      if (filterStatus === 'active' && !isLiveSeries(s)) return false
       if (filterStatus === 'paused' && s.active) return false
+      if (filterStatus === 'ended' && !(s.active && !isLiveSeries(s))) return false
       if (filterClient && String(s.client_id) !== String(filterClient)) return false
       return true
     })
@@ -1247,16 +1256,16 @@ export default function Recurring() {
     [clientsById],
   )
 
-  // Keys shared by 2+ ACTIVE series — flagged as possible duplicates in the list.
-  const duplicateKeys = useMemo(() => {
-    const counts = {}
-    for (const s of schedules) {
-      if (!s.active) continue
-      const k = seriesDupKey(s)
-      counts[k] = (counts[k] || 0) + 1
-    }
-    return new Set(Object.keys(counts).filter(k => counts[k] > 1))
-  }, [schedules])
+  // Duplicate groups among LIVE series (shared definition with the backend
+  // pre-create guard: same client + property + cadence + time, overlapping
+  // days). Ended series never count, so retired split-predecessors stop
+  // flooding the flag.
+  const dupGroups = useMemo(() => groupDuplicateSeries(schedules), [schedules])
+  const dupKeyBySeriesId = useMemo(() => {
+    const m = new Map()
+    for (const g of dupGroups) for (const s of g.members) m.set(s.id, g.key)
+    return m
+  }, [dupGroups])
 
   // Review-duplicates panel: opened from the banner; groups the flagged
   // series so the owner picks a keeper and confirms each pause/cancel.
@@ -1274,8 +1283,8 @@ export default function Recurring() {
     })
   }, [])
   const dupGroupCount = useMemo(
-    () => [...duplicateKeys].filter(k => !reviewedKeys.has(k)).length,
-    [duplicateKeys, reviewedKeys],
+    () => dupGroups.filter(g => !reviewedKeys.has(g.key)).length,
+    [dupGroups, reviewedKeys],
   )
 
   // Detail view
@@ -1350,6 +1359,7 @@ export default function Recurring() {
               { v: 'all', label: 'All' },
               { v: 'active', label: 'Active' },
               { v: 'paused', label: 'Paused' },
+              { v: 'ended', label: 'Ended' },
             ].map(o => (
               <button key={o.v}
                 onClick={() => setFilterStatus(o.v)}
@@ -1370,8 +1380,8 @@ export default function Recurring() {
             <AlertTriangle className="w-4 h-4 shrink-0" />
             <span className="flex-1 min-w-0">
               {dupGroupCount} possible duplicate group{dupGroupCount === 1 ? '' : 's'} — same client,
-              cadence, and day. Review them side by side and pick which series to keep;
-              nothing is changed automatically.
+              property, cadence, and time on overlapping days. Review them side by side and pick
+              which series to keep; nothing is changed automatically.
             </span>
             <Button variant="secondary" size="sm" className="shrink-0" onClick={() => setReviewOpen(true)}>
               Review
@@ -1404,7 +1414,7 @@ export default function Recurring() {
                 s={s}
                 clientName={clientsById[s.client_id]?.name || 'Unknown client'}
                 onOpen={openSeries}
-                isDuplicate={s.active && duplicateKeys.has(seriesDupKey(s)) && !reviewedKeys.has(seriesDupKey(s))}
+                isDuplicate={dupKeyBySeriesId.has(s.id) && !reviewedKeys.has(dupKeyBySeriesId.get(s.id))}
               />
             ))}
           </ul>

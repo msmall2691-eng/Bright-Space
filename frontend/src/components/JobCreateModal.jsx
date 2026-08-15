@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { X, Calendar, Clock, MapPin, AlertCircle, Repeat as RepeatIcon, Search, Loader, Check, Users } from 'lucide-react'
 import { get, post } from '../api'
 import { toast } from '../utils/toastBus'
+import { parseSimilarSeriesConflict } from '../utils/recurringDuplicates'
 import AddressAutocomplete from './AddressAutocomplete'
 import { toLocalYMD } from '../utils/format'
 import { useEmployees } from '../hooks/useEmployees'
@@ -44,6 +45,42 @@ function ConflictPrompt({ conflict, saving, onCancel, onOverride }) {
         <button type="button" onClick={onOverride} disabled={saving}
           className="px-3 py-1.5 rounded-md bg-amber-600 hover:bg-amber-700 text-white disabled:opacity-50">
           {saving ? 'Booking…' : 'Book anyway'}
+        </button>
+      </div>
+    </div>
+  )
+}
+
+/** Amber "this client already has a similar series" prompt. Shown when
+ *  POST /api/recurring 409s with detail=similar_series_exists (the backend's
+ *  pre-create duplicate guard). Mirrors ConflictPrompt's escape-hatch UX:
+ *  link to the existing series, or resubmit with allow_duplicate=true. */
+function DuplicateSeriesPrompt({ matches, saving, onCancel, onOverride }) {
+  if (!matches || !matches.length) return null
+  return (
+    <div className="bg-amber-50 border border-amber-200 rounded-lg px-3 py-2.5 text-xs"
+      data-testid="job-create-duplicate-series-prompt">
+      <p className="font-semibold text-amber-800 mb-1">Similar recurring series already exists</p>
+      <ul className="text-amber-900 mb-2 space-y-1">
+        {matches.map(m => (
+          <li key={m.id}>
+            This client already has: {m.cadence}
+            {m.property_name ? ` at ${m.property_name}` : m.address ? ` at ${m.address}` : ''}
+            {` — ${m.upcoming_job_count || 0} upcoming`}
+            {' · '}
+            <a href={`/recurring?series=${m.id}`}
+              className="font-semibold underline text-amber-800 hover:text-amber-900">
+              Open existing
+            </a>
+          </li>
+        ))}
+      </ul>
+      <div className="flex gap-2">
+        <button type="button" onClick={onCancel}
+          className="px-3 py-1.5 rounded-md bg-bg-2 text-ink-2 hover:bg-hairline">Never mind</button>
+        <button type="button" onClick={onOverride} disabled={saving}
+          className="px-3 py-1.5 rounded-md bg-amber-600 hover:bg-amber-700 text-white disabled:opacity-50">
+          {saving ? 'Creating…' : 'Create anyway'}
         </button>
       </div>
     </div>
@@ -398,11 +435,16 @@ export default function JobCreateModal({
   // The backend accepts allow_conflicts to override, so we surface a "Book
   // anyway" prompt rather than a dead-end error.
   const [conflict, setConflict] = useState(null)
+  // Recurring twin of `conflict`: matches from the backend's similar-series
+  // 409 (create-duplicate guard), surfaced as an "Open existing / Create
+  // anyway" prompt rather than a dead-end error.
+  const [dupMatches, setDupMatches] = useState(null)
 
-  const save = async (allowConflicts = false) => {
+  const save = async (allowConflicts = false, allowDuplicate = false) => {
     setSaving(true)
     setError(null)
     setConflict(null)
+    setDupMatches(null)
     // Park the booking before we hit the network: if the session has expired,
     // the 401 redirects to /login (this code never resumes), and this draft is
     // what gets restored after re-auth. Cleared on a confirmed success below.
@@ -436,6 +478,8 @@ export default function JobCreateModal({
           notes: form.notes || null,
           // Link back to the source quote so it's converted (see one-time path).
           quote_id: initialQuoteId ? parseInt(initialQuoteId) : null,
+          // Similar-series guard override — only true from "Create anyway".
+          allow_duplicate: allowDuplicate,
         }
         const sched = await post('/api/recurring', body)
         if (!sched) return  // 401 → redirecting to /login; keep the draft to restore
@@ -466,6 +510,13 @@ export default function JobCreateModal({
       onCreated?.({ kind: 'job', job, gcal: job?.gcal })
       onClose?.()
     } catch (e) {
+      // Recurring 409 from the similar-series guard → "Open existing / Create
+      // anyway" prompt (overridable via allow_duplicate, like allow_conflicts).
+      const similar = recurring ? parseSimilarSeriesConflict(e) : null
+      if (similar) {
+        setDupMatches(similar)
+        return
+      }
       const msg = e?.message || `Failed to create ${recurring ? 'schedule' : 'job'}`
       // Conflict 409s (incl. the Google Free/Busy "already booked" guard) are
       // overridable — route them to the "Book anyway" prompt, not a hard error.
@@ -741,6 +792,8 @@ export default function JobCreateModal({
           )}
           <ConflictPrompt conflict={conflict} saving={saving}
             onCancel={() => setConflict(null)} onOverride={() => save(true)} />
+          <DuplicateSeriesPrompt matches={dupMatches} saving={saving}
+            onCancel={() => setDupMatches(null)} onOverride={() => save(false, true)} />
 
           {/* ── More options — Property picker (inline expansion) ─────────── */}
           {showMore && (<>

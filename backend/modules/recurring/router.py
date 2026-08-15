@@ -90,6 +90,11 @@ class ScheduleCreate(BaseModel):
     ends_mode: Optional[str] = None
     ends_on: Optional[str] = None
     ends_after_count: Optional[int] = None
+    # Override the similar-series pre-create guard (services/recurring_guards).
+    # Mirrors scheduling's allow_conflicts escape hatch: the default (False)
+    # is the SAFE value — a create that matches an existing live series 409s
+    # with the matches so the operator confirms before a second series exists.
+    allow_duplicate: Optional[bool] = False
 
 
 class ExceptionCreate(BaseModel):
@@ -816,6 +821,9 @@ def create_schedule(data: ScheduleCreate, db: Session = Depends(get_db),
         "ends_on": payload.pop("ends_on"),
         "ends_after_count": payload.pop("ends_after_count"),
     }
+    # Request-only guard override (see ScheduleCreate), not a column.
+    allow_duplicate = payload.pop("allow_duplicate", False)
+    oid = resolve_org_id(org_id, db)
     # Normalise days_of_week. For a DAILY schedule an empty set means "every
     # day" — generate_dates treats a falsy days_of_week as no weekday filter —
     # so leave it empty rather than collapsing it to a single day, which
@@ -832,8 +840,20 @@ def create_schedule(data: ScheduleCreate, db: Session = Depends(get_db),
     # leniently) — coerce here the same way update_schedule already does.
     payload["start_time"] = _as_time(payload["start_time"])
     payload["end_time"] = _as_time(payload["end_time"])
+    # Similar-series pre-create guard (data-model review, guard 1). Runs
+    # AFTER the day/time normalization above so it compares what would
+    # actually be stored. Overridable: resubmit with allow_duplicate=true
+    # (mirrors scheduling's allow_conflicts 409 escape-hatch convention).
+    if not allow_duplicate:
+        from services.recurring_guards import find_similar_series
+        similar = find_similar_series(db, oid, payload)
+        if similar:
+            raise HTTPException(
+                status_code=409,
+                detail={"detail": "similar_series_exists", "matches": similar},
+            )
     sched = RecurringSchedule(**payload)
-    sched.org_id = resolve_org_id(org_id, db)  # MT-2: stamp the caller's workspace
+    sched.org_id = oid  # MT-2: stamp the caller's workspace
     _apply_ends_fields(sched, ends_fields)
     db.add(sched)
     db.commit()
@@ -1206,6 +1226,12 @@ def split_schedule(schedule_id: int, data: ScheduleSplit, db: Session = Depends(
     new_sched = RecurringSchedule(
         client_id=old.client_id,
         job_type=old.job_type,
+        # Lineage (data-model review, guard 4): the successor keeps the
+        # predecessor's quote/opportunity links. carry_over_fields omitted
+        # them, so every split silently severed deal-board traceability —
+        # the won deal's cadence pointed only at the retired series.
+        quote_id=old.quote_id,
+        opportunity_id=old.opportunity_id,
         active=True,
         org_id=old.org_id,
         series_start_date=data.split_date,
