@@ -4706,6 +4706,8 @@ export interface paths {
         /**
          * Quick Query
          * @description One-shot question answered with live business data. Returns {answer}.
+         *     Owner-side only: get_current_user gates it (JWT or master API key) and
+         *     current_org_id pins the tenant for the record-context lookups.
          */
         post: operations["quick_query_api_ai_quick_post"];
         delete?: never;
@@ -4819,6 +4821,53 @@ export interface paths {
          *     is persisted.
          */
         post: operations["quote_from_conversation_api_ai_quote_from_conversation__conversation_id__post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/ai/draft-quote-followup/{quote_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Draft Quote Followup
+         * @description Draft a short, friendly follow-up on a quote the customer hasn't
+         *     answered. Returns {subject, message} (SMS drafts carry an empty subject).
+         *     Only sent/viewed quotes qualify — a draft was never seen by the customer
+         *     and an accepted/declined one already got its answer, so a nudge would
+         *     read as either confusing or pushy.
+         */
+        post: operations["draft_quote_followup_api_ai_draft_quote_followup__quote_id__post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/ai/draft-review-request/{job_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Draft Review Request
+         * @description Draft a warm review-request note for a completed job. Returns
+         *     {subject, message}; nothing is sent. Completed jobs only — asking for a
+         *     review on a job that hasn't happened yet would go to a customer who has
+         *     nothing to review.
+         */
+        post: operations["draft_review_request_api_ai_draft_review_request__job_id__post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -5872,6 +5921,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/crew/ask": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Crew Ask */
+        post: operations["crew_ask_api_crew_ask_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/crew/docs": {
         parameters: {
             query?: never;
@@ -6295,6 +6361,10 @@ export interface components {
             role?: string | null;
             /** Active */
             active?: boolean | null;
+            /** Full Name */
+            full_name?: string | null;
+            /** Email */
+            email?: string | null;
             /** Cleaner Id */
             cleaner_id?: string | null;
             /** Pay Rate Residential */
@@ -6305,6 +6375,13 @@ export interface components {
             pay_rate_deep?: number | null;
             /** Can View Full Schedule */
             can_view_full_schedule?: boolean | null;
+        };
+        /** AskBody */
+        AskBody: {
+            /** Question */
+            question: string;
+            /** History */
+            history?: unknown[] | null;
         };
         /** AssignRequest */
         AssignRequest: {
@@ -6792,6 +6869,16 @@ export interface components {
             /**
              * Channel
              * @default email
+             */
+            channel: string | null;
+            /** Instruction */
+            instruction?: string | null;
+        };
+        /** DraftNudgeRequest */
+        DraftNudgeRequest: {
+            /**
+             * Channel
+             * @default sms
              */
             channel: string | null;
             /** Instruction */
@@ -7765,6 +7852,10 @@ export interface components {
             question: string;
             /** Page Context */
             page_context?: string | null;
+            /** Record Type */
+            record_type?: string | null;
+            /** Record Id */
+            record_id?: number | null;
         };
         /** QuoteCreate */
         QuoteCreate: {
@@ -16185,6 +16276,76 @@ export interface operations {
             };
         };
     };
+    draft_quote_followup_api_ai_draft_quote_followup__quote_id__post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                quote_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["DraftNudgeRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    draft_review_request_api_ai_draft_review_request__job_id__post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                job_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["DraftNudgeRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     overdue_reminders_api_ai_overdue_reminders_get: {
         parameters: {
             query?: never;
@@ -17800,6 +17961,39 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["ClientTextBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    crew_ask_api_crew_ask_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AskBody"];
             };
         };
         responses: {

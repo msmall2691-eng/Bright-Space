@@ -2,6 +2,7 @@ import { useState, useRef, useEffect, useMemo } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { X, Send, Loader2, Sparkles, ArrowUpRight, ChevronRight, Zap } from 'lucide-react'
 import { get, post } from '../api'
+import { recordFromPath } from '../nav/routes'
 import AgentAvatar from './workspace/AgentAvatar'
 import MarkdownContent from './workspace/MarkdownContent'
 
@@ -114,7 +115,14 @@ export default function PageAssistant() {
     setAsking(true); setAnswer(null)
     try {
       const page = location.pathname.replace('/', '') || 'dashboard'
-      const res = await post('/api/ai/quick', { question: q, page_context: page })
+      // On a detail page, tell the backend which record we're looking at so
+      // the answer is grounded in it ("this quote", "this client").
+      const record = recordFromPath(location.pathname)
+      const res = await post('/api/ai/quick', {
+        question: q,
+        page_context: page,
+        ...(record ? { record_type: record.type, record_id: record.id } : {}),
+      })
       setAnswer(res)
     } catch (err) {
       setAnswer({ answer: 'Sorry — I couldn’t answer that right now.', error: true })
