@@ -9,7 +9,7 @@
  * tools). Renders as a bottom sheet on phones, a right-hand panel on desktop.
  */
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { X, Send, Loader2, Sparkles, ChevronRight, Zap } from 'lucide-react'
+import { X, Send, Loader2, Sparkles, ChevronRight, Zap, Trash2 } from 'lucide-react'
 import { get, post } from '../../api'
 import MarkdownContent from '../workspace/MarkdownContent'
 import { SEV_DOT } from './tokens'
@@ -25,14 +25,16 @@ function firstLink(item) {
   return (item.actions || []).find(a => a.kind !== 'api' && a.href)?.href || null
 }
 
-export default function BoardAssistant({ open, onClose, sections, navigate }) {
+export default function BoardAssistant({ open, onClose, sections, navigate, onActed }) {
   const [query, setQuery] = useState('')
   const [asking, setAsking] = useState(false)
   const [answer, setAnswer] = useState(null)
   const [actionMsg, setActionMsg] = useState(null)
+  const [confirmClear, setConfirmClear] = useState(false)
   const inputRef = useRef(null)
 
   useEffect(() => { if (open) setTimeout(() => inputRef.current?.focus(), 50) }, [open])
+  useEffect(() => { if (!open) setConfirmClear(false) }, [open])
   useEffect(() => {
     if (!open) return
     const onKey = (e) => { if (e.key === 'Escape') onClose() }
@@ -74,6 +76,31 @@ export default function BoardAssistant({ open, onClose, sections, navigate }) {
         : { text: 'No overdue invoices right now. ✨' })
     } catch {
       setActionMsg({ text: 'Could not draft reminders right now.' })
+    }
+  }
+
+  // How many "Safe to Ignore" cards are on the board right now — the noise the
+  // one-tap cleanup deletes (moves to Gmail Trash where possible, always clears
+  // the board). Two-tap confirm since it's a bulk delete.
+  const noiseCount = useMemo(() => {
+    const safe = (sections || []).find(s => s.key === 'safe_to_ignore')
+    return safe?.items?.length || 0
+  }, [sections])
+
+  const clearNoise = async () => {
+    if (!noiseCount) { setActionMsg({ text: 'Nothing to clear — Safe to Ignore is empty. ✨' }); return }
+    if (!confirmClear) { setConfirmClear(true); return }
+    setConfirmClear(false); setActionMsg('working')
+    try {
+      const res = await post('/api/inbox/triage/delete-all?section=safe_to_ignore', {})
+      const cleared = res?.deleted ?? noiseCount
+      const trashed = res?.gmail_trashed ?? 0
+      setActionMsg({ text: trashed > 0
+        ? `Cleared ${cleared} — ${trashed} moved to Gmail Trash.`
+        : `Cleared ${cleared} from the board.` })
+      onActed?.()
+    } catch {
+      setActionMsg({ text: 'Could not clear the noise right now.' })
     }
   }
 
@@ -140,10 +167,22 @@ export default function BoardAssistant({ open, onClose, sections, navigate }) {
             <>
               <div>
                 <p className="mb-1.5 px-1 text-[10px] font-bold uppercase tracking-wider text-ink-3">Quick actions</p>
-                <button onClick={draftReminders}
-                  className="inline-flex items-center gap-1 rounded-lg border border-indigo-200 bg-indigo-50 px-2.5 py-1.5 text-[12px] font-medium text-indigo-700 hover:bg-indigo-100 dark:border-indigo-500/30 dark:bg-indigo-500/15 dark:text-indigo-300">
-                  <Zap className="h-3 w-3" /> Draft overdue reminders
-                </button>
+                <div className="flex flex-wrap gap-1.5">
+                  <button onClick={draftReminders}
+                    className="inline-flex items-center gap-1 rounded-lg border border-indigo-200 bg-indigo-50 px-2.5 py-1.5 text-[12px] font-medium text-indigo-700 hover:bg-indigo-100 dark:border-indigo-500/30 dark:bg-indigo-500/15 dark:text-indigo-300">
+                    <Zap className="h-3 w-3" /> Draft overdue reminders
+                  </button>
+                  <button onClick={clearNoise}
+                    className={`inline-flex items-center gap-1 rounded-lg border px-2.5 py-1.5 text-[12px] font-medium ${
+                      confirmClear
+                        ? 'border-rose-300 bg-rose-50 text-rose-700 hover:bg-rose-100 dark:border-rose-500/40 dark:bg-rose-500/15 dark:text-rose-300'
+                        : 'border-hairline bg-bg text-ink-2 hover:bg-bg-2'}`}>
+                    <Trash2 className="h-3 w-3" />
+                    {confirmClear
+                      ? `Delete ${noiseCount}? Tap to confirm`
+                      : `Clear the noise${noiseCount ? ` (${noiseCount})` : ''}`}
+                  </button>
+                </div>
                 {actionMsg && (
                   <div className="mt-1.5 flex items-center gap-2 text-[12px] text-ink-2">
                     {actionMsg === 'working'

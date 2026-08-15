@@ -16,7 +16,7 @@ from fastapi.testclient import TestClient
 
 from main import app
 from database.db import SessionLocal
-from database.models import InboxTriageItem
+from database.models import InboxTriageItem, UserGoogleAccount
 from modules.auth.router import get_current_user, current_org_id
 from services.inbox_triage import classify_email, capture_triage_item, ai_classify_email
 
@@ -187,3 +187,69 @@ def test_dismiss_all_clears_only_the_named_section(client):
     remaining = {i["id"] for i in api.get("/api/inbox/triage").json()["items"]}
     assert a not in remaining and b not in remaining
     assert c in remaining                                   # Systems section untouched
+
+
+# ── Delete (Gmail trash + board tombstone) ───────────────────────────────────
+
+def test_delete_falls_back_to_board_only_without_a_connected_account(client):
+    api, ids = client
+    rid = _seed(ids, section="safe_to_ignore", category="promotions")  # source_account_id=None
+
+    res = api.post(f"/api/inbox/triage/{rid}/delete").json()
+    assert res["deleted"] is True            # board tombstone always applies
+    assert res["gmail_trashed"] is False     # nothing to trash from (shared inbox)
+    assert res["reason"]                     # explains why Gmail wasn't touched
+
+    # Gone from board + list, and it does not resurface.
+    assert all(i["id"] != rid for i in api.get("/api/inbox/triage").json()["items"])
+    board = api.get("/api/dashboard/board").json()
+    assert f"triage:{rid}" not in {it["id"] for s in board["sections"] for it in s["items"]}
+
+    # Undo brings it back to the board.
+    undo = api.post(f"/api/inbox/triage/{rid}/undo").json()
+    assert undo["restored"] is True and undo["gmail_restored"] is False
+    assert any(i["id"] == rid for i in api.get("/api/inbox/triage").json()["items"])
+
+
+def test_delete_reports_reconnect_when_account_lacks_modify_scope(client):
+    api, ids = client
+    db = SessionLocal()
+    acct = UserGoogleAccount(
+        user_id=900000 + (uuid.uuid4().int % 90000), org_id=1,
+        google_sub=uuid.uuid4().hex, email=f"ro-{uuid.uuid4().hex[:6]}@example.com",
+        scopes=["https://www.googleapis.com/auth/gmail.readonly"],   # no modify → can't trash
+        status="connected",
+    )
+    db.add(acct); db.commit(); db.refresh(acct); aid = acct.id; db.close()
+    try:
+        db = SessionLocal()
+        row = InboxTriageItem(
+            org_id=1, external_id=f"<{uuid.uuid4().hex}@x>", source_account_id=aid,
+            from_addr="billing@stripe.com", subject="Receipt", snippet="…",
+            section="systems", category="finance", classified_by="rules", dismissed_at=None,
+        )
+        db.add(row); db.commit(); db.refresh(row); ids.append(row.id); rid = row.id; db.close()
+
+        res = api.post(f"/api/inbox/triage/{rid}/delete").json()
+        assert res["deleted"] is True
+        assert res["gmail_trashed"] is False
+        assert "reconnect" in (res["reason"] or "").lower()   # prompts the scope upgrade
+    finally:
+        db = SessionLocal()
+        db.query(UserGoogleAccount).filter(UserGoogleAccount.id == aid).delete()
+        db.commit(); db.close()
+
+
+def test_delete_all_tombstones_the_named_section(client):
+    api, ids = client
+    a = _seed(ids, section="safe_to_ignore", category="promotions")
+    b = _seed(ids, section="safe_to_ignore", category="social")
+    c = _seed(ids, section="systems", category="finance")
+
+    res = api.post("/api/inbox/triage/delete-all", params={"section": "safe_to_ignore"}).json()
+    assert res["deleted"] >= 2
+    assert res["gmail_trashed"] == 0            # seeded rows have no connected account
+
+    remaining = {i["id"] for i in api.get("/api/inbox/triage").json()["items"]}
+    assert a not in remaining and b not in remaining
+    assert c in remaining                        # Systems untouched

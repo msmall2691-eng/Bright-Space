@@ -45,7 +45,12 @@ CONNECT_SCOPES = [
     "openid",
     "https://www.googleapis.com/auth/userinfo.email",
     "https://www.googleapis.com/auth/userinfo.profile",
-    "https://www.googleapis.com/auth/gmail.readonly",
+    # gmail.modify is a superset of gmail.readonly (it can read AND move messages
+    # to Trash). The inbox sync only reads; the extra capability powers the Ops
+    # Board's "Delete" on triaged noise (users.messages.trash). Accounts connected
+    # before this change keep their old readonly grant until they reconnect —
+    # sync still works; Delete falls back to board-only for them (see has_gmail_modify).
+    "https://www.googleapis.com/auth/gmail.modify",
     "https://www.googleapis.com/auth/gmail.send",
     "https://www.googleapis.com/auth/calendar",
 ]

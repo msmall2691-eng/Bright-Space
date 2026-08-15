@@ -185,6 +185,52 @@ def stop_watch(creds) -> None:
     _service(creds).users().stop(userId="me").execute()
 
 
+def has_gmail_modify(scopes) -> bool:
+    """True if a granted-scope list can move messages to Trash (gmail.modify or
+    full-mail). Accounts connected before the Delete feature only hold
+    gmail.readonly and must reconnect Google first."""
+    joined = " ".join(scopes or [])
+    return "gmail.modify" in joined or "mail.google.com" in joined
+
+
+def _find_gmail_id_by_rfc822(service, rfc822_message_id: str):
+    """Resolve an RFC Message-ID (what we store as external_id) to Gmail's own
+    message id. `in:anywhere` so it finds the message whether it's in the inbox
+    or already in Trash (needed for untrash). Returns None if not found."""
+    mid = (rfc822_message_id or "").strip().strip("<>")
+    if not mid:
+        return None
+    listing = service.users().messages().list(
+        userId="me", q=f"rfc822msgid:{mid} in:anywhere", maxResults=1,
+    ).execute()
+    msgs = listing.get("messages") or []
+    return msgs[0]["id"] if msgs else None
+
+
+def trash_by_rfc822(creds, rfc822_message_id: str) -> bool:
+    """Move the message with this RFC Message-ID to Gmail Trash (recoverable).
+    Requires the gmail.modify scope. Returns True if trashed, False if the
+    message could not be found. Raises on a scope/permission error so the caller
+    can tell the user to reconnect."""
+    service = _service(creds)
+    gid = _find_gmail_id_by_rfc822(service, rfc822_message_id)
+    if not gid:
+        return False
+    service.users().messages().trash(userId="me", id=gid).execute()
+    return True
+
+
+def untrash_by_rfc822(creds, rfc822_message_id: str) -> bool:
+    """Restore a message (by RFC Message-ID) from Gmail Trash. Requires the
+    gmail.modify scope. Returns True if restored, False if not found."""
+    service = _service(creds)
+    gid = _find_gmail_id_by_rfc822(service, rfc822_message_id)
+    if not gid:
+        return False
+    service.users().messages().untrash(userId="me", id=gid).execute()
+    return True
+
+
 def fetch_inbox_for_account(creds, max_results: int = 30, skip_automated: bool = True) -> list:
     """Fetch the most recent inbox messages for a connected account (full scan).
 
