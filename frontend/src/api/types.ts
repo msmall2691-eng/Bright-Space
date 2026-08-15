@@ -2459,6 +2459,31 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/payroll/mileage": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Mileage Report
+         * @description Pre-calculated drive mileage per cleaner: for each day in the range,
+         *     chain their scheduled jobs by start time and measure home → first job →
+         *     between houses → back home. Distances are road distances when the Google
+         *     key is configured, otherwise straight-line × 1.3 clearly flagged
+         *     estimated. DISPLAY ONLY — nothing here feeds gross pay; reimbursement
+         *     still runs on the miles crew enter at clock-out (TimeEntry.miles).
+         */
+        get: operations["mileage_report_api_payroll_mileage_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/payroll/send-to-square": {
         parameters: {
             query?: never;
@@ -3270,6 +3295,30 @@ export interface paths {
          *     generate_jobs' cancelled-date guard won't recreate them.
          */
         post: operations["apply_off_phase_cleanup_api_recurring_cleanup_off_phase_apply_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/recurring/cleanup/health": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Recurring Health
+         * @description Recurring Doctor: read-only audit of every series in the org —
+         *     duplicate groups, missing times, junk titles, ended-but-active, stalled
+         *     generation, stale paused leftovers, broken links. Each problem carries a
+         *     suggested fix; applying any fix goes through the normal PATCH/DELETE
+         *     endpoints with a human confirm (audit never writes).
+         */
+        get: operations["recurring_health_api_recurring_cleanup_health_get"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -5133,6 +5182,53 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/dashboard/property-economics": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Property Economics Endpoint
+         * @description "Am I making money on this house" — per-property paid/invoiced revenue
+         *     (Invoice → Job → Property), completed-visit count, crew hours from the
+         *     native time clock, and effective $/hr, top N by paid revenue.
+         *
+         *     Admin/manager only, matching /owner: per-property financials are
+         *     owner-facing money, not something a viewer login needs.
+         */
+        get: operations["property_economics_endpoint_api_dashboard_property_economics_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/dashboard/week-capacity": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Week Capacity Endpoint
+         * @description Booked job hours vs available crew hours for the current (Mon-anchored)
+         *     week, with a per-day split — the "how packed is this week" number. No
+         *     financials, so viewers may read it (same gate as /summary).
+         */
+        get: operations["week_capacity_endpoint_api_dashboard_week_capacity_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/dashboard/funnel": {
         parameters: {
             query?: never;
@@ -6333,6 +6429,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/push/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Push Status
+         * @description Diagnostics for the Settings panel (owner report: 'I'm not getting
+         *     notifications at all' — the answer should be readable in the app, not a
+         *     debugging session). Says whether the server is configured and how many
+         *     devices are registered for this user and org-wide.
+         */
+        get: operations["push_status_api_push_status_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/push/subscriptions": {
         parameters: {
             query?: never;
@@ -6514,6 +6633,8 @@ export interface components {
             pay_rate_deep?: number | null;
             /** Can View Full Schedule */
             can_view_full_schedule?: boolean | null;
+            /** Home Address */
+            home_address?: string | null;
         };
         /** AskBody */
         AskBody: {
@@ -12530,6 +12651,42 @@ export interface operations {
             };
         };
     };
+    mileage_report_api_payroll_mileage_get: {
+        parameters: {
+            query?: {
+                /** @description YYYY-MM-DD (default today) */
+                start_date?: string | null;
+                /** @description YYYY-MM-DD (default start_date) */
+                end_date?: string | null;
+                /** @description Limit to one crew ID */
+                cleaner_id?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     send_to_square_api_payroll_send_to_square_post: {
         parameters: {
             query?: never;
@@ -13885,6 +14042,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    recurring_health_api_recurring_cleanup_health_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
                 };
             };
         };
@@ -16763,6 +16940,58 @@ export interface operations {
             };
         };
     };
+    property_economics_endpoint_api_dashboard_property_economics_get: {
+        parameters: {
+            query?: {
+                window_days?: number;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    week_capacity_endpoint_api_dashboard_week_capacity_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
     funnel_dashboard_api_dashboard_funnel_get: {
         parameters: {
             query?: {
@@ -18726,6 +18955,26 @@ export interface operations {
         };
     };
     vapid_public_key_api_push_vapid_public_key_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    push_status_api_push_status_get: {
         parameters: {
             query?: never;
             header?: never;

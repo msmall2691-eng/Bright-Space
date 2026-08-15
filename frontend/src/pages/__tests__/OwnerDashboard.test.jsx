@@ -9,7 +9,8 @@
  * backend (test_dashboard_owner.py).
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { render, screen, waitFor, cleanup } from '@testing-library/react'
+import { render as rtlRender, screen, waitFor, cleanup } from '@testing-library/react'
+import { MemoryRouter } from 'react-router-dom'
 
 vi.mock('../../api', () => ({
   get: vi.fn(),
@@ -17,6 +18,37 @@ vi.mock('../../api', () => ({
 
 import OwnerDashboard from '../OwnerDashboard'
 import { get } from '../../api'
+
+// The page now calls useNavigate (linked AR buckets + widget tile actions),
+// so it needs a Router around it.
+const render = (ui) => rtlRender(<MemoryRouter>{ui}</MemoryRouter>)
+
+// Benign defaults for the analytics-widget fetches the page fires alongside
+// /api/dashboard/owner — each widget's own rendering is covered separately in
+// components/dashboard/__tests__/OwnerWidgets.test.jsx.
+const WIDGET_DEFAULTS = {
+  '/api/dashboard/property-economics': { window_days: 90, properties_total: 0, properties: [] },
+  '/api/dashboard/week-capacity': {
+    booked_hours: 0, available_hours: 0, utilization_pct: null,
+    crew_count: 0, crew_without_pattern: 0, days: [],
+  },
+  '/api/jobs/sync-overview': { channels: [] },
+  '/api/recurring/cleanup/health': { scanned: 0, healthy: 0, issues: [] },
+}
+
+/** get() mock: `owner` (a value to resolve, or an Error to reject) for
+ *  /api/dashboard/owner; quiet defaults for every widget endpoint. */
+function mockGet(owner) {
+  get.mockImplementation((url) => {
+    if (url === '/api/dashboard/owner') {
+      return owner instanceof Error ? Promise.reject(owner) : Promise.resolve(owner)
+    }
+    const key = Object.keys(WIDGET_DEFAULTS).find(k => url.startsWith(k))
+    if (key) return Promise.resolve(WIDGET_DEFAULTS[key])
+    if (url.startsWith('/api/payroll/summary')) return Promise.resolve({ employees: [] })
+    return Promise.resolve({})
+  })
+}
 
 const OK = {
   as_of: '2026-07-08',
@@ -50,7 +82,7 @@ afterEach(cleanup)
 
 describe('OwnerDashboard', () => {
   it('renders all six sections with populated data', async () => {
-    get.mockResolvedValueOnce(OK)
+    mockGet(OK)
     render(<OwnerDashboard />)
     await waitFor(() => expect(screen.getByText('40%')).toBeTruthy())
     // Close rate
@@ -73,7 +105,7 @@ describe('OwnerDashboard', () => {
   })
 
   it('formats unknown service_types by Start Case fallback', async () => {
-    get.mockResolvedValueOnce(OK)
+    mockGet(OK)
     render(<OwnerDashboard />)
     await waitFor(() => expect(screen.getByText('Residential')).toBeTruthy())
     expect(screen.getByText('STR turnover')).toBeTruthy()
@@ -83,7 +115,7 @@ describe('OwnerDashboard', () => {
 
   it('hides the "Missing due date" line when no unbucketed invoices', async () => {
     const payload = { ...OK, ar_aging: { ...OK.ar_aging, unbucketed: { count: 0, total: 0.0 } } }
-    get.mockResolvedValueOnce(payload)
+    mockGet(payload)
     render(<OwnerDashboard />)
     await waitFor(() => expect(screen.getByText(/1,850 past due/)).toBeTruthy())
     expect(screen.queryByText('Missing due date')).toBeNull()
@@ -91,7 +123,7 @@ describe('OwnerDashboard', () => {
 
   it('hides the "Current" row when there are no current receivables', async () => {
     const payload = { ...OK, ar_aging: { ...OK.ar_aging, current: { count: 0, total: 0.0 } } }
-    get.mockResolvedValueOnce(payload)
+    mockGet(payload)
     render(<OwnerDashboard />)
     await waitFor(() => expect(screen.getByText(/1,850 past due/)).toBeTruthy())
     expect(screen.queryByText(/Current \(not yet due\)/)).toBeNull()
@@ -99,13 +131,13 @@ describe('OwnerDashboard', () => {
 
   it('shows an empty state when there are no paid invoices in the window', async () => {
     const payload = { ...OK, revenue_by_service: [] }
-    get.mockResolvedValueOnce(payload)
+    mockGet(payload)
     render(<OwnerDashboard />)
     await waitFor(() => expect(screen.getByText(/No paid invoices in the window yet/)).toBeTruthy())
   })
 
   it('renders an ErrorState when the API rejects', async () => {
-    get.mockRejectedValueOnce(new Error('network down'))
+    mockGet(new Error('network down'))
     render(<OwnerDashboard />)
     await waitFor(() => expect(screen.getByText(/Could not load Owner Dashboard/)).toBeTruthy())
   })
@@ -115,7 +147,7 @@ describe('OwnerDashboard', () => {
       ...OK,
       close_rate: { quotes_sent: 0, quotes_won: 0, rate_pct: null },
     }
-    get.mockResolvedValueOnce(payload)
+    mockGet(payload)
     render(<OwnerDashboard />)
     await waitFor(() => expect(screen.getByText('n/a')).toBeTruthy())
     expect(screen.getByText('0 of 0 sent')).toBeTruthy()

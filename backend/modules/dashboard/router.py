@@ -377,6 +377,43 @@ def owner_dashboard(db: Session = Depends(get_db), org_id: int = Depends(current
     }
 
 
+# ── Owner-analytics widgets (Owner Dashboard) ───────────────────────────────
+#
+# Aggregation math lives in modules/dashboard/analytics.py — these endpoints
+# only resolve the org and pass parameters through. Both compute on request
+# (no background ticks, R1) and return plain dicts.
+
+
+@router.get("/property-economics", dependencies=[Depends(require_role("admin", "manager"))])
+def property_economics_endpoint(
+    window_days: int = Query(90, ge=1, le=3650),
+    limit: int = Query(8, ge=1, le=50),
+    db: Session = Depends(get_db),
+    org_id: int = Depends(current_org_id),
+):
+    """"Am I making money on this house" — per-property paid/invoiced revenue
+    (Invoice → Job → Property), completed-visit count, crew hours from the
+    native time clock, and effective $/hr, top N by paid revenue.
+
+    Admin/manager only, matching /owner: per-property financials are
+    owner-facing money, not something a viewer login needs."""
+    from modules.dashboard.analytics import property_economics
+    return property_economics(db, resolve_org_id(org_id, db),
+                              window_days=window_days, limit=limit)
+
+
+@router.get("/week-capacity", dependencies=[Depends(require_role("admin", "manager", "viewer"))])
+def week_capacity_endpoint(
+    db: Session = Depends(get_db),
+    org_id: int = Depends(current_org_id),
+):
+    """Booked job hours vs available crew hours for the current (Mon-anchored)
+    week, with a per-day split — the "how packed is this week" number. No
+    financials, so viewers may read it (same gate as /summary)."""
+    from modules.dashboard.analytics import week_capacity
+    return week_capacity(db, resolve_org_id(org_id, db))
+
+
 # ── Intake → Quote funnel ───────────────────────────────────────────────────
 #
 # A cohort funnel anchored on the REQUEST (LeadIntake), not a status snapshot:
