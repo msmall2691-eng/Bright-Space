@@ -1179,6 +1179,17 @@ def apply_off_phase_cleanup(body: OffPhaseCleanupApply, db: Session = Depends(ge
     return {"cancelled_count": len(cancelled), "cancelled_job_ids": cancelled}
 
 
+@router.get("/cleanup/health", dependencies=[Depends(require_role("admin", "manager"))])
+def recurring_health(db: Session = Depends(get_db), org_id: int = Depends(current_org_id)):
+    """Recurring Doctor: read-only audit of every series in the org —
+    duplicate groups, missing times, junk titles, ended-but-active, stalled
+    generation, stale paused leftovers, broken links. Each problem carries a
+    suggested fix; applying any fix goes through the normal PATCH/DELETE
+    endpoints with a human confirm (audit never writes)."""
+    from services.recurring_guards import audit_series
+    return audit_series(db, resolve_org_id(org_id, db))
+
+
 @router.post("/{schedule_id}/generate", dependencies=[Depends(require_role("admin", "manager"))])
 def generate(schedule_id: int, db: Session = Depends(get_db),
              org_id: int = Depends(current_org_id)):
