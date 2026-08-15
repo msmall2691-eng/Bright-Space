@@ -2,6 +2,30 @@
 
 Guidance for AI assistants (and humans) working in this repository.
 
+## Repo skills — load before you build (binding on every branch)
+
+`.claude/skills/` ships with the repo, so these travel with every branch and
+worktree. They are not optional reading; each encodes owner decisions that have
+already been litigated:
+
+- **`brightbase-design-language`** — load before styling or building ANY UI
+  (office or crew). Quiet dot+word labels; the owner has vetoed SaaS pill
+  bubbles, tinted banners, and count bubbles — twice. Also: `shell:` (900px)
+  breakpoint, per-role layout rules, access-details UI constraints.
+- **`brightbase-economy`** — load before adding any fetch, sync, background
+  tick, or external API call. No polling where events work, one fetch per
+  screen per need, metered APIs cached at the row, crew payloads light
+  (rural cell data).
+- **`recurring-doctor`** — load when recurring-series data looks wrong
+  (duplicates, ghosts, ended-but-active). Points at the health scan and the
+  root causes already identified; don't re-diagnose from scratch.
+
+User-level skills that also govern work here when present: `brightbase-build`
+(conventions, security checklist), `brightbase-migrations` (Alembic
+discipline — single head, real downgrades, additive-only),
+`scheduling-invariants` (the authority contract for anything touching
+jobs/sync — R1–R8; it overrides other guidance where they conflict).
+
 ## What this is
 
 **BrightBase** (repo: Bright-Space, API title `BrightBase API`) is the operations
