@@ -42,6 +42,9 @@ TENANT_TABLES = [
     # Property crew notes + reference photos (migration 090), org-scoped.
     "property_crew_notes",
     "property_photos",
+    # Autopilot approval gate (migration 091): AI-proposed actions awaiting a
+    # human decision, org-scoped.
+    "proposed_actions",
 ]
 
 POLICY = "bb_org_isolation"
