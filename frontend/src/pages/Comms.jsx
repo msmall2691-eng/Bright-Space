@@ -36,6 +36,8 @@ import { ComposeBar } from '../components/comms/ComposeBar'
 import { ReplySuggestion } from '../components/comms/ReplySuggestion'
 import { ThreadHeader } from '../components/comms/ThreadHeader'
 import { InboxLeftPanel } from '../components/comms/InboxLeftPanel'
+import { InboxViewToggle } from '../components/comms/InboxViewToggle'
+import { CrewInbox } from '../components/comms/CrewInbox'
 import { useCommsData } from '../hooks/useCommsData'
 import { useCommsMutations } from '../hooks/useCommsMutations'
 import { useCommsFilters } from '../hooks/useCommsFilters'
@@ -83,6 +85,18 @@ export default function Comms() {
     setSearch(urlParams.get('q') || '')
   }, [urlParams])
 
+  // Clients | Crew view. Crew = the office side of every cleaner's chat
+  // thread, first-class inside Messages (owner: "chat with crew front and
+  // center"). Kept in the URL (?view=crew) so the Crew page and mobile nav
+  // can deep-link straight to it, and Back returns to the client inbox.
+  const view = urlParams.get('view') === 'crew' ? 'crew' : 'inbox'
+  const setView = useCallback((v) => {
+    const next = new URLSearchParams(urlParams)
+    if (v === 'crew') next.set('view', 'crew')
+    else next.delete('view')
+    setUrlParams(next, { replace: true })
+  }, [urlParams, setUrlParams])
+
   // ──────── Data ────────
 
   const {
@@ -91,7 +105,7 @@ export default function Comms() {
     detail, loadingDetail, loadingList, clients,
     threadRef,
     loadList, loadSummary, loadDetail,
-  } = useCommsData({ folder, chipFilters, channelFilter, search })
+  } = useCommsData({ folder, chipFilters, channelFilter, search, enabled: view !== 'crew' })
 
   // ──────── Filter config (memos over summary + state) ────────
 
@@ -298,6 +312,18 @@ export default function Comms() {
   // run_inbox_sync attaches inbound Gmail to Conversations. Email uses the
   // same conversation list as SMS.
 
+  // The Clients | Crew switch lives in the left panel header of BOTH views so
+  // it never moves. Unread counts: client convs from the summary poll, crew
+  // threads from the same endpoint's crew_unread_threads.
+  const viewToggle = (
+    <InboxViewToggle
+      view={view}
+      onChange={setView}
+      clientUnread={summary.unread || 0}
+      crewUnread={summary.crew_unread_threads || 0}
+    />
+  )
+
   return (
     <div className="flex flex-col h-full bg-bg">
       {/* Compact header — PageHeader isn't full-height on its own, and this
@@ -321,9 +347,13 @@ export default function Comms() {
         }
       />
 
+    {view === 'crew' ? (
+      <CrewInbox viewToggle={viewToggle} />
+    ) : (
     <div className="flex flex-1 min-h-0">
 
       <InboxLeftPanel
+        header={viewToggle}
         convs={convs}
         loadingList={loadingList}
         selectedId={selectedId}
@@ -452,6 +482,7 @@ export default function Comms() {
       )}
 
     </div>
+    )}
 
       {/* ═══ Compose Modal ═══ (fixed overlay — lives outside the 3-pane row) */}
       {showCompose && (

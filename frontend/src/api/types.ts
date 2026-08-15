@@ -6112,6 +6112,51 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/crew/threads": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Office Crew Threads
+         * @description Every cleaner's office thread in one list for the Messages page's Crew
+         *     view — last-message preview, unread-from-cleaner count, newest activity
+         *     first (cleaners with no thread yet sort last, alphabetically), so the
+         *     office sees at a glance who's waiting on a reply.
+         */
+        get: operations["office_crew_threads_api_crew_threads_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/crew/messages/broadcast": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Office Broadcast
+         * @description One message to many cleaners at once ("park behind the shop today") —
+         *     each copy lands in that cleaner's normal office thread and pushes to their
+         *     phone exactly like a 1:1 office reply; the crew side needs nothing new.
+         */
+        post: operations["office_broadcast_api_crew_messages_broadcast_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/crew/messages/{user_id}": {
         parameters: {
             query?: never;
@@ -6854,6 +6899,13 @@ export interface components {
             bedrooms?: number | null;
             /** Cancel */
             cancel?: boolean | null;
+        };
+        /** BroadcastBody */
+        BroadcastBody: {
+            /** Body */
+            body: string;
+            /** User Ids */
+            user_ids?: number[] | null;
         };
         /** BulkIdsRequest */
         BulkIdsRequest: {
@@ -18406,6 +18458,59 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["MessageBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    office_crew_threads_api_crew_threads_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    office_broadcast_api_crew_messages_broadcast_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BroadcastBody"];
             };
         };
         responses: {

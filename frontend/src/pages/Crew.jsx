@@ -12,42 +12,23 @@
  * existing admin PATCH /api/auth/users/{id}.
  */
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { HardHat, RefreshCw, UserPlus, Mail, Link2 } from 'lucide-react'
+import { HardHat, RefreshCw, UserPlus, Mail } from 'lucide-react'
 import { get, post, patch } from '../api'
 import { PageHeader, EmptyState, ErrorState, Skeleton } from '../components/ui'
 import { pushToast } from '../utils/toastBus'
 import CrewDocsAdmin from '../components/crew/CrewDocsAdmin'
-import { MessageSquare, Send, Sparkles, X } from 'lucide-react'
+import { CrewThreadPane } from '../components/comms/CrewThreadPane'
+import { MessageSquare, Sparkles, X } from 'lucide-react'
+import { Link } from 'react-router-dom'
 
 /** Office side of the cleaner↔office thread (crew app "message the office").
- *  One drawer per cleaner; replies push to their phone. `initialDraft`
- *  prefills the composer (the AI day-plan draft) — review-first: nothing
- *  sends until the office edits/approves and hits Send, and the cleaner
- *  just sees a normal office message (no AI badge on the crew side). */
+ *  One drawer per cleaner; replies push to their phone. The thread body is
+ *  the SAME component the Messages page's Crew view renders inline
+ *  (components/comms/CrewThreadPane) — one implementation, two entrances.
+ *  `initialDraft` prefills the composer (the AI day-plan draft) —
+ *  review-first: nothing sends until the office edits/approves and hits
+ *  Send, and the cleaner just sees a normal office message. */
 function OfficeCrewThread({ user, initialDraft, onClose }) {
-  const [msgs, setMsgs] = useState(null)
-  const [draft, setDraft] = useState(initialDraft || '')
-  const [busy, setBusy] = useState(false)
-
-  const load = useCallback(() => {
-    get(`/api/crew/messages/${user.id}`).then(setMsgs).catch(() => setMsgs([]))
-  }, [user.id])
-  useEffect(() => { load() }, [load])
-
-  const send = async () => {
-    const text = draft.trim()
-    if (!text) return
-    setBusy(true)
-    try {
-      await post(`/api/crew/messages/${user.id}`, { body: text })
-      setDraft(''); load()
-    } catch (e) {
-      pushToast({ type: 'error', message: e.detail || e.message || 'Could not send' })
-    } finally {
-      setBusy(false)
-    }
-  }
-
   return (
     <div className="fixed inset-0 z-40 flex justify-end bg-black/30" onClick={onClose}>
       <div className="w-full max-w-md h-full bg-panel border-l border-hairline flex flex-col"
@@ -62,35 +43,11 @@ function OfficeCrewThread({ user, initialDraft, onClose }) {
             <X className="w-4 h-4" />
           </button>
         </div>
-        <div className="flex-1 overflow-y-auto px-4 py-4 space-y-2">
-          {!msgs && <div className="h-24 rounded-xl bg-bg-2 animate-pulse" />}
-          {msgs?.length === 0 && (
-            <p className="text-[12.5px] text-ink-3 text-center pt-8">No messages yet.</p>
-          )}
-          {(msgs || []).map(m => (
-            <div key={m.id} className={`max-w-[85%] ${m.sender === 'office' ? 'ml-auto' : ''}`}>
-              <div className={`rounded-2xl px-3.5 py-2 text-[13.5px] whitespace-pre-wrap ${
-                m.sender === 'office'
-                  ? 'bg-indigo-600 text-white rounded-br-md'
-                  : 'bg-bg-2 border border-hairline text-ink rounded-bl-md'}`}>
-                {m.body}
-              </div>
-              <div className={`text-[10px] text-ink-3 mt-0.5 ${m.sender === 'office' ? 'text-right' : ''}`}>
-                {m.created_at ? new Date(m.created_at).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : ''}
-              </div>
-            </div>
-          ))}
-        </div>
-        <div className="border-t border-hairline px-3 py-2.5 flex items-end gap-2">
-          <textarea value={draft} rows={1} maxLength={2000}
-            onChange={e => setDraft(e.target.value)}
-            placeholder={`Message ${(user.full_name || '').split(' ')[0] || 'them'}…`}
-            className="flex-1 resize-none rounded-xl border border-hairline bg-bg px-3 py-2.5 text-[14px] text-ink focus:outline-none focus:border-indigo-400" />
-          <button onClick={send} disabled={busy || !draft.trim()} aria-label="Send"
-            className="grid place-items-center w-10 h-10 rounded-md bg-indigo-600 hover:bg-indigo-700 text-white disabled:opacity-50 transition-colors">
-            <Send className="w-4 h-4" />
-          </button>
-        </div>
+        <CrewThreadPane
+          userId={user.id}
+          firstName={(user.full_name || '').split(' ')[0]}
+          initialDraft={initialDraft}
+        />
       </div>
     </div>
   )
@@ -238,17 +195,25 @@ export default function Crew() {
         iconColor="violet"
         title="Crew"
         subtitle="Add cleaners, set their pay rates, and send each one a link to set their own password."
+        actions={
+          <Link to="/comms?view=crew"
+            className="inline-flex h-8 items-center gap-1.5 text-xs font-medium text-ink-2 bg-panel border border-hairline-2 rounded-md px-2.5 hover:bg-bg-2 no-underline transition-colors">
+            <MessageSquare className="w-3.5 h-3.5" /> Crew chat
+          </Link>
+        }
       />
 
       <div className="px-4 sm:px-8 space-y-5 max-w-4xl">
         {/* Unclaimed crew IDs — the cutover safety net. Only shows when there are
-            crew IDs on upcoming jobs that no login owns yet. */}
+            crew IDs on upcoming jobs that no login owns yet. Attention =
+            hairline card + amber dot (design law), not a tinted banner. */}
         {!loading && unclaimed.length > 0 && (
-          <div className="border border-amber-200 bg-amber-50/60 rounded-xl p-4">
-            <div className="flex items-center gap-2 text-amber-800 font-semibold text-sm mb-1">
-              <Link2 className="w-4 h-4" /> Crew IDs on the schedule with no login yet
+          <div className="bg-panel border border-hairline rounded-lg p-4">
+            <div className="flex items-center gap-2 font-semibold text-sm text-ink mb-1">
+              <span className="h-1.5 w-1.5 rounded-full bg-amber-500 shrink-0" aria-hidden="true" />
+              Crew IDs on the schedule with no login yet
             </div>
-            <p className="text-[13px] text-amber-700/90 mb-3">
+            <p className="text-[13px] text-ink-2 mb-3">
               These crew IDs are assigned to upcoming jobs but aren’t linked to anyone. Add a cleaner
               with the matching ID so their jobs show up for them — and so no one falls off the
               schedule.
@@ -256,67 +221,16 @@ export default function Crew() {
             <div className="flex flex-wrap gap-2">
               {unclaimed.map(u => (
                 <button key={u.cleaner_id} onClick={() => claim(u.cleaner_id)}
-                  className="inline-flex items-center gap-1.5 text-xs font-medium bg-panel border border-amber-300 text-amber-800 hover:bg-amber-100 rounded-md px-3 py-1.5 transition-colors">
+                  className="inline-flex items-center gap-1.5 text-xs font-medium bg-panel border border-hairline-2 text-ink-2 hover:bg-bg-2 rounded-md px-3 py-1.5 transition-colors">
                   <UserPlus className="w-3.5 h-3.5" />
                   <span className="font-semibold">{u.cleaner_id}</span>
-                  <span className="text-amber-600">· {u.upcoming_jobs} job{u.upcoming_jobs === 1 ? '' : 's'}</span>
+                  <span className="text-ink-3">· {u.upcoming_jobs} job{u.upcoming_jobs === 1 ? '' : 's'}</span>
                 </button>
               ))}
             </div>
           </div>
         )}
 
-        {/* Add cleaner */}
-        <form onSubmit={addCleaner} className="border border-hairline bg-panel rounded-xl p-4">
-          <div className="flex items-center gap-2 text-ink font-semibold text-sm mb-3">
-            <UserPlus className="w-4 h-4 text-indigo-500" /> Add a cleaner
-          </div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <label className="block">
-              <span className="text-[11px] text-ink-3">Name</span>
-              <input ref={nameRef} value={fullName} onChange={e => setFullName(e.target.value)}
-                placeholder="Full name" disabled={adding}
-                className="mt-0.5 w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" />
-            </label>
-            <label className="block">
-              <span className="text-[11px] text-ink-3">Email <span className="text-red-500">*</span></span>
-              <input type="email" value={email} onChange={e => setEmail(e.target.value)}
-                placeholder="cleaner@email.com" disabled={adding}
-                className="mt-0.5 w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" />
-            </label>
-            <label className="block sm:col-span-2">
-              <span className="text-[11px] text-ink-3">Crew ID <span className="text-ink-3">(optional — links them to jobs already assigned)</span></span>
-              <input value={crewId} onChange={e => setCrewId(e.target.value)}
-                placeholder="e.g. 123" disabled={adding}
-                className="mt-0.5 w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" />
-            </label>
-            <label className="block">
-              <span className="text-[11px] text-ink-3">Residential $/hr</span>
-              <input type="number" step="0.5" min="0" value={res} onChange={e => setRes(e.target.value)}
-                placeholder="Blank = shop default" disabled={adding}
-                className="mt-0.5 w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" />
-            </label>
-            <label className="block">
-              <span className="text-[11px] text-ink-3">Rental (turnover) $/hr</span>
-              <input type="number" step="0.5" min="0" value={rental} onChange={e => setRental(e.target.value)}
-                placeholder="Blank = shop default" disabled={adding}
-                className="mt-0.5 w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" />
-            </label>
-            <label className="block">
-              <span className="text-[11px] text-ink-3">Deep-clean $/hr</span>
-              <input type="number" step="0.5" min="0" value={deep} onChange={e => setDeep(e.target.value)}
-                placeholder="Blank = shop default" disabled={adding}
-                className="mt-0.5 w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" />
-            </label>
-          </div>
-          <div className="flex items-center gap-2 mt-3">
-            <button type="submit" disabled={adding}
-              className="text-sm font-medium bg-indigo-600 hover:bg-indigo-700 disabled:opacity-60 text-white px-4 py-2 rounded-md inline-flex items-center gap-1.5 transition-colors">
-              <Mail className="w-4 h-4" /> {adding ? 'Sending…' : 'Add & send invite'}
-            </button>
-            <span className="text-[11px] text-ink-3">They’ll get an email with a link to set their password (good for 7 days).</span>
-          </div>
-        </form>
 
         {/* Roster */}
         <div>
@@ -331,7 +245,7 @@ export default function Crew() {
           {!loading && error && <ErrorState onRetry={load} compact />}
           {!loading && !error && rows.length === 0 && (
             <EmptyState icon={HardHat} title="No cleaners yet"
-              description="Add your first cleaner above — they’ll get an invite to set their password and see their schedule." compact />
+              description="Add your first cleaner below — they’ll get an invite to set their password and see their schedule." compact />
           )}
 
           {!loading && !error && rows.length > 0 && (
@@ -437,6 +351,58 @@ export default function Crew() {
             </div>
           )}
         </div>
+
+        {/* Add cleaner — kept below the roster: day-to-day the office reads/edits the roster; adding someone is the occasional flow. */}
+        <form onSubmit={addCleaner} className="border border-hairline bg-panel rounded-xl p-4">
+          <div className="flex items-center gap-2 text-ink font-semibold text-sm mb-3">
+            <UserPlus className="w-4 h-4 text-indigo-500" /> Add a cleaner
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <label className="block">
+              <span className="text-[11px] text-ink-3">Name</span>
+              <input ref={nameRef} value={fullName} onChange={e => setFullName(e.target.value)}
+                placeholder="Full name" disabled={adding}
+                className="mt-0.5 w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+            </label>
+            <label className="block">
+              <span className="text-[11px] text-ink-3">Email <span className="text-red-500">*</span></span>
+              <input type="email" value={email} onChange={e => setEmail(e.target.value)}
+                placeholder="cleaner@email.com" disabled={adding}
+                className="mt-0.5 w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+            </label>
+            <label className="block sm:col-span-2">
+              <span className="text-[11px] text-ink-3">Crew ID <span className="text-ink-3">(optional — links them to jobs already assigned)</span></span>
+              <input value={crewId} onChange={e => setCrewId(e.target.value)}
+                placeholder="e.g. 123" disabled={adding}
+                className="mt-0.5 w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+            </label>
+            <label className="block">
+              <span className="text-[11px] text-ink-3">Residential $/hr</span>
+              <input type="number" step="0.5" min="0" value={res} onChange={e => setRes(e.target.value)}
+                placeholder="Blank = shop default" disabled={adding}
+                className="mt-0.5 w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+            </label>
+            <label className="block">
+              <span className="text-[11px] text-ink-3">Rental (turnover) $/hr</span>
+              <input type="number" step="0.5" min="0" value={rental} onChange={e => setRental(e.target.value)}
+                placeholder="Blank = shop default" disabled={adding}
+                className="mt-0.5 w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+            </label>
+            <label className="block">
+              <span className="text-[11px] text-ink-3">Deep-clean $/hr</span>
+              <input type="number" step="0.5" min="0" value={deep} onChange={e => setDeep(e.target.value)}
+                placeholder="Blank = shop default" disabled={adding}
+                className="mt-0.5 w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+            </label>
+          </div>
+          <div className="flex items-center gap-2 mt-3">
+            <button type="submit" disabled={adding}
+              className="text-sm font-medium bg-indigo-600 hover:bg-indigo-700 disabled:opacity-60 text-white px-4 py-2 rounded-md inline-flex items-center gap-1.5 transition-colors">
+              <Mail className="w-4 h-4" /> {adding ? 'Sending…' : 'Add & send invite'}
+            </button>
+            <span className="text-[11px] text-ink-3">They’ll get an email with a link to set their password (good for 7 days).</span>
+          </div>
+        </form>
 
         <CrewDocsAdmin />
       </div>

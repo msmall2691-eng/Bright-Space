@@ -86,9 +86,12 @@ describe('OpsBoard', () => {
     expect(JSON.parse(localStorage.getItem('brightbase_board_cleared'))).toContain('job:1')
   })
 
+  // Search + severity chips fold behind the quiet "Filters" disclosure now
+  // (owner: "this is so busy") — open it first, then filter as before.
   it('severity chips filter the visible cards', async () => {
     renderBoard()
     await screen.findByText('No cleaner assigned')
+    fireEvent.click(screen.getByRole('button', { name: /filters/i }))
     fireEvent.click(screen.getByRole('button', { name: /urgent/i }))
     expect(screen.getByText('No cleaner assigned')).toBeTruthy() // urgent
     expect(screen.queryByText('Wells rental')).toBeNull()        // watch → hidden
@@ -97,6 +100,7 @@ describe('OpsBoard', () => {
   it('search narrows the board', async () => {
     renderBoard()
     await screen.findByText('No cleaner assigned')
+    fireEvent.click(screen.getByRole('button', { name: /filters/i }))
     fireEvent.change(screen.getByPlaceholderText(/search everything/i), { target: { value: 'wells' } })
     expect(screen.getByText('Wells rental')).toBeTruthy()
     expect(screen.queryByText('No cleaner assigned')).toBeNull()

@@ -3050,6 +3050,15 @@ def update_job(job_id: int, data: JobUpdate, db: Session = Depends(get_db), org_
     ):
         updates["status"] = "scheduled"
     prev_cleaner_ids = [str(c) for c in (job.cleaner_ids or [])]
+    # Economy audit H3 / scheduling-invariants R4: capture, BEFORE the edit is
+    # applied, exactly the fields the Google Calendar event serializes (the
+    # job_dict below plus the client). The edit modal sends the full payload on
+    # every save, so without this gate every note edit, cleaner swap, or
+    # status flip re-pushed an unchanged event to Google.
+    _gcal_sig_before = (
+        job.title, job.job_type, job.scheduled_date, job.start_time,
+        job.end_time, job.address, job.notes, job.property_id, job.client_id,
+    )
     for field, value in updates.items():
         setattr(job, field, value)
 
@@ -3193,7 +3202,13 @@ def update_job(job_id: int, data: JobUpdate, db: Session = Depends(get_db), org_
                     db.commit()
         except Exception as e:
             logger.warning(f"GCal inline create failed for job {job.id}: {e}")
-    elif job.gcal_event_id:
+    elif job.gcal_event_id and (
+        job.title, job.job_type, job.scheduled_date, job.start_time,
+        job.end_time, job.address, job.notes, job.property_id, job.client_id,
+    ) != _gcal_sig_before:
+        # Only push to Google when a field the event actually carries changed
+        # (see _gcal_sig_before above). Unchanged-event edits skip the API
+        # call, the timeline row, and the failure logging entirely.
         try:
             from integrations.google_calendar import (
                 _calendar_id, create_event, delete_event, update_event,

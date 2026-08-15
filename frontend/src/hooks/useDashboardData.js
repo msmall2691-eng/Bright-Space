@@ -53,8 +53,6 @@ export function useDashboardData() {
       get(`/api/jobs?date=${t}`),
       get(`/api/jobs?date_from=${t}&date_to=${weekEnd}`),
       get('/api/invoices?limit=200'),
-      // Job/Visit unification (PR-B): today's occurrences read from /api/jobs.
-      get(`/api/jobs?date=${t}`),
       get('/api/comms/conversations?sla_state=breached&status=open&limit=20'),
       get('/api/comms/conversations?assignee=unassigned&status=open&limit=20'),
       get('/api/invoices/summary/by-service?period=mtd'),
@@ -76,16 +74,17 @@ export function useDashboardData() {
 
     const val = (i, d) => (results[i].status === 'fulfilled' ? results[i].value : d)
     const jobsToday = val(0, []), jobsWeek = val(1, []), invoicesAll = val(2, [])
-    // /api/jobs returns a plain array; the old `{ items: [] }` shape came
-    // from /api/visits and is no longer produced (fallback still tolerated).
-    const visitsToday = val(3, [])
-    const conversationsOverdue = val(4, { items: [] })
-    const conversationsUnassigned = val(5, { items: [] })
-    const svcRevenueResp = val(6, { by_service: [] })
-    const commsSummaryResp = val(7, {})
-    const followUpsResp = val(8, [])
-    const employeesAll = results[9].status === 'fulfilled' ? results[9].value : null
-    const summaryResp = val(10, null)
+    // Job/Visit unification (PR-B): today's "visits" ARE today's jobs — this
+    // used to be a second identical `/api/jobs?date=` request fired in
+    // parallel (economy audit H4); both readers now share one fetch.
+    const visitsToday = jobsToday
+    const conversationsOverdue = val(3, { items: [] })
+    const conversationsUnassigned = val(4, { items: [] })
+    const svcRevenueResp = val(5, { by_service: [] })
+    const commsSummaryResp = val(6, {})
+    const followUpsResp = val(7, [])
+    const employeesAll = results[8].status === 'fulfilled' ? results[8].value : null
+    const summaryResp = val(9, null)
 
     setTodayJobs(Array.isArray(jobsToday) ? jobsToday : [])
     setWeekJobs(Array.isArray(jobsWeek) ? jobsWeek : [])

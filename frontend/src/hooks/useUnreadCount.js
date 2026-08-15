@@ -19,6 +19,9 @@ import { getCached } from '../api'
 export function useUnreadCount({ intervalMs = 120000, onIncrease } = {}) {
   const [unreadConversations, setUnreadConversations] = useState(0)
   const [unreadMessages, setUnreadMessages] = useState(0)
+  // Crew chat (cleaner→office threads) rides the same summary payload, so the
+  // Messages badge can cover BOTH inboxes without a second poll loop.
+  const [crewUnreadThreads, setCrewUnreadThreads] = useState(0)
   const lastSeen = useRef(null)
   const onIncreaseRef = useRef(onIncrease)
   onIncreaseRef.current = onIncrease
@@ -37,10 +40,13 @@ export function useUnreadCount({ intervalMs = 120000, onIncrease } = {}) {
       try {
         const data = await getCached('/api/comms/conversations/summary')
         if (cancelled) return
-        const total = data.unread_messages ?? 0
+        // Include crew messages in the chime total so a cleaner's "van won't
+        // start" pings the office just like a customer text does.
+        const total = (data.unread_messages ?? 0) + (data.crew_unread_messages ?? 0)
         const convs = data.unread ?? 0
         setUnreadMessages(total)
         setUnreadConversations(convs)
+        setCrewUnreadThreads(data.crew_unread_threads ?? 0)
         if (lastSeen.current !== null && total > lastSeen.current) {
           onIncreaseRef.current?.(total, lastSeen.current)
         }
@@ -57,5 +63,5 @@ export function useUnreadCount({ intervalMs = 120000, onIncrease } = {}) {
     return () => { cancelled = true; clearInterval(id) }
   }, [intervalMs])
 
-  return { unreadConversations, unreadMessages }
+  return { unreadConversations, unreadMessages, crewUnreadThreads }
 }

@@ -54,17 +54,38 @@ def has_street_view(address: str, api_key: str) -> bool:
         return False
 
 
+# Economy audit H2: every render was 2 metered Google calls (metadata + image)
+# with nothing cached server-side, and the photo renders per-row on Requests /
+# client profiles. Houses don't change; cache the JPEG in-process keyed by
+# normalized address so repeat views across users/devices on this container
+# cost zero Google calls. Bounded FIFO (~50 entries × ~60KB ≈ 3MB). Negative
+# results ("no coverage") cache too — those were the most repeated calls.
+_SV_CACHE: dict[str, bytes | None] = {}
+_SV_CACHE_MAX = 50
+
+
+def _sv_key(address: str, size: str) -> str:
+    return f"{' '.join((address or '').lower().split())}|{size}"
+
+
 def street_view_bytes(address: str, api_key: str, size: str = "640x360") -> bytes | None:
     """Front-of-house JPEG for the address, or None when there's no coverage."""
-    if not has_street_view(address, api_key):
-        return None
-    try:
-        qs = urllib.parse.urlencode({"size": size, "location": address, "fov": "80", "key": api_key})
-        with urllib.request.urlopen(f"{_SV_BASE}?{qs}", timeout=8) as resp:
-            return resp.read()
-    except Exception as e:
-        logger.warning(f"[street-view] image fetch failed: {e}")
-        return None
+    key = _sv_key(address, size)
+    if key in _SV_CACHE:
+        return _SV_CACHE[key]
+    result: bytes | None = None
+    if has_street_view(address, api_key):
+        try:
+            qs = urllib.parse.urlencode({"size": size, "location": address, "fov": "80", "key": api_key})
+            with urllib.request.urlopen(f"{_SV_BASE}?{qs}", timeout=8) as resp:
+                result = resp.read()
+        except Exception as e:
+            logger.warning(f"[street-view] image fetch failed: {e}")
+            return None  # transient failure: don't cache, let the next view retry
+    if len(_SV_CACHE) >= _SV_CACHE_MAX:
+        _SV_CACHE.pop(next(iter(_SV_CACHE)))
+    _SV_CACHE[key] = result
+    return result
 
 
 # ── RentCast property data ───────────────────────────────────────────────────

@@ -17,12 +17,15 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
   Search, RotateCcw, Eye, EyeOff, Check, ArrowRight, RefreshCw, Loader2, Sparkles,
+  SlidersHorizontal, ChevronDown,
 } from 'lucide-react'
 import { get, post } from '../api'
 import { pushToast } from '../utils/toastBus'
 import { ErrorState } from '../components/ui'
 import { TAG_TONE, SEV_DOT, SEV_LABEL, STAT_TONE, INT_DOT, SEV_ORDER } from '../components/board/tokens'
 import BoardAssistant from '../components/board/BoardAssistant'
+import { useUnreadCount } from '../hooks/useUnreadCount'
+import { currentRole } from '../nav/routes'
 
 const CLEARED_KEY = 'brightbase_board_cleared'
 
@@ -221,7 +224,8 @@ function ProposalsQueue() {
       <header className="flex items-center gap-2 border-b border-hairline px-3.5 py-2.5">
         <span className="h-1.5 w-1.5 rounded-full bg-indigo-500" />
         <h2 className="text-[11px] font-medium text-ink-3">Waiting for your approval</h2>
-        <span className="ml-auto rounded-full bg-bg-2 px-1.5 py-0.5 text-[10px] font-bold tabular-nums text-ink-3">
+        {/* Plain number, not a count bubble (owner veto). */}
+        <span className="ml-auto text-[11px] font-semibold tabular-nums text-ink-3">
           {proposals.length}
         </span>
       </header>
@@ -231,6 +235,91 @@ function ProposalsQueue() {
             busy={busy?.id === p.id ? busy.action : null}
             error={failures[p.id]}
             onApprove={approve} onDismiss={dismiss} />
+        ))}
+      </div>
+    </section>
+  )
+}
+
+/* ── Communication strip ──────────────────────────────────────────────────── */
+/** The owner's #1 ask for Home: communication first. One quiet row — client
+ *  messages, crew chats, threads waiting on a reply, new leads — plain
+ *  numbers + 11px labels (no tiles, no bubbles), each a link into the surface
+ *  that answers it. Counts reuse the summary poll (useUnreadCount) and the
+ *  board's existing stats; no new endpoints. */
+function CommsStrip({ stats, unreadConversations, crewUnreadThreads, navigate }) {
+  const stat = (k) => (stats || []).find(s => s.key === k)
+  const entries = [
+    { n: unreadConversations, label: 'unread messages', to: '/comms' },
+    { n: crewUnreadThreads, label: 'crew chats', to: '/comms?view=crew' },
+    { n: Number(stat('waiting')?.value ?? 0), label: 'waiting on a reply', to: '/comms' },
+    { n: Number(stat('leads')?.value ?? 0), label: 'new leads', to: '/requests' },
+  ]
+  return (
+    <section className="mt-4 overflow-hidden rounded-xl border border-hairline bg-panel">
+      <header className="flex items-center gap-2 border-b border-hairline px-3.5 py-2">
+        <h2 className="text-[11px] font-medium text-ink-3">Communication</h2>
+      </header>
+      <div className="flex items-stretch divide-x divide-hairline overflow-x-auto">
+        {entries.map(e => (
+          <button key={e.label} onClick={() => navigate(e.to)}
+            className="flex min-w-0 flex-1 shrink-0 flex-col items-start gap-0.5 px-3.5 py-2.5 text-left transition-colors hover:bg-bg-2">
+            <span className="flex items-center gap-1.5">
+              {e.n > 0 && <span className="h-1.5 w-1.5 rounded-full bg-indigo-500" aria-hidden="true" />}
+              <span className={`text-[15px] font-bold leading-none tabular-nums ${e.n > 0 ? 'text-ink' : 'text-ink-3'}`}>
+                {e.n}
+              </span>
+            </span>
+            <span className="whitespace-nowrap text-[10.5px] text-ink-3">{e.label}</span>
+          </button>
+        ))}
+      </div>
+    </section>
+  )
+}
+
+/* ── Crew activity ────────────────────────────────────────────────────────── */
+/** Staff activity, right under communication: the latest crew↔office chatter
+ *  from /api/crew/threads (who said what, unread as dot + number), linking
+ *  into the Messages page's Crew view. Self-contained like DailyBrief — its
+ *  own fetch, renders nothing on failure/emptiness (viewers 403 here, and a
+ *  quiet page beats an error card for a nicety). */
+function CrewActivity({ navigate }) {
+  const [threads, setThreads] = useState(null)
+  useEffect(() => {
+    get('/api/crew/threads')
+      .then(t => setThreads(Array.isArray(t) ? t : []))
+      .catch(() => setThreads([]))
+  }, [])
+  const recent = (threads || []).filter(t => t.last_message).slice(0, 4)
+  if (recent.length === 0) return null
+  return (
+    <section className="mt-4 overflow-hidden rounded-xl border border-hairline bg-panel">
+      <header className="flex items-center gap-2 border-b border-hairline px-3.5 py-2">
+        <h2 className="text-[11px] font-medium text-ink-3">Crew</h2>
+        <button onClick={() => navigate('/comms?view=crew')}
+          className="ml-auto inline-flex items-center gap-0.5 text-[11px] font-semibold text-indigo-600 transition-all hover:gap-1 dark:text-indigo-400">
+          Open crew chat<ArrowRight className="h-3 w-3" />
+        </button>
+      </header>
+      <div className="divide-y divide-hairline">
+        {recent.map(t => (
+          <button key={t.user_id} onClick={() => navigate('/comms?view=crew')}
+            className="flex w-full items-baseline gap-2 px-3.5 py-2 text-left transition-colors hover:bg-bg-2">
+            <span className={`shrink-0 text-[12.5px] ${t.unread > 0 ? 'font-semibold text-ink' : 'font-medium text-ink-2'}`}>
+              {t.name}
+            </span>
+            <span className="min-w-0 flex-1 truncate text-[12px] text-ink-3">
+              {t.last_message.sender === 'office' && 'You: '}{t.last_message.body}
+            </span>
+            {t.unread > 0 && (
+              <span className="flex shrink-0 items-center gap-1">
+                <span className="h-1.5 w-1.5 rounded-full bg-indigo-600" aria-hidden="true" />
+                <span className="text-[10px] font-bold tabular-nums text-ink">{t.unread}</span>
+              </span>
+            )}
+            <span className="shrink-0 text-[10.5px] tabular-nums text-ink-3">{relTime(t.last_activity)}</span>
+          </button>
         ))}
       </div>
     </section>
@@ -251,17 +340,26 @@ function Tag({ tag }) {
   )
 }
 
-function StatTile({ stat, navigate }) {
+/** Compact KPI band — the owner keeps her numbers but as ONE tight row (quiet
+ *  data-forward, OpsSummary-style), not a wall of six tiles. Values keep their
+ *  semantic tone (red = overdue etc.); labels are 11px muted; the whole band
+ *  scrolls sideways on a phone instead of stacking. */
+function StatBand({ stats, navigate }) {
+  if (!stats?.length) return null
   return (
-    <button
-      onClick={() => stat.href && navigate(stat.href)}
-      className="rounded-xl border border-hairline bg-panel px-3 py-2.5 text-left transition-colors hover:border-hairline-2">
-      <div className={`text-xl font-bold leading-none tabular-nums ${STAT_TONE[stat.tone] || STAT_TONE.neutral}`}>
-        {stat.value}
-      </div>
-      <div className="mt-1 truncate text-[11px] font-semibold text-ink">{stat.label}</div>
-      <div className="truncate text-[10px] text-ink-3">{stat.sub}</div>
-    </button>
+    <div className="mt-4 flex items-stretch divide-x divide-hairline overflow-x-auto rounded-xl border border-hairline bg-panel">
+      {stats.map(stat => (
+        <button key={stat.key}
+          onClick={() => stat.href && navigate(stat.href)}
+          title={stat.sub || undefined}
+          className="flex min-w-0 flex-1 shrink-0 flex-col items-start gap-0.5 px-3.5 py-2.5 text-left transition-colors hover:bg-bg-2">
+          <span className={`text-[15px] font-bold leading-none tabular-nums ${STAT_TONE[stat.tone] || STAT_TONE.neutral}`}>
+            {stat.value}
+          </span>
+          <span className="whitespace-nowrap text-[10.5px] text-ink-3">{stat.label}</span>
+        </button>
+      ))}
+    </div>
   )
 }
 
@@ -350,16 +448,23 @@ function BoardRow({ item, cleared, onToggle, onAction, actioningKey, confirmingK
   )
 }
 
-function Section({ section, items, clearedSet, onToggle, onAction, actioningKey, confirmingKey }) {
+function Section({ section, items, clearedSet, onToggle, onAction, actioningKey, confirmingKey, headerLink, navigate }) {
   if (!items.length) return null
   return (
     <section className="mb-4 break-inside-avoid overflow-hidden rounded-2xl border border-hairline bg-panel">
       <header className="flex items-center gap-2 border-b border-hairline px-3.5 py-2.5">
         <span className="text-[13px] leading-none">{section.icon}</span>
         <h2 className="text-[11px] font-medium text-ink-3">{section.title}</h2>
-        <span className="ml-auto rounded-full bg-bg-2 px-1.5 py-0.5 text-[10px] font-bold tabular-nums text-ink-3">
+        {/* Plain number, not a count bubble (owner veto). */}
+        <span className="ml-auto text-[11px] font-semibold tabular-nums text-ink-3">
           {items.length}
         </span>
+        {headerLink && (
+          <button onClick={() => navigate(headerLink.to)}
+            className="inline-flex items-center gap-0.5 text-[11px] font-semibold text-indigo-600 transition-all hover:gap-1 dark:text-indigo-400">
+            {headerLink.label}<ArrowRight className="h-3 w-3" />
+          </button>
+        )}
       </header>
       <div className="divide-y divide-hairline">
         {items.map(it => (
@@ -373,6 +478,18 @@ function Section({ section, items, clearedSet, onToggle, onAction, actioningKey,
 
 /* ── Page ─────────────────────────────────────────────────────────────────── */
 
+// The owner's stated priority for Home, top to bottom: communication, staff
+// activity, schedule, then KPIs — so sections render in that order regardless
+// of payload order, split around the compact KPI band. Money/systems/noise
+// follow below the fold.
+const SECTION_RANK = { people_waiting: 0, needs_today: 1, jobs_on_deck: 2, money: 3, systems: 4, safe_to_ignore: 5 }
+const PRIMARY_SECTIONS = new Set(['people_waiting', 'needs_today', 'jobs_on_deck'])
+const SECTION_LINKS = {
+  people_waiting: { label: 'Inbox', to: '/comms' },
+  jobs_on_deck: { label: 'Schedule', to: '/schedule' },
+  needs_today: { label: 'Today', to: '/schedule' },
+}
+
 export default function OpsBoard() {
   const navigate = useNavigate()
   const [data, setData] = useState(null)
@@ -384,6 +501,13 @@ export default function OpsBoard() {
   const [filter, setFilter] = useState('all')
   const [query, setQuery] = useState('')
   const [hideCleared, setHideCleared] = useState(false)
+  // Triage machinery (search / severity filter / cleared progress) folds away
+  // behind one quiet disclosure — the owner: "this is so busy".
+  const [toolsOpen, setToolsOpen] = useState(false)
+  // Messages/crew unread for the Communication strip (same summary poll the
+  // sidebar uses; getCached dedupes the request).
+  const { unreadConversations, crewUnreadThreads } = useUnreadCount()
+  const canComms = ['admin', 'manager'].includes(currentRole())
   const [note, setNote] = useState('')
   const [actioningKey, setActioningKey] = useState(null)
   const [confirmingKey, setConfirmingKey] = useState(null)
@@ -411,7 +535,12 @@ export default function OpsBoard() {
     const onKey = (e) => {
       const tag = (e.target.tagName || '').toLowerCase()
       const typing = tag === 'input' || tag === 'textarea' || e.target.isContentEditable
-      if (e.key === '/' && !typing) { e.preventDefault(); searchRef.current?.focus() }
+      if (e.key === '/' && !typing) {
+        e.preventDefault()
+        // Search lives inside the collapsed tools row — open it first.
+        setToolsOpen(true)
+        setTimeout(() => searchRef.current?.focus(), 0)
+      }
       else if (e.key === 'Escape' && document.activeElement === searchRef.current) {
         setQuery(''); searchRef.current?.blur()
       }
@@ -482,7 +611,9 @@ export default function OpsBoard() {
 
   const q = query.trim().toLowerCase()
   const visibleBySection = useMemo(() => {
-    return sections.map(s => ({
+    const ordered = [...sections].sort(
+      (a, b) => (SECTION_RANK[a.key] ?? 99) - (SECTION_RANK[b.key] ?? 99))
+    return ordered.map(s => ({
       section: s,
       items: s.items.filter(it => {
         if (filter !== 'all' && it.severity !== filter) return false
@@ -493,7 +624,13 @@ export default function OpsBoard() {
     }))
   }, [sections, filter, hideCleared, cleared, q])
 
+  // Communication + schedule sections above the KPI band; money/systems/noise
+  // below it — the owner's linear order for Home.
+  const primarySections = visibleBySection.filter(v => PRIMARY_SECTIONS.has(v.section.key))
+  const secondarySections = visibleBySection.filter(v => !PRIMARY_SECTIONS.has(v.section.key))
+
   const anyVisible = visibleBySection.some(v => v.items.length > 0)
+  const filtersActive = filter !== 'all' || !!q || hideCleared
 
   if (error && !loading) {
     return (
@@ -542,113 +679,147 @@ export default function OpsBoard() {
         <DailyBrief />
 
         {note && (
-          <div className="mt-3 flex items-center gap-2 rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-[12px] font-medium text-emerald-700 dark:text-emerald-300">
-            <Check className="h-4 w-4 shrink-0" /> <span className="min-w-0 flex-1 truncate">{note}</span>
+          /* Quiet hairline card + emerald check — not a tinted banner. */
+          <div className="mt-3 flex items-center gap-2 rounded-xl border border-hairline bg-panel px-3 py-2 text-[12px] font-medium text-ink-2">
+            <Check className="h-4 w-4 shrink-0 text-emerald-500" /> <span className="min-w-0 flex-1 truncate">{note}</span>
             <button onClick={() => setNote('')} className="text-ink-3 hover:text-ink" aria-label="Dismiss">✕</button>
           </div>
         )}
 
-        {/* Cleared progress */}
-        <div className="mt-4 flex items-center gap-3">
-          <span className="shrink-0 text-[12px] font-medium tabular-nums text-ink-3">
-            {clearedCount} of {total} cleared
-          </span>
-          <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-bg-2">
-            <div className="h-full rounded-full bg-emerald-500 transition-all" style={{ width: `${pct}%` }} />
-          </div>
-          <div className="flex shrink-0 items-center gap-1.5">
-            <button
-              onClick={() => setHideCleared(v => !v)}
-              className="inline-flex h-7 items-center gap-1 rounded-md border border-hairline-2 bg-panel px-2 text-[11px] font-medium text-ink-2 hover:bg-bg-2">
-              {hideCleared ? <Eye className="h-3 w-3" /> : <EyeOff className="h-3 w-3" />}
-              {hideCleared ? 'Show cleared' : 'Hide cleared'}
-            </button>
-            <button
-              onClick={resetCleared}
-              disabled={!clearedCount}
-              className="inline-flex h-7 items-center gap-1 rounded-md border border-hairline-2 bg-panel px-2 text-[11px] font-medium text-ink-2 hover:bg-bg-2 disabled:opacity-40">
-              <RotateCcw className="h-3 w-3" /> Reset
-            </button>
-          </div>
-        </div>
-
-        {/* Search */}
-        <div className="relative mt-4">
-          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-ink-3" />
-          <input
-            ref={searchRef}
-            value={query}
-            onChange={e => setQuery(e.target.value)}
-            placeholder="Search everything…  (press /)"
-            className="w-full rounded-xl border border-hairline bg-panel py-2.5 pl-9 pr-3 text-[13px] text-ink placeholder:text-ink-3 focus:border-indigo-500 focus:outline-none" />
-        </div>
-
-        {/* Filter chips */}
-        <div className="mt-3 flex flex-wrap gap-1.5">
-          {SEV_ORDER.map(sev => (
-            <FilterChip key={sev} sev={sev} count={counts[sev] || 0}
-              active={filter === sev} onClick={() => setFilter(sev)} />
-          ))}
-        </div>
-
-        {/* Integration chips */}
-        {data?.integrations?.length > 0 && (
-          <div className="mt-3 flex gap-1.5 overflow-x-auto pb-1">
-            {data.integrations.map(chip => <IntChip key={chip.key} chip={chip} />)}
-          </div>
+        {/* 1 — Communication first (the owner's order for Home). Hidden for
+            viewers: /comms, /requests and crew chat are admin/manager-only,
+            so the strip could only link them into 403s. */}
+        {!loading && canComms && (
+          <CommsStrip stats={data?.stats}
+            unreadConversations={unreadConversations}
+            crewUnreadThreads={crewUnreadThreads}
+            navigate={navigate} />
         )}
 
-        {/* Stat tiles */}
-        {loading ? (
-          <div className="mt-4 grid grid-cols-3 gap-2 sm:grid-cols-6">
-            {Array.from({ length: 6 }).map((_, i) => (
-              <div key={i} className="h-[68px] animate-pulse rounded-xl border border-hairline bg-panel" />
-            ))}
-          </div>
-        ) : (
-          <div className="mt-4 grid grid-cols-3 gap-2 sm:grid-cols-6">
-            {(data?.stats || []).map(stat => <StatTile key={stat.key} stat={stat} navigate={navigate} />)}
-          </div>
-        )}
+        {/* 2 — Staff activity: latest crew↔office chatter. */}
+        {!loading && canComms && <CrewActivity navigate={navigate} />}
 
-        {/* Autopilot proposals — above the sections; absent when none pending */}
+        {/* Autopilot proposals — actionable, so they stay high. */}
         <ProposalsQueue />
 
-        {/* Sections (masonry) */}
+        {/* 3 — The attention sections (messages waiting, today, on-deck jobs),
+            with the triage machinery folded behind one quiet disclosure. */}
+        <div className="mt-6 flex items-center gap-2.5">
+          <h2 className="text-[11px] font-medium text-ink-3">Needs attention</h2>
+          <span className="text-[11px] tabular-nums text-ink-3">{clearedCount} of {total} cleared</span>
+          <button
+            onClick={() => setToolsOpen(v => !v)}
+            aria-expanded={toolsOpen}
+            className="ml-auto inline-flex h-7 items-center gap-1.5 rounded-md border border-hairline-2 bg-panel px-2 text-[11px] font-medium text-ink-2 hover:bg-bg-2">
+            <SlidersHorizontal className="h-3 w-3" />
+            Filters
+            {filtersActive && <span className="h-1.5 w-1.5 rounded-full bg-indigo-600" aria-hidden="true" />}
+            <ChevronDown className={`h-3 w-3 transition-transform ${toolsOpen ? 'rotate-180' : ''}`} />
+          </button>
+        </div>
+
+        {toolsOpen && (
+          <div className="mt-2 space-y-2.5 rounded-xl border border-hairline bg-panel p-3">
+            <div className="relative">
+              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-ink-3" />
+              <input
+                ref={searchRef}
+                value={query}
+                onChange={e => setQuery(e.target.value)}
+                placeholder="Search everything…  (press /)"
+                className="w-full rounded-lg border border-hairline bg-bg py-2 pl-9 pr-3 text-[13px] text-ink placeholder:text-ink-3 focus:border-indigo-500 focus:outline-none" />
+            </div>
+            {/* Zero-count severities are noise ("Good 0") — only offered while active. */}
+            <div className="flex flex-wrap gap-1.5">
+              {SEV_ORDER.filter(sev => sev === 'all' || (counts[sev] || 0) > 0 || filter === sev).map(sev => (
+                <FilterChip key={sev} sev={sev} count={counts[sev] || 0}
+                  active={filter === sev} onClick={() => setFilter(sev)} />
+              ))}
+            </div>
+            <div className="flex items-center gap-3">
+              <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-bg-2">
+                <div className="h-full rounded-full bg-emerald-500 transition-all" style={{ width: `${pct}%` }} />
+              </div>
+              <div className="flex shrink-0 items-center gap-1.5">
+                <button
+                  onClick={() => setHideCleared(v => !v)}
+                  className="inline-flex h-7 items-center gap-1 rounded-md border border-hairline-2 bg-panel px-2 text-[11px] font-medium text-ink-2 hover:bg-bg-2">
+                  {hideCleared ? <Eye className="h-3 w-3" /> : <EyeOff className="h-3 w-3" />}
+                  {hideCleared ? 'Show cleared' : 'Hide cleared'}
+                </button>
+                <button
+                  onClick={resetCleared}
+                  disabled={!clearedCount}
+                  className="inline-flex h-7 items-center gap-1 rounded-md border border-hairline-2 bg-panel px-2 text-[11px] font-medium text-ink-2 hover:bg-bg-2 disabled:opacity-40">
+                  <RotateCcw className="h-3 w-3" /> Reset
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
         {loading ? (
-          <div className="mt-5 columns-1 gap-4 lg:columns-2 xl:columns-3">
+          <div className="mt-3 columns-1 gap-4 lg:columns-2 xl:columns-3">
             {Array.from({ length: 6 }).map((_, i) => (
               <div key={i} className="mb-4 h-56 animate-pulse rounded-2xl border border-hairline bg-panel" />
             ))}
           </div>
         ) : anyVisible ? (
-          <div className="mt-5 columns-1 gap-4 lg:columns-2 xl:columns-3">
-            {visibleBySection.map(({ section, items }) => (
-              <Section key={section.key} section={section} items={items}
-                clearedSet={cleared} onToggle={toggleCleared}
-                onAction={runAction} actioningKey={actioningKey} confirmingKey={confirmingKey} />
-            ))}
-          </div>
-        ) : (
-          <div className="mt-16 flex flex-col items-center justify-center text-center">
-            <div className="grid h-12 w-12 place-items-center rounded-full bg-emerald-500/10">
-              <Check className="h-6 w-6 text-emerald-500" strokeWidth={2.5} />
+          <>
+            {/* Communication + schedule sections (linear on a phone; ordered
+                masonry on desktop). */}
+            <div className="mt-3 columns-1 gap-4 lg:columns-2 xl:columns-3">
+              {primarySections.map(({ section, items }) => (
+                <Section key={section.key} section={section} items={items}
+                  clearedSet={cleared} onToggle={toggleCleared}
+                  onAction={runAction} actioningKey={actioningKey} confirmingKey={confirmingKey}
+                  headerLink={SECTION_LINKS[section.key]} navigate={navigate} />
+              ))}
             </div>
-            <p className="mt-3 text-sm font-semibold text-ink">
-              {total === 0 ? "You're all caught up" : query || filter !== 'all' ? 'No matches' : 'Everything cleared'}
-            </p>
-            <p className="mt-0.5 text-[12px] text-ink-3">
-              {total === 0
-                ? 'Nothing needs your attention right now.'
-                : query || filter !== 'all'
-                  ? 'Try a different search or filter.'
-                  : 'Nice work. Hit Reset to bring cleared items back.'}
-            </p>
+
+            {/* 4 — KPIs: one compact band, not a wall of tiles. */}
+            <StatBand stats={data?.stats} navigate={navigate} />
+
+            {/* Money, systems and the ignore pile below the fold. */}
+            <div className="mt-4 columns-1 gap-4 lg:columns-2 xl:columns-3">
+              {secondarySections.map(({ section, items }) => (
+                <Section key={section.key} section={section} items={items}
+                  clearedSet={cleared} onToggle={toggleCleared}
+                  onAction={runAction} actioningKey={actioningKey} confirmingKey={confirmingKey}
+                  headerLink={SECTION_LINKS[section.key]} navigate={navigate} />
+              ))}
+            </div>
+          </>
+        ) : (
+          <>
+            <div className="mt-12 flex flex-col items-center justify-center text-center">
+              <div className="grid h-12 w-12 place-items-center rounded-full bg-emerald-500/10">
+                <Check className="h-6 w-6 text-emerald-500" strokeWidth={2.5} />
+              </div>
+              <p className="mt-3 text-sm font-semibold text-ink">
+                {total === 0 ? "You're all caught up" : query || filter !== 'all' ? 'No matches' : 'Everything cleared'}
+              </p>
+              <p className="mt-0.5 text-[12px] text-ink-3">
+                {total === 0
+                  ? 'Nothing needs your attention right now.'
+                  : query || filter !== 'all'
+                    ? 'Try a different search or filter.'
+                    : 'Nice work. Hit Reset to bring cleared items back.'}
+              </p>
+            </div>
+            <StatBand stats={data?.stats} navigate={navigate} />
+          </>
+        )}
+
+        {/* Plumbing status lives at the bottom — useful, never front and center. */}
+        {!loading && data?.integrations?.length > 0 && (
+          <div className="mt-8 flex gap-1.5 overflow-x-auto pb-1">
+            {data.integrations.map(chip => <IntChip key={chip.key} chip={chip} />)}
           </div>
         )}
 
         {/* Provenance footnote — mirrors the artifact's honesty about data sources. */}
-        <p className="mt-8 text-[10.5px] leading-relaxed text-ink-3">
+        <p className="mt-3 text-[10.5px] leading-relaxed text-ink-3">
           Live from BrightBase — jobs, invoices, quotes, conversations and integration health.
           Check-offs are saved on this device. Twilio balance and Square deposits aren't live yet.
         </p>

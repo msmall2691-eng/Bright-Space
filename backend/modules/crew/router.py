@@ -24,7 +24,7 @@ Postgres (prod), and the window is tiny (one crew member, ~2 weeks).
 import logging
 from collections import defaultdict
 from datetime import date, datetime, timedelta, timezone, time as dtime
-from typing import Optional
+from typing import List, Optional
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Response, UploadFile
 from pydantic import BaseModel
@@ -1949,7 +1949,107 @@ def send_message_to_office(
     return _msg_dict(m)
 
 
-# Office side of the same thread (Crew page drawer).
+# Office side of the same thread — read/send per cleaner (Messages page Crew
+# view + the Crew page drawer), the whole roster as a thread list, and a
+# one-shot broadcast that fans a single message out to many threads.
+
+@router.get("/threads", dependencies=[Depends(require_role("admin", "manager"))])
+def office_crew_threads(db: Session = Depends(get_db), org_id: int = Depends(current_org_id)):
+    """Every cleaner's office thread in one list for the Messages page's Crew
+    view — last-message preview, unread-from-cleaner count, newest activity
+    first (cleaners with no thread yet sort last, alphabetically), so the
+    office sees at a glance who's waiting on a reply."""
+    oid = resolve_org_id(org_id, db)
+    cleaners = (db.query(User)
+                .filter(User.role == "cleaner",
+                        or_(User.org_id == oid, User.org_id.is_(None)))
+                .all())
+    ids = [u.id for u in cleaners]
+    last_by_user: dict = {}
+    unread_by_user: dict = {}
+    if ids:
+        # Newest message per thread via MAX(id) (ids are monotonic with insert
+        # order) — one grouped query + one fetch, same pattern as the comms
+        # inbox previews.
+        max_ids = [mid for (mid,) in
+                   db.query(func.max(CrewMessage.id))
+                     .filter(CrewMessage.user_id.in_(ids))
+                     .group_by(CrewMessage.user_id).all()]
+        if max_ids:
+            for m in db.query(CrewMessage).filter(CrewMessage.id.in_(max_ids)).all():
+                last_by_user[m.user_id] = m
+        unread_by_user = dict(
+            db.query(CrewMessage.user_id, func.count(CrewMessage.id))
+              .filter(CrewMessage.user_id.in_(ids),
+                      CrewMessage.sender == "cleaner",
+                      CrewMessage.read_at.is_(None))
+              .group_by(CrewMessage.user_id).all())
+    rows = []
+    for u in cleaners:
+        last = last_by_user.get(u.id)
+        rows.append({
+            "user_id": u.id,
+            "name": u.full_name or u.email,
+            "email": u.email,
+            "status": u.status or "active",
+            "unread": int(unread_by_user.get(u.id, 0)),
+            "last_message": _msg_dict(last) if last else None,
+            "last_activity": _iso_utc(last.created_at) if last else None,
+        })
+    active = sorted([r for r in rows if r["last_activity"]],
+                    key=lambda r: r["last_activity"], reverse=True)
+    empty = sorted([r for r in rows if not r["last_activity"]],
+                   key=lambda r: (r["name"] or "").lower())
+    return active + empty
+
+
+class BroadcastBody(BaseModel):
+    body: str
+    # Narrow the fan-out; omitted/empty = every non-disabled cleaner.
+    user_ids: Optional[List[int]] = None
+
+
+# NOTE: registered before POST /messages/{user_id} below — FastAPI matches in
+# registration order, and the path-param route would otherwise eat "broadcast".
+@router.post("/messages/broadcast", status_code=201)
+def office_broadcast(
+    body: BroadcastBody,
+    db: Session = Depends(get_db),
+    org_id: int = Depends(current_org_id),
+    current_user: User = Depends(require_role("admin", "manager")),
+):
+    """One message to many cleaners at once ("park behind the shop today") —
+    each copy lands in that cleaner's normal office thread and pushes to their
+    phone exactly like a 1:1 office reply; the crew side needs nothing new."""
+    text = _sanitize_note(body.body)
+    if not text:
+        raise HTTPException(status_code=422, detail="Say something first.")
+    oid = resolve_org_id(org_id, db)
+    q = (db.query(User)
+         .filter(User.role == "cleaner",
+                 or_(User.org_id == oid, User.org_id.is_(None)),
+                 or_(User.status.is_(None), User.status != "disabled")))
+    if body.user_ids:
+        q = q.filter(User.id.in_(body.user_ids))
+    targets = q.all()
+    if not targets:
+        raise HTTPException(status_code=404, detail="No cleaners to send to.")
+    who = getattr(current_user, "full_name", None) or current_user.email
+    now = _now_naive_utc()
+    for u in targets:
+        db.add(CrewMessage(org_id=oid, user_id=u.id, sender="office",
+                           sender_name=who, body=text, created_at=now))
+    db.commit()
+    try:
+        from services.push_service import notify_user
+        for u in targets:
+            notify_user(u.id, "Message from the office",
+                        text if len(text) <= 120 else text[:117] + "…",
+                        url="/my-day", tag=f"office-msg-{u.id}")
+    except Exception:
+        log.exception("push notify failed on office_broadcast")
+    return {"sent": len(targets), "user_ids": [u.id for u in targets]}
+
 
 @router.get("/messages/{user_id}", dependencies=[Depends(require_role("admin", "manager"))])
 def office_thread(user_id: int, db: Session = Depends(get_db), org_id: int = Depends(current_org_id)):

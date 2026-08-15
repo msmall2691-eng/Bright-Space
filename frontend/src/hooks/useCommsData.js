@@ -17,7 +17,7 @@ import { get, post, getCached } from '../api'
  *
  *  The parent's mutation actions (sendReply / setStatus / setPriority /
  *  setAssignee) call loadList / loadDetail / loadSummary directly. */
-export function useCommsData({ folder, chipFilters, channelFilter, search }) {
+export function useCommsData({ folder, chipFilters, channelFilter, search, enabled = true }) {
   const [convs, setConvs] = useState([])
   const [summary, setSummary] = useState({})
   const [selectedId, setSelectedId] = useState(null)
@@ -96,12 +96,19 @@ export function useCommsData({ folder, chipFilters, channelFilter, search }) {
     if (threadRef.current) threadRef.current.scrollTop = threadRef.current.scrollHeight
   }, [detail?.messages?.length])
   useEffect(() => {
+    // Economy (audit H1): this used to be 3 requests every 15s with no
+    // visibility gate, and it kept running on the Crew view that renders none
+    // of this data. Now: 60s (skill floor), skipped while the tab is hidden,
+    // disabled entirely when the caller says so, and the summary is left to
+    // useUnreadCount's global poll instead of being re-fetched here.
+    if (!enabled) return undefined
     const iv = setInterval(() => {
-      loadList(); loadSummary()
+      if (document.hidden) return
+      loadList()
       if (selectedId) loadDetail(selectedId)
-    }, 15000)
+    }, 60000)
     return () => clearInterval(iv)
-  }, [selectedId, loadList, loadSummary, loadDetail])
+  }, [enabled, selectedId, loadList, loadDetail])
 
   return {
     convs,

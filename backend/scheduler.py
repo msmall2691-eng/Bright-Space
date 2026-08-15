@@ -108,7 +108,10 @@ def sync_all_ical_feeds_tick() -> dict:
 
         for prop in props:
             try:
-                result = sync_property(db, prop)
+                # Economy audit H5: the tick may skip parsing feeds whose
+                # bytes haven't changed (conditional GET / body hash, 6h
+                # safety valve). Manual "Sync now" paths stay full syncs.
+                result = sync_property(db, prop, allow_unchanged_skip=True)
                 if "error" not in result:
                     properties_synced += 1
                     total_jobs_created += result.get("jobs_created", 0)

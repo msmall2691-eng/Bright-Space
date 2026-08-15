@@ -569,6 +569,18 @@ def conversations_summary(db: Session = Depends(get_db)):
                 b["breached"] += 1
 
     total["by_channel"] = by_channel
+
+    # Crew chat rides the same poller: unread cleaner→office messages (read
+    # when the office opens the thread via GET /api/crew/messages/{user_id}).
+    # Two scalar queries against the tiny crew_messages table — keeps the
+    # sidebar/bottom-nav Messages badge honest about BOTH inboxes without a
+    # second poll loop.
+    from database.models import CrewMessage
+    crew_q = db.query(CrewMessage).filter(CrewMessage.sender == "cleaner",
+                                          CrewMessage.read_at.is_(None))
+    total["crew_unread_messages"] = crew_q.count()
+    total["crew_unread_threads"] = (
+        crew_q.with_entities(func.count(func.distinct(CrewMessage.user_id))).scalar() or 0)
     return total
 
 

@@ -20,6 +20,7 @@ const CHANNEL_TABS = [
  *  conversation list starts near the top instead of below five stacked bars.
  *  Desktop (lg+) has the vertical room, so it shows everything inline. */
 export function InboxLeftPanel({
+  header,
   convs,
   loadingList,
   selectedId,
@@ -111,7 +112,9 @@ export function InboxLeftPanel({
       {/* Header */}
       <div className="px-4 pt-3 pb-2.5">
         <div className="flex items-center justify-between mb-2.5">
-          <h1 className="text-[15px] font-semibold tracking-tight text-ink">Inbox</h1>
+          {/* `header` = the Clients | Crew view toggle from Comms; falls back
+              to the plain title when the parent doesn't pass one. */}
+          {header || <h1 className="text-[15px] font-semibold tracking-tight text-ink">Inbox</h1>}
           <div className="flex items-center gap-1.5">
             <NotifPermissionButton />
             {/* Mobile-only filters trigger — opens the sheet with channel + chips. */}
