@@ -1,7 +1,15 @@
+import { useNavigate } from 'react-router-dom'
 import {
   Calendar, FileText, Receipt, MessageSquare, TrendingUp, Mail, Zap, X,
 } from 'lucide-react'
 import { JOB_COLORS, INVOICE_COLORS, QUOTE_COLORS, OPP_COLORS } from './constants'
+
+// Record types the timeline can link straight through to (each has its own
+// detail page and the activity's `data.id` is that record's id). Everything
+// else (messages, emails, gcal events, plain activity-log notes) stays inert
+// — this was a dead end: the client's own timeline showed "Quote — $450" or
+// an invoice total with no way to open it, unlike the Overview tab's cards.
+const DETAIL_ROUTE = { job: 'jobs', quote: 'quotes', invoice: 'invoices', opportunity: 'opportunities' }
 
 // Filter chips: All / Email / Calendar / Money / Notes
 const ACTIVITY_FILTERS = [
@@ -16,6 +24,7 @@ export default function ActivityTimeline({
   allActivity, activityFilter, setActivityFilter,
   noteText, setNoteText, savingNote, submitNote,
 }) {
+  const navigate = useNavigate()
   const activeFilter = ACTIVITY_FILTERS.find(f => f.value === activityFilter)
   const activity = activityFilter === 'all' || !activeFilter?.match
     ? allActivity
@@ -68,7 +77,10 @@ export default function ActivityTimeline({
         })}
       </div>
       {activity.length === 0 && <p className="text-ink-3 text-sm text-center py-10">No {activityFilter === 'all' ? '' : activityFilter} activity yet</p>}
-      {activity.map((item, i) => (
+      {activity.map((item, i) => {
+        const detailRoute = DETAIL_ROUTE[item.type] && item.data?.id != null
+          ? `/${DETAIL_ROUTE[item.type]}/${item.data.id}` : null
+        return (
         <div key={i} className="flex gap-4">
           <div className="flex flex-col items-center">
             <div className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 ${
@@ -98,7 +110,10 @@ export default function ActivityTimeline({
             {i < activity.length - 1 && <div className="w-px flex-1 bg-bg-2 mt-1" />}
           </div>
           <div className="flex-1 pb-4 min-w-0">
-            <div className="bg-panel border border-hairline rounded-xl p-3">
+            <div
+              onClick={detailRoute ? () => navigate(detailRoute) : undefined}
+              className={`bg-panel border border-hairline rounded-xl p-3 ${detailRoute ? 'cursor-pointer transition-colors hover:border-hairline-2 hover:bg-bg-2' : ''}`}
+            >
               <div className="flex items-start justify-between gap-2">
                 <div className="min-w-0">
                   {item.type === 'job' && (
@@ -186,7 +201,8 @@ export default function ActivityTimeline({
             </div>
           </div>
         </div>
-      ))}
+        )
+      })}
     </div>
   )
 }
