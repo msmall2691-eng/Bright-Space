@@ -35,7 +35,7 @@ export default function CrewJobSheet({ jobId, onClose }) {
   return (
     <div className="fixed inset-0 z-30 flex items-end sm:items-center justify-center bg-black/40 px-4 pb-4 sm:pb-0"
       onClick={onClose}>
-      <div className="w-full max-w-sm max-h-[85vh] overflow-y-auto space-y-2"
+      <div className="w-full max-w-sm max-h-[85dvh] overflow-y-auto space-y-2"
         onClick={e => e.stopPropagation()}>
         <div className="flex items-center justify-between gap-2 bg-panel rounded-xl border border-hairline px-4 py-2.5">
           <div className="text-[13px] font-bold text-ink truncate">

@@ -103,7 +103,7 @@ export default function LaunchStepper({ opportunityId, title, onClose }) {
 
   return (
     <div className="fixed inset-0 z-50 bg-black/50 flex items-end sm:items-center sm:justify-center" onClick={onClose}>
-      <div className="w-full sm:max-w-lg bg-panel rounded-t-2xl sm:rounded-2xl border border-hairline shadow-glass-lg max-h-[92vh] flex flex-col overflow-hidden"
+      <div className="w-full sm:max-w-lg bg-panel rounded-t-2xl sm:rounded-2xl border border-hairline shadow-glass-lg max-h-[92dvh] flex flex-col overflow-hidden"
         onClick={e => e.stopPropagation()}>
         <div className="flex items-center justify-between gap-3 px-5 py-3.5 border-b border-hairline">
           <div className="flex items-center gap-2 min-w-0">
@@ -121,7 +121,7 @@ export default function LaunchStepper({ opportunityId, title, onClose }) {
         ) : error ? (
           <div className="p-8 text-center text-red-600 dark:text-red-300 text-sm">{error}</div>
         ) : (
-          <div className="flex-1 overflow-y-auto p-5 grid sm:grid-cols-[130px_1fr] gap-5">
+          <div className="flex-1 overflow-y-auto overscroll-contain p-5 grid sm:grid-cols-[130px_1fr] gap-5">
             <Rail steps={steps} currentStep={currentStep} />
 
             <div className="min-w-0">

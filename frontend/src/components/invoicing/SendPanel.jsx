@@ -45,7 +45,10 @@ export function SendPanel({
         </button>
       </div>
 
-      <div className="flex-1 p-6 space-y-6">
+      {/* Scrollable body — without overflow-y-auto the flex-1 region refused
+          to shrink (min-height:auto), pushing the Send footer off-screen on
+          phones with nothing scrollable anywhere. */}
+      <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain p-6 space-y-6">
 
         {/* Channel selector */}
         <div>

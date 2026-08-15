@@ -590,7 +590,7 @@ export default function JobCreateModal({
       onClick={handleCancel}
     >
       <div
-        className="w-full sm:w-[420px] bg-panel rounded-t-2xl sm:rounded-2xl shadow-2xl flex flex-col max-h-[90vh] sm:max-h-[95vh]"
+        className="w-full sm:w-[420px] bg-panel rounded-t-2xl sm:rounded-2xl shadow-2xl flex flex-col max-h-[90dvh] sm:max-h-[95dvh]"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Mobile-only drag handle — signals dismissible bottom sheet. */}
@@ -609,7 +609,7 @@ export default function JobCreateModal({
           </div>
         </div>
 
-        <div className="flex-1 overflow-y-auto p-6 space-y-4 scrollbar-thin">
+        <div className="flex-1 overflow-y-auto overscroll-contain p-6 space-y-4 scrollbar-thin">
           {/* Client picker — only in standalone mode; from a client profile
               the client is fixed by the caller. */}
           {standalone && (

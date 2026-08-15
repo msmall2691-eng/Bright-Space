@@ -760,7 +760,7 @@ export default function MyDay() {
           className="fixed inset-0 z-30 flex items-end sm:items-center justify-center bg-black/40 px-4 pb-4 sm:pb-0"
           onClick={() => { if (!actionBusy) setClockOutOpen(false) }}>
           <div
-            className="w-full max-w-sm bg-panel rounded-2xl border border-hairline shadow-glass p-5 space-y-4"
+            className="w-full max-w-sm bg-panel rounded-2xl border border-hairline shadow-glass p-5 space-y-4 max-h-[85dvh] overflow-y-auto overscroll-contain"
             onClick={e => e.stopPropagation()}>
             <div>
               <div className="text-base font-bold text-ink">Clock out</div>
@@ -826,7 +826,7 @@ export default function MyDay() {
         return (
           <div className="fixed inset-0 z-30 flex items-end sm:items-center justify-center bg-black/40 px-4 pb-4 sm:pb-0"
             onClick={() => { if (!actionBusy) setTextJob(null) }}>
-            <div className="w-full max-w-sm bg-panel rounded-2xl border border-hairline shadow-glass p-5 space-y-3"
+            <div className="w-full max-w-sm bg-panel rounded-2xl border border-hairline shadow-glass p-5 space-y-3 max-h-[85dvh] overflow-y-auto overscroll-contain"
               onClick={e => e.stopPropagation()}>
               <div>
                 <div className="text-base font-bold text-ink">Text {textJob.client_name || 'the client'}</div>
@@ -896,7 +896,7 @@ export default function MyDay() {
           className="fixed inset-0 z-30 flex items-end sm:items-center justify-center bg-black/40 px-4 pb-4 sm:pb-0"
           onClick={() => { if (!actionBusy) setClaimJob(null) }}>
           <div
-            className="w-full max-w-sm bg-panel rounded-2xl border border-hairline shadow-glass p-5 space-y-4"
+            className="w-full max-w-sm bg-panel rounded-2xl border border-hairline shadow-glass p-5 space-y-4 max-h-[85dvh] overflow-y-auto overscroll-contain"
             onClick={e => e.stopPropagation()}>
             <div>
               <div className="text-base font-bold text-ink">Claim this job?</div>
@@ -935,7 +935,7 @@ export default function MyDay() {
           className="fixed inset-0 z-30 flex items-end sm:items-center justify-center bg-black/40 px-4 pb-4 sm:pb-0"
           onClick={() => { if (!actionBusy) setDeclineJob(null) }}>
           <div
-            className="w-full max-w-sm bg-panel rounded-2xl border border-hairline shadow-glass p-5 space-y-4"
+            className="w-full max-w-sm bg-panel rounded-2xl border border-hairline shadow-glass p-5 space-y-4 max-h-[85dvh] overflow-y-auto overscroll-contain"
             onClick={e => e.stopPropagation()}>
             <div>
               <div className="text-base font-bold text-ink">Can't make it</div>
@@ -982,7 +982,7 @@ export default function MyDay() {
           className="fixed inset-0 z-30 flex items-end sm:items-center justify-center bg-black/40 px-4 pb-4 sm:pb-0"
           onClick={() => { if (!actionBusy) setMarkDoneJob(null) }}>
           <div
-            className="w-full max-w-sm bg-panel rounded-2xl border border-hairline shadow-glass p-5 space-y-4"
+            className="w-full max-w-sm bg-panel rounded-2xl border border-hairline shadow-glass p-5 space-y-4 max-h-[85dvh] overflow-y-auto overscroll-contain"
             onClick={e => e.stopPropagation()}>
             <div>
               <div className="text-base font-bold text-ink">Mark done</div>

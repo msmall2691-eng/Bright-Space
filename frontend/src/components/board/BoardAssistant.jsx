@@ -83,7 +83,7 @@ export default function BoardAssistant({ open, onClose, sections, navigate }) {
     <>
       <div className="fixed inset-0 z-40 bg-black/30" onClick={onClose} />
       <div className="fixed z-50 flex flex-col bg-panel shadow-2xl border border-hairline overflow-hidden
-        inset-x-0 bottom-0 rounded-t-2xl max-h-[85vh]
+        inset-x-0 bottom-0 rounded-t-2xl max-h-[85dvh]
         sm:inset-x-auto sm:inset-y-0 sm:right-0 sm:w-[400px] sm:max-h-none sm:rounded-none sm:border-y-0 sm:border-r-0">
         {/* Header */}
         <div className="flex items-center gap-2.5 border-b border-hairline px-4 py-3">

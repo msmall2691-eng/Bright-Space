@@ -163,7 +163,7 @@ export default function GlobalSearch() {
         </div>
 
         {/* Result list */}
-        <div className="max-h-[55vh] overflow-y-auto pb-1">
+        <div className="max-h-[55dvh] overflow-y-auto pb-1">
           {shownRecents.length > 0 && <SectionLabel>Recent</SectionLabel>}
           {shownRecents.map((r, i) => (
             <Row key={`re-${r.to}`} icon={iconFor(r.to)} title={r.label} tag=""

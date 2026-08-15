@@ -104,7 +104,7 @@ export default function CompleteVisitModal({ visit, onClose, onComplete }) {
 
   return (
     <div className="fixed inset-0 bg-black/40 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4" onClick={onClose}>
-      <div className="bg-panel w-full sm:max-w-md sm:rounded-2xl rounded-t-2xl max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+      <div className="bg-panel w-full sm:max-w-md sm:rounded-2xl rounded-t-2xl max-h-[90dvh] overflow-y-auto overscroll-contain" onClick={e => e.stopPropagation()}>
         <div className="flex items-center justify-between px-4 py-3 border-b border-hairline sticky top-0 bg-panel">
           <h3 className="text-base font-bold text-ink">Complete visit</h3>
           <button onClick={onClose} className="p-2 -m-1 rounded-lg hover:bg-bg-2 text-ink-3">

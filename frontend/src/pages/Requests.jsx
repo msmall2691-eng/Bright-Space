@@ -847,7 +847,7 @@ export default function Requests() {
       {/* Details Drawer */}
       {showDetailsDrawer && selectedRequest && (
         <div className="fixed inset-0 bg-black bg-opacity-50 z-40 flex items-end sm:items-center sm:justify-center">
-          <div className="w-full sm:w-full max-w-2xl bg-panel rounded-t-2xl sm:rounded-lg shadow-xl overflow-hidden sm:max-h-[90vh] flex flex-col max-h-[95vh]">
+          <div className="w-full sm:w-full max-w-2xl bg-panel rounded-t-2xl sm:rounded-lg shadow-xl overflow-hidden sm:max-h-[90dvh] flex flex-col max-h-[92dvh]">
             {/* Header */}
             <div className="bg-panel border-b border-hairline p-4 sm:p-6 text-ink flex items-center justify-between">
               <div>
@@ -901,7 +901,7 @@ export default function Requests() {
                 <RequestThreadPanel intake={selectedRequest} />
               </div>
             ) : (
-            <div className="overflow-y-auto flex-1 p-4 sm:p-6 space-y-4">
+            <div className="overflow-y-auto overscroll-contain flex-1 p-4 sm:p-6 space-y-4">
               {/* AI-enriched gist of the lead: what they want + the next step. */}
               <AiInsight type="lead" id={selectedRequest.id} />
               {/* Front-of-house Street View photo of the service address — the
@@ -1219,14 +1219,14 @@ export default function Requests() {
       {/* New Request Modal */}
       {showNewRequestModal && (
         <div className="fixed inset-0 bg-black bg-opacity-50 z-40 flex items-end sm:items-center sm:justify-center">
-          <div className="w-full sm:w-full max-w-lg bg-panel rounded-t-2xl sm:rounded-lg shadow-xl overflow-hidden sm:max-h-[90vh] flex flex-col max-h-[95vh]">
+          <div className="w-full sm:w-full max-w-lg bg-panel rounded-t-2xl sm:rounded-lg shadow-xl overflow-hidden sm:max-h-[90dvh] flex flex-col max-h-[92dvh]">
             <div className="bg-panel border-b border-hairline p-4 sm:p-6 text-ink flex items-center justify-between">
               <h2 className="text-xl font-bold">New Request</h2>
               <button onClick={() => setShowNewRequestModal(false)} className="text-ink-3 hover:text-ink">
                 <X className="w-5 h-5" />
               </button>
             </div>
-            <div className="p-4 sm:p-6 space-y-4 overflow-y-auto">
+            <div className="p-4 sm:p-6 space-y-4 overflow-y-auto overscroll-contain">
               <div>
                 <label className="text-xs font-semibold text-ink-2 uppercase">Name *</label>
                 <input

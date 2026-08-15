@@ -697,7 +697,7 @@ export default function PropertyDetail() {
       {/* Job Details Drawer */}
       {showJobDetails && selectedJob && (
         <div className="fixed inset-0 bg-black bg-opacity-50 z-40 flex items-end sm:items-center sm:justify-center">
-          <div className="w-full sm:w-full max-w-2xl bg-panel rounded-t-2xl sm:rounded-lg shadow-xl overflow-hidden sm:max-h-[90vh] flex flex-col max-h-[95vh]">
+          <div className="w-full sm:w-full max-w-2xl bg-panel rounded-t-2xl sm:rounded-lg shadow-xl overflow-hidden sm:max-h-[90dvh] flex flex-col max-h-[92dvh]">
             {/* Header */}
             <div className="bg-gradient-to-r from-blue-500 to-indigo-600 p-4 sm:p-6 text-white flex items-center justify-between">
               <div>
@@ -713,7 +713,7 @@ export default function PropertyDetail() {
             </div>
 
             {/* Body */}
-            <div className="overflow-y-auto flex-1 p-4 sm:p-6 space-y-4">
+            <div className="overflow-y-auto overscroll-contain flex-1 p-4 sm:p-6 space-y-4">
               <div className="grid sm:grid-cols-2 gap-4">
                 <div>
                   <label className="text-xs font-semibold text-ink-2 uppercase">Date</label>

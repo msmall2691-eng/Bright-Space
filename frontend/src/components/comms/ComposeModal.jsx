@@ -67,7 +67,7 @@ export function ComposeModal({ onClose, onSent, clients, initialTo = '', initial
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 backdrop-blur-sm" onClick={onClose}>
-      <div className="bg-panel rounded-2xl border border-hairline shadow-glass-lg w-full max-w-lg mx-4 overflow-hidden" onClick={e => e.stopPropagation()}>
+      <div className="bg-panel rounded-2xl border border-hairline shadow-glass-lg w-full max-w-lg mx-4 max-h-[92dvh] flex flex-col overflow-hidden" onClick={e => e.stopPropagation()}>
         {/* Header */}
         <div className="flex items-center justify-between px-5 py-4 border-b border-hairline">
           <div className="flex items-center gap-2">
@@ -104,8 +104,9 @@ export function ComposeModal({ onClose, onSent, clients, initialTo = '', initial
           </div>
         </div>
 
-        {/* Form */}
-        <div className="px-5 py-4 space-y-3">
+        {/* Form — its own scroll region so the footer's Send button stays
+            reachable on phones when the keyboard is up. */}
+        <div className="px-5 py-4 space-y-3 flex-1 min-h-0 overflow-y-auto overscroll-contain">
           <div className="relative">
             <label className="text-[11px] font-semibold text-ink-3 uppercase tracking-wider block mb-1">
               To

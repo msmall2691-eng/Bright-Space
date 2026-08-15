@@ -23,7 +23,7 @@ export default function GlobalConfirmDialog() {
         role="alertdialog"
         aria-modal="true"
         aria-label={title || 'Confirm'}
-        className="relative w-full max-w-sm bg-panel border border-hairline rounded-2xl shadow-2xl p-5"
+        className="relative w-full max-w-sm bg-panel border border-hairline rounded-2xl shadow-2xl p-5 max-h-[85dvh] overflow-y-auto overscroll-contain"
       >
         {title && <h3 className="text-base font-bold text-ink mb-1">{title}</h3>}
         <p className="text-sm text-ink-2 mb-5 whitespace-pre-line">{message}</p>

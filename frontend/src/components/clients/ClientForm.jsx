@@ -52,7 +52,7 @@ export function ClientForm({
           <X className="w-5 h-5" />
         </button>
       </div>
-      <div className="flex-1 overflow-y-auto p-6 space-y-4">
+      <div className="flex-1 overflow-y-auto overscroll-contain p-6 space-y-4">
         <div className="flex gap-2">
           <div className="flex-1">
             <label className="block text-[11px] text-ink-3 mb-1 font-medium">First Name *</label>

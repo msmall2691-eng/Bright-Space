@@ -201,7 +201,7 @@ function ReviewDraftModal({ draft, onClose }) {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4" onClick={onClose}>
       <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" />
-      <div className="relative w-full max-w-md bg-panel rounded-2xl shadow-2xl border border-hairline overflow-hidden"
+      <div className="relative w-full max-w-md bg-panel rounded-2xl shadow-2xl border border-hairline max-h-[85dvh] overflow-y-auto overscroll-contain"
         onClick={e => e.stopPropagation()}>
         <div className="flex items-start justify-between px-5 py-4 border-b border-hairline">
           <div className="flex items-center gap-2.5 min-w-0">

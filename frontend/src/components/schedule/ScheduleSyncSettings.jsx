@@ -90,7 +90,7 @@ export default function ScheduleSyncSettings({ open, onClose }) {
         {loading ? (
           <div className="p-8 text-center text-sm text-ink-3">Loading…</div>
         ) : (
-          <div className="flex-1 overflow-y-auto divide-y divide-hairline">
+          <div className="flex-1 overflow-y-auto overscroll-contain divide-y divide-hairline">
             {/* Google Calendar */}
             <div>
               <div className="px-4 pt-3 pb-1 text-[11px] font-semibold uppercase tracking-wider text-ink-3">Google Calendar</div>
