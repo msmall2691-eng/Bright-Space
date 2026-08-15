@@ -1,5 +1,5 @@
 import {
-  LayoutDashboard, Sparkles, Users, Calendar, Receipt, LayoutGrid,
+  LayoutDashboard, Sparkles, Users, Calendar, Receipt,
   DollarSign, MessageSquare, Home, Repeat, Settings, Inbox,
   TrendingUp, Radar, Rows3, Filter, HardHat, CalendarDays, FileText, Star,
 } from 'lucide-react'
@@ -13,6 +13,13 @@ import {
  * `roles`: when present, only those roles see the item (matches the backend's
  * gates — e.g. /api/dashboard/owner 403s viewers, so viewers don't get a link
  * that only errors).
+ *
+ * Pipeline (`/pipeline`) intentionally has no entry here. Deals is the
+ * unified deal board (see its header comment) and already carries the same
+ * per-row stage-change action as Pipeline's drag-and-drop, so the kanban no
+ * longer needs its own sidebar row — it's one click away as "Board view"
+ * from Deals instead. The route and page are untouched; see EXTRA_ROUTES
+ * below for its breadcrumb.
  */
 export const NAV_SECTIONS = [
   {
@@ -26,13 +33,15 @@ export const NAV_SECTIONS = [
   {
     label: 'Sales',
     items: [
-      { to: '/deals',    icon: Rows3,      label: 'Deals' },
+      { to: '/deals',    icon: Rows3,   label: 'Deals' },
       // /api/intake is admin/manager-only — a viewer's Requests page could
       // only error, so don't offer the link.
-      { to: '/requests', icon: Inbox,      label: 'Requests', roles: ['admin', 'manager'] },
-      { to: '/pipeline', icon: LayoutGrid, label: 'Pipeline' },
-      { to: '/funnel',   icon: Filter,     label: 'Quote funnel', roles: ['admin', 'manager'] },
-      { to: '/billing',  icon: Receipt,    label: 'Quotes & Billing' },
+      { to: '/requests', icon: Inbox,   label: 'Requests', roles: ['admin', 'manager'] },
+      // Was "Quotes & Billing" — shortened once Pipeline (which also said
+      // "Quote...") moved out of this section, so it no longer needs to be
+      // disambiguated from "Quote funnel" below.
+      { to: '/billing',  icon: Receipt, label: 'Billing' },
+      { to: '/funnel',   icon: Filter,  label: 'Quote funnel', roles: ['admin', 'manager'] },
     ],
   },
   {
@@ -51,7 +60,9 @@ export const NAV_SECTIONS = [
       { to: '/schedule',  icon: Calendar, label: 'Schedule' },
       // Every /api/recurring endpoint is admin/manager-only.
       { to: '/recurring', icon: Repeat,   label: 'Recurring', roles: ['admin', 'manager'] },
-      { to: '/sync',      icon: Radar,    label: 'Sync', roles: ['admin', 'manager', 'viewer'] },
+      // Renamed from "Sync" — plain enough in context, but "Calendar sync"
+      // reads unambiguously on first glance for a non-technical owner.
+      { to: '/sync',      icon: Radar,    label: 'Calendar sync', roles: ['admin', 'manager', 'viewer'] },
     ],
   },
   {
@@ -158,6 +169,9 @@ const EXTRA_ROUTES = {
   '/dashboard/classic': { label: 'Classic dashboard', section: null },
   '/cleanup':           { label: 'Tidy Up', section: null },
   '/design-system':     { label: 'Design system', section: null },
+  // Reachable from Deals' "Board view" link, not a sidebar item — see the
+  // comment above NAV_SECTIONS.
+  '/pipeline':          { label: 'Pipeline', section: 'Sales' },
 }
 
 /**
