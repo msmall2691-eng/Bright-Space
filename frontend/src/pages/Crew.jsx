@@ -17,13 +17,16 @@ import { get, post, patch } from '../api'
 import { PageHeader, EmptyState, ErrorState, Skeleton } from '../components/ui'
 import { pushToast } from '../utils/toastBus'
 import CrewDocsAdmin from '../components/crew/CrewDocsAdmin'
-import { MessageSquare, Send, X } from 'lucide-react'
+import { MessageSquare, Send, Sparkles, X } from 'lucide-react'
 
 /** Office side of the cleaner↔office thread (crew app "message the office").
- *  One drawer per cleaner; replies push to their phone. */
-function OfficeCrewThread({ user, onClose }) {
+ *  One drawer per cleaner; replies push to their phone. `initialDraft`
+ *  prefills the composer (the AI day-plan draft) — review-first: nothing
+ *  sends until the office edits/approves and hits Send, and the cleaner
+ *  just sees a normal office message (no AI badge on the crew side). */
+function OfficeCrewThread({ user, initialDraft, onClose }) {
   const [msgs, setMsgs] = useState(null)
-  const [draft, setDraft] = useState('')
+  const [draft, setDraft] = useState(initialDraft || '')
   const [busy, setBusy] = useState(false)
 
   const load = useCallback(() => {
@@ -116,7 +119,10 @@ export default function Crew() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   const [busyId, setBusyId] = useState(null)
-  const [threadUser, setThreadUser] = useState(null)   // office↔cleaner chat drawer
+  // Office↔cleaner chat drawer: { user, draft } — draft prefills the composer
+  // when opened via "Draft day plan", '' when opened via plain "Message".
+  const [thread, setThread] = useState(null)
+  const [draftingId, setDraftingId] = useState(null)   // per-row day-plan spinner
 
   // Add-cleaner form
   const [fullName, setFullName] = useState('')
@@ -181,6 +187,24 @@ export default function Crew() {
     try { await post(`/api/crew/${id}/resend-invite`); pushToast('Invite re-sent.', 'success') }
     catch (err) { pushToast(err?.message || 'Could not resend the invite.', 'error') }
     finally { setBusyId(null) }
+  }
+
+  // Mia drafts tomorrow's day message for one cleaner (backend defaults the
+  // date to the next business day); the returned text lands in the normal
+  // thread composer for review — the endpoint sends nothing itself. The
+  // backend returns the error envelope ({error}) with HTTP 200, matching the
+  // other AI draft endpoints, so check both shapes.
+  const draftDayPlan = async (row) => {
+    setDraftingId(row.id)
+    try {
+      const res = await post(`/api/ai/draft-crew-message/${row.id}`, {})
+      if (res?.error) { pushToast(res.error, 'error'); return }
+      setThread({ user: row, draft: res?.message || '' })
+    } catch (err) {
+      pushToast(err?.message || 'Could not draft a day plan.', 'error')
+    } finally {
+      setDraftingId(null)
+    }
   }
 
   const claim = (cid) => {
@@ -333,10 +357,19 @@ export default function Crew() {
                         )}
                       </div>
                     </div>
-                    <button onClick={() => setThreadUser(row)}
-                      className="mb-2 inline-flex h-7 items-center gap-1.5 text-xs font-medium text-ink-2 bg-panel border border-hairline-2 rounded-md px-2.5 hover:bg-bg-2 transition-colors">
-                      <MessageSquare className="w-3.5 h-3.5" /> Message
-                    </button>
+                    <div className="mb-2 flex items-center gap-2">
+                      <button onClick={() => setThread({ user: row, draft: '' })}
+                        className="inline-flex h-7 items-center gap-1.5 text-xs font-medium text-ink-2 bg-panel border border-hairline-2 rounded-md px-2.5 hover:bg-bg-2 transition-colors">
+                        <MessageSquare className="w-3.5 h-3.5" /> Message
+                      </button>
+                      <button onClick={() => draftDayPlan(row)}
+                        disabled={draftingId === row.id}
+                        title="Draft tomorrow's day message for review — nothing sends until you hit Send"
+                        className="inline-flex h-7 items-center gap-1.5 text-xs font-medium text-ink-2 bg-panel border border-hairline-2 rounded-md px-2.5 hover:bg-bg-2 disabled:opacity-60 transition-colors">
+                        <Sparkles className={`w-3.5 h-3.5 ${draftingId === row.id ? 'animate-pulse' : ''}`} />
+                        {draftingId === row.id ? 'Drafting…' : 'Draft day plan'}
+                      </button>
+                    </div>
                     <label className="flex items-center gap-2 mb-2 text-[12px] font-medium text-ink-2 cursor-pointer ml-3">
                       <input type="checkbox"
                         checked={!!row.can_view_full_schedule}
@@ -407,7 +440,8 @@ export default function Crew() {
 
         <CrewDocsAdmin />
       </div>
-      {threadUser && <OfficeCrewThread user={threadUser} onClose={() => setThreadUser(null)} />}
+      {thread && <OfficeCrewThread user={thread.user} initialDraft={thread.draft}
+        onClose={() => setThread(null)} />}
     </div>
   )
 }

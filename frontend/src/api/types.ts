@@ -4874,6 +4874,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/ai/draft-crew-message/{user_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Draft Crew Message
+         * @description Draft one cleaner's day-plan message for review. Returns
+         *     {subject, message} — the Crew page drops `message` into the existing
+         *     office-thread composer; `subject` is informational (the thread has no
+         *     subject line). Office roles only, mirroring the thread endpoints this
+         *     draft feeds (/api/crew/messages/{user_id}).
+         */
+        post: operations["draft_crew_message_api_ai_draft_crew_message__user_id__post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/ai/overdue-reminders": {
         parameters: {
             query?: never;
@@ -6510,6 +6534,8 @@ export interface components {
             gmail_live_sync?: boolean | null;
             /** Customer Self Reschedule */
             customer_self_reschedule?: boolean | null;
+            /** Str Auto Assign Mode */
+            str_auto_assign_mode?: string | null;
             /** Turnover Lead Buffer Hours */
             turnover_lead_buffer_hours?: number | null;
         };
@@ -6953,6 +6979,13 @@ export interface components {
             pinned?: boolean | null;
             /** Published */
             published?: boolean | null;
+        };
+        /** DraftCrewMessageRequest */
+        DraftCrewMessageRequest: {
+            /** Date */
+            date?: string | null;
+            /** Instruction */
+            instruction?: string | null;
         };
         /** DraftLeadRequest */
         DraftLeadRequest: {
@@ -16413,6 +16446,41 @@ export interface operations {
         requestBody?: {
             content: {
                 "application/json": components["schemas"]["DraftNudgeRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    draft_crew_message_api_ai_draft_crew_message__user_id__post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                user_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["DraftCrewMessageRequest"];
             };
         };
         responses: {
