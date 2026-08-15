@@ -7,12 +7,41 @@
  * share the same "list of cards" pattern; splitting into five files would just
  * add noise to the components/client/ directory.
  */
+import { Link } from 'react-router-dom'
 import { Plus, Calendar, MapPin, RefreshCw, TrendingUp } from 'lucide-react'
 import RecordLink from '../RecordLink'
 import OpportunityLinker from '../OpportunityLinker'
 import { JOB_COLORS, INVOICE_COLORS, QUOTE_COLORS, OPP_COLORS } from './constants'
+import { formatDateShort } from '../../utils/format'
 
-export function RecurringTab({ schedules }) {
+// Compact cadence line for a series row — same vocabulary as Recurring.jsx's
+// ruleSummary (weekly / biweekly / every N weeks / monthly / daily).
+function cadenceLine(s) {
+  const DAYS_S = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
+  if (s.frequency === 'monthly') return `Monthly · day ${s.day_of_month || 1}`
+  const days = (s.days_of_week && s.days_of_week.length ? s.days_of_week : [s.day_of_week ?? 0])
+    .slice().sort((a, b) => a - b).map(d => DAYS_S[d]).join('/')
+  if (s.frequency === 'daily') return `Daily · ${days}`
+  const interval = s.interval_weeks || (s.frequency === 'biweekly' ? 2 : 1)
+  const cadence = interval === 1 ? 'Weekly' : interval === 2 ? 'Every 2 wks' : `Every ${interval} wks`
+  return `${cadence} · ${days}`
+}
+
+// Active/Paused dot-pill — status word + dot, never color alone.
+function SeriesStatusPill({ active }) {
+  return (
+    <span className={`inline-flex items-center gap-1.5 text-[10px] px-2 py-0.5 rounded-full border ${
+      active
+        ? 'text-emerald-700 bg-emerald-500/10 border-emerald-500/20'
+        : 'text-ink-3 bg-bg-2 border-hairline'
+    }`}>
+      <span className={`w-1.5 h-1.5 rounded-full ${active ? 'bg-emerald-500' : 'bg-ink-3'}`} />
+      {active ? 'Active' : 'Paused'}
+    </span>
+  )
+}
+
+export function RecurringTab({ schedules, upcomingJobs = [], properties = [] }) {
   return (
     <div className="max-w-2xl">
       <div className="flex items-center justify-between mb-4">
@@ -31,27 +60,53 @@ export function RecurringTab({ schedules }) {
       )}
       <div className="space-y-2">
         {schedules.map(s => {
-          const FREQ = { weekly: 'Every week', biweekly: 'Every 2 wks', monthly: 'Monthly' }
-          const DAYS_S = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun']
           const typeColors = {
             residential: 'text-blue-400 bg-blue-500/10 border-blue-500/20',
             commercial:  'text-green-400 bg-green-500/10 border-green-500/20',
           }
+          // Chain link: series → its property record (payload carries
+          // property_id; the profile already fetched the client's properties).
+          const property = s.property_id ? properties.find(p => p.id === s.property_id) : null
+          // Chain link: series → its next materialized visit. upcomingJobs is
+          // already date-sorted ascending and carries recurring_schedule_id.
+          const nextVisit = upcomingJobs.find(j => j.recurring_schedule_id === s.id)
           return (
             <div key={s.id} className={`bg-panel border rounded-xl p-4 ${s.active ? 'border-hairline' : 'border-hairline opacity-60'}`}>
               <div className="flex items-start justify-between gap-2">
                 <div className="min-w-0">
-                  <div className="flex items-center gap-2 mb-0.5">
-                    <span className="text-sm font-medium text-ink">{s.title}</span>
+                  <div className="flex items-center gap-2 mb-0.5 flex-wrap">
+                    <Link to={`/recurring?series=${s.id}`}
+                      className="text-sm font-medium text-ink hover:text-indigo-600 no-underline truncate">
+                      {s.title}
+                    </Link>
                     <span className={`text-[10px] px-2 py-0.5 rounded-full border capitalize ${typeColors[s.job_type] || typeColors.residential}`}>
                       {s.job_type}
                     </span>
-                    {!s.active && <span className="text-[10px] text-ink-3 bg-bg-2 px-2 py-0.5 rounded-full">Paused</span>}
+                    <SeriesStatusPill active={s.active} />
                   </div>
                   <div className="text-xs text-ink-3">
-                    {FREQ[s.frequency]} · {s.frequency !== 'monthly' ? `${DAYS_S[s.day_of_week]}s` : `day ${s.day_of_month}`} · {s.start_time}–{s.end_time}
+                    {cadenceLine(s)} · {s.start_time}–{s.end_time}
                   </div>
-                  {s.address && <div className="text-[10px] text-ink-3 mt-0.5 flex items-center gap-1"><MapPin className="w-2.5 h-2.5" />{s.address}</div>}
+                  <div className="text-[11px] text-ink-3 mt-0.5 flex items-center gap-1 flex-wrap">
+                    <MapPin className="w-2.5 h-2.5 shrink-0" />
+                    {property ? (
+                      <Link to={`/properties/${property.id}`}
+                        className="text-ink hover:text-indigo-600 no-underline truncate">
+                        {property.name || property.address}
+                      </Link>
+                    ) : (
+                      s.address || <span className="italic">No property linked</span>
+                    )}
+                    <span className="text-ink-3/50">·</span>
+                    {nextVisit ? (
+                      <Link to={`/jobs/${nextVisit.id}`}
+                        className="text-ink hover:text-indigo-600 no-underline">
+                        Next {formatDateShort(nextVisit.scheduled_date)}{nextVisit.start_time ? ` · ${nextVisit.start_time}` : ''}
+                      </Link>
+                    ) : (
+                      <span>No upcoming visit</span>
+                    )}
+                  </div>
                 </div>
                 <a href={`/recurring?series=${s.id}`} className="text-xs text-ink-3 hover:text-ink-3 bg-bg-2 hover:bg-bg-2 px-2.5 py-1.5 rounded-lg transition-colors shrink-0">
                   Manage

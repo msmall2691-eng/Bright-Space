@@ -1,10 +1,11 @@
 import { useState, useEffect } from 'react'
-import { useParams, useNavigate } from 'react-router-dom'
+import { useParams, useNavigate, Link } from 'react-router-dom'
 import {
   ChevronLeft, ChevronRight, Plus, Edit2, Trash2, MoreVertical, MapPin, Home, Building2, Wind,
-  Calendar, Clock, Users, CheckCircle, AlertCircle, Navigation2, ClipboardList, X
+  Calendar, Clock, Users, CheckCircle, AlertCircle, Navigation2, ClipboardList, X, Repeat
 } from 'lucide-react'
 import { get, patch, post } from '../api'
+import { todayYMD, formatDateShort } from '../utils/format'
 import Button from '../components/ui/Button'
 import RecordLink from '../components/RecordLink'
 import AiInsight from '../components/AiInsight'
@@ -100,6 +101,75 @@ function CalendarFeedsCard({ property, navigate }) {
           })}
         </ul>
       )}
+    </div>
+  )
+}
+
+// Recurring series that generate jobs at this property — the quiet chain link
+// property → series → next visit. Each row deep-links to the series' manage
+// view (/recurring?series=<id>); the next visit links to its job. Rendered
+// only when the property actually has series.
+function RecurringSeriesCard({ schedules, jobs }) {
+  const DAYS_S = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
+  const cadence = (s) => {
+    if (s.frequency === 'monthly') return `Monthly · day ${s.day_of_month || 1}`
+    const days = (s.days_of_week?.length ? s.days_of_week : [s.day_of_week ?? 0])
+      .slice().sort((a, b) => a - b).map(d => DAYS_S[d]).join('/')
+    if (s.frequency === 'daily') return `Daily · ${days}`
+    const interval = s.interval_weeks || (s.frequency === 'biweekly' ? 2 : 1)
+    return `${interval === 1 ? 'Weekly' : interval === 2 ? 'Every 2 wks' : `Every ${interval} wks`} · ${days}`
+  }
+  const today = todayYMD()
+  // Next materialized visit per series, from the jobs this page already
+  // fetched (they carry recurring_schedule_id).
+  const nextVisitFor = (sid) => jobs
+    .filter(j => j.recurring_schedule_id === sid && j.status !== 'cancelled'
+      && j.scheduled_date && j.scheduled_date >= today)
+    .sort((a, b) => a.scheduled_date.localeCompare(b.scheduled_date))[0]
+  return (
+    <div className="bg-panel border border-hairline rounded-lg p-4 mb-4" data-testid="detail-recurring-card">
+      <div className="flex items-center justify-between gap-2 mb-2">
+        <h3 className="text-sm font-semibold text-ink flex items-center gap-1.5">
+          <Repeat className="w-3.5 h-3.5 text-indigo-500" /> Recurring series
+        </h3>
+        <Link to="/recurring" className="text-xs font-semibold text-indigo-600 hover:text-indigo-700 hover:underline">
+          All series →
+        </Link>
+      </div>
+      <ul className="divide-y divide-hairline/60">
+        {schedules.map(s => {
+          const next = nextVisitFor(s.id)
+          return (
+            <li key={s.id} className="py-2 first:pt-0 last:pb-0">
+              <div className="flex items-center gap-2 flex-wrap">
+                <Link to={`/recurring?series=${s.id}`}
+                  className="text-[13px] font-medium text-ink hover:text-indigo-600 no-underline truncate">
+                  {s.title}
+                </Link>
+                <span className={`inline-flex items-center gap-1.5 text-[10px] px-2 py-0.5 rounded-full border ${
+                  s.active
+                    ? 'text-emerald-700 bg-emerald-500/10 border-emerald-500/20'
+                    : 'text-ink-3 bg-bg-2 border-hairline'
+                }`}>
+                  <span className={`w-1.5 h-1.5 rounded-full ${s.active ? 'bg-emerald-500' : 'bg-ink-3'}`} />
+                  {s.active ? 'Active' : 'Paused'}
+                </span>
+              </div>
+              <div className="flex items-center gap-2 flex-wrap text-[11px] text-ink-3 mt-0.5">
+                <span>{cadence(s)} · {s.start_time}–{s.end_time}</span>
+                <span className="text-ink-3/50">·</span>
+                {next ? (
+                  <Link to={`/jobs/${next.id}`} className="text-ink hover:text-indigo-600 no-underline">
+                    Next {formatDateShort(next.scheduled_date)}{next.start_time ? ` · ${next.start_time.slice(0, 5)}` : ''}
+                  </Link>
+                ) : (
+                  <span>No upcoming visit</span>
+                )}
+              </div>
+            </li>
+          )
+        })}
+      </ul>
     </div>
   )
 }
@@ -300,6 +370,10 @@ export default function PropertyDetail() {
   const [property, setProperty] = useState(null)
   const [jobs, setJobs] = useState([])
   const [visits, setVisits] = useState([])
+  // Recurring series that generate jobs at this property. The property payload
+  // doesn't embed them, so we reuse the existing client-filtered list endpoint
+  // (/api/recurring?client_id=) and narrow to this property client-side.
+  const [schedules, setSchedules] = useState([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [selectedJob, setSelectedJob] = useState(null)
@@ -330,6 +404,15 @@ export default function PropertyDetail() {
           job_id: j.id,
           visit_id: j.id,
         })))
+
+        // Recurring series at this property (needs the client_id off the
+        // property, so it can't join the parallel batch above).
+        if (propRes?.client_id) {
+          const scheds = toArray(await get(`/api/recurring?client_id=${propRes.client_id}`).catch(() => []))
+          setSchedules(scheds.filter(s => s.property_id === Number(propertyId)))
+        } else {
+          setSchedules([])
+        }
       } catch (err) {
         console.error('[PropertyDetail]', err)
         setError('Failed to load property details')
@@ -497,6 +580,12 @@ export default function PropertyDetail() {
               it just never rendered here. */}
           {property.property_type === 'str' && (
             <CalendarFeedsCard property={property} navigate={navigate} />
+          )}
+
+          {/* Recurring series scheduled at this property (client → property →
+              series → next visit chain). Quiet: hidden when there are none. */}
+          {schedules.length > 0 && (
+            <RecurringSeriesCard schedules={schedules} jobs={jobs} />
           )}
 
           {/* Cleaning Checklist — editable template per property, collapsed by
