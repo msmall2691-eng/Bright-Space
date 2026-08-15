@@ -13,8 +13,48 @@
 import { useEffect, useState } from 'react'
 import { Bell, CheckCircle2, Smartphone, X } from 'lucide-react'
 import { pushSupported, getPushState, enablePush, isAppInstalled, mobilePlatform } from '../../utils/push'
+import { useNotificationPrefs } from '../../hooks/useNotificationPrefs'
 
 const DISMISS_KEY = 'bb_crew_setup_dismissed'
+
+const CREW_CATEGORY_LABELS = {
+  job_assignments: 'New jobs assigned to me',
+  office_messages: 'Messages from the office',
+  time_off: 'Time-off decisions',
+  digest: 'Morning digest',
+}
+
+/** Account-wide category toggles — independent of THIS device's subscription
+ *  state, so it's reachable even before push is turned on here. Only shown
+ *  on the Me tab (`persistent`): a settings list, not onboarding chrome. */
+function CrewNotificationCategoryList() {
+  const { prefs, toggle } = useNotificationPrefs()
+  if (!prefs) return null
+  return (
+    <div className="mt-2.5 border-t border-hairline pt-2.5 space-y-2">
+      <p className="text-[11px] font-semibold text-ink-2">What you get notified about</p>
+      {Object.entries(CREW_CATEGORY_LABELS).map(([key, label]) => {
+        const on = prefs[key] !== false
+        return (
+          <div key={key} className="flex items-center justify-between gap-3 min-h-8">
+            <span className="flex items-center gap-2 text-[12px] text-ink-2">
+              <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${on ? 'bg-emerald-500' : 'bg-gray-400'}`} />
+              {label}
+            </span>
+            <button type="button" onClick={() => toggle(key)} aria-pressed={on}
+              className={`relative shrink-0 w-9 h-5 rounded-full transition-colors ${
+                on ? 'bg-indigo-600' : 'bg-hairline-2'
+              }`}>
+              <span className={`absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform ${
+                on ? 'translate-x-4' : 'translate-x-0'
+              }`} />
+            </button>
+          </div>
+        )
+      })}
+    </div>
+  )
+}
 
 export default function CrewSetupCard({ persistent = false }) {
   const [dismissed, setDismissed] = useState(() => {
@@ -40,8 +80,11 @@ export default function CrewSetupCard({ persistent = false }) {
 
   const showInstall = !installed
   const showPush = canOfferPush || (pushOn && push?.supported)
-  if (!showInstall && !showPush) return null
-  if (push === null && !showInstall) return null   // still checking, nothing else to say yet
+  // On the Me tab (persistent) the card also carries account-wide category
+  // preferences, which don't depend on THIS device's push support — so it
+  // stays mounted there even when install/push have nothing left to say.
+  if (!persistent && !showInstall && !showPush) return null
+  if (push === null && !showInstall && !persistent) return null   // still checking, nothing else to say yet
 
   const dismiss = () => {
     try { localStorage.setItem(DISMISS_KEY, '1') } catch { /* ignore */ }
@@ -112,6 +155,8 @@ export default function CrewSetupCard({ persistent = false }) {
           )}
         </div>
       )}
+
+      {persistent && <CrewNotificationCategoryList />}
     </div>
   )
 }

@@ -74,6 +74,7 @@ def notify_job_assigned(db: Session, job, cleaner_ids) -> int:
                 _job_line(job),
                 url="/my-day",
                 tag=f"job-assign-{job.id}",
+                category="job_assignments",
             )
         return sent
     except Exception:  # pragma: no cover - defensive: push must never break scheduling

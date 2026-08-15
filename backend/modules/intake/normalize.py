@@ -641,6 +641,7 @@ def upsert_lead(db: Session, data: IntakeData) -> dict:
             url="/requests",
             tag=f"intake-{intake.id}",
             org_id=intake.org_id,
+            category="requests",
         )
     except Exception:
         pass

@@ -5,6 +5,47 @@ import {
   pushSupported, getPushState, enablePush, disablePush, sendTestPush,
   isAppInstalled, mobilePlatform,
 } from '../../utils/push'
+import { useNotificationPrefs } from '../../hooks/useNotificationPrefs'
+
+const OFFICE_CATEGORY_LABELS = {
+  requests: 'New requests',
+  messages: 'Client messages',
+  quotes: 'Quote activity',
+  crew: 'Crew activity',
+}
+
+/** Which event categories reach this account at all — account-wide, so it's
+ *  shown whenever the server is configured, independent of whether push is
+ *  enabled on THIS device yet (a user can set preferences before ever
+ *  turning notifications on here). Quiet dot+word rows, no new chrome. */
+function NotificationCategoryList() {
+  const { prefs, toggle } = useNotificationPrefs()
+  if (!prefs) return null
+  return (
+    <div className="mt-4 pt-4 border-t border-hairline space-y-2.5">
+      <p className="text-xs font-semibold text-ink-2">What you get notified about</p>
+      {Object.entries(OFFICE_CATEGORY_LABELS).map(([key, label]) => {
+        const on = prefs[key] !== false
+        return (
+          <div key={key} className="flex items-center justify-between gap-3">
+            <span className="flex items-center gap-2 text-xs text-ink-2">
+              <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${on ? 'bg-emerald-500' : 'bg-gray-400'}`} />
+              {label}
+            </span>
+            <button type="button" onClick={() => toggle(key)} aria-pressed={on}
+              className={`relative shrink-0 w-8 h-[18px] rounded-full transition-colors ${
+                on ? 'bg-indigo-600' : 'bg-hairline-2'
+              }`}>
+              <span className={`absolute top-0.5 left-0.5 w-[14px] h-[14px] rounded-full bg-white shadow transition-transform ${
+                on ? 'translate-x-[14px]' : 'translate-x-0'
+              }`} />
+            </button>
+          </div>
+        )
+      })}
+    </div>
+  )
+}
 
 /** Push-notification opt-in for this device. Renders a single toggle that
  *  subscribes/unsubscribes the browser and a "Send test" button once on.
@@ -183,6 +224,10 @@ export default function NotificationsCard({ toast }) {
         ) : (
           <p className="text-xs text-ink-3 mt-3">Off — flip the switch to turn them on for this device.</p>
         )}
+
+        {/* Account-wide category preferences — not tied to this device's
+            subscription state, so it's usable even before push is on here. */}
+        {serverReady && <NotificationCategoryList />}
       </div>
     </div>
   )

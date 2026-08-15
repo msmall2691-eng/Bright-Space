@@ -1815,7 +1815,7 @@ def set_time_off_status(
                 "Time off " + ("approved ✓" if status == "approved" else "not approved"),
                 f"Your request for {rng} was {status}."
                 + ("" if status == "approved" else " Talk to the office if you need it."),
-                url="/my-day", tag=f"timeoff-{row.id}",
+                url="/my-day", tag=f"timeoff-{row.id}", category="time_off",
             )
         except Exception:
             logger.exception("push notify failed on set_time_off_status")

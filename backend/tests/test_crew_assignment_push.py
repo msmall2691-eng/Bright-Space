@@ -76,9 +76,9 @@ def pushes(monkeypatch):
     from services import push_service
     sent = []
 
-    def fake_notify_user(user_id, title, body, *, url="/", tag=None):
+    def fake_notify_user(user_id, title, body, *, url="/", tag=None, category=None):
         sent.append({"user_id": user_id, "title": title, "body": body,
-                     "url": url, "tag": tag})
+                     "url": url, "tag": tag, "category": category})
         return 1
 
     monkeypatch.setattr(push_service, "push_enabled", lambda: True)

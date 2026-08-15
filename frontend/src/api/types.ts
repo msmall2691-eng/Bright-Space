@@ -5364,6 +5364,73 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/inbox/triage/{item_id}/delete": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Delete Triage
+         * @description Really delete a triaged email: move it to Gmail Trash (when the account
+         *     granted delete permission) AND tombstone it on the board so it never
+         *     resurfaces. Always clears the card; `gmail_trashed` says whether the real
+         *     email was removed, `reason` explains any fallback to board-only.
+         */
+        post: operations["delete_triage_api_inbox_triage__item_id__delete_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/inbox/triage/{item_id}/undo": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Undo Triage
+         * @description Undo a dismiss/delete: restore the card to the board and, if the email was
+         *     trashed in Gmail, pull it back out of Trash.
+         */
+        post: operations["undo_triage_api_inbox_triage__item_id__undo_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/inbox/triage/delete-all": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Delete All Triage
+         * @description Delete every pending triage card (optionally just one section) at once:
+         *     tombstone all of them on the board, and move as many as possible to Gmail
+         *     Trash (bounded so one click can't hang). Returns how many were cleared and
+         *     how many actually left Gmail.
+         */
+        post: operations["delete_all_triage_api_inbox_triage_delete_all_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/schedule/week": {
         parameters: {
             query?: never;
@@ -6540,6 +6607,35 @@ export interface paths {
         options?: never;
         head?: never;
         patch?: never;
+        trace?: never;
+    };
+    "/api/push/preferences": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Preferences
+         * @description This user's full category map — every category valid for their role,
+         *     explicit true/false, so the frontend never has to guess a default. Missing
+         *     key or `true` = on; only an explicit `false` is off (opt-out semantics,
+         *     migration 094). Per-user, not per-org — no org_id needed.
+         */
+        get: operations["get_preferences_api_push_preferences_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Patch Preferences
+         * @description Merge a partial {category: bool} patch into the caller's stored prefs.
+         *     Only categories valid for the caller's own role may be set — an office
+         *     role can't touch crew-only categories and vice versa.
+         */
+        patch: operations["patch_preferences_api_push_preferences_patch"];
         trace?: never;
     };
     "/api/admin/ical-sync-now": {
@@ -17222,6 +17318,99 @@ export interface operations {
             };
         };
     };
+    delete_triage_api_inbox_triage__item_id__delete_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                item_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    undo_triage_api_inbox_triage__item_id__undo_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                item_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_all_triage_api_inbox_triage_delete_all_post: {
+        parameters: {
+            query?: {
+                section?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     schedule_week_api_schedule_week_get: {
         parameters: {
             query: {
@@ -19181,6 +19370,61 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+        };
+    };
+    get_preferences_api_push_preferences_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    patch_preferences_api_push_preferences_patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    [key: string]: boolean;
+                };
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
