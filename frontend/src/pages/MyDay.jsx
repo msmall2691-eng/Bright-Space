@@ -27,6 +27,10 @@ import PropertySheet from '../components/crew/PropertySheet'
 import JobCard, { SOFT, fmtTimeRange } from '../components/crew/JobCard'
 import CrewJobSheet from '../components/crew/CrewJobSheet'
 import CrewSetupCard from '../components/crew/CrewSetupCard'
+// Photos captured on cellular wait on-device and send on WiFi — My Day owns
+// flushing the queue (app open + connectivity changes) and the visible
+// "waiting" line with the cleaner's Send-now override.
+import { flushPhotoQueue, subscribeQueue } from '../components/crew/photoQueue'
 
 function fmtDuration(ms) {
   const totalMin = Math.max(0, Math.floor(ms / 60000))
@@ -294,6 +298,32 @@ export default function MyDay() {
   const [textSent, setTextSent] = useState(null)   // backend's sent preview
 
   const [weekPay, setWeekPay] = useState(null)
+  // Photos waiting for WiFi (see components/crew/photoQueue.js).
+  const [queuedPhotos, setQueuedPhotos] = useState(0)
+  const [sendingQueued, setSendingQueued] = useState(false)
+
+  useEffect(() => {
+    const unsub = subscribeQueue(setQueuedPhotos)
+    // Flush whatever is waiting: on open, when the browser comes back online,
+    // and when the connection type changes (cellular → WiFi). flush() itself
+    // refuses to run on cellular unless forced.
+    flushPhotoQueue()
+    const onChange = () => { flushPhotoQueue() }
+    window.addEventListener('online', onChange)
+    const conn = navigator.connection || navigator.mozConnection || navigator.webkitConnection
+    conn?.addEventListener?.('change', onChange)
+    return () => {
+      unsub()
+      window.removeEventListener('online', onChange)
+      conn?.removeEventListener?.('change', onChange)
+    }
+  }, [])
+
+  const sendQueuedNow = useCallback(async () => {
+    setSendingQueued(true)
+    try { await flushPhotoQueue({ force: true }) }
+    finally { setSendingQueued(false) }
+  }, [])
 
   const fetchDay = useCallback((silent = false) => {
     if (!silent) { setLoading(true); setError(null) }
@@ -519,6 +549,21 @@ export default function MyDay() {
         {actionError && (
           <div className="text-xs text-red-700 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
             {actionError}
+          </div>
+        )}
+
+        {queuedPhotos > 0 && (
+          /* Photos captured on cellular, waiting for WiFi. Quiet hairline
+             card + amber dot; Send now is the cleaner's override. */
+          <div className="flex items-center justify-between gap-2 rounded-lg border border-hairline bg-panel px-3 py-2">
+            <span className="text-[12px] text-ink-2 flex items-center gap-1.5 min-w-0">
+              <span className="w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0" />
+              {queuedPhotos} photo{queuedPhotos > 1 ? 's' : ''} waiting for WiFi
+            </span>
+            <button onClick={sendQueuedNow} disabled={sendingQueued}
+              className="shrink-0 min-h-9 text-[12px] font-medium text-ink-2 border border-hairline-2 rounded-md px-2.5 py-1 hover:bg-bg-2 disabled:opacity-60 transition-colors">
+              {sendingQueued ? 'Sending…' : 'Send now'}
+            </button>
           </div>
         )}
 

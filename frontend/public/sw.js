@@ -2,15 +2,41 @@
  *
  * Deliberately minimal: this is an authenticated CRM, so we do NOT cache API
  * responses or authenticated HTML — that risks leaking one user's data to
- * another on a shared device. The SW exists for two reasons:
+ * another on a shared device. The SW exists for three reasons:
  *   1. Installability — Chrome/Android require a fetch-handling SW before the
  *      "Install app" prompt appears.
  *   2. Push notifications — the push/notificationclick handlers below are the
  *      client half of web-push. They stay dormant until the backend starts
  *      sending pushes (see docs/PUSH_NOTIFICATIONS.md).
+ *   3. Static-asset caching — cache-first for the built, content-hashed
+ *      JS/CSS under /assets/ (plus the small stable shell files: icons,
+ *      favicons, manifest). Rural cell data is expensive; a revisit should
+ *      re-download ~nothing. Hashed filenames make cache-first safe: a new
+ *      deploy ships new URLs, and old entries are swept on activate.
  */
 
-const VERSION = 'v1'
+const VERSION = 'v2'
+const STATIC_CACHE = `bb-static-${VERSION}`
+
+/** Same-origin static files that are safe to serve cache-first.
+ *  - /assets/*  — Vite build output; filenames are content-hashed (immutable)
+ *  - /icons/*, favicons, manifest — tiny, stable shell files; refreshed by a
+ *    VERSION bump (activate deletes the old cache) when they ever change.
+ *  Never HTML/navigations (index.html must stay fresh so new hashed URLs are
+ *  picked up), never /api/*, never cross-origin. */
+function isCacheableStatic(url) {
+  if (url.origin !== self.location.origin) return false
+  const p = url.pathname
+  if (p.startsWith('/api/')) return false
+  return (
+    p.startsWith('/assets/') ||
+    p.startsWith('/icons/') ||
+    p === '/manifest.webmanifest' ||
+    p === '/favicon-16.png' ||
+    p === '/favicon-32.png' ||
+    p === '/apple-touch-icon.png'
+  )
+}
 
 self.addEventListener('install', () => {
   // Take over as soon as possible so updates roll out without a full app close.
@@ -18,16 +44,47 @@ self.addEventListener('install', () => {
 })
 
 self.addEventListener('activate', (event) => {
-  event.waitUntil(self.clients.claim())
+  event.waitUntil(
+    (async () => {
+      // Sweep caches from older SW versions so stale assets don't pile up.
+      const keys = await caches.keys()
+      await Promise.all(
+        keys
+          .filter((k) => k.startsWith('bb-static-') && k !== STATIC_CACHE)
+          .map((k) => caches.delete(k))
+      )
+      await self.clients.claim()
+    })()
+  )
 })
 
-// Network-first passthrough. We don't serve stale content; we only need a
-// fetch handler to exist for installability. Non-GET and cross-origin requests
-// are left entirely alone.
+// Static assets: cache-first (see isCacheableStatic). Everything else — API,
+// navigations, cross-origin — is a network passthrough exactly as before: we
+// never serve stale app HTML or cache authed data.
 self.addEventListener('fetch', (event) => {
   const { request } = event
   if (request.method !== 'GET') return
-  // Let the browser handle it normally — no offline caching of authed data.
+  let url
+  try {
+    url = new URL(request.url)
+  } catch {
+    return
+  }
+  if (!isCacheableStatic(url)) return
+
+  event.respondWith(
+    (async () => {
+      const cache = await caches.open(STATIC_CACHE)
+      const hit = await cache.match(request)
+      if (hit) return hit
+      const res = await fetch(request)
+      // Only keep full, successful same-origin responses (no opaque/partial).
+      if (res.ok && res.type === 'basic') {
+        cache.put(request, res.clone()).catch(() => {})
+      }
+      return res
+    })()
+  )
 })
 
 // ── Push notifications (client half) ─────────────────────────────────────────

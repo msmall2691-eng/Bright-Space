@@ -15,6 +15,7 @@ import { Camera, Images, X } from 'lucide-react'
 import { del, get, upload } from '../../api'
 import { AuthImage } from '../ui'
 import { prepareForUpload } from '../../utils/imageDownscale'
+import { onCellular, enqueuePhoto, flushPhotoQueue, subscribeQueue } from './photoQueue'
 
 const KIND_LABEL = { before: 'Before', after: 'After' }
 
@@ -23,8 +24,15 @@ export default function JobPhotoSheet({ job, onClose }) {
   const [error, setError] = useState(null)
   const [kind, setKind] = useState(job.status === 'completed' ? 'after' : 'before')
   const [progress, setProgress] = useState(null)  // { done, total } while uploading
+  // Cellular data-saver: photos queue for WiFi where the platform reports the
+  // connection type (see photoQueue.js). Sampled when the sheet opens.
+  const [cellular] = useState(() => onCellular())
+  const [queued, setQueued] = useState(0)          // photos waiting, all jobs
+  const [sendingNow, setSendingNow] = useState(false)
   const cameraRef = useRef(null)
   const galleryRef = useRef(null)
+
+  useEffect(() => subscribeQueue(setQueued), [])
 
   const refresh = useCallback(() => {
     return get(`/api/crew/jobs/${job.id}/photos`)
@@ -34,20 +42,29 @@ export default function JobPhotoSheet({ job, onClose }) {
 
   useEffect(() => { refresh() }, [refresh])
 
-  const busy = progress != null
+  const busy = progress != null || sendingNow
 
   const handleFiles = useCallback(async (fileList) => {
     const files = Array.from(fileList || [])
     if (!files.length) return
     setError(null)
+    // On cellular, photos go to the on-device queue instead of straight up the
+    // cell link ("will send on WiFi", Send-now to override). If the queue is
+    // unavailable or full, fall through to a normal direct upload.
+    const defer = onCellular()
     setProgress({ done: 0, total: files.length })
     for (let i = 0; i < files.length; i++) {
       try {
         const { blob, filename } = await prepareForUpload(files[i])
-        const form = new FormData()
-        form.append('file', blob, filename)
-        form.append('kind', kind)
-        await upload(`/api/crew/jobs/${job.id}/photos`, form)
+        const wasQueued = defer && await enqueuePhoto({
+          url: `/api/crew/jobs/${job.id}/photos`, blob, filename, fields: { kind },
+        })
+        if (!wasQueued) {
+          const form = new FormData()
+          form.append('file', blob, filename)
+          form.append('kind', kind)
+          await upload(`/api/crew/jobs/${job.id}/photos`, form)
+        }
         setProgress({ done: i + 1, total: files.length })
       } catch (e) {
         setError(`Photo ${i + 1} of ${files.length} didn't upload — ${e.message || 'try again'}`)
@@ -57,6 +74,17 @@ export default function JobPhotoSheet({ job, onClose }) {
     setProgress(null)
     refresh()
   }, [job.id, kind, refresh])
+
+  // The cleaner's override: push the whole queue up over cellular, now.
+  const sendNow = useCallback(async () => {
+    setSendingNow(true); setError(null)
+    try {
+      await flushPhotoQueue({ force: true })
+      await refresh()
+    } finally {
+      setSendingNow(false)
+    }
+  }, [refresh])
 
   const removePhoto = useCallback(async (photoId) => {
     setError(null)
@@ -117,9 +145,32 @@ export default function JobPhotoSheet({ job, onClose }) {
         <input ref={galleryRef} type="file" accept="image/*" multiple
           className="hidden" onChange={e => { handleFiles(e.target.files); e.target.value = '' }} />
 
+        {cellular && queued === 0 && !progress && (
+          /* Quiet heads-up BEFORE the first shot: cellular detected, photos
+             will wait. Ties back to the job card's House WiFi block. */
+          <p className="text-[11px] text-ink-3 flex items-start gap-1.5">
+            <span className="w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0 mt-[5px]" />
+            You're on cellular — photos will wait and send on WiFi. Joining the
+            house WiFi (on the job card) sends them free.
+          </p>
+        )}
+
+        {queued > 0 && (
+          <div className="flex items-center justify-between gap-2 rounded-lg border border-hairline bg-bg px-3 py-2">
+            <span className="text-[12px] text-ink-2 flex items-center gap-1.5 min-w-0">
+              <span className="w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0" />
+              {queued} photo{queued > 1 ? 's' : ''} waiting for WiFi
+            </span>
+            <button onClick={sendNow} disabled={busy}
+              className="shrink-0 min-h-9 text-[12px] font-medium text-ink-2 border border-hairline-2 rounded-md px-2.5 py-1 hover:bg-bg-2 disabled:opacity-60 transition-colors">
+              {sendingNow ? 'Sending…' : 'Send now'}
+            </button>
+          </div>
+        )}
+
         {progress && (
           <div className="text-[12px] text-ink-2 bg-bg border border-hairline rounded-lg px-3 py-2">
-            Uploading {Math.min(progress.done + 1, progress.total)} of {progress.total}…
+            Saving {Math.min(progress.done + 1, progress.total)} of {progress.total}…
           </div>
         )}
         {error && (

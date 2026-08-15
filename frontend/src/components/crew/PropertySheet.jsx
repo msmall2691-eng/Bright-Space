@@ -9,9 +9,10 @@
  */
 import { useCallback, useEffect, useState } from 'react'
 import { ArrowLeft, Camera, Plus, Share2 } from 'lucide-react'
-import { get, post, del } from '../../api'
+import { get, post, del, upload } from '../../api'
 import { AuthImage } from '../ui'
 import { prepareForUpload } from '../../utils/imageDownscale'
+import { onCellular, enqueuePhoto } from './photoQueue'
 
 export default function PropertySheet({ propertyId, propertyName, onClose }) {
   const [notes, setNotes] = useState(null)
@@ -20,6 +21,7 @@ export default function PropertySheet({ propertyId, propertyName, onClose }) {
   const [addingNote, setAddingNote] = useState(false)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState(null)
+  const [notice, setNotice] = useState(null)   // e.g. "2 photos will send on WiFi"
   const [viewer, setViewer] = useState(null)   // full-screen photo
 
   const load = useCallback(() => {
@@ -44,13 +46,25 @@ export default function PropertySheet({ propertyId, propertyName, onClose }) {
 
   const uploadPhotos = async (files) => {
     if (!files?.length) return
-    setBusy(true); setError(null)
+    setBusy(true); setError(null); setNotice(null)
+    // Reference photos are the definition of non-urgent: on cellular they go
+    // to the on-device queue and send on WiFi (see photoQueue.js); anywhere
+    // else — or if the queue is unavailable — they upload right away.
+    const defer = onCellular()
+    let queuedNow = 0
     try {
       for (let i = 0; i < files.length; i++) {
         const { blob, filename } = await prepareForUpload(files[i])
+        const wasQueued = defer && await enqueuePhoto({
+          url: `/api/crew/properties/${propertyId}/photos`, blob, filename,
+        })
+        if (wasQueued) { queuedNow++; continue }
         const form = new FormData()
         form.append('file', blob, filename)
-        await post(`/api/crew/properties/${propertyId}/photos`, form)
+        await upload(`/api/crew/properties/${propertyId}/photos`, form)
+      }
+      if (queuedNow > 0) {
+        setNotice(`${queuedNow} photo${queuedNow > 1 ? 's' : ''} saved — they'll send on WiFi and show up here after.`)
       }
       load()
     } catch (e) {
@@ -82,6 +96,11 @@ export default function PropertySheet({ propertyId, propertyName, onClose }) {
 
       <div className="max-w-lg mx-auto px-4 py-4 pb-16 space-y-5">
         {error && <div className="text-xs text-red-700 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{error}</div>}
+        {notice && (
+          <p className="text-[12px] text-ink-2 flex items-start gap-1.5">
+            <span className="w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0 mt-[5px]" /> {notice}
+          </p>
+        )}
 
         {/* Photos */}
         <section>
