@@ -691,6 +691,12 @@ ASSIGNABLE_ROLES = {"admin", "manager", "member", "viewer", "cleaner", "client"}
 class AdminUserUpdate(BaseModel):
     role: Optional[str] = None
     active: Optional[bool] = None
+    # Identity fields — the owner needs to fix a typo'd name or swap an email
+    # after inviting someone, without a delete-and-reinvite dance (which would
+    # orphan the crew ID + pay rates). Email changes keep the login the same
+    # object; the person just signs in with the new address.
+    full_name: Optional[str] = None
+    email: Optional[str] = None
     # Crew accounts: links a role="cleaner" login to the Job.cleaner_ids
     # string space. "" clears the link (kept distinct from None = "not
     # provided in this request", matching the rest of this endpoint's
@@ -885,6 +891,24 @@ def update_workspace_user(user_id: int, data: AdminUserUpdate, db: Session = Dep
         # Re-enabling a disabled account restores access in one step.
         if data.active and (u.status or "active") == "disabled":
             u.status = "active"
+    if data.full_name is not None:
+        new_name = data.full_name.strip()
+        if not new_name:
+            raise HTTPException(status_code=422, detail="Name cannot be empty")
+        u.full_name = new_name[:255]
+    if data.email is not None:
+        new_email = data.email.strip()
+        if not new_email or "@" not in new_email:
+            raise HTTPException(status_code=422, detail="A valid email is required")
+        # Case-insensitive uniqueness — login matches case-insensitively, so a
+        # second account differing only by case would make sign-in ambiguous.
+        clash = db.query(User).filter(
+            func.lower(User.email) == new_email.lower(), User.id != u.id
+        ).first()
+        if clash:
+            raise HTTPException(status_code=409,
+                                detail=f"'{new_email}' already belongs to another user.")
+        u.email = new_email
     if data.cleaner_id is not None:
         # "" clears the link; anything else sets it. Trimmed so a stray space
         # pasted from a Connecteam export doesn't silently fail to match

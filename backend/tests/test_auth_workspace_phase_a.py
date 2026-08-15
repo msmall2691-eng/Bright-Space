@@ -169,3 +169,38 @@ def test_office_password_login_still_works(db):
     assert admin.active and (admin.status or "active") == "active"
     # And the status gate in get_current_user lets them straight through.
     assert (admin.status or "active") != "pending"
+
+
+def test_admin_can_edit_name_and_email(db):
+    """The owner can fix a typo'd name or swap an email after inviting someone —
+    without delete-and-reinvite (which would orphan crew ID + pay rates)."""
+    db_, admin = db
+    member = User(email="typo@example.com", full_name="Typo Nmae", role="member",
+                  active=True, status="active", org_id=admin.org_id)
+    db_.add(member); db_.commit(); db_.refresh(member)
+
+    row = update_workspace_user(
+        member.id, AdminUserUpdate(full_name="Real Name", email="real@example.com"),
+        db=db_, current_user=admin)
+    assert row["full_name"] == "Real Name"
+    assert row["email"] == "real@example.com"
+
+    # Blank name / invalid email rejected.
+    with pytest.raises(HTTPException) as ei:
+        update_workspace_user(member.id, AdminUserUpdate(full_name="   "),
+                              db=db_, current_user=admin)
+    assert ei.value.status_code == 422
+    with pytest.raises(HTTPException) as ei:
+        update_workspace_user(member.id, AdminUserUpdate(email="not-an-email"),
+                              db=db_, current_user=admin)
+    assert ei.value.status_code == 422
+
+    # Email uniqueness is case-insensitive: login matches case-insensitively,
+    # so a case-variant duplicate would make sign-in ambiguous.
+    other = User(email="taken@example.com", role="member", active=True,
+                 status="active", org_id=admin.org_id)
+    db_.add(other); db_.commit()
+    with pytest.raises(HTTPException) as ei:
+        update_workspace_user(member.id, AdminUserUpdate(email="TAKEN@example.com"),
+                              db=db_, current_user=admin)
+    assert ei.value.status_code == 409
