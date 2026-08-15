@@ -1,12 +1,14 @@
-import { Phone, Mail, MapPin, Calendar, ChevronRight } from 'lucide-react'
+import { Phone, Mail, MapPin, Calendar, ChevronRight, Pencil, Trash2 } from 'lucide-react'
 import { displayContactName } from '../../utils/display'
 import { STATUS_COLORS, avatarColor } from './constants'
 
 /** Card-view row for a single client — avatar + name + status pill,
  *  inline phone/email/city, selection checkbox, and the quick
- *  "Schedule a job" action. Row-level click navigates to the client
- *  profile; checkbox and the schedule button stop propagation. */
-export function ClientCardRow({ c, selected, toggleSelect, setJobClient, navigate }) {
+ *  "Schedule a job" / edit / delete actions. Row-level click navigates
+ *  to the client profile; checkbox and the action buttons stop
+ *  propagation. Edit opens the slide-in form (which is also where the
+ *  full field set lives); Delete confirms via the global dialog. */
+export function ClientCardRow({ c, selected, toggleSelect, setJobClient, navigate, openEdit, deleteClient }) {
   return (
     <div onClick={() => navigate(`/clients/${c.id}`)}
       className={`flex items-center gap-3 sm:gap-4 bg-panel border rounded-xl p-3 sm:p-3.5 cursor-pointer transition-all group ${selected ? 'border-blue-400 bg-blue-50/40' : 'border-hairline hover:border-hairline'}`}>
@@ -37,8 +39,20 @@ export function ClientCardRow({ c, selected, toggleSelect, setJobClient, navigat
       <button onClick={(e) => { e.stopPropagation(); setJobClient(c) }}
         title={`Schedule a job for ${displayContactName(c)}`}
         aria-label={`Schedule ${c.name}`}
-        className="inline-flex items-center justify-center w-7 h-7 rounded-lg text-ink-3 hover:text-blue-600 hover:bg-blue-50 transition-colors shrink-0">
+        className="inline-flex items-center justify-center w-11 h-11 sm:w-7 sm:h-7 rounded-lg text-ink-3 hover:text-blue-600 hover:bg-blue-50 transition-colors shrink-0">
         <Calendar className="w-4 h-4" />
+      </button>
+      <button onClick={(e) => { e.stopPropagation(); openEdit(c) }}
+        title={`Edit ${displayContactName(c)}`}
+        aria-label={`Edit ${c.name}`}
+        className="inline-flex items-center justify-center w-11 h-11 sm:w-7 sm:h-7 rounded-lg text-ink-3 hover:text-ink hover:bg-bg-2 transition-colors shrink-0">
+        <Pencil className="w-4 h-4" />
+      </button>
+      <button onClick={(e) => { e.stopPropagation(); deleteClient(c.id) }}
+        title={`Delete ${displayContactName(c)}`}
+        aria-label={`Delete ${c.name}`}
+        className="inline-flex items-center justify-center w-11 h-11 sm:w-7 sm:h-7 rounded-lg text-ink-3 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-500/10 transition-colors shrink-0">
+        <Trash2 className="w-4 h-4" />
       </button>
       <ChevronRight className="w-4 h-4 text-ink-3 group-hover:text-ink-3 transition-colors shrink-0" />
     </div>

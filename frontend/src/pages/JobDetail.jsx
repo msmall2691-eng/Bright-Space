@@ -2,10 +2,11 @@ import { useState, useEffect, useCallback } from 'react'
 import { useParams, useNavigate, Link } from 'react-router-dom'
 import {
   ArrowLeft, Building2, MapPin, Receipt, FileText, TrendingUp, Calendar, Send, Plus, CalendarPlus, KeyRound,
-  Sparkles, Copy, Check, X,
+  Sparkles, Copy, Check, X, Trash2,
 } from 'lucide-react'
 import { get, patch, post, del, download } from '../api'
 import { toast } from '../utils/toastBus'
+import { confirmDialog } from '../utils/confirmBus'
 import { formatDateShort as fmtDate } from '../utils/format'
 import { canEdit } from '../utils/perms'
 import InlineSelect from '../components/InlineSelect'
@@ -315,6 +316,29 @@ export default function JobDetail() {
     } catch { toast.error('Could not generate calendar invite') }
   }
 
+  // DELETE /api/jobs/{id} is a HARD delete on the backend: the job row is
+  // removed and its Google Calendar event deleted. The soft path — keep the
+  // record, call the visit off — is status → Cancelled, so point there.
+  const [deleting, setDeleting] = useState(false)
+  const deleteJob = async () => {
+    const ok = await confirmDialog(
+      'Permanently delete this job? It is removed from BrightBase and taken off the Google Calendar. ' +
+      'This cannot be undone.\n\n' +
+      'To call the visit off but keep the record, set the status to Cancelled instead.',
+      { title: 'Delete job?', confirmLabel: 'Delete permanently', danger: true }
+    )
+    if (!ok) return
+    setDeleting(true)
+    try {
+      await del(`/api/jobs/${id}`)
+      toast.success('Job deleted')
+      navigate('/schedule')
+    } catch (e) {
+      toast.error(e?.message || 'Could not delete job')
+      setDeleting(false)
+    }
+  }
+
   const newInvoice = async () => {
     setCreating(true)
     try {
@@ -567,6 +591,18 @@ export default function JobDetail() {
                     <Sparkles className="w-3.5 h-3.5" /> {draftingReview ? 'Drafting…' : 'Draft review request'}
                   </button>
                 )}
+              </div>
+            )}
+
+            {/* Hard delete lives in its own section, spaced away from the safe
+                actions — red text on a secondary surface, never a red primary.
+                Cancelling (soft) stays in the status select above. */}
+            {canEdit() && (
+              <div className="border-t border-hairline pt-3">
+                <button onClick={deleteJob} disabled={deleting}
+                  className="w-full flex items-center justify-center gap-1.5 bg-bg-2 border border-hairline hover:border-red-300 disabled:opacity-50 text-red-600 hover:text-red-700 px-3 py-2 rounded-lg text-[12px] font-medium transition-colors">
+                  <Trash2 className="w-3.5 h-3.5" /> {deleting ? 'Deleting…' : 'Delete job'}
+                </button>
               </div>
             )}
           </div>

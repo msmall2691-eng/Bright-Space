@@ -1,3 +1,4 @@
+import { Link } from 'react-router-dom'
 import {
   Plus, CheckCircle, AlertCircle, X, RefreshCw, Trash2,
   Home, MapPin, Calendar,
@@ -292,7 +293,13 @@ export default function PropertiesTab({
                     <Home className="w-4 h-4 text-ink-3" />
                   </div>
                   <div className="min-w-0">
-                    <div className="font-medium text-ink text-sm">{p.name}</div>
+                    {/* The property name is the record — link it (the "Jobs"
+                        button already went there, but the name itself was
+                        dead text). */}
+                    <Link to={`/properties/${p.id}`}
+                      className="block font-medium text-ink hover:text-indigo-600 no-underline text-sm truncate">
+                      {p.name}
+                    </Link>
                     {p.address && (
                       <div className="text-xs text-ink-3 flex items-center gap-1 mt-0.5">
                         <MapPin className="w-3 h-3 shrink-0" />

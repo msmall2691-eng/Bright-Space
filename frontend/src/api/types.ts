@@ -566,7 +566,17 @@ export interface paths {
         get: operations["get_client_api_clients__client_id__get"];
         put?: never;
         post?: never;
-        /** Delete Client */
+        /**
+         * Delete Client
+         * @description BB-SEC-09: client delete hard-cascades everything (properties, jobs,
+         *     quotes, invoices, conversations, history) via the ORM relationships. It
+         *     used to do so unconditionally — one confirmed mis-click erased a client's
+         *     entire business record with no server-side backstop, and any non-UI caller
+         *     (script, agent tool, curl) got the same silent cascade. Now a client with
+         *     real history 409s unless the caller explicitly passes ?force=true; the UI
+         *     surfaces the counts from the 409 in an escalated confirm before retrying
+         *     with force.
+         */
         delete: operations["delete_client_api_clients__client_id__delete"];
         options?: never;
         head?: never;
@@ -2270,7 +2280,14 @@ export interface paths {
         get: operations["get_invoice_api_invoices__invoice_id__get"];
         put?: never;
         post?: never;
-        /** Delete Invoice */
+        /**
+         * Delete Invoice
+         * @description BB-SEC-10: deleting a PAID invoice erases the payment record — the
+         *     money trail for work already done. It used to be a plain delete with no
+         *     server-side distinction; a paid invoice now 409s unless the caller
+         *     explicitly passes ?force=true (the UI escalates its confirm and retries
+         *     with force). Unpaid invoices delete as before.
+         */
         delete: operations["delete_invoice_api_invoices__invoice_id__delete"];
         options?: never;
         head?: never;
@@ -2886,7 +2903,15 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Get Property */
+        /**
+         * Get Property
+         * @description BB-SEC-11: this endpoint returns the full property dict — house_code,
+         *     access_notes, wifi_password included — and had no role gate at all, so any
+         *     authenticated cleaner could read every property's codes by id. Office roles
+         *     only now (matches the list endpoint above); the crew app reads properties
+         *     through /api/crew/*, which serves access details solely for the cleaner's
+         *     own assigned jobs.
+         */
         get: operations["get_property_api_properties__property_id__get"];
         put?: never;
         post?: never;
@@ -8368,6 +8393,11 @@ export interface components {
             ends_on?: string | null;
             /** Ends After Count */
             ends_after_count?: number | null;
+            /**
+             * Allow Duplicate
+             * @default false
+             */
+            allow_duplicate: boolean | null;
         };
         /**
          * ScheduleSplit
@@ -9496,7 +9526,9 @@ export interface operations {
     };
     delete_client_api_clients__client_id__delete: {
         parameters: {
-            query?: never;
+            query?: {
+                force?: boolean;
+            };
             header?: never;
             path: {
                 client_id: number;
@@ -12192,7 +12224,9 @@ export interface operations {
     };
     delete_invoice_api_invoices__invoice_id__delete: {
         parameters: {
-            query?: never;
+            query?: {
+                force?: boolean;
+            };
             header?: never;
             path: {
                 invoice_id: number;

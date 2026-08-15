@@ -427,8 +427,14 @@ def get_all_ical_events(
     return results
 
 
-@router.get("/{property_id}")
+@router.get("/{property_id}", dependencies=[Depends(require_role("admin", "manager", "viewer"))])
 def get_property(property_id: int, db: Session = Depends(get_db), org_id: int = Depends(current_org_id)):
+    """BB-SEC-11: this endpoint returns the full property dict — house_code,
+    access_notes, wifi_password included — and had no role gate at all, so any
+    authenticated cleaner could read every property's codes by id. Office roles
+    only now (matches the list endpoint above); the crew app reads properties
+    through /api/crew/*, which serves access details solely for the cleaner's
+    own assigned jobs."""
     prop = db.query(Property).options(joinedload(Property.property_icals)).filter(
         Property.id == property_id,
         or_(Property.org_id == org_id, Property.org_id.is_(None)),  # MT-2 tenant scope

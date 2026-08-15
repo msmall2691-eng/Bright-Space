@@ -97,18 +97,65 @@ export function useClientMutations({
     setImporting(false); e.target.value = ''
   }
 
+  // The backend hard-deletes the client AND cascades over everything attached
+  // (properties, jobs, quotes, invoices, conversations, activity history) with
+  // no dependent-record guard — the confirm has to carry the full weight.
   const deleteClient = async (id) => {
-    if (!(await confirmDialog('Delete this client?', { confirmLabel: 'Delete', danger: true }))) return
-    await del(`/api/clients/${id}`); await load(); setShowForm(false); resetPhones()
+    const ok = await confirmDialog(
+      'This permanently deletes the client and everything attached to them — ' +
+      'their properties, jobs, quotes, invoices, and message history. It cannot be undone.\n\n' +
+      'To keep the history, set their status to Inactive instead.',
+      { title: 'Delete client?', confirmLabel: 'Delete permanently', danger: true }
+    )
+    if (!ok) return
+    try {
+      await del(`/api/clients/${id}`)
+      await load(); setShowForm(false); setSelected(null); resetPhones()
+    } catch (e) {
+      // BB-SEC-09: the server now refuses to cascade a client with real
+      // history unless forced — surface ITS counts in a second, escalated
+      // confirm so the final yes is informed by the database, not the UI's
+      // guess.
+      if (e?.status === 409) {
+        let counts = null
+        try { counts = JSON.parse(e.detail)?.counts } catch { /* not json */ }
+        const parts = counts
+          ? Object.entries(counts).filter(([, n]) => n > 0).map(([k, n]) => `${n} ${k}`).join(', ')
+          : 'linked history'
+        const really = await confirmDialog(
+          `The server checked: this client has ${parts} that will be permanently deleted with them.\n\nDelete everything anyway?`,
+          { title: 'Client has history', confirmLabel: 'Delete everything', danger: true }
+        )
+        if (!really) return
+        try {
+          await del(`/api/clients/${id}?force=true`)
+          await load(); setShowForm(false); setSelected(null); resetPhones()
+        } catch (e2) {
+          toast.error('Could not delete: ' + (e2?.message || 'unknown error'))
+        }
+        return
+      }
+      toast.error('Could not delete: ' + (e?.message || 'unknown error'))
+    }
   }
 
   const bulkDelete = async () => {
     const ids = Array.from(selectedIds)
     if (ids.length === 0) return
-    if (!(await confirmDialog(`Delete ${ids.length} client${ids.length === 1 ? '' : 's'}? This cannot be undone.`, { confirmLabel: 'Delete', danger: true }))) return
+    const ok = await confirmDialog(
+      `Permanently delete ${ids.length} client${ids.length === 1 ? '' : 's'}? ` +
+      `Each client's properties, jobs, quotes, invoices, and message history are deleted with them. ` +
+      `This cannot be undone.`,
+      { title: `Delete ${ids.length} client${ids.length === 1 ? '' : 's'}?`, confirmLabel: 'Delete permanently', danger: true }
+    )
+    if (!ok) return
     setBulkDeleting(true)
     try {
-      const results = await Promise.allSettled(ids.map(id => del(`/api/clients/${id}`)))
+      // Bulk is a deliberate multi-select behind its own maximal confirm, so
+      // it carries force — per-row second confirms for N clients would just
+      // train click-through. (BB-SEC-09's guard still protects every other
+      // caller.)
+      const results = await Promise.allSettled(ids.map(id => del(`/api/clients/${id}?force=true`)))
       const failed = results.filter(r => r.status === 'rejected').length
       if (failed > 0) toast.error(`Deleted ${ids.length - failed} of ${ids.length}. ${failed} failed.`)
       clearSelection()

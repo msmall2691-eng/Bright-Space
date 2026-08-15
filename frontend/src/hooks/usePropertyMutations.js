@@ -137,11 +137,35 @@ export function usePropertyMutations({ load }) {
     setRebuildingId(null)
   }, [])
 
+  /** Deactivate one property. DELETE /api/properties/{id} is a soft
+   *  deactivate on the backend (sets active=false) — the property is hidden
+   *  from lists and skipped by feed syncs, but nothing is deleted. */
+  const deactivateOne = useCallback(async (p) => {
+    const ok = await confirmDialog(
+      `Deactivate “${p.name}”? It will be hidden from the properties list and its calendar feeds stop syncing. ` +
+      `Nothing is deleted — its jobs and history are kept, and it can be reactivated later.`,
+      { title: 'Deactivate property?', confirmLabel: 'Deactivate' }
+    )
+    if (!ok) return { ok: false, reason: 'cancelled' }
+    try {
+      await del(`/api/properties/${p.id}`)
+      toast.success('Property deactivated')
+      await load()
+      return { ok: true }
+    } catch (e) {
+      toast.error('Could not deactivate: ' + (e?.message || 'unknown'))
+      return { ok: false, error: e }
+    }
+  }, [load])
+
   const bulkDelete = useCallback(async ({ ids, hardDelete }) => {
     if (ids.length === 0) return { ok: false, reason: 'empty' }
-    const verb = hardDelete ? 'permanently delete' : 'archive'
+    const verb = hardDelete ? 'permanently delete' : 'deactivate'
     const confirmed = await confirmDialog(
-      `${verb[0].toUpperCase() + verb.slice(1)} ${ids.length} propert${ids.length === 1 ? 'y' : 'ies'}? ${hardDelete ? 'This removes them from the database entirely.' : 'They will be soft-archived (active=false).'} `,
+      `${verb[0].toUpperCase() + verb.slice(1)} ${ids.length} propert${ids.length === 1 ? 'y' : 'ies'}? ${
+        hardDelete
+          ? 'This removes them from the database entirely — it cannot be undone.'
+          : 'They are hidden from lists and their feeds stop syncing, but nothing is deleted — they can be reactivated later.'} `,
       { confirmLabel: verb[0].toUpperCase() + verb.slice(1), danger: hardDelete }
     )
     if (!confirmed) {
@@ -154,7 +178,7 @@ export function usePropertyMutations({ load }) {
       } else {
         const results = await Promise.allSettled(ids.map(id => del(`/api/properties/${id}`)))
         const failed = results.filter(r => r.status === 'rejected').length
-        if (failed > 0) toast.error(`Archived ${ids.length - failed} of ${ids.length}. ${failed} failed.`)
+        if (failed > 0) toast.error(`Deactivated ${ids.length - failed} of ${ids.length}. ${failed} failed.`)
       }
       await load()
       return { ok: true }
@@ -181,6 +205,7 @@ export function usePropertyMutations({ load }) {
     syncAll,
     runSweep,
     rebuildOne,
+    deactivateOne,
     bulkDelete,
   }
 }

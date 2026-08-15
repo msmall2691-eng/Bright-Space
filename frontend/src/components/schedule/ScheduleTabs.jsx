@@ -5,6 +5,7 @@ import Button from '../ui/Button'
 import GlassCard from '../ui/GlassCard'
 import { toast } from '../../utils/toastBus'
 import { confirmDialog } from '../../utils/confirmBus'
+import { parseSimilarSeriesConflict } from '../../utils/recurringDuplicates'
 import EndsPicker from './EndsPicker'
 
 /** Two self-contained tab views for the Schedule page.
@@ -34,6 +35,10 @@ export function RecurringCreateModal({ clients, properties, onClose, onCreated }
   })
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
+  // Matches from the backend's similar-series 409 (pre-create duplicate
+  // guard) — rendered as an "Open existing / Create anyway" prompt, mirroring
+  // JobCreateModal's overridable-conflict UX.
+  const [dupMatches, setDupMatches] = useState(null)
   const dayLabels = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
   const filteredProps = properties.filter(p => !form.client_id || p.client_id === parseInt(form.client_id))
   const toggleDay = (d) => {
@@ -51,7 +56,7 @@ export function RecurringCreateModal({ clients, properties, onClose, onCreated }
       job_type: p?.property_type === 'commercial' ? 'commercial' : 'residential',
     }))
   }
-  const submit = async () => {
+  const submit = async (allowDuplicate = false) => {
     if (!form.client_id) { setError('Pick a client'); return }
     if (!form.title.trim()) { setError('Title is required'); return }
     if (!form.address.trim()) { setError('Address is required'); return }
@@ -64,7 +69,7 @@ export function RecurringCreateModal({ clients, properties, onClose, onCreated }
     if (form.ends_mode === 'after_count' && (!form.ends_after_count || parseInt(form.ends_after_count) < 1)) {
       setError('Occurrence count must be at least 1'); return
     }
-    setSaving(true); setError('')
+    setSaving(true); setError(''); setDupMatches(null)
     try {
       const payload = {
         client_id: parseInt(form.client_id),
@@ -84,11 +89,16 @@ export function RecurringCreateModal({ clients, properties, onClose, onCreated }
         ends_mode: form.ends_mode,
         ends_on: form.ends_mode === 'on_date' ? form.ends_on : null,
         ends_after_count: form.ends_mode === 'after_count' ? parseInt(form.ends_after_count) : null,
+        // Similar-series guard override — only true from "Create anyway".
+        allow_duplicate: allowDuplicate,
       }
       await post('/api/recurring', payload)
       onCreated(); onClose()
     } catch (e) {
-      setError(e.message || 'Failed to create schedule')
+      // 409 from the similar-series guard → overridable prompt, not an error.
+      const similar = parseSimilarSeriesConflict(e)
+      if (similar) setDupMatches(similar)
+      else setError(e.message || 'Failed to create schedule')
     } finally {
       setSaving(false)
     }
@@ -197,11 +207,40 @@ export function RecurringCreateModal({ clients, properties, onClose, onCreated }
             <label className="block text-sm font-semibold mb-1">Notes</label>
             <textarea value={form.notes} onChange={e => setForm(f => ({...f, notes: e.target.value}))} rows={2} className="w-full px-3 py-2 border border-hairline rounded-lg" />
           </div>
+          {dupMatches && dupMatches.length > 0 && (
+            <div className="p-3 bg-amber-50 border border-amber-200 rounded text-sm"
+              data-testid="recurring-create-duplicate-prompt">
+              <p className="font-semibold text-amber-800 mb-1">Similar recurring series already exists</p>
+              <ul className="text-amber-900 mb-2 space-y-1 text-xs">
+                {dupMatches.map(m => (
+                  <li key={m.id}>
+                    This client already has: {m.cadence}
+                    {m.property_name ? ` at ${m.property_name}` : m.address ? ` at ${m.address}` : ''}
+                    {` — ${m.upcoming_job_count || 0} upcoming`}
+                    {' · '}
+                    <a href={`/recurring?series=${m.id}`}
+                      className="font-semibold underline text-amber-800 hover:text-amber-900">
+                      Open existing
+                    </a>
+                  </li>
+                ))}
+              </ul>
+              <div className="flex gap-2">
+                <button type="button" onClick={() => setDupMatches(null)}
+                  className="px-3 py-1.5 rounded-md bg-bg-2 text-ink-2 hover:bg-hairline text-xs">Never mind</button>
+                <button type="button" onClick={() => submit(true)} disabled={saving}
+                  className="px-3 py-1.5 rounded-md bg-amber-600 hover:bg-amber-700 text-white disabled:opacity-50 text-xs">
+                  {saving ? 'Creating...' : 'Create anyway'}
+                </button>
+              </div>
+            </div>
+          )}
           {error && <div className="p-3 bg-red-50 border border-red-200 text-red-700 dark:bg-red-950 dark:border-red-800 dark:text-red-300 rounded text-sm">{error}</div>}
         </div>
         <div className="border-t border-hairline bg-bg p-4 flex justify-end gap-3">
           <Button variant="secondary" onClick={onClose}>Cancel</Button>
-          <Button variant="primary" onClick={submit} disabled={saving}>{saving ? 'Creating...' : 'Create schedule'}</Button>
+          {/* Wrapped so the click event can't leak into submit's allowDuplicate param. */}
+          <Button variant="primary" onClick={() => submit()} disabled={saving}>{saving ? 'Creating...' : 'Create schedule'}</Button>
         </div>
       </div>
     </div>

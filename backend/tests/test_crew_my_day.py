@@ -45,7 +45,8 @@ def _mk_str_property(ids, cid):
     p = Property(client_id=cid, name="9 Lakeshore Dr", address="9 Lakeshore Dr",
                  property_type="str", org_id=1,
                  check_out_time="10:00", check_in_time="16:00", house_code="4521",
-                 access_notes="Side door lockbox")
+                 access_notes="Side door lockbox",
+                 bedrooms=3, bathrooms=2.5, square_footage=1850, year_built=1987)
     db.add(p); db.commit(); db.refresh(p)
     ids["properties"].append(p.id); pid = p.id; db.close()
     return pid
@@ -89,6 +90,17 @@ def test_my_day_returns_only_this_cleaners_jobs(ids):
         row = body["today"][0]
         assert row["turnover_line"] == "Guest out 10:00 → in 16:00 · Code 4521"
         assert row["access_notes"] == "Side door lockbox"
+
+        # House preview: an ASSIGNED cleaner's card carries the door code plus
+        # the structured specs + type — and (asserted above) a job not assigned
+        # to this cleaner never appears in the payload at all, so these fields
+        # are only ever served inside the assigned-only scope.
+        assert row["house_code"] == "4521"
+        assert row["property_type"] == "str"
+        assert row["bedrooms"] == 3
+        assert row["bathrooms"] == 2.5
+        assert row["square_footage"] == 1850
+        assert row["year_built"] == 1987
     finally:
         app.dependency_overrides.pop(get_current_user, None)
         app.dependency_overrides.pop(current_org_id, None)

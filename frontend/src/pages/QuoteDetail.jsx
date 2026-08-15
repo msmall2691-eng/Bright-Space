@@ -2,9 +2,9 @@ import { useState, useEffect, useCallback } from 'react'
 import { useParams, useNavigate, Link } from 'react-router-dom'
 import {
   ArrowLeft, Building2, MapPin, TrendingUp, Calendar, FileText, Inbox,
-  Mail, MessageSquare, ChevronRight, Send, Eye, Download, Link2, Check, Sparkles,
+  Mail, MessageSquare, ChevronRight, Send, Eye, Download, Link2, Check, Sparkles, Archive,
 } from 'lucide-react'
-import { get, patch, post } from '../api'
+import { get, patch, post, del } from '../api'
 import { toast } from '../utils/toastBus'
 import { confirmDialog } from '../utils/confirmBus'
 import { formatDateShort as fmtDate } from '../utils/format'
@@ -193,6 +193,27 @@ export default function QuoteDetail() {
     setSending(false)
   }
 
+  // Archive = the backend's DELETE /api/quotes/{id}: a soft delete (status →
+  // archived, hidden from lists, everything linked preserved). The server 409s
+  // on a quote already converted to a job — surface its message verbatim.
+  const archiveQuote = async () => {
+    const ok = await confirmDialog(
+      `Archive quote ${quote.quote_number || ''}?\n\n` +
+      'It disappears from your quote lists but nothing is deleted — the quote and its ' +
+      'client, request, and deal links are all kept.',
+      { title: 'Archive quote?', confirmLabel: 'Archive' }
+    )
+    if (!ok) return
+    try {
+      await del(`/api/quotes/${id}`)
+      toast.success('Quote archived')
+      navigate('/billing?view=quotes&tab=quotes')
+    } catch (e) {
+      // e.message carries the backend's 409 detail ("…Cancel/delete the job first.")
+      toast.error(e?.message || 'Could not archive quote')
+    }
+  }
+
   // Convert-to-job opens the modal so the operator can pick a date + crew
   // at conversion time. The modal itself POSTs to the endpoint (idempotent
   // on the backend — returns the existing job if already converted).
@@ -255,6 +276,15 @@ export default function QuoteDetail() {
               <ToolbarButton icon={Eye} label="Preview" onClick={preview} />
               <ToolbarButton icon={Download} label="Download PDF" onClick={downloadPdf} />
               <ToolbarButton icon={copied ? Check : Link2} label={copied ? 'Copied' : 'Copy link'} onClick={copyLink} />
+              {/* Red-text secondary, never a red primary — archive is the
+                  quote's "remove" (soft; the backend keeps everything). */}
+              {quote.status !== 'archived' && (
+                <button onClick={archiveQuote}
+                  title="Hide this quote from lists — nothing is deleted"
+                  className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-[12px] font-medium bg-bg-2 border border-hairline text-red-600 hover:text-red-700 hover:border-red-300 transition-colors">
+                  <Archive className="w-3.5 h-3.5" /> Archive
+                </button>
+              )}
             </div>
           )}
         </div>

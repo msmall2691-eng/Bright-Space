@@ -479,7 +479,7 @@ export default function ClientProfile() {
 
         {/* Recurring schedules */}
         {tab === 'recurring' && (
-          <RecurringTab schedules={schedules} />
+          <RecurringTab schedules={schedules} upcomingJobs={upcomingJobs} properties={properties} />
         )}
 
         {/* Jobs */}

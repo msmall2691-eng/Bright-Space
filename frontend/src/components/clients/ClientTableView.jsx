@@ -1,4 +1,4 @@
-import { Users } from 'lucide-react'
+import { Users, Pencil, Trash2 } from 'lucide-react'
 import { EmptyState } from '../ui'
 
 /** Table view for the clients list — the app's archetype list table
@@ -20,6 +20,8 @@ export function ClientTableView({
   search,
   statusFilter,
   openNew,
+  openEdit,
+  deleteClient,
 }) {
   // Row click peeks (side panel) when the page provides onRowOpen; falls
   // back to the old full navigation otherwise.
@@ -42,6 +44,7 @@ export function ClientTableView({
             {visibleColumns.map(col => (
               <th key={col.id} className="bb-th">{col.label}</th>
             ))}
+            <th className="bb-th w-16 !px-2"><span className="sr-only">Actions</span></th>
           </tr>
         </thead>
         <tbody>
@@ -62,6 +65,21 @@ export function ClientTableView({
                   {col.render(c, { updateStatus, setJobClient })}
                 </td>
               ))}
+              {/* Row actions — edit opens the slide-in form; delete confirms
+                  through the global dialog (the backend hard-deletes with all
+                  linked history, so the confirm carries the warning). */}
+              <td className="bb-td !px-2" onClick={(e) => e.stopPropagation()}>
+                <div className="flex items-center justify-end gap-0.5">
+                  <button onClick={() => openEdit(c)} title={`Edit ${c.name}`} aria-label={`Edit ${c.name}`}
+                    className="inline-flex items-center justify-center w-6 h-6 rounded text-ink-3 hover:text-ink hover:bg-bg-2 transition-colors">
+                    <Pencil className="w-3.5 h-3.5" />
+                  </button>
+                  <button onClick={() => deleteClient(c.id)} title={`Delete ${c.name}`} aria-label={`Delete ${c.name}`}
+                    className="inline-flex items-center justify-center w-6 h-6 rounded text-ink-3 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-500/10 transition-colors">
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              </td>
             </tr>
           ))}
         </tbody>
