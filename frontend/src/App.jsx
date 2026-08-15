@@ -27,6 +27,50 @@ import { pushToast } from './utils/toastBus'
 
 const PageLoader = () => <div className="flex items-center justify-center min-h-screen">Loading...</div>
 
+// Warms the browser's module cache for the primary nav pages during idle
+// time right after login, so the FIRST click on Schedule/Messages/Clients/
+// etc. doesn't pay a network round-trip on top of the render — the chunk is
+// already fetched by the time React.lazy asks for it. Module-scope flag (not
+// component state) because the warm-up should happen once per tab, not once
+// per mount. Economy-conscious: office roles only (a cleaner's whole app is
+// My Day, already eagerly bundled — don't ship them megabytes of office
+// code), and it's idle-time so it never competes with an actual navigation.
+let _navChunksWarmed = false
+function warmNavChunks() {
+  if (_navChunksWarmed) return
+  _navChunksWarmed = true
+  const warm = () => {
+    import('./pages/Schedule')
+    import('./pages/Comms')
+    import('./pages/Clients')
+    import('./pages/Properties')
+    import('./pages/Recurring')
+    import('./pages/Billing')
+    import('./pages/OwnerDashboard')
+  }
+  if ('requestIdleCallback' in window) window.requestIdleCallback(warm, { timeout: 4000 })
+  else setTimeout(warm, 1500)
+}
+
+// A deploy renames every page's chunk file (content-hashed). A tab left open
+// across a deploy still holds the OLD chunk map in memory, so the next
+// lazy-loaded page (React.lazy/dynamic import()) 404s — "Failed to fetch
+// dynamically imported module" — and used to dead-end on the error screen
+// with the new page never once rendering. One hard reload fixes it (the tab
+// picks up the new chunk map); a sessionStorage timestamp caps it to once per
+// 10s so a genuinely-broken chunk doesn't reload-loop forever.
+const CHUNK_ERROR_RE = /Failed to fetch dynamically imported module|error loading dynamically imported module|Importing a module script failed/i
+function tryRecoverFromChunkError(err) {
+  const msg = (err && (err.message || String(err))) || ''
+  if (!CHUNK_ERROR_RE.test(msg)) return false
+  const key = 'bb_chunk_reload_at'
+  const last = Number(sessionStorage.getItem(key) || 0)
+  if (Date.now() - last < 10000) return false
+  sessionStorage.setItem(key, String(Date.now()))
+  window.location.reload()
+  return true
+}
+
 // Safety net for errors a page didn't catch itself: a thrown mutation (e.g. an
 // `onClick={async …}` with no try/catch) rejects, and without this the user
 // sees nothing. We surface the real reason as a toast. Pages that DO catch and
@@ -38,6 +82,7 @@ function useUnhandledErrorToasts() {
     let lastMsg = ''
     let lastAt = 0
     const surface = (raw) => {
+      if (tryRecoverFromChunkError(raw)) return
       const msg = (raw && (raw.message || String(raw))) || ''
       if (!msg || msg === 'undefined' || msg === '[object Object]') return
       // api() resolves (not rejects) on 401 — it redirects to /login — so auth
@@ -60,10 +105,19 @@ function useUnhandledErrorToasts() {
 }
 
 class ErrorBoundary extends Component {
-  state = { hasError: false, error: null }
+  state = { hasError: false, error: null, recovering: false }
   static getDerivedStateFromError(error) { return { hasError: true, error } }
+  componentDidCatch(error) {
+    // tryRecoverFromChunkError reloads (and returns true) unless it already
+    // tried within the last 10s — in which case this is either a second tab
+    // hitting the same stale chunk (the reload elsewhere will fix this one
+    // too on its next mount) or a genuinely broken chunk, so fall through to
+    // the normal error screen rather than spin forever.
+    if (tryRecoverFromChunkError(error)) this.setState({ recovering: true })
+  }
   render() {
     if (this.state.hasError) {
+      if (this.state.recovering) return <PageLoader />
       return (
         <div className="flex flex-col items-center justify-center min-h-screen gap-4 p-8 text-center">
           <h1 className="text-xl font-semibold text-ink">Something went wrong</h1>
@@ -177,6 +231,11 @@ export default function App() {
     }
     setLoading(false)
   }, [])
+
+  useEffect(() => {
+    if (loading || !user || user.status === 'pending' || user.role === 'cleaner') return
+    warmNavChunks()
+  }, [loading, user])
 
   const handleLoginSuccess = (loginResponse) => {
     setUser(loginResponse)
