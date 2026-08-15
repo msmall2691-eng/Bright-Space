@@ -6,9 +6,11 @@ import NotificationsCard from './NotificationsCard'
 import { inp, lbl } from './constants'
 
 // Swatch color per accent (a representative 500/600) for the picker dots.
+// amber/emerald are intentionally absent — see the ACCENTS comment in
+// theme.js (they collide with the fixed status-dot colors).
 const ACCENT_SWATCH = {
   indigo: '#4f46e5', violet: '#7c3aed', blue: '#2563eb',
-  emerald: '#059669', rose: '#e11d48', amber: '#d97706', cyan: '#0891b2',
+  rose: '#e11d48', cyan: '#0891b2',
 }
 import ServiceScopesEditor from './ServiceScopesEditor'
 

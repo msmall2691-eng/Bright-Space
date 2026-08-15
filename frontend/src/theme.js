@@ -18,8 +18,20 @@ const VALID = ['light', 'dark', 'neon']
 // Accent color — recolors the whole app's `indigo-*` scale (remapped to CSS
 // vars in index.css / tailwind.config) via a body.accent-* class. Default is
 // Indigo (no class needed, but we set it explicitly for clarity).
+//
+// `amber` and `emerald` are deliberately NOT offered here (dataviz color-
+// formula: "status colors are reserved... never reused for 'series 4'").
+// index.css's accent-amber/-emerald steps are literally Tailwind's stock
+// amber-500 (#F59E0B) / emerald-500 (#10B981) — the exact hexes every
+// dashboard tile, StatusBadge, and OpsAlert already uses, unmapped, for the
+// fixed "needs attention" / "ok, done" status dots. Letting a user pick
+// either as their personal accent would make `indigo-*` (primary buttons,
+// active nav, record links — see brightbase-design-language) render
+// pixel-identical to a warning or success dot everywhere on the same
+// screen. If index.css ever re-adds those steps, re-validate with
+// dataviz's `validate_palette.js` before re-listing them here.
 const ACCENT_KEY = 'brightbase_accent'
-export const ACCENTS = ['indigo', 'violet', 'blue', 'emerald', 'rose', 'amber', 'cyan']
+export const ACCENTS = ['indigo', 'violet', 'blue', 'rose', 'cyan']
 
 export function getAccent() {
   const saved = localStorage.getItem(ACCENT_KEY)

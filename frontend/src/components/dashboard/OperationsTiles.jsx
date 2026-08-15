@@ -1,6 +1,6 @@
 import { ArrowRight, CheckCircle2, Users, Zap } from 'lucide-react'
 import { EmptyState, StatCard } from '../ui'
-import { Tile, TileLoading } from './primitives'
+import { Tile, TileLoading, BarTip } from './primitives'
 
 /** "Turnover coverage" tile — STR cleanings this week and how many still
  *  need a crew. Two-up StatCards give total + need-a-cleaner counts. */
@@ -77,9 +77,11 @@ export function CrewWorkloadTile({ loading, crew, rosterUnavailable, navigate })
             return (
               <div key={r.id} className="flex items-center gap-2 text-sm">
                 <span className="w-28 truncate text-ink-2 shrink-0">{r.name}</span>
-                <div className="flex-1 bg-bg-2 rounded-full h-2 overflow-hidden">
-                  <div className="bg-blue-500 h-full rounded-full" style={{ width: `${pct}%` }} />
-                </div>
+                <BarTip value={`${r.n} job${r.n === 1 ? '' : 's'}`} label={`· ${r.name}`} className="flex-1">
+                  <div className="w-full bg-bg-2 rounded-full h-2 overflow-hidden">
+                    <div className="bg-blue-500 h-full rounded-full" style={{ width: `${pct}%` }} />
+                  </div>
+                </BarTip>
                 <span className="w-6 text-right font-semibold text-ink shrink-0">{r.n}</span>
               </div>
             )

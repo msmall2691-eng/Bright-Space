@@ -2,22 +2,32 @@ import { Fragment } from 'react'
 import { ArrowRight, TrendingUp } from 'lucide-react'
 import { SOFT_CARD } from './constants'
 import { Skeleton } from '../ui'
+import { BarTip } from './primitives'
 
 /** One stage in the horizontal Lead → Quoted → Accepted → Won strip:
  *  large count on top, tinted relative-volume bar under it, optional
- *  subtitle, and an arrow to the next stage (hidden when `last`). */
-function FunnelStage({ label, n, tone, pct, sub, onClick, last }) {
+ *  subtitle, and an arrow to the next stage (hidden when `last`). The bar
+ *  itself carries a hover/focus tooltip with the relative-volume percentage
+ *  the bar width encodes (not otherwise shown as text) — `focusable={false}`
+ *  because the tooltip only needs the stage button's own focus, not a
+ *  second tab stop. */
+function FunnelStage({ label, n, tone, pct, sub, onClick, last, first }) {
   return (
     <Fragment>
-      <button onClick={onClick}
-        className="flex-1 min-w-0 text-left rounded-xl border border-hairline bg-panel p-3.5 hover:shadow-md hover:border-hairline-2 transition-all">
-        <div className={`text-[10px] font-bold uppercase tracking-wide ${tone.text}`}>{label}</div>
-        <div className="text-[26px] leading-none font-bold text-ink tabular-nums mt-1.5">{n}</div>
-        <div className="mt-2.5 h-1.5 rounded-full bg-bg-2 overflow-hidden">
-          <div className={`h-full rounded-full ${tone.bar}`} style={{ width: `${Math.max(pct, n > 0 ? 8 : 0)}%` }} />
-        </div>
-        {sub && <div className="text-[10px] text-ink-3 mt-1.5 truncate">{sub}</div>}
-      </button>
+      <BarTip focusable={false} className="flex-1 min-w-0"
+        align={first ? 'start' : last ? 'end' : 'center'}
+        value={`${n} ${label.toLowerCase()}`}
+        label={`· ${pct}% of busiest stage`}>
+        <button onClick={onClick}
+          className="w-full text-left rounded-xl border border-hairline bg-panel p-3.5 hover:shadow-md hover:border-hairline-2 transition-all">
+          <div className={`text-[10px] font-bold uppercase tracking-wide ${tone.text}`}>{label}</div>
+          <div className="text-[26px] leading-none font-bold text-ink tabular-nums mt-1.5">{n}</div>
+          <div className="mt-2.5 h-1.5 rounded-full bg-bg-2 overflow-hidden">
+            <div className={`h-full rounded-full ${tone.bar}`} style={{ width: `${Math.max(pct, n > 0 ? 8 : 0)}%` }} />
+          </div>
+          {sub && <div className="text-[10px] text-ink-3 mt-1.5 truncate">{sub}</div>}
+        </button>
+      </BarTip>
       {!last && (
         <div className="hidden sm:flex items-center self-center shrink-0">
           <ArrowRight className="w-4 h-4 text-ink-3" />
@@ -64,7 +74,8 @@ export function Funnel({ stages, convRate, activeClients, loading }) {
       ) : (
         <div className="flex flex-col sm:flex-row gap-2">
           {stages.map((s, i) => (
-            <FunnelStage key={s.key} {...s} pct={Math.round((s.n / max) * 100)} last={i === stages.length - 1} />
+            <FunnelStage key={s.key} {...s} pct={Math.round((s.n / max) * 100)}
+              first={i === 0} last={i === stages.length - 1} />
           ))}
         </div>
       )}

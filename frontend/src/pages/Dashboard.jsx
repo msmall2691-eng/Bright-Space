@@ -26,6 +26,7 @@ import {
   ArrowUpRight, Users, AlertTriangle, ArrowRight, MapPin,
 } from 'lucide-react'
 import { fmtMoney } from '../components/dashboard/utils'
+import { BarTip } from '../components/dashboard/primitives'
 import { NeedsYouNow } from '../components/dashboard/NeedsYouNow'
 import { ArAgingTile } from '../components/dashboard/ArAgingTile'
 import { CustomerActivity } from '../components/dashboard/CustomerActivity'
@@ -270,10 +271,12 @@ function CrewLoad({ loading, crew, navigate }) {
           {crew.rows.slice(0, 5).map(r => (
             <div key={r.id} className="flex items-center gap-3">
               <span className="text-[12px] text-ink-2 w-20 truncate shrink-0">{r.name}</span>
-              <div className="flex-1 h-2 rounded-full bg-bg-2 overflow-hidden">
+              <BarTip value={`${r.n} job${r.n === 1 ? '' : 's'}`} label={`· ${r.name}`} className="flex-1">
                 {/* Single-hue magnitude bar with rounded end (dataviz): no rainbow gradient. */}
-                <div className="h-full rounded-full bg-indigo-500" style={{ width: `${(r.n / max) * 100}%` }} />
-              </div>
+                <div className="w-full h-2 rounded-full bg-bg-2 overflow-hidden">
+                  <div className="h-full rounded-full bg-indigo-500" style={{ width: `${(r.n / max) * 100}%` }} />
+                </div>
+              </BarTip>
               <span className="text-[12px] font-bold tabular-nums text-ink w-6 text-right shrink-0">{r.n}</span>
             </div>
           ))}

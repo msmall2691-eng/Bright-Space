@@ -838,6 +838,7 @@ def claim_job(
             db, "Open job claimed",
             f"{who} claimed {job.title} on {when}.",
             url=f"/jobs/{job.id}", tag=f"job-claim-{job.id}", org_id=oid,
+            category="crew",
         )
     except Exception:
         log.exception("push notify failed on claim_job")
@@ -944,6 +945,7 @@ def respond_to_job(
                     f"{who} declined {job.title} on {when}"
                     + (f': "{reason}"' if reason else "") + " — needs a reassignment.",
                     url=f"/jobs/{job.id}", tag=f"job-response-{job.id}", org_id=oid,
+                    category="crew",
                 )
             except Exception:
                 log.exception("push notify failed on respond_to_job")
@@ -1037,7 +1039,8 @@ def add_property_note(
                          f"{who} on {prop.name or prop.address}: "
                          + (text if len(text) <= 100 else text[:97] + "…"),
                          url=f"/properties/{property_id}",
-                         tag=f"prop-note-{n.id}", org_id=oid)
+                         tag=f"prop-note-{n.id}", org_id=oid,
+                         category="crew")
         except Exception:
             log.exception("push notify failed on add_property_note")
     return _note_dict(n, current_user)
@@ -1784,6 +1787,7 @@ def request_time_off(
             db, "Time-off request",
             f"{who} asked for {rng}" + (f': "{reason}"' if reason else "") + ". Approve or deny in Schedule → time off.",
             url="/schedule?tab=availability", tag=f"timeoff-req-{row.id}", org_id=oid,
+            category="crew",
         )
     except Exception:
         log.exception("push notify failed on request_time_off")
@@ -1943,7 +1947,7 @@ def send_message_to_office(
         notify_staff(db, f"Message from {who}",
                      text if len(text) <= 120 else text[:117] + "…",
                      url="/crew", tag=f"crew-msg-{current_user.id}",
-                     org_id=m.org_id)
+                     org_id=m.org_id, category="crew")
     except Exception:
         log.exception("push notify failed on send_message_to_office")
     return _msg_dict(m)
@@ -2045,7 +2049,8 @@ def office_broadcast(
         for u in targets:
             notify_user(u.id, "Message from the office",
                         text if len(text) <= 120 else text[:117] + "…",
-                        url="/my-day", tag=f"office-msg-{u.id}")
+                        url="/my-day", tag=f"office-msg-{u.id}",
+                        category="office_messages")
     except Exception:
         log.exception("push notify failed on office_broadcast")
     return {"sent": len(targets), "user_ids": [u.id for u in targets]}
@@ -2092,7 +2097,8 @@ def office_reply(
         from services.push_service import notify_user
         notify_user(user_id, "Message from the office",
                     text if len(text) <= 120 else text[:117] + "…",
-                    url="/my-day", tag=f"office-msg-{user_id}")
+                    url="/my-day", tag=f"office-msg-{user_id}",
+                    category="office_messages")
     except Exception:
         log.exception("push notify failed on office_reply")
     return _msg_dict(m)
@@ -2653,7 +2659,7 @@ def set_week_availability(
                 f"{first['title']} on {first['scheduled_date']}{more} — check the assignment.",
                 url=f"/jobs/{first['job_id']}",
                 tag=f"avail-conflict-{current_user.cleaner_id}-{monday.isoformat()}",
-                org_id=oid,
+                org_id=oid, category="crew",
             )
         except Exception:
             log.exception("push notify failed on set_week_availability")

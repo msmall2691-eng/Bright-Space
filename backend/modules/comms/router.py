@@ -1175,6 +1175,7 @@ async def twilio_inbound(request: Request, background_tasks: BackgroundTasks, db
             url="/messages",
             tag=f"conv-{conv.id}",
             org_id=getattr(conv, "org_id", None),
+            category="messages",
         )
     except Exception:
         pass

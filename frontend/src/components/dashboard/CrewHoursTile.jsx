@@ -9,7 +9,7 @@
  * exactly the kind of thing that should be visible before payday, not on it.
  */
 import { Clock } from 'lucide-react'
-import { Tile, TileLoading } from './primitives'
+import { Tile, TileLoading, BarTip } from './primitives'
 
 export function CrewHoursTile({ loading, data, error, navigate }) {
   const employees = (data?.employees || [])
@@ -47,10 +47,12 @@ export function CrewHoursTile({ loading, data, error, navigate }) {
                     )}
                   </span>
                 </div>
-                <div className="mt-1 h-1 rounded-full bg-bg-2 overflow-hidden">
-                  <div className="h-full rounded-full bg-indigo-500"
-                       style={{ width: `${Math.round(((e.total_hours || 0) / maxHours) * 100)}%` }} />
-                </div>
+                <BarTip value={`${e.total_hours}h`} label={`· ${e.name}`} className="mt-1 w-full">
+                  <div className="w-full h-1 rounded-full bg-bg-2 overflow-hidden">
+                    <div className="h-full rounded-full bg-indigo-500"
+                         style={{ width: `${Math.round(((e.total_hours || 0) / maxHours) * 100)}%` }} />
+                  </div>
+                </BarTip>
               </div>
             ))}
           </div>

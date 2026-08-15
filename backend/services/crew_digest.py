@@ -95,6 +95,7 @@ def send_crew_morning_digests(db: Session, now: Optional[datetime] = None) -> di
                 sent += push_service.notify_user(
                     d["user_id"], "Your day at a glance", d["body"],
                     url="/my-day", tag=f"crew-digest-{today.isoformat()}",
+                    category="digest",
                 )
             except Exception:
                 log.exception("crew digest push failed for user %s", d["user_id"])

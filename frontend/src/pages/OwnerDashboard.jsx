@@ -26,7 +26,7 @@ import {
 import { get } from '../api'
 import { toLocalYMD } from '../utils/format'
 import { fmtMoney } from '../components/dashboard/utils'
-import { KpiCard, Tile, TileLoading } from '../components/dashboard/primitives'
+import { KpiCard, Tile, TileLoading, BarTip } from '../components/dashboard/primitives'
 import { PropertyEconomicsTile } from '../components/dashboard/PropertyEconomicsTile'
 import { WeekCapacityTile } from '../components/dashboard/WeekCapacityTile'
 import { CrewHoursTile } from '../components/dashboard/CrewHoursTile'
@@ -236,9 +236,11 @@ export default function OwnerDashboard() {
                         {fmtMoney(r.total)} <span className="text-[11px] text-ink-3">· {pct}%</span>
                       </span>
                     </div>
-                    <div className="h-1.5 bg-bg-2 rounded-full overflow-hidden">
-                      <div className="h-full bg-indigo-500 rounded-full" style={{ width: `${pct}%` }} />
-                    </div>
+                    <BarTip value={fmtMoney(r.total)} label={`· ${pct}% of paid revenue`} className="w-full">
+                      <div className="w-full h-1.5 bg-bg-2 rounded-full overflow-hidden">
+                        <div className="h-full bg-indigo-500 rounded-full" style={{ width: `${pct}%` }} />
+                      </div>
+                    </BarTip>
                   </div>
                 )
               })}

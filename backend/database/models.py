@@ -180,6 +180,15 @@ class User(Base):
     home_lat = Column(Float, nullable=True)
     home_lng = Column(Float, nullable=True)
 
+    # Per-user, per-category push notification opt-out (migration 094). NULL,
+    # or a missing key within it, means that category is ON — opt-OUT
+    # semantics so nobody's existing notifications go silent on deploy day.
+    # Keys are the category names in services/push_service.py's category
+    # list (role-scoped: office roles get requests/messages/quotes/crew,
+    # cleaners get job_assignments/office_messages/time_off/digest); only an
+    # explicit `false` turns one off. Never rides any crew/customer payload.
+    notification_prefs = Column(JSON, nullable=True)
+
     client = relationship("Client", back_populates="user", foreign_keys="User.client_id")
     # User.jobs_assigned was dropped by migration 040 — its FK column
     # (Job.assigned_cleaner_user_id) was never wired up; Job.cleaner_ids is

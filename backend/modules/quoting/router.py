@@ -1598,6 +1598,7 @@ def public_view_quote(token: str, db: Session = Depends(get_db)):
                 url="/billing?view=quotes",
                 tag=f"quote-viewed-{quote.id}",
                 org_id=getattr(quote, "org_id", None),
+                category="quotes",
             )
         except Exception:
             pass

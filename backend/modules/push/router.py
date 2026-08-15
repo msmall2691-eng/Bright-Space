@@ -5,6 +5,8 @@ Web Push subscription management.
   POST   /api/push/subscriptions     → register this device (idempotent on endpoint)
   DELETE /api/push/subscriptions     → drop this device's subscription
   POST   /api/push/test              → send a test push to the caller's devices
+  GET    /api/push/preferences       → per-category opt-out map for this user
+  PATCH  /api/push/preferences       → flip one or more categories
 
 All routes require an authenticated staff user. Subscriptions are keyed by the
 browser's push `endpoint`, so re-subscribing the same device just refreshes the
@@ -12,9 +14,9 @@ keys rather than creating duplicates.
 """
 import logging
 from datetime import datetime, timezone
-from typing import Optional
+from typing import Dict, Optional
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Body, Depends, HTTPException, Request
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
@@ -133,3 +135,37 @@ def send_test(
         org_id=org_id,
     )
     return {"ok": True, "sent": sent, "enabled": push_service.push_enabled()}
+
+
+@router.get("/preferences")
+def get_preferences(user: User = Depends(get_current_user)):
+    """This user's full category map — every category valid for their role,
+    explicit true/false, so the frontend never has to guess a default. Missing
+    key or `true` = on; only an explicit `false` is off (opt-out semantics,
+    migration 094). Per-user, not per-org — no org_id needed."""
+    cats = push_service.categories_for_role(user.role)
+    prefs = user.notification_prefs or {}
+    return {c: (prefs.get(c) is not False) for c in cats}
+
+
+@router.patch("/preferences")
+def patch_preferences(
+    body: Dict[str, bool] = Body(...),
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Merge a partial {category: bool} patch into the caller's stored prefs.
+    Only categories valid for the caller's own role may be set — an office
+    role can't touch crew-only categories and vice versa."""
+    cats = push_service.categories_for_role(user.role)
+    unknown = [c for c in body if c not in cats]
+    if unknown:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Unknown or wrong-role notification categor{'y' if len(unknown) == 1 else 'ies'}: {', '.join(sorted(unknown))}",
+        )
+    prefs = dict(user.notification_prefs or {})
+    prefs.update(body)
+    user.notification_prefs = prefs
+    db.commit()
+    return {c: (prefs.get(c) is not False) for c in cats}
