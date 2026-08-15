@@ -14,7 +14,7 @@ const TYPES = [
 export function TypeSelectorModal({ selected, onSelect, onCancel, onConfirm }) {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
-      <div className="bg-panel rounded-xl shadow-xl max-w-sm w-full mx-4">
+      <div className="bg-panel rounded-xl shadow-xl max-w-sm w-full mx-4 max-h-[90dvh] overflow-y-auto overscroll-contain">
         <div className="p-6">
           <h2 className="text-lg font-semibold text-ink mb-4">What kind of property?</h2>
           <div className="space-y-2">

@@ -105,12 +105,12 @@ export function RecurringCreateModal({ clients, properties, onClose, onCreated }
   }
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-end sm:items-center sm:justify-center">
-      <div className="w-full sm:max-w-2xl bg-panel rounded-t-2xl sm:rounded-lg shadow-xl overflow-hidden flex flex-col max-h-[95vh]">
+      <div className="w-full sm:max-w-2xl bg-panel rounded-t-2xl sm:rounded-lg shadow-xl overflow-hidden flex flex-col max-h-[92dvh]">
         <div className="flex items-center justify-between bg-gradient-to-r from-blue-500 to-indigo-600 p-4 sm:p-6 text-white">
           <h2 className="text-xl sm:text-2xl font-bold">New recurring schedule</h2>
           <button onClick={onClose} className="p-2 hover:bg-blue-400 rounded"><X className="w-5 h-5" /></button>
         </div>
-        <div className="overflow-y-auto flex-1 p-4 sm:p-6 space-y-4">
+        <div className="overflow-y-auto overscroll-contain flex-1 p-4 sm:p-6 space-y-4">
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
               <label className="block text-sm font-semibold mb-1">Client *</label>

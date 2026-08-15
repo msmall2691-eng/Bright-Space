@@ -414,7 +414,7 @@ export default function PublicQuote() {
 
         {showRequest && (
           <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-end sm:items-center sm:justify-center p-0 sm:p-4">
-            <div className="w-full sm:max-w-md bg-panel rounded-t-2xl sm:rounded-lg shadow-xl flex flex-col max-h-[95vh]">
+            <div className="w-full sm:max-w-md bg-panel rounded-t-2xl sm:rounded-lg shadow-xl flex flex-col max-h-[92dvh]">
               <div className="p-5 border-b border-hairline">
                 <h2 className="text-lg font-bold text-ink">What would you like changed?</h2>
                 <p className="text-xs text-ink-3 mt-1">Tell us what to adjust and we'll send you a new quote.</p>
@@ -445,7 +445,7 @@ export default function PublicQuote() {
 
         {showDecline && (
           <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-end sm:items-center sm:justify-center p-0 sm:p-4">
-            <div className="w-full sm:max-w-md bg-panel rounded-t-2xl sm:rounded-lg shadow-xl flex flex-col max-h-[95vh]">
+            <div className="w-full sm:max-w-md bg-panel rounded-t-2xl sm:rounded-lg shadow-xl flex flex-col max-h-[92dvh]">
               <div className="p-5 border-b border-hairline">
                 <h2 className="text-lg font-bold text-ink">Decline this quote?</h2>
                 <p className="text-xs text-ink-3 mt-1">Optionally tell us why — it helps us improve.</p>

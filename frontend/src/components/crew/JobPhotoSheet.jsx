@@ -101,7 +101,7 @@ export default function JobPhotoSheet({ job, onClose }) {
       className="fixed inset-0 z-30 flex items-end sm:items-center justify-center bg-black/40 px-4 pb-4 sm:pb-0"
       onClick={() => { if (!busy) onClose() }}>
       <div
-        className="w-full max-w-sm bg-panel rounded-2xl border border-hairline shadow-glass p-5 space-y-4 max-h-[85vh] overflow-y-auto"
+        className="w-full max-w-sm bg-panel rounded-2xl border border-hairline shadow-glass p-5 space-y-4 max-h-[85dvh] overflow-y-auto"
         onClick={e => e.stopPropagation()}>
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">

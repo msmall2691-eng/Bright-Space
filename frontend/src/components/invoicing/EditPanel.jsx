@@ -54,7 +54,7 @@ export function EditPanel({
       </div>
 
       {/* Form body */}
-      <div className="flex-1 overflow-y-auto scrollbar-thin p-6 space-y-6">
+      <div className="flex-1 overflow-y-auto overscroll-contain scrollbar-thin p-6 space-y-6">
 
         {/* Client */}
         <div>

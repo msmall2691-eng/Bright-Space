@@ -95,7 +95,7 @@ export function PropertyForm({
         <h2 className="font-semibold text-ink">{selected ? 'Edit Property' : 'Add Property'}</h2>
         <button onClick={onClose} className="text-ink-3 hover:text-ink-3"><X className="w-5 h-5" /></button>
       </div>
-      <div className="flex-1 overflow-y-auto p-6 space-y-4 scrollbar-thin">
+      <div className="flex-1 overflow-y-auto overscroll-contain p-6 space-y-4 scrollbar-thin">
         {/* Type selector — for new or existing properties */}
         <div>
           <label className="block text-xs text-ink-3 mb-3 font-semibold">Property Type *</label>

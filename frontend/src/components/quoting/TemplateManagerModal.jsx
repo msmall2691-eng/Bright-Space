@@ -63,7 +63,7 @@ export default function TemplateManagerModal({ initial, templatesLoaded, onClose
 
   return (
     <div className="fixed inset-0 z-50 bg-black/30 flex items-end sm:items-center sm:justify-end">
-      <div className="w-full sm:w-[520px] bg-panel sm:h-full shadow-2xl flex flex-col max-h-[92vh] sm:max-h-full">
+      <div className="w-full sm:w-[520px] bg-panel sm:h-full shadow-2xl flex flex-col max-h-[92dvh] sm:max-h-full">
         <div className="flex items-center justify-between px-6 py-4 border-b border-hairline shrink-0">
           <div>
             <h2 className="font-semibold text-ink">Quote templates</h2>
@@ -71,7 +71,7 @@ export default function TemplateManagerModal({ initial, templatesLoaded, onClose
           </div>
           <button onClick={onClose} className="text-ink-3 hover:text-ink"><X className="w-5 h-5" /></button>
         </div>
-        <div className="flex-1 overflow-y-auto p-4 space-y-4 scrollbar-thin">
+        <div className="flex-1 overflow-y-auto overscroll-contain p-4 space-y-4 scrollbar-thin">
           {editTemplates.length === 0 && <p className="text-sm text-ink-3 text-center py-6">No templates yet — add one below.</p>}
           {editTemplates.map((t, ti) => (
             <div key={ti} className="border border-hairline rounded-xl p-3 space-y-2 bg-bg">

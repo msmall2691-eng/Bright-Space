@@ -85,7 +85,7 @@ export default function SendQuotePanel({
         <button onClick={onClose} className="text-ink-3 hover:text-ink-3"><X className="w-5 h-5" /></button>
       </div>
 
-      <div className="flex-1 overflow-y-auto p-6 space-y-5 scrollbar-thin">
+      <div className="flex-1 overflow-y-auto overscroll-contain p-6 space-y-5 scrollbar-thin">
 
         {/* Channel selector */}
         <div>

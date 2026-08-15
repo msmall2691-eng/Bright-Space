@@ -42,7 +42,12 @@ export default function VisitDetailsDrawer({
       onClick={onClose}
     >
       <GlassCard
-        className="w-full sm:w-96 h-[95vh] sm:max-h-[90vh] sm:h-auto rounded-t-2xl sm:rounded-lg m-0 sm:m-4 flex flex-col overflow-hidden"
+        // max-h (dvh) instead of a fixed h-[95vh]: vh ignores the iOS Safari
+        // URL bar, so the sheet rendered taller than the visible viewport and
+        // its top (header + close) clipped off-screen with no way to scroll
+        // to it. dvh tracks the real visible height; max-h lets short visits
+        // shrink to fit.
+        className="w-full sm:w-96 max-h-[92dvh] sm:max-h-[90dvh] rounded-t-2xl sm:rounded-lg m-0 sm:m-4 flex flex-col overflow-hidden"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Drag handle — visual affordance that this sheet dismisses from
@@ -50,7 +55,7 @@ export default function VisitDetailsDrawer({
         <div className="sm:hidden flex justify-center pt-2 pb-1">
           <div className="w-10 h-1 rounded-full bg-ink-3/30" aria-hidden="true" />
         </div>
-        <div className="p-4 sm:p-6 flex-1 min-h-0 overflow-y-auto">
+        <div className="p-4 sm:p-6 flex-1 min-h-0 overflow-y-auto overscroll-contain">
           <div className="flex items-center justify-between mb-4 sm:mb-6">
             <h2 className="text-lg sm:text-xl font-bold text-ink">Visit Details</h2>
             <div className="flex items-center gap-1">

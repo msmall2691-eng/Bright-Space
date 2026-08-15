@@ -100,7 +100,7 @@ export default function OpportunityLinker({ clientId, itemType, itemId, itemName
       {/* Modal */}
       {showModal && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className="bg-panel rounded-xl shadow-lg max-w-lg w-full mx-4">
+          <div className="bg-panel rounded-xl shadow-lg max-w-lg w-full mx-4 max-h-[92dvh] flex flex-col">
             {/* Header */}
             <div className="flex items-center justify-between p-6 border-b border-hairline">
               <h2 className="text-lg font-semibold text-ink">Link {itemType} to Opportunity</h2>
@@ -113,7 +113,7 @@ export default function OpportunityLinker({ clientId, itemType, itemId, itemName
             </div>
 
             {/* Content */}
-            <div className="p-6 space-y-4">
+            <div className="p-6 space-y-4 flex-1 min-h-0 overflow-y-auto overscroll-contain">
               <div>
                 <div className="text-sm text-ink-2 mb-1">Item</div>
                 <div className="font-medium text-ink">{itemName || `${itemType} #${itemId}`}</div>

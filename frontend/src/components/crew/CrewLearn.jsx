@@ -68,7 +68,7 @@ function MyNotes() {
       {editing !== null && (
         <div className="fixed inset-0 z-30 flex items-end sm:items-center justify-center bg-black/40 px-4 pb-4 sm:pb-0"
           onClick={() => { if (!busy) setEditing(null) }}>
-          <div className="w-full max-w-sm bg-panel rounded-2xl border border-hairline shadow-glass p-4 space-y-2.5"
+          <div className="w-full max-w-sm bg-panel rounded-2xl border border-hairline shadow-glass p-4 space-y-2.5 max-h-[85dvh] overflow-y-auto overscroll-contain"
             onClick={e => e.stopPropagation()}>
             <input value={form.title} maxLength={200} autoFocus
               onChange={e => setForm(f => ({ ...f, title: e.target.value }))}

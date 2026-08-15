@@ -453,7 +453,7 @@ export default function JobEditModal({ job, properties = [], clients = [], onClo
         </div>
 
         {/* Content */}
-        <div className="overflow-y-auto flex-1 p-4 sm:p-6 space-y-6">
+        <div className="overflow-y-auto overscroll-contain flex-1 p-4 sm:p-6 space-y-6">
           {/* Status pills — primary control on existing jobs, was buried
               under "Advanced options" per the audit. New jobs default to
               Scheduled with no picker so the create flow stays compact.

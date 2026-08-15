@@ -536,14 +536,14 @@ function EditSeriesModal({ schedule, onClose, onDone }) {
 function ModalShell({ title, onClose, wide = false, children }) {
   return (
     <div className="fixed inset-0 bg-black/50 z-50 flex items-end sm:items-center sm:justify-center p-0 sm:p-4">
-      <div className={`w-full ${wide ? 'sm:max-w-2xl' : 'sm:max-w-md'} bg-panel rounded-t-2xl sm:rounded-lg shadow-xl overflow-hidden flex flex-col max-h-[95vh]`}>
+      <div className={`w-full ${wide ? 'sm:max-w-2xl' : 'sm:max-w-md'} bg-panel rounded-t-2xl sm:rounded-lg shadow-xl overflow-hidden flex flex-col max-h-[92dvh]`}>
         <div className="flex items-center justify-between bg-gradient-to-r from-blue-500 to-indigo-600 p-4 text-white">
           <h2 className="text-lg font-bold">{title}</h2>
           <button onClick={onClose} className="p-1.5 hover:bg-blue-400 rounded" aria-label="Close">
             <X className="w-5 h-5" />
           </button>
         </div>
-        <div className="overflow-y-auto flex-1 p-4 sm:p-5 space-y-3">
+        <div className="overflow-y-auto overscroll-contain flex-1 p-4 sm:p-5 space-y-3">
           {children}
         </div>
       </div>

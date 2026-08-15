@@ -21,6 +21,15 @@ const TYPE_CONFIG = {
   str_turnover: { ...PROPERTY_TYPE_CONFIG.str_turnover, label: 'Turnover' },
 }
 
+// Quiet dot+word status for the day-agenda job cards (design language:
+// emerald = done, amber = needs attention, gray = neutral).
+const JOB_STATUS_META = {
+  unscheduled: { dot: 'bg-amber-500',   label: 'Unscheduled' },
+  in_progress: { dot: 'bg-amber-500',   label: 'In progress' },
+  completed:   { dot: 'bg-emerald-500', label: 'Done' },
+  cancelled:   { dot: 'bg-gray-400',    label: 'Cancelled' },
+}
+
 const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
 const DAYS_SHORT = ['S', 'M', 'T', 'W', 'T', 'F', 'S']
 const MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December']
@@ -173,6 +182,20 @@ export default function CalendarView({
   // month, the highlighted "today" cell silently became "whatever day of
   // the month the anchor is on" instead of the actual current date.
   const today = toLocalYMD(new Date())
+
+  // Phone: keep a day selected at all times so the agenda under the grid
+  // always shows the day's jobs without a tap — today when the visible month
+  // contains it, otherwise the 1st. Desktop keeps click-to-open (the side
+  // rail steals grid width, so it stays opt-in there). Owner feedback: "I
+  // can't see anything til I click on the day."
+  useEffect(() => {
+    if (!isMobile) return
+    const prefix = `${year}-${String(month + 1).padStart(2, '0')}-`
+    setSelected(prev => {
+      if (prev && prev.startsWith(prefix)) return prev
+      return today.startsWith(prefix) ? today : `${prefix}01`
+    })
+  }, [isMobile, year, month, today])
 
   const firstDay = new Date(year, month, 1)
   const lastDay  = new Date(year, month + 1, 0)
@@ -386,9 +409,16 @@ export default function CalendarView({
 
   // Also stable (see below) so MonthDayCell's memo isn't defeated by a
   // fresh onSelectDay closure on every render.
+  const dayPanelRef = useRef(null)
   const onSelectDay = useCallback((date) => {
     setSelected(date)
     onDayClick?.(date)
+    // Phone: the day's agenda renders inline below the grid (no overlay to
+    // announce the tap anymore) — nudge it into view. The ref is only
+    // attached at phone widths, so this is a no-op on desktop.
+    requestAnimationFrame(() => {
+      dayPanelRef.current?.scrollIntoView?.({ behavior: 'smooth', block: 'start' })
+    })
   }, [onDayClick])
 
   // Toggle a day's inline "show everything" expansion (functional update keeps
@@ -647,7 +677,10 @@ export default function CalendarView({
   const selectedReschedFrom = selected ? (reschedulesFromByDay[selected] || []) : []
   const selectedReschedTo = selected ? (reschedulesToByDay[selected] || []) : []
 
-  const dayDetail = (
+  // One renderer, two homes: the desktop side rail (its own scroll region)
+  // and the phone inline agenda under the month grid (flows with the page —
+  // an overlay here used to trap the scroll entirely on iOS).
+  const renderDayDetail = (inline = false) => (
     <>
       <div className="px-4 py-3 border-b border-hairline flex items-start justify-between gap-2">
         <div className="min-w-0">
@@ -680,7 +713,7 @@ export default function CalendarView({
               <Plus className="w-3.5 h-3.5" /> New job
             </button>
           )}
-          {selected && (
+          {selected && !inline && (
             <button
               onClick={() => setSelected(null)}
               className="p-1 -mr-1 text-ink-3 hover:text-ink-2 active:text-ink-2"
@@ -692,7 +725,7 @@ export default function CalendarView({
         </div>
       </div>
 
-      <div className="flex-1 overflow-y-auto p-4 scrollbar-thin space-y-4">
+      <div className={inline ? 'p-3 space-y-4' : 'flex-1 overflow-y-auto overscroll-contain p-4 scrollbar-thin space-y-4'}>
         {selectedSkips.length > 0 && (
           <div>
             <p className="text-[10px] text-purple-600 font-medium mb-2 uppercase tracking-wide">Skipped Occurrences</p>
@@ -795,7 +828,12 @@ export default function CalendarView({
                           )}
                           {j.title}
                         </div>
-                        <div className="text-xs text-ink-3 mt-0.5">{j.start_time || "—"} – {j.end_time || "—"}</div>
+                        <div className="text-xs text-ink-3 mt-0.5">
+                          {j.start_time || "—"} – {j.end_time || "—"}
+                          {j.client_name && !String(j.title || '').includes(j.client_name) && (
+                            <span className="text-ink-2"> · {j.client_name}</span>
+                          )}
+                        </div>
                         {j.address && <div className="text-xs text-ink-3 truncate mt-0.5">{j.address}</div>}
                         {cleanerInits.length > 0 && (
                           <div className="flex items-center gap-1 mt-1">
@@ -845,6 +883,12 @@ export default function CalendarView({
                           <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${tc.dot}`} aria-hidden="true" />
                           {tc.label}
                         </span>
+                        {JOB_STATUS_META[j.status] && (
+                          <span className="inline-flex items-center gap-1 text-[10px] font-medium text-ink-3">
+                            <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${JOB_STATUS_META[j.status].dot}`} aria-hidden="true" />
+                            {JOB_STATUS_META[j.status].label}
+                          </span>
+                        )}
                         <div className="flex gap-1">
                           {j.calendar_invite_sent && <span title="Client invited" className="text-[10px] text-blue-500">Invited</span>}
                         </div>
@@ -988,6 +1032,20 @@ export default function CalendarView({
             )
           })}
         </div>
+
+        {/* Phone: the selected day's agenda lives INLINE under the grid and
+            scrolls with it — the old bottom-sheet overlay clipped taller than
+            the visible viewport on iOS and its scroll was trapped ("I click
+            on the day, and then I can't scroll"). Auto-selected above, so
+            today's jobs are visible without any tap. */}
+        {isMobile && selected && (
+          <div
+            ref={dayPanelRef}
+            className="mt-3 mb-2 bg-panel border border-hairline rounded-xl scroll-mt-2"
+          >
+            {renderDayDetail(true)}
+          </div>
+        )}
         </div>
       </div>
 
@@ -996,23 +1054,7 @@ export default function CalendarView({
           chips truncated to bare times). Close (X) gives the space back. */}
       {!isMobile && selected && (
         <div className="w-80 bg-bg border-l border-hairline flex flex-col shrink-0">
-          {dayDetail}
-        </div>
-      )}
-
-      {isMobile && selected && (
-        <div
-          className="fixed inset-0 z-40 bg-black/40 flex items-end"
-          onClick={() => setSelected(null)}
-        >
-          <div
-            className="bg-panel rounded-t-2xl w-full max-h-[75vh] flex flex-col shadow-glass-lg"
-            onClick={e => e.stopPropagation()}
-            style={{ paddingBottom: 'env(safe-area-inset-bottom, 0px)' }}
-          >
-            <div className="w-12 h-1 bg-bg-2 rounded-full mx-auto my-2 shrink-0" />
-            {dayDetail}
-          </div>
+          {renderDayDetail(false)}
         </div>
       )}
 

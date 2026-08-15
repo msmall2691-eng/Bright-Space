@@ -171,8 +171,8 @@ export default function PageAssistant() {
 
   return (
     <div className="no-print flex flex-col fixed z-40 bg-panel shadow-2xl border border-hairline overflow-hidden
-      inset-x-0 bottom-0 rounded-t-2xl max-h-[80vh]
-      lg:inset-x-auto lg:bottom-6 lg:right-6 lg:w-[380px] lg:rounded-2xl lg:max-h-[72vh]">
+      inset-x-0 bottom-0 rounded-t-2xl max-h-[80dvh]
+      lg:inset-x-auto lg:bottom-6 lg:right-6 lg:w-[380px] lg:rounded-2xl lg:max-h-[72dvh]">
       {/* Header */}
       <div className="flex items-center gap-2.5 px-4 py-3 border-b border-hairline">
         <AgentAvatar agent={agent} size="sm" />

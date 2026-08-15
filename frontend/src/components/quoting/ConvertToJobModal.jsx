@@ -175,7 +175,7 @@ export default function ConvertToJobModal({ quote, onClose, onConverted, onError
 
   return (
     <div className="fixed inset-0 z-50 bg-black/40 flex items-end sm:items-center sm:justify-center">
-      <div className="w-full sm:w-[520px] bg-panel sm:rounded-xl shadow-2xl flex flex-col max-h-[92vh]">
+      <div className="w-full sm:w-[520px] bg-panel sm:rounded-xl shadow-2xl flex flex-col max-h-[92dvh]">
         <div className="flex items-center justify-between px-6 py-4 border-b border-hairline shrink-0">
           <div className="flex items-center gap-2">
             <Calendar className="w-4 h-4 text-blue-500" />
@@ -184,7 +184,7 @@ export default function ConvertToJobModal({ quote, onClose, onConverted, onError
           <button onClick={onClose} className="text-ink-3 hover:text-ink"><X className="w-5 h-5" /></button>
         </div>
 
-        <div className="flex-1 overflow-y-auto p-6 space-y-5 scrollbar-thin">
+        <div className="flex-1 overflow-y-auto overscroll-contain p-6 space-y-5 scrollbar-thin">
           <p className="text-xs text-ink-3">
             {quote.quote_number} · {quote.title || 'Untitled quote'}
           </p>

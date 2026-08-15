@@ -117,7 +117,7 @@ export default function CrewDocsAdmin() {
       {editing !== null && (
         <div className="fixed inset-0 z-30 flex items-center justify-center bg-black/40 px-4"
           onClick={() => { if (!saving) setEditing(null) }}>
-          <div className="w-full max-w-lg bg-panel rounded-2xl border border-hairline shadow-glass p-5 space-y-3 max-h-[90vh] overflow-y-auto"
+          <div className="w-full max-w-lg bg-panel rounded-2xl border border-hairline shadow-glass p-5 space-y-3 max-h-[90dvh] overflow-y-auto"
             onClick={e => e.stopPropagation()}>
             <div className="text-base font-bold text-ink">
               {editing === 'new' ? 'New crew doc' : 'Edit crew doc'}

@@ -19,7 +19,7 @@ export function MergeModal({
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 backdrop-blur-sm p-4"
       onClick={() => { if (merging) return; if (reviewProgress) reviewProgress.onStop?.(); else setMergeModal(null) }}>
-      <div className="bg-panel border border-hairline rounded-2xl shadow-xl w-full max-w-md p-6" onClick={e => e.stopPropagation()}>
+      <div className="bg-panel border border-hairline rounded-2xl shadow-xl w-full max-w-md p-6 max-h-[90dvh] overflow-y-auto overscroll-contain" onClick={e => e.stopPropagation()}>
         <div className="flex items-start justify-between gap-3 mb-1">
           <h3 className="text-base font-bold text-ink">Merge clients</h3>
           {reviewProgress && (
