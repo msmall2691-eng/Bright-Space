@@ -17,6 +17,29 @@ export function pushSupported() {
   )
 }
 
+/** Is this tab running as an installed PWA (Home Screen / desktop install)?
+ *  iOS Safari only exposes the Push API to installed apps — a regular Safari
+ *  tab reports pushSupported()=false with no further explanation, so callers
+ *  need this + isMobilePlatform() to tell "won't ever work here" apart from
+ *  "will work once installed." */
+export function isAppInstalled() {
+  try {
+    return (
+      (typeof window !== 'undefined' && window.matchMedia?.('(display-mode: standalone)')?.matches) ||
+      (typeof navigator !== 'undefined' && navigator.standalone === true)
+    )
+  } catch { return false }
+}
+
+/** 'ios' | 'android' | 'other' — drives the platform-specific "Add to Home
+ *  Screen" copy shared by the crew setup card and the office Settings page. */
+export function mobilePlatform() {
+  const ua = typeof navigator !== 'undefined' ? navigator.userAgent : ''
+  if (/iPad|iPhone|iPod/.test(ua)) return 'ios'
+  if (/Android/i.test(ua)) return 'android'
+  return 'other'
+}
+
 // VAPID public keys are URL-safe base64; PushManager wants a Uint8Array.
 function urlBase64ToUint8Array(base64String) {
   const padding = '='.repeat((4 - (base64String.length % 4)) % 4)

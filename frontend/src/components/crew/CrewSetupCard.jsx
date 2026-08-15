@@ -12,25 +12,9 @@
  */
 import { useEffect, useState } from 'react'
 import { Bell, CheckCircle2, Smartphone, X } from 'lucide-react'
-import { pushSupported, getPushState, enablePush } from '../../utils/push'
+import { pushSupported, getPushState, enablePush, isAppInstalled, mobilePlatform } from '../../utils/push'
 
 const DISMISS_KEY = 'bb_crew_setup_dismissed'
-
-function isInstalled() {
-  try {
-    return (
-      (typeof window !== 'undefined' && window.matchMedia?.('(display-mode: standalone)')?.matches) ||
-      (typeof navigator !== 'undefined' && navigator.standalone === true)
-    )
-  } catch { return false }
-}
-
-function platform() {
-  const ua = typeof navigator !== 'undefined' ? navigator.userAgent : ''
-  if (/iPad|iPhone|iPod/.test(ua)) return 'ios'
-  if (/Android/i.test(ua)) return 'android'
-  return 'other'
-}
 
 export default function CrewSetupCard({ persistent = false }) {
   const [dismissed, setDismissed] = useState(() => {
@@ -47,8 +31,8 @@ export default function CrewSetupCard({ persistent = false }) {
 
   if (!persistent && dismissed) return null
 
-  const installed = isInstalled()
-  const os = platform()
+  const installed = isAppInstalled()
+  const os = mobilePlatform()
   // Push is offerable only when the browser can do it AND the server has keys
   // AND the user hasn't hard-blocked the permission.
   const canOfferPush = !!(push?.supported && push?.enabledOnServer && push?.permission !== 'denied')
