@@ -25,8 +25,9 @@ export function ThreadHeader({
     <>
       {/* Phase 8: Overdue banner (renamed from "SLA breached"). */}
       {detail.sla_state === 'breached' && (
-        <div className="bg-red-50 dark:bg-red-500/10 border-b border-red-200 dark:border-red-500/25 px-5 py-2.5 flex items-center gap-2 text-[12px] font-medium text-red-700 dark:text-red-300">
-          <Clock className="w-4 h-4" />
+        <div className="bg-panel border-b border-hairline px-5 py-2.5 flex items-center gap-2 text-[12px] font-medium text-ink-2">
+          <span className="w-1.5 h-1.5 rounded-full bg-red-500 shrink-0" aria-hidden="true" />
+          <Clock className="w-4 h-4 text-ink-3" />
           Overdue — last reply {relTime(detail.last_inbound_at)} ago
         </div>
       )}

@@ -119,7 +119,7 @@ function SourceChip({ source }) {
   const cfg = SOURCE_CONFIG[source] || SOURCE_CONFIG.website
   const Ic = cfg.icon
   return (
-    <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium ${cfg.badge}`}>
+    <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-sm text-[11px] font-medium ${cfg.badge}`}>
       <Ic className="w-3 h-3" /> {cfg.label}
     </span>
   )
@@ -249,7 +249,8 @@ const RequestCard = ({ intake, onViewDetails, onCreateQuote, onConvertToClient, 
             {pricingFactors(intake).length > 0 && (
               <div className="flex items-center gap-1.5 flex-wrap mt-1.5">
                 {pricingFactors(intake).map((f, idx) => (
-                  <span key={idx} className="inline-flex items-center px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 text-[11px] font-medium">
+                  <span key={idx} className="inline-flex items-center gap-1.5 text-[11px] font-medium text-ink-3">
+                    <span className="w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0" aria-hidden="true" />
                     {f}
                   </span>
                 ))}
@@ -359,8 +360,8 @@ const RequestCard = ({ intake, onViewDetails, onCreateQuote, onConvertToClient, 
         || intake.custom_fields.arrival_window
         || (Array.isArray(intake.custom_fields.photos) && intake.custom_fields.photos.length)
       ) && (
-        <div className="text-[11px] text-ink-2 bg-blue-50 border border-blue-200 rounded p-2 space-y-0.5">
-          <div className="text-[10px] font-semibold uppercase tracking-wide text-indigo-700 mb-1">Booking essentials</div>
+        <div className="text-[11px] text-ink-2 bg-bg border border-hairline rounded p-2 space-y-0.5">
+          <div className="text-[10px] font-semibold uppercase tracking-wide text-ink-3 mb-1">Booking essentials</div>
           {intake.custom_fields.arrival_window && (
             <div><span className="text-ink-3">Arrival:</span> {ARRIVAL_WINDOW_LABELS[intake.custom_fields.arrival_window] || intake.custom_fields.arrival_window}</div>
           )}
@@ -782,7 +783,7 @@ export default function Requests() {
                 onClick={() => setShowDuplicatesOnly(v => !v)}
                 className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm border transition-colors ${
                   showDuplicatesOnly
-                    ? 'bg-amber-100 border-amber-300 text-amber-800'
+                    ? 'bg-bg-2 border-ink/30 text-ink font-semibold'
                     : 'bg-panel border-hairline text-ink-2 hover:bg-bg-2'
                 }`}
                 title="Show only leads that share a name or address with another lead"
@@ -921,7 +922,7 @@ export default function Requests() {
                   {selectedRequest.phone && (
                     <a
                       href={`tel:${selectedRequest.phone}`}
-                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100"
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium bg-panel text-ink-2 border border-hairline-2 hover:bg-bg-2"
                     >
                       <Phone className="w-3.5 h-3.5" /> Call
                     </a>
@@ -929,7 +930,7 @@ export default function Requests() {
                   {selectedRequest.phone && (
                     <a
                       href={`sms:${selectedRequest.phone}?body=${encodeURIComponent(`Hi ${selectedRequest.name || ''} — following up on your cleaning request.`)}`}
-                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium bg-blue-50 text-blue-700 border border-blue-200 hover:bg-blue-100"
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium bg-panel text-ink-2 border border-hairline-2 hover:bg-bg-2"
                     >
                       <MessageCircle className="w-3.5 h-3.5" /> Text
                     </a>
@@ -937,14 +938,14 @@ export default function Requests() {
                   {selectedRequest.email && (
                     <a
                       href={`mailto:${selectedRequest.email}?subject=${encodeURIComponent('Your cleaning request')}&body=${encodeURIComponent(`Hi ${selectedRequest.name || ''},\n\nThanks for reaching out — I wanted to follow up on your request before sending a quote.\n\n`)}`}
-                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium bg-violet-50 text-violet-700 border border-violet-200 hover:bg-violet-100"
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium bg-panel text-ink-2 border border-hairline-2 hover:bg-bg-2"
                     >
                       <Mail className="w-3.5 h-3.5" /> Email
                     </a>
                   )}
                   <button
                     onClick={() => openConversation(selectedRequest)}
-                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium bg-amber-50 text-amber-700 border border-amber-200 hover:bg-amber-100"
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium bg-panel text-ink-2 border border-hairline-2 hover:bg-bg-2"
                   >
                     <MessageSquare className="w-3.5 h-3.5" /> Open thread
                   </button>
@@ -955,7 +956,7 @@ export default function Requests() {
               {selectedRequest.converted_quote_id && (
                 <button
                   onClick={() => navigate(`/quotes/${selectedRequest.converted_quote_id}`)}
-                  className="w-full flex items-center justify-between gap-2 px-3 py-2 rounded-lg text-sm font-medium bg-blue-50 text-blue-700 border border-blue-200 hover:bg-blue-100 dark:bg-blue-950 dark:text-blue-300 dark:border-blue-800"
+                  className="w-full flex items-center justify-between gap-2 px-3 py-2 rounded-md text-sm font-medium bg-panel text-ink-2 border border-hairline-2 hover:bg-bg-2"
                 >
                   <span className="flex items-center gap-1.5"><FileText className="w-4 h-4" /> View the quote this became</span>
                   <ChevronRight className="w-4 h-4" />

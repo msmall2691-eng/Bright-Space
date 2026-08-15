@@ -27,7 +27,8 @@ export function QuotesLeadsTile({ loading, quoteActions, navigate }) {
       iconColor="text-purple-500"
       title="Quotes & leads"
       badge={(quoteActions.changes + quoteActions.newLeads) > 0 && (
-        <span className="text-[10px] font-bold text-white bg-amber-500 px-1.5 py-0.5 rounded-full">
+        <span className="inline-flex items-center gap-1.5 text-[10px] font-semibold text-ink-3 tabular-nums">
+          <span className="w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0" aria-hidden="true" />
           {quoteActions.changes + quoteActions.newLeads}
         </span>
       )}

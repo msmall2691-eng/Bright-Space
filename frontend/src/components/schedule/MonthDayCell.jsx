@@ -91,7 +91,7 @@ function MonthDayCell({
 
       {daySkips.length > 0 && (
         <div
-          className="flex items-center gap-0.5 text-[9px] sm:text-[10px] px-1 sm:px-1.5 py-0.5 mb-0.5 rounded border bg-purple-50/60 text-purple-700 border-purple-200 line-through truncate leading-tight"
+          className="flex items-center gap-0.5 text-[9px] sm:text-[10px] px-1 sm:px-1.5 py-0.5 mb-0.5 rounded border bg-panel text-purple-700 dark:text-purple-300 border-hairline line-through truncate leading-tight"
           title={`${daySkips.length} occurrence(s) skipped on this date${daySkips[0].reason ? ': ' + daySkips[0].reason : ''}`}
         >
           <Ban className="w-2.5 h-2.5 shrink-0" />
@@ -101,7 +101,7 @@ function MonthDayCell({
 
       {dayReschedFrom.length > 0 && (
         <div
-          className="flex items-center gap-0.5 text-[9px] sm:text-[10px] px-1 sm:px-1.5 py-0.5 mb-0.5 rounded border bg-purple-50/40 text-purple-600 border-purple-200 italic truncate leading-tight"
+          className="flex items-center gap-0.5 text-[9px] sm:text-[10px] px-1 sm:px-1.5 py-0.5 mb-0.5 rounded border bg-panel text-purple-600 dark:text-purple-300 border-hairline italic truncate leading-tight"
           title={`Moved to ${dayReschedFrom[0].rescheduled_date}`}
         >
           <ArrowRight className="w-2.5 h-2.5 shrink-0" />
@@ -111,7 +111,7 @@ function MonthDayCell({
 
       {dayReschedTo.length > 0 && (
         <div
-          className="flex items-center gap-0.5 text-[9px] sm:text-[10px] px-1 sm:px-1.5 py-0.5 mb-0.5 rounded border bg-purple-50 text-purple-700 border-purple-300 truncate leading-tight"
+          className="flex items-center gap-0.5 text-[9px] sm:text-[10px] px-1 sm:px-1.5 py-0.5 mb-0.5 rounded border bg-panel text-purple-700 dark:text-purple-300 border-hairline truncate leading-tight"
           title={`Moved from ${dayReschedTo[0].exception_date}`}
         >
           <ArrowLeft className="w-2.5 h-2.5 shrink-0" />
@@ -169,8 +169,8 @@ function MonthDayCell({
               }}
               className={`group/chip block overflow-hidden pl-1.5 pr-1.5 py-1 rounded-md leading-tight cursor-grab active:cursor-grabbing transition-colors ${
                 isCancelled ? 'bg-bg-2 text-ink-3 line-through' :
-                isDuplicate ? 'bg-red-50 text-red-700 ring-1 ring-red-200 dark:bg-red-500/10' :
-                `${tc.pill} ${tc.pillHover}`
+                isDuplicate ? 'bg-panel border border-red-300 text-red-700 dark:border-red-500/40' :
+                'bg-panel border border-hairline hover:bg-bg-2'
               }`}
               title={`${chipTime ? chipTime + ' · ' : ''}${j.title}${j.client_name ? ' · ' + j.client_name : ''}${crew ? ' · assigned' : ' · needs a cleaner'}${j.recurring_schedule_id ? ' (recurring)' : ''} — press-and-hold to reschedule`}
             >

@@ -38,18 +38,21 @@ export default function MessagesTab({
     <div className="max-w-2xl">
       {/* Channel filter — all aspects linked by email/phone, in one place. */}
       <div className="flex items-center gap-2 mb-4">
+        {/* Quiet filter tabs — label + plain count, active is ink + underline
+            (owner vetoed the filled chip bubbles). */}
         {[
           { value: 'all',   label: 'All',   count: messages.length + emails.length },
           { value: 'sms',   label: 'SMS',   count: messages.length },
           { value: 'email', label: 'Email', count: emails.length },
         ].map(f => (
           <button key={f.value} onClick={() => setCommsFilter(f.value)}
-            className={`px-3 py-1.5 rounded-full text-xs font-medium border transition-colors ${
+            aria-pressed={commsFilter === f.value}
+            className={`px-0.5 py-1 text-xs font-medium border-b-2 transition-colors ${
               commsFilter === f.value
-                ? 'bg-indigo-600 text-white border-indigo-600'
-                : 'bg-panel text-ink-2 border-hairline hover:bg-bg'
+                ? 'border-ink text-ink'
+                : 'border-transparent text-ink-3 hover:text-ink-2'
             }`}>
-            {f.label} <span className={commsFilter === f.value ? 'text-sky-100' : 'text-ink-3'}>{f.count}</span>
+            {f.label} <span className="ml-1 text-[10px] tabular-nums text-ink-3">{f.count}</span>
           </button>
         ))}
       </div>

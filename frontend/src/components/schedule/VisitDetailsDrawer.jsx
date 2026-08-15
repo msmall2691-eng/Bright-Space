@@ -226,8 +226,8 @@ export default function VisitDetailsDrawer({
                 <p className="text-xs font-semibold text-ink-2 uppercase mb-1">Assigned Cleaners</p>
                 <div className="flex flex-wrap gap-1.5">
                   {visit.cleaner_ids.map((cid, i) => (
-                    <span key={i} className="inline-flex items-center gap-1.5 text-sm text-ink bg-bg-2 pl-1 pr-2.5 py-0.5 rounded-full">
-                      <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-emerald-100 text-emerald-700 text-[9px] font-bold">
+                    <span key={i} className="inline-flex items-center gap-1.5 text-sm text-ink">
+                      <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-bg-2 border border-hairline text-ink-2 text-[9px] font-bold">
                         {cleanerInitials(empName(cid) || `C${cid}`)}
                       </span>
                       {empName(cid) || `Cleaner ${cid}`}
@@ -250,27 +250,25 @@ export default function VisitDetailsDrawer({
                 {(() => {
                   const latest = jobEvents[0]
                   if (!latest) {
-                    return <span className="inline-flex items-center gap-1 text-[12px] font-semibold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700"><CheckCircle className="w-3.5 h-3.5" /> Synced</span>
+                    return <StatusBadge status="success">Synced</StatusBadge>
                   }
                   const when = latest.created_at ? new Date(latest.created_at).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : ''
                   if (latest.status === 'failed') {
                     return (
-                      <span className="inline-flex items-center gap-1 text-[12px] font-semibold px-2 py-0.5 rounded-full bg-red-50 text-red-700" title={latest.error_message || ''}>
-                        <AlertCircle className="w-3.5 h-3.5" /> {latest.action === 'delete' ? 'Calendar removal failed' : 'Calendar sync failed'}{when && ` · ${when}`}
+                      <span title={latest.error_message || ''}>
+                        <StatusBadge status="danger">
+                          {latest.action === 'delete' ? 'Calendar removal failed' : 'Calendar sync failed'}{when && ` · ${when}`}
+                        </StatusBadge>
                       </span>
                     )
                   }
                   if (latest.action === 'delete') {
                     return (
-                      <span className="inline-flex items-center gap-1 text-[12px] font-semibold px-2 py-0.5 rounded-full bg-bg-2 text-ink-2">
-                        <Clock className="w-3.5 h-3.5" /> Removed from calendar{when && ` · ${when}`}
-                      </span>
+                      <StatusBadge status="neutral">Removed from calendar{when && ` · ${when}`}</StatusBadge>
                     )
                   }
                   return (
-                    <span className="inline-flex items-center gap-1 text-[12px] font-semibold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700">
-                      <CheckCircle className="w-3.5 h-3.5" /> Synced{when && ` · ${when}`}
-                    </span>
+                    <StatusBadge status="success">Synced{when && ` · ${when}`}</StatusBadge>
                   )
                 })()}
                 {jobEvents[0]?.status === 'failed' && jobEvents[0]?.error_message && (
@@ -294,11 +292,7 @@ export default function VisitDetailsDrawer({
                 <button
                   type="button"
                   onClick={() => onToggleReminder(job, !job?.skip_sms_reminder)}
-                  className={`text-[12px] font-semibold px-3 py-1.5 rounded-lg border whitespace-nowrap transition-colors ${
-                    job?.skip_sms_reminder
-                      ? 'bg-green-50 text-green-700 border-green-200 hover:bg-green-100'
-                      : 'bg-amber-50 text-amber-700 border-amber-200 hover:bg-amber-100'
-                  }`}
+                  className="text-[12px] font-medium px-3 py-1.5 rounded-md border border-hairline-2 bg-panel text-ink-2 hover:bg-bg-2 whitespace-nowrap transition-colors"
                 >
                   {job?.skip_sms_reminder ? 'Enable' : 'Disable'}
                 </button>

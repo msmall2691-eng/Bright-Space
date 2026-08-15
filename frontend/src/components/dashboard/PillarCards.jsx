@@ -25,12 +25,12 @@ function Pillar({ icon: Icon, accent, label, value, headline, stats, urgent, onC
       <span className={`pointer-events-none absolute -top-8 -right-8 w-28 h-28 rounded-full blur-2xl opacity-60 ${A.wash}`} />
 
       <div className="relative flex items-start justify-between gap-3">
-        <span className={`bb-icon-chip grid place-items-center w-10 h-10 rounded-2xl shrink-0 ${A.chip}`}>
-          <Icon className="w-5 h-5" />
-        </span>
+        {/* Flat glyph — no tinted icon chip (owner's SaaS-bubble veto). */}
+        <Icon className="w-5 h-5 shrink-0 text-ink-3" />
         <span className="flex items-center gap-2">
           {urgent > 0 && (
-            <span className="inline-flex items-center rounded-full bg-red-500 px-2 py-0.5 text-[11px] font-bold text-white">
+            <span className="inline-flex items-center gap-1.5 text-[11px] font-medium text-red-600 dark:text-red-300">
+              <span className="w-1.5 h-1.5 rounded-full bg-red-500 shrink-0" aria-hidden="true" />
               {urgent} urgent
             </span>
           )}

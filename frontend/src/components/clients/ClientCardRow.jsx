@@ -27,7 +27,10 @@ export function ClientCardRow({ c, selected, toggleSelect, setJobClient, navigat
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-2">
           <div className="text-[13px] font-medium text-ink truncate">{displayContactName(c)}</div>
-          <span className={`sm:hidden text-[10px] px-2 py-0.5 rounded-full border capitalize font-medium shrink-0 ${STATUS_COLORS[c.status] || STATUS_COLORS.inactive}`}>{c.status}</span>
+          <span className="sm:hidden inline-flex items-center gap-1.5 text-[10px] px-2 py-0.5 rounded-sm border border-hairline-2 bg-panel text-ink-2 capitalize font-medium shrink-0">
+            <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${STATUS_COLORS[c.status] || STATUS_COLORS.inactive}`} aria-hidden="true" />
+            {c.status}
+          </span>
         </div>
         <div className="flex items-center gap-x-3 gap-y-0.5 mt-0.5 flex-wrap">
           {c.phone && <span className="text-[11px] text-ink-3 flex items-center gap-1"><Phone className="w-3 h-3 shrink-0" />{c.phone}</span>}
@@ -35,7 +38,10 @@ export function ClientCardRow({ c, selected, toggleSelect, setJobClient, navigat
           {c.city && <span className="text-[11px] text-ink-3 flex items-center gap-1"><MapPin className="w-3 h-3 shrink-0" />{c.city}</span>}
         </div>
       </div>
-      <span className={`hidden sm:inline-flex text-[10px] px-2 py-0.5 rounded-full border capitalize font-medium shrink-0 ${STATUS_COLORS[c.status] || STATUS_COLORS.inactive}`}>{c.status}</span>
+      <span className="hidden sm:inline-flex items-center gap-1.5 text-[10px] px-2 py-0.5 rounded-sm border border-hairline-2 bg-panel text-ink-2 capitalize font-medium shrink-0">
+        <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${STATUS_COLORS[c.status] || STATUS_COLORS.inactive}`} aria-hidden="true" />
+        {c.status}
+      </span>
       <button onClick={(e) => { e.stopPropagation(); setJobClient(c) }}
         title={`Schedule a job for ${displayContactName(c)}`}
         aria-label={`Schedule ${c.name}`}

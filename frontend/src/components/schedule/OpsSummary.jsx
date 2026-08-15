@@ -1,7 +1,8 @@
 /**
- * Ops summary chip strip — the "how does today look" answer that used to
- * take a swipe through a month grid. Four numbers, tabular monospace, warn
- * variant when there's work waiting on a decision (unassigned crew).
+ * Ops summary — the "how does today look" answer that used to take a swipe
+ * through a month grid. One quiet line of dot+word stats (the owner vetoed
+ * the colored chip bubbles): values in ink, labels in ink-2, an amber dot
+ * only where something actually needs attention (unassigned crew).
  *
  * Sits above AgendaDay; renders nothing when there are no jobs so the empty
  * state below can carry the day on its own.
@@ -9,7 +10,7 @@
 
 export default function OpsSummary({ stats, isToday }) {
   if (!stats || stats.jobs === 0) return null
-  const chips = [
+  const items = [
     { key: 'jobs', value: stats.jobs, label: 'jobs' },
     { key: 'unassigned', value: stats.unassigned, label: 'need a crew', warn: stats.unassigned > 0 },
     { key: 'capacity', value: `${stats.capacityPct}%`, label: 'capacity' },
@@ -22,20 +23,19 @@ export default function OpsSummary({ stats, isToday }) {
           Today at a glance
         </div>
       )}
-      <div className="flex flex-wrap gap-1.5">
-        {chips.map(c => (
-          <span
-            key={c.key}
-            className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border text-[11.5px] font-mono tabular-nums ${
-              c.warn
-                ? 'bg-amber-50 border-amber-200 text-amber-700'
-                : 'bg-bg-2 border-hairline text-ink-3'
-            }`}
-          >
-            <strong className={`text-[12.5px] font-semibold ${c.warn ? 'text-amber-700' : 'text-ink'}`}>
-              {c.value}
-            </strong>
-            <span>{c.label}</span>
+      <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1 text-[12px] text-ink-2">
+        {items.map((c, i) => (
+          <span key={c.key} className="inline-flex items-baseline gap-x-2 whitespace-nowrap">
+            {i > 0 && <span className="text-ink-3/50" aria-hidden>·</span>}
+            <span className="inline-flex items-center gap-1.5">
+              {c.warn && (
+                <span className="w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0" aria-hidden="true" />
+              )}
+              <span className={`font-semibold tabular-nums ${c.warn ? 'text-amber-600 dark:text-amber-300' : 'text-ink'}`}>
+                {c.value}
+              </span>
+              <span className="text-ink-3">{c.label}</span>
+            </span>
           </span>
         ))}
       </div>

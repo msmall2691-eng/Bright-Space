@@ -38,11 +38,12 @@ export function RescheduleRequestsTile({ navigate }) {
   if (!rows || rows.length === 0) return null
 
   return (
-    <div className="lg:col-span-2 bg-panel border border-amber-200 dark:border-amber-500/25 rounded-2xl overflow-hidden shadow-sm">
-      <div className="flex items-center gap-2 px-5 py-3.5 bg-amber-50 dark:bg-amber-500/10 border-b border-amber-200 dark:border-amber-500/25">
-        <CalendarClock className="w-4.5 h-4.5 text-amber-600" />
+    <div className="lg:col-span-2 bg-panel border border-hairline rounded-2xl overflow-hidden shadow-sm">
+      <div className="flex items-center gap-2 px-5 py-3.5 border-b border-hairline">
+        <span className="w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0" aria-hidden="true" />
+        <CalendarClock className="w-4.5 h-4.5 text-ink-3" />
         <h2 className="font-semibold text-ink text-[15px]">Reschedule requests</h2>
-        <span className="ml-2 text-[11px] font-semibold px-2 py-0.5 rounded-full bg-amber-600 text-white">{rows.length}</span>
+        <span className="ml-2 text-[11px] font-semibold text-ink-3 tabular-nums">{rows.length}</span>
       </div>
       <div className="divide-y divide-hairline">
         {rows.map(r => (

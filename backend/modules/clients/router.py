@@ -647,6 +647,33 @@ def create_client(data: ClientCreate, db: Session = Depends(get_db),
     db.add(client)
     db.commit()
     db.refresh(client)
+
+    # Owner report (Aug 2026): a client added with her address still showed
+    # "No properties for this client yet" when scheduling — the address had to
+    # be re-typed as a property by hand. For a cleaning company the client's
+    # address IS the service location in the common case, so a new client with
+    # a street address gets a Property created from it automatically. Form/API
+    # path only (XLSX import and intake build their rows directly and have
+    # their own conversion flows); best-effort — a property hiccup must never
+    # roll back the client that was just created.
+    if (payload.get("address") or "").strip():
+        try:
+            prop = Property(
+                client_id=client.id,
+                org_id=org_id,
+                name=payload["address"].strip(),
+                address=payload["address"].strip(),
+                city=(payload.get("city") or "").strip() or None,
+                state=(payload.get("state") or "").strip() or None,
+                zip_code=(payload.get("zip_code") or "").strip() or None,
+                property_type="residential",
+            )
+            db.add(prop)
+            db.commit()
+        except Exception:
+            logger.exception("auto-property from client address failed (client %s)", client.id)
+            db.rollback()
+
     return client_to_dict(client)
 
 

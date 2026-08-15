@@ -173,10 +173,13 @@ export default function ClientCalendarTab({ jobs, upcomingJobs, pastJobs, naviga
         {gcalEvents.loading ? (
           <div className="text-center py-8 bg-panel border border-hairline rounded-xl text-sm text-ink-3">Loading events from Google…</div>
         ) : gcalEvents.connected === false ? (
-          <div className="text-center py-8 bg-amber-50 border border-amber-200 rounded-xl px-4">
-            <Calendar className="w-7 h-7 mx-auto mb-2 text-amber-500" />
-            <p className="text-sm text-amber-800 font-medium">Google Calendar isn't connected</p>
-            <p className="text-xs text-amber-700 mt-1 max-w-sm mx-auto">
+          <div className="text-center py-8 bg-panel border border-hairline rounded-xl px-4">
+            <Calendar className="w-7 h-7 mx-auto mb-2 text-ink-3" />
+            <p className="text-sm text-ink font-medium inline-flex items-center gap-1.5">
+              <span className="w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0" aria-hidden="true" />
+              Google Calendar isn't connected
+            </p>
+            <p className="text-xs text-ink-3 mt-1 max-w-sm mx-auto">
               Connect your work Google account in Settings → Integrations so this client's
               events appear here automatically, linked by their email.
             </p>
@@ -371,7 +374,8 @@ export default function ClientCalendarTab({ jobs, upcomingJobs, pastJobs, naviga
 
                   {/* Status + indicators */}
                   <div className="flex flex-col items-end gap-1.5 shrink-0">
-                    <span className={`text-[10px] px-2 py-0.5 rounded-full border font-medium ${statusPill}`}>
+                    <span className="inline-flex items-center gap-1.5 text-[10px] px-2 py-0.5 rounded-sm border border-hairline-2 bg-panel font-medium text-ink-2 capitalize">
+                      <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${statusPill}`} aria-hidden="true" />
                       {j.status?.replace('_', ' ')}
                     </span>
                     <div className="flex gap-1">
@@ -382,7 +386,7 @@ export default function ClientCalendarTab({ jobs, upcomingJobs, pastJobs, naviga
                     {/* Opt-in: email the customer a calendar invite so the event lands on their calendar */}
                     {!isPast && clientEmail && !j.calendar_invite_sent && (
                       <button onClick={(e) => { e.stopPropagation(); inviteCustomer(j.id) }} disabled={invitingId === j.id}
-                        className="flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full border border-blue-200 text-blue-600 hover:bg-blue-50 disabled:opacity-50 transition-colors"
+                        className="flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-md border border-hairline-2 bg-panel text-ink-2 hover:bg-bg-2 disabled:opacity-50 transition-colors"
                         title={`Invite ${clientEmail} to this event`}>
                         <Mail className="w-2.5 h-2.5" /> {invitingId === j.id ? 'Inviting…' : 'Invite'}
                       </button>

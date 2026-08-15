@@ -279,14 +279,31 @@ export default function JobCreateModal({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
+  // Owner report: a client added with her address still showed "No properties
+  // for this client yet", forcing a re-type. New clients now auto-create the
+  // property server-side; for clients from before that change, this holds the
+  // client's own address so the picker can offer creating it in one tap.
+  const [clientAddress, setClientAddress] = useState(null)
+
   // Load the active client's properties whenever it changes.
   useEffect(() => {
-    if (!activeClientId) { setProperties([]); return }
+    if (!activeClientId) { setProperties([]); setClientAddress(null); return }
     setLoadingProps(true)
     get(`/api/properties?client_id=${activeClientId}`)
       .then(data => {
         const list = Array.isArray(data) ? data : []
         setProperties(list)
+        if (list.length === 0) {
+          get(`/api/clients/${activeClientId}`).then(c => {
+            if (!c?.address) return
+            setClientAddress({ address: c.address, city: c.city, state: c.state, zip_code: c.zip_code })
+            // The recurring form requires an address — prefill it from the
+            // client card instead of making the operator re-type it.
+            setForm(f => f.address ? f : { ...f, address: [c.address, c.city, c.state].filter(Boolean).join(', ') })
+          }).catch(() => {})
+        } else {
+          setClientAddress(null)
+        }
         if (initialPropertyId) {
           const prop = list.find(p => p.id === parseInt(initialPropertyId))
           if (prop) applyProperty(prop)
@@ -413,6 +430,32 @@ export default function JobCreateModal({
       applyProperty(created)
       setAddingProp(false)
       setNewProp({ name: '', address: '' })
+    } catch (e) {
+      setPropErr(e.message || 'Failed to create property')
+    }
+    setCreatingProp(false)
+  }
+
+  // One-tap version of the above for the "client has an address but no
+  // property yet" case — creates the property straight from the client card.
+  const createPropertyFromClientAddress = async () => {
+    if (!clientAddress?.address) return
+    setCreatingProp(true); setPropErr('')
+    try {
+      const created = await post('/api/properties', {
+        client_id: parseInt(activeClientId),
+        name: clientAddress.address,
+        address: clientAddress.address,
+        city: clientAddress.city || undefined,
+        state: clientAddress.state || undefined,
+        zip_code: clientAddress.zip_code || undefined,
+        property_type: (form.job_type === 'str_turnover' || form.job_type === 'str') ? 'str'
+          : form.job_type === 'commercial' ? 'commercial'
+          : 'residential',
+      })
+      setProperties([created])
+      applyProperty(created)
+      setClientAddress(null)
     } catch (e) {
       setPropErr(e.message || 'Failed to create property')
     }
@@ -829,7 +872,15 @@ export default function JobCreateModal({
                   </option>
                 ))}
               </select>
-            ) : (
+            ) : null}
+            {!addingProp && !loadingProps && properties.length === 0 && clientAddress?.address && (
+              <button type="button" onClick={createPropertyFromClientAddress} disabled={creatingProp}
+                data-testid="job-create-use-client-address"
+                className="mt-1.5 text-xs text-indigo-600 hover:text-indigo-700 font-medium disabled:opacity-50">
+                {creatingProp ? 'Creating…' : `Use their address — create “${clientAddress.address}”`}
+              </button>
+            )}
+            {addingProp && (
               <div className="rounded-lg border border-blue-200 bg-blue-50/50 p-2.5 space-y-2">
                 <input autoFocus value={newProp.name} onChange={e => setNewProp(n => ({ ...n, name: e.target.value }))}
                   placeholder="Property name * (e.g. 4 Red Barn Circle)"

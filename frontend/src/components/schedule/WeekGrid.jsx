@@ -693,8 +693,8 @@ const VisitBlock = memo(function VisitBlock({
         onDragStart(visit)
       } : undefined}
       onDragEnd={canDrag ? () => onDragEnd && onDragEnd() : undefined}
-      className={`absolute rounded-md border shadow-sm text-left overflow-hidden transition-shadow hover:shadow-md focus:outline-none focus:ring-2 focus:ring-indigo-500 ${cfg.pill} ${isCancelled ? 'opacity-50 line-through' : ''} ${canDrag ? 'cursor-grab active:cursor-grabbing' : ''}`}
-      style={style}
+      className={`absolute rounded-md border border-hairline bg-panel text-ink shadow-sm text-left overflow-hidden transition-shadow hover:shadow-md focus:outline-none focus:ring-2 focus:ring-indigo-500 ${isCancelled ? 'opacity-50 line-through' : ''} ${canDrag ? 'cursor-grab active:cursor-grabbing' : ''}`}
+      style={{ ...style, borderLeft: `3px solid ${cfg.hex}` }}
       onClick={(e) => {
         // Stop the click bubbling into the day-column's empty-slot handler.
         e.stopPropagation()
@@ -738,7 +738,10 @@ const VisitBlock = memo(function VisitBlock({
                 </span>
               </span>
             )}
-            <span className={`ml-auto text-[10px] px-1 rounded shrink-0 ${statusCfg.pillMobile}`}>{statusCfg.label}</span>
+            <span className="ml-auto inline-flex items-center gap-1 text-[10px] text-ink-3 shrink-0">
+              <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${statusCfg.dot}`} aria-hidden="true" />
+              {statusCfg.label}
+            </span>
           </div>
         )}
       </div>
@@ -757,7 +760,7 @@ const VisitChip = memo(function VisitChip({ visit, jobs, properties, clients, em
     <button
       type="button"
       onClick={() => onOpen && onOpen(visit)}
-      className={`shrink-0 max-w-[140px] truncate text-[11px] px-1.5 py-0.5 rounded border ${cfg.pill}`}
+      className="shrink-0 max-w-[140px] truncate text-[11px] px-1.5 py-0.5 rounded border border-hairline bg-panel text-ink-2 hover:bg-bg-2"
       title={label}
       data-testid={`week-grid-untimed-${visit.id}`}
     >

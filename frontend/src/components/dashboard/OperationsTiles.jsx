@@ -11,7 +11,8 @@ export function TurnoverCoverageTile({ loading, turnover, navigate }) {
       iconColor="text-amber-500"
       title="Turnover coverage"
       badge={turnover.needCrew > 0 && (
-        <span className="text-[10px] font-bold text-white bg-amber-500 px-1.5 py-0.5 rounded-full">
+        <span className="inline-flex items-center gap-1.5 text-[10px] font-medium text-amber-700 dark:text-amber-300">
+          <span className="w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0" aria-hidden="true" />
           {turnover.needCrew} need a crew
         </span>
       )}
@@ -48,7 +49,8 @@ export function CrewWorkloadTile({ loading, crew, rosterUnavailable, navigate })
       iconColor="text-blue-500"
       title="Crew workload (7 days)"
       badge={crew.unassigned > 0 && (
-        <span className="text-[10px] font-bold text-white bg-amber-500 px-1.5 py-0.5 rounded-full">
+        <span className="inline-flex items-center gap-1.5 text-[10px] font-medium text-amber-700 dark:text-amber-300">
+          <span className="w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0" aria-hidden="true" />
           {crew.unassigned} unassigned
         </span>
       )}
@@ -84,8 +86,11 @@ export function CrewWorkloadTile({ loading, crew, rosterUnavailable, navigate })
           })}
           {crew.unassigned > 0 && (
             <button onClick={() => navigate('/schedule')}
-              className="w-full flex items-center justify-between gap-2 border border-amber-200 dark:border-amber-500/25 bg-amber-50 dark:bg-amber-500/10 rounded-lg px-3 py-2 text-sm text-amber-800 dark:text-amber-300 hover:opacity-90 transition-opacity mt-1">
-              <span>Jobs with no crew assigned</span>
+              className="w-full flex items-center justify-between gap-2 border border-hairline bg-panel rounded-lg px-3 py-2 text-sm text-ink-2 hover:bg-bg-2 transition-colors mt-1">
+              <span className="inline-flex items-center gap-1.5">
+                <span className="w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0" aria-hidden="true" />
+                Jobs with no crew assigned
+              </span>
               <span className="font-bold flex items-center gap-1">{crew.unassigned} <ArrowRight className="w-3.5 h-3.5" /></span>
             </button>
           )}

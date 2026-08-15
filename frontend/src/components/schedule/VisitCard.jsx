@@ -1,5 +1,6 @@
 import { useNavigate } from 'react-router-dom'
 import { MapPin, User } from 'lucide-react'
+import StatusBadge from '../ui/StatusBadge'
 import { PROPERTY_TYPE_CONFIG, VISIT_STATUS_CONFIG, computeDisplayStatus } from './constants'
 import { TurnoverInfo, SyncStatusChips } from './SyncBadge'
 import { mapsSearchUrl } from '../../utils/maps'
@@ -66,16 +67,16 @@ export default function VisitCard({ v, jobs, properties, clients, onSelect, empN
             {startHHMM || '—'}
             {endHHMM && <span className="text-ink-3 font-medium"> – {endHHMM}</span>}
           </span>
-          {/* Dot-pill: the dot repeats the status in shape, so the pill still
-              reads at a glance when the tint washes out (sunlight, colorblind). */}
-          <span className={`inline-flex items-center gap-1.5 text-[10px] font-semibold px-2 py-0.5 rounded-full shrink-0 ${statusCfg.pillMobile}`}>
-            <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${statusCfg.dot}`} aria-hidden="true" />
+          {/* Quiet dot+word status — never a tinted capsule (owner veto). */}
+          <StatusBadge status={statusCfg.badge} className="shrink-0">
             {statusCfg.label}
-          </span>
+          </StatusBadge>
         </div>
         {/* Title row */}
         <div className="flex items-start gap-2 mb-1">
-          <div className={`shrink-0 mt-0.5 w-6 h-6 rounded-md flex items-center justify-center ${typeCfg.badge}`}>
+          {/* Flat type glyph — the colored edge bar already carries the type
+              hue; a tinted icon chip on top of it was one bubble too many. */}
+          <div className="shrink-0 mt-0.5 w-6 h-6 rounded-md border border-hairline bg-bg-2 flex items-center justify-center text-ink-3" title={typeCfg.label}>
             <TypeIcon className="w-3 h-3" />
           </div>
           <div className="min-w-0 flex-1">
@@ -85,9 +86,10 @@ export default function VisitCard({ v, jobs, properties, clients, onSelect, empN
               </span>
               {v.ical_source && (
                 <span
-                  className="inline-flex items-center text-[10px] font-semibold px-1.5 py-px rounded bg-amber-50 text-amber-700 capitalize"
+                  className="inline-flex items-center gap-1 text-[10px] font-medium text-ink-3 capitalize"
                   title={`Auto-scheduled from ${v.ical_source} iCal feed`}
                 >
+                  <span className="w-1.5 h-1.5 rounded-full bg-amber-400 shrink-0" aria-hidden="true" />
                   {v.ical_source === 'booking_com' ? 'Booking.com' : v.ical_source}
                 </span>
               )}
@@ -152,6 +154,13 @@ export default function VisitCard({ v, jobs, properties, clients, onSelect, empN
             <span className="inline-flex items-center gap-1.5 text-amber-700 dark:text-amber-300 font-medium">
               <span className="w-[7px] h-[7px] rounded-full bg-amber-400 ring-2 ring-amber-200/70 dark:ring-amber-500/25" aria-hidden="true" />
               Needs a cleaner
+            </span>
+          )}
+          {(v.open_for_claims || job?.open_for_claims) && !isCancelled && v.status !== 'completed' && (
+            // Job is on the crew claim board — quiet dot+word state.
+            <span className="inline-flex items-center gap-1.5 text-ink-3 font-medium" title="Crew can claim this job from their phone">
+              <span className="w-1.5 h-1.5 rounded-full bg-violet-500 shrink-0" aria-hidden="true" />
+              Open to crew
             </span>
           )}
           <SyncStatusChips visit={v} job={job} />

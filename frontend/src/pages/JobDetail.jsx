@@ -71,12 +71,13 @@ function PropertyAccessCard({ property, canEdit: editable }) {
   }
 
   return (
-    <div className={`rounded-xl border p-3 space-y-2 ${missing ? 'border-amber-300 bg-amber-50/50' : 'border-hairline bg-panel'}`}>
+    <div className="rounded-xl border border-hairline bg-panel p-3 space-y-2">
       <div className="text-[10px] uppercase tracking-wide text-ink-3 flex items-center gap-1">
         <KeyRound className="w-3 h-3" /> Access — what the crew sees
       </div>
       {missing && (
-        <p className="text-[11px] text-amber-800">
+        <p className="text-[11px] text-ink-2 flex items-center gap-1.5">
+          <span className="w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0" aria-hidden="true" />
           Nothing on file — crew cards show no door code for this property.
         </p>
       )}
@@ -109,11 +110,9 @@ function PropertyAccessCard({ property, canEdit: editable }) {
                 {editable && (
                   <>
                     <button onClick={() => toggleShare(n)}
-                      className={`text-[10px] font-semibold rounded-full px-1.5 py-0.5 border ${
-                        n.shared
-                          ? 'text-emerald-700 bg-emerald-50 border-emerald-300'
-                          : 'text-amber-700 bg-amber-50 border-amber-300'}`}>
-                      {n.shared ? 'Shared ✓ (tap to unshare)' : 'Share with crew'}
+                      className="inline-flex items-center gap-1.5 text-[10px] font-medium rounded-md px-1.5 py-0.5 border border-hairline-2 bg-panel text-ink-2 hover:bg-bg-2">
+                      <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${n.shared ? 'bg-emerald-500' : 'bg-amber-500'}`} aria-hidden="true" />
+                      {n.shared ? 'Shared (tap to unshare)' : 'Share with crew'}
                     </button>
                     <button onClick={() => removeNote(n)}
                       className="text-[10px] text-red-600 underline underline-offset-2">delete</button>
@@ -389,12 +388,13 @@ export default function JobDetail() {
         </button>
 
         {showInvoicePrompt && (
-          <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3">
+          <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-hairline bg-panel px-4 py-3">
             <div className="flex items-start gap-2 min-w-0">
-              <Receipt className="w-4 h-4 shrink-0 mt-0.5 text-emerald-700" />
-              <div className="min-w-0 text-[13px] text-emerald-800">
-                <p className="font-semibold">Ready to bill this job?</p>
-                <p className="text-emerald-700/90">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0 mt-2" aria-hidden="true" />
+              <Receipt className="w-4 h-4 shrink-0 mt-0.5 text-ink-3" />
+              <div className="min-w-0 text-[13px] text-ink-2">
+                <p className="font-semibold text-ink">Ready to bill this job?</p>
+                <p className="text-ink-3">
                   It's marked complete and doesn't have an invoice yet
                   {job.quote ? ` — we'll copy the ${job.quote.quote_number} line items.` : '.'}
                 </p>
@@ -438,11 +438,11 @@ export default function JobDetail() {
                 if (!job.property_id) missing.push('a property')
                 if (!(job.cleaner_ids && job.cleaner_ids.length)) missing.push('a crew')
                 return (
-                  <div className="mb-3 flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-[12px] text-amber-800">
-                    <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+                  <div className="mb-3 flex items-start gap-2 rounded-lg border border-hairline bg-panel px-3 py-2 text-[12px] text-ink-2">
+                    <span className="w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0 mt-1.5" aria-hidden="true" />
                     <div>
-                      <p className="font-semibold">Needs setup</p>
-                      <p className="text-amber-700/90">
+                      <p className="font-semibold text-ink">Needs setup</p>
+                      <p className="text-ink-3">
                         This job isn't fully scheduled yet — add {missing.join(' + ')} to make it live.
                       </p>
                     </div>
@@ -454,25 +454,26 @@ export default function JobDetail() {
                   the owner's inbox. A pending reschedule request wins (it needs
                   action); a self-reschedule clears that and lands as confirmed. */}
               {job.reschedule_requested_at ? (
-                <div className="mb-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2.5 text-[12px] text-amber-800">
+                <div className="mb-3 rounded-lg border border-hairline bg-panel px-3 py-2.5 text-[12px] text-ink-2">
                   <div className="flex items-start gap-2">
-                    <CalendarClock className="w-4 h-4 shrink-0 mt-0.5" />
+                    <span className="w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0 mt-1.5" aria-hidden="true" />
+                    <CalendarClock className="w-4 h-4 shrink-0 mt-0.5 text-ink-3" />
                     <div className="min-w-0">
-                      <p className="font-semibold">
+                      <p className="font-semibold text-ink">
                         {job.reschedule_requested_date ? 'Customer wants to reschedule' : 'Customer asked to reschedule'}
                       </p>
                       {job.reschedule_requested_date && (
-                        <p className="text-amber-700/90">
+                        <p className="text-ink-3">
                           To {fmtDate(job.reschedule_requested_date)}
                           {job.reschedule_requested_scope === 'future' ? ' · this + all future visits' : ' · this visit'}
                           {' '}— that slot's busy, so it needs your OK.
                         </p>
                       )}
                       {job.reschedule_request_message && (
-                        <p className="text-amber-700/90">“{job.reschedule_request_message}”</p>
+                        <p className="text-ink-3">“{job.reschedule_request_message}”</p>
                       )}
                       {!job.reschedule_requested_date && (
-                        <p className="text-amber-700/90">Pick a new time below (or in the schedule).</p>
+                        <p className="text-ink-3">Pick a new time below (or in the schedule).</p>
                       )}
                     </div>
                   </div>
@@ -485,16 +486,16 @@ export default function JobDetail() {
                         </button>
                       )}
                       <button onClick={() => resolveReschedule('decline')}
-                        className="flex-1 px-3 py-1.5 rounded-lg bg-panel border border-amber-300 text-amber-800 font-medium hover:bg-amber-100">
+                        className="flex-1 px-3 py-1.5 rounded-md bg-panel border border-hairline-2 text-ink-2 font-medium hover:bg-bg-2">
                         Dismiss
                       </button>
                     </div>
                   )}
                 </div>
               ) : job.customer_confirmed_at ? (
-                <div className="mb-3 flex items-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-[12px] text-emerald-800">
-                  <CheckCircle className="w-4 h-4 shrink-0" />
-                  <p className="font-semibold">Customer confirmed this visit</p>
+                <div className="mb-3 flex items-center gap-2 rounded-lg border border-hairline bg-panel px-3 py-2 text-[12px] text-ink-2">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" aria-hidden="true" />
+                  <p className="font-semibold text-ink">Customer confirmed this visit</p>
                 </div>
               ) : null}
               <InlineEditField label="Job" value={job.title} placeholder="Untitled job"
@@ -525,9 +526,12 @@ export default function JobDetail() {
                   onClick={() => saveField({ open_for_claims: !job.open_for_claims })}
                   className={`w-full flex items-center justify-between gap-2 rounded-lg border px-3 py-2 text-[12px] font-medium transition-colors ${
                     job.open_for_claims
-                      ? 'border-amber-300 bg-amber-50 text-amber-800 hover:bg-amber-100'
-                      : 'border-hairline bg-bg-2 text-ink-2 hover:bg-bg-3'}`}>
-                  <span>{job.open_for_claims ? '✨ Up for grabs — crew can claim it' : 'Open for claims'}</span>
+                      ? 'border-hairline-2 bg-bg-2 text-ink hover:bg-bg-3'
+                      : 'border-hairline bg-panel text-ink-2 hover:bg-bg-2'}`}>
+                  <span className="inline-flex items-center gap-1.5">
+                    <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${job.open_for_claims ? 'bg-violet-500' : 'bg-ink-3/40'}`} aria-hidden="true" />
+                    {job.open_for_claims ? 'Open to crew — they can claim it' : 'Open to crew'}
+                  </span>
                   <span className="text-[10px] uppercase tracking-wide opacity-70">
                     {job.open_for_claims ? 'On · tap to close' : 'Off'}
                   </span>
@@ -612,10 +616,10 @@ export default function JobDetail() {
             {job.completion_note && (
               /* Field report left by the cleaner at mark-done. Internal-only —
                  stored on its own column so it can never ride onto an invoice. */
-              <div className="bg-emerald-50 dark:bg-emerald-500/10 border border-emerald-200 dark:border-emerald-500/30 rounded-xl p-3 flex items-start gap-2">
-                <CheckCircle className="w-4 h-4 mt-0.5 shrink-0 text-emerald-600" />
+              <div className="bg-panel border border-hairline rounded-xl p-3 flex items-start gap-2">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0 mt-2" aria-hidden="true" />
                 <div className="min-w-0 text-[13px]">
-                  <span className="font-semibold text-emerald-800 dark:text-emerald-300">Crew note</span>
+                  <span className="font-semibold text-ink">Crew note</span>
                   <span className="text-ink-2"> — {job.completion_note}</span>
                 </div>
               </div>

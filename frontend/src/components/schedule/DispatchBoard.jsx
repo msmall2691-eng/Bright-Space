@@ -53,6 +53,7 @@ export default function DispatchBoard({
   empName,
   onOpen,
   onLocalMove,
+  onOpenToCrew,
   toast,
 }) {
   const dateStr = toLocalYMD(currentDate)
@@ -154,9 +155,9 @@ export default function DispatchBoard({
             ['crews', `Crews${crewLoad?.length ? ` (${crewLoad.length})` : ''}`],
           ].map(([key, label]) => (
             <button key={key} onClick={() => toggleCol(key)} aria-pressed={cols[key]}
-              className={`text-[11px] font-semibold px-2.5 py-1 rounded-full border transition-colors ${
+              className={`text-[11px] font-medium px-2.5 py-1 rounded-md border transition-colors ${
                 cols[key]
-                  ? 'bg-panel border-hairline text-ink'
+                  ? 'bg-panel border-hairline-2 text-ink'
                   : 'bg-bg-2 border-transparent text-ink-3 line-through decoration-ink-3/50 hover:text-ink-2'}`}>
               {label}
             </button>
@@ -187,6 +188,7 @@ export default function DispatchBoard({
               onOpen={onOpen}
               onDragStartVisit={setDraggingVisit}
               onDragEndVisit={() => setDraggingVisit(null)}
+              onOpenToCrew={onOpenToCrew}
             />
           )}
           {cols.timeline && (

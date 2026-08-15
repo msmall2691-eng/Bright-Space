@@ -4,13 +4,16 @@
  * ("Every job today has a crew — nice.") rather than a hollow shell.
  *
  * Each card is draggable — drop it on a crew card in CrewUtilization to
- * assign that visit (see DispatchBoard's commitAssign).
+ * assign that visit (see DispatchBoard's commitAssign). Cards also carry a
+ * quiet "Open to crew" action (crew app Phase 3: open_for_claims) so the
+ * office can put a job up for grabs right where the gap is visible.
  */
 import { CheckCircle2 } from 'lucide-react'
 import { PROPERTY_TYPE_CONFIG } from './constants'
 
 export default function UnassignedQueue({
   visits, jobs, properties, clients, onOpen, onDragStartVisit, onDragEndVisit,
+  onOpenToCrew,
 }) {
   return (
     <div className="bg-bg-2 border border-hairline rounded-2xl p-3 flex flex-col min-w-0">
@@ -23,7 +26,7 @@ export default function UnassignedQueue({
           )}
           Unassigned queue
         </span>
-        <span className="text-[11px] font-mono tabular-nums px-2 py-0.5 rounded-full border border-hairline bg-panel text-ink">
+        <span className="text-[11px] font-mono tabular-nums text-ink">
           {visits.length}
         </span>
       </div>
@@ -44,6 +47,7 @@ export default function UnassignedQueue({
             const typeCfg = PROPERTY_TYPE_CONFIG[type] || PROPERTY_TYPE_CONFIG.residential
             const start = (v.start_time || '').slice(0, 5)
             const end = (v.end_time || '').slice(0, 5)
+            const isOpen = !!(v.open_for_claims || job?.open_for_claims)
             return (
               <li key={v.id}>
                 <button
@@ -73,9 +77,35 @@ export default function UnassignedQueue({
                       {prop.address}
                     </div>
                   )}
-                  <span className={`inline-block mt-1.5 text-[9.5px] font-mono tracking-widest uppercase px-1.5 py-0.5 rounded ${typeCfg.badge}`}>
-                    {typeCfg.label}
-                  </span>
+                  <div className="flex items-center gap-2.5 mt-1.5 flex-wrap">
+                    {/* Dot+word type tag — quiet, no tinted capsule. */}
+                    <span className="inline-flex items-center gap-1 text-[10px] font-medium text-ink-3">
+                      <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${typeCfg.dot}`} aria-hidden="true" />
+                      {typeCfg.label}
+                    </span>
+                    {isOpen ? (
+                      <span className="inline-flex items-center gap-1.5 text-[10px] font-medium text-ink-3"
+                        title="Crew can claim this job from their phone">
+                        <span className="w-1.5 h-1.5 rounded-full bg-violet-500 shrink-0" aria-hidden="true" />
+                        Open to crew
+                      </span>
+                    ) : onOpenToCrew ? (
+                      /* Plain span, not <button> — the whole card is already a
+                         <button>, and HTML forbids nesting interactive
+                         elements. stopPropagation keeps it from opening the
+                         drawer. */
+                      <span
+                        onClick={e => { e.stopPropagation(); onOpenToCrew([v]) }}
+                        onKeyDown={e => { if (e.key === 'Enter') { e.stopPropagation(); onOpenToCrew([v]) } }}
+                        className="inline-flex items-center px-2 py-0.5 rounded-md border border-hairline-2 bg-panel text-[10.5px] font-medium text-ink-2 hover:bg-bg-2 cursor-pointer transition-colors"
+                        title="Let cleaners claim this job from their phone"
+                        role="button"
+                        tabIndex={0}
+                      >
+                        Open to crew
+                      </span>
+                    ) : null}
+                  </div>
                 </button>
               </li>
             )

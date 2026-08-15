@@ -7,48 +7,55 @@
  * threading them through every prop.
  */
 
+// Status renders are dot + word (owner's veto of tinted pill bubbles):
+// DOT_CHIP is the quiet bordered body, the *_COLORS maps now hold the
+// little dot's color class. Same export names as before so consumers only
+// changed their render markup, not their imports.
+export const DOT_CHIP = 'inline-flex items-center gap-1.5 rounded-sm border border-hairline-2 bg-panel px-2 py-0.5 text-[11px] font-medium capitalize leading-none text-ink-2'
+export const DOT = 'w-1.5 h-1.5 rounded-full shrink-0'
+
 export const STATUS_COLORS = {
-  lead:     'bg-amber-500/15 text-amber-500 border-amber-500/20',
-  active:   'bg-emerald-500/15 text-emerald-500 border-emerald-500/20',
-  inactive: 'bg-bg-2 text-ink-3 border-hairline',
+  lead:     'bg-amber-500',
+  active:   'bg-emerald-500',
+  inactive: 'bg-ink-3',
 }
 
 export const JOB_COLORS = {
-  scheduled:   'bg-blue-500/20 text-blue-400',
-  in_progress: 'bg-yellow-500/20 text-yellow-400',
-  completed:   'bg-green-500/20 text-green-400',
-  cancelled:   'bg-red-500/20 text-red-400',
+  scheduled:   'bg-blue-500',
+  in_progress: 'bg-amber-500',
+  completed:   'bg-green-500',
+  cancelled:   'bg-red-500',
 }
 
 export const INVOICE_COLORS = {
-  draft:   'bg-ink-3/15 text-ink-3',
-  sent:    'bg-blue-500/20 text-blue-400',
-  paid:    'bg-green-500/20 text-green-400',
-  overdue: 'bg-red-500/20 text-red-400',
+  draft:   'bg-ink-3',
+  sent:    'bg-blue-500',
+  paid:    'bg-green-500',
+  overdue: 'bg-red-500',
 }
 
 export const QUOTE_COLORS = {
-  draft:    'bg-ink-3/15 text-ink-3',
-  sent:     'bg-blue-500/20 text-blue-400',
-  viewed:   'bg-indigo-500/20 text-indigo-400',
-  changes_requested: 'bg-amber-500/20 text-amber-500',
-  accepted: 'bg-green-500/20 text-green-400',
-  converted: 'bg-teal-500/20 text-teal-400',
-  declined: 'bg-red-500/20 text-red-400',
+  draft:    'bg-ink-3',
+  sent:     'bg-blue-500',
+  viewed:   'bg-indigo-500',
+  changes_requested: 'bg-amber-500',
+  accepted: 'bg-green-500',
+  converted: 'bg-teal-500',
+  declined: 'bg-red-500',
 }
 
 export const OPP_COLORS = {
-  new: 'bg-amber-500/20 text-amber-500',
-  qualified: 'bg-blue-500/20 text-blue-400',
-  quoted: 'bg-purple-500/20 text-purple-400',
-  won: 'bg-green-500/20 text-green-400',
-  lost: 'bg-red-500/20 text-red-400',
+  new: 'bg-amber-500',
+  qualified: 'bg-blue-500',
+  quoted: 'bg-purple-500',
+  won: 'bg-green-500',
+  lost: 'bg-red-500',
 }
 
 export const PROPERTY_TYPE_COLORS = {
-  residential: 'bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-950 dark:text-blue-300 dark:border-blue-800',
-  commercial:  'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950 dark:text-emerald-300 dark:border-emerald-800',
-  str:         'bg-orange-50 text-orange-700 border-orange-200 dark:bg-orange-950 dark:text-orange-300 dark:border-orange-800',
+  residential: 'bg-blue-500',
+  commercial:  'bg-emerald-500',
+  str:         'bg-orange-500',
 }
 
 export const PROPERTY_TYPE_LABELS = {
@@ -76,11 +83,12 @@ export const JOB_TYPE_LABEL = {
   str_turnover: 'STR Turnover',
 }
 
+// Same dot-not-tint rule for the calendar tab's status chips.
 export const STATUS_PILL = {
-  scheduled:   'bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-950 dark:text-blue-300 dark:border-blue-800',
-  in_progress: 'bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-950 dark:text-amber-300 dark:border-amber-800',
-  completed:   'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950 dark:text-emerald-300 dark:border-emerald-800',
-  cancelled:   'bg-bg-2 text-ink-3 border-hairline',
+  scheduled:   'bg-blue-500',
+  in_progress: 'bg-amber-500',
+  completed:   'bg-emerald-500',
+  cancelled:   'bg-ink-3',
 }
 
 export const EMPTY_ICAL = {

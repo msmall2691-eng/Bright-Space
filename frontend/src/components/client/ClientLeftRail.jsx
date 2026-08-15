@@ -2,7 +2,6 @@ import { useState, useEffect } from 'react'
 import {
   ArrowLeft, Edit2, Mail, Phone, MapPin, Home,
 } from 'lucide-react'
-import { STATUS_COLORS } from './constants'
 import PropertyPhoto from '../PropertyPhoto'
 
 /** Twenty-style click-to-edit field for the record rail. Click the value to
@@ -74,7 +73,7 @@ export default function ClientLeftRail({
             <select
               value={client.status || 'lead'}
               onChange={e => saveField('status', e.target.value)}
-              className={`mt-1 text-[10px] px-2 py-0.5 rounded-full border capitalize cursor-pointer focus:outline-none ${STATUS_COLORS[client.status] || ''}`}
+              className="mt-1 text-[10px] px-2 py-0.5 rounded-sm border border-hairline-2 bg-panel text-ink-2 capitalize cursor-pointer focus:outline-none"
               title="Change status"
             >
               <option value="lead">lead</option>

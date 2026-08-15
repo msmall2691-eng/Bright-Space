@@ -11,7 +11,7 @@ import { Link } from 'react-router-dom'
 import { Plus, Calendar, MapPin, RefreshCw, TrendingUp } from 'lucide-react'
 import RecordLink from '../RecordLink'
 import OpportunityLinker from '../OpportunityLinker'
-import { JOB_COLORS, INVOICE_COLORS, QUOTE_COLORS, OPP_COLORS } from './constants'
+import { JOB_COLORS, INVOICE_COLORS, QUOTE_COLORS, OPP_COLORS, DOT_CHIP, DOT } from './constants'
 import { formatDateShort } from '../../utils/format'
 
 // Compact cadence line for a series row — same vocabulary as Recurring.jsx's
@@ -27,15 +27,12 @@ function cadenceLine(s) {
   return `${cadence} · ${days}`
 }
 
-// Active/Paused dot-pill — status word + dot, never color alone.
+// Active/Paused dot chip — status word + dot on a quiet body, never a
+// tinted capsule and never color alone.
 function SeriesStatusPill({ active }) {
   return (
-    <span className={`inline-flex items-center gap-1.5 text-[10px] px-2 py-0.5 rounded-full border ${
-      active
-        ? 'text-emerald-700 bg-emerald-500/10 border-emerald-500/20'
-        : 'text-ink-3 bg-bg-2 border-hairline'
-    }`}>
-      <span className={`w-1.5 h-1.5 rounded-full ${active ? 'bg-emerald-500' : 'bg-ink-3'}`} />
+    <span className={DOT_CHIP}>
+      <span className={`${DOT} ${active ? 'bg-emerald-500' : 'bg-ink-3'}`} aria-hidden="true" />
       {active ? 'Active' : 'Paused'}
     </span>
   )
@@ -60,9 +57,9 @@ export function RecurringTab({ schedules, upcomingJobs = [], properties = [] }) 
       )}
       <div className="space-y-2">
         {schedules.map(s => {
-          const typeColors = {
-            residential: 'text-blue-400 bg-blue-500/10 border-blue-500/20',
-            commercial:  'text-green-400 bg-green-500/10 border-green-500/20',
+          const typeDots = {
+            residential: 'bg-blue-500',
+            commercial:  'bg-green-500',
           }
           // Chain link: series → its property record (payload carries
           // property_id; the profile already fetched the client's properties).
@@ -79,7 +76,8 @@ export function RecurringTab({ schedules, upcomingJobs = [], properties = [] }) 
                       className="text-sm font-medium text-ink hover:text-indigo-600 no-underline truncate">
                       {s.title}
                     </Link>
-                    <span className={`text-[10px] px-2 py-0.5 rounded-full border capitalize ${typeColors[s.job_type] || typeColors.residential}`}>
+                    <span className={DOT_CHIP}>
+                      <span className={`${DOT} ${typeDots[s.job_type] || typeDots.residential}`} aria-hidden="true" />
                       {s.job_type}
                     </span>
                     <SeriesStatusPill active={s.active} />
@@ -146,8 +144,15 @@ export function JobsListTab({ jobs, upcomingJobs, pastJobs, clientId, onLinked }
                   {j.address && <div className="text-xs text-ink-3 flex items-center gap-1 mt-0.5"><MapPin className="w-3 h-3" />{j.address}</div>}
                 </div>
                 <div className="flex items-center gap-2">
-                  {j.dispatched && <span className="text-xs bg-purple-100 text-purple-700 border border-purple-200 px-2 py-0.5 rounded-full">Dispatched</span>}
-                  <span className={`text-xs px-2.5 py-1 rounded-full capitalize ${JOB_COLORS[j.status]}`}>{j.status.replace('_', ' ')}</span>
+                  {j.dispatched && (
+                    <span className={DOT_CHIP}>
+                      <span className={`${DOT} bg-purple-500`} aria-hidden="true" /> Dispatched
+                    </span>
+                  )}
+                  <span className={DOT_CHIP}>
+                    <span className={`${DOT} ${JOB_COLORS[j.status] || 'bg-ink-3'}`} aria-hidden="true" />
+                    {j.status.replace('_', ' ')}
+                  </span>
                   <OpportunityLinker
                     clientId={clientId}
                     itemType="job"
@@ -180,7 +185,10 @@ export function JobsListTab({ jobs, upcomingJobs, pastJobs, clientId, onLinked }
                   <RecordLink type="job" id={j.id} label={j.title} className="font-medium" />
                   {j.address && <div className="text-xs text-ink-3 flex items-center gap-1 mt-0.5"><MapPin className="w-3 h-3" />{j.address}</div>}
                 </div>
-                <span className={`text-xs px-2.5 py-1 rounded-full capitalize ${JOB_COLORS[j.status]}`}>{j.status.replace('_', ' ')}</span>
+                <span className={DOT_CHIP}>
+                  <span className={`${DOT} ${JOB_COLORS[j.status] || 'bg-ink-3'}`} aria-hidden="true" />
+                  {j.status.replace('_', ' ')}
+                </span>
               </div>
             ))}
           </div>
@@ -201,7 +209,10 @@ export function QuotesListTab({ quotes, clientId, onLinked }) {
             <div className="text-xs text-ink-3 mt-0.5">{q.items?.length || 0} items · {new Date(q.created_at).toLocaleDateString()}</div>
           </div>
           <div className="flex items-center gap-2 ml-4">
-            <span className={`text-xs px-2.5 py-1 rounded-full capitalize ${QUOTE_COLORS[q.status] || QUOTE_COLORS.draft}`}>{(q.status || '').replace(/_/g, ' ')}</span>
+            <span className={DOT_CHIP}>
+              <span className={`${DOT} ${QUOTE_COLORS[q.status] || QUOTE_COLORS.draft}`} aria-hidden="true" />
+              {(q.status || '').replace(/_/g, ' ')}
+            </span>
             <OpportunityLinker
               clientId={clientId}
               itemType="quote"
@@ -228,7 +239,10 @@ export function InvoicesListTab({ invoices, clientId, onLinked }) {
             <div className="text-xs text-ink-3 mt-0.5">Due {inv.due_date || 'N/A'} · ${inv.total?.toFixed(2)}</div>
           </div>
           <div className="flex items-center gap-2 ml-4">
-            <span className={`text-xs px-2.5 py-1 rounded-full capitalize ${INVOICE_COLORS[inv.status]}`}>{inv.status}</span>
+            <span className={DOT_CHIP}>
+              <span className={`${DOT} ${INVOICE_COLORS[inv.status] || 'bg-ink-3'}`} aria-hidden="true" />
+              {inv.status}
+            </span>
             <OpportunityLinker
               clientId={clientId}
               itemType="invoice"
@@ -262,7 +276,8 @@ export function OpportunitiesTab({ opportunities, navigate }) {
               <div className="flex items-center gap-2 mb-1">
                 <TrendingUp className="w-4 h-4 text-amber-500" />
                 <RecordLink type="opportunity" id={opp.id} label={opp.title} className="font-medium" />
-                <span className={`text-[10px] px-2 py-0.5 rounded-full capitalize ${OPP_COLORS[opp.stage] || 'bg-bg-2 text-ink-3'}`}>
+                <span className={DOT_CHIP}>
+                  <span className={`${DOT} ${OPP_COLORS[opp.stage] || 'bg-ink-3'}`} aria-hidden="true" />
                   {opp.stage}
                 </span>
               </div>

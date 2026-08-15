@@ -280,8 +280,8 @@ export default function PropertiesTab({
           const feedCount = p.icals?.length || 0
           const icalPill = isStr
             ? feedCount > 0
-              ? { label: `${feedCount} iCal feed${feedCount !== 1 ? 's' : ''}`, cls: 'bg-emerald-50 text-emerald-700 border-emerald-200' }
-              : { label: 'No iCal feeds', cls: 'bg-amber-50 text-amber-700 border-amber-200' }
+              ? { label: `${feedCount} iCal feed${feedCount !== 1 ? 's' : ''}`, dot: 'bg-ink-3/40' }
+              : { label: 'No iCal feeds', dot: 'bg-amber-500' }
             : null
           return (
             <div key={p.id}
@@ -308,11 +308,13 @@ export default function PropertiesTab({
                       </div>
                     )}
                     <div className="flex items-center gap-2 mt-1.5 flex-wrap">
-                      <span className={`text-[10px] px-2 py-0.5 rounded-full border ${PROPERTY_TYPE_COLORS[pType] || PROPERTY_TYPE_COLORS.residential}`}>
+                      <span className="inline-flex items-center gap-1.5 text-[10px] font-medium text-ink-3">
+                        <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${PROPERTY_TYPE_COLORS[pType] || PROPERTY_TYPE_COLORS.residential}`} aria-hidden="true" />
                         {PROPERTY_TYPE_LABELS[pType] || p.property_type}
                       </span>
                       {icalPill && (
-                        <span className={`text-[10px] px-2 py-0.5 rounded-full border ${icalPill.cls}`}>
+                        <span className="inline-flex items-center gap-1.5 text-[10px] font-medium text-ink-3">
+                          <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${icalPill.dot}`} aria-hidden="true" />
                           {icalPill.label}
                         </span>
                       )}

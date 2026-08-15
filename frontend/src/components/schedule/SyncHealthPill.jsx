@@ -57,22 +57,26 @@ export default function SyncHealthPill({ refreshKey = 0, onForced, onOpenSetting
   const backlog = health.google?.unsynced_count || 0
   const issues = (health.issues?.duplicate_jobs || 0) + (health.issues?.orphaned_shifts || 0)
 
+  // Quiet secondary-button trigger — the status hue lives in a small dot,
+  // not a tinted capsule (owner vetoed the bubble labels). Icons keep a
+  // muted tone so "syncing" still visibly spins.
   const style = {
-    ok:        { cls: 'bg-emerald-50 dark:bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border-emerald-200 dark:border-emerald-500/30', Icon: CheckCircle2, label: 'Auto-sync on' },
-    syncing:   { cls: 'bg-blue-50 dark:bg-blue-500/15 text-blue-700 dark:text-blue-300 border-blue-200 dark:border-blue-500/30', Icon: RefreshCw, label: `Syncing ${backlog}…` },
-    attention: { cls: 'bg-amber-100 dark:bg-amber-500/15 text-amber-800 dark:text-amber-300 border-amber-300 dark:border-amber-500/30', Icon: AlertTriangle, label: issues ? `${issues} need attention` : 'Needs attention' },
+    ok:        { dot: 'bg-emerald-500', Icon: CheckCircle2, label: 'Auto-sync on' },
+    syncing:   { dot: 'bg-blue-500', Icon: RefreshCw, label: `Syncing ${backlog}…` },
+    attention: { dot: 'bg-amber-500', Icon: AlertTriangle, label: issues ? `${issues} need attention` : 'Needs attention' },
   }[overall]
-  const { cls, Icon, label } = style
+  const { dot, Icon, label } = style
 
   return (
     <div className="relative">
       <button
         onClick={() => setOpen(o => !o)}
-        className={`shrink-0 flex items-center gap-1.5 h-8 px-2.5 rounded-lg border text-xs font-semibold transition-colors ${cls}`}
+        className="shrink-0 flex items-center gap-1.5 h-8 px-2.5 rounded-md bg-panel border border-hairline-2 text-ink-2 hover:bg-bg-2 text-xs font-medium transition-colors"
         title="Schedule sync health — click for details"
         data-testid="sync-health-pill"
       >
-        <Icon className={`w-4 h-4 ${overall === 'syncing' ? 'animate-spin' : ''}`} />
+        <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${dot}`} aria-hidden="true" />
+        {overall === 'syncing' && <Icon className="w-3.5 h-3.5 animate-spin text-ink-3" />}
         <span className="hidden sm:inline">{label}</span>
         <ChevronDown className="w-3 h-3 opacity-60" />
       </button>
@@ -82,7 +86,7 @@ export default function SyncHealthPill({ refreshKey = 0, onForced, onOpenSetting
           <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
           <div className="absolute right-0 mt-1 w-72 bg-panel border border-hairline rounded-xl shadow-lg z-50 p-3 text-sm">
             <div className="flex items-center gap-2 mb-2">
-              <Icon className={`w-4 h-4 ${cls.split(' ').find(c => c.startsWith('text-')) || ''}`} />
+              <span className={`w-2 h-2 rounded-full shrink-0 ${dot}`} aria-hidden="true" />
               <span className="font-bold text-ink">
                 {overall === 'ok' ? 'Everything’s in sync'
                   : overall === 'syncing' ? 'Catching up automatically'
@@ -103,10 +107,20 @@ export default function SyncHealthPill({ refreshKey = 0, onForced, onOpenSetting
                    : 'not connected'} />
 
             {issues > 0 && (
-              <div className="mt-2 px-2 py-1.5 rounded-lg bg-amber-50 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-500/30 text-[12px] text-amber-800 dark:text-amber-300">
-                {health.issues.duplicate_jobs > 0 && <div>{health.issues.duplicate_jobs} duplicate job group(s)</div>}
-                {health.issues.orphaned_shifts > 0 && <div>{health.issues.orphaned_shifts} orphaned shift(s)</div>}
-                <div className="opacity-70 mt-0.5">Review in the schedule audit.</div>
+              <div className="mt-2 px-2 py-1.5 rounded-lg border border-hairline bg-bg text-[12px] text-ink-2">
+                {health.issues.duplicate_jobs > 0 && (
+                  <div className="flex items-center gap-1.5">
+                    <span className="w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0" aria-hidden="true" />
+                    {health.issues.duplicate_jobs} duplicate job group(s)
+                  </div>
+                )}
+                {health.issues.orphaned_shifts > 0 && (
+                  <div className="flex items-center gap-1.5">
+                    <span className="w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0" aria-hidden="true" />
+                    {health.issues.orphaned_shifts} orphaned shift(s)
+                  </div>
+                )}
+                <div className="text-ink-3 mt-0.5">Review in the schedule audit.</div>
               </div>
             )}
 

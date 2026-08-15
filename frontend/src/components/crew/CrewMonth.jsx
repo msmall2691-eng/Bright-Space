@@ -7,78 +7,13 @@
  * rows that aren't theirs. Tap a day for its list below the grid.
  */
 import { useEffect, useMemo, useState } from 'react'
-import { ChevronLeft, ChevronRight, KeyRound, MapPin, ParkingCircle, Users, X } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Users } from 'lucide-react'
 import { get } from '../../api'
-
-/** Tap-through detail sheet for one of MY jobs from the month grid — the
- *  full card context (address, code, notes, checklist, teammates) fetched
- *  from /api/crew/jobs/{id}. Other people's jobs don't open (no details to
- *  show by design). */
-function MonthJobSheet({ jobId, onClose }) {
-  const [job, setJob] = useState(null)
-  const [error, setError] = useState(null)
-  useEffect(() => {
-    let cancelled = false
-    get(`/api/crew/jobs/${jobId}`)
-      .then(d => { if (!cancelled) setJob(d) })
-      .catch(e => { if (!cancelled) setError(e.detail || e.message || 'Could not load') })
-    return () => { cancelled = true }
-  }, [jobId])
-  return (
-    <div className="fixed inset-0 z-30 flex items-end sm:items-center justify-center bg-black/40 px-4 pb-4 sm:pb-0"
-      onClick={onClose}>
-      <div className="w-full max-w-sm bg-panel rounded-2xl border border-hairline shadow-glass p-5 space-y-3 max-h-[85vh] overflow-y-auto"
-        onClick={e => e.stopPropagation()}>
-        <div className="flex items-start justify-between gap-2">
-          <div className="min-w-0">
-            <div className="text-base font-bold text-ink truncate">
-              {job ? (job.property_name || job.title) : 'Loading…'}
-            </div>
-            {job && (
-              <div className="text-[12px] text-ink-3">
-                {new Date(`${job.scheduled_date}T12:00`).toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}
-                {job.start_time ? ` · ${job.start_time}${job.end_time ? `–${job.end_time}` : ''}` : ''}
-              </div>
-            )}
-          </div>
-          <button onClick={onClose} aria-label="Close"
-            className="shrink-0 grid place-items-center w-8 h-8 rounded-lg bg-bg-2 text-ink-3">
-            <X className="w-4 h-4" />
-          </button>
-        </div>
-        {error && <div className="text-xs text-red-700 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{error}</div>}
-        {!job && !error && <div className="h-32 rounded-xl bg-bg-2 animate-pulse" />}
-        {job && (
-          <div className="space-y-2 text-[13px] text-ink-2">
-            {job.address && (
-              <div className="flex items-start gap-1.5"><MapPin className="w-3.5 h-3.5 mt-0.5 shrink-0 text-ink-3" /> {job.address}</div>
-            )}
-            {job.house_code && (
-              <div className="flex items-start gap-1.5"><KeyRound className="w-3.5 h-3.5 mt-0.5 shrink-0 text-ink-3" /> Code {job.house_code}</div>
-            )}
-            {job.access_notes && (
-              <div className="flex items-start gap-1.5"><KeyRound className="w-3.5 h-3.5 mt-0.5 shrink-0 text-ink-3" /> {job.access_notes}</div>
-            )}
-            {job.parking_notes && (
-              <div className="flex items-start gap-1.5"><ParkingCircle className="w-3.5 h-3.5 mt-0.5 shrink-0 text-ink-3" /> {job.parking_notes}</div>
-            )}
-            {job.notes && (
-              <div className="rounded-lg bg-blue-500/5 border border-blue-500/15 px-3 py-2 text-[12px] whitespace-pre-wrap">
-                <span className="font-semibold text-ink">From the office: </span>{job.notes}
-              </div>
-            )}
-            {job.teammates?.length > 0 && (
-              <div className="flex items-start gap-1.5"><Users className="w-3.5 h-3.5 mt-0.5 shrink-0 text-ink-3" /> With {job.teammates.join(', ')}</div>
-            )}
-            {job.checklist_template && (
-              <div className="text-[12px] text-ink-3 whitespace-pre-wrap border-t border-hairline pt-2">{job.checklist_template}</div>
-            )}
-          </div>
-        )}
-      </div>
-    </div>
-  )
-}
+// The tap-through opens the SAME full job card My Day renders (address → maps
+// link, code, WiFi, house notes, working checklist) instead of the old cut-down
+// summary — which also rendered the structured checklist_template (an array of
+// {area, tasks}) as a raw React child and crashed for properties that had one.
+import CrewJobSheet from './CrewJobSheet'
 
 const DOW = ['S', 'M', 'T', 'W', 'T', 'F', 'S']   // Sunday-first, US calendar
 const ymd = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
@@ -214,7 +149,7 @@ export default function CrewMonth() {
           </div>
         </>
       )}
-      {openJobId && <MonthJobSheet jobId={openJobId} onClose={() => setOpenJobId(null)} />}
+      {openJobId && <CrewJobSheet jobId={openJobId} onClose={() => setOpenJobId(null)} />}
     </div>
   )
 }

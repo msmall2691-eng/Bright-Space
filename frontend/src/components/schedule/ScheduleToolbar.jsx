@@ -218,10 +218,10 @@ export default function ScheduleToolbar({
             <select
               value={selectedPropertyType}
               onChange={(e) => onPropertyTypeChange(e.target.value)}
-              className={`text-[11px] font-medium px-2 py-1 rounded-md border whitespace-nowrap ${
+              className={`text-[11px] font-medium px-2 py-1 rounded-md border whitespace-nowrap bg-panel ${
                 selectedPropertyType === 'all'
-                  ? 'bg-panel text-ink-3 border-hairline-2'
-                  : 'bg-blue-50 text-blue-700 border-blue-200'
+                  ? 'text-ink-3 border-hairline-2'
+                  : 'text-ink border-ink/30 font-semibold'
               }`}
             >
               <option value="all">All types</option>
@@ -232,10 +232,10 @@ export default function ScheduleToolbar({
             <select
               value={selectedStatus}
               onChange={(e) => onStatusChange(e.target.value)}
-              className={`text-[11px] font-medium px-2 py-1 rounded-md border whitespace-nowrap ${
+              className={`text-[11px] font-medium px-2 py-1 rounded-md border whitespace-nowrap bg-panel ${
                 selectedStatus === 'all'
-                  ? 'bg-panel text-ink-3 border-hairline-2'
-                  : 'bg-blue-50 text-blue-700 border-blue-200'
+                  ? 'text-ink-3 border-hairline-2'
+                  : 'text-ink border-ink/30 font-semibold'
               }`}
             >
               <option value="all">All status</option>
@@ -256,9 +256,9 @@ export default function ScheduleToolbar({
                 active={unassignedOnly}
                 onClick={onToggleUnassigned}
                 disabled={unassignedCount === 0 && !unassignedOnly}
-                colorActive="bg-amber-50 text-amber-800 border-amber-200"
                 testid="filter-unassigned"
               >
+                <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${unassignedCount > 0 ? 'bg-amber-500' : 'bg-ink-3/40'}`} aria-hidden="true" />
                 Needs cleaner ({unassignedCount})
               </ChipToggle>
             )}
@@ -267,9 +267,9 @@ export default function ScheduleToolbar({
                 active={noGcalOnly}
                 onClick={onToggleNoGcal}
                 disabled={notGcalCount === 0 && !noGcalOnly}
-                colorActive="bg-amber-50 text-amber-800 border-amber-200"
                 testid="filter-no-gcal"
               >
+                <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${notGcalCount > 0 ? 'bg-amber-500' : 'bg-ink-3/40'}`} aria-hidden="true" />
                 Not on Google ({notGcalCount})
               </ChipToggle>
             )}
@@ -277,7 +277,6 @@ export default function ScheduleToolbar({
               <ChipToggle
                 active={showGuestStays}
                 onClick={onToggleGuestStays}
-                colorActive="bg-orange-50 text-orange-700 border-orange-200"
                 testid="filter-guest-stays"
               >
                 Guest stays
@@ -344,16 +343,19 @@ function ToolsMenu({ open, onClose, onPreviewAutoAssign, onPreviewFixTimes, onOp
 }
 
 /** Small toggle chip used for the quick filters (needs cleaner / not on
- *  Google). Kept local because it shares the exact visual language of the
- *  two selects above and isn't reused elsewhere.
+ *  Google). Quiet in both states — active is marked by ink text + a firmer
+ *  border, and severity color lives only in the little dot the caller
+ *  renders inside (never a tinted fill). Kept local because it shares the
+ *  exact visual language of the two selects above and isn't reused
+ *  elsewhere.
  */
-function ChipToggle({ active, onClick, disabled, colorActive, testid, children }) {
-  const base = 'text-[11px] font-medium px-2 py-1 rounded-md border whitespace-nowrap transition-colors'
+function ChipToggle({ active, onClick, disabled, testid, children }) {
+  const base = 'inline-flex items-center gap-1.5 text-[11px] font-medium px-2 py-1 rounded-md border whitespace-nowrap transition-colors bg-panel'
   const state = active
-    ? colorActive
+    ? 'text-ink border-ink/30 font-semibold'
     : disabled
-      ? 'bg-panel text-ink-3/50 border-hairline cursor-default'
-      : 'bg-panel text-ink-3 border-hairline-2 hover:bg-bg-2 cursor-pointer'
+      ? 'text-ink-3/50 border-hairline cursor-default'
+      : 'text-ink-3 border-hairline-2 hover:bg-bg-2 cursor-pointer'
   return (
     <button
       type="button"

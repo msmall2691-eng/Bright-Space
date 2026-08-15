@@ -93,12 +93,10 @@ export function NeedsYouNow({ attention = [], loading, navigate }) {
   return (
     <section className={`${SOFT_CARD} overflow-hidden`}>
       <div className="flex items-center gap-2.5 px-5 py-3.5 border-b border-hairline">
-        <span className="bb-icon-chip grid place-items-center w-8 h-8 rounded-xl shrink-0 bg-blue-50 dark:bg-blue-500/15 text-blue-600 dark:text-blue-300">
-          <Zap className="w-4 h-4" />
-        </span>
+        <Zap className="w-4 h-4 shrink-0 text-ink-3" />
         <h2 className="text-sm font-semibold text-ink">Needs you now</h2>
         {total > 0 && (
-          <span className="text-[11px] font-bold text-white bg-indigo-600 px-1.5 py-0.5 rounded-full">{total}</span>
+          <span className="text-[11px] font-semibold text-ink-3 tabular-nums">{total}</span>
         )}
       </div>
 
@@ -108,9 +106,7 @@ export function NeedsYouNow({ attention = [], loading, navigate }) {
         </div>
       ) : total === 0 ? (
         <div className="flex flex-col items-center justify-center text-center py-10 px-6">
-          <span className="grid place-items-center w-11 h-11 rounded-2xl bg-emerald-50 dark:bg-emerald-500/15 text-emerald-600 dark:text-emerald-300 mb-2.5">
-            <Sparkles className="w-5 h-5" />
-          </span>
+          <Sparkles className="w-6 h-6 text-emerald-500 mb-2.5" />
           <p className="text-sm font-semibold text-ink">You're all caught up</p>
           <p className="text-[12px] text-ink-3 mt-0.5">No approvals, replies, or overdue items right now.</p>
         </div>
