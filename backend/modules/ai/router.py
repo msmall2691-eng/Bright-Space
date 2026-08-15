@@ -28,7 +28,7 @@ from sqlalchemy.orm import Session, joinedload
 
 from database.db import get_db
 from database.models import (Client, Job, RecurringSchedule, Property, Invoice,
-                             Quote, ProposedAction)
+                             Quote, ProposedAction, User)
 from modules.auth.router import get_current_user, current_org_id, require_role
 from ratelimit import rate_limit
 from services.proposals import (PROPOSAL_STATUSES, dismiss_proposal,
@@ -1289,6 +1289,208 @@ def _fallback_review_request(name, service_date: Optional[str],
     if channel == "sms":
         return {"subject": "", "message": body}
     return {"subject": "How did we do?", "message": body}
+
+
+# ── POST /api/ai/draft-crew-message/{user_id} ───────────────────────────────
+# Autopilot Phase 4: Mia drafts each cleaner's day-plan message; the owner
+# reviews it in the existing Crew-page composer and sends it through the
+# office↔cleaner thread (POST /api/crew/messages/{user_id}). Review-first like
+# every draft endpoint here — nothing is sent from this endpoint, and the crew
+# side (My Day, CrewAsk) is untouched: the cleaner just receives a normal
+# message from the office, with no AI badge in their experience (owner rule).
+
+class DraftCrewMessageRequest(BaseModel):
+    # YYYY-MM-DD; default = the next business day (tomorrow relative to
+    # business_today) — the message is a "here's your day tomorrow" heads-up.
+    date: Optional[str] = None
+    instruction: Optional[str] = None    # optional steering, e.g. "mention the supply pickup"
+
+
+def _cleaner_first_name(u: User) -> str:
+    """Same first-name resolution as the crew app's My Day greeting."""
+    name = ((u.full_name or "").strip().split(" ")[0]
+            or (u.email or "").split("@")[0])
+    return name or "there"
+
+
+def _crew_day_jobs(db: Session, org_id: int, cleaner_id: str, day) -> list:
+    """One cleaner's lineup for one date, in time order.
+
+    EXACTLY the matching the crew app's My Day uses (modules/crew/router.py
+    my_day): an org-scoped date query, then a Python `in` check against
+    Job.cleaner_ids — crew IDs live in a JSON list of strings, so a SQL
+    contains() would be dialect-dependent, and one day of org jobs is a small
+    list. Replicated rather than imported so this owner-facing draft can't
+    quietly inherit crew-app-only concerns (open offers, clock state).
+    Completed/cancelled jobs are excluded — a day PLAN previews work still to
+    do (My Day keeps completed visible for its own "Done ✓" reason)."""
+    jobs = (db.query(Job)
+            .options(joinedload(Job.property), joinedload(Job.client))
+            .filter(_org(Job, org_id),
+                    Job.scheduled_date == day,
+                    Job.status.in_(("scheduled", "in_progress")))
+            .order_by(Job.start_time, Job.id)
+            .all())
+    return [j for j in jobs if cleaner_id in (j.cleaner_ids or [])]
+
+
+def _crew_job_facts(jobs, day) -> list:
+    """Per-job facts for the prompt AND the fallback renderer.
+
+    HARD RULE (the same crown-jewel exclusion as _build_record_context):
+    NOTHING from the access family — house_code, access_notes (lockbox/key
+    locations), wifi_ssid/wifi_password — may enter this list, so it can
+    never enter the prompt or the drafted message. The message points the
+    cleaner at their BrightBase day view instead, where those details are
+    already gated to the assigned cleaner. Add nothing from that field
+    family here."""
+    from datetime import datetime as _dt
+    facts = []
+    prev_end = None
+    for j in jobs:
+        p = j.property
+        c = j.client
+        tight = False
+        if prev_end and j.start_time:
+            gap = (_dt.combine(day, j.start_time)
+                   - _dt.combine(day, prev_end)).total_seconds() / 60
+            tight = gap <= 30  # back-to-back or a ≤30-min drive window
+        facts.append({k: v for k, v in {
+            "start_time": str(j.start_time)[:5] if j.start_time else None,
+            "end_time": str(j.end_time)[:5] if j.end_time else None,
+            "job_type": j.job_type,
+            "title": j.title,
+            "client_name": c.name if c else None,
+            "property_name": p.name if p else None,
+            # Street address only — same field _job_row shows the crew.
+            "address": (p.address if p else None) or j.address or None,
+            "tight_turnaround": tight or None,
+        }.items() if v is not None})
+        if j.end_time:
+            prev_end = j.end_time
+    return facts
+
+
+def _fallback_crew_day_message(first_name: str, day, job_facts: list) -> dict:
+    """Deterministic day plan: the same lineup as plain text, so the button
+    still works with no API key. Same closing rule as the model prompt —
+    details and door codes live in the day view, never in the message."""
+    label = f"{day.strftime('%A, %b')} {day.day}"
+    if not job_facts:
+        return {"subject": f"Your day — {label}",
+                "message": (f"Hi {first_name}! Nothing on the schedule for "
+                            f"{label} — enjoy it! Keep an eye on your "
+                            f"BrightBase day view in case anything gets "
+                            f"added. – The office")}
+    lines = []
+    for f in job_facts:
+        when = f.get("start_time") or "TBD"
+        if f.get("end_time"):
+            when += f"–{f['end_time']}"
+        what = f.get("title") or (f.get("job_type") or "clean").replace("_", " ")
+        where = " · ".join(x for x in [f.get("property_name"),
+                                       f.get("client_name"),
+                                       f.get("address")] if x)
+        line = f"• {when} — {what}" + (f" ({where})" if where else "")
+        if f.get("tight_turnaround"):
+            line += " — heads up, quick turnaround from the one before"
+        lines.append(line)
+    n = len(job_facts)
+    body = (f"Hi {first_name}! Here's your day for {label} — "
+            f"{n} job{'s' if n != 1 else ''}:\n\n" + "\n".join(lines) +
+            "\n\nFull details and door codes are in your BrightBase day "
+            "view. Thank you! – The office")
+    return {"subject": f"Your day — {label}", "message": body}
+
+
+def _draft_crew_day_message(cleaner: User, day, job_facts: list, instruction,
+                            client_ai) -> dict:
+    """Haiku tier for the same reason as _draft_quote_followup — this is a
+    write-a-short-message-from-facts task, not reasoning. The prompt only
+    ever sees _crew_job_facts output, so access details are excluded by
+    construction (the model can't leak what it was never given)."""
+    first = _cleaner_first_name(cleaner)
+    if client_ai is None:
+        return _fallback_crew_day_message(first, day, job_facts)
+
+    label = f"{day.strftime('%A, %b')} {day.day}"
+    facts = {"cleaner_first_name": first, "date": day.isoformat(),
+             "day_label": label, "jobs": job_facts}
+    if instruction:
+        facts["operator_instruction"] = instruction
+    system = (
+        "You write the day-plan message from the office of Maine Cleaning Co, "
+        "a cleaning business, to one of its cleaners. Warm, brief, and human — "
+        "greet them by first name, then list their jobs for the day in time "
+        "order (time, what it is, client/property, street address). If a job "
+        "is marked tight_turnaround, flag it kindly (e.g. 'heads up — it's a "
+        "quick turnaround into the next one'). Close by telling them full "
+        "details and door codes are in their BrightBase day view. NEVER "
+        "include door codes, lockbox or key locations, or wifi details — you "
+        "were not given them and must not invent them. No markdown, no "
+        "emoji. Respond with ONLY a JSON object: "
+        '{"subject": string, "message": string}.'
+    )
+    try:
+        resp = client_ai.messages.create(
+            model=_TIER_MODEL_IDS["haiku"], max_tokens=500, system=system,
+            messages=[{"role": "user", "content": json.dumps(facts, default=str)}],
+        )
+        text = "".join(b.text for b in resp.content if b.type == "text")
+        data = json.loads(_strip_json(text))
+        msg = (data.get("message") or "").strip()
+        if not msg:
+            return _fallback_crew_day_message(first, day, job_facts)
+        return {"subject": (data.get("subject") or f"Your day — {label}").strip(),
+                "message": msg}
+    except Exception:
+        logger.exception("ai crew day-plan draft failed; using fallback")
+        return _fallback_crew_day_message(first, day, job_facts)
+
+
+@router.post("/draft-crew-message/{user_id}",
+             dependencies=[Depends(require_role("admin", "manager"))])
+def draft_crew_message(user_id: int,
+                       body: DraftCrewMessageRequest = DraftCrewMessageRequest(),
+                       db: Session = Depends(get_db),
+                       org_id: int = Depends(current_org_id)):
+    """Draft one cleaner's day-plan message for review. Returns
+    {subject, message} — the Crew page drops `message` into the existing
+    office-thread composer; `subject` is informational (the thread has no
+    subject line). Office roles only, mirroring the thread endpoints this
+    draft feeds (/api/crew/messages/{user_id})."""
+    cleaner = (db.query(User)
+               .filter(User.id == user_id, User.role == "cleaner",
+                       _org(User, org_id)).first())
+    if not cleaner:
+        # Wrong org, wrong role, and nonexistent all look identical on
+        # purpose (no existence leak) — same envelope as the other drafts.
+        return {"subject": "", "message": "", "error": "Cleaner not found"}
+    if not (cleaner.cleaner_id or "").strip():
+        # Distinct from "no jobs" for the same reason My Day 400s here: a
+        # mis-linked account and a genuinely free day must not read alike.
+        return {"subject": "", "message": "",
+                "error": "This cleaner has no crew ID linked yet — set it on "
+                         "the Crew page first"}
+
+    if (body.date or "").strip():
+        try:
+            day = date.fromisoformat(body.date.strip())
+        except ValueError:
+            return {"subject": "", "message": "",
+                    "error": "Invalid date — use YYYY-MM-DD"}
+    else:
+        day = business_today() + timedelta(days=1)
+
+    jobs = _crew_day_jobs(db, org_id, cleaner.cleaner_id, day)
+    job_facts = _crew_job_facts(jobs, day)
+    if not jobs:
+        # A free day is a friendly message, not an error — the owner may
+        # still want to send it ("enjoy the day off").
+        return _fallback_crew_day_message(_cleaner_first_name(cleaner), day, [])
+    return _draft_crew_day_message(cleaner, day, job_facts,
+                                   (body.instruction or "").strip() or None,
+                                   _anthropic_client())
 
 
 # ── GET /api/ai/overdue-reminders ───────────────────────────────────────────

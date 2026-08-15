@@ -21,7 +21,7 @@ from fastapi.testclient import TestClient
 from main import app
 from database.db import SessionLocal
 from database.models import (
-    Client, ICalEvent, Invoice, Job, Org, Property, PropertyIcal, Quote,
+    Client, ICalEvent, Invoice, Job, Org, Property, PropertyIcal, Quote, User,
 )
 from modules.auth.router import current_org_id, get_current_user
 import modules.ai.router as ai_router
@@ -284,6 +284,127 @@ def test_draft_review_request_completed_only(api):
         db.rollback()
         _cleanup(db, client_ids=[c.id] if c else (),
                  property_ids=[p.id] if p else ())
+        db.close()
+
+
+# ── POST /api/ai/draft-crew-message/{user_id} ───────────────────────────────
+# Autopilot Phase 4. CI has no ANTHROPIC_API_KEY, so these exercise the
+# deterministic fallback — which renders the same lineup facts the prompt
+# would get, so the no-access-details guarantee holds for both paths.
+
+def _seed_cleaner(db, *, email, cleaner_id="C-DAYPLAN", org_id=1):
+    u = User(email=email, role="cleaner", full_name="Dana Cleaner",
+             cleaner_id=cleaner_id, org_id=org_id, active=True)
+    db.add(u); db.commit(); db.refresh(u)
+    return u
+
+
+def _cleanup_users(db, user_ids):
+    if user_ids:
+        db.query(User).filter(User.id.in_(user_ids)).delete(synchronize_session=False)
+        db.commit()
+
+
+def test_draft_crew_message_lineup_never_leaks_access_details(api):
+    """Fallback draft carries the cleaner's lineup (client name + time, own
+    jobs only) and NEVER an access detail, even with every secret field set."""
+    db = SessionLocal()
+    c = p = u = None
+    try:
+        c = Client(name="Day Plan Client", status="active", org_id=1)
+        db.add(c); db.commit(); db.refresh(c)
+        p = Property(client_id=c.id, name="Plan Cottage", address="5 Plan Ln",
+                     property_type="str", active=True, org_id=1,
+                     access_notes="Lockbox 8712 behind the shed",
+                     house_code="4321#", wifi_ssid="PlanNet",
+                     wifi_password="plan-secret")
+        db.add(p); db.commit(); db.refresh(p)
+        u = _seed_cleaner(db, email="dayplan-cleaner@example.com")
+        day = date.today() + timedelta(days=1)
+        db.add_all([
+            Job(client_id=c.id, property_id=p.id, org_id=1,
+                job_type="str_turnover", title="Turnover",
+                scheduled_date=day, start_time=time(9, 0), end_time=time(12, 0),
+                status="scheduled", cleaner_ids=["C-DAYPLAN"]),
+            # 15-min gap → the tight-turnaround flag fires in the facts.
+            Job(client_id=c.id, property_id=p.id, org_id=1,
+                job_type="residential", title="Standard clean",
+                scheduled_date=day, start_time=time(12, 15), end_time=time(15, 0),
+                status="scheduled", cleaner_ids=["C-DAYPLAN"]),
+            # Somebody else's job the same day — must NOT ride this draft.
+            Job(client_id=c.id, property_id=p.id, org_id=1,
+                job_type="residential", title="Ghost Job",
+                scheduled_date=day, start_time=time(10, 0),
+                status="scheduled", cleaner_ids=["C-SOMEONE-ELSE"]),
+        ])
+        db.commit()
+
+        r = api.post(f"/api/ai/draft-crew-message/{u.id}",
+                     json={"date": day.isoformat()})
+        assert r.status_code == 200, r.text
+        body = r.json()
+        assert not body.get("error")
+        msg = body["message"]
+        assert "Dana" in msg                       # greeted by first name
+        assert "Day Plan Client" in msg            # client name
+        assert "09:00" in msg and "12:15" in msg   # lineup in time order
+        assert "5 Plan Ln" in msg                  # street address
+        assert "Ghost Job" not in msg              # only THEIR jobs
+        assert "day view" in msg.lower()           # details live in the app
+        # Crown jewels: no access/credential value may reach the message
+        # (this is the fallback path, so it also proves the prompt facts —
+        # both render from the same _crew_job_facts output).
+        for secret in ("4321#", "8712", "Lockbox", "shed",
+                       "PlanNet", "plan-secret"):
+            assert secret not in msg, f"access detail {secret!r} leaked into draft"
+    finally:
+        db.rollback()
+        _cleanup_users(db, [u.id] if u else [])
+        _cleanup(db, client_ids=[c.id] if c else (),
+                 property_ids=[p.id] if p else ())
+        db.close()
+
+
+def test_draft_crew_message_cross_org_cleaner_is_invisible(api):
+    """Another tenant's cleaner reads as nonexistent — same envelope the
+    other draft endpoints use, no existence leak."""
+    db = SessionLocal()
+    u = None
+    try:
+        _ensure_org2(db)
+        u = _seed_cleaner(db, email="rival-cleaner@example.com",
+                          cleaner_id="C-RIVAL", org_id=2)
+        r = api.post(f"/api/ai/draft-crew-message/{u.id}", json={})
+        assert r.status_code == 200, r.text
+        body = r.json()
+        assert body.get("error") == "Cleaner not found"
+        assert body.get("subject") == "" and body.get("message") == ""
+    finally:
+        db.rollback()
+        _cleanup_users(db, [u.id] if u else [])
+        db.close()
+
+
+def test_draft_crew_message_free_day_is_friendly_not_error(api):
+    """No jobs that day → a warm 'nothing scheduled' message, not an error
+    (the owner may still want to send it)."""
+    db = SessionLocal()
+    u = None
+    try:
+        u = _seed_cleaner(db, email="freeday-cleaner@example.com",
+                          cleaner_id="C-FREEDAY")
+        # Far-future date nothing else in the shared DB could have seeded.
+        day = date.today() + timedelta(days=200)
+        r = api.post(f"/api/ai/draft-crew-message/{u.id}",
+                     json={"date": day.isoformat()})
+        assert r.status_code == 200, r.text
+        body = r.json()
+        assert not body.get("error")
+        assert "Dana" in body["message"]
+        assert "nothing on the schedule" in body["message"].lower()
+    finally:
+        db.rollback()
+        _cleanup_users(db, [u.id] if u else [])
         db.close()
 
 
