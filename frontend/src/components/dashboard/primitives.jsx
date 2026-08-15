@@ -1,6 +1,51 @@
+import { useState } from 'react'
 import { ArrowRight } from 'lucide-react'
 import { Skeleton } from '../ui'
 import { SOFT_CARD } from './constants'
+
+/** Shared hover/focus tooltip for chart marks (dataviz skill's interaction
+ *  spec: a real positioned tooltip, not a native `title` attribute — every
+ *  bar-style mark on the dashboard shares this one component instead of
+ *  reinventing the pattern per tile).
+ *
+ *  Wrap the mark (or, when the mark already sits inside a button/link, wrap
+ *  that whole interactive element with `focusable={false}` so a keyboard
+ *  user gets the tip on the SAME focus the row already receives, instead of
+ *  a second redundant tab stop — focus/blur bubble in React's event system,
+ *  so a listener on this outer span still fires when a descendant button is
+ *  focused).
+ *
+ *  Tooltips enhance, they never gate: every tile using this also shows the
+ *  underlying number as plain text somewhere else on the tile (the point
+ *  label, the row's trailing figure, or the linked detail page), so nothing
+ *  here is the *only* way to read a value. */
+export function BarTip({ value, label, align = 'center', wrap = false, focusable = true, children, className = '' }) {
+  const [open, setOpen] = useState(false)
+  const alignClass = align === 'start' ? 'left-0' : align === 'end' ? 'right-0' : 'left-1/2 -translate-x-1/2'
+  return (
+    <span
+      {...(focusable ? { tabIndex: 0 } : {})}
+      className={`relative inline-flex outline-none rounded focus-visible:ring-2 focus-visible:ring-indigo-500/40 ${className}`}
+      onMouseEnter={() => setOpen(true)}
+      onMouseLeave={() => setOpen(false)}
+      onFocus={() => setOpen(true)}
+      onBlur={() => setOpen(false)}
+    >
+      {children}
+      {open && (
+        <span
+          role="tooltip"
+          aria-hidden="true"
+          className={`pointer-events-none absolute bottom-full mb-1.5 z-20 rounded-md border border-hairline bg-panel px-2 py-1 text-[11px] shadow-glass-sm ${
+            wrap ? 'max-w-[10rem] whitespace-normal' : 'whitespace-nowrap'} ${alignClass}`}
+        >
+          <span className="font-semibold text-ink tabular-nums">{value}</span>
+          {label && <span className="ml-1 text-ink-3">{label}</span>}
+        </span>
+      )}
+    </span>
+  )
+}
 
 /** Attention row — unified across overdue / unassigned / late / overdue
  *  invoice. Colored dot on the left, title (+ optional subtitle) in the
