@@ -62,3 +62,25 @@ def test_fields_accepts_property_entity_and_rejects_unknown(client_row):
             FieldDefinition.entity_type.in_(["property", "nonsense"])
         ).delete(synchronize_session=False)
         db.commit()
+
+
+def test_property_type_normalized_and_validated(client_row):
+    """Regression: creating a property from the Schedule Job modal with a
+    turnover job passed the JOB type ('str_turnover') straight through and
+    died on ck_properties_property_type as an HTTP 500. The synonym now
+    normalizes to 'str'; genuinely unknown values are a clear 422."""
+    from fastapi import HTTPException
+
+    c, db = client_row
+    out = create_property(PropertyCreate(
+        client_id=c.id, name="Limerick Rental", address="163 Leisure Ln",
+        property_type="str_turnover",
+    ), db=db, org_id=1)
+    assert out["property_type"] == "str"
+
+    with pytest.raises(HTTPException) as ei:
+        create_property(PropertyCreate(
+            client_id=c.id, name="Bad Type House", address="9 Nope Rd",
+            property_type="castle",
+        ), db=db, org_id=1)
+    assert ei.value.status_code == 422

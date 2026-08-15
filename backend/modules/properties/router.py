@@ -298,6 +298,20 @@ def create_property(data: PropertyCreate, db: Session = Depends(get_db), org_id:
     d = data.model_dump()
     if not d.get("address"):
         d["address"] = ""
+    # Normalize/validate property_type BEFORE it reaches the DB: the schema
+    # accepted any string, so a caller passing a JOB type (e.g. 'str_turnover'
+    # from the Schedule Job modal) sailed through Pydantic and died on
+    # ck_properties_property_type as an HTTP 500 with no clue for the user.
+    # Map the known job-type synonym, reject anything else as a clear 422.
+    _pt = (d.get("property_type") or "residential").strip().lower()
+    if _pt in ("str_turnover", "turnover", "rental"):
+        _pt = "str"
+    if _pt not in ("residential", "commercial", "str"):
+        raise HTTPException(
+            status_code=422,
+            detail=f"property_type must be residential, commercial, or str (got '{d.get('property_type')}')",
+        )
+    d["property_type"] = _pt
     # Dedup guard: a property is uniquely a (client, normalized address) pair.
     # If this client already has a property at the same street+city+state+zip,
     # return it instead of creating a second row — so a double-submit or a
