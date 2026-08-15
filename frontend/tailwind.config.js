@@ -7,6 +7,14 @@ export default {
   content: ['./index.html', './src/**/*.{js,jsx}'],
   theme: {
     extend: {
+      screens: {
+        // The app shell's desktop breakpoint. The shell used Tailwind's lg
+        // (1024px), but the owner works in a ~960px window — she never saw
+        // the sidebar or sheet frame and reported "no design changes".
+        // 900px turns the desktop shell on for that window while phones and
+        // half-screen splits keep the drawer + bottom-nav layout.
+        shell: '900px',
+      },
       colors: {
         // Design tokens from index.css — use these instead of zinc/blue literals
         // so the app respects the paper/dark theme toggle.

@@ -37,7 +37,7 @@ export default function BottomNav() {
   const openMenu = () => window.dispatchEvent(new Event('bb:open-menu'))
 
   return (
-    <nav className="no-print fixed bottom-0 left-0 right-0 z-30 lg:hidden bg-panel/95 backdrop-blur-md border-t border-hairline"
+    <nav className="no-print fixed bottom-0 left-0 right-0 z-30 shell:hidden bg-panel/95 backdrop-blur-md border-t border-hairline"
       style={{ paddingBottom: 'env(safe-area-inset-bottom, 0px)' }}>
       <div className="flex items-stretch justify-around px-1">
         {PRIMARY_TABS.map(tab => (
