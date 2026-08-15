@@ -81,6 +81,19 @@ export default function Properties() {
   const [missingAccessOnly, setMissingAccessOnly] = useState(false)
   const { filteredProperties, typeCounts, missingAccessCount } = usePropertyFilters({ properties, currentType, search, missingAccessOnly })
 
+  // STR turnover-pipeline health (same chip pattern as missing-access): a
+  // rental with no feed or a stale feed is the one where a guest walks into
+  // a dirty unit. Client-side narrow over the already-filtered list — the
+  // ical_health rollup ships with every property row.
+  const needsFeedAttention = (p) =>
+    (p?.property_type || '').toLowerCase() === 'str' &&
+    (p?.ical_health === 'no_feed' || p?.ical_health === 'stale')
+  const [feedAttentionOnly, setFeedAttentionOnly] = useState(false)
+  const feedAttentionCount = properties.filter(needsFeedAttention).length
+  const visibleProperties = feedAttentionOnly
+    ? filteredProperties.filter(needsFeedAttention)
+    : filteredProperties
+
   const save = async () => {
     const result = await saveProperty({ selected, form })
     if (result.ok) resetAfterSave()
@@ -96,7 +109,7 @@ export default function Properties() {
 
   const removeIcal = (propId, icalId) => mutateRemoveIcal(propId, icalId)
 
-  const toggleSelectAll = () => toggleAll(filteredProperties.map(p => p.id))
+  const toggleSelectAll = () => toggleAll(visibleProperties.map(p => p.id))
   const bulkDelete = async () => {
     const result = await mutateBulkDelete({ ids: Array.from(selectedIds), hardDelete })
     if (result?.ok) clearSelection()
@@ -164,20 +177,37 @@ export default function Properties() {
         </div>
 
         <div className="flex-1 flex flex-col min-h-0 px-4 sm:px-8 pb-4 sm:pb-6">
-          {missingAccessCount > 0 && (
-            /* The batch-fill sweep: every property here shows crew "no access
-               info on file". One chip, then work the list down to zero. */
-            <button onClick={() => setMissingAccessOnly(v => !v)} aria-pressed={missingAccessOnly}
-              className={`self-start mb-2 inline-flex items-center gap-1.5 text-[12px] font-semibold px-3 py-1.5 rounded-full border transition-colors ${
-                missingAccessOnly
-                  ? 'bg-amber-500 border-amber-500 text-white'
-                  : 'bg-amber-50 border-amber-300 text-amber-800 hover:bg-amber-100'}`}>
-              🔑 Missing access info ({missingAccessCount})
-              {missingAccessOnly && <span className="opacity-80">· showing only these</span>}
-            </button>
+          {(missingAccessCount > 0 || feedAttentionCount > 0) && (
+            <div className="flex items-center gap-2 flex-wrap self-start mb-2">
+              {feedAttentionCount > 0 && (
+                /* Needs-attention-first nudge: STRs whose turnover feed is
+                   missing or stale — the "guest walks into a dirty rental"
+                   failure mode. One chip, work it down to zero. */
+                <button onClick={() => setFeedAttentionOnly(v => !v)} aria-pressed={feedAttentionOnly}
+                  className={`inline-flex items-center gap-1.5 text-[12px] font-semibold px-3 py-1.5 rounded-full border transition-colors ${
+                    feedAttentionOnly
+                      ? 'bg-red-500 border-red-500 text-white'
+                      : 'bg-red-50 border-red-300 text-red-800 hover:bg-red-100'}`}>
+                  📅 Turnover feed needs attention ({feedAttentionCount})
+                  {feedAttentionOnly && <span className="opacity-80">· showing only these</span>}
+                </button>
+              )}
+              {missingAccessCount > 0 && (
+                /* The batch-fill sweep: every property here shows crew "no access
+                   info on file". One chip, then work the list down to zero. */
+                <button onClick={() => setMissingAccessOnly(v => !v)} aria-pressed={missingAccessOnly}
+                  className={`inline-flex items-center gap-1.5 text-[12px] font-semibold px-3 py-1.5 rounded-full border transition-colors ${
+                    missingAccessOnly
+                      ? 'bg-amber-500 border-amber-500 text-white'
+                      : 'bg-amber-50 border-amber-300 text-amber-800 hover:bg-amber-100'}`}>
+                  🔑 Missing access info ({missingAccessCount})
+                  {missingAccessOnly && <span className="opacity-80">· showing only these</span>}
+                </button>
+              )}
+            </div>
           )}
           <BulkActionBar
-            filteredProperties={filteredProperties}
+            filteredProperties={visibleProperties}
             selectedIds={selectedIds}
             toggleSelectAll={toggleSelectAll}
             clearSelection={clearSelection}
@@ -206,7 +236,7 @@ export default function Properties() {
           )}
 
           <div className="space-y-2 overflow-y-auto flex-1 scrollbar-thin">
-            {filteredProperties.map(p => (
+            {visibleProperties.map(p => (
               <PropertyRow
                 key={p.id}
                 p={p}
@@ -229,7 +259,7 @@ export default function Properties() {
               />
             ))}
 
-            {filteredProperties.length === 0 && (
+            {visibleProperties.length === 0 && (
               <EmptyState
                 icon={Home}
                 title={currentType === 'all'

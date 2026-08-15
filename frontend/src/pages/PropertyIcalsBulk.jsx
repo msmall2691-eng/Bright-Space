@@ -4,6 +4,7 @@ import { ArrowLeft, RefreshCw, Trash2, CheckCircle, AlertCircle, Link as LinkIco
 import { get, post, del } from '../api'
 import { toast } from '../utils/toastBus'
 import { confirmDialog } from '../utils/confirmBus'
+import { isStaleSync, relTimeAgo } from '../components/properties/utils'
 
 const SOURCES = [
   { value: 'airbnb',     label: 'Airbnb',      pattern: /airbnb\.com/i },
@@ -227,7 +228,11 @@ export default function PropertyIcalsBulk() {
         </button>
         <div className="flex items-start justify-between gap-3 flex-wrap">
           <div className="min-w-0">
-            <h1 className="text-lg sm:text-xl font-bold text-ink truncate">{property.name}</h1>
+            <h1 className="text-lg sm:text-xl font-bold truncate">
+              <Link to={`/properties/${propertyId}`} className="text-ink hover:text-indigo-600 hover:underline">
+                {property.name}
+              </Link>
+            </h1>
             <p className="text-xs text-ink-3 mt-0.5">
               {[property.address, property.city, property.state].filter(Boolean).join(', ')}
             </p>
@@ -315,14 +320,24 @@ export default function PropertyIcalsBulk() {
                         <span className="text-[11px] font-semibold uppercase tracking-wide text-ink-2">
                           {SOURCES.find(s => s.value === (ical.source || '').toLowerCase())?.label || ical.source || 'Custom'}
                         </span>
-                        {ical.last_sync_status === 'failed' ? (
+                        {/* Same vocabulary as the properties list & Sync Center:
+                            Failed / Stale (no clean sync in 24h+) / Synced Xh
+                            ago / Never synced — words, never color alone. */}
+                        {(ical.last_sync_status === 'failed' || ical.last_sync_status === 'retrying') ? (
                           <span className="inline-flex items-center gap-1 text-[10px] font-semibold px-1.5 py-0.5 rounded bg-red-50 text-red-700" title={ical.last_sync_error || ''}>
-                            <AlertCircle className="w-2.5 h-2.5" /> Failed
+                            <AlertCircle className="w-2.5 h-2.5" /> Failed {relTimeAgo(ical.last_synced_at) || ''}
                           </span>
                         ) : ical.last_synced_at ? (
-                          <span className="inline-flex items-center gap-1 text-[10px] font-semibold px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-700">
-                            <CheckCircle className="w-2.5 h-2.5" /> Synced
-                          </span>
+                          isStaleSync(ical.last_synced_at) ? (
+                            <span className="inline-flex items-center gap-1 text-[10px] font-semibold px-1.5 py-0.5 rounded bg-amber-50 text-amber-700"
+                              title="No clean sync in 24h+ — check this feed">
+                              <AlertCircle className="w-2.5 h-2.5" /> Stale · synced {relTimeAgo(ical.last_synced_at)}
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center gap-1 text-[10px] font-semibold px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-700">
+                              <CheckCircle className="w-2.5 h-2.5" /> Synced {relTimeAgo(ical.last_synced_at)}
+                            </span>
+                          )
                         ) : (
                           <span className="text-[10px] font-medium text-ink-3 bg-bg-2 px-1.5 py-0.5 rounded">Never synced</span>
                         )}

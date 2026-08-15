@@ -9,6 +9,7 @@ import { PageHeader, Button } from '../components/ui'
 import { post } from '../api'
 import { toast } from '../utils/toastBus'
 import { useSyncOverview } from '../hooks/useSyncOverview'
+import { isStaleSync } from '../components/properties/utils'
 
 /**
  * Sync Control Center (`/sync`) — one screen for the whole scheduling nervous
@@ -127,7 +128,10 @@ function Toggle({ on, onChange, disabled }) {
 }
 
 function ChannelCard({ ch, canToggle, canSync, busy, onToggle, onSync }) {
-  const [showFeeds, setShowFeeds] = useState(false)
+  // A failing feed shouldn't hide behind a collapsed row — open the feed
+  // list by default whenever any feed needs a human.
+  const [showFeeds, setShowFeeds] = useState(() =>
+    (ch.feeds || []).some(f => f.status === 'failed' || f.status === 'retrying'))
   const Icon = ICON[ch.icon] || Calendar
   const st = STATUS[ch.status] || STATUS.paused
   const syncing = busy === `sync:${ch.key}`
@@ -181,16 +185,27 @@ function ChannelCard({ ch, canToggle, canSync, busy, onToggle, onSync }) {
           {showFeeds && (
             <ul className="mt-2 space-y-1.5">
               {ch.feeds.map(f => {
+                // Same vocabulary as the property pages: failed (red) /
+                // never synced (grey) / stale, 24h+ without a clean sync
+                // (amber) / synced Xm ago (green). Words, not color alone.
                 const bad = f.status === 'failed' || f.status === 'retrying'
+                const never = !f.last_synced_at
+                const stale = !bad && !never && isStaleSync(f.last_synced_at)
+                const dot = bad ? 'bg-red-500' : never ? 'bg-slate-400' : stale ? 'bg-amber-500' : 'bg-emerald-500'
+                const tone = bad ? 'text-red-600' : stale ? 'text-amber-600' : 'text-ink-3'
+                const label = bad ? (f.last_synced_at ? `failed · last ok ${relTime(f.last_synced_at)}` : 'failed')
+                  : never ? 'never synced'
+                  : stale ? `stale · ${relTime(f.last_synced_at)}`
+                  : relTime(f.last_synced_at)
                 return (
                   <li key={f.id} className="flex items-center justify-between gap-2 text-xs">
                     <Link to={`/properties/${f.property_id}`} className="truncate text-ink-2 hover:text-indigo-600">
                       <span className="capitalize">{f.source}</span> · {f.property}
                     </Link>
-                    <span className={`inline-flex items-center gap-1 shrink-0 ${bad ? 'text-red-600' : 'text-ink-3'}`}
+                    <span className={`inline-flex items-center gap-1 shrink-0 ${tone}`}
                       title={f.error || ''}>
-                      <span className={`w-1.5 h-1.5 rounded-full ${bad ? 'bg-red-500' : 'bg-emerald-500'}`} />
-                      {bad ? 'error' : relTime(f.last_synced_at)}
+                      <span className={`w-1.5 h-1.5 rounded-full ${dot}`} />
+                      {label}
                     </span>
                   </li>
                 )
