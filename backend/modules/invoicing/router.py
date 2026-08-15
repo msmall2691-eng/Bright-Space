@@ -254,13 +254,24 @@ def update_invoice(invoice_id: int, data: InvoiceUpdate, db: Session = Depends(g
 
 
 @router.delete("/{invoice_id}", status_code=204, dependencies=[Depends(require_role("admin", "manager"))])
-def delete_invoice(invoice_id: int, db: Session = Depends(get_db), org_id: int = Depends(current_org_id)):
+def delete_invoice(invoice_id: int, force: bool = False,
+                   db: Session = Depends(get_db), org_id: int = Depends(current_org_id)):
+    """BB-SEC-10: deleting a PAID invoice erases the payment record — the
+    money trail for work already done. It used to be a plain delete with no
+    server-side distinction; a paid invoice now 409s unless the caller
+    explicitly passes ?force=true (the UI escalates its confirm and retries
+    with force). Unpaid invoices delete as before."""
     inv = db.query(Invoice).filter(
         Invoice.id == invoice_id,
         or_(Invoice.org_id == resolve_org_id(org_id, db), Invoice.org_id.is_(None)),  # MT-2 tenant scope
     ).first()
     if not inv:
         raise HTTPException(status_code=404, detail="Invoice not found")
+    if not force and (inv.status or "").lower() == "paid":
+        raise HTTPException(status_code=409, detail={
+            "code": "invoice_paid",
+            "message": "This invoice is PAID — deleting it erases the payment record.",
+        })
     db.delete(inv)
     db.commit()
 

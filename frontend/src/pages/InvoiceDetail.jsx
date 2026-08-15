@@ -104,7 +104,11 @@ export default function InvoiceDetail() {
     if (!ok) return
     setActing(true)
     try {
-      await del(`/api/invoices/${id}`)
+      // BB-SEC-10: a paid invoice 409s without force. The confirm above
+      // already escalated for the paid case the UI knows about; force is sent
+      // only then. A surprise 409 (stale status) falls through to the toast
+      // rather than silently forcing.
+      await del(`/api/invoices/${id}${paid ? '?force=true' : ''}`)
       toast.success('Invoice deleted')
       navigate('/billing?view=invoices')
     } catch (e) {

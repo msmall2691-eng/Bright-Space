@@ -112,6 +112,29 @@ export function useClientMutations({
       await del(`/api/clients/${id}`)
       await load(); setShowForm(false); setSelected(null); resetPhones()
     } catch (e) {
+      // BB-SEC-09: the server now refuses to cascade a client with real
+      // history unless forced — surface ITS counts in a second, escalated
+      // confirm so the final yes is informed by the database, not the UI's
+      // guess.
+      if (e?.status === 409) {
+        let counts = null
+        try { counts = JSON.parse(e.detail)?.counts } catch { /* not json */ }
+        const parts = counts
+          ? Object.entries(counts).filter(([, n]) => n > 0).map(([k, n]) => `${n} ${k}`).join(', ')
+          : 'linked history'
+        const really = await confirmDialog(
+          `The server checked: this client has ${parts} that will be permanently deleted with them.\n\nDelete everything anyway?`,
+          { title: 'Client has history', confirmLabel: 'Delete everything', danger: true }
+        )
+        if (!really) return
+        try {
+          await del(`/api/clients/${id}?force=true`)
+          await load(); setShowForm(false); setSelected(null); resetPhones()
+        } catch (e2) {
+          toast.error('Could not delete: ' + (e2?.message || 'unknown error'))
+        }
+        return
+      }
       toast.error('Could not delete: ' + (e?.message || 'unknown error'))
     }
   }
@@ -128,7 +151,11 @@ export function useClientMutations({
     if (!ok) return
     setBulkDeleting(true)
     try {
-      const results = await Promise.allSettled(ids.map(id => del(`/api/clients/${id}`)))
+      // Bulk is a deliberate multi-select behind its own maximal confirm, so
+      // it carries force — per-row second confirms for N clients would just
+      // train click-through. (BB-SEC-09's guard still protects every other
+      // caller.)
+      const results = await Promise.allSettled(ids.map(id => del(`/api/clients/${id}?force=true`)))
       const failed = results.filter(r => r.status === 'rejected').length
       if (failed > 0) toast.error(`Deleted ${ids.length - failed} of ${ids.length}. ${failed} failed.`)
       clearSelection()

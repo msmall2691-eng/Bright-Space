@@ -1250,13 +1250,35 @@ def merge_clients(winner_id: int, body: ClientMergeRequest, db: Session = Depend
 
 
 @router.delete("/{client_id}", status_code=204, dependencies=[Depends(require_role("admin", "manager"))])
-def delete_client(client_id: int, db: Session = Depends(get_db), org_id: int = Depends(current_org_id)):
+def delete_client(client_id: int, force: bool = False,
+                  db: Session = Depends(get_db), org_id: int = Depends(current_org_id)):
+    """BB-SEC-09: client delete hard-cascades everything (properties, jobs,
+    quotes, invoices, conversations, history) via the ORM relationships. It
+    used to do so unconditionally — one confirmed mis-click erased a client's
+    entire business record with no server-side backstop, and any non-UI caller
+    (script, agent tool, curl) got the same silent cascade. Now a client with
+    real history 409s unless the caller explicitly passes ?force=true; the UI
+    surfaces the counts from the 409 in an escalated confirm before retrying
+    with force."""
     client = db.query(Client).filter(
         Client.id == client_id,
         or_(Client.org_id == org_id, Client.org_id.is_(None)),  # MT-2 tenant scope
     ).first()
     if not client:
         raise HTTPException(status_code=404, detail="Client not found")
+    if not force:
+        from database.models import Job, Invoice, Quote
+        counts = {
+            "jobs": db.query(func.count(Job.id)).filter(Job.client_id == client_id).scalar() or 0,
+            "invoices": db.query(func.count(Invoice.id)).filter(Invoice.client_id == client_id).scalar() or 0,
+            "quotes": db.query(func.count(Quote.id)).filter(Quote.client_id == client_id).scalar() or 0,
+        }
+        if any(counts.values()):
+            raise HTTPException(status_code=409, detail={
+                "code": "client_has_history",
+                "message": "This client has linked history that will be permanently deleted with them.",
+                "counts": counts,
+            })
     db.delete(client)
     db.commit()
 
