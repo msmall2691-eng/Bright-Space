@@ -40,6 +40,27 @@ export function mobilePlatform() {
   return 'other'
 }
 
+/** Re-run a support/state check whenever the tab regains focus, not just
+ *  once at mount. Owner report: adding the app to the Home Screen, then
+ *  switching back to the still-open Safari TAB (not the new icon), read as
+ *  "it still won't set up notifications" — pushSupported()/isAppInstalled()
+ *  only flip true once you're actually running from the installed icon, and
+ *  a one-shot mount check never notices the switch. `pageshow` also covers
+ *  iOS's bfcache restore (returning to a backgrounded tab without a real
+ *  reload) and the documented iOS quirk where a freshly-installed icon's
+ *  FIRST launch sometimes needs one full close+reopen before PushManager
+ *  appears — both read as "focus changed," which this catches without
+ *  asking the user to manually refresh. Returns an unsubscribe. */
+export function onAppForeground(fn) {
+  const handler = () => { if (document.visibilityState === 'visible') fn() }
+  document.addEventListener('visibilitychange', handler)
+  window.addEventListener('pageshow', handler)
+  return () => {
+    document.removeEventListener('visibilitychange', handler)
+    window.removeEventListener('pageshow', handler)
+  }
+}
+
 // VAPID public keys are URL-safe base64; PushManager wants a Uint8Array.
 function urlBase64ToUint8Array(base64String) {
   const padding = '='.repeat((4 - (base64String.length % 4)) % 4)

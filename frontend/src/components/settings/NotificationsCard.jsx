@@ -3,7 +3,7 @@ import { Bell, BellOff, Smartphone } from 'lucide-react'
 import { get } from '../../api'
 import {
   pushSupported, getPushState, enablePush, disablePush, sendTestPush,
-  isAppInstalled, mobilePlatform,
+  isAppInstalled, mobilePlatform, onAppForeground,
 } from '../../utils/push'
 import { useNotificationPrefs } from '../../hooks/useNotificationPrefs'
 
@@ -64,10 +64,15 @@ export default function NotificationsCard({ toast }) {
   // Server-side diagnostics (owner report: "I'm not getting notifications at
   // all" — the why should be readable right here, not a debugging session).
   const [diag, setDiag] = useState(null)
-  useEffect(() => {
+  const check = () => {
     if (!pushSupported()) { setState({ supported: false }); return }
     getPushState().then(setState).catch(() => setState({ supported: false }))
     get('/api/push/status').then(setDiag).catch(() => {})
+  }
+  useEffect(() => {
+    check()
+    return onAppForeground(check)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   if (state && state.supported === false) {
@@ -93,7 +98,10 @@ export default function NotificationsCard({ toast }) {
                     This browser can't receive notifications until the app is saved to your
                     Home Screen. In Safari, tap <span className="font-semibold">Share</span>
                     {' '}(the square with the up arrow) → <span className="font-semibold">Add to Home Screen</span>,
-                    then open it from there and turn notifications on.
+                    then open it from the new <span className="font-semibold">Home Screen icon</span> —
+                    not this browser tab — and turn notifications on. If it still doesn't
+                    offer notifications right away, fully close the app (swipe it away) and
+                    reopen it once from the icon.
                   </>) : (<>
                     This browser can't receive notifications until the app is installed. In
                     Chrome, tap the <span className="font-semibold">⋮ menu</span> →{' '}
