@@ -92,7 +92,7 @@ export function InboxLeftPanel({
               active
                 ? (isOverdue ? 'bg-red-50 text-red-700 border-red-200 dark:bg-red-500/15 dark:text-red-300 dark:border-red-500/25'
                              : 'bg-indigo-500/10 text-indigo-700 border-indigo-200 dark:bg-indigo-500/15 dark:text-indigo-300 dark:border-indigo-500/25')
-                : 'bg-panel text-ink-3 border-hairline hover:bg-bg'
+                : 'bg-panel text-ink-3 border-hairline hover:bg-bg-2'
             }`}>
             <Ic className="w-3 h-3" />
             {label}
@@ -135,7 +135,7 @@ export function InboxLeftPanel({
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-ink-3" />
           <input value={search} onChange={e => setSearch(e.target.value)}
             placeholder="Search conversations…"
-            className="w-full bg-bg border border-hairline rounded-xl pl-9 pr-3 py-2.5 text-[13px] placeholder-ink-3 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-400 focus:bg-panel transition-all" />
+            className="w-full bg-bg border border-hairline rounded-xl pl-9 pr-3 py-2.5 text-base sm:text-[13px] placeholder-ink-3 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-400 focus:bg-panel transition-all" />
         </div>
       </div>
 

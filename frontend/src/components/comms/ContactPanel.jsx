@@ -1,4 +1,5 @@
 import { useMemo } from 'react'
+import { Link } from 'react-router-dom'
 import {
   X, Phone, Mail, MapPin, User, Hash, StickyNote, ArrowLeft, Send, FileText, Loader2,
   MessageSquare, Calendar, CheckCircle2, RefreshCw, DollarSign, BellRing,
@@ -181,10 +182,11 @@ export function ContactPanel({ detail, context, onRemind, onClose, onDraftQuote,
         )}
 
         {client ? (
-          <a href={`/clients/${client.id}`}
+          /* Client-side <Link> (was a raw <a>, which forced a full page reload) */
+          <Link to={`/clients/${client.id}`}
             className="mt-2 w-full flex items-center justify-center gap-1.5 text-[12px] font-semibold text-indigo-600 bg-indigo-500/10 hover:bg-indigo-500/15 py-2 rounded-xl transition-colors">
             <User className="w-3.5 h-3.5" /> View Full Profile
-          </a>
+          </Link>
         ) : onLinkClient ? (
           <LinkClientControl onLink={onLinkClient} linking={linkingClient} />
         ) : null}

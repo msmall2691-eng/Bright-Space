@@ -114,7 +114,7 @@ export function ComposeModal({ onClose, onSent, clients, initialTo = '', initial
               onFocus={() => clientSuggestions.length > 0 && setShowSuggestions(true)}
               onBlur={() => setTimeout(() => setShowSuggestions(false), 200)}
               placeholder={channel === 'email' ? 'email@example.com' : '+1 (207) 555-1234'}
-              className="w-full bg-bg border border-hairline rounded-xl px-3.5 py-2.5 text-[13px] placeholder-ink-3 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-400 transition-all" />
+              className="w-full bg-bg border border-hairline rounded-xl px-3.5 py-2.5 text-base sm:text-[13px] placeholder-ink-3 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-400 transition-all" />
             {showSuggestions && (
               <div className="absolute z-10 top-full left-0 right-0 mt-1 bg-panel border border-hairline rounded-xl shadow-lg overflow-hidden">
                 {clientSuggestions.map(c => (
@@ -138,7 +138,7 @@ export function ComposeModal({ onClose, onSent, clients, initialTo = '', initial
               <label className="text-[11px] font-semibold text-ink-3 uppercase tracking-wider block mb-1">Subject</label>
               <input value={subject} onChange={e => setSubject(e.target.value)}
                 placeholder="Subject line"
-                className="w-full bg-bg border border-hairline rounded-xl px-3.5 py-2.5 text-[13px] placeholder-ink-3 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-400 transition-all" />
+                className="w-full bg-bg border border-hairline rounded-xl px-3.5 py-2.5 text-base sm:text-[13px] placeholder-ink-3 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-400 transition-all" />
             </div>
           )}
 
@@ -146,7 +146,7 @@ export function ComposeModal({ onClose, onSent, clients, initialTo = '', initial
             <label className="text-[11px] font-semibold text-ink-3 uppercase tracking-wider block mb-1">Message</label>
             <textarea value={body} onChange={e => setBody(e.target.value)} rows={4}
               placeholder={channel === 'email' ? 'Write your email...' : 'Type your SMS message...'}
-              className="w-full bg-bg border border-hairline rounded-xl px-3.5 py-2.5 text-[13px] placeholder-ink-3 resize-none focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-400 transition-all leading-relaxed"
+              className="w-full bg-bg border border-hairline rounded-xl px-3.5 py-2.5 text-base sm:text-[13px] placeholder-ink-3 resize-none focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-400 transition-all leading-relaxed"
               onKeyDown={e => { if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') handleSend() }} />
             {channel === 'sms' && (
               <div className="text-[10px] text-ink-3 mt-1 text-right">{body.length}/160 chars</div>
@@ -174,7 +174,7 @@ export function ComposeModal({ onClose, onSent, clients, initialTo = '', initial
               Cancel
             </button>
             <button onClick={handleSend} disabled={sending || !to.trim() || !body.trim()}
-              className="text-[13px] font-semibold px-5 py-2 rounded-xl bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-40 shadow-sm transition-all flex items-center gap-1.5">
+              className="text-[13px] font-semibold px-5 py-2 min-h-[44px] sm:min-h-0 rounded-xl bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-40 shadow-sm transition-all flex items-center gap-1.5">
               {sending
                 ? <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
                 : <><Send className="w-3.5 h-3.5" /> Send</>
