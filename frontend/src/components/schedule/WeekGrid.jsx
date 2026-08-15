@@ -99,6 +99,7 @@ export default function WeekGrid({
   onLocalMove,
   onRefresh,
   toast,
+  onSwitchToDay,
 }) {
   const isMobile = useIsMobile()
 
@@ -281,9 +282,18 @@ export default function WeekGrid({
           <CalendarIcon className="w-8 h-8 text-ink-3 mx-auto mb-3" />
           <p className="text-sm text-ink-2 font-medium">Week view isn't sized for phones</p>
           <p className="text-xs text-ink-3 mt-1">
-            Switch to <strong>Day</strong> in the toolbar for a mobile-friendly agenda,
-            or open Week on a tablet or desktop.
+            Day view shows the same jobs as a mobile-friendly agenda.
           </p>
+          {onSwitchToDay && (
+            <Button
+              variant="primary" size="sm"
+              onClick={onSwitchToDay}
+              className="mt-4 min-h-[44px] px-5"
+              data-testid="week-grid-open-day"
+            >
+              Open Day view
+            </Button>
+          )}
         </div>
       </div>
     )
@@ -660,6 +670,15 @@ const VisitBlock = memo(function VisitBlock({
 
   const label = client?.name || property?.address || job?.title || 'Job'
   const timeLabel = formatTimeRange(visit.start_time, visit.end_time)
+  // Short start-only stamp for the block's first line — the block's vertical
+  // extent already shows the duration, and giving the name the freed width is
+  // the month-view lesson (name gets truncation priority over time).
+  const startHour = parseTimeToHour(visit.start_time)
+  const startLabel = startHour == null ? '' : formatHalf(startHour)
+  const needsCleaner = !isCancelled && cleaners.length === 0
+  const crewTitle = isCancelled ? ''
+    : cleaners.length === 0 ? ' · needs a cleaner'
+    : ` · ${cleaners.map(id => (empName ? empName(id) : String(id))).filter(Boolean).join(', ')}`
 
   const canDrag = !isCancelled && onDragStart
   return (
@@ -682,19 +701,33 @@ const VisitBlock = memo(function VisitBlock({
         onOpen && onOpen(visit)
       }}
       data-testid={`week-grid-block-${visit.id}`}
-      title={`${timeLabel} · ${label}`}
+      title={`${timeLabel} · ${label}${property?.address && label !== property.address ? ' · ' + property.address : ''}${crewTitle} · ${statusCfg.label}`}
     >
       <div className="px-1.5 py-1 flex flex-col h-full">
+        {/* First line carries the name — a 28px block used to clip it below
+            the time row and read as a bare "10:00". */}
         <div className="flex items-center gap-1 min-w-0">
           <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${cfg.dot}`} />
-          <span className="text-[10px] font-semibold truncate">{timeLabel}</span>
+          {startLabel && <span className="text-[11px] font-semibold tabular-nums shrink-0">{startLabel}</span>}
+          <span className="flex-1 min-w-0 text-[11px] font-semibold truncate">{label}</span>
+          {/* Amber needs-cleaner dot for blocks too short to fit the footer's
+              worded cue — same language as the month chips. */}
+          {needsCleaner && heightPx <= 48 && (
+            <span className="ml-auto shrink-0 w-[7px] h-[7px] rounded-full bg-amber-400 ring-2 ring-amber-200/70 dark:ring-amber-500/25"
+              title="Needs a cleaner" />
+          )}
         </div>
-        <div className="text-[11px] font-medium truncate mt-0.5">{label}</div>
+        {heightPx > 44 && (
+          <div className="text-[11px] opacity-80 truncate mt-0.5">
+            {property?.address && label !== property.address ? property.address : timeLabel}
+          </div>
+        )}
         {heightPx > 48 && (
-          <div className="mt-auto flex items-center gap-1 text-[10px] text-ink-3">
+          <div className="mt-auto flex items-center gap-1 text-[11px] text-ink-3">
             {cleaners.length === 0 ? (
-              <span className="inline-flex items-center gap-0.5 text-amber-700 font-medium">
-                <AlertCircle className="w-2.5 h-2.5" /> Needs cleaner
+              <span className="inline-flex items-center gap-1 text-amber-700 font-medium">
+                <span className="w-[7px] h-[7px] rounded-full bg-amber-400 ring-2 ring-amber-200/70 dark:ring-amber-500/25 shrink-0" aria-hidden="true" />
+                Needs cleaner
               </span>
             ) : (
               <span className="inline-flex items-center gap-0.5 truncate">
@@ -705,7 +738,7 @@ const VisitBlock = memo(function VisitBlock({
                 </span>
               </span>
             )}
-            <span className={`ml-auto text-[9px] px-1 rounded shrink-0 ${statusCfg.pillMobile}`}>{statusCfg.label}</span>
+            <span className={`ml-auto text-[10px] px-1 rounded shrink-0 ${statusCfg.pillMobile}`}>{statusCfg.label}</span>
           </div>
         )}
       </div>
@@ -724,7 +757,7 @@ const VisitChip = memo(function VisitChip({ visit, jobs, properties, clients, em
     <button
       type="button"
       onClick={() => onOpen && onOpen(visit)}
-      className={`shrink-0 max-w-[140px] truncate text-[10px] px-1.5 py-0.5 rounded border ${cfg.pill}`}
+      className={`shrink-0 max-w-[140px] truncate text-[11px] px-1.5 py-0.5 rounded border ${cfg.pill}`}
       title={label}
       data-testid={`week-grid-untimed-${visit.id}`}
     >

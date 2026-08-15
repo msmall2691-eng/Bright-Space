@@ -76,7 +76,7 @@ export default function AgendaDay({
           <ul className="space-y-2.5">
             {sorted.map((v) => (
               <li key={v.id}>
-                <VisitCard v={v} jobs={jobs} properties={properties} clients={clients} onSelect={onSelect} />
+                <VisitCard v={v} jobs={jobs} properties={properties} clients={clients} onSelect={onSelect} empName={empName} />
               </li>
             ))}
           </ul>
@@ -90,7 +90,7 @@ export default function AgendaDay({
         <button
           onClick={onJumpToToday}
           style={{ bottom: 'calc(1.25rem + env(safe-area-inset-bottom, 0px))' }}
-          className="fixed right-4 z-20 flex items-center gap-1.5 px-3.5 py-2 rounded-full bg-ink text-panel shadow-lg active:scale-95 transition-transform text-[13px] font-semibold"
+          className="fixed right-4 z-20 flex items-center gap-1.5 px-4 min-h-[44px] rounded-full bg-ink text-panel shadow-lg active:scale-95 transition-transform text-[13px] font-semibold"
           data-testid="jump-to-today"
           aria-label="Jump to today"
         >

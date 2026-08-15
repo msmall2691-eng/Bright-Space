@@ -1,4 +1,5 @@
-import { MapPin } from 'lucide-react'
+import { useNavigate } from 'react-router-dom'
+import { MapPin, User } from 'lucide-react'
 import { PROPERTY_TYPE_CONFIG, VISIT_STATUS_CONFIG, computeDisplayStatus } from './constants'
 import { TurnoverInfo, SyncStatusChips } from './SyncBadge'
 import { mapsSearchUrl } from '../../utils/maps'
@@ -6,8 +7,13 @@ import { mapsSearchUrl } from '../../utils/maps'
 /** One schedule visit rendered as a full-width tappable card. Extracted from
  *  AgendaDay so the single-day agenda AND the multi-day "All upcoming" view
  *  render identical cards (tap → the same detail drawer via onSelect). Resolves
- *  its job/property/client from the shared maps, exactly as AgendaDay did. */
-export default function VisitCard({ v, jobs, properties, clients, onSelect }) {
+ *  its job/property/client from the shared maps, exactly as AgendaDay did.
+ *
+ *  `empName(id)` is optional — AgendaDay passes it so assigned cleaners show
+ *  by name; AgendaUpcoming's payload has no employee roster, so the crew line
+ *  falls back to the amber needs-cleaner cue only (never a bare id). */
+export default function VisitCard({ v, jobs, properties, clients, onSelect, empName }) {
+  const navigate = useNavigate()
   const job = jobs[v.job_id]
   const property = properties[job?.property_id]
   const client = clients[job?.client_id]
@@ -24,6 +30,20 @@ export default function VisitCard({ v, jobs, properties, clients, onSelect }) {
   const startHHMM = (v.start_time || '').slice(0, 5)
   const endHHMM = (v.end_time || '').slice(0, 5)
   const isCancelled = v.status === 'cancelled'
+  // Crew line. Same visit-first-then-job resolution as displayStatus above.
+  // The Array.isArray guard matters: AgendaUpcoming's payload omits
+  // cleaner_ids entirely, and "we don't know" must not render as "needs one".
+  const cleanerIds = v.cleaner_ids?.length ? v.cleaner_ids : job?.cleaner_ids
+  const needsCleaner = !isCancelled && v.status !== 'completed'
+    && Array.isArray(cleanerIds) && cleanerIds.length === 0
+  const crewNames = (Array.isArray(cleanerIds) && cleanerIds.length > 0 && empName)
+    ? cleanerIds.map(id => empName(id)).filter(Boolean).slice(0, 2).join(', ')
+      + (cleanerIds.length > 2 ? ` +${cleanerIds.length - 2}` : '')
+    : null
+  // Record links use spans, not <a>/<Link> — the whole card is already a
+  // <button>, and HTML forbids nesting interactive elements. stopPropagation
+  // keeps them from also opening the drawer.
+  const goTo = (e, path) => { e.stopPropagation(); navigate(path) }
   return (
     <button
       onClick={() => onSelect(v, job, property)}
@@ -46,7 +66,10 @@ export default function VisitCard({ v, jobs, properties, clients, onSelect }) {
             {startHHMM || '—'}
             {endHHMM && <span className="text-ink-3 font-medium"> – {endHHMM}</span>}
           </span>
-          <span className={`inline-flex items-center text-[10px] font-semibold px-2 py-0.5 rounded-full shrink-0 ${statusCfg.pillMobile}`}>
+          {/* Dot-pill: the dot repeats the status in shape, so the pill still
+              reads at a glance when the tint washes out (sunlight, colorblind). */}
+          <span className={`inline-flex items-center gap-1.5 text-[10px] font-semibold px-2 py-0.5 rounded-full shrink-0 ${statusCfg.pillMobile}`}>
+            <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${statusCfg.dot}`} aria-hidden="true" />
             {statusCfg.label}
           </span>
         </div>
@@ -71,12 +94,25 @@ export default function VisitCard({ v, jobs, properties, clients, onSelect }) {
             </div>
             {property?.address && (
               <div className="text-[12px] text-ink-3 mt-0.5 flex items-center gap-1">
-                <span className="truncate">{property.address}</span>
+                {job?.property_id ? (
+                  <span
+                    onClick={e => goTo(e, `/properties/${job.property_id}`)}
+                    className="truncate hover:text-indigo-600 hover:underline cursor-pointer py-1 -my-1"
+                    title="Open this property's record"
+                    role="link"
+                    tabIndex={-1}
+                  >
+                    {property.address}
+                  </span>
+                ) : (
+                  <span className="truncate">{property.address}</span>
+                )}
                 {/* Plain span, not <a>/<button> — the whole card is already a
-                    <button>, and HTML forbids nesting interactive elements. */}
+                    <button>, and HTML forbids nesting interactive elements.
+                    Padded hit area (~32px) so a thumb can hit it on a phone. */}
                 <span
                   onClick={e => { e.stopPropagation(); window.open(mapsSearchUrl(property.address), '_blank', 'noopener,noreferrer') }}
-                  className="no-print shrink-0 text-ink-3 hover:text-indigo-600 cursor-pointer"
+                  className="no-print shrink-0 text-ink-3 hover:text-indigo-600 cursor-pointer p-2 -my-2 -mr-1"
                   title="Open in Google Maps"
                   role="button"
                   tabIndex={-1}
@@ -87,9 +123,37 @@ export default function VisitCard({ v, jobs, properties, clients, onSelect }) {
             )}
           </div>
         </div>
-        {/* Meta footer — client name + at-a-glance sync chips. */}
+        {/* Meta footer — client link, crew (or needs-cleaner cue), sync chips. */}
         <div className="flex items-center gap-2 mt-2 text-[11px] text-ink-3 flex-wrap">
-          {client?.name && <span className="truncate">{client.name}</span>}
+          {client?.name && (
+            client?.id != null ? (
+              <span
+                onClick={e => goTo(e, `/clients/${client.id}`)}
+                className="truncate hover:text-indigo-600 hover:underline cursor-pointer py-1 -my-1"
+                title={`Open ${client.name}'s client record`}
+                role="link"
+                tabIndex={-1}
+              >
+                {client.name}
+              </span>
+            ) : (
+              <span className="truncate">{client.name}</span>
+            )
+          )}
+          {crewNames && (
+            <span className="inline-flex items-center gap-1 truncate" title="Assigned cleaners">
+              <User className="w-3 h-3 shrink-0" />
+              <span className="truncate">{crewNames}</span>
+            </span>
+          )}
+          {needsCleaner && (
+            // Same calm amber-dot cue as the month chips — a word plus a dot,
+            // never color alone.
+            <span className="inline-flex items-center gap-1.5 text-amber-700 dark:text-amber-300 font-medium">
+              <span className="w-[7px] h-[7px] rounded-full bg-amber-400 ring-2 ring-amber-200/70 dark:ring-amber-500/25" aria-hidden="true" />
+              Needs a cleaner
+            </span>
+          )}
           <SyncStatusChips visit={v} job={job} />
         </div>
         {/* Airbnb/STR turnover context (guests, immediate flag, next check-in) */}

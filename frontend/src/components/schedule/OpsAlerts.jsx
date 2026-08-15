@@ -44,15 +44,13 @@ export default function OpsAlerts({ stats, unassignedToday, onFocusUnassigned })
     <div className="px-3 pt-1 pb-2 space-y-1.5">
       {alerts.map(a => {
         const Icon = a.tone === 'warn' ? AlertCircle : Info
-        return (
-          <div
-            key={a.key}
-            className={`flex items-center gap-2.5 px-3 py-2 rounded-xl border text-[12.5px] ${
-              a.tone === 'warn'
-                ? 'bg-amber-50 border-amber-200 text-amber-900'
-                : 'bg-blue-50 border-blue-200 text-blue-900'
-            }`}
-          >
+        const rowCls = `w-full flex items-center gap-2.5 px-3 py-2.5 min-h-[44px] rounded-xl border text-[12.5px] text-left ${
+          a.tone === 'warn'
+            ? 'bg-amber-50 border-amber-200 text-amber-900'
+            : 'bg-blue-50 border-blue-200 text-blue-900'
+        }`
+        const body = (
+          <>
             <Icon className={`w-3.5 h-3.5 shrink-0 ${a.tone === 'warn' ? 'text-amber-500' : 'text-blue-500'}`} />
             <span className="flex-1 leading-snug">
               <strong className="font-semibold">{a.title}</strong>
@@ -63,16 +61,27 @@ export default function OpsAlerts({ stats, unassignedToday, onFocusUnassigned })
               )}
             </span>
             {a.cta && a.onClick && (
-              <button
-                type="button"
-                onClick={a.onClick}
+              <span
                 className={`text-[10.5px] font-mono tracking-widest uppercase font-semibold ${
-                  a.tone === 'warn' ? 'text-amber-800 hover:text-amber-900' : 'text-blue-800 hover:text-blue-900'
+                  a.tone === 'warn' ? 'text-amber-800' : 'text-blue-800'
                 }`}
               >
                 {a.cta}
-              </button>
+              </span>
             )}
+          </>
+        )
+        // An actionable alert is one tap-target end to end — the old
+        // text-only "Assign" button was a ~10px thumb target on the phone
+        // hero, exactly where this row matters most.
+        return a.onClick ? (
+          <button key={a.key} type="button" onClick={a.onClick}
+            className={`${rowCls} transition-colors ${a.tone === 'warn' ? 'hover:bg-amber-100/70' : 'hover:bg-blue-100/70'}`}>
+            {body}
+          </button>
+        ) : (
+          <div key={a.key} className={rowCls}>
+            {body}
           </div>
         )
       })}
