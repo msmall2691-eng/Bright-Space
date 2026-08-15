@@ -227,8 +227,8 @@ function AttentionCard({ item, canSync, busy, onAction }) {
   const warn = item.level === 'warn'
   const acting = busy === `attn:${item.key}`
   return (
-    <div className={`flex items-start gap-3 p-3.5 rounded-xl border ${warn ? 'border-amber-200 bg-amber-50 dark:bg-amber-500/10 dark:border-amber-500/30' : 'border-hairline bg-bg-2'}`}>
-      <AlertTriangle className={`w-4.5 h-4.5 shrink-0 mt-0.5 ${warn ? 'text-amber-600' : 'text-ink-3'}`} />
+    <div className="flex items-start gap-3 p-3.5 rounded-xl border border-hairline bg-panel">
+      <span className={`w-1.5 h-1.5 rounded-full shrink-0 mt-2 ${warn ? 'bg-amber-500' : 'bg-ink-3/40'}`} aria-hidden="true" />
       <div className="min-w-0 flex-1">
         <div className="text-sm font-semibold text-ink">{item.title}</div>
         {item.detail && <div className="text-xs text-ink-3 mt-0.5">{item.detail}</div>}

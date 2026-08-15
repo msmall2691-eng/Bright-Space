@@ -44,8 +44,9 @@ export default function ActivityTimeline({
           </button>
         </div>
       </div>
-      {/* Twenty-style filter chips */}
-      <div className="flex items-center gap-1.5 overflow-x-auto pb-1 -mt-1 sticky top-0 bg-bg z-10 py-2">
+      {/* Quiet filter tabs — label + plain count, active is ink + underline.
+          (Owner vetoed the filled chip bubbles here too.) */}
+      <div className="flex items-center gap-3 overflow-x-auto pb-1 -mt-1 sticky top-0 bg-bg z-10 py-2">
         {ACTIVITY_FILTERS.map(f => {
           const count = f.value === 'all' ? allActivity.length : (f.match ? allActivity.filter(f.match).length : 0)
           const isActive = activityFilter === f.value
@@ -53,14 +54,15 @@ export default function ActivityTimeline({
             <button
               key={f.value}
               onClick={() => setActivityFilter(f.value)}
-              className={`text-xs px-2.5 py-1 rounded-full border font-medium whitespace-nowrap transition-colors ${
+              aria-pressed={isActive}
+              className={`text-xs px-0.5 py-1 font-medium whitespace-nowrap border-b-2 transition-colors ${
                 isActive
-                  ? 'bg-indigo-600 text-white border-indigo-600'
-                  : 'bg-panel border-hairline text-ink-3 hover:bg-bg'
+                  ? 'border-ink text-ink'
+                  : 'border-transparent text-ink-3 hover:text-ink-2'
               }`}
             >
               {f.label}
-              <span className={`ml-1.5 text-[10px] opacity-70 ${isActive ? 'text-white' : 'text-ink-3'}`}>{count}</span>
+              <span className="ml-1 text-[10px] tabular-nums text-ink-3">{count}</span>
             </button>
           )
         })}
@@ -158,16 +160,17 @@ export default function ActivityTimeline({
                   )}
                 </div>
                 <div className="flex items-center gap-2 shrink-0">
-                  <span className={`text-xs px-2 py-0.5 rounded-full capitalize ${
-                    item.type === 'job'          ? JOB_COLORS[item.data.status] :
-                    item.type === 'gcal_event'   ? 'bg-indigo-500/20 text-indigo-500' :
-                    item.type === 'quote'        ? QUOTE_COLORS[item.data.status] :
-                    item.type === 'invoice'      ? INVOICE_COLORS[item.data.status] :
-                    item.type === 'opportunity'  ? (OPP_COLORS[item.data.stage] || 'bg-amber-500/20 text-amber-500') :
-                    item.type === 'email'        ? 'bg-cyan-500/20 text-cyan-500' :
-                    item.type === 'activity_log' ? 'bg-bg-2 text-ink-3' :
-                    'bg-purple-500/20 text-purple-400'
-                  }`}>
+                  <span className="inline-flex items-center gap-1.5 text-xs capitalize text-ink-3">
+                    <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${
+                      item.type === 'job'          ? (JOB_COLORS[item.data.status] || 'bg-ink-3') :
+                      item.type === 'gcal_event'   ? 'bg-indigo-500' :
+                      item.type === 'quote'        ? (QUOTE_COLORS[item.data.status] || 'bg-ink-3') :
+                      item.type === 'invoice'      ? (INVOICE_COLORS[item.data.status] || 'bg-ink-3') :
+                      item.type === 'opportunity'  ? (OPP_COLORS[item.data.stage] || 'bg-amber-500') :
+                      item.type === 'email'        ? 'bg-cyan-500' :
+                      item.type === 'activity_log' ? 'bg-ink-3/40' :
+                      'bg-purple-500'
+                    }`} aria-hidden="true" />
                     {item.type === 'message' ? item.data.direction :
                      item.type === 'gcal_event' ? 'event' :
                      item.type === 'opportunity' ? item.data.stage :

@@ -3,12 +3,13 @@ import { get, patch } from '../api'
 import { X, Link2, Loader, CheckCircle } from 'lucide-react'
 import { toast } from '../utils/toastBus'
 
-const STAGE_COLORS = {
-  new:       'bg-amber-100 text-amber-700',
-  qualified: 'bg-blue-100 text-blue-700',
-  quoted:    'bg-purple-100 text-purple-700',
-  won:       'bg-emerald-100 text-emerald-700',
-  lost:      'bg-red-100 text-red-700',
+// Stage hue as a small dot over a quiet chip (no tinted pill bubbles).
+const STAGE_DOTS = {
+  new:       'bg-amber-500',
+  qualified: 'bg-blue-500',
+  quoted:    'bg-purple-500',
+  won:       'bg-emerald-500',
+  lost:      'bg-red-500',
 }
 
 export default function OpportunityLinker({ clientId, itemType, itemId, itemName, currentOpportunityId, onLinked }) {
@@ -149,7 +150,8 @@ export default function OpportunityLinker({ clientId, itemType, itemId, itemName
                               {opp.probability && ` • ${opp.probability}% prob`}
                             </div>
                           </div>
-                          <span className={`px-2 py-1 rounded-full text-xs font-medium whitespace-nowrap ml-2 ${STAGE_COLORS[opp.stage] || 'bg-bg-2 text-ink-2'}`}>
+                          <span className="inline-flex items-center gap-1.5 text-xs font-medium whitespace-nowrap ml-2 text-ink-2">
+                            <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${STAGE_DOTS[opp.stage] || 'bg-ink-3'}`} aria-hidden="true" />
                             {opp.stage}
                           </span>
                         </div>

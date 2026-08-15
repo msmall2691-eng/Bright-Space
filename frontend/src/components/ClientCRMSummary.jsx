@@ -6,27 +6,32 @@ import {
   Phone, Eye, Loader
 } from 'lucide-react'
 
-const STAGE_COLORS = {
-  new:       'bg-amber-50 border-amber-200 text-amber-700',
-  qualified: 'bg-blue-50 border-blue-200 text-blue-700',
-  quoted:    'bg-purple-50 border-purple-200 text-purple-700',
-  won:       'bg-emerald-50 border-emerald-200 text-emerald-700',
-  lost:      'bg-red-50 border-red-200 text-red-700',
+// Stage hue lives in a small dot on quiet hairline cards (owner's veto of
+// the tinted pill/panel bubbles).
+const STAGE_DOTS = {
+  new:       'bg-amber-500',
+  qualified: 'bg-blue-500',
+  quoted:    'bg-purple-500',
+  won:       'bg-emerald-500',
+  lost:      'bg-red-500',
 }
 
 function StatCard({ icon: Icon, label, value, subtext, color = 'blue' }) {
-  const colorMap = {
-    blue:    'bg-blue-50 text-blue-600 border-blue-200',
-    emerald: 'bg-emerald-50 text-emerald-600 border-emerald-200',
-    amber:   'bg-amber-50 text-amber-600 border-amber-200',
-    purple:  'bg-purple-50 text-purple-600 border-purple-200',
-    red:     'bg-red-50 text-red-600 border-red-200',
+  const dotMap = {
+    blue:    'bg-blue-500',
+    emerald: 'bg-emerald-500',
+    amber:   'bg-amber-500',
+    purple:  'bg-purple-500',
+    red:     'bg-red-500',
   }
   return (
-    <div className={`rounded-lg border ${colorMap[color]} p-4`}>
+    <div className="rounded-lg border border-hairline bg-panel p-4">
       <div className="flex items-center justify-between mb-2">
-        <span className="text-sm font-medium text-ink-2">{label}</span>
-        <Icon className="w-5 h-5" />
+        <span className="inline-flex items-center gap-1.5 text-sm font-medium text-ink-2">
+          <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${dotMap[color] || dotMap.blue}`} aria-hidden="true" />
+          {label}
+        </span>
+        <Icon className="w-5 h-5 text-ink-3" />
       </div>
       <div className="text-2xl font-bold text-ink">{value}</div>
       {subtext && <div className="text-xs text-ink-2 mt-1">{subtext}</div>}
@@ -104,11 +109,14 @@ export default function ClientCRMSummary({ clientId }) {
         </div>
         <div className="space-y-2">
           {Object.entries(crm.pipeline.by_stage).map(([stage, data]) => (
-            <div key={stage} className={`rounded-lg border p-3 ${STAGE_COLORS[stage]}`}>
+            <div key={stage} className="rounded-lg border border-hairline bg-panel p-3">
               <div className="flex justify-between items-center">
                 <div>
-                  <div className="font-semibold capitalize">{stage}</div>
-                  <div className="text-sm">{data.count} opportunity(ies)</div>
+                  <div className="font-semibold capitalize text-ink inline-flex items-center gap-1.5">
+                    <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${STAGE_DOTS[stage] || 'bg-ink-3'}`} aria-hidden="true" />
+                    {stage}
+                  </div>
+                  <div className="text-sm text-ink-3">{data.count} opportunity(ies)</div>
                 </div>
                 <div className="text-right">
                   <div className="font-semibold">${data.value.toLocaleString('en-US', {maximumFractionDigits: 0})}</div>

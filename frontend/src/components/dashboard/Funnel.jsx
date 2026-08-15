@@ -38,9 +38,7 @@ export function Funnel({ stages, convRate, activeClients, loading }) {
     <div className={`${SOFT_CARD} p-5`}>
       <div className="flex items-center justify-between gap-3 mb-4 flex-wrap">
         <div className="flex items-center gap-2.5">
-          <span className="grid place-items-center w-8 h-8 rounded-xl shrink-0 bg-purple-50 text-purple-600">
-            <TrendingUp className="w-4 h-4" />
-          </span>
+          <TrendingUp className="w-4 h-4 shrink-0 text-ink-3" />
           <div>
             <h2 className="text-sm font-semibold text-ink">Lead → quote funnel</h2>
             <p className="text-[10px] text-ink-3">From website intake &amp; quotes — separate from the Opportunities pipeline board</p>

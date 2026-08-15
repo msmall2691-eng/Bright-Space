@@ -36,9 +36,7 @@ export function CustomerActivity({ navigate }) {
   return (
     <section className={`${SOFT_CARD} overflow-hidden`}>
       <div className="flex items-center gap-2.5 px-5 py-3.5 border-b border-hairline">
-        <span className="bb-icon-chip grid place-items-center w-8 h-8 rounded-xl shrink-0 bg-emerald-50 dark:bg-emerald-500/15 text-emerald-600 dark:text-emerald-300">
-          <CalendarCheck className="w-4 h-4" />
-        </span>
+        <CalendarCheck className="w-4 h-4 shrink-0 text-ink-3" />
         <h2 className="text-sm font-semibold text-ink">Customers confirmed</h2>
         <span className="text-[11px] font-medium text-ink-3">nothing to do — just so you know</span>
       </div>

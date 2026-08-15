@@ -32,27 +32,27 @@ const toneFor = (id) => {
 function AvailabilityChip({ info }) {
   if (info?.status === 'off') {
     return (
-      <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-amber-700 dark:text-amber-300 bg-amber-500/10 border border-amber-500/20 rounded-full px-1.5 py-0.5"
+      <span className="inline-flex items-center gap-1 text-[10px] font-medium text-amber-700 dark:text-amber-300"
         title={info.detail}>
-        Time off
+        <span className="w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0" aria-hidden="true" /> Time off
       </span>
     )
   }
   if (info?.status === 'usually_off') {
     return (
-      <span className="inline-flex items-center gap-1 text-[10px] font-medium text-ink-3 bg-bg-2 border border-hairline rounded-full px-1.5 py-0.5"
+      <span className="inline-flex items-center gap-1 text-[10px] font-medium text-ink-3"
         title={info.detail}>
-        {info.detail || 'Usually off'}
+        <span className="w-1.5 h-1.5 rounded-full bg-ink-3/40 shrink-0" aria-hidden="true" /> {info.detail || 'Usually off'}
       </span>
     )
   }
   if (info?.status === 'unavailable') {
     /* Explicit week entry (Phase 4b) — firmer than the gray usually-off,
-       distinct from the amber Time-off chip. */
+       distinct from the amber time-off cue. */
     return (
-      <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-red-700 dark:text-red-300 bg-red-500/10 border border-red-500/20 rounded-full px-1.5 py-0.5"
+      <span className="inline-flex items-center gap-1 text-[10px] font-medium text-red-700 dark:text-red-300"
         title={info.detail}>
-        Unavailable
+        <span className="w-1.5 h-1.5 rounded-full bg-red-500 shrink-0" aria-hidden="true" /> Unavailable
       </span>
     )
   }
@@ -165,7 +165,8 @@ export default function CrewUtilization({
                   </span>
                 ))}
                 {isIdle && (
-                  <span className="text-[10px] font-mono text-amber-700 border border-amber-200 bg-amber-50 rounded px-1.5 py-0.5">
+                  <span className="inline-flex items-center gap-1 text-[10px] font-mono text-amber-700 dark:text-amber-300 border border-hairline bg-bg-2 rounded px-1.5 py-0.5">
+                    <span className="w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0" aria-hidden="true" />
                     {openHours}h open
                   </span>
                 )}

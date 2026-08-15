@@ -45,13 +45,18 @@ export function PropertyRow({
               data-testid="property-row-checkbox"
               aria-label={`Select ${p.name}`}
             />
-            <div className={`w-10 h-10 rounded-xl ${Config?.badge} flex items-center justify-center shrink-0 bg-opacity-20`}>
+            <div className="w-10 h-10 rounded-xl border border-hairline bg-bg-2 flex items-center justify-center shrink-0">
               <Icon className={`w-5 h-5 ${Config?.color}`} />
             </div>
             <div className="flex-1 min-w-0">
               <div className="flex items-center gap-2">
                 <div className="font-semibold text-ink">{p.name}</div>
-                <span className={`text-xs px-2 py-0.5 rounded ${Config?.badge}`}>{Config?.label}</span>
+                <span className="inline-flex items-center gap-1.5 text-xs font-medium text-ink-3">
+                  <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${
+                    pType === 'str' ? 'bg-amber-500' : pType === 'commercial' ? 'bg-purple-500' : 'bg-blue-500'
+                  }`} aria-hidden="true" />
+                  {Config?.label}
+                </span>
               </div>
               <div className="text-sm text-ink-2 flex items-center gap-2 mt-1">
                 {!clients.find(c => c.id === p.client_id) && (
@@ -69,7 +74,7 @@ export function PropertyRow({
                       <Clock className="w-3 h-3" />{p.default_duration_hours}h turnover
                     </span>
                     {p.house_code && (
-                      <span className="text-xs bg-blue-500/10 text-blue-600 px-2 py-0.5 rounded">
+                      <span className="text-xs text-ink-2 border border-hairline bg-bg-2 px-2 py-0.5 rounded">
                         Code: {p.house_code}
                       </span>
                     )}

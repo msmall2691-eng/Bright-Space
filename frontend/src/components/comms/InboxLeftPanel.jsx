@@ -88,15 +88,16 @@ export function InboxLeftPanel({
         const isOverdue = key === 'overdue'
         return (
           <button key={key} onClick={() => toggleChip(key)}
-            className={`inline-flex items-center gap-1 text-[11px] font-medium px-2.5 py-1.5 rounded-md border transition-all ${
+            aria-pressed={active}
+            className={`inline-flex items-center gap-1 text-[11px] font-medium px-2.5 py-1.5 rounded-md border transition-all bg-panel ${
               active
-                ? (isOverdue ? 'bg-red-50 text-red-700 border-red-200 dark:bg-red-500/15 dark:text-red-300 dark:border-red-500/25'
-                             : 'bg-indigo-500/10 text-indigo-700 border-indigo-200 dark:bg-indigo-500/15 dark:text-indigo-300 dark:border-indigo-500/25')
-                : 'bg-panel text-ink-3 border-hairline hover:bg-bg-2'
+                ? 'border-ink/30 text-ink font-semibold'
+                : 'text-ink-3 border-hairline hover:bg-bg-2'
             }`}>
+            {isOverdue && <span className="w-1.5 h-1.5 rounded-full bg-red-500 shrink-0" aria-hidden="true" />}
             <Ic className="w-3 h-3" />
             {label}
-            {count != null && count > 0 && <span className={`tabular-nums ${active ? 'opacity-80' : 'opacity-60'}`}>{count}</span>}
+            {count != null && count > 0 && <span className="tabular-nums text-ink-3">{count}</span>}
           </button>
         )
       })}
@@ -118,9 +119,7 @@ export function InboxLeftPanel({
               className="lg:hidden relative w-8 h-8 rounded-md border border-hairline-2 bg-panel hover:bg-bg-2 text-ink-2 flex items-center justify-center transition-colors">
               <SlidersHorizontal className="w-4 h-4" />
               {activeFilterCount > 0 && (
-                <span className="absolute -top-1 -right-1 min-w-[16px] h-[16px] px-1 grid place-items-center rounded-full bg-indigo-600 text-white text-[9px] font-bold ring-2 ring-panel">
-                  {activeFilterCount}
-                </span>
+                <span className="absolute top-1 right-1 w-2 h-2 rounded-full bg-indigo-600 ring-2 ring-panel" aria-label={`${activeFilterCount} filters active`} />
               )}
             </button>
             <button onClick={onCompose}

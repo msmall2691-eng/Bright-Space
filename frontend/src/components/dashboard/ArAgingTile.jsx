@@ -48,9 +48,7 @@ export function ArAgingTile({ loading, arAging, navigate }) {
     <section className={`${SOFT_CARD} overflow-hidden`}>
       <div className="flex items-center justify-between gap-3 px-5 py-3.5 border-b border-hairline">
         <div className="flex items-center gap-2.5 min-w-0">
-          <span className="grid place-items-center w-8 h-8 rounded-lg shrink-0 bg-rose-500/10 text-rose-600 dark:text-rose-300">
-            <DollarSign className="w-4 h-4" />
-          </span>
+          <DollarSign className="w-4 h-4 shrink-0 text-ink-3" />
           <h2 className="text-sm font-semibold text-ink truncate">Collect this morning</h2>
         </div>
         <button onClick={() => go('overdue')}

@@ -1,6 +1,6 @@
 import { ArrowRight } from 'lucide-react'
 import { Skeleton } from '../ui'
-import { CHIP, SOFT_CARD } from './constants'
+import { SOFT_CARD } from './constants'
 
 /** Attention row — unified across overdue / unassigned / late / overdue
  *  invoice. Colored dot on the left, title (+ optional subtitle) in the
@@ -31,16 +31,14 @@ export function AttentionRow({ tone, title, sub, action, onClick }) {
 /** Tile shell — facelifted to the airy white card. Header row carries a
  *  tinted icon chip, title, optional badge, and a text+arrow action link.
  *  Body is unpadded so each tile manages its own spacing. */
-export function Tile({ icon: Icon, iconColor, title, badge, action, onAction, children }) {
+export function Tile({ icon: Icon, iconColor, title, badge, action, onAction, children }) { // eslint-disable-line no-unused-vars -- iconColor legacy; flat glyphs now
   return (
     <section className={`${SOFT_CARD} flex flex-col overflow-hidden`}>
       <div className="flex items-center justify-between gap-3 px-5 py-4 border-b border-hairline">
         <div className="flex items-center gap-2.5 min-w-0">
-          {Icon && (
-            <span className={`bb-icon-chip grid place-items-center w-8 h-8 rounded-xl shrink-0 ${CHIP[iconColor] || 'bg-blue-50 text-blue-600'}`}>
-              <Icon className="w-4 h-4" />
-            </span>
-          )}
+          {/* Flat glyph — the tinted icon chips read as "SaaS bubbles"
+              (owner veto). Color belongs to data, not chrome. */}
+          {Icon && <Icon className="w-4 h-4 shrink-0 text-ink-3" />}
           <h2 className="text-sm font-semibold text-ink truncate">{title}</h2>
           {badge}
         </div>
@@ -55,15 +53,15 @@ export function Tile({ icon: Icon, iconColor, title, badge, action, onAction, ch
   )
 }
 
-/** KPI card — the headline stat tiles across the top of the dashboard. */
-export function KpiCard({ icon: Icon, chip, label, value, sub, accent }) {
+/** KPI card — the headline stat tiles across the top of the dashboard.
+ *  Quiet and data-forward: big plain number, 11px label, flat glyph —
+ *  no tinted icon chip (`chip` is accepted for compatibility, unused). */
+export function KpiCard({ icon: Icon, chip, label, value, sub, accent }) { // eslint-disable-line no-unused-vars
   return (
     <div className={`${SOFT_CARD} p-4`}>
       <div className="flex items-center justify-between gap-2">
         <span className="text-[11px] font-semibold text-ink-3 uppercase tracking-wide truncate">{label}</span>
-        <span className={`bb-icon-chip grid place-items-center w-8 h-8 rounded-xl shrink-0 ${chip}`}>
-          <Icon className="w-4 h-4" />
-        </span>
+        <Icon className="w-4 h-4 shrink-0 text-ink-3" />
       </div>
       <div className={`text-2xl font-bold mt-2 tabular-nums ${accent || 'text-ink'}`}>{value}</div>
       {sub && <div className="text-[11px] text-ink-3 mt-0.5 truncate">{sub}</div>}

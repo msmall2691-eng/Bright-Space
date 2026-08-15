@@ -399,10 +399,10 @@ function EditSeriesModal({ schedule, onClose, onDone }) {
   }
   return (
     <ModalShell title="Edit recurring rule" onClose={onClose} wide>
-      <div className="p-3 rounded-lg bg-amber-50 border border-amber-200 text-amber-900 text-[13px] flex gap-2">
-        <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0" />
+      <div className="p-3 rounded-lg bg-panel border border-hairline text-ink-2 text-[13px] flex gap-2">
+        <span className="w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0 mt-1.5" aria-hidden="true" />
         <div>
-          <div className="font-semibold">These changes apply to future visits only.</div>
+          <div className="font-semibold text-ink">These changes apply to future visits only.</div>
           Visits already on the calendar keep their current time and cleaners.
           To change one specific visit, use “Skip” or “Reschedule” on that row.
         </div>
@@ -1024,19 +1024,19 @@ function SeriesDetail({ id, onBack, onChanged, toast }) {
         ) : (
           <>
             {generatedCount < upcoming.length && (
-              <div className="mb-2 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+              <div className="mb-2 flex items-start gap-2 text-xs text-ink-2 bg-panel border border-hairline rounded-lg px-3 py-2">
+                <span className="w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0 mt-1" aria-hidden="true" />
+                <span>
                 Only {generatedCount} of these {upcoming.length} dates {generatedCount === 1 ? 'has' : 'have'} an
                 actual job on the Schedule — the rest are projected from the rule but haven't been generated yet.
                 Use "Generate now" above to materialize them.
+                </span>
               </div>
             )}
             <ul className="space-y-1.5">
             {upcoming.map((u) => (
               <li key={u.date}
-                className={`flex items-center justify-between gap-3 px-3 py-2 rounded-xl border ${
-                  u.rescheduled
-                    ? 'bg-amber-50/60 border-amber-200'
-                    : 'bg-panel border-hairline'}`}>
+                className="flex items-center justify-between gap-3 px-3 py-2 rounded-xl border bg-panel border-hairline">
                 <div className="min-w-0">
                   <div className="text-sm font-semibold text-ink">
                     {fmtDate(u.date)}
@@ -1047,7 +1047,8 @@ function SeriesDetail({ id, onBack, onChanged, toast }) {
                       </span>
                     )}
                     {!generatedDates.has(u.date) && (
-                      <span className="ml-2 text-[10px] font-semibold text-ink-3 bg-bg-2 px-2 py-0.5 rounded-full">
+                      <span className="ml-2 inline-flex items-center gap-1.5 text-[10px] font-medium text-ink-3">
+                        <span className="w-1.5 h-1.5 rounded-full bg-ink-3/40 shrink-0" aria-hidden="true" />
                         not yet generated
                       </span>
                     )}
@@ -1326,11 +1327,11 @@ export default function Recurring() {
 
       <div className="max-w-5xl mx-auto px-4 sm:px-6 pb-8">
         {autoGenOff && (
-          <div className="mt-4 mb-4 flex items-start gap-2.5 rounded-lg bg-amber-50 dark:bg-amber-500/10 border border-amber-300 dark:border-amber-500/30 px-3.5 py-3 text-sm text-amber-800 dark:text-amber-300">
-            <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0" />
+          <div className="mt-4 mb-4 flex items-start gap-2.5 rounded-lg bg-panel border border-hairline px-3.5 py-3 text-sm text-ink-2">
+            <span className="w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0 mt-1.5" aria-hidden="true" />
             <div>
-              <p className="font-semibold">Recurring auto-generate is off</p>
-              <p className="text-[13px] mt-0.5 opacity-90">
+              <p className="font-semibold text-ink">Recurring auto-generate is off</p>
+              <p className="text-[13px] mt-0.5 text-ink-3">
                 Schedules were filled once and won’t roll forward, so upcoming visits will stop
                 appearing over time. Turn on <b>Recurring auto-generate</b> in Settings → Automation
                 to keep the window topped up automatically.
@@ -1363,8 +1364,9 @@ export default function Recurring() {
             ].map(o => (
               <button key={o.v}
                 onClick={() => setFilterStatus(o.v)}
+                aria-pressed={filterStatus === o.v}
                 className={`px-3 py-1.5 text-xs font-medium rounded-md transition ${
-                  filterStatus === o.v ? 'bg-indigo-600 text-white' : 'text-ink-3 hover:text-ink'
+                  filterStatus === o.v ? 'bg-bg-2 text-ink shadow-sm' : 'text-ink-3 hover:text-ink'
                 }`}>
                 {o.label}
               </button>
@@ -1376,8 +1378,8 @@ export default function Recurring() {
         </div>
 
         {dupGroupCount > 0 && (
-          <div className="flex items-center gap-2.5 mb-4 px-3 py-2.5 rounded-xl bg-amber-50 border border-amber-200 text-amber-800 text-sm">
-            <AlertTriangle className="w-4 h-4 shrink-0" />
+          <div className="flex items-center gap-2.5 mb-4 px-3 py-2.5 rounded-xl bg-panel border border-hairline text-ink-2 text-sm">
+            <span className="w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0" aria-hidden="true" />
             <span className="flex-1 min-w-0">
               {dupGroupCount} possible duplicate group{dupGroupCount === 1 ? '' : 's'} — same client,
               property, cadence, and time on overlapping days. Review them side by side and pick

@@ -80,18 +80,19 @@ export function SlaBadge({ state, compact = false }) {
   // Phase 8: only render for the actionable state (breached → "Overdue").
   // The other states were noise — operators only need to know "this is late".
   if (state !== 'breached') return null
-  // Token-based (dark-mode aware) rather than the inline SLA_CONFIG hex, which
-  // baked in a light-only red that read harsh on the dark panel.
-  const tone = 'bg-red-50 dark:bg-red-500/15 text-red-700 dark:text-red-300'
+  // Quiet dot+word — red text carries the urgency, no tinted capsule
+  // (owner's veto of the pill bubbles).
+  const tone = 'text-red-600 dark:text-red-300'
   if (compact) {
     return (
-      <span title="Overdue — needs reply" className={`inline-flex items-center gap-0.5 text-[9px] font-bold px-1 py-px rounded ${tone}`}>
-        <Clock className="w-2.5 h-2.5" /> Overdue
+      <span title="Overdue — needs reply" className={`inline-flex items-center gap-1 text-[9px] font-semibold ${tone}`}>
+        <span className="w-1.5 h-1.5 rounded-full bg-red-500 shrink-0" aria-hidden="true" /> Overdue
       </span>
     )
   }
   return (
-    <span className={`inline-flex items-center gap-1 text-[10px] font-semibold px-1.5 py-0.5 rounded-md ${tone}`}>
+    <span className={`inline-flex items-center gap-1.5 text-[10px] font-medium ${tone}`}>
+      <span className="w-1.5 h-1.5 rounded-full bg-red-500 shrink-0" aria-hidden="true" />
       <Clock className="w-3 h-3" /> Overdue
     </span>
   )

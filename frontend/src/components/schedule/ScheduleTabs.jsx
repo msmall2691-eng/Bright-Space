@@ -375,13 +375,13 @@ export function AvailabilityPanel() {
                 <span className="text-xs text-ink-3 ml-2">{e.start_date} → {e.end_date}</span>
                 {e.reason && <span className="text-[11px] text-ink-3 ml-2 capitalize">· {e.reason}</span>}
                 {e.status === 'requested' && (
-                  <span className="text-[10px] font-bold uppercase tracking-wide text-amber-700 bg-amber-50 border border-amber-300 rounded-full px-1.5 py-0.5 ml-2">
-                    Requested
+                  <span className="inline-flex items-center gap-1 text-[10px] font-medium text-amber-700 dark:text-amber-300 ml-2">
+                    <span className="w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0" aria-hidden="true" /> Requested
                   </span>
                 )}
                 {e.status === 'denied' && (
-                  <span className="text-[10px] font-bold uppercase tracking-wide text-ink-3 bg-bg-2 border border-hairline rounded-full px-1.5 py-0.5 ml-2">
-                    Denied
+                  <span className="inline-flex items-center gap-1 text-[10px] font-medium text-ink-3 ml-2">
+                    <span className="w-1.5 h-1.5 rounded-full bg-ink-3/40 shrink-0" aria-hidden="true" /> Denied
                   </span>
                 )}
               </div>
@@ -391,7 +391,7 @@ export function AvailabilityPanel() {
                      requester's phone gets a push either way. */
                   <>
                     <button onClick={() => setStatus(e.id, 'approved')}
-                      className="text-[11px] font-semibold text-emerald-700 bg-emerald-50 border border-emerald-300 rounded-lg px-2 py-1 hover:bg-emerald-100">
+                      className="text-[11px] font-medium text-ink-2 bg-panel border border-hairline-2 rounded-md px-2 py-1 hover:bg-bg-2">
                       Approve
                     </button>
                     <button onClick={() => setStatus(e.id, 'denied')}
@@ -505,7 +505,8 @@ export function RecurringPanel() {
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-2 mb-1">
                         <h3 className="text-base font-semibold text-ink">{s.title || 'Untitled'}</h3>
-                        <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${s.active ? 'bg-emerald-100 text-emerald-700' : 'bg-bg-2 text-ink-3'}`}>
+                        <span className="inline-flex items-center gap-1.5 text-[10px] font-medium text-ink-3">
+                          <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${s.active ? 'bg-emerald-500' : 'bg-ink-3/40'}`} aria-hidden="true" />
                           {s.active ? 'Active' : 'Paused'}
                         </span>
                       </div>

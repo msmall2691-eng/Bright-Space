@@ -86,10 +86,13 @@ export function ConvItem({ conv, active, onClick }) {
           ) : null}
         </div>
 
-        {/* Unread count pill */}
+        {/* Unread — quiet dot + plain count, no filled bubble (owner veto). */}
         {unread && (
-          <span className="bg-indigo-600 text-white text-[10px] font-bold min-w-[20px] h-5 px-1.5 rounded-full flex items-center justify-center shrink-0 shadow-sm">
-            {conv.unread_count > 9 ? '9+' : conv.unread_count}
+          <span className="flex items-center gap-1 shrink-0">
+            <span className="w-1.5 h-1.5 rounded-full bg-indigo-600" aria-hidden="true" />
+            <span className="text-[10px] font-bold tabular-nums text-ink">
+              {conv.unread_count > 9 ? '9+' : conv.unread_count}
+            </span>
           </span>
         )}
       </div>

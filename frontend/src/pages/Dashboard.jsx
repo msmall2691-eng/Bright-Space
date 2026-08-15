@@ -141,12 +141,14 @@ function Pillar({ icon: Icon, accent, value, headline, label, urgent, stats, onC
     <button onClick={onClick}
       className={`${SOFT} group text-left p-5 hover:border-hairline-2 transition-colors`}>
       <div className="flex items-start justify-between">
-        <span className={`grid place-items-center w-10 h-10 rounded-xl ${PILLAR[accent]}`}>
-          <Icon className="w-5 h-5" />
-        </span>
+        {/* Flat glyph — no tinted icon chip (owner's SaaS-bubble veto). */}
+        <Icon className="w-5 h-5 text-ink-3" />
         <span className="flex items-center gap-2">
           {urgent > 0 && (
-            <span className="inline-flex items-center rounded-full bg-red-500/10 text-red-600 dark:text-red-300 px-2 py-0.5 text-[11px] font-semibold">{urgent} urgent</span>
+            <span className="inline-flex items-center gap-1.5 text-[11px] font-medium text-red-600 dark:text-red-300">
+              <span className="w-1.5 h-1.5 rounded-full bg-red-500 shrink-0" aria-hidden="true" />
+              {urgent} urgent
+            </span>
           )}
           <ArrowUpRight className="w-4 h-4 text-ink-3 group-hover:text-indigo-500 transition-colors" />
         </span>
@@ -173,11 +175,12 @@ function Pillar({ icon: Icon, accent, value, headline, label, urgent, stats, onC
 
 /* ── Local tiles ──────────────────────────────────────────────────────── */
 
-function TileHead({ icon: Icon, tint, title, action, onAction }) {
+function TileHead({ icon: Icon, tint, title, action, onAction }) { // eslint-disable-line no-unused-vars -- tint legacy; flat glyphs now
   return (
     <div className="flex items-center justify-between gap-3 px-5 py-3.5 border-b border-hairline">
       <div className="flex items-center gap-2.5 min-w-0">
-        <span className={`grid place-items-center w-8 h-8 rounded-lg shrink-0 ${tint}`}><Icon className="w-4 h-4" /></span>
+        {/* Flat glyph — no tinted icon chip (owner's SaaS-bubble veto). */}
+        <Icon className="w-4 h-4 shrink-0 text-ink-3" />
         <h2 className="text-sm font-semibold text-ink truncate">{title}</h2>
       </div>
       {action && (
@@ -213,7 +216,8 @@ function TodayRoute({ loading, todayJobs, todayCount, navigate }) {
                   <div className="text-[11px] text-ink-3 truncate inline-flex items-center gap-1"><MapPin className="w-3 h-3" />{j.property_name}</div>
                 )}
               </div>
-              <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full shrink-0 ${(j.cleaner_ids && j.cleaner_ids.length) ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-300' : 'bg-amber-500/10 text-amber-600 dark:text-amber-300'}`}>
+              <span className="inline-flex items-center gap-1.5 text-[10px] font-medium text-ink-3 shrink-0">
+                <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${(j.cleaner_ids && j.cleaner_ids.length) ? 'bg-emerald-500' : 'bg-amber-500'}`} aria-hidden="true" />
                 {(j.cleaner_ids && j.cleaner_ids.length) ? 'Assigned' : 'No crew'}
               </span>
             </button>
@@ -275,8 +279,11 @@ function CrewLoad({ loading, crew, navigate }) {
           ))}
           {crew.unassigned > 0 && (
             <button onClick={() => navigate('/schedule?view=dispatch')}
-              className="w-full mt-1 flex items-center justify-between gap-2 rounded-lg border border-amber-200 dark:border-amber-500/25 bg-amber-50 dark:bg-amber-500/10 px-3 py-2 text-[12px] text-amber-700 dark:text-amber-300 hover:opacity-90">
-              <span>{crew.unassigned} job{crew.unassigned === 1 ? '' : 's'} with no crew</span>
+              className="w-full mt-1 flex items-center justify-between gap-2 rounded-lg border border-hairline bg-panel px-3 py-2 text-[12px] text-ink-2 hover:bg-bg-2 transition-colors">
+              <span className="inline-flex items-center gap-1.5">
+                <span className="w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0" aria-hidden="true" />
+                {crew.unassigned} job{crew.unassigned === 1 ? '' : 's'} with no crew
+              </span>
               <ArrowRight className="w-3.5 h-3.5" />
             </button>
           )}

@@ -244,6 +244,28 @@ export default function Schedule() {
     setJobs(prev => (prev && prev[jobId]) ? { ...prev, [jobId]: { ...prev[jobId], ...next } } : prev)
   }
 
+  // "Open to crew" (crew app Phase 3): flip open_for_claims on still-closed
+  // unassigned jobs so they show on every cleaner's phone with a Claim
+  // button — the same toggle JobDetail carries, surfaced where the office
+  // actually sees the gap (needs-crew alert + unassigned queue). Uses the
+  // EXISTING jobs PATCH; first claim adds the cleaner and closes it again.
+  const handleOpenToCrew = async (visitList) => {
+    const targets = (visitList || []).filter(v => !v.open_for_claims)
+    if (targets.length === 0) return
+    try {
+      await Promise.all(targets.map(v =>
+        patch(`/api/jobs/${v.job_id ?? v.id}`, { open_for_claims: true })
+      ))
+      targets.forEach(v => applyLocalMove(v.job_id ?? v.id, { open_for_claims: true }))
+      toast.success(targets.length === 1
+        ? 'Opened to crew — cleaners can claim it from their phone'
+        : `${targets.length} jobs opened to crew`)
+    } catch (err) {
+      toast.error('Could not open to crew: ' + err.message)
+      refresh() // reconcile any partial success
+    }
+  }
+
   // When the detail drawer opens for a job, pull its Google Calendar audit rows
   // so we can show whether the last push actually landed (and why, if it didn't).
   useEffect(() => {
@@ -529,6 +551,7 @@ export default function Schedule() {
             isToday={dateStr === todayYMD()}
             onDateSelect={setCurrentDate}
             onFocusUnassigned={() => setUnassignedOnly(v => !v)}
+            onOpenToCrew={handleOpenToCrew}
           />
           <div className="flex-1 min-h-0">
             <AgendaDay
@@ -562,6 +585,7 @@ export default function Schedule() {
           empName={empName}
           onOpen={handleEdit}
           onLocalMove={applyLocalMove}
+          onOpenToCrew={handleOpenToCrew}
           toast={toast}
         />
       ) : viewMode === 'week' ? (

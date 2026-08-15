@@ -5,31 +5,35 @@
  */
 import { toLocalYMD } from '../../utils/format'
 
-export const QUOTE_STATUS_COLORS = {
-  draft:    'bg-bg-2 text-ink-3 border-hairline',
-  sent:     'bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-950 dark:text-blue-300 dark:border-blue-800',
-  viewed:   'bg-indigo-50 text-indigo-700 border-indigo-200 dark:bg-indigo-950 dark:text-indigo-300 dark:border-indigo-800',
-  changes_requested: 'bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-950 dark:text-amber-300 dark:border-amber-800',
-  accepted: 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950 dark:text-emerald-300 dark:border-emerald-800',
-  converted: 'bg-teal-50 text-teal-700 border-teal-200 dark:bg-teal-950 dark:text-teal-300 dark:border-teal-800',
-  declined: 'bg-red-50 text-red-700 border-red-200 dark:bg-red-950 dark:text-red-300 dark:border-red-800',
-  expired: 'bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-950 dark:text-amber-300 dark:border-amber-800',
+// Status hue lives in a small dot over a quiet chip body (owner's veto of
+// the tinted pill bubbles) — these dot classes feed InlineSelect and the
+// read-only dot+word status renders.
+export const QUOTE_STATUS_DOTS = {
+  draft:    'bg-ink-3',
+  sent:     'bg-blue-500',
+  viewed:   'bg-indigo-500',
+  changes_requested: 'bg-amber-500',
+  accepted: 'bg-emerald-500',
+  converted: 'bg-teal-500',
+  declined: 'bg-red-500',
+  expired: 'bg-amber-500',
 }
 
-export const LEAD_STATUS_COLORS = {
-  new:       'bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-950 dark:text-amber-300 dark:border-amber-800',
-  reviewed:  'bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-950 dark:text-blue-300 dark:border-blue-800',
-  quoted:    'bg-purple-50 text-purple-700 border-purple-200 dark:bg-purple-950 dark:text-purple-300 dark:border-purple-800',
-  converted: 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950 dark:text-emerald-300 dark:border-emerald-800',
+export const LEAD_STATUS_DOTS = {
+  new:       'bg-amber-500',
+  reviewed:  'bg-blue-500',
+  quoted:    'bg-purple-500',
+  converted: 'bg-emerald-500',
 }
 
-// Inline-edit status options (Twenty-style chips) for the leads/quotes tables.
-// 'converted' is intentionally NOT selectable here — it's a derived state set only
-// by the quote→job conversion flow, never a manual status pick (audit item 2).
+// Inline-edit status options (Twenty-style dot chips) for the leads/quotes
+// tables. 'converted' is intentionally NOT selectable here — it's a derived
+// state set only by the quote→job conversion flow, never a manual status
+// pick (audit item 2).
 export const QUOTE_STATUS_OPTIONS = ['draft', 'sent', 'viewed', 'accepted', 'declined']
-  .map(s => ({ value: s, label: s, chipClass: QUOTE_STATUS_COLORS[s] || QUOTE_STATUS_COLORS.draft }))
+  .map(s => ({ value: s, label: s, dot: QUOTE_STATUS_DOTS[s] || QUOTE_STATUS_DOTS.draft }))
 export const LEAD_STATUS_OPTIONS = ['new', 'reviewed', 'quoted', 'converted']
-  .map(s => ({ value: s, label: s, chipClass: LEAD_STATUS_COLORS[s] }))
+  .map(s => ({ value: s, label: s, dot: LEAD_STATUS_DOTS[s] }))
 
 // Guided "next step" per quote status — turns the quotes list into a worklist so
 // it's always obvious what moves a lead toward becoming a (recurring) client.

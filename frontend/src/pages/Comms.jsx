@@ -485,7 +485,7 @@ export default function Comms() {
         <div className={`fixed bottom-6 right-6 z-[60] flex items-center gap-2 px-4 py-3 rounded-xl shadow-lg border text-sm ${
           toast.ok
             ? 'bg-panel border-hairline text-ink'
-            : 'bg-amber-50 border-amber-200 text-amber-900'
+            : 'bg-panel border-hairline text-ink-2'
         }`}>
           {toast.ok
             ? <CheckCircle2 className="w-4 h-4 text-emerald-500 shrink-0" />

@@ -13,7 +13,7 @@ export function TodayTile({ loading, todayJobs, todayCount, weekCount, navigate 
       iconColor="text-violet-500"
       title="Today's schedule"
       badge={todayCount > 0 && (
-        <span className="text-[10px] font-bold text-violet-700 bg-violet-50 px-1.5 py-0.5 rounded-full">
+        <span className="text-[10px] font-semibold text-ink-3 tabular-nums">
           {todayCount}
         </span>
       )}

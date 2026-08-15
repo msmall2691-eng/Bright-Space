@@ -1,6 +1,6 @@
 import { Send, Copy, Check, Calendar, MapPin, Trash2, Eye } from 'lucide-react'
 import InlineSelect from '../InlineSelect'
-import { QUOTE_STATUS_COLORS, QUOTE_STATUS_OPTIONS, QUOTE_NEXT_STEP } from './constants'
+import { QUOTE_STATUS_DOTS, QUOTE_STATUS_OPTIONS, QUOTE_NEXT_STEP } from './constants'
 
 // "Opened Jul 18, 2:14 PM" read-receipt from the customer's first view of the
 // public quote link. viewed_at is recorded server-side and already on the quote
@@ -53,17 +53,21 @@ export default function QuoteRow({
                   onSelect={(s) => onUpdateStatus(q.id, s)} />
               </span>
             ) : (
-              <span className={`text-xs px-2.5 py-0.5 rounded-full border capitalize ${QUOTE_STATUS_COLORS[q.status] || QUOTE_STATUS_COLORS.draft}`}>{(q.status || '').replace(/_/g, ' ')}</span>
+              <span className="inline-flex h-5 items-center gap-1.5 whitespace-nowrap rounded-sm border border-hairline-2 bg-panel px-2 text-[11px] font-medium capitalize leading-none text-ink-2">
+                <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${QUOTE_STATUS_DOTS[q.status] || QUOTE_STATUS_DOTS.draft}`} aria-hidden="true" />
+                {(q.status || '').replace(/_/g, ' ')}
+              </span>
             )}
             {q.status === 'changes_requested' && <span className="w-2 h-2 rounded-full bg-amber-500" title="Customer requested changes" />}
             {q.last_send_error && ['draft', 'sent', 'viewed'].includes(q.status) && (
-              <span className="text-xs px-2 py-0.5 rounded-full border bg-red-50 text-red-700 border-red-200"
+              <span className="inline-flex items-center gap-1.5 text-xs font-medium text-red-600 dark:text-red-300"
                 title={q.last_send_error}>
+                <span className="w-1.5 h-1.5 rounded-full bg-red-500 shrink-0" aria-hidden="true" />
                 send failed
               </span>
             )}
             {q.viewed_at && q.status !== 'converted' && (
-              <span className="flex items-center gap-1 text-xs px-2 py-0.5 rounded-full border bg-indigo-50 text-indigo-600 border-indigo-200"
+              <span className="flex items-center gap-1 text-xs text-ink-3"
                 title={`Customer opened this quote on ${new Date(q.viewed_at).toLocaleString()}`}>
                 <Eye className="w-3 h-3 shrink-0" /> Opened {fmtViewed(q.viewed_at)}
               </span>
@@ -112,10 +116,11 @@ export default function QuoteRow({
             </button>
           )}
           {q.status === 'converted' && (
-            <span className="flex items-center gap-1 text-xs px-2.5 py-1.5 bg-green-50 text-green-500 rounded-lg"
+            <span className="flex items-center gap-1.5 text-xs px-2.5 py-1.5 text-ink-3"
               title="This quote has been scheduled">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" aria-hidden="true" />
               <Calendar className="w-3 h-3" />
-              Scheduled ✓
+              Scheduled
             </span>
           )}
           {canEdit && q.status !== 'converted' && (

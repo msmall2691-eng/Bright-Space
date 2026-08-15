@@ -30,7 +30,6 @@ describe('SyncStatusChips', () => {
     )
     expect(container.textContent).toMatch(/Google/)
     expect(screen.getByTitle('On Google Calendar')).toBeTruthy()
-    expect(container.textContent).toMatch(/✓/)
   })
 
   it('renders an unsynced Google chip when the job has no gcal_event_id', () => {

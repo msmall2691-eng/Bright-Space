@@ -20,31 +20,33 @@ export function IcalFeedRow({ ical, onRemove }) {
   // sync_property update lacked a status string, and rendering them
   // as "Never synced" would defeat the whole observability feature
   // (Codex P1).
+  // Quiet dot+word status — sync-ok is a non-event (gray dot); only stale/
+  // failed states earn a colored dot (owner's veto of the pill bubbles).
   let statusPill
   if (status === 'failed' || status === 'retrying') {
     statusPill = (
-      <span className="inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-full bg-red-50 dark:bg-red-500/10 text-red-700 dark:text-red-300" title={ical.last_sync_error || ''}>
-        <AlertTriangle className="w-3 h-3" /> Failed {lastAt || ''}
+      <span className="inline-flex items-center gap-1.5 text-[11px] font-medium text-red-600 dark:text-red-300" title={ical.last_sync_error || ''}>
+        <span className="w-1.5 h-1.5 rounded-full bg-red-500 shrink-0" aria-hidden="true" /> Failed {lastAt || ''}
       </span>
     )
   } else if (status === 'ok' || ical.last_synced_at) {
-    // A "Synced" pill on a feed that last synced days ago is a lie by
+    // A "Synced" state on a feed that last synced days ago is a lie by
     // omission — auto-sync runs every 15 min, so >24h without a clean sync
     // means the feed is stale (same cutoff as the property-level rollup).
     const stale = isStaleSync(ical.last_synced_at)
     statusPill = stale ? (
-      <span className="inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-full bg-amber-50 dark:bg-amber-500/10 text-amber-700 dark:text-amber-300"
+      <span className="inline-flex items-center gap-1.5 text-[11px] font-medium text-amber-700 dark:text-amber-300"
         title="No clean sync in 24h+ — check this feed">
-        <AlertTriangle className="w-3 h-3" /> Stale · synced {lastAt || '—'}
+        <span className="w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0" aria-hidden="true" /> Stale · synced {lastAt || '—'}
       </span>
     ) : (
-      <span className="inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-full bg-emerald-50 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-300">
-        <CheckCircle className="w-3 h-3" /> Synced {lastAt || ''}
+      <span className="inline-flex items-center gap-1.5 text-[11px] font-medium text-ink-3">
+        <span className="w-1.5 h-1.5 rounded-full bg-ink-3/40 shrink-0" aria-hidden="true" /> Synced {lastAt || ''}
       </span>
     )
   } else {
     statusPill = (
-      <span className="inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-full bg-bg-2 text-ink-2">
+      <span className="inline-flex items-center gap-1.5 text-[11px] font-medium text-ink-3">
         <Clock className="w-3 h-3" /> Never synced
       </span>
     )

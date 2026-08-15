@@ -17,8 +17,7 @@ export default function FollowUpRow({
   const h = q.hours_waiting || 0
   const waited = h >= 48 ? `${Math.round(h / 24)}d` : `${Math.round(h)}h`
   const reasonLabel = q.follow_up_reason === 'viewed_not_accepted' ? 'Opened, no reply' : 'Not opened yet'
-  const reasonTone = q.follow_up_reason === 'viewed_not_accepted'
-    ? 'bg-purple-50 text-purple-500 border-purple-200' : 'bg-amber-50 text-amber-600 border-amber-200'
+  const reasonDot = q.follow_up_reason === 'viewed_not_accepted' ? 'bg-purple-500' : 'bg-amber-500'
   return (
     <div className="bg-panel border border-hairline rounded-xl p-4">
       <div className="flex items-center gap-3">
@@ -26,7 +25,10 @@ export default function FollowUpRow({
           <div className="flex flex-wrap items-center gap-2">
             <span className="font-medium text-ink">{clientName(q.client_id)}</span>
             <span className="text-xs text-ink-3">{q.quote_number}</span>
-            <span className={`text-xs px-2.5 py-0.5 rounded-full border ${reasonTone}`}>{reasonLabel}</span>
+            <span className="inline-flex items-center gap-1.5 text-xs font-medium text-ink-3">
+              <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${reasonDot}`} aria-hidden="true" />
+              {reasonLabel}
+            </span>
             <span className="flex items-center gap-1 text-xs text-ink-3"><Clock className="w-3.5 h-3.5" />waiting {waited}</span>
             {q.follow_up_sent_at && <span className="text-xs text-ink-3">· nudged before</span>}
           </div>

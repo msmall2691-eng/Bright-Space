@@ -30,12 +30,13 @@ export function InboxTile({
       badge={(attention.length > 0 || slaBreached > 0) && (
         <span className="flex items-center gap-1">
           {slaBreached > 0 && (
-            <span className="text-[10px] font-bold text-white bg-red-500 px-1.5 py-0.5 rounded-full" title="Conversations past their response SLA">
+            <span className="inline-flex items-center gap-1.5 text-[10px] font-medium text-red-600 dark:text-red-300" title="Conversations past their response SLA">
+              <span className="w-1.5 h-1.5 rounded-full bg-red-500 shrink-0" aria-hidden="true" />
               {slaBreached} SLA
             </span>
           )}
           {attention.length > 0 && (
-            <span className="text-[10px] font-bold text-ink-3 bg-bg-2 px-1.5 py-0.5 rounded-full">
+            <span className="text-[10px] font-semibold text-ink-3 tabular-nums">
               {attention.length}
             </span>
           )}

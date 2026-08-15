@@ -34,6 +34,7 @@ export default function AgendaHero({
   isToday,
   onDateSelect,
   onFocusUnassigned,
+  onOpenToCrew,
 }) {
   const dateLabel = new Date(`${toLocalYMD(currentDate)}T00:00`).toLocaleDateString('en-US', {
     weekday: 'long',
@@ -82,6 +83,7 @@ export default function AgendaHero({
           stats={todayStats}
           unassignedToday={unassignedToday}
           onFocusUnassigned={onFocusUnassigned}
+          onOpenToCrew={onOpenToCrew}
         />
       </div>
     </div>

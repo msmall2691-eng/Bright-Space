@@ -1,17 +1,18 @@
-/** Status chip color classes shared by the row chip + the inline select. */
+/** Status dot color shared by the row chip + the inline select — status
+ *  hue lives in the small dot over a quiet chip body (no tinted pills). */
 export const STATUS_COLORS = {
-  lead:     'bg-amber-500/15 text-amber-500 border-amber-500/20',
-  active:   'bg-emerald-500/15 text-emerald-500 border-emerald-500/20',
-  inactive: 'bg-bg-2 text-ink-3 border-hairline',
+  lead:     'bg-amber-500',
+  active:   'bg-emerald-500',
+  inactive: 'bg-ink-3',
 }
 
 /** Options for the inline-editable status chip in the table
- *  (Twenty-style). Each carries the chip pill class and the leading
- *  dot color so InlineSelect can render them without extra lookups. */
+ *  (Twenty-style). Each carries the leading dot color so InlineSelect can
+ *  render them without extra lookups. */
 export const STATUS_OPTIONS = [
-  { value: 'lead',     label: 'lead',     chipClass: STATUS_COLORS.lead,     dot: 'bg-amber-500' },
-  { value: 'active',   label: 'active',   chipClass: STATUS_COLORS.active,   dot: 'bg-emerald-500' },
-  { value: 'inactive', label: 'inactive', chipClass: STATUS_COLORS.inactive, dot: 'bg-ink-3' },
+  { value: 'lead',     label: 'lead',     dot: STATUS_COLORS.lead },
+  { value: 'active',   label: 'active',   dot: STATUS_COLORS.active },
+  { value: 'inactive', label: 'inactive', dot: STATUS_COLORS.inactive },
 ]
 
 /** Deterministic tinted palette for row avatars. `avatarColor(name)`

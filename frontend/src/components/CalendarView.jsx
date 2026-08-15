@@ -841,7 +841,10 @@ export default function CalendarView({
                         )}
                       </div>
                       <div className="flex flex-col items-end gap-1 shrink-0">
-                        <span className={`text-[10px] px-1.5 py-0.5 rounded border ${tc.pill}`}>{tc.label}</span>
+                        <span className="inline-flex items-center gap-1 text-[10px] font-medium text-ink-3">
+                          <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${tc.dot}`} aria-hidden="true" />
+                          {tc.label}
+                        </span>
                         <div className="flex gap-1">
                           {j.calendar_invite_sent && <span title="Client invited" className="text-[10px] text-blue-500">Invited</span>}
                         </div>
@@ -1019,10 +1022,12 @@ export default function CalendarView({
           tracks the finger. */}
       {touchDrag && draggingJob && (
         <div
-          className={`fixed pointer-events-none z-50 px-2 py-1 rounded shadow-lg text-xs font-medium border ${
-            (TYPE_CONFIG[draggingJob.job_type] || TYPE_CONFIG.residential).pill
-          }`}
-          style={{ left: touchDrag.x + 12, top: touchDrag.y + 12 }}
+          className="fixed pointer-events-none z-50 px-2 py-1 rounded shadow-lg text-xs font-medium border border-hairline bg-panel text-ink"
+          style={{
+            left: touchDrag.x + 12,
+            top: touchDrag.y + 12,
+            borderLeft: `3px solid ${(TYPE_CONFIG[draggingJob.job_type] || TYPE_CONFIG.residential).hex}`,
+          }}
         >
           {draggingJob.title}
         </div>

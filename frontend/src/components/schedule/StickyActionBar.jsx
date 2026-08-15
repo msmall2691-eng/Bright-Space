@@ -1,35 +1,30 @@
 /**
- * Mobile-only sticky bottom action bar — just "+ New job".
+ * Phone-only "+ New job" floating action button.
  *
- * Used to swap its primary slot to a black "Assign crew · N" nag whenever
- * any job that day had no cleaner_ids — a small operator running its own
- * crew doesn't want that as the default action every time it opens the
- * agenda (production feedback), and it was floating on TOP of the last
- * card's content, compounding the "can't scroll to the bottom" bug fixed
- * alongside this. "New job" is always the primary action now; assigning a
- * crew still works the same as before via the job edit modal, it's just
- * not pushed on you here.
+ * Used to be a FULL-WIDTH bar pinned across the bottom of the agenda — it
+ * covered the last card's content and the assistant button rode on top of
+ * it (owner: "hate these big bubbles"). Now a compact pill in the
+ * bottom-right, stacked ABOVE the PageAssistant/Ask-AI button (which sits
+ * at bottom-[4.75rem] below lg) so the two never overlap, and narrow
+ * enough that cards scroll past beside it.
  *
- * Sits above the iOS home indicator via env(safe-area-inset-bottom). The
- * agenda list pads its bottom padding enough that no card gets hidden
- * behind this bar.
+ * md:hidden — from tablet width up the toolbar's own "New Job" button is
+ * the (one) primary; this exists only for one-thumb reach on phones.
+ * Sits above the iOS home indicator via env(safe-area-inset-bottom).
  */
 import { Plus } from 'lucide-react'
 
 export default function StickyActionBar({ onNewJob }) {
   return (
-    <div
-      className="no-print lg:hidden fixed left-0 right-0 z-30 flex items-center gap-2 px-4"
-      style={{ bottom: 'calc(env(safe-area-inset-bottom, 0px) + 78px)' }}
+    <button
+      type="button"
+      onClick={onNewJob}
+      style={{ bottom: 'calc(env(safe-area-inset-bottom, 0px) + 8.25rem)' }}
+      className="no-print md:hidden fixed right-4 z-30 flex items-center gap-1.5 pl-3 pr-4 min-h-[44px] rounded-full text-[13px] font-semibold shadow-lg active:scale-95 transition-transform bg-indigo-600 text-white"
+      aria-label="New job"
     >
-      <button
-        type="button"
-        onClick={onNewJob}
-        className="flex-1 flex items-center justify-center gap-2 px-4 py-3 rounded-full text-[14px] font-semibold shadow-lg active:scale-[0.99] transition-transform bg-indigo-600 text-white"
-      >
-        <Plus className="w-4 h-4" />
-        <span>New job</span>
-      </button>
-    </div>
+      <Plus className="w-4 h-4" />
+      <span>New job</span>
+    </button>
   )
 }

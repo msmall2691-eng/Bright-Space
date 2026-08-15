@@ -18,13 +18,14 @@ const ROLES = ['admin', 'manager', 'member', 'viewer', 'cleaner']
 // One derived visual state per row, so the pill and the buttons can never
 // contradict each other (the old screen showed "Active" beside "Re-enable").
 function rowState(u) {
+  // dot carries the hue; the chip body stays quiet (owner's bubble veto).
   if (!u.active || u.status === 'disabled')
-    return { key: 'disabled', label: 'Disabled', Icon: Ban, cls: 'bg-red-50 text-red-700 border-red-200' }
+    return { key: 'disabled', label: 'Disabled', Icon: Ban, dot: 'bg-red-500' }
   if (u.status === 'pending')
-    return { key: 'pending', label: 'Pending', Icon: Clock, cls: 'bg-amber-50 text-amber-700 border-amber-200' }
+    return { key: 'pending', label: 'Pending', Icon: Clock, dot: 'bg-amber-500' }
   if (u.activated === false)
-    return { key: 'invited', label: 'Invited', Icon: Mail, cls: 'bg-amber-50 text-amber-700 border-amber-200' }
-  return { key: 'active', label: 'Active', Icon: CheckCircle2, cls: 'bg-emerald-50 text-emerald-700 border-emerald-200' }
+    return { key: 'invited', label: 'Invited', Icon: Mail, dot: 'bg-amber-500' }
+  return { key: 'active', label: 'Active', Icon: CheckCircle2, dot: 'bg-emerald-500' }
 }
 
 const inputCls = 'mt-0.5 w-full bg-panel border border-hairline rounded-lg px-2.5 py-2 text-base sm:text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500'
@@ -176,12 +177,13 @@ export default function UsersAdmin() {
 
       {!loading && pending.length > 0 && (
         <div className="mb-5">
-          <h3 className="text-xs font-semibold text-amber-700 uppercase tracking-wide mb-2">
+          <h3 className="inline-flex items-center gap-1.5 text-xs font-semibold text-ink-3 uppercase tracking-wide mb-2">
+            <span className="w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0" aria-hidden="true" />
             Waiting for approval ({pending.length})
           </h3>
           <div className="space-y-2">
             {pending.map(u => (
-              <div key={u.id} className="flex flex-wrap items-center gap-3 border border-amber-200 bg-amber-50/50 rounded-xl px-4 py-3">
+              <div key={u.id} className="flex flex-wrap items-center gap-3 border border-hairline bg-panel rounded-xl px-4 py-3">
                 <div className="flex-1 min-w-[180px]">
                   <div className="text-sm font-semibold text-ink truncate">{u.full_name || u.email}</div>
                   <div className="text-xs text-ink-3 truncate">{u.email} · signed up {u.created_at ? new Date(u.created_at).toLocaleDateString() : '—'}</div>
@@ -219,8 +221,9 @@ export default function UsersAdmin() {
                       {u.last_login_at ? ` · last login ${new Date(u.last_login_at).toLocaleDateString()}` : ''}
                     </div>
                   </div>
-                  <span className={`inline-flex items-center gap-1 text-[11px] px-2 py-1 rounded-full border shrink-0 ${st.cls}`}>
-                    <st.Icon className="w-3 h-3" /> {st.label}
+                  <span className="inline-flex items-center gap-1.5 text-[11px] px-2 py-1 rounded-sm border border-hairline-2 bg-panel text-ink-2 font-medium shrink-0">
+                    <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${st.dot}`} aria-hidden="true" />
+                    {st.label}
                   </span>
                 </div>
 

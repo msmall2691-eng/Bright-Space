@@ -53,25 +53,25 @@ function CalendarFeedsCard({ property, navigate }) {
             let pill
             if (failed) {
               pill = (
-                <span className="inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-full bg-red-50 dark:bg-red-500/10 text-red-700 dark:text-red-300"
+                <span className="inline-flex items-center gap-1.5 text-[11px] font-medium text-red-600 dark:text-red-300"
                   title={ical.last_sync_error || ''}>
-                  <AlertCircle className="w-3 h-3" /> Failed {lastAt || ''}
+                  <span className="w-1.5 h-1.5 rounded-full bg-red-500 shrink-0" aria-hidden="true" /> Failed {lastAt || ''}
                 </span>
               )
             } else if (ical.last_synced_at) {
               pill = isStaleSync(ical.last_synced_at) ? (
-                <span className="inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-full bg-amber-50 dark:bg-amber-500/10 text-amber-700 dark:text-amber-300"
+                <span className="inline-flex items-center gap-1.5 text-[11px] font-medium text-amber-700 dark:text-amber-300"
                   title="No clean sync in 24h+ — check this feed">
-                  <AlertCircle className="w-3 h-3" /> Stale · synced {lastAt}
+                  <span className="w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0" aria-hidden="true" /> Stale · synced {lastAt}
                 </span>
               ) : (
-                <span className="inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-full bg-emerald-50 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-300">
-                  <CheckCircle className="w-3 h-3" /> Synced {lastAt}
+                <span className="inline-flex items-center gap-1.5 text-[11px] font-medium text-ink-3">
+                  <span className="w-1.5 h-1.5 rounded-full bg-ink-3/40 shrink-0" aria-hidden="true" /> Synced {lastAt}
                 </span>
               )
             } else {
               pill = (
-                <span className="inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-full bg-bg-2 text-ink-2">
+                <span className="inline-flex items-center gap-1.5 text-[11px] font-medium text-ink-3">
                   <Clock className="w-3 h-3" /> Never synced
                 </span>
               )
@@ -487,12 +487,16 @@ export default function PropertyDetail() {
 
           {/* Property Info */}
           <div className="flex items-start gap-3 mb-4">
-            <div className={`p-2 rounded ${propertyTypeConfig.badge}`}>
+            <div className="p-2 rounded border border-hairline bg-bg-2 text-ink-3">
               <PropertyIcon className="w-5 h-5" />
             </div>
             <div className="flex-1">
               <div className="flex items-center gap-2 flex-wrap">
-                <span className={`px-2 py-1 rounded text-xs font-medium ${propertyTypeConfig.badge}`}>
+                <span className="inline-flex items-center gap-1.5 text-xs font-medium text-ink-2">
+                  <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${
+                    property.property_type === 'str' ? 'bg-amber-500'
+                    : property.property_type === 'commercial' ? 'bg-purple-500' : 'bg-blue-500'
+                  }`} aria-hidden="true" />
                   {propertyTypeConfig.label}
                 </span>
                 {/* STR feed health + upcoming turnover count (Tier 3 roadmap) —
@@ -501,14 +505,12 @@ export default function PropertyDetail() {
                     ran the manual sweep from the properties list. */}
                 {property.property_type === 'str' && property.ical_health && property.ical_health !== 'no_feed' && (
                   <span
-                    className={`flex items-center gap-1 px-2 py-1 rounded text-xs font-medium ${
-                      property.ical_health === 'healthy' ? 'text-green-600 bg-green-500/10' : 'text-amber-600 bg-amber-500/10'
-                    }`}
+                    className="flex items-center gap-1.5 text-xs font-medium text-ink-3"
                     title={property.ical_health === 'healthy'
                       ? 'A feed synced cleanly within the last 24h'
                       : "No feed has synced cleanly in 24h+ — check it"}
                   >
-                    {property.ical_health === 'healthy' ? <CheckCircle className="w-3.5 h-3.5" /> : <AlertCircle className="w-3.5 h-3.5" />}
+                    <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${property.ical_health === 'healthy' ? 'bg-ink-3/40' : 'bg-amber-500'}`} aria-hidden="true" />
                     {property.ical_health === 'healthy' ? 'Feed healthy' : 'Feed stale'}
                   </span>
                 )}
@@ -639,13 +641,14 @@ export default function PropertyDetail() {
                           <span onClick={e => e.stopPropagation()}>
                             <RecordLink type="job" id={job.id} label={job.title} className="font-semibold" />
                           </span>
-                          <span className={`px-2 py-1 rounded-full text-xs font-medium whitespace-nowrap ${statusConfig.badge}`}>
+                          <span className="inline-flex items-center gap-1.5 text-xs font-medium text-ink-2 whitespace-nowrap">
+                            <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${statusConfig.dot}`} aria-hidden="true" />
                             {statusConfig.label}
                           </span>
                           {job.job_type === 'str_turnover' && (
-                            <span className="flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium whitespace-nowrap bg-amber-100 text-amber-700 dark:bg-amber-900 dark:text-amber-300"
+                            <span className="flex items-center gap-1 text-xs font-medium whitespace-nowrap text-ink-3"
                               title="Auto-created from this property's rental calendar feed">
-                              <Wind className="w-3 h-3" /> Turnover
+                              <Wind className="w-3 h-3 text-amber-500" /> Turnover
                             </span>
                           )}
                         </div>

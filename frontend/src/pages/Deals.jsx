@@ -174,13 +174,14 @@ export default function Deals() {
         <div className="flex items-center gap-1.5 flex-wrap py-3 overflow-x-auto">
           {chips.map(c => (
             <button key={c.key} onClick={() => setStageFilter(c.key)}
-              className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[12px] font-medium border transition-colors whitespace-nowrap ${
+              aria-pressed={stageFilter === c.key}
+              className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[12px] font-medium border transition-colors whitespace-nowrap bg-panel ${
                 stageFilter === c.key
-                  ? 'bg-indigo-600 border-indigo-600 text-white'
-                  : 'bg-panel border-hairline text-ink-2 hover:bg-bg-2'}`}>
+                  ? 'border-ink/30 text-ink font-semibold'
+                  : 'border-hairline text-ink-2 hover:bg-bg-2'}`}>
               {c.key !== 'all' && <span className={`w-1.5 h-1.5 rounded-full ${STAGE_MAP[c.key]?.dot}`} />}
               {c.label}
-              <span className={`tabular-nums ${stageFilter === c.key ? 'text-white/80' : 'text-ink-3'}`}>{c.n}</span>
+              <span className="tabular-nums text-ink-3">{c.n}</span>
             </button>
           ))}
         </div>

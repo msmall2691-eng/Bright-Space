@@ -18,7 +18,6 @@ import QuoteEditPanel from '../components/quoting/QuoteEditPanel'
 import { useQuotingData, safeQuote } from '../hooks/useQuotingData'
 import { useQuotingMutations } from '../hooks/useQuotingMutations'
 import {
-  QUOTE_STATUS_COLORS, LEAD_STATUS_COLORS,
   QUOTE_STATUS_OPTIONS, LEAD_STATUS_OPTIONS, QUOTE_NEXT_STEP,
   EMPTY_ITEM,
   serviceLabel, freqLabel, titleFromIntake, roundTo5, defaultValidUntil,
