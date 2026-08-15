@@ -4917,6 +4917,32 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/ai/daily-brief": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Daily Brief
+         * @description Once-a-day AI brief for the Ops Board strip.
+         *     {brief, generated_at, ai, items}. `items` is the live followup list (same
+         *     shape as /followup-check) so the strip's caller doesn't need a second
+         *     request — the ITEMS are recomputed every call (cheap DB scans, and they
+         *     must reflect reality e.g. right after an invoice is paid); only the
+         *     model-written PROSE is cached per business day. ?refresh=1 regenerates
+         *     the prose.
+         */
+        get: operations["daily_brief_api_ai_daily_brief_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/dashboard/board": {
         parameters: {
             query?: never;
@@ -16382,6 +16408,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+        };
+    };
+    daily_brief_api_ai_daily_brief_get: {
+        parameters: {
+            query?: {
+                refresh?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

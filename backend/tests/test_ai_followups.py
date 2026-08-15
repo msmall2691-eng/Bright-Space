@@ -24,6 +24,7 @@ from database.models import (
     Client, ICalEvent, Invoice, Job, Org, Property, PropertyIcal, Quote,
 )
 from modules.auth.router import current_org_id, get_current_user
+import modules.ai.router as ai_router
 from modules.ai.router import _build_record_context, _compute_followups
 from services.turnover_coverage import compute_turnover_coverage
 
@@ -283,4 +284,115 @@ def test_draft_review_request_completed_only(api):
         db.rollback()
         _cleanup(db, client_ids=[c.id] if c else (),
                  property_ids=[p.id] if p else ())
+        db.close()
+
+
+# ── GET /api/ai/daily-brief ─────────────────────────────────────────────────
+
+@pytest.fixture(autouse=False)
+def _clear_brief_cache():
+    """The per-business-day cache is module state — each test starts clean so
+    a brief cached by one test can't satisfy (or poison) another."""
+    ai_router._BRIEF_CACHE.clear()
+    yield
+    ai_router._BRIEF_CACHE.clear()
+
+
+def test_daily_brief_fallback_shape_without_model(api, monkeypatch, _clear_brief_cache):
+    """No anthropic client → the deterministic fallback still returns the full
+    contract: a non-empty brief, an ISO generated_at, ai=False, and the same
+    items list /followup-check serves (the strip must never need two calls)."""
+    monkeypatch.setattr(ai_router, "_anthropic_client", lambda: None)
+    r = api.get("/api/ai/daily-brief")
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert isinstance(body.get("brief"), str) and body["brief"]
+    assert body.get("ai") is False
+    datetime.fromisoformat(body["generated_at"])  # raises if not ISO
+    assert isinstance(body.get("items"), list)
+    # The items really are the followup list, not a re-shaped copy.
+    db = SessionLocal()
+    try:
+        expected = _compute_followups(db, 1)["followups"]
+    finally:
+        db.close()
+    assert [i["title"] for i in body["items"]] == [i["title"] for i in expected]
+
+
+def test_daily_brief_caches_prose_per_day_and_refresh_busts(api, monkeypatch,
+                                                            _clear_brief_cache):
+    """Second call the same day returns the SAME generated_at without a second
+    model call; ?refresh=1 regenerates. Counted via a fake client so the test
+    proves the cache short-circuits the model, not just that timestamps match."""
+    from types import SimpleNamespace
+
+    calls = []
+
+    class _FakeMessages:
+        def create(self, **kwargs):
+            calls.append(kwargs)
+            return SimpleNamespace(content=[
+                SimpleNamespace(type="text", text="All quiet — 2 jobs today.")])
+
+    fake = SimpleNamespace(messages=_FakeMessages())
+    monkeypatch.setattr(ai_router, "_anthropic_client", lambda: fake)
+
+    r1 = api.get("/api/ai/daily-brief")
+    assert r1.status_code == 200, r1.text
+    b1 = r1.json()
+    assert b1["brief"] == "All quiet — 2 jobs today."
+    assert b1["ai"] is True
+    assert len(calls) == 1
+
+    r2 = api.get("/api/ai/daily-brief")
+    b2 = r2.json()
+    assert b2["generated_at"] == b1["generated_at"]
+    assert b2["brief"] == b1["brief"]
+    assert len(calls) == 1, "cached day must not trigger a second model call"
+
+    r3 = api.get("/api/ai/daily-brief?refresh=1")
+    assert r3.status_code == 200
+    assert len(calls) == 2, "?refresh=1 must regenerate"
+
+
+def test_daily_brief_is_org_scoped(api, monkeypatch, _clear_brief_cache):
+    """An org-1 overdue invoice shows in org 1's items and never in org 2's —
+    the brief aggregates money/jobs across the business, so an unscoped scan
+    here would leak one tenant's numbers into another's morning readout."""
+    monkeypatch.setattr(ai_router, "_anthropic_client", lambda: None)
+
+    def overdue_count(items):
+        # The scan aggregates into one "<n> overdue invoice(s)" item; absent
+        # item means zero. Delta-based so rows left behind by OTHER tests in
+        # the shared DB can't turn this into a flake.
+        item = next((i for i in items if "overdue invoice" in i["title"]), None)
+        return int(item["title"].split()[0]) if item else 0
+
+    def fetch(org):
+        app.dependency_overrides[current_org_id] = lambda: org
+        return api.get("/api/ai/daily-brief").json()
+
+    db = SessionLocal()
+    c = None
+    try:
+        _ensure_org2(db)
+        before1 = overdue_count(fetch(1)["items"])
+        before2 = overdue_count(fetch(2)["items"])
+
+        c = Client(name="Brief Owner", email="brief@example.com",
+                   status="active", org_id=1)
+        db.add(c); db.commit(); db.refresh(c)
+        db.add(Invoice(client_id=c.id, org_id=1, status="overdue",
+                       total=432.0, invoice_number="INV-BRIEF-1"))
+        db.commit()
+
+        # Org 1 sees its new overdue invoice; org 2's readout is unchanged.
+        assert overdue_count(fetch(1)["items"]) == before1 + 1
+        assert overdue_count(fetch(2)["items"]) == before2
+        # And the cached prose is keyed per org — each org got its own entry.
+        assert {k[0] for k in ai_router._BRIEF_CACHE} == {1, 2}
+    finally:
+        app.dependency_overrides[current_org_id] = lambda: 1
+        db.rollback()
+        _cleanup(db, client_ids=[c.id] if c else ())
         db.close()

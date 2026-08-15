@@ -29,6 +29,7 @@ from sqlalchemy.orm import Session, joinedload
 from database.db import get_db
 from database.models import Client, Job, RecurringSchedule, Property, Invoice, Quote
 from modules.auth.router import get_current_user, current_org_id
+from ratelimit import rate_limit
 # The 24h staleness verdict must be THE one the Properties page shows — a
 # duplicated cutoff here would eventually drift and the alert list would
 # disagree with the page it links to.
@@ -1556,3 +1557,137 @@ def _compute_followups(db: Session, org_id: int) -> dict:
     order = {"high": 0, "medium": 1, "low": 2}
     items.sort(key=lambda f: order.get(f["severity"], 3))
     return {"total": len(items), "followups": items}
+
+
+# ── GET /api/ai/daily-brief ─────────────────────────────────────────────────
+#
+# One warm paragraph for the top of the Ops Board: "here's what today looks
+# like and what to do first." Built from the SAME followup items the alert
+# bell shows (so the brief and the bell can never disagree) plus a compact
+# org-scoped business snapshot, summarized once per business day by the
+# cheapest tier (haiku) — this is a summarize-what's-here task, not reasoning.
+#
+# Cache: one model call per org per business day, in a module-level dict.
+# In-memory is a deliberate tradeoff: with UVICORN_WORKERS=4 each worker keeps
+# its own cache, so the worst case is one haiku call per worker per day —
+# pennies — and the cache resets on deploy, which is fine (the brief just
+# regenerates). AppSetting was considered and rejected: it's a global (not
+# org-scoped) kv table, so a durable cache would need composite keys plus
+# stale-row cleanup for a value that's worthless after midnight anyway.
+_BRIEF_CACHE: dict = {}  # {(org_id, iso_date): {"brief", "generated_at", "ai"}}
+
+
+def _org_business_snapshot(db: Session, org_id: int) -> dict:
+    """Org-scoped twin of agents/tools.py get_business_snapshot. The agent
+    tool queries the whole DB (the agent chat is single-tenant by design);
+    this endpoint serves a specific org's board, so every count here carries
+    the standard MT-3 filter — replicated rather than imported so the tool's
+    unscoped queries can't quietly become the brief's."""
+    today = business_today().isoformat()
+    week_end = (business_today() + timedelta(days=7)).isoformat()
+    return {
+        "date_today": today,
+        "clients_active": db.query(Client).filter(
+            Client.status == "active", _org(Client, org_id)).count(),
+        "clients_leads": db.query(Client).filter(
+            Client.status == "lead", _org(Client, org_id)).count(),
+        "jobs_today": db.query(Job).filter(
+            Job.scheduled_date == today, _org(Job, org_id)).count(),
+        "jobs_this_week": db.query(Job).filter(
+            Job.scheduled_date >= today, Job.scheduled_date <= week_end,
+            Job.status == "scheduled", _org(Job, org_id)).count(),
+        "active_recurring_schedules": db.query(RecurringSchedule).filter(
+            RecurringSchedule.active == True,  # noqa: E712
+            _org(RecurringSchedule, org_id)).count(),
+        "outstanding_invoices": sum(
+            i.total or 0
+            for i in db.query(Invoice).filter(
+                Invoice.status.in_(["sent", "overdue"]),
+                _org(Invoice, org_id)).all()
+        ),
+    }
+
+
+def _fallback_brief(items: list) -> str:
+    """One deterministic line from the top-severity items — the brief strip
+    must still say something true when the model is unavailable."""
+    if not items:
+        return "Nothing needs attention today — you're all caught up."
+    top = "; ".join(i["title"] for i in items[:3])
+    n = len(items)
+    return (f"{n} thing{'s need' if n != 1 else ' needs'} attention today: "
+            f"{top}.")
+
+
+def _generate_brief(db: Session, org_id: int, items: list) -> dict:
+    """Produce the cached portion of the daily brief: {brief, generated_at,
+    ai}. Falls back to the templated line on any model problem — the board
+    must never show an error because a nicety failed."""
+    from datetime import datetime, timezone
+    generated_at = datetime.now(timezone.utc).isoformat()
+    client = _anthropic_client()
+    if client is None:
+        # Cached like a real brief: without a key every board load would
+        # re-check the env for nothing. ?refresh=1 busts it once configured.
+        return {"brief": _fallback_brief(items), "generated_at": generated_at,
+                "ai": False}
+
+    payload = {
+        "business": _org_business_snapshot(db, org_id),
+        # Only the fields the model should narrate — hrefs/actions are UI
+        # plumbing that would just tempt it into inventing link text.
+        "needs_attention": [{"title": i["title"], "detail": i["detail"],
+                             "severity": i["severity"]} for i in items],
+    }
+    system = (
+        "You write a short morning brief for the owner of a small cleaning "
+        "business. From the JSON payload (today's business snapshot + a "
+        "prioritized needs-attention list), write 3-5 plain-English "
+        "sentences: what needs attention today, most urgent first, with the "
+        "concrete names and numbers from the data. Warm and direct, like a "
+        "capable office manager. No markdown, no headers, no bullet points, "
+        "no emoji. Never invent facts, names, or numbers that aren't in the "
+        "payload. If nothing needs attention, say so briefly and note the "
+        "day's schedule."
+    )
+    try:
+        resp = client.messages.create(
+            model=_TIER_MODEL_IDS["haiku"], max_tokens=300, system=system,
+            messages=[{"role": "user", "content": json.dumps(payload, default=str)}],
+        )
+        text = "".join(b.text for b in resp.content if b.type == "text").strip()
+        if not text:
+            return {"brief": _fallback_brief(items),
+                    "generated_at": generated_at, "ai": False}
+        return {"brief": text, "generated_at": generated_at, "ai": True}
+    except Exception:
+        logger.exception("daily brief generation failed; using fallback")
+        return {"brief": _fallback_brief(items), "generated_at": generated_at,
+                "ai": False}
+
+
+# Modest per-IP limit: the board fetches this once per mount (cached — free),
+# but ?refresh=1 forces a model call, so a stuck refresh-clicker (or a
+# scripted loop) shouldn't be able to burn tokens unbounded.
+@router.get("/daily-brief",
+            dependencies=[Depends(rate_limit(30, 3600, "ai_daily_brief"))])
+def daily_brief(refresh: int = 0, db: Session = Depends(get_db),
+                user=Depends(get_current_user),
+                org_id: int = Depends(current_org_id)):
+    """Once-a-day AI brief for the Ops Board strip.
+    {brief, generated_at, ai, items}. `items` is the live followup list (same
+    shape as /followup-check) so the strip's caller doesn't need a second
+    request — the ITEMS are recomputed every call (cheap DB scans, and they
+    must reflect reality e.g. right after an invoice is paid); only the
+    model-written PROSE is cached per business day. ?refresh=1 regenerates
+    the prose."""
+    items = _compute_followups(db, org_id)["followups"]
+    key = (org_id, business_today().isoformat())
+    if refresh:
+        _BRIEF_CACHE.pop(key, None)
+    cached = _BRIEF_CACHE.get(key)
+    if cached is None:
+        cached = _generate_brief(db, org_id, items)
+        _BRIEF_CACHE[key] = cached
+    return {"brief": cached["brief"], "generated_at": cached["generated_at"],
+            "ai": cached["ai"], "items": items}

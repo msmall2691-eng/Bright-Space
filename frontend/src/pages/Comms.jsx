@@ -33,6 +33,7 @@ import { MessageBubble } from '../components/comms/MessageBubble'
 import { ComposeModal } from '../components/comms/ComposeModal'
 import { ContactPanel } from '../components/comms/ContactPanel'
 import { ComposeBar } from '../components/comms/ComposeBar'
+import { ReplySuggestion } from '../components/comms/ReplySuggestion'
 import { ThreadHeader } from '../components/comms/ThreadHeader'
 import { InboxLeftPanel } from '../components/comms/InboxLeftPanel'
 import { useCommsData } from '../hooks/useCommsData'
@@ -248,6 +249,26 @@ export default function Comms() {
     return rowAction(id, 'assign', { assignee: me }, `Assigned to ${me}`)
   }, [rowAction])
 
+  // ──────── Reply co-pilot ────────
+  // The last real (non-note) message decides whether the thread is "waiting
+  // on us": inbound = the customer spoke last, so offer a suggested reply.
+  // Direction comes from Message.direction ('inbound' | 'outbound') — the
+  // same field MessageBubble aligns bubbles with.
+  const lastMsg = useMemo(() => {
+    const msgs = (detail?.messages || []).filter(m => !m.is_internal_note)
+    return msgs.length ? msgs[msgs.length - 1] : null
+  }, [detail?.messages])
+  const showSuggestion = !!detail && detail.status !== 'resolved' &&
+    lastMsg?.direction === 'inbound' && !noteMode
+
+  // "Use" fills the composer exactly like Draft-with-AI does — reply mode on,
+  // subject only for email threads. Never sends.
+  const useSuggestion = useCallback((text, subject) => {
+    setNoteMode(false)
+    setReply(text)
+    if (detail?.channel === 'email' && subject) setReplySubject(subject)
+  }, [detail?.channel])
+
   // ──────── Message grouping with day separators ────────
 
   const groupedMessages = useMemo(() => {
@@ -376,6 +397,16 @@ export default function Comms() {
                 </div>
               )}
             </div>
+
+            {showSuggestion && (
+              <div className="border-t border-hairline bg-panel px-4 pt-3">
+                <ReplySuggestion
+                  conversationId={detail.id}
+                  lastMessageId={lastMsg.id}
+                  onUse={useSuggestion}
+                />
+              </div>
+            )}
 
             <ComposeBar
               detail={detail}
