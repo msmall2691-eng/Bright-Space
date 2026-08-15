@@ -11,6 +11,9 @@ import EmptyState from '../components/ui/EmptyState'
 import PageHeader from '../components/ui/PageHeader'
 import { toast } from '../utils/toastBus'
 import { confirmDialog } from '../utils/confirmBus'
+import {
+  seriesDupKey, suggestKeeper, loadReviewedDupKeys, saveReviewedDupKeys,
+} from '../utils/recurringDuplicates'
 import { useEmployees } from '../hooks/useEmployees'
 import EndsPicker from '../components/schedule/EndsPicker'
 import { RecurringCreateModal } from '../components/schedule/ScheduleTabs'
@@ -601,14 +604,236 @@ function SeriesRow({ s, clientName, onOpen, isDuplicate }) {
   )
 }
 
-// Two ACTIVE series with the same client + cadence + day-of-week are almost
-// always an accidental double-create (the confusing "two Sandra Fox, every 4
-// weeks on Fri" case). Key them so the list can flag it — informational only,
-// never auto-removes anything.
-function seriesDupKey(s) {
-  const days = (s.days_of_week && s.days_of_week.length ? s.days_of_week : [s.day_of_week ?? 0])
-    .slice().sort((a, b) => a - b).join(',')
-  return `${s.client_id}|${s.frequency}|${s.interval_weeks || 1}|${s.day_of_month || ''}|${days}`
+// Duplicate grouping (same client + cadence + day) lives in
+// utils/recurringDuplicates.js — seriesDupKey is THE single definition,
+// shared by the list pills, the banner count, and the review panel below.
+
+// ─── Duplicate review panel ──────────────────────────────────────────────
+// Groups "Possible duplicate" series side by side so the owner can pick the
+// keeper and pause/cancel the others one confirmed action at a time. Drives
+// ONLY the existing Manage endpoints — PATCH {active:false} (pause, same as
+// the detail page's Pause button) and DELETE (soft-cancel: sets active=false;
+// already-scheduled visits stay on the calendar, past visits untouched).
+// Nothing is automatic: every action goes through the app's confirm dialog,
+// and nothing is ever hard-deleted (scheduling-invariants R7).
+function DuplicateReviewPanel({ schedules, clientsById, reviewedKeys, onToggleReviewed, onChanged, onClose }) {
+  // Snapshot group membership (and the keeper suggestion) at open, so acting
+  // on a series doesn't make its group vanish mid-review — the group stays
+  // put and collapses to a quiet "Resolved" row once one active series is
+  // left. Cards still render LIVE data from the schedules prop.
+  const [groups] = useState(() => {
+    const byKey = new Map()
+    for (const s of schedules) {
+      if (!s.active) continue
+      const k = seriesDupKey(s)
+      if (!byKey.has(k)) byKey.set(k, [])
+      byKey.get(k).push(s)
+    }
+    return [...byKey.entries()]
+      .filter(([, list]) => list.length > 1)
+      .map(([key, list]) => ({
+        key,
+        ids: list.map(s => s.id),
+        suggestion: suggestKeeper(list),
+      }))
+  })
+  const byId = useMemo(() => {
+    const m = {}
+    schedules.forEach(s => { m[s.id] = s })
+    return m
+  }, [schedules])
+  const [keeperByKey, setKeeperByKey] = useState({}) // group key → chosen keeper id
+  const [actioned, setActioned] = useState({})       // series id → 'paused' | 'cancelled'
+  const [busyId, setBusyId] = useState(null)
+
+  const doPause = async (s) => {
+    const ok = await confirmDialog(
+      `Pause “${s.title || 'Untitled'}”?\n\nNo new visits will be generated while it's paused; visits already on the calendar stay. You can resume it anytime from Manage.`,
+      { title: 'Pause series', confirmLabel: 'Pause series' },
+    )
+    if (!ok) return
+    setBusyId(s.id)
+    try {
+      await patch(`/api/recurring/${s.id}`, { active: false })
+      setActioned(a => ({ ...a, [s.id]: 'paused' }))
+      toast.success('Series paused')
+      onChanged?.()
+    } catch (e) {
+      toast.error(e.message || 'Failed to pause series')
+    } finally { setBusyId(null) }
+  }
+
+  const doCancel = async (s) => {
+    const n = s.upcoming_job_count || 0
+    const ok = await confirmDialog(
+      `Cancel “${s.title || 'Untitled'}”?\n\nNo new visits will be generated for this series.`
+      + (n > 0
+        ? ` Its ${n} already-scheduled visit${n === 1 ? ' stays' : 's stay'} on the calendar until you remove them individually.`
+        : '')
+      + ` Past and completed visits are untouched.`,
+      { title: 'Cancel series', confirmLabel: 'Cancel series', cancelLabel: 'Never mind', danger: true },
+    )
+    if (!ok) return
+    setBusyId(s.id)
+    try {
+      await del(`/api/recurring/${s.id}`)
+      setActioned(a => ({ ...a, [s.id]: 'cancelled' }))
+      toast.success('Series cancelled')
+      onChanged?.()
+    } catch (e) {
+      toast.error(e.message || 'Failed to cancel series')
+    } finally { setBusyId(null) }
+  }
+
+  return (
+    <ModalShell title="Review duplicates" onClose={onClose} wide>
+      <p className="text-[13px] text-ink-2">
+        Each group below is the same client, cadence, and day. Pick the series to keep,
+        then pause or cancel the extras — every action asks before it does anything, and
+        visits already on the calendar are never touched.
+      </p>
+      {groups.length === 0 && (
+        <EmptyState icon={Repeat} title="No duplicate groups"
+          description="No two active series share a client, cadence, and day." compact />
+      )}
+      {groups.map(g => {
+        const members = g.ids.map(id => byId[id]).filter(Boolean)
+        const first = members[0]
+        if (!first) return null
+        const clientName = clientsById[first.client_id]?.name || 'Unknown client'
+        const skipped = reviewedKeys.has(g.key)
+        const activeMembers = members.filter(s => s.active && !actioned[s.id])
+        const keeperId = keeperByKey[g.key] ?? g.suggestion?.id
+
+        if (skipped) {
+          return (
+            <div key={g.key}
+              className="flex items-center gap-2 rounded-md border border-hairline bg-bg-2/50 px-3 py-2 text-[12px] text-ink-3">
+              <span className="h-1.5 w-1.5 rounded-full bg-gray-400 shrink-0" />
+              <span className="min-w-0 truncate">
+                Skipped — not duplicates · {clientName} · {ruleSummary(first)}
+              </span>
+              <button onClick={() => onToggleReviewed(g.key)}
+                className="ml-auto shrink-0 font-medium text-ink-2 hover:text-ink underline underline-offset-2">
+                Undo
+              </button>
+            </div>
+          )
+        }
+
+        if (activeMembers.length <= 1) {
+          const kept = activeMembers[0]
+          return (
+            <div key={g.key}
+              className="flex items-center gap-2 rounded-md border border-hairline bg-bg-2/50 px-3 py-2 text-[12px] text-ink-3">
+              <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 shrink-0" />
+              <span className="min-w-0 truncate">
+                Resolved · {clientName} · {ruleSummary(first)}
+                {kept ? <> — keeping “{kept.title || 'Untitled'}”</> : ' — no active series left'}
+              </span>
+            </div>
+          )
+        }
+
+        return (
+          <section key={g.key} className="rounded-md border border-hairline bg-bg-2/40 p-3">
+            <header className="flex items-baseline justify-between gap-3 flex-wrap">
+              <div className="text-sm font-semibold text-ink min-w-0">
+                {clientName}
+                <span className="font-normal text-ink-3"> · {ruleSummary(first)}</span>
+              </div>
+              <button onClick={() => onToggleReviewed(g.key)}
+                className="shrink-0 text-[12px] text-ink-3 hover:text-ink underline underline-offset-2">
+                Not duplicates — skip this group
+              </button>
+            </header>
+            <div className="mt-2.5 grid gap-2.5 sm:grid-cols-2">
+              {members.map(s => {
+                const state = actioned[s.id] || (s.active ? 'active' : 'paused')
+                const isKeeper = state === 'active' && s.id === keeperId
+                const suggested = g.suggestion?.id === s.id
+                const next = state === 'active' ? computeUpcoming(s, [], 1)[0]?.date : null
+                return (
+                  <div key={s.id}
+                    className={`rounded-md border bg-panel p-3 ${isKeeper ? 'border-emerald-300 dark:border-emerald-800' : 'border-hairline'}`}>
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0">
+                        <div className="text-sm font-semibold text-ink truncate">{s.title || 'Untitled'}</div>
+                        <div className="text-[12px] text-ink-2 truncate">
+                          {s.client_id ? (
+                            <Link to={`/clients/${s.client_id}`}
+                              className="no-underline hover:text-indigo-600 hover:underline">
+                              {clientsById[s.client_id]?.name || `Client #${s.client_id}`}
+                            </Link>
+                          ) : 'No client'}
+                          {' · '}{s.address}
+                        </div>
+                      </div>
+                      <span className="inline-flex h-5 items-center gap-1.5 rounded-sm border border-hairline-2 bg-panel px-2 text-[11px] font-medium text-ink-2 shrink-0">
+                        <span className={`h-1.5 w-1.5 rounded-full ${
+                          state === 'active' ? 'bg-emerald-500'
+                          : state === 'cancelled' ? 'bg-red-500' : 'bg-gray-500'}`} />
+                        {state === 'active' ? 'Active' : state === 'cancelled' ? 'Cancelled' : 'Paused'}
+                      </span>
+                    </div>
+                    <div className="mt-2 space-y-0.5 text-[12px] text-ink-3">
+                      <div>{ruleSummary(s)} · {s.start_time
+                        ? <>{fmtTime(s.start_time)}–{fmtTime(s.end_time)}</>
+                        : <span className="text-amber-600 font-medium">no time set</span>}</div>
+                      <div>Created {fmtDate((s.created_at || '').slice(0, 10)) || 'unknown'}</div>
+                      <div>
+                        {s.upcoming_job_count || 0} upcoming visit{(s.upcoming_job_count || 0) === 1 ? '' : 's'}
+                        {next && <> · next {fmtDate(next)}</>}
+                      </div>
+                    </div>
+                    {state === 'active' ? (
+                      isKeeper ? (
+                        <div className="mt-3 flex items-center gap-2 flex-wrap">
+                          <span className="inline-flex h-5 items-center gap-1.5 rounded-sm border border-emerald-300 dark:border-emerald-800 bg-panel px-2 text-[11px] font-medium text-emerald-700 dark:text-emerald-400">
+                            <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+                            Keeper
+                          </span>
+                          {suggested && (
+                            <span className="text-[11px] text-ink-3">Suggested — {g.suggestion.reason}</span>
+                          )}
+                        </div>
+                      ) : (
+                        <div className="mt-3 flex items-center gap-2 flex-wrap">
+                          <button onClick={() => setKeeperByKey(m => ({ ...m, [g.key]: s.id }))}
+                            className="inline-flex items-center rounded-md border border-hairline bg-panel px-2.5 py-1.5 text-xs font-medium text-ink-2 hover:bg-bg-2 hover:text-ink">
+                            Keep this one
+                          </button>
+                          <span className="ml-auto inline-flex items-center gap-2">
+                            <Button variant="secondary" size="sm" disabled={busyId === s.id}
+                              onClick={() => doPause(s)}>
+                              <Pause className="w-3.5 h-3.5 mr-1" />Pause
+                            </Button>
+                            <button onClick={() => doCancel(s)} disabled={busyId === s.id}
+                              className="inline-flex items-center rounded-md border border-hairline bg-panel px-2.5 py-1.5 text-xs font-medium text-red-600 hover:bg-red-50 dark:hover:bg-red-950/40 disabled:opacity-50 disabled:cursor-not-allowed">
+                              Cancel series
+                            </button>
+                          </span>
+                        </div>
+                      )
+                    ) : (
+                      <div className="mt-3 text-[11px] text-ink-3">
+                        {state === 'cancelled'
+                          ? 'Cancelled — no new visits will be generated.'
+                          : 'Paused — no new visits while paused; resume anytime from Manage.'}
+                      </div>
+                    )}
+                  </div>
+                )
+              })}
+            </div>
+          </section>
+        )
+      })}
+      <div className="flex justify-end pt-2">
+        <Button variant="secondary" onClick={onClose}>Done</Button>
+      </div>
+    </ModalShell>
+  )
 }
 
 // ─── Detail view ─────────────────────────────────────────────────────────
@@ -1032,9 +1257,25 @@ export default function Recurring() {
     }
     return new Set(Object.keys(counts).filter(k => counts[k] > 1))
   }, [schedules])
-  const dupCount = useMemo(
-    () => filtered.filter(s => s.active && duplicateKeys.has(seriesDupKey(s))).length,
-    [filtered, duplicateKeys],
+
+  // Review-duplicates panel: opened from the banner; groups the flagged
+  // series so the owner picks a keeper and confirms each pause/cancel.
+  // "Skip this group" (false positive) persists per-group in localStorage so
+  // the banner count and pills stop nagging about it.
+  const [reviewOpen, setReviewOpen] = useState(false)
+  const [reviewedKeys, setReviewedKeys] = useState(() => loadReviewedDupKeys())
+  const toggleReviewed = useCallback((key) => {
+    setReviewedKeys(prev => {
+      const next = new Set(prev)
+      if (next.has(key)) next.delete(key)
+      else next.add(key)
+      saveReviewedDupKeys(next)
+      return next
+    })
+  }, [])
+  const dupGroupCount = useMemo(
+    () => [...duplicateKeys].filter(k => !reviewedKeys.has(k)).length,
+    [duplicateKeys, reviewedKeys],
   )
 
   // Detail view
@@ -1124,14 +1365,17 @@ export default function Recurring() {
           </span>
         </div>
 
-        {dupCount > 0 && (
-          <div className="flex items-start gap-2 mb-4 px-3 py-2.5 rounded-xl bg-amber-50 border border-amber-200 text-amber-800 text-sm">
-            <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0" />
-            <span>
-              {dupCount} active series look like duplicates — same client, cadence, and day as another active one.
-              They're flagged <span className="font-semibold">Possible duplicate</span> below; open each and pause or
-              cancel the one you don't want. (This flag is just a heads-up — nothing is removed automatically.)
+        {dupGroupCount > 0 && (
+          <div className="flex items-center gap-2.5 mb-4 px-3 py-2.5 rounded-xl bg-amber-50 border border-amber-200 text-amber-800 text-sm">
+            <AlertTriangle className="w-4 h-4 shrink-0" />
+            <span className="flex-1 min-w-0">
+              {dupGroupCount} possible duplicate group{dupGroupCount === 1 ? '' : 's'} — same client,
+              cadence, and day. Review them side by side and pick which series to keep;
+              nothing is changed automatically.
             </span>
+            <Button variant="secondary" size="sm" className="shrink-0" onClick={() => setReviewOpen(true)}>
+              Review
+            </Button>
           </div>
         )}
 
@@ -1160,12 +1404,22 @@ export default function Recurring() {
                 s={s}
                 clientName={clientsById[s.client_id]?.name || 'Unknown client'}
                 onOpen={openSeries}
-                isDuplicate={s.active && duplicateKeys.has(seriesDupKey(s))}
+                isDuplicate={s.active && duplicateKeys.has(seriesDupKey(s)) && !reviewedKeys.has(seriesDupKey(s))}
               />
             ))}
           </ul>
         )}
       </div>
+      {reviewOpen && (
+        <DuplicateReviewPanel
+          schedules={schedules}
+          clientsById={clientsById}
+          reviewedKeys={reviewedKeys}
+          onToggleReviewed={toggleReviewed}
+          onChanged={loadList}
+          onClose={() => setReviewOpen(false)}
+        />
+      )}
       {showCreate && (
         <RecurringCreateModal
           clients={clientOptions}
