@@ -27,7 +27,9 @@ export const NAV_SECTIONS = [
     label: 'Sales',
     items: [
       { to: '/deals',    icon: Rows3,      label: 'Deals' },
-      { to: '/requests', icon: Inbox,      label: 'Requests' },
+      // /api/intake is admin/manager-only — a viewer's Requests page could
+      // only error, so don't offer the link.
+      { to: '/requests', icon: Inbox,      label: 'Requests', roles: ['admin', 'manager'] },
       { to: '/pipeline', icon: LayoutGrid, label: 'Pipeline' },
       { to: '/funnel',   icon: Filter,     label: 'Quote funnel', roles: ['admin', 'manager'] },
       { to: '/billing',  icon: Receipt,    label: 'Quotes & Billing' },
@@ -36,7 +38,9 @@ export const NAV_SECTIONS = [
   {
     label: 'Customers',
     items: [
-      { to: '/comms',      icon: MessageSquare, label: 'Messages' },
+      // All /api/comms endpoints (and the crew-chat office side) are
+      // admin/manager-only.
+      { to: '/comms',      icon: MessageSquare, label: 'Messages', roles: ['admin', 'manager'] },
       { to: '/clients',    icon: Users,         label: 'Clients' },
       { to: '/properties', icon: Home,          label: 'Properties' },
     ],
@@ -45,7 +49,8 @@ export const NAV_SECTIONS = [
     label: 'Operations',
     items: [
       { to: '/schedule',  icon: Calendar, label: 'Schedule' },
-      { to: '/recurring', icon: Repeat,   label: 'Recurring' },
+      // Every /api/recurring endpoint is admin/manager-only.
+      { to: '/recurring', icon: Repeat,   label: 'Recurring', roles: ['admin', 'manager'] },
       { to: '/sync',      icon: Radar,    label: 'Sync', roles: ['admin', 'manager', 'viewer'] },
     ],
   },
@@ -53,7 +58,8 @@ export const NAV_SECTIONS = [
     label: 'Team',
     items: [
       { to: '/crew',    icon: HardHat,    label: 'Crew', roles: ['admin', 'manager'] },
-      { to: '/payroll', icon: DollarSign, label: 'Payroll' },
+      // Payroll reads (/rates, /summary, /mileage) are admin/manager-only.
+      { to: '/payroll', icon: DollarSign, label: 'Payroll', roles: ['admin', 'manager'] },
     ],
   },
 ]
@@ -77,6 +83,25 @@ export const CREATE_ACTIONS = [
 
 /** Every nav destination as a flat list (pages the switcher can jump to). */
 export const NAV_ITEMS = [...NAV_SECTIONS.flatMap(s => s.items), SETTINGS_ITEM]
+
+/** The current user's role, read the same way the rest of the shell does. */
+export function currentRole() {
+  try { return JSON.parse(localStorage.getItem('brightbase_user') || '{}')?.role || null }
+  catch { return null }
+}
+
+/** Nav destinations visible to a role — same filter the Sidebar applies, for
+ *  the quick switcher (a viewer shouldn't be offered pages that only 403). */
+export function navItemsFor(role) {
+  return NAV_ITEMS.filter(i => !i.roles || (role && i.roles.includes(role)))
+}
+
+/** Create actions visible to a role. Every create flow (lead, message, job,
+ *  quote, client) is an admin/manager write in the backend, so viewers get
+ *  none — the "+ New" menu and switcher hide rather than offer 403s. */
+export function createActionsFor(role) {
+  return role === 'admin' || role === 'manager' ? CREATE_ACTIONS : []
+}
 
 /** Best icon for a path: exact nav match, else the detail route's parent icon. */
 export function iconFor(pathname) {

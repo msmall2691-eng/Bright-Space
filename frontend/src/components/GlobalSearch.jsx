@@ -4,7 +4,7 @@ import {
   Search, X, User, Home, FileText, Calendar, Loader2, Clock, ArrowRight, CornerDownLeft,
 } from 'lucide-react'
 import { get } from '../api'
-import { NAV_ITEMS, CREATE_ACTIONS, iconFor } from '../nav/routes'
+import { navItemsFor, createActionsFor, currentRole, iconFor } from '../nav/routes'
 import { getRecents } from '../nav/recents'
 
 // The quick switcher. Opens on Cmd+/ (or Ctrl+/) or via the sidebar/topbar
@@ -100,12 +100,17 @@ export default function GlobalSearch() {
 
   const q = query.trim().toLowerCase()
 
+  // Role-visible subsets — the switcher must not offer pages/creates the
+  // caller's role can only 403 on (same filter the Sidebar applies).
+  const role = currentRole()
+  const navItems = navItemsFor(role)
+  const createActions = createActionsFor(role)
   // Pages — fuzzy over the nav manifest (typing only; recents cover "empty").
-  const pages = q ? NAV_ITEMS.filter(p => p.label.toLowerCase().includes(q)) : []
+  const pages = q ? navItems.filter(p => p.label.toLowerCase().includes(q)) : []
   // Create actions — all when empty, filtered by label/keywords when typing.
   const actions = q
-    ? CREATE_ACTIONS.filter(a => (a.label + ' ' + a.keywords).toLowerCase().includes(q))
-    : CREATE_ACTIONS
+    ? createActions.filter(a => (a.label + ' ' + a.keywords).toLowerCase().includes(q))
+    : createActions
   // Skip the page we're on — "jump to where you already are" is noise.
   const shownRecents = q ? [] : recents.filter(r => r.to !== location.pathname).slice(0, 6)
 

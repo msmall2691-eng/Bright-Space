@@ -84,7 +84,7 @@ class ErrorBoundary extends Component {
 // (skipped on /login and public /quote/:token, /pay/:token, /job/:token routes).
 function SidebarWithUnread(props) {
   const navigate = useNavigate()
-  const { unreadConversations } = useUnreadCount({
+  const { unreadConversations, crewUnreadThreads } = useUnreadCount({
     onIncrease: (newTotal, prevTotal) => {
       playChime()
       const delta = newTotal - prevTotal
@@ -97,12 +97,15 @@ function SidebarWithUnread(props) {
       })
     },
   })
+  // The Messages badge covers BOTH inboxes — client conversations and crew
+  // chat threads (the Clients | Crew views of /comms) — as one quiet number.
+  const messagesBadge = unreadConversations + crewUnreadThreads
   useEffect(() => {
-    document.title = unreadConversations > 0
-      ? `(${unreadConversations}) BrightBase`
+    document.title = messagesBadge > 0
+      ? `(${messagesBadge}) BrightBase`
       : 'BrightBase'
-  }, [unreadConversations])
-  return <Sidebar {...props} badges={{ '/comms': unreadConversations }} />
+  }, [messagesBadge])
+  return <Sidebar {...props} badges={{ '/comms': messagesBadge }} />
 }
 
 // Lazy-loaded pages for code splitting

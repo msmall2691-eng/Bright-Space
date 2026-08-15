@@ -3,10 +3,10 @@ import { Link, useLocation, useNavigate } from 'react-router-dom'
 import {
   Menu, Search, Sparkles, Plus, ChevronDown, PanelLeft, Star,
 } from 'lucide-react'
-import { crumbsFor, CREATE_ACTIONS } from '../nav/routes'
+import { crumbsFor, createActionsFor, currentRole } from '../nav/routes'
 import { useFavorites, toggleFavorite } from '../nav/favorites'
 
-function NewMenu() {
+function NewMenu({ actions }) {
   const navigate = useNavigate()
   const [open, setOpen] = useState(false)
   const ref = useRef(null)
@@ -39,7 +39,7 @@ function NewMenu() {
           role="menu"
           className="absolute right-0 z-50 mt-1.5 w-48 rounded-lg border border-hairline-2 bg-panel py-1 shadow-glass-lg"
         >
-          {CREATE_ACTIONS.map(a => (
+          {actions.map(a => (
             <button
               key={a.to}
               role="menuitem"
@@ -66,6 +66,7 @@ export default function Header({ onMenuToggle, sidebarCollapsed, onSidebarExpand
   const location = useLocation()
   const crumbs = crumbsFor(location.pathname)
   const favorites = useFavorites()
+  const createActions = createActionsFor(currentRole())
   // Detail routes (crumb trail starts with a linked parent) can be pinned to
   // the sidebar Favorites. Label comes from the page's own <h1> (the record's
   // real name) at click time; the generic crumb label is the fallback.
@@ -159,8 +160,14 @@ export default function Header({ onMenuToggle, sidebarCollapsed, onSidebarExpand
         >
           <Sparkles className="h-4 w-4" />
         </button>
-        <div className="mx-1 h-4 w-px bg-hairline-2" />
-        <NewMenu />
+        {/* Every create is an admin/manager write — a viewer gets no "+ New"
+            (a menu of guaranteed 403s is worse than no menu). */}
+        {createActions.length > 0 && (
+          <>
+            <div className="mx-1 h-4 w-px bg-hairline-2" />
+            <NewMenu actions={createActions} />
+          </>
+        )}
       </div>
     </header>
   )
