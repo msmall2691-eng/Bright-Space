@@ -332,9 +332,44 @@ async def fetch_ical(url: str) -> bytes:
         return r.content
 
 
-def _sync_ical_url(db: Session, prop: Property, ical_url: str, ical_source_label: str = "unknown", property_ical: PropertyIcal = None) -> dict:
+# ── Feed change detection (economy audit H5) ────────────────────────────────
+# Every 15-minute tick used to re-download and re-parse every feed in full,
+# even when Airbnb returned byte-identical bytes (the overwhelmingly common
+# case). In-process, per-URL state: ETag/Last-Modified for conditional GETs
+# (a 304 costs headers only) and a body hash as the fallback short-circuit.
+# feed_uids are cached alongside because the cross-feed cancellation sweep in
+# sync_property needs EVERY feed's UIDs each tick — an unchanged-skip that
+# returned no UIDs would make that feed's bookings look "missing" and wrongly
+# flag cancellations. Safety valve: after _FEED_SKIP_TTL a full re-parse runs
+# regardless, so state that drifted outside the feed (e.g. a deleted Job)
+# can't hide behind "unchanged" forever. Process restart just means one full
+# fetch per feed — same as today.
+_FEED_STATE: dict = {}
+_FEED_SKIP_TTL_SECONDS = 6 * 3600
+
+_UNCHANGED_STATS = {
+    "events_seen": 0, "events_created": 0, "jobs_created": 0,
+    "jobs_cancelled": 0, "jobs_rescheduled": 0, "skipped_host_blocks": 0,
+    "skipped_not_reserved": 0, "future_bookings": 0, "missing_turnovers": [],
+    "is_partial_fetch": False, "unchanged": True,
+}
+
+
+def _feed_unchanged_result(state: dict) -> dict:
+    return {**_UNCHANGED_STATS, "missing_turnovers": [],
+            "feed_uids": set(state.get("feed_uids") or ())}
+
+
+def _sync_ical_url(db: Session, prop: Property, ical_url: str, ical_source_label: str = "unknown", property_ical: PropertyIcal = None,
+                   allow_unchanged_skip: bool = False) -> dict:
     """
     Sync a single iCal URL. Returns stats dict.
+
+    ``allow_unchanged_skip`` (economy audit H5): only the 15-minute background
+    tick passes True — an unchanged feed (304 or identical body hash) then
+    short-circuits before the parse. Manual "Sync now" and the retry endpoint
+    keep the default False so an operator's explicit sync is always a full
+    fetch + reconcile.
 
     RFC 5545 fix:
     - DTEND is exclusive for all-day events
@@ -347,14 +382,38 @@ def _sync_ical_url(db: Session, prop: Property, ical_url: str, ical_source_label
     except ValueError as e:
         log.warning(f"Refusing to fetch unsafe iCal URL {ical_url}: {e}")
         return {"error": f"Refusing unsafe iCal URL: {e}"}
+    import hashlib
+    import time as _time
+    _state = _FEED_STATE.get(ical_url)
+    _fresh = (allow_unchanged_skip and bool(_state)
+              and (_time.time() - _state.get("parsed_at", 0)) < _FEED_SKIP_TTL_SECONDS)
     try:
         with _httpx.Client(timeout=15, follow_redirects=False) as client:
-            r = client.get(ical_url)
+            _cond = {}
+            if _fresh:
+                if _state.get("etag"):
+                    _cond["If-None-Match"] = _state["etag"]
+                if _state.get("last_modified"):
+                    _cond["If-Modified-Since"] = _state["last_modified"]
+            # kwargs form so test doubles with a bare .get(url) keep working
+            # on the unconditional path.
+            r = client.get(ical_url, **({"headers": _cond} if _cond else {}))
+            if r.status_code == 304 and _fresh:
+                return _feed_unchanged_result(_state)
+            if r.status_code == 304:
+                # Conditional hit outside the freshness window: force full.
+                r = client.get(ical_url)
             r.raise_for_status()
             raw = r.content
+            _resp_etag = r.headers.get("etag") if hasattr(r, "headers") else None
+            _resp_lm = r.headers.get("last-modified") if hasattr(r, "headers") else None
     except Exception as e:
         log.warning(f"Failed to fetch iCal from {ical_url}: {e}")
         return {"error": f"Failed to fetch iCal: {e}"}
+
+    _sha = hashlib.sha256(raw).hexdigest()
+    if _fresh and _state.get("sha") == _sha:
+        return _feed_unchanged_result(_state)
 
     # Parse
     try:
@@ -793,6 +852,16 @@ def _sync_ical_url(db: Session, prop: Property, ical_url: str, ical_source_label
             f"have NO turnover after sync: {[m['checkout'] for m in missing_turnovers]}"
         )
 
+    # Record change-detection state for the next tick (economy audit H5) —
+    # only after a full successful parse, and never for partial fetches
+    # (a partial body's hash must not suppress the next full read).
+    if not is_partial_fetch:
+        import time as _time
+        _FEED_STATE[ical_url] = {
+            "sha": _sha, "etag": _resp_etag, "last_modified": _resp_lm,
+            "feed_uids": set(feed_uids), "parsed_at": _time.time(),
+        }
+
     return {
         "events_seen": seen,
         "events_created": created_events,
@@ -874,13 +943,17 @@ def _backfill_turnover_gcal(db: Session, prop: Property) -> int:
     return healed
 
 
-def sync_property(db: Session, prop: Property, only_ical_id: int = None) -> dict:
+def sync_property(db: Session, prop: Property, only_ical_id: int = None,
+                  allow_unchanged_skip: bool = False) -> dict:
     """
     Sync a property's iCal feeds. Returns a summary dict. Designed to be called
     from an API route or background task.
 
     If ``only_ical_id`` is given, only that PropertyIcal feed is synced — used
     by the per-feed retry endpoint.
+
+    ``allow_unchanged_skip``: passed through to the per-feed fetch; only the
+    background tick sets True (economy audit H5) — manual syncs stay full.
     """
     if not prop.property_icals:
         return {"error": "No iCal URLs configured for this property"}
@@ -918,7 +991,8 @@ def sync_property(db: Session, prop: Property, only_ical_id: int = None) -> dict
         result = _sync_ical_url(
             db, prop, prop_ical.url,
             ical_source_label=prop_ical.source or "unknown",
-            property_ical=prop_ical
+            property_ical=prop_ical,
+            allow_unchanged_skip=allow_unchanged_skip,
         )
         # Always record sync attempt outcome so the operator UI can show
         # an accurate status pill — last_synced_at alone with no status

@@ -34,7 +34,9 @@ export function useSyncOverview() {
 
   useEffect(() => {
     load()
-    timer.current = setInterval(load, 60_000)
+    // Hidden-tab guard (economy audit M3): a backgrounded Sync tab shouldn't
+    // keep billing the container every minute.
+    timer.current = setInterval(() => { if (!document.hidden) load() }, 60_000)
     return () => { if (timer.current) clearInterval(timer.current) }
   }, [load])
 

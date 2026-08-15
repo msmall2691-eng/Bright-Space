@@ -30,7 +30,8 @@ export function CrewInbox({ viewToggle }) {
   }, [])
   useEffect(() => {
     load()
-    const id = setInterval(load, 60000)
+    // Hidden-tab guard (economy audit M3).
+    const id = setInterval(() => { if (!document.hidden) load() }, 60000)
     return () => clearInterval(id)
   }, [load])
 

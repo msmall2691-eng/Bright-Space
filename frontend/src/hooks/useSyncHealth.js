@@ -39,7 +39,9 @@ export function useSyncHealth(refreshKey = 0) {
 
   useEffect(() => {
     _subs.add(setHealth)
-    if (!_timer) _timer = setInterval(_load, 60_000)
+    // Hidden-tab guard (economy audit M3): sync-health runs a schedule audit
+    // server-side per call — don't pay for it while nobody's looking.
+    if (!_timer) _timer = setInterval(() => { if (!document.hidden) _load() }, 60_000)
     // Always fetch fresh on mount (deduped) so a newly-shown pill isn't stale.
     _load()
     return () => {

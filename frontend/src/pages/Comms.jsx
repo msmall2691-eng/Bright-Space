@@ -105,7 +105,7 @@ export default function Comms() {
     detail, loadingDetail, loadingList, clients,
     threadRef,
     loadList, loadSummary, loadDetail,
-  } = useCommsData({ folder, chipFilters, channelFilter, search })
+  } = useCommsData({ folder, chipFilters, channelFilter, search, enabled: view !== 'crew' })
 
   // ──────── Filter config (memos over summary + state) ────────
 
