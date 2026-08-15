@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
+import { Link } from 'react-router-dom'
 import {
   Search, Download, Clock, Car, DollarSign, User, CalendarRange,
   Home, KeyRound, Sun, AlertTriangle, Settings2, ChevronDown, Save, Check, Tag,
@@ -578,7 +579,10 @@ function TurnoverRow({ property }) {
   return (
     <div className="flex items-center gap-3 bg-bg-2/50 rounded-lg px-3 py-2">
       <div className="flex-1 min-w-0">
-        <div className="text-sm text-ink truncate">{property.name}</div>
+        <Link to={`/properties/${property.id}`}
+          className="block text-sm text-ink truncate no-underline hover:text-indigo-600">
+          {property.name}
+        </Link>
         {err && <div className="text-xs text-red-400">{err}</div>}
       </div>
       <div className="flex items-center bg-panel border border-hairline rounded-lg px-2">

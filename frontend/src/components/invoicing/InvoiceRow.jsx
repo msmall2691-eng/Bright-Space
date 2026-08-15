@@ -1,3 +1,4 @@
+import { Link } from 'react-router-dom'
 import { AlertTriangle, Calendar, CheckCircle, ChevronRight, Send } from 'lucide-react'
 import { STATUS, avatar, daysOverdue } from './constants'
 
@@ -39,8 +40,18 @@ export function InvoiceRow({
           {av.initials}
         </div>
         <div className="min-w-0">
-          <div className="text-sm text-ink truncate">{clientName(inv.client_id)}</div>
-          <div className="text-[11px] text-ink-3">{inv.invoice_number}</div>
+          {inv.client_id ? (
+            <Link to={`/clients/${inv.client_id}`} onClick={e => e.stopPropagation()}
+              className="block text-sm text-ink truncate no-underline hover:text-indigo-600">
+              {clientName(inv.client_id)}
+            </Link>
+          ) : (
+            <div className="text-sm text-ink truncate">{clientName(inv.client_id)}</div>
+          )}
+          <Link to={`/invoices/${inv.id}`} onClick={e => e.stopPropagation()}
+            className="block text-[11px] text-ink-3 no-underline hover:text-indigo-600 truncate">
+            {inv.invoice_number}
+          </Link>
         </div>
       </div>
 

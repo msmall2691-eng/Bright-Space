@@ -100,7 +100,7 @@ export default function ClientProfile() {
     client, setClient,
     jobs, quotes, invoices, messages, emails,
     properties, schedules, opportunities, intakes,
-    visitStats, timelineEvents,
+    visitStats, profileVisits, timelineEvents,
     load, reloadActivities, reloadProperties,
     totalRevenue, outstanding, upcomingJobs, pastJobs, allActivity,
   } = useClientProfileData(id)

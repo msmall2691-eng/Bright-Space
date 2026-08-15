@@ -576,7 +576,15 @@ function SeriesRow({ s, clientName, onOpen, isDuplicate }) {
                 </span>
               )}
             </div>
-            <p className="text-[13px] text-ink-2 truncate">{clientName} · {s.address}</p>
+            <p className="text-[13px] text-ink-2 truncate">
+              {s.client_id ? (
+                <Link to={`/clients/${s.client_id}`} onClick={e => e.stopPropagation()}
+                  className="no-underline hover:text-indigo-600 hover:underline">
+                  {clientName}
+                </Link>
+              ) : clientName}
+              {' · '}{s.address}
+            </p>
             <p className="text-[12px] text-ink-3 mt-1">
               {ruleSummary(s)}
               {hasTime
@@ -728,7 +736,9 @@ function SeriesDetail({ id, onBack, onChanged, toast }) {
           <p className="text-sm text-ink-2">
             {client
               ? <Link to={`/clients/${client.id}`} className="hover:underline">{client.name}</Link>
-              : `Client #${schedule.client_id}`}
+              : schedule.client_id
+                ? <Link to={`/clients/${schedule.client_id}`} className="hover:underline">{`Client #${schedule.client_id}`}</Link>
+                : 'No client'}
             {' · '}{schedule.address}
           </p>
         </div>

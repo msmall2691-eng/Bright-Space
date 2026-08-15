@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useParams, useNavigate, Link } from 'react-router-dom'
 import {
-  ArrowLeft, Building2, MapPin, TrendingUp, Calendar, FileText,
+  ArrowLeft, Building2, MapPin, TrendingUp, Calendar, FileText, Inbox,
   Mail, MessageSquare, ChevronRight, Send, Eye, Download, Link2, Check,
 } from 'lucide-react'
 import { get, patch, post } from '../api'
@@ -353,6 +353,10 @@ export default function QuoteDetail() {
             {/* The original request behind this quote — expanded so staff can
                 see what the customer asked for while reviewing/sending. */}
             <OriginalRequestCard intake={quote.intake} defaultOpen className="bg-panel" />
+            <LinkedCard icon={Inbox} label="Request"
+              to={quote.intake ? `/requests/${quote.intake.id}` : null}
+              primary={quote.intake ? (quote.intake.name || `Request #${quote.intake.id}`) : null}
+              secondary={quote.intake?.source ? `via ${quote.intake.source}` : null} />
             <LinkedCard icon={TrendingUp} label="Opportunity"
               to={quote.opportunity ? `/opportunities/${quote.opportunity.id}` : null}
               primary={quote.opportunity?.title} secondary={quote.opportunity?.stage} />
