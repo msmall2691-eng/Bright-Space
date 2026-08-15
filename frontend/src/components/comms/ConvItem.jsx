@@ -1,4 +1,3 @@
-import { Clock } from 'lucide-react'
 import { CHANNEL_CONFIG } from './constants'
 import { contactDisplay, relTime } from './utils'
 import { Avatar } from './primitives'
@@ -19,10 +18,10 @@ export function ConvItem({ conv, active, onClick }) {
     <button onClick={onClick}
       className={`group w-full text-left px-4 py-3 transition-colors border-b border-hairline ${
         active
-          ? 'bg-indigo-50/60'
+          ? 'bg-bg-2'
           : unread
-            ? 'bg-panel hover:bg-bg'
-            : 'bg-panel hover:bg-bg/70'
+            ? 'bg-panel hover:bg-bg-2/60'
+            : 'bg-panel hover:bg-bg-2/60'
       }`}>
       <div className="flex items-center gap-3">
         {/* Avatar with a neutral channel chip in the bottom-right corner. The
@@ -58,8 +57,8 @@ export function ConvItem({ conv, active, onClick }) {
               light up amber on every row. */}
           {overdue ? (
             <div className="mt-1.5">
-              <span className="inline-flex items-center gap-0.5 text-[10px] font-semibold px-1.5 py-px rounded bg-red-50 text-red-700 border border-red-100 dark:bg-red-500/15 dark:text-red-300 dark:border-red-500/25">
-                <Clock className="w-2.5 h-2.5" /> Overdue
+              <span className="inline-flex h-5 items-center gap-1.5 rounded-sm border border-hairline-2 bg-panel px-2 text-[11px] font-medium text-ink-2">
+                <span className="h-1.5 w-1.5 rounded-full bg-red-500" /> Overdue
               </span>
             </div>
           ) : unassigned ? (

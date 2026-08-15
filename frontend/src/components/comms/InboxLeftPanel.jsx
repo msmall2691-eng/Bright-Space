@@ -88,7 +88,7 @@ export function InboxLeftPanel({
         const isOverdue = key === 'overdue'
         return (
           <button key={key} onClick={() => toggleChip(key)}
-            className={`inline-flex items-center gap-1 text-[11px] font-semibold px-2.5 py-1.5 rounded-full border transition-all ${
+            className={`inline-flex items-center gap-1 text-[11px] font-medium px-2.5 py-1.5 rounded-md border transition-all ${
               active
                 ? (isOverdue ? 'bg-red-50 text-red-700 border-red-200 dark:bg-red-500/15 dark:text-red-300 dark:border-red-500/25'
                              : 'bg-indigo-500/10 text-indigo-700 border-indigo-200 dark:bg-indigo-500/15 dark:text-indigo-300 dark:border-indigo-500/25')
@@ -110,12 +110,12 @@ export function InboxLeftPanel({
       {/* Header */}
       <div className="px-4 pt-3 pb-2.5">
         <div className="flex items-center justify-between mb-2.5">
-          <h1 className="text-[17px] font-bold text-ink tracking-tight">Inbox</h1>
+          <h1 className="text-[15px] font-semibold tracking-tight text-ink">Inbox</h1>
           <div className="flex items-center gap-1.5">
             <NotifPermissionButton />
             {/* Mobile-only filters trigger — opens the sheet with channel + chips. */}
             <button onClick={() => setFiltersOpen(true)}
-              className="lg:hidden relative w-9 h-9 rounded-lg bg-bg-2 hover:bg-hairline text-ink-2 flex items-center justify-center transition-colors">
+              className="lg:hidden relative w-8 h-8 rounded-md border border-hairline-2 bg-panel hover:bg-bg-2 text-ink-2 flex items-center justify-center transition-colors">
               <SlidersHorizontal className="w-4 h-4" />
               {activeFilterCount > 0 && (
                 <span className="absolute -top-1 -right-1 min-w-[16px] h-[16px] px-1 grid place-items-center rounded-full bg-indigo-600 text-white text-[9px] font-bold ring-2 ring-panel">
@@ -124,7 +124,7 @@ export function InboxLeftPanel({
               )}
             </button>
             <button onClick={onCompose}
-              className="w-9 h-9 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white flex items-center justify-center shadow-sm transition-all active:scale-95">
+              className="w-8 h-8 rounded-md bg-indigo-600 hover:bg-indigo-700 text-white flex items-center justify-center transition-colors">
               <Plus className="w-4 h-4" />
             </button>
           </div>
@@ -171,7 +171,7 @@ export function InboxLeftPanel({
              while the fetch is still in flight read as slow/broken. */
           <div className="divide-y divide-hairline">
             {[0, 1, 2, 3, 4, 5, 6].map(i => (
-              <div key={i} className="flex items-center gap-3 px-4 py-3.5">
+              <div key={i} className="flex items-center gap-3 px-4 py-3">
                 <div className="w-10 h-10 rounded-full bg-bg-2 animate-pulse shrink-0" />
                 <div className="flex-1 space-y-2">
                   <div className="h-3 rounded bg-bg-2 animate-pulse w-1/3" />
@@ -227,17 +227,17 @@ export function InboxLeftPanel({
               </button>
             </div>
             <div>
-              <label className="text-[11px] font-bold text-ink-3 uppercase tracking-wide block mb-1.5">Channel</label>
+              <label className="text-[11px] font-medium text-ink-3 block mb-1.5">Channel</label>
               <ChannelTabs />
             </div>
             {visibleChips.length > 0 && (
               <div>
-                <label className="text-[11px] font-bold text-ink-3 uppercase tracking-wide block mb-1.5">Quick filters</label>
+                <label className="text-[11px] font-medium text-ink-3 block mb-1.5">Quick filters</label>
                 <Chips />
               </div>
             )}
             <button onClick={() => setFiltersOpen(false)}
-              className="w-full py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-semibold transition-colors">
+              className="w-full py-2.5 rounded-md bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-medium transition-colors">
               Done
             </button>
           </div>

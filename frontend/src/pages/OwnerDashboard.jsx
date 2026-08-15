@@ -94,7 +94,7 @@ export default function OwnerDashboard() {
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
         <KpiCard
           icon={TrendingUp}
-          chip="bg-blue-50 dark:bg-blue-500/15 text-blue-600 dark:text-blue-300"
+          chip="bg-bg-2 text-ink-2"
           label="Close rate (90d)"
           value={loading ? '—' : closeRate?.rate_pct != null ? `${closeRate.rate_pct}%` : 'n/a'}
           sub={loading ? 'Loading…' : closeRate
@@ -103,7 +103,7 @@ export default function OwnerDashboard() {
         />
         <KpiCard
           icon={Repeat}
-          chip="bg-emerald-50 dark:bg-emerald-500/15 text-emerald-600 dark:text-emerald-300"
+          chip="bg-bg-2 text-ink-2"
           label="MRR estimate"
           value={loading ? '—' : fmtMoney((mrr?.estimate_cents || 0) / 100)}
           sub={loading ? 'Loading…' : mrr
@@ -112,7 +112,7 @@ export default function OwnerDashboard() {
         />
         <KpiCard
           icon={DollarSign}
-          chip="bg-violet-50 dark:bg-violet-500/15 text-violet-600 dark:text-violet-300"
+          chip="bg-bg-2 text-ink-2"
           label="Revenue paid (90d)"
           value={loading ? '—' : fmtMoney(revenueTotal)}
           sub={loading ? 'Loading…' : `${revenueByService.reduce((n, r) => n + (r.invoice_count || 0), 0)} invoices`}
@@ -202,7 +202,7 @@ export default function OwnerDashboard() {
           <div className="divide-y divide-hairline">
             {topClients.map((c, i) => (
               <a key={c.client_id} href={`/clients/${c.client_id}`}
-                 className="flex items-center gap-3 px-5 py-3 hover:bg-bg transition-colors">
+                 className="flex items-center gap-3 px-5 py-3 hover:bg-bg-2/60 transition-colors">
                 <span className="grid place-items-center w-6 h-6 rounded-full bg-bg-2 text-[11px] font-semibold text-ink-3 tabular-nums shrink-0">
                   {i + 1}
                 </span>

@@ -151,7 +151,7 @@ function SuggestedTasks({ items, onDismiss, onPick }) {
   return (
     <div className="shrink-0 mb-3 rounded-2xl border border-hairline bg-panel p-3.5">
       <div className="flex items-center justify-between gap-2 mb-2">
-        <span className="text-[11px] font-semibold text-ink-3 uppercase tracking-wide">Suggested for today</span>
+        <span className="text-[11px] font-medium text-ink-3">Suggested for today</span>
         <button onClick={onDismiss} className="text-ink-3 hover:text-ink-2 p-0.5">
           <X className="w-3.5 h-3.5" />
         </button>
@@ -409,20 +409,20 @@ export default function Workspace() {
         <div className="shrink-0 flex items-center gap-2 overflow-x-auto pb-3 -mx-1 px-1 scrollbar-thin">
           <button
             onClick={() => setSelectedAgentId(null)}
-            className={`flex items-center gap-1.5 shrink-0 pl-1.5 pr-3 py-1.5 rounded-full border text-[12px] font-semibold transition-colors ${
-              !selectedAgentId ? 'bg-purple-50 border-purple-200 text-purple-700' : 'bg-panel border-hairline text-ink-2 hover:border-hairline-2'
+            className={`flex items-center gap-1.5 shrink-0 pl-1.5 pr-3 py-1.5 rounded-md border text-xs font-medium transition-colors ${
+              !selectedAgentId ? 'bg-bg-2 border-hairline-2 text-ink' : 'bg-panel border-hairline text-ink-2 hover:border-hairline-2'
             }`}
           >
-            <span className="grid place-items-center w-6 h-6 rounded-full bg-purple-100 text-purple-600 text-xs">✨</span>
+            <span className="grid place-items-center w-6 h-6 rounded-full bg-bg-2 text-ink-2 text-xs">✨</span>
             Auto
           </button>
           {loadingAgents ? (
-            <Skeleton className="h-8 w-40 rounded-full shrink-0" />
+            <Skeleton className="h-8 w-40 rounded-md shrink-0" />
           ) : agents.map(a => (
             <button
               key={a.id}
               onClick={() => setSelectedAgentId(a.id === selectedAgentId ? null : a.id)}
-              className={`flex items-center gap-1.5 shrink-0 pl-1.5 pr-3 py-1.5 rounded-full border text-[12px] font-semibold transition-colors ${
+              className={`flex items-center gap-1.5 shrink-0 pl-1.5 pr-3 py-1.5 rounded-md border text-xs font-medium transition-colors ${
                 selectedAgentId === a.id ? 'border-hairline-2' : 'bg-panel border-hairline text-ink-2 hover:border-hairline-2'
               }`}
               style={selectedAgentId === a.id ? { backgroundColor: `${a.color}14`, color: a.color, borderColor: `${a.color}55` } : undefined}
@@ -479,7 +479,7 @@ export default function Workspace() {
             <button
               onClick={() => handleSend()}
               disabled={!input.trim() || sending}
-              className="shrink-0 grid place-items-center w-9 h-9 rounded-full bg-indigo-600 text-white disabled:opacity-40 disabled:cursor-not-allowed hover:bg-indigo-700 transition-colors"
+              className="shrink-0 grid place-items-center w-8 h-8 rounded-md bg-indigo-600 text-white disabled:opacity-40 disabled:cursor-not-allowed hover:bg-indigo-700 transition-colors"
             >
               <Send className="w-4 h-4" />
             </button>

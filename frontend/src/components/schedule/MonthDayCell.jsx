@@ -36,7 +36,7 @@ function MonthDayCell({
       onDragOver={e => onDragOverDay(e, date)}
       onDragLeave={onDragLeaveDay}
       onDrop={e => onDropDay(e, date)}
-      className={`group/day relative p-1 sm:p-1.5 min-h-[58px] sm:min-h-[96px] cursor-pointer transition-colors ${
+      className={`group/day relative p-1 sm:p-1.5 min-h-[58px] sm:min-h-[110px] cursor-pointer transition-colors ${
         isDropTarget ? 'bg-blue-50 ring-2 ring-blue-400 ring-inset' :
         isSelected ? 'bg-blue-50/60' :
         dayBookings.length > 0 ? 'bg-orange-50/50 hover:bg-orange-50' :
@@ -167,7 +167,7 @@ function MonthDayCell({
                 e.stopPropagation()
                 onJobClick?.(j)
               }}
-              className={`group/chip flex items-center gap-1.5 text-[10px] sm:text-[11px] pl-1.5 pr-1 py-1 rounded-md leading-tight cursor-grab active:cursor-grabbing transition-colors ${
+              className={`group/chip flex items-center gap-1.5 text-[11px] sm:text-[12px] pl-1.5 pr-1 py-1 rounded-md leading-tight cursor-grab active:cursor-grabbing transition-colors ${
                 isCancelled ? 'bg-bg-2 text-ink-3 line-through' :
                 isDuplicate ? 'bg-red-50 text-red-700 ring-1 ring-red-200 dark:bg-red-500/10' :
                 `${tc.pill} ${tc.pillHover}`
@@ -187,7 +187,10 @@ function MonthDayCell({
               )}
               {j.recurring_schedule_id && <RotateCw className="w-2.5 h-2.5 shrink-0 opacity-50" title="Recurring" />}
               {chipTime && <span className="font-semibold tabular-nums shrink-0 text-ink-2">{chipTime}</span>}
-              <span className="truncate text-ink font-medium">{chipWho}</span>
+              {/* The name is the point of the chip — it takes all remaining
+                  width (min-w-0 so truncate actually engages) instead of
+                  being squeezed out by the fixed time/icons. */}
+              <span className="flex-1 min-w-0 truncate text-ink font-medium">{chipWho}</span>
               {!isCancelled && (
                 crew ? (
                   <span className="ml-auto shrink-0 inline-flex items-center justify-center h-[16px] min-w-[16px] px-1 rounded-full bg-ink/5 dark:bg-white/10 text-[8px] font-semibold text-ink-2 leading-none"

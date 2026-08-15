@@ -77,7 +77,7 @@ function IntChip({ chip }) {
   return (
     <span
       title={`${chip.label} — ${chip.detail}`}
-      className="inline-flex shrink-0 items-center gap-1.5 rounded-full border border-hairline bg-panel px-2.5 py-1 text-[11px] font-medium text-ink-2">
+      className="inline-flex h-5 shrink-0 items-center gap-1.5 rounded-sm border border-hairline-2 bg-panel px-2 text-[11px] font-medium text-ink-2">
       <span className={`h-1.5 w-1.5 rounded-full ${INT_DOT[chip.tone] || INT_DOT.gray}`} />
       {chip.label}
       {chip.detail && <span className="text-ink-3">· {chip.detail}</span>}
@@ -89,8 +89,8 @@ function FilterChip({ sev, count, active, onClick }) {
   return (
     <button
       onClick={onClick}
-      className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[12px] font-semibold transition-colors ${
-        active ? 'border-transparent bg-ink text-bg' : 'border-hairline bg-panel text-ink-2 hover:border-hairline-2'
+      className={`inline-flex h-7 items-center gap-1.5 rounded-md border px-2.5 text-xs font-medium transition-colors ${
+        active ? 'border-transparent bg-ink text-bg' : 'border-hairline-2 bg-panel text-ink-2 hover:bg-bg-2'
       }`}>
       {sev !== 'all' && <span className={`h-1.5 w-1.5 rounded-full ${SEV_DOT[sev]}`} />}
       {SEV_LABEL[sev]}
@@ -164,7 +164,7 @@ function Section({ section, items, clearedSet, onToggle, onAction, actioningKey,
     <section className="mb-4 break-inside-avoid overflow-hidden rounded-2xl border border-hairline bg-panel">
       <header className="flex items-center gap-2 border-b border-hairline px-3.5 py-2.5">
         <span className="text-[13px] leading-none">{section.icon}</span>
-        <h2 className="text-[11px] font-bold uppercase tracking-wider text-ink-2">{section.title}</h2>
+        <h2 className="text-[11px] font-medium text-ink-3">{section.title}</h2>
         <span className="ml-auto rounded-full bg-bg-2 px-1.5 py-0.5 text-[10px] font-bold tabular-nums text-ink-3">
           {items.length}
         </span>
@@ -322,12 +322,9 @@ export default function OpsBoard() {
         <header className="flex flex-wrap items-end justify-between gap-3">
           <div className="min-w-0">
             <div className="flex items-center gap-2">
-              <h1 className="truncate text-xl font-bold tracking-tight text-ink sm:text-2xl">
+              <h1 className="truncate text-lg font-semibold tracking-tight text-ink">
                 {data?.company || 'Ops Board'}
               </h1>
-              <span className="rounded-md bg-bg-2 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-ink-3">
-                Ops Board
-              </span>
             </div>
             {data?.email && <p className="mt-0.5 truncate text-[12px] text-ink-3">{data.email}</p>}
           </div>
@@ -337,13 +334,13 @@ export default function OpsBoard() {
             )}
             <button
               onClick={() => setAssistantOpen(true)}
-              className="inline-flex items-center gap-1.5 rounded-lg border border-indigo-300 bg-indigo-50 px-2.5 py-1.5 text-[12px] font-semibold text-indigo-700 transition-colors hover:bg-indigo-100 dark:border-indigo-500/30 dark:bg-indigo-500/15 dark:text-indigo-300">
+              className="inline-flex h-8 items-center gap-1.5 rounded-md border border-hairline-2 bg-panel px-2.5 text-xs font-medium text-ink-2 transition-colors hover:bg-bg-2">
               <Sparkles className="h-3.5 w-3.5" /> Ask
             </button>
             <button
               onClick={() => load(true)}
               disabled={refreshing || loading}
-              className="inline-flex items-center gap-1.5 rounded-lg border border-hairline bg-panel px-2.5 py-1.5 text-[12px] font-semibold text-ink-2 transition-colors hover:text-ink disabled:opacity-50">
+              className="inline-flex h-8 items-center gap-1.5 rounded-md border border-hairline-2 bg-panel px-2.5 text-xs font-medium text-ink-2 transition-colors hover:bg-bg-2 disabled:opacity-50">
               {refreshing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
               Refresh
             </button>
@@ -368,14 +365,14 @@ export default function OpsBoard() {
           <div className="flex shrink-0 items-center gap-1.5">
             <button
               onClick={() => setHideCleared(v => !v)}
-              className="inline-flex items-center gap-1 rounded-lg border border-hairline bg-panel px-2 py-1 text-[11px] font-semibold text-ink-2 hover:text-ink">
+              className="inline-flex h-7 items-center gap-1 rounded-md border border-hairline-2 bg-panel px-2 text-[11px] font-medium text-ink-2 hover:bg-bg-2">
               {hideCleared ? <Eye className="h-3 w-3" /> : <EyeOff className="h-3 w-3" />}
               {hideCleared ? 'Show cleared' : 'Hide cleared'}
             </button>
             <button
               onClick={resetCleared}
               disabled={!clearedCount}
-              className="inline-flex items-center gap-1 rounded-lg border border-hairline bg-panel px-2 py-1 text-[11px] font-semibold text-ink-2 hover:text-ink disabled:opacity-40">
+              className="inline-flex h-7 items-center gap-1 rounded-md border border-hairline-2 bg-panel px-2 text-[11px] font-medium text-ink-2 hover:bg-bg-2 disabled:opacity-40">
               <RotateCcw className="h-3 w-3" /> Reset
             </button>
           </div>
