@@ -12,7 +12,7 @@
  */
 import { useEffect, useState } from 'react'
 import { Bell, CheckCircle2, Smartphone, X } from 'lucide-react'
-import { pushSupported, getPushState, enablePush, isAppInstalled, mobilePlatform } from '../../utils/push'
+import { pushSupported, getPushState, enablePush, isAppInstalled, mobilePlatform, onAppForeground } from '../../utils/push'
 import { useNotificationPrefs } from '../../hooks/useNotificationPrefs'
 
 const DISMISS_KEY = 'bb_crew_setup_dismissed'
@@ -64,9 +64,14 @@ export default function CrewSetupCard({ persistent = false }) {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState(null)
 
-  useEffect(() => {
+  const checkPush = () => {
     if (!pushSupported()) { setPush({ supported: false }); return }
     getPushState().then(setPush).catch(() => setPush({ supported: false }))
+  }
+  useEffect(() => {
+    checkPush()
+    return onAppForeground(checkPush)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   if (!persistent && dismissed) return null
@@ -127,7 +132,12 @@ export default function CrewSetupCard({ persistent = false }) {
             <span className="font-semibold">Add to Home Screen</span> / <span className="font-semibold">Install app</span> option
             — it opens like a regular app after that.
           </>)}
-          {os === 'ios' && !push?.supported && ' Installing it also unlocks notifications.'}
+          {os === 'ios' && !push?.supported && (<>
+            {' '}Installing it also unlocks notifications — but open it from the new{' '}
+            <span className="font-semibold">Home Screen icon</span>, not this browser tab.
+            If it still doesn't offer notifications right away, fully close the app
+            (swipe it away) and reopen it once from the icon.
+          </>)}
         </p>
       )}
 
