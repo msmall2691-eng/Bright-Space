@@ -11,6 +11,7 @@ import { htmlToText, formatDate, formatDateTime } from '../utils/format'
 import Button from '../components/ui/Button'
 import GlassCard from '../components/ui/GlassCard'
 import PageHero from '../components/ui/PageHero'
+import SavedViewsBar from '../components/SavedViewsBar'
 import { RequestThreadPanel } from '../components/requests/RequestThreadPanel'
 import PropertyPhoto from '../components/PropertyPhoto'
 import AiInsight from '../components/AiInsight'
@@ -473,6 +474,23 @@ export default function Requests() {
     loadRequests()
   }, [selectedStatus, selectedServiceType, selectedPriority])
 
+  // Saved-views glue: the snapshot a view persists, and the inverse that
+  // applies a stored config back onto the page. Status/service/priority are
+  // server-side (setting them re-triggers the fetch effect above);
+  // duplicatesOnly is the client-side possible-duplicates toggle.
+  const viewConfig = {
+    status: selectedStatus,
+    serviceType: selectedServiceType,
+    priority: selectedPriority,
+    duplicatesOnly: showDuplicatesOnly,
+  }
+  const applyView = (cfg) => {
+    setSelectedStatus(cfg.status || 'all')
+    setSelectedServiceType(cfg.serviceType || 'all')
+    setSelectedPriority(cfg.priority || 'all')
+    setShowDuplicatesOnly(!!cfg.duplicatesOnly)
+  }
+
   const handleCreateRequest = async () => {
     if (!newRequestForm.name.trim()) return
     setCreatingRequest(true)
@@ -717,6 +735,9 @@ export default function Requests() {
 
           {/* Filters */}
           <div className="flex flex-wrap gap-3 items-center">
+            {/* Saved view tabs — presets of the filters below (plus the
+                duplicates toggle); the selects stay for ad-hoc tweaks. */}
+            <SavedViewsBar entityType="lead" currentConfig={viewConfig} onApply={applyView} defaultLabel="All requests" />
             <select
               value={selectedStatus}
               onChange={(e) => setSelectedStatus(e.target.value)}

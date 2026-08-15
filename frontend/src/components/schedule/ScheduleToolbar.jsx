@@ -93,10 +93,8 @@ export default function ScheduleToolbar({
               switcher has moved to its own full-width row, which frees this
               row so nothing wraps. */}
           <div className="flex items-center gap-1.5">
-            <span className="bb-icon-chip grid place-items-center w-8 h-8 rounded-xl shrink-0 bg-emerald-50 dark:bg-emerald-500/15 text-emerald-600 dark:text-emerald-300">
-              <CalendarIcon className="w-[18px] h-[18px]" />
-            </span>
-            <h1 className="text-base font-bold text-ink">Schedule</h1>
+            <CalendarIcon className="w-[18px] h-[18px] shrink-0 text-ink-3" />
+            <h1 className="text-base font-semibold tracking-tight text-ink">Schedule</h1>
             <div className="flex-1" />
 
             <SyncHealthPill refreshKey={healthRefreshKey} onForced={onSyncForced}
@@ -156,10 +154,8 @@ export default function ScheduleToolbar({
         {/* =========================== DESKTOP =========================== */}
         <div className="hidden md:flex items-center gap-3">
           <div className="flex items-center gap-2 shrink-0">
-            <span className="bb-icon-chip grid place-items-center w-8 h-8 rounded-xl bg-emerald-50 dark:bg-emerald-500/15 text-emerald-600 dark:text-emerald-300">
-              <CalendarIcon className="w-[18px] h-[18px]" />
-            </span>
-            <h1 className="text-lg font-bold text-ink">Schedule</h1>
+            <CalendarIcon className="w-[18px] h-[18px] shrink-0 text-ink-3" />
+            <h1 className="text-lg font-semibold tracking-tight text-ink">Schedule</h1>
           </div>
 
           <div className="flex items-center gap-0.5 bg-bg-2 rounded-lg p-0.5 shrink-0">
@@ -222,9 +218,9 @@ export default function ScheduleToolbar({
             <select
               value={selectedPropertyType}
               onChange={(e) => onPropertyTypeChange(e.target.value)}
-              className={`text-[11px] font-medium px-2 py-1 rounded-full border whitespace-nowrap ${
+              className={`text-[11px] font-medium px-2 py-1 rounded-md border whitespace-nowrap ${
                 selectedPropertyType === 'all'
-                  ? 'bg-panel text-ink-3 border-hairline'
+                  ? 'bg-panel text-ink-3 border-hairline-2'
                   : 'bg-blue-50 text-blue-700 border-blue-200'
               }`}
             >
@@ -236,9 +232,9 @@ export default function ScheduleToolbar({
             <select
               value={selectedStatus}
               onChange={(e) => onStatusChange(e.target.value)}
-              className={`text-[11px] font-medium px-2 py-1 rounded-full border whitespace-nowrap ${
+              className={`text-[11px] font-medium px-2 py-1 rounded-md border whitespace-nowrap ${
                 selectedStatus === 'all'
-                  ? 'bg-panel text-ink-3 border-hairline'
+                  ? 'bg-panel text-ink-3 border-hairline-2'
                   : 'bg-blue-50 text-blue-700 border-blue-200'
               }`}
             >
@@ -352,12 +348,12 @@ function ToolsMenu({ open, onClose, onPreviewAutoAssign, onPreviewFixTimes, onOp
  *  two selects above and isn't reused elsewhere.
  */
 function ChipToggle({ active, onClick, disabled, colorActive, testid, children }) {
-  const base = 'text-[11px] font-medium px-2 py-1 rounded-full border whitespace-nowrap transition-colors'
+  const base = 'text-[11px] font-medium px-2 py-1 rounded-md border whitespace-nowrap transition-colors'
   const state = active
     ? colorActive
     : disabled
       ? 'bg-panel text-ink-3/50 border-hairline cursor-default'
-      : 'bg-panel text-ink-3 border-hairline hover:bg-white/50 cursor-pointer'
+      : 'bg-panel text-ink-3 border-hairline-2 hover:bg-bg-2 cursor-pointer'
   return (
     <button
       type="button"

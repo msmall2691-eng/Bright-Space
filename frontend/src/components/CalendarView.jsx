@@ -680,7 +680,7 @@ export default function CalendarView({
               <Plus className="w-3.5 h-3.5" /> New job
             </button>
           )}
-          {isMobile && selected && (
+          {selected && (
             <button
               onClick={() => setSelected(null)}
               className="p-1 -mr-1 text-ink-3 hover:text-ink-2 active:text-ink-2"
@@ -988,8 +988,11 @@ export default function CalendarView({
         </div>
       </div>
 
-      {!isMobile && (
-        <div className="w-72 bg-bg border-l border-hairline flex flex-col shrink-0">
+      {/* Day rail only exists once a day is picked — an empty "Select a day"
+          panel was stealing ~45% of the cells' width for nothing (the month
+          chips truncated to bare times). Close (X) gives the space back. */}
+      {!isMobile && selected && (
+        <div className="w-80 bg-bg border-l border-hairline flex flex-col shrink-0">
           {dayDetail}
         </div>
       )}
