@@ -231,20 +231,51 @@ def test_after_count_credits_elapsed_occurrences_from_anchor(seeded):
 def test_create_daily_empty_days_means_every_day(seeded):
     """A daily schedule created with no weekday filter means EVERY day — it must
     not be collapsed to a single weekday (audit C6: "daily" became Mondays
-    only). sched_to_dict masks the empty set as [day_of_week] for display, so
-    assert on the stored column and what generate_dates actually produces."""
+    only). Covers both the stored column/generate_dates AND the API response
+    shape sched_to_dict returns — the latter used to mask the empty set as
+    [day_of_week] for display, which fed the frontend's "Every day (Mon)"
+    label and, worse, computeUpcoming()'s date projection, which used that
+    fabricated single day as a weekday filter (backend/modules/recurring/
+    router.py's _effective_days, fixed to match services/recurring_guards'
+    already-correct daily/empty handling)."""
     from modules.recurring.router import generate_dates
     db, c, p = seeded
     r = api.post("/api/recurring", json=_base_create_payload(
         c, p, frequency="daily", days_of_week=[],
     ))
     assert r.status_code == 201, r.text
-    row = db.query(RecurringSchedule).get(r.json()["id"])
+    body = r.json()
+    row = db.query(RecurringSchedule).get(body["id"])
     # Stored as an every-day schedule, NOT collapsed to [0].
     assert row.days_of_week == []
     # generate_dates therefore yields every day of the week, not just Mondays.
     weekdays = {d.weekday() for d in generate_dates(row, weeks_ahead=2)}
     assert weekdays == {0, 1, 2, 3, 4, 5, 6}
+    # The API response (sched_to_dict) must reflect the same "every day"
+    # reality, not a single fabricated weekday — this is what the Recurring
+    # page and its upcoming-visit projection actually consume.
+    assert sorted(body["days_of_week"]) == [0, 1, 2, 3, 4, 5, 6]
+
+
+def test_daily_every_n_days_anchor_defaults_to_today_not_a_weekday(seeded):
+    """A freshly-created 'every N days' schedule (daily, empty days_of_week,
+    interval_weeks > 1) must phase its cadence off the actual creation day,
+    not off a fabricated single weekday. Before the _effective_days fix,
+    _ensure_anchor's fallback (`min(today + offset for dow in days)`) used the
+    single-day-masked [day_of_week] list, so the anchor could land up to 6
+    days in the future whenever the schedule wasn't created on that weekday —
+    shifting the whole 'every N days' phase and, for the first several days,
+    generating nothing at all."""
+    db, c, p = seeded
+    r = api.post("/api/recurring", json=_base_create_payload(
+        c, p, frequency="daily", interval_weeks=3, days_of_week=[],
+    ))
+    assert r.status_code == 201, r.text
+    row = db.query(RecurringSchedule).get(r.json()["id"])
+    db.refresh(row)
+    assert row.anchor_date == date.today(), (
+        f"expected anchor pinned to today ({date.today()}), got {row.anchor_date}"
+    )
 
 
 def test_convert_reschedule_to_skip_cancels_moved_job(seeded):

@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import { Link } from 'react-router-dom'
-import { LayoutGrid, RefreshCw, GripVertical, Search, DollarSign, Calendar } from 'lucide-react'
+import { LayoutGrid, RefreshCw, GripVertical, Search, DollarSign, Calendar, Rows3 } from 'lucide-react'
 import { get, patch } from '../api'
 import SavedViewsBar from '../components/SavedViewsBar'
 import PageHero from '../components/ui/PageHero'
@@ -114,10 +114,18 @@ export default function Pipeline() {
           { label: 'Won', value: byStage('won').length, tone: 'text-emerald-300' },
         ]}
         actions={
-          <button onClick={load}
-            className="flex items-center gap-1.5 bg-panel border border-hairline-2 text-ink-2 hover:bg-bg-2 px-3 py-1.5 rounded-md text-xs font-medium transition-colors">
-            <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} /> Refresh
-          </button>
+          <div className="flex items-center gap-2">
+            {/* Pipeline moved off the sidebar in favor of Deals (see nav/routes.js);
+                this is the way back for anyone who lands here directly. */}
+            <Link to="/deals"
+              className="flex items-center gap-1.5 text-ink-3 hover:text-ink-2 px-1 py-1.5 rounded-md text-xs font-medium no-underline transition-colors">
+              <Rows3 className="w-3.5 h-3.5" /> Deals list
+            </Link>
+            <button onClick={load}
+              className="flex items-center gap-1.5 bg-panel border border-hairline-2 text-ink-2 hover:bg-bg-2 px-3 py-1.5 rounded-md text-xs font-medium transition-colors">
+              <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} /> Refresh
+            </button>
+          </div>
         }
       >
         <div className="flex items-center gap-2 flex-wrap">

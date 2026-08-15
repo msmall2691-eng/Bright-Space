@@ -201,6 +201,24 @@ def _effective_days(s: RecurringSchedule) -> List[int]:
     ``days_of_week`` is *truly* empty. An empty list previously collapsed
     multi-day schedules (Mon/Wed/Fri) to a single day after an update that
     omitted ``days_of_week``.
+
+    Audit fix (frontend/backend contract drift, Aug 2026): a DAILY schedule
+    with an empty ``days_of_week`` means "every day" — no weekday filter — not
+    "fall back to a single legacy day". ``_occurs_on``'s own daily branch
+    already knows this and bypasses this function entirely for that case
+    (``chosen = None`` when ``days_of_week`` is falsy), so date generation was
+    never wrong. But every OTHER caller of this function — sched_to_dict (the
+    API response), _ensure_anchor's anchor fallback, and
+    _off_phase_future_jobs — went through the single-day fallback below and
+    got a fabricated "Monday" for a series that actually runs every day.
+    sched_to_dict's days_of_week/day_of_week fed straight into the frontend's
+    "Every day (Mon)" label and, worse, its computeUpcoming() date projection,
+    which used the fabricated single day as a weekday filter and would only
+    ever show one visit a week for a schedule generating one every day.
+    services/recurring_guards._effective_days already treated this correctly
+    (returns all seven days for a daily/empty rule) — this brings the router's
+    copy back in sync with it instead of leaving the two independently
+    reimplemented and drifted.
     """
     if s.days_of_week:
         # Defensive: dedupe + clamp to valid 0-6 range so a corrupted JSON blob
@@ -208,6 +226,8 @@ def _effective_days(s: RecurringSchedule) -> List[int]:
         cleaned = sorted({int(d) for d in s.days_of_week if isinstance(d, (int, float)) and 0 <= int(d) <= 6})
         if cleaned:
             return cleaned
+    if getattr(s, "frequency", None) == "daily":
+        return list(range(7))
     return [s.day_of_week] if s.day_of_week is not None else [0]
 
 

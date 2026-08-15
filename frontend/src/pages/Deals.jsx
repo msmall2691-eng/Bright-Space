@@ -14,7 +14,7 @@
  */
 import { useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { LayoutGrid, RefreshCw, Search, ArrowUp, ArrowDown, ArrowRight, Rocket, Trash2 } from 'lucide-react'
+import { LayoutGrid, RefreshCw, Search, ArrowUp, ArrowDown, ArrowRight, Rocket, Trash2, Columns3 } from 'lucide-react'
 import { del } from '../api'
 import { confirmDialog } from '../utils/confirmBus'
 import PageHero from '../components/ui/PageHero'
@@ -170,20 +170,29 @@ export default function Deals() {
       </div>
 
       <div className="px-4 sm:px-8 pb-6">
-        {/* Stage filter chips — the "columns" as filters, each with a live count. */}
-        <div className="flex items-center gap-1.5 flex-wrap py-3 overflow-x-auto">
-          {chips.map(c => (
-            <button key={c.key} onClick={() => setStageFilter(c.key)}
-              aria-pressed={stageFilter === c.key}
-              className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[12px] font-medium border transition-colors whitespace-nowrap bg-panel ${
-                stageFilter === c.key
-                  ? 'border-ink/30 text-ink font-semibold'
-                  : 'border-hairline text-ink-2 hover:bg-bg-2'}`}>
-              {c.key !== 'all' && <span className={`w-1.5 h-1.5 rounded-full ${STAGE_MAP[c.key]?.dot}`} />}
-              {c.label}
-              <span className="tabular-nums text-ink-3">{c.n}</span>
-            </button>
-          ))}
+        {/* Stage filter chips — the "columns" as filters, each with a live count.
+            "Board view" is a quiet tertiary link to the /pipeline kanban — same
+            data, drag-to-restage instead of the row select below, for anyone
+            who prefers moving cards by hand. */}
+        <div className="flex items-center justify-between gap-2 flex-wrap py-3">
+          <div className="flex items-center gap-1.5 flex-wrap overflow-x-auto">
+            {chips.map(c => (
+              <button key={c.key} onClick={() => setStageFilter(c.key)}
+                aria-pressed={stageFilter === c.key}
+                className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[12px] font-medium border transition-colors whitespace-nowrap bg-panel ${
+                  stageFilter === c.key
+                    ? 'border-ink/30 text-ink font-semibold'
+                    : 'border-hairline text-ink-2 hover:bg-bg-2'}`}>
+                {c.key !== 'all' && <span className={`w-1.5 h-1.5 rounded-full ${STAGE_MAP[c.key]?.dot}`} />}
+                {c.label}
+                <span className="tabular-nums text-ink-3">{c.n}</span>
+              </button>
+            ))}
+          </div>
+          <Link to="/pipeline"
+            className="inline-flex items-center gap-1.5 text-[12px] font-medium text-ink-3 hover:text-ink-2 no-underline shrink-0">
+            <Columns3 className="w-3.5 h-3.5" /> Board view
+          </Link>
         </div>
 
         {error && (

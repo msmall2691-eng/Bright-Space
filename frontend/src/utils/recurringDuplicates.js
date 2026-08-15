@@ -75,7 +75,17 @@ export function groupDuplicateSeries(seriesList) {
     const daySets = members.map(s => new Set(effectiveDays(s)))
     for (let i = 0; i < members.length; i++) {
       for (let j = i + 1; j < members.length; j++) {
-        if ([...daySets[i]].some(d => daySets[j].has(d))) {
+        // Monthly series don't have a meaningful day-of-week — day_of_month
+        // is already part of the bucket key (baseKey), so same-bucket monthly
+        // series always overlap here. Mirrors the backend's
+        // _group_live_duplicates (services/recurring_guards.py), which
+        // bypasses the day-set check entirely for frequency === 'monthly';
+        // without this, two monthly duplicates whose (cosmetic, UI-unused)
+        // day_of_week values happened to differ would silently NOT group on
+        // the frontend while the backend's health scan still flagged them.
+        const overlaps = members[i].frequency === 'monthly'
+          || [...daySets[i]].some(d => daySets[j].has(d))
+        if (overlaps) {
           parent[find(i)] = find(j)
         }
       }
