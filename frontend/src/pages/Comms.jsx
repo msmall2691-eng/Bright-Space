@@ -50,8 +50,8 @@ import { useCompanyName } from '../hooks/useCompanyName'
  *  on the Home "Messages" pillar so the two surfaces read as one system. */
 function HeaderStat({ n, label, tone }) {
   return (
-    <span className="inline-flex items-baseline gap-1 rounded-lg bg-bg-2 px-2.5 py-1">
-      <span className={`text-[13px] font-bold tabular-nums ${tone || 'text-ink'}`}>{n}</span>
+    <span className="inline-flex items-baseline gap-1.5 whitespace-nowrap text-[13px] text-ink-3">
+      <span className={`font-semibold tabular-nums ${tone || 'text-ink'}`}>{n}</span>
       <span className="text-[11px] text-ink-3">{label}</span>
     </span>
   )

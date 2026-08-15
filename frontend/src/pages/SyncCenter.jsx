@@ -89,15 +89,15 @@ const STATUS = {
 
 function DirectionChip({ direction }) {
   const cfg = {
-    out:      { Icon: ArrowRight,     label: 'Pushes out',  cls: 'bg-blue-500/10 text-blue-600' },
-    in:       { Icon: ArrowLeft,      label: 'Pulls in',    cls: 'bg-amber-500/10 text-amber-600' },
-    two_way:  { Icon: ArrowLeftRight, label: 'Two-way',     cls: 'bg-violet-500/10 text-violet-600' },
-    internal: { Icon: Repeat,         label: 'Internal',    cls: 'bg-slate-500/10 text-ink-3' },
+    out:      { Icon: ArrowRight,     label: 'Pushes out' },
+    in:       { Icon: ArrowLeft,      label: 'Pulls in' },
+    two_way:  { Icon: ArrowLeftRight, label: 'Two-way' },
+    internal: { Icon: Repeat,         label: 'Internal' },
   }[direction] || {}
   if (!cfg.Icon) return null
   return (
-    <span className={`inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-full ${cfg.cls}`}>
-      <cfg.Icon className="w-3 h-3" /> {cfg.label}
+    <span className="inline-flex h-5 items-center gap-1.5 rounded-sm border border-hairline-2 bg-panel px-2 text-[11px] font-medium text-ink-2">
+      <cfg.Icon className="w-3 h-3 text-ink-3" /> {cfg.label}
     </span>
   )
 }
@@ -252,7 +252,7 @@ function BackgroundJobsPanel({ jobs }) {
             if (!rows.length) return null
             return (
               <div key={g} className="px-4 py-3">
-                <div className="text-[11px] font-semibold uppercase tracking-wider text-ink-3 mb-2">{groups[g]}</div>
+                <div className="text-[11px] font-medium text-ink-3 mb-2">{groups[g]}</div>
                 <ul className="space-y-1.5">
                   {rows.map(j => (
                     <li key={j.key} className="flex items-center justify-between gap-2 text-sm">
@@ -288,7 +288,7 @@ function ScheduleLogPanel({ log }) {
         <div className="flex items-center gap-2 min-w-0">
           <ScrollText className="w-4 h-4 text-ink-3 shrink-0" />
           <span className="font-semibold text-ink text-sm">Schedule log</span>
-          <span className={`inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-full ${live ? 'bg-emerald-500/10 text-emerald-600' : 'bg-slate-500/10 text-ink-3'}`}>
+          <span className="inline-flex h-5 items-center gap-1.5 rounded-sm border border-hairline-2 bg-panel px-2 text-[11px] font-medium text-ink-2">
             <span className={`w-1.5 h-1.5 rounded-full ${live ? 'bg-emerald-500' : 'bg-slate-400'}`} />
             {live ? 'Capturing' : 'Dark'}
           </span>
@@ -426,7 +426,7 @@ export default function SyncCenter() {
           <div className="flex items-start gap-3 min-w-0 flex-1">
             <span className={`w-2.5 h-2.5 rounded-full mt-1.5 shrink-0 ${overallCfg.dot}`} />
             <div className="min-w-0">
-              <div className="text-base font-bold text-ink">{data.headline}</div>
+              <div className="text-base font-semibold text-ink">{data.headline}</div>
               <p className="text-[13px] text-ink-3 mt-0.5">
                 <span className="font-semibold text-ink-2">BrightBase is the master.</span> Your schedule here is the
                 source of truth — it pushes out to Google, pulls Airbnb turnovers in, and keeps recurring

@@ -12,7 +12,7 @@
  * existing admin PATCH /api/auth/users/{id}.
  */
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { HardHat, RefreshCw, UserPlus, Mail, Link2, CheckCircle2, Clock, Ban } from 'lucide-react'
+import { HardHat, RefreshCw, UserPlus, Mail, Link2 } from 'lucide-react'
 import { get, post, patch } from '../api'
 import { PageHeader, EmptyState, ErrorState, Skeleton } from '../components/ui'
 import { pushToast } from '../utils/toastBus'
@@ -51,11 +51,11 @@ function OfficeCrewThread({ user, onClose }) {
         onClick={e => e.stopPropagation()}>
         <div className="px-4 py-3 border-b border-hairline flex items-center justify-between">
           <div>
-            <div className="text-[15px] font-bold text-ink">{user.full_name || user.email}</div>
+            <div className="text-[15px] font-semibold text-ink">{user.full_name || user.email}</div>
             <div className="text-[11px] text-ink-3">Replies ping their phone</div>
           </div>
           <button onClick={onClose} aria-label="Close"
-            className="grid place-items-center w-8 h-8 rounded-lg bg-bg-2 text-ink-3">
+            className="grid place-items-center w-8 h-8 rounded-md bg-bg-2 text-ink-3">
             <X className="w-4 h-4" />
           </button>
         </div>
@@ -84,7 +84,7 @@ function OfficeCrewThread({ user, onClose }) {
             placeholder={`Message ${(user.full_name || '').split(' ')[0] || 'them'}…`}
             className="flex-1 resize-none rounded-xl border border-hairline bg-bg px-3 py-2.5 text-[14px] text-ink focus:outline-none focus:border-indigo-400" />
           <button onClick={send} disabled={busy || !draft.trim()} aria-label="Send"
-            className="grid place-items-center w-10 h-10 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white disabled:opacity-50 transition-colors">
+            className="grid place-items-center w-10 h-10 rounded-md bg-indigo-600 hover:bg-indigo-700 text-white disabled:opacity-50 transition-colors">
             <Send className="w-4 h-4" />
           </button>
         </div>
@@ -105,9 +105,9 @@ const isEmail = (s) => /.+@.+\..+/.test(String(s || '').trim())
 // truth: a cleaner is "Active" once they've set a password (accepted the
 // invite), "Invited" until then, and "Disabled" if the account was shut off.
 function pill(row) {
-  if ((row.status || '') === 'disabled') return { label: 'Disabled', Icon: Ban, cls: 'bg-red-50 text-red-700 border-red-200' }
-  if (row.activated) return { label: 'Active', Icon: CheckCircle2, cls: 'bg-emerald-50 text-emerald-700 border-emerald-200' }
-  return { label: 'Invited', Icon: Clock, cls: 'bg-amber-50 text-amber-700 border-amber-200' }
+  if ((row.status || '') === 'disabled') return { label: 'Disabled', dot: 'bg-red-500' }
+  if (row.activated) return { label: 'Active', dot: 'bg-emerald-500' }
+  return { label: 'Invited', dot: 'bg-amber-500' }
 }
 
 export default function Crew() {
@@ -232,7 +232,7 @@ export default function Crew() {
             <div className="flex flex-wrap gap-2">
               {unclaimed.map(u => (
                 <button key={u.cleaner_id} onClick={() => claim(u.cleaner_id)}
-                  className="inline-flex items-center gap-1.5 text-xs font-medium bg-panel border border-amber-300 text-amber-800 hover:bg-amber-100 rounded-full px-3 py-1.5 transition-colors">
+                  className="inline-flex items-center gap-1.5 text-xs font-medium bg-panel border border-amber-300 text-amber-800 hover:bg-amber-100 rounded-md px-3 py-1.5 transition-colors">
                   <UserPlus className="w-3.5 h-3.5" />
                   <span className="font-semibold">{u.cleaner_id}</span>
                   <span className="text-amber-600">· {u.upcoming_jobs} job{u.upcoming_jobs === 1 ? '' : 's'}</span>
@@ -287,7 +287,7 @@ export default function Crew() {
           </div>
           <div className="flex items-center gap-2 mt-3">
             <button type="submit" disabled={adding}
-              className="text-sm font-semibold bg-indigo-600 hover:bg-indigo-700 disabled:opacity-60 text-white px-4 py-2 rounded-lg inline-flex items-center gap-1.5 transition-colors">
+              className="text-sm font-medium bg-indigo-600 hover:bg-indigo-700 disabled:opacity-60 text-white px-4 py-2 rounded-md inline-flex items-center gap-1.5 transition-colors">
               <Mail className="w-4 h-4" /> {adding ? 'Sending…' : 'Add & send invite'}
             </button>
             <span className="text-[11px] text-ink-3">They’ll get an email with a link to set their password (good for 7 days).</span>
@@ -298,7 +298,7 @@ export default function Crew() {
         <div>
           <div className="flex items-center justify-between mb-2">
             <h2 className="text-sm font-semibold text-ink">Crew ({rows.length})</h2>
-            <button onClick={load} className="p-1.5 rounded-lg text-ink-3 hover:text-ink-2 hover:bg-bg-2" title="Refresh">
+            <button onClick={load} className="p-1.5 rounded-md text-ink-3 hover:text-ink-2 hover:bg-bg-2" title="Refresh">
               <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
             </button>
           </div>
@@ -322,8 +322,8 @@ export default function Crew() {
                         <div className="text-xs text-ink-3 truncate">{row.email}</div>
                       </div>
                       <div className="flex items-center gap-2 shrink-0">
-                        <span className={`inline-flex items-center gap-1 text-[11px] px-2 py-0.5 rounded-full border ${p.cls}`}>
-                          <p.Icon className="w-3 h-3" /> {p.label}
+                        <span className="inline-flex h-5 items-center gap-1.5 rounded-sm border border-hairline-2 bg-panel px-2 text-[11px] font-medium text-ink-2">
+                          <span className={`h-1.5 w-1.5 rounded-full ${p.dot}`} /> {p.label}
                         </span>
                         {!row.activated && (row.status || '') !== 'disabled' && (
                           <button onClick={() => resend(row.id)} disabled={busyId === row.id}
@@ -334,7 +334,7 @@ export default function Crew() {
                       </div>
                     </div>
                     <button onClick={() => setThreadUser(row)}
-                      className="mb-2 inline-flex items-center gap-1.5 text-[12px] font-semibold text-indigo-600 bg-indigo-50 border border-indigo-200 rounded-lg px-2.5 py-1.5 hover:bg-indigo-100 transition-colors">
+                      className="mb-2 inline-flex h-7 items-center gap-1.5 text-xs font-medium text-ink-2 bg-panel border border-hairline-2 rounded-md px-2.5 hover:bg-bg-2 transition-colors">
                       <MessageSquare className="w-3.5 h-3.5" /> Message
                     </button>
                     <label className="flex items-center gap-2 mb-2 text-[12px] font-medium text-ink-2 cursor-pointer ml-3">
