@@ -712,6 +712,10 @@ class AdminUserUpdate(BaseModel):
     # Crew lead flag: this cleaner's app shows the WHOLE month schedule
     # (names/times only). Admin-set here only — never self-service.
     can_view_full_schedule: Optional[bool] = None
+    # Cleaner home address (migration 092) — start/end of the payroll mileage
+    # chain. "" clears it. Office-entered; the cached geocode (home_lat/lng)
+    # resets on change so the next mileage report re-geocodes lazily.
+    home_address: Optional[str] = None
 
 
 def _user_row(db: Session, u: User) -> dict:
@@ -735,6 +739,7 @@ def _user_row(db: Session, u: User) -> dict:
         "pay_rate_rental": u.pay_rate_rental,
         "pay_rate_deep": u.pay_rate_deep,
         "can_view_full_schedule": bool(getattr(u, "can_view_full_schedule", False)),
+        "home_address": u.home_address,
         "last_login_at": u.last_login_at.isoformat() if u.last_login_at else None,
         "created_at": u.created_at.isoformat() if u.created_at else None,
     }
@@ -933,6 +938,14 @@ def update_workspace_user(user_id: int, data: AdminUserUpdate, db: Session = Dep
             setattr(u, _attr, _val)
     if data.can_view_full_schedule is not None:
         u.can_view_full_schedule = data.can_view_full_schedule
+    if data.home_address is not None:
+        new_home = data.home_address.strip()[:400] or None
+        if new_home != u.home_address:
+            u.home_address = new_home
+            # Invalidate the cached geocode — the next payroll mileage report
+            # re-geocodes the new address lazily (services/geocoding.py).
+            u.home_lat = None
+            u.home_lng = None
     db.commit()
     logger.info(f"[auth] {current_user.email} updated user {u.email}: "
                 f"role={data.role!r} active={data.active!r} cleaner_id={data.cleaner_id!r}")

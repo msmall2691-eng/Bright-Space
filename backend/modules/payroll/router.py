@@ -422,6 +422,193 @@ def payroll_summary(
     return _native_summary(db, start_date, end_date, rates, resolve_org_id(org_id, db))
 
 
+# ── Pre-calculated drive mileage (display/report only — NOT wired into pay) ──
+
+def _mileage_day_legs(stops: list, home, cache: dict) -> tuple:
+    """Build the drive legs for one cleaner-day.
+
+    stops: [(label, property_id, coords-or-None)] in visit order (consecutive
+    duplicates already collapsed); home: coords or None. Returns
+    (legs, unknown_stops). A stop with no coordinates (not geocoded — usually
+    no Google key) breaks the chain around it: legs touching it are skipped
+    and counted, the rest still compute — partial truth beats no report."""
+    from services.geocoding import leg_miles
+
+    legs, unknown = [], 0
+    points = []
+    if home is not None:
+        points.append(("Home", None, home, "from_home"))
+    for label, pid, coords, in stops:
+        points.append((label, pid, coords, "between"))
+    if home is not None and stops:
+        points.append(("Home", None, home, "return_home"))
+
+    seen_unknown_ids = set()
+    for prev, nxt in zip(points, points[1:]):
+        p_label, p_id, p_coords, _ = prev
+        n_label, n_id, n_coords, n_kind = nxt
+        for label, pid, coords in ((p_label, p_id, p_coords), (n_label, n_id, n_coords)):
+            if coords is None and (pid, label) not in seen_unknown_ids:
+                seen_unknown_ids.add((pid, label))
+                unknown += 1
+        if p_coords is None or n_coords is None:
+            continue
+        miles, estimated = leg_miles(p_coords, n_coords, cache)
+        legs.append({
+            "from": p_label,
+            "from_property_id": p_id,
+            "to": n_label,
+            "to_property_id": n_id,
+            "miles": round(miles, 1),
+            "estimated": estimated,
+            # 'from_home' | 'between' | 'return_home' — the return leg is
+            # included in the total but labeled, so the office can subtract
+            # it if they decide commute-home doesn't count.
+            "kind": "return_home" if n_kind == "return_home" else (
+                "from_home" if prev[3] == "from_home" else "between"),
+        })
+    return legs, unknown
+
+
+@router.get("/mileage", dependencies=[Depends(require_role("admin", "manager"))])
+def mileage_report(
+    start_date: Optional[str] = Query(None, description="YYYY-MM-DD (default today)"),
+    end_date: Optional[str] = Query(None, description="YYYY-MM-DD (default start_date)"),
+    cleaner_id: Optional[str] = Query(None, description="Limit to one crew ID"),
+    db: Session = Depends(get_db),
+    org_id: int = Depends(current_org_id),
+):
+    """Pre-calculated drive mileage per cleaner: for each day in the range,
+    chain their scheduled jobs by start time and measure home → first job →
+    between houses → back home. Distances are road distances when the Google
+    key is configured, otherwise straight-line × 1.3 clearly flagged
+    estimated. DISPLAY ONLY — nothing here feeds gross pay; reimbursement
+    still runs on the miles crew enter at clock-out (TimeEntry.miles)."""
+    from services.geocoding import ensure_property_coords, ensure_user_home_coords, _key as _geo_key
+
+    today = datetime.now(_tz.utc).astimezone(business_tz()).date()
+    try:
+        d0 = datetime.strptime(start_date, "%Y-%m-%d").date() if start_date else today
+        d1 = datetime.strptime(end_date, "%Y-%m-%d").date() if end_date else d0
+    except ValueError:
+        raise HTTPException(status_code=422, detail="Dates must be YYYY-MM-DD")
+    if d1 < d0:
+        raise HTTPException(status_code=422, detail="End date is before start date")
+    if (d1 - d0).days > 92:
+        raise HTTPException(status_code=422, detail="Mileage ranges are capped at 92 days")
+
+    oid = resolve_org_id(org_id, db)
+    jobs = (
+        db.query(Job)
+        .options(joinedload(Job.property))
+        .filter(or_(Job.org_id == oid, Job.org_id.is_(None)),
+                Job.scheduled_date >= d0,
+                Job.scheduled_date <= d1,
+                Job.status != "cancelled")
+        .all()
+    )
+
+    # cleaner_id → date → [jobs]; cleaner_ids is a JSON list, so fan out in
+    # Python (a shared job counts a full chain stop for EACH assigned cleaner).
+    by_cleaner: dict = {}
+    for j in jobs:
+        for cid in (j.cleaner_ids or []):
+            cid = str(cid)
+            if cleaner_id and cid != cleaner_id:
+                continue
+            by_cleaner.setdefault(cid, {}).setdefault(j.scheduled_date, []).append(j)
+
+    users = {}
+    if by_cleaner:
+        # Same org-scoped map as _native_summary (cleaner_id is non-unique
+        # across orgs; an unscoped lookup could leak another org's user).
+        for u in db.query(User).filter(
+            User.cleaner_id.in_(list(by_cleaner.keys())),
+            or_(User.org_id == oid, User.org_id.is_(None)),
+        ).all():
+            users[u.cleaner_id] = u
+
+    have_key = bool(_geo_key())
+    cache: dict = {}
+    cleaners, missing_home = [], []
+    for cid in sorted(by_cleaner.keys()):
+        u = users.get(cid)
+        name = (u.full_name or u.email) if u else cid
+        home = ensure_user_home_coords(u)
+        if home is None:
+            missing_home.append(name)
+        days_out = []
+        total = work = ret = 0.0
+        unknown_stops = 0
+        any_estimated = False
+        for d in sorted(by_cleaner[cid].keys()):
+            day_jobs = sorted(
+                by_cleaner[cid][d],
+                key=lambda j: (j.start_time is None, j.start_time or time.min, j.id),
+            )
+            stops = []
+            for j in day_jobs:
+                prop = j.property
+                label = (prop.name if prop is not None else None) or j.address or j.title
+                pid = prop.id if prop is not None else None
+                # Consecutive visits at the same property are one stop.
+                if stops and stops[-1][1] is not None and stops[-1][1] == pid:
+                    continue
+                stops.append((label, pid, ensure_property_coords(prop)))
+            legs, unk = _mileage_day_legs(stops, home, cache)
+            unknown_stops += unk
+            day_miles = round(sum(l["miles"] for l in legs), 1)
+            for l in legs:
+                total += l["miles"]
+                if l["kind"] == "return_home":
+                    ret += l["miles"]
+                else:
+                    work += l["miles"]
+                any_estimated = any_estimated or l["estimated"]
+            days_out.append({"date": d.isoformat(), "miles": day_miles,
+                             "stops": len(stops), "legs": legs})
+        cleaners.append({
+            "cleaner_id": cid,
+            "name": name,
+            "has_home": home is not None,
+            "total_miles": round(total, 1),
+            "work_miles": round(work, 1),        # home→first + between houses
+            "return_miles": round(ret, 1),       # the labeled jobN→home leg(s)
+            "estimated": any_estimated,
+            "unknown_stops": unknown_stops,
+            "days": days_out,
+        })
+    # Persist any lazily-filled lat/lng caches (each address geocodes once).
+    db.commit()
+
+    notes = []
+    if not have_key:
+        notes.append(
+            "No Google key configured — distances are straight-line estimates "
+            "× 1.3 road factor (and addresses can't be geocoded, so stops "
+            "without saved coordinates are skipped)."
+        )
+    if missing_home:
+        notes.append(
+            "No home address on file for: " + ", ".join(sorted(missing_home))
+            + " — their chains skip the home legs (between-houses only). "
+            "Add it under Settings → Users."
+        )
+
+    return {
+        "start_date": d0.isoformat(),
+        "end_date": d1.isoformat(),
+        "method": "road" if have_key else "estimated",
+        "cleaners": cleaners,
+        "totals": {
+            "miles": round(sum(c["total_miles"] for c in cleaners), 1),
+            "work_miles": round(sum(c["work_miles"] for c in cleaners), 1),
+            "return_miles": round(sum(c["return_miles"] for c in cleaners), 1),
+        },
+        "notes": notes,
+    }
+
+
 def _norm_name(s: str) -> str:
     return " ".join((s or "").lower().split())
 
