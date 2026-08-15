@@ -117,6 +117,19 @@ describe('groupDuplicateSeries', () => {
     const list = [{ ...base, id: 1 }, { ...base, id: 2 }]
     expect(groupDuplicateSeries(list)[0].key).toBe(groupDuplicateSeries([...list].reverse())[0].key)
   })
+  it('groups same-bucket monthly series even with mismatched (cosmetic) day_of_week, matching the backend audit', () => {
+    // Monthly cadence has no real day-of-week; day_of_month is what matters
+    // and is already part of the bucket key. Two monthly series in the same
+    // bucket must group regardless of their unused days_of_week/day_of_week.
+    const monthly = { client_id: 7, property_id: 12, frequency: 'monthly',
+                       interval_weeks: 1, day_of_month: 15, start_time: '09:00:00', active: true }
+    const groups = groupDuplicateSeries([
+      { ...monthly, id: 1, days_of_week: [0], day_of_week: 0 },
+      { ...monthly, id: 2, days_of_week: [4], day_of_week: 4 },
+    ])
+    expect(groups).toHaveLength(1)
+    expect(groups[0].members.map(s => s.id).sort()).toEqual([1, 2])
+  })
 })
 
 describe('parseSimilarSeriesConflict', () => {
