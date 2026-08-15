@@ -200,10 +200,10 @@ def _turnover_context(job: Job) -> str:
 def _job_type_tag(job: Job) -> dict:
     jt = (job.job_type or "").lower()
     if jt == "str_turnover":
-        return {"label": "TURNO", "tone": "blue"}
+        return {"label": "Turnover", "tone": "blue"}
     if jt == "commercial":
-        return {"label": "COMMERCIAL", "tone": "violet"}
-    return {"label": "RESIDENTIAL", "tone": "indigo"}
+        return {"label": "Commercial", "tone": "violet"}
+    return {"label": "Residential", "tone": "indigo"}
 
 
 def _job_place(job: Job) -> str:
@@ -402,7 +402,9 @@ def build_board(db: Session, oid: int, can_act: bool = True) -> dict:
             f"job:{j.id}", "urgent", "No cleaner assigned",
             f"{_job_place(j)}" + (f" · {_client_name(j)}" if _client_name(j) else ""),
             _job_meta(j, today),
-            tags=[_job_type_tag(j), {"label": "UNASSIGNED", "tone": "amber"}],
+            # Just the type tag — the row's TITLE is already 'No cleaner
+            # assigned'; a second UNASSIGNED chip said it twice (owner veto).
+            tags=[_job_type_tag(j)],
             actions=[
                 _api("Auto-assign", f"/api/jobs/{j.id}/auto-assign", done="Assigned"),
                 _link("Dispatch", "/schedule?view=dispatch"),
@@ -413,7 +415,7 @@ def build_board(db: Session, oid: int, can_act: bool = True) -> dict:
             f"conv:{c.id}", "urgent", f"Reply overdue — {_conv_contact(c)}",
             snippets.get(c.id, "") or (c.subject or f"{(c.channel or 'message').upper()} awaiting reply"),
             _ago(c.last_inbound_at),
-            tags=[{"label": (c.channel or "msg").upper(), "tone": "rose"}, {"label": "SLA", "tone": "rose"}],
+            tags=[{"label": (c.channel or "message").capitalize(), "tone": "rose"}],
             actions=[
                 _api("Resolve", f"/api/comms/conversations/{c.id}/status", body={"status": "resolved"}, done="Resolved"),
                 _link("Reply", "/comms"),
@@ -445,7 +447,7 @@ def build_board(db: Session, oid: int, can_act: bool = True) -> dict:
         deck.append(_item(
             f"deck-job:{j.id}", "good" if assigned else "watch",
             _job_place(j) or (j.title or f"Job #{j.id}"), _client_name(j), meta,
-            tags=[_job_type_tag(j)] + ([] if assigned else [{"label": "UNASSIGNED", "tone": "amber"}]),
+            tags=[_job_type_tag(j)] + ([] if assigned else [{"label": "Needs cleaner", "tone": "amber"}]),
             actions=acts,
         ))
     for s in recurring:

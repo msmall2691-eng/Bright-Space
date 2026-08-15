@@ -239,9 +239,13 @@ function ProposalsQueue() {
 
 /* ── Small pieces ─────────────────────────────────────────────────────────── */
 
+// Quiet dot + word — the old bold-uppercase pill ("TURNO", "UNASSIGNED")
+// read as shouting and the owner vetoed the bubbles. The dot carries the
+// tone via bg-current, so TAG_TONE stays a single text-color map.
 function Tag({ tag }) {
   return (
-    <span className={`inline-flex items-center rounded px-1.5 py-[1px] text-[9.5px] font-bold uppercase tracking-wide ${TAG_TONE[tag.tone] || TAG_TONE.gray}`}>
+    <span className={`inline-flex items-center gap-1 text-[10.5px] font-medium ${TAG_TONE[tag.tone] || TAG_TONE.gray}`}>
+      <span className="h-1 w-1 rounded-full bg-current opacity-70" aria-hidden />
       {tag.label}
     </span>
   )
