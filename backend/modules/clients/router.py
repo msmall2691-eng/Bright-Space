@@ -873,8 +873,14 @@ def get_client_profile(client_id: int, db: Session = Depends(get_db), org_id: in
         })
     profile["properties"] = properties_data
 
-    # Split jobs into upcoming and past
-    today = business_today().isoformat()
+    # Split jobs into upcoming and past. Job.scheduled_date is a Date column
+    # (a real `date` object, not a string) — compare against another `date`,
+    # never its .isoformat() string, or `date >= str` raises TypeError and
+    # 500s this endpoint for any client with a scheduled job (BB bug: this
+    # silently degraded on the full ClientProfile page, which catches the
+    # /profile fetch and falls back to /clients/{id}, but crashed ClientPeek
+    # — the list quick-view — which has no such fallback).
+    today = business_today()
     upcoming_jobs = []
     past_jobs = []
 

@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { useParams, useNavigate, Link } from 'react-router-dom'
 import {
   ChevronLeft, ChevronRight, Plus, Edit2, Trash2, MoreVertical, MapPin, Home, Building2, Wind,
-  Calendar, Clock, Users, CheckCircle, AlertCircle, Navigation2, ClipboardList, X, Repeat
+  Calendar, Clock, Users, CheckCircle, AlertCircle, Navigation2, ClipboardList, X, Repeat, FileText
 } from 'lucide-react'
 import { get, patch, post } from '../api'
 import { todayYMD, formatDateShort } from '../utils/format'
@@ -169,6 +169,34 @@ function RecurringSeriesCard({ schedules, jobs }) {
             </li>
           )
         })}
+      </ul>
+    </div>
+  )
+}
+
+// Quotes tied to this property (Quote.property_id) — the one link the
+// property page was missing: a quote still pending/not yet converted to a
+// job had no path back from Property at all (a job-based Property → Job →
+// Quote chain only exists post-conversion). Quiet: hidden when there are none.
+function QuotesCard({ quotes }) {
+  const STATUS_LABEL = { draft: 'Draft', sent: 'Sent', viewed: 'Viewed', accepted: 'Accepted', declined: 'Declined', converted: 'Converted', expired: 'Expired' }
+  return (
+    <div className="bg-panel border border-hairline rounded-lg p-4 mb-4" data-testid="detail-quotes-card">
+      <div className="flex items-center justify-between gap-2 mb-2">
+        <h3 className="text-sm font-semibold text-ink flex items-center gap-1.5">
+          <FileText className="w-3.5 h-3.5 text-indigo-500" /> Quotes
+        </h3>
+      </div>
+      <ul className="divide-y divide-hairline/60">
+        {quotes.map(q => (
+          <li key={q.id} className="py-2 first:pt-0 last:pb-0">
+            <Link to={`/quotes/${q.id}`}
+              className="flex items-center justify-between gap-2 text-[13px] font-medium text-ink hover:text-indigo-600 no-underline">
+              <span className="truncate">{q.title || q.quote_number}</span>
+              <span className="shrink-0 text-[11px] text-ink-3">{STATUS_LABEL[q.status] || q.status}</span>
+            </Link>
+          </li>
+        ))}
       </ul>
     </div>
   )
@@ -374,6 +402,7 @@ export default function PropertyDetail() {
   // doesn't embed them, so we reuse the existing client-filtered list endpoint
   // (/api/recurring?client_id=) and narrow to this property client-side.
   const [schedules, setSchedules] = useState([])
+  const [quotes, setQuotes] = useState([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [selectedJob, setSelectedJob] = useState(null)
@@ -387,12 +416,16 @@ export default function PropertyDetail() {
     const loadData = async () => {
       setLoading(true)
       try {
-        const [propRes, jobsRes] = await Promise.all([
+        const [propRes, jobsRes, quotesRes] = await Promise.all([
           get(`/api/properties/${propertyId}`).catch(() => null),
           get(`/api/jobs?property_id=${propertyId}&limit=500`).catch(() => []),
+          // Closes the property → quote dead-end: a quote not yet converted
+          // to a job has no other path back from this page.
+          get(`/api/quotes?property_id=${propertyId}&limit=50`).catch(() => []),
         ])
 
         setProperty(propRes)
+        setQuotes(toArray(quotesRes))
         // Job/Visit unification (PR-B): the separate Visit fetch is gone —
         // jobs carry completion state (status/completed_at/checklist_results/
         // photos) directly. `visits` still mirrors jobs 1:1 so the existing
@@ -588,6 +621,12 @@ export default function PropertyDetail() {
               series → next visit chain). Quiet: hidden when there are none. */}
           {schedules.length > 0 && (
             <RecurringSeriesCard schedules={schedules} jobs={jobs} />
+          )}
+
+          {/* Quotes written against this property. Quiet: hidden when there
+              are none. */}
+          {quotes.length > 0 && (
+            <QuotesCard quotes={quotes} />
           )}
 
           {/* Cleaning Checklist — editable template per property, collapsed by

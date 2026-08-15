@@ -444,6 +444,10 @@ def create_quote(
 def list_quotes(
     db: Session = Depends(get_db),
     client_id: Optional[int] = Query(None),
+    # Closes a linearity dead-end: a quote not yet converted to a job had no
+    # path back from the Property page (PropertyDetail showed jobs but never
+    # quotes, even though Quote.property_id has carried this link all along).
+    property_id: Optional[int] = Query(None),
     status: Optional[str] = Query(None),
     limit: int = Query(100, ge=1, le=500),
     offset: int = Query(0, ge=0),
@@ -453,8 +457,16 @@ def list_quotes(
     org_id = resolve_org_id(org_id, db)
     # MT-2: scope to the caller's workspace; tolerate legacy NULL-org rows.
     query = db.query(Quote).filter(or_(Quote.org_id == org_id, Quote.org_id.is_(None)))
-    if client_id is not None:
+    # isinstance guards (not `is not None`): in-process callers that predate
+    # this param (e.g. tests calling list_quotes() directly, bypassing
+    # FastAPI's request handling) don't pass property_id, so its default
+    # arrives as the unresolved `Query(None)` sentinel object — truthy and
+    # very much "is not None" — the same class of bug resolve_org_id() above
+    # exists to guard against for org_id.
+    if isinstance(client_id, int):
         query = query.filter(Quote.client_id == client_id)
+    if isinstance(property_id, int):
+        query = query.filter(Quote.property_id == property_id)
     if status:
         query = query.filter(Quote.status == status)
     else:
