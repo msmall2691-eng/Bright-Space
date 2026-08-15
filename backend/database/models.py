@@ -1684,3 +1684,40 @@ class ProjectionState(Base):
         UniqueConstraint("target", "job_id", name="uq_projection_state_target_job"),
         Index("idx_projection_state_job", "job_id"),
     )
+
+
+class ProposedAction(Base):
+    """Autopilot approval gate: an action an AI tick/persona WANTS to take,
+    parked here for a human to approve or dismiss (migration 091).
+
+    Nothing automated executes from this table. Approval (modules/ai/router.py
+    → services/proposals.py) runs the action through the SAME write path a
+    human uses — assign_cleaner goes through scheduling's update_job (GCal
+    side effects and conflict guards included), send_sms through the comms
+    send paths — never raw column writes (scheduling-invariants R6). The
+    'propose' mode of the EXISTING STR turnover auto-assign tick writes rows
+    here instead of assigning (R1: no new tick).
+
+    `kind` is validated against the allowlist in services/proposals.py;
+    `status` is pending | approved | dismissed | executed | failed, validated
+    in code (deliberately no DB enum type). `payload` is the kind-specific
+    input (e.g. {job_id, cleaner_id}); `result` records the execution outcome
+    (or {'error': ...} on failure)."""
+    __tablename__ = "proposed_actions"
+    org_id = Column(Integer, ForeignKey("orgs.id"), nullable=False, index=True)  # tenant scope (MT-3)
+
+    id = Column(Integer, primary_key=True, index=True)
+    agent_id = Column(String(40), nullable=True)   # which persona/tick proposed ('mia', ...)
+    kind = Column(String(40), nullable=False)      # 'assign_cleaner' | 'send_sms'
+    title = Column(String(255), nullable=False)    # human summary ("Assign Ana to Sea Rose turnover on 2026-08-20")
+    detail = Column(Text, nullable=True)
+    payload = Column(JSON, nullable=False, default=dict)
+    status = Column(String(20), nullable=False, default="pending", index=True)
+    created_at = Column(DateTime, default=_utcnow, nullable=False)
+    decided_at = Column(DateTime, nullable=True)
+    decided_by = Column(Integer, ForeignKey("users.id"), nullable=True)
+    result = Column(JSON, nullable=True)
+
+    __table_args__ = (
+        Index("idx_proposed_actions_org_status", "org_id", "status"),
+    )

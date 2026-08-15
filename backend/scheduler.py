@@ -324,16 +324,46 @@ def sync_gmail_inbox_tick() -> dict:
         db.close()
 
 
+def _str_autoassign_mode(db) -> str:
+    """Three-state Autopilot mode for the STR turnover auto-assign tick:
+    'off' (default) | 'propose' (write ProposedAction rows for a human to
+    approve, assign nothing) | 'auto' (assign directly — the legacy ON
+    behavior). Read from the `str_auto_assign_mode` app_setting; when unset,
+    the legacy boolean `str_turnover_autoassign_enabled` (+ its env default)
+    maps to 'auto'/'off' so existing deployments keep their behavior. The
+    STR_TURNOVER_AUTOASSIGN_ENABLED env gate on tick REGISTRATION (startup,
+    below) stays the master switch on top of this."""
+    row = db.query(AppSetting).filter(AppSetting.key == "str_auto_assign_mode").first()
+    val = (str(row.value).strip().lower() if row is not None and row.value is not None else "")
+    if val in ("off", "propose", "auto"):
+        return val
+    return "auto" if _db_flag(db, "str_turnover_autoassign_enabled",
+                              env_flag("STR_TURNOVER_AUTOASSIGN_ENABLED", False)) else "off"
+
+
 def str_turnover_autoassign_tick() -> dict:
     """Auto-assign available cleaners to upcoming unassigned STR turnover jobs.
-    OFF by default (it changes real assignments). Gate:
-    str_turnover_autoassign_enabled (app_settings) / STR_TURNOVER_AUTOASSIGN_ENABLED."""
+    OFF by default (it changes real assignments). Mode: str_auto_assign_mode
+    app_setting — off | propose | auto (see _str_autoassign_mode for the
+    legacy-flag fallback). 'propose' runs the SAME picker as a dry run and
+    parks each would-be assignment as a pending ProposedAction for human
+    approval (the Autopilot approval gate) — idempotent across runs via the
+    dedupe guard in services/proposals.py, and it assigns NOTHING itself."""
     db = SessionLocal()
     try:
-        if not _db_flag(db, "str_turnover_autoassign_enabled",
-                        env_flag("STR_TURNOVER_AUTOASSIGN_ENABLED", False)):
+        mode = _str_autoassign_mode(db)
+        if mode == "off":
             return {"skipped": True}
         from modules.scheduling.router import auto_assign_unassigned_turnovers
+        if mode == "propose":
+            preview = auto_assign_unassigned_turnovers(db, dry_run=True)
+            from services.proposals import propose_turnover_assignments
+            outcome = propose_turnover_assignments(db, preview.get("assigned") or [])
+            if outcome.get("proposed"):
+                log.info(f"Turnover auto-assign (propose): {len(outcome['proposed'])} "
+                         f"new proposal(s) awaiting approval")
+            return {"mode": "propose", "considered": preview.get("considered"),
+                    "unassignable": preview.get("unassignable"), **outcome}
         result = auto_assign_unassigned_turnovers(db)
         if result.get("assigned"):
             log.info(f"Turnover auto-assign: assigned {len(result['assigned'])} job(s)")

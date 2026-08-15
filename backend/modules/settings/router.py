@@ -758,6 +758,12 @@ class AutomationConfig(BaseModel):
     # OFF by default and inert unless GMAIL_PUBSUB_TOPIC is configured.
     gmail_live_sync: Optional[bool] = None
     customer_self_reschedule: Optional[bool] = None
+    # Autopilot mode for the STR turnover auto-assign tick: 'off' | 'propose'
+    # (park each would-be assignment as a ProposedAction for human approval on
+    # the Home board) | 'auto' (assign directly). The scheduler reads this via
+    # _str_autoassign_mode with a legacy-boolean fallback; without this field
+    # the Settings dial's POST was silently dropped by Pydantic.
+    str_auto_assign_mode: Optional[str] = None
     # STR turnover lead-time guardrail (Tier 3 roadmap): warn when a turnover
     # ends less than this many hours before the next guest's check-in.
     turnover_lead_buffer_hours: Optional[float] = None
@@ -989,6 +995,16 @@ def get_automation_settings(db: Session = Depends(get_db)):
         "gmail_live_sync_available": bool((os.getenv("GMAIL_PUBSUB_TOPIC") or "").strip()),
         "customer_self_reschedule": customer_self_reschedule_enabled(db),
         "turnover_lead_buffer_hours": turnover_lead_buffer_hours(db),
+        # Mirrors scheduler._str_autoassign_mode's legacy fallback exactly, so
+        # the Settings dial shows the mode the tick will actually run with.
+        "str_auto_assign_mode": (
+            (get_setting(db, "str_auto_assign_mode") or "").strip().lower()
+            if (get_setting(db, "str_auto_assign_mode") or "").strip().lower() in ("off", "propose", "auto")
+            else ("auto" if _coerce_bool(
+                get_setting(db, "str_turnover_autoassign_enabled"),
+                os.getenv("STR_TURNOVER_AUTOASSIGN_ENABLED", "").strip().lower() in {"1", "true", "yes", "on"},
+            ) else "off")
+        ),
     }
 
 
@@ -996,6 +1012,12 @@ def get_automation_settings(db: Session = Depends(get_db)):
 def save_automation_settings(config: AutomationConfig, db: Session = Depends(get_db)):
     """Persist iCal / GCal auto-sync flags to app_settings. Only set provided keys."""
     data = config.model_dump(exclude_none=True)
+    if "str_auto_assign_mode" in data:
+        mode = str(data["str_auto_assign_mode"]).strip().lower()
+        if mode not in ("off", "propose", "auto"):
+            raise HTTPException(status_code=422,
+                                detail="str_auto_assign_mode must be off, propose, or auto")
+        data["str_auto_assign_mode"] = mode
     for key, value in data.items():
         set_setting(db, key, str(value).lower() if isinstance(value, bool) else str(value))
     db.commit()

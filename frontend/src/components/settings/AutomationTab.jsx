@@ -25,6 +25,9 @@ export function useAutomationSettings({ toast, active }) {
     gmail_live_sync_available: false,
     customer_self_reschedule: true,
     turnover_lead_buffer_hours: 3,
+    // Autopilot dial for the STR turnover auto-assign tick:
+    // 'off' | 'propose' (queue proposals for approval) | 'auto' (assign directly)
+    str_auto_assign_mode: 'off',
   })
   const [automationSaving, setAutomationSaving] = useState(false)
 
@@ -245,6 +248,28 @@ export default function AutomationTab({ state, toast, active }) {
                 className={inp} />
               <p className="text-xs text-ink-3 mt-1">Recommended: 3 hours</p>
             </div>
+          </div>
+
+          <div className="border-t border-hairline pt-5">
+            <h3 className="font-semibold text-ink">STR turnover auto-assign</h3>
+            <p className="text-xs text-ink-3 mt-1">
+              How the background tick handles upcoming Airbnb/VRBO turnovers
+              that have no cleaner assigned.
+            </p>
+            <div className="mt-3 flex items-center gap-0.5 bg-bg-2 rounded-lg p-0.5 w-fit">
+              {[['off', 'Off'], ['propose', 'Propose'], ['auto', 'Auto']].map(([value, label]) => (
+                <button key={value} type="button"
+                  onClick={() => setAutomationSettings(x => ({ ...x, str_auto_assign_mode: value }))}
+                  aria-pressed={s.str_auto_assign_mode === value}
+                  className={`px-2.5 py-1 rounded-md text-xs font-medium transition-colors ${
+                    s.str_auto_assign_mode === value ? 'bg-panel text-ink shadow-sm' : 'text-ink-3 hover:text-ink-2'}`}>
+                  {label}
+                </button>
+              ))}
+            </div>
+            <p className="text-xs text-ink-3 mt-2">
+              Propose queues assignments for your approval on the Home board; Auto assigns directly.
+            </p>
           </div>
 
           {/* Customer messaging status — was a red/amber banner on Integrations.
