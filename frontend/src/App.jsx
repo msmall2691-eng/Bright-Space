@@ -5,7 +5,6 @@ import Header from './components/Header'
 import BottomNav from './components/BottomNav'
 import PageAssistant from './components/PageAssistant'
 import GlobalSearch from './components/GlobalSearch'
-import TweaksPanel from './components/dev/TweaksPanel'
 import Login from './pages/Login'
 import PendingApproval from './pages/PendingApproval'
 import Dashboard from './pages/Dashboard'
@@ -21,6 +20,7 @@ import CustomerPortal from './pages/CustomerPortal'
 import PortalVerify from './pages/PortalVerify'
 import AcceptInvite from './pages/AcceptInvite'
 import { useUnreadCount } from './hooks/useUnreadCount'
+import { recordVisit } from './nav/recents'
 import { playChime } from './utils/chime'
 import { notify } from './utils/notifications'
 import { pushToast } from './utils/toastBus'
@@ -132,10 +132,19 @@ const DesignSystem = lazy(() => import('./pages/DesignSystem'))
 
 export default function App() {
   const [sidebarOpen, setSidebarOpen] = useState(false)
+  // Desktop sidebar: visible by default, collapsible to fully hidden (the
+  // topbar grows a reopen button). Persisted so the choice sticks.
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
+    try { return localStorage.getItem('bb_sidebar_collapsed') === '1' } catch { return false }
+  })
   const [user, setUser] = useState(null)
   const [loading, setLoading] = useState(true)
   const location = useLocation()
   const closeSidebar = useCallback(() => setSidebarOpen(false), [])
+  const setCollapsed = useCallback((v) => {
+    setSidebarCollapsed(v)
+    try { localStorage.setItem('bb_sidebar_collapsed', v ? '1' : '0') } catch { /* ignore */ }
+  }, [])
   useUnhandledErrorToasts()
 
   // The mobile bottom nav's "More" button opens the full menu drawer.
@@ -144,6 +153,14 @@ export default function App() {
     window.addEventListener('bb:open-menu', open)
     return () => window.removeEventListener('bb:open-menu', open)
   }, [])
+
+  // Feed the quick switcher's Recents. Only meaningful inside the CRM shell —
+  // recordVisit itself skips login/public paths, and crew accounts never
+  // render a route the switcher could jump to.
+  useEffect(() => {
+    if (!user || user.status === 'pending' || user.role === 'cleaner') return
+    return recordVisit(location.pathname)
+  }, [location.pathname, user])
 
   useEffect(() => {
     const jwt = localStorage.getItem('brightbase_jwt')
@@ -222,10 +239,24 @@ export default function App() {
   }
 
   return (
-    <div className="flex h-[100dvh] overflow-hidden bg-bg">
-      <SidebarWithUnread open={sidebarOpen} onClose={closeSidebar} user={user} />
-      <div className="flex flex-col flex-1 overflow-hidden min-w-0">
-        <Header onMenuToggle={() => setSidebarOpen(true)} />
+    // The app frame (Twenty-style): a quiet gray ground holding the sidebar
+    // and one rounded white-ish "sheet" per page. The sheet — not the frame —
+    // scrolls, so the sidebar and gutter stay put.
+    <div className="flex h-[100dvh] overflow-hidden bg-frame">
+      <SidebarWithUnread
+        open={sidebarOpen}
+        onClose={closeSidebar}
+        collapsed={sidebarCollapsed}
+        onCollapse={() => setCollapsed(true)}
+        user={user}
+      />
+      <div className="flex flex-col flex-1 overflow-hidden min-w-0 lg:py-2 lg:pr-2 lg:pl-0.5">
+        <div className="flex flex-col flex-1 overflow-hidden bg-bg lg:rounded-lg lg:border lg:border-hairline-2 lg:shadow-glass-sm">
+        <Header
+          onMenuToggle={() => setSidebarOpen(true)}
+          sidebarCollapsed={sidebarCollapsed}
+          onSidebarExpand={() => setCollapsed(false)}
+        />
         <main className="flex-1 overflow-auto bg-bg bb-app-canvas pb-bottomnav lg:pb-0 scroll-smooth-mobile">
           <ErrorBoundary>
           <Suspense fallback={<PageLoader />}>
@@ -298,13 +329,13 @@ export default function App() {
           </Suspense>
           </ErrorBoundary>
         </main>
+        </div>
       </div>
       <BottomNav />
       <PageAssistant />
       <GlobalSearch />
       {/* GlobalToasts is mounted once at the app root (main.jsx) so it covers
           every route, including /login and the public pages. */}
-      {import.meta.env.DEV && <TweaksPanel />}
     </div>
   )
 }

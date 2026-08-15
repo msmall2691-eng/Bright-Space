@@ -120,7 +120,7 @@ export default function Invoicing() {
           {/* Column headers */}
           <div className="hidden sm:grid grid-cols-[2fr_1fr_1fr_1fr_auto] gap-4 px-3 mb-2">
             {['Client', 'Amount', 'Due', 'Status', ''].map(h => (
-              <div key={h} className="text-[10px] font-semibold uppercase tracking-widest text-ink-3">{h}</div>
+              <div key={h} className="text-[11px] font-medium text-ink-3">{h}</div>
             ))}
           </div>
 

@@ -121,14 +121,14 @@ export default function Properties() {
               {typeCounts.str > 0 && (
                 <button onClick={() => setShowAdvanced(v => !v)}
                   title="Sync tools and turnover health check"
-                  className={`flex items-center gap-2 border border-white/15 px-3.5 py-2 rounded-xl text-xs font-semibold transition-colors ${showAdvanced ? 'bg-white/20 text-white' : 'bg-white/10 hover:bg-white/15 text-white'}`}>
+                  className={`flex items-center gap-2 border border-hairline-2 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${showAdvanced ? 'bg-bg-2 text-ink' : 'bg-panel hover:bg-bg-2 text-ink-2'}`}>
                   <RefreshCw className="w-3.5 h-3.5" />
                   Sync tools
                   <ChevronRight className={`w-3.5 h-3.5 transition-transform ${showAdvanced ? 'rotate-90' : ''}`} />
                 </button>
               )}
               <button onClick={openNew}
-                className="flex items-center gap-2 bg-white text-slate-900 hover:bg-white/90 px-3.5 py-2 rounded-xl text-xs font-semibold transition-colors">
+                className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white px-3 py-1.5 rounded-md text-xs font-medium transition-colors">
                 <Plus className="w-4 h-4" /> Add Property
               </button>
             </>
@@ -205,7 +205,7 @@ export default function Properties() {
             />
           )}
 
-          <div className="space-y-3 overflow-y-auto flex-1 scrollbar-thin">
+          <div className="space-y-2 overflow-y-auto flex-1 scrollbar-thin">
             {filteredProperties.map(p => (
               <PropertyRow
                 key={p.id}

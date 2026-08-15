@@ -1,4 +1,4 @@
-import { AlertTriangle, Calendar, CheckCircle2, Clock, Home, Link, RefreshCw, Users } from 'lucide-react'
+import { AlertTriangle, Calendar, Clock, Home, Link, RefreshCw, Users } from 'lucide-react'
 import { ICAL_SOURCES, PROPERTY_TYPE_CONFIG } from './constants'
 import { IcalFeedRow } from './IcalFeedRow'
 
@@ -32,7 +32,7 @@ export function PropertyRow({
   return (
     <div className={`bg-panel border rounded-xl ${selectedIds.has(p.id) ? 'border-blue-400' : 'border-hairline'}`}>
       {/* Property header */}
-      <div className="p-4 cursor-pointer hover:bg-bg transition-colors" onClick={() => setExpandedPropId(expandedPropId === p.id ? null : p.id)}>
+      <div className="px-4 py-2.5 cursor-pointer hover:bg-bg-2/60 transition-colors" onClick={() => setExpandedPropId(expandedPropId === p.id ? null : p.id)}>
         <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-2">
           <div className="flex items-start gap-4 flex-1 min-w-0">
             <input
@@ -87,21 +87,19 @@ export function PropertyRow({
                         per-feed pill you had to expand the card to see. */}
                     {p.ical_health && p.ical_health !== 'no_feed' && (
                       <span
-                        className={`flex items-center gap-1 text-xs px-2 py-0.5 rounded ${
-                          p.ical_health === 'healthy' ? 'text-green-600 bg-green-500/10' : 'text-amber-600 bg-amber-500/10'
-                        }`}
+                        className="inline-flex h-5 items-center gap-1.5 rounded-sm border border-hairline-2 bg-panel px-2 text-[11px] font-medium text-ink-2"
                         title={p.ical_health === 'healthy'
                           ? 'A feed synced cleanly within the last 24h'
                           : "No feed has synced cleanly in 24h+ — check it"}
                       >
-                        {p.ical_health === 'healthy' ? <CheckCircle2 className="w-3 h-3" /> : <AlertTriangle className="w-3 h-3" />}
+                        <span className={`h-1.5 w-1.5 rounded-full ${p.ical_health === 'healthy' ? 'bg-emerald-500' : 'bg-amber-500'}`} />
                         {p.ical_health === 'healthy' ? 'Feed healthy' : 'Feed stale'}
                       </span>
                     )}
                     {p.ical_health === 'no_feed' && (
-                      <span className="flex items-center gap-1 text-xs px-2 py-0.5 rounded text-red-600 bg-red-500/10"
+                      <span className="inline-flex h-5 items-center gap-1.5 rounded-sm border border-hairline-2 bg-panel px-2 text-[11px] font-medium text-ink-2"
                         title="STR property with no active calendar feed configured">
-                        <AlertTriangle className="w-3 h-3" />No feed
+                        <span className="h-1.5 w-1.5 rounded-full bg-red-500" />No feed
                       </span>
                     )}
                     {typeof p.turnovers_next_30d === 'number' && (

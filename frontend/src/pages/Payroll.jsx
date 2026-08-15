@@ -223,7 +223,7 @@ export default function Payroll() {
                   <div key={emp.employee_id} className="bg-panel border border-hairline rounded-xl overflow-hidden">
                     <button
                       onClick={() => setExpanded(x => ({ ...x, [emp.employee_id]: !x[emp.employee_id] }))}
-                      className="w-full text-left p-4 hover:bg-bg-2/40 transition-colors">
+                      className="w-full text-left px-4 py-2.5 hover:bg-bg-2/60 transition-colors">
                       <div className="flex items-center justify-between gap-3 mb-3">
                         <div className="flex items-center gap-1.5 font-medium text-ink flex-wrap">
                           <User className="w-4 h-4 text-ink-3 shrink-0" />{emp.name}

@@ -29,10 +29,15 @@
 
   --shadow-1: 0 1px 0 rgba(23,21,18,0.04), 0 2px 8px rgba(23,21,18,0.04);
   --shadow-2: 0 1px 2px rgba(23,21,18,0.05), 0 2px 6px rgba(23,21,18,0.05);
+
+  /* App frame behind the sidebar + content sheet (see body.mode-clean).
+     Defined per-theme; defaults to the deepest bg step. */
+  --frame: #e8e4d7;
 }
 
 /* Dark theme — toggled with body.theme-console */
 body.theme-console {
+  --frame: #060708;
   --bg: #0c0d0f;
   --bg-2: #111317;
   --bg-3: #171a20;
@@ -56,40 +61,44 @@ body.theme-console {
   --shadow-2: 0 1px 2px rgba(0,0,0,0.4), 0 2px 6px rgba(0,0,0,0.4);
 }
 
-/* Clean mode — the app's default skin. Refreshed to a bright, airy "light
-   SaaS" look (Linear/Notion/Jobber family): cool slate-tinted neutrals, a
-   confident indigo accent, and soft, low-contrast ambient shadows so cards
-   float on a calm canvas instead of sitting in hard-edged boxes. Toggled
-   with body.mode-clean. */
+/* Clean mode — the app's default skin. Retuned to the quiet neutral family
+   BrightBase's references live in (Notion / Attio / Twenty): near-grayscale
+   surfaces (the old palette leaned blue-slate), structure from gray-on-white
+   contrast rather than shadows, and color reserved for data + the accent.
+   `--frame` is the app frame behind the sidebar and content sheet (the
+   Twenty "gray frame / white sheet" look) — slightly deeper than --bg so the
+   sheet reads as a surface sitting on it. Toggled with body.mode-clean. */
 body.mode-clean {
-  --bg: #f6f8fb;
-  --bg-2: #eef2f7;
-  --bg-3: #e3e9f1;
+  --frame: #ececee;
+  --bg: #f7f7f8;
+  --bg-2: #f0f0f2;
+  --bg-3: #e7e7ea;
   --panel: #ffffff;
-  --ink: #0f172a;
-  --ink-2: #475569;
-  --ink-3: #94a3b8;
-  --hairline: #eef2f7;
-  --hairline-2: #e2e8f0;
+  --ink: #191a1f;
+  --ink-2: #52545e;
+  --ink-3: #8b8e99;
+  --hairline: #ececee;
+  --hairline-2: #dfe0e4;
   --accent: oklch(0.55 0.20 264);
   --accent-ink: #ffffff;
-  --shadow-1: 0 1px 2px rgba(15,23,42,0.04);
-  --shadow-2: 0 1px 2px rgba(15,23,42,0.04), 0 12px 28px -14px rgba(15,23,42,0.14);
+  --shadow-1: 0 1px 2px rgba(25,26,31,0.04);
+  --shadow-2: 0 1px 2px rgba(25,26,31,0.04), 0 12px 28px -14px rgba(25,26,31,0.14);
   font-size: 13px;
 }
 
 body.mode-clean.theme-console {
-  --bg: #0a0f1a;
-  --bg-2: #111827;
-  --bg-3: #1a2234;
-  --panel: #0f172a;
-  --ink: #f1f5f9;
-  --ink-2: #a3b0c2;
-  --ink-3: #64748b;
-  --hairline: #1e293b;
-  --hairline-2: #29374a;
+  --frame: #0b0b0d;
+  --bg: #151518;
+  --bg-2: #1c1c20;
+  --bg-3: #242429;
+  --panel: #1a1a1e;
+  --ink: #ededf0;
+  --ink-2: #a4a6b0;
+  --ink-3: #686b76;
+  --hairline: #26262b;
+  --hairline-2: #313138;
   --accent: oklch(0.72 0.16 264);
-  --accent-ink: #0a0f1a;
+  --accent-ink: #0b0b0d;
   --shadow-1: 0 1px 2px rgba(0,0,0,0.4);
   --shadow-2: 0 1px 2px rgba(0,0,0,0.4), 0 16px 40px -18px rgba(0,0,0,0.6);
 }
@@ -104,6 +113,7 @@ body.mode-clean.theme-console {
    .bb-* primitives degrade to a plain subtle look everywhere else.
    ---------------------------------------------------------------------- */
 body.theme-neon {
+  --frame: #0b0d13;
   --bg: #101219;
   --bg-2: #171a23;
   --bg-3: #1f2430;
@@ -168,6 +178,63 @@ body.theme-console .bb-surface-hover:hover {
 /* Active-nav highlight — a calm inset accent ring, no outer bloom. */
 .bb-nav-active {
   box-shadow: inset 0 0 0 1px rgba(99, 102, 241, 0.22);
+}
+
+/* ----------------------------------------------------------------------
+   List tables (Attio/Twenty-grade) — the shared vocabulary every list page's
+   table uses so they all read as one product. Compact fixed-rhythm rows,
+   sentence-case quiet column labels (no uppercase shouting), full-row hover
+   tint, and a summary footer. Cells opt out of the mobile 44px control
+   min-height via their own sizing; interactive touch targets inside cells
+   keep their padding.
+
+     <table class="bb-table">
+       <thead><tr><th class="bb-th">Name</th>…</tr></thead>
+       <tbody><tr class="bb-row"><td class="bb-td">…</td>…</tr></tbody>
+     </table>
+     <div class="bb-table-foot">128 clients</div>
+   ---------------------------------------------------------------------- */
+.bb-table { width: 100%; text-align: left; border-collapse: collapse; }
+.bb-th {
+  height: 32px;
+  padding: 0 12px;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--ink-3);
+  white-space: nowrap;
+  border-bottom: 1px solid var(--hairline-2);
+}
+.bb-td {
+  height: 36px;
+  padding: 4px 12px;
+  font-size: 13px;
+  color: var(--ink-2);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 320px;
+}
+/* Primary cell (the record's name) reads as the row's anchor. */
+.bb-td-primary { color: var(--ink); font-weight: 500; }
+.bb-row { border-bottom: 1px solid var(--hairline); cursor: pointer; }
+.bb-row:hover { background: color-mix(in srgb, var(--bg-2) 60%, transparent); }
+.bb-row-selected { background: var(--bg-2); }
+.bb-table-foot {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  height: 32px;
+  padding: 0 12px;
+  font-size: 11px;
+  color: var(--ink-3);
+  border-top: 1px solid var(--hairline);
+}
+.bb-check {
+  width: 14px;
+  height: 14px;
+  border-radius: 4px;
+  cursor: pointer;
+  accent-color: rgb(var(--accent-600));
 }
 
 /* App canvas — flat. The gaps between panels are plain surface (bg-bg), the

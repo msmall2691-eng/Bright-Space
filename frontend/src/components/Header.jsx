@@ -1,38 +1,10 @@
-import { useState, useRef, useEffect } from 'react'
-import { useLocation, useNavigate } from 'react-router-dom'
+import { useState, useRef, useEffect, Fragment } from 'react'
+import { Link, useLocation, useNavigate } from 'react-router-dom'
 import {
-  Menu, Search, Command, Zap, Sparkles, Plus, ChevronDown,
-  Inbox, MessageSquare, CalendarDays, FileText, Users,
+  Menu, Search, Sparkles, Plus, ChevronDown, PanelLeft, Star,
 } from 'lucide-react'
-
-const PAGE_TITLES = {
-  '/dashboard': 'Home',
-  '/workspace': 'Assistant',
-  '/clients': 'Clients',
-  '/requests': 'Requests',
-  '/pipeline': 'Pipeline',
-  '/billing': 'Quotes & Billing',
-  '/schedule': 'Schedule',
-  '/payroll': 'Payroll',
-  '/comms': 'Messages',
-  '/properties': 'Properties',
-  '/recurring': 'Recurring',
-  '/owner': 'Owner',
-  '/settings': 'Settings',
-}
-
-// The "+ New" quick-action menu — one tap from anywhere to start the work
-// the app revolves around: a lead, a message, a job, a quote, or a client.
-// Each item deep-links to the page that owns the create flow with the param
-// that auto-opens its modal (?new=1 / ?compose=1), so the menu never has to
-// mount those modals itself.
-const NEW_ACTIONS = [
-  { label: 'New lead',    icon: Inbox,          to: '/requests?new=1',           tint: 'text-indigo-600 dark:text-indigo-300',   bg: 'bg-indigo-50 dark:bg-indigo-500/15' },
-  { label: 'New message', icon: MessageSquare,  to: '/comms?compose=1',          tint: 'text-blue-600 dark:text-blue-300',       bg: 'bg-blue-50 dark:bg-blue-500/15' },
-  { label: 'New job',     icon: CalendarDays,   to: '/schedule?new=1',           tint: 'text-emerald-600 dark:text-emerald-300', bg: 'bg-emerald-50 dark:bg-emerald-500/15' },
-  { label: 'New quote',   icon: FileText,       to: '/billing?view=quotes&new=1', tint: 'text-purple-600 dark:text-purple-300',  bg: 'bg-purple-50 dark:bg-purple-500/15' },
-  { label: 'New client',  icon: Users,          to: '/clients?new=1',            tint: 'text-amber-600 dark:text-amber-300',     bg: 'bg-amber-50 dark:bg-amber-500/15' },
-]
+import { crumbsFor, CREATE_ACTIONS } from '../nav/routes'
+import { useFavorites, toggleFavorite } from '../nav/favorites'
 
 function NewMenu() {
   const navigate = useNavigate()
@@ -52,32 +24,29 @@ function NewMenu() {
     <div className="relative" ref={ref}>
       <button
         onClick={() => setOpen(o => !o)}
-        className="flex items-center gap-1.5 pl-2.5 pr-2 sm:pr-2.5 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white font-semibold shadow-sm transition-colors"
+        className="flex h-7 min-h-0 items-center gap-1 rounded-md bg-indigo-600 pl-2 pr-1.5 text-[12px] font-medium text-white transition-colors hover:bg-indigo-700"
         title="Create something new"
         aria-haspopup="menu"
         aria-expanded={open}
       >
-        <Plus className="w-4 h-4" />
-        <span className="hidden sm:inline text-xs">New</span>
-        <ChevronDown className={`w-3 h-3 transition-transform ${open ? 'rotate-180' : ''}`} />
+        <Plus className="h-3.5 w-3.5" />
+        <span className="hidden sm:inline">New</span>
+        <ChevronDown className={`h-3 w-3 transition-transform ${open ? 'rotate-180' : ''}`} />
       </button>
 
       {open && (
         <div
           role="menu"
-          className="absolute right-0 mt-1.5 w-52 bg-panel border border-hairline rounded-xl shadow-glass-lg py-1.5 z-50"
+          className="absolute right-0 z-50 mt-1.5 w-48 rounded-lg border border-hairline-2 bg-panel py-1 shadow-glass-lg"
         >
-          <p className="px-3 pt-1 pb-1.5 text-[10px] font-bold uppercase tracking-wider text-ink-3">Create</p>
-          {NEW_ACTIONS.map(a => (
+          {CREATE_ACTIONS.map(a => (
             <button
               key={a.to}
               role="menuitem"
               onClick={() => { setOpen(false); navigate(a.to) }}
-              className="w-full flex items-center gap-3 px-3 py-2 text-[13px] font-medium text-ink-2 hover:text-ink hover:bg-bg-2 transition-colors"
+              className="flex w-full min-h-0 items-center gap-2.5 px-3 py-1.5 text-[13px] font-medium text-ink-2 transition-colors hover:bg-bg-2 hover:text-ink"
             >
-              <span className={`grid place-items-center w-7 h-7 rounded-lg shrink-0 ${a.bg} ${a.tint}`}>
-                <a.icon className="w-4 h-4" />
-              </span>
+              <a.icon className="h-4 w-4 shrink-0 text-ink-3" />
               {a.label}
             </button>
           ))}
@@ -87,64 +56,111 @@ function NewMenu() {
   )
 }
 
-export default function Header({ onMenuToggle }) {
+/**
+ * Header — the slim 44px bar at the top of the content sheet. Left side is a
+ * breadcrumb trail derived from the route manifest (nav/routes.js) — no more
+ * hardcoded title map that left detail pages blank. Right side keeps the
+ * global create/search/AI entry points, compact.
+ */
+export default function Header({ onMenuToggle, sidebarCollapsed, onSidebarExpand }) {
   const location = useLocation()
-  const path = location.pathname
-  const title = PAGE_TITLES[path] || 'BrightBase'
+  const crumbs = crumbsFor(location.pathname)
+  const favorites = useFavorites()
+  // Detail routes (crumb trail starts with a linked parent) can be pinned to
+  // the sidebar Favorites. Label comes from the page's own <h1> (the record's
+  // real name) at click time; the generic crumb label is the fallback.
+  const isDetail = Boolean(crumbs[0]?.to)
+  const isPinned = favorites.some(f => f.to === location.pathname)
+  const pinRecord = () => {
+    const h1 = document.querySelector('main h1')?.textContent?.trim()
+    toggleFavorite({
+      to: location.pathname,
+      label: h1 || crumbs[crumbs.length - 1]?.label || location.pathname,
+      kind: 'record',
+    })
+  }
+
+  const openSearch = () => {
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: '/', metaKey: true, bubbles: true }))
+  }
+  const openAssistant = () => {
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'k', metaKey: true, bubbles: true }))
+  }
 
   return (
-    <header className="no-print relative z-20 h-14 flex items-center justify-between px-4 sm:px-6 border-b border-hairline bg-panel shrink-0">
-      <div className="flex items-center gap-3 flex-1">
+    <header className="no-print relative z-20 flex h-11 shrink-0 items-center justify-between gap-3 border-b border-hairline bg-panel px-3 sm:px-4">
+      <div className="flex min-w-0 flex-1 items-center gap-1.5">
+        {/* Mobile: open the drawer */}
         <button
           onClick={onMenuToggle}
-          className="lg:hidden -ml-1 w-10 h-10 rounded-lg text-ink-3 hover:text-ink-2 hover:bg-bg-2 active:bg-bg-2 transition-colors flex items-center justify-center"
+          className="-ml-1 flex h-9 w-9 items-center justify-center rounded-md text-ink-3 transition-colors hover:bg-bg-2 hover:text-ink-2 lg:hidden"
         >
-          <Menu className="w-5 h-5" />
+          <Menu className="h-5 w-5" />
         </button>
-        <div className="flex items-center gap-2.5 lg:hidden">
-          <div className="w-6 h-6 rounded-lg bg-indigo-600 flex items-center justify-center">
-            <Zap className="w-3.5 h-3.5 text-white" />
-          </div>
-          <span className="text-sm font-bold text-ink tracking-tight">{title}</span>
-        </div>
-        <h1 className="hidden lg:block text-base font-bold text-ink">{title}</h1>
+        {/* Desktop: reopen the collapsed sidebar */}
+        {sidebarCollapsed && (
+          <button
+            onClick={onSidebarExpand}
+            title="Show sidebar"
+            className="hidden h-7 w-7 min-h-0 items-center justify-center rounded-md text-ink-3 transition-colors hover:bg-bg-2 hover:text-ink-2 lg:flex"
+          >
+            <PanelLeft className="h-4 w-4" />
+          </button>
+        )}
+        <nav className="flex min-w-0 items-center gap-1.5 text-[13px]" aria-label="Breadcrumb">
+          {crumbs.map((crumb, i) => {
+            const last = i === crumbs.length - 1
+            return (
+              <Fragment key={`${crumb.label}-${i}`}>
+                {i > 0 && <span className="text-ink-3/60">/</span>}
+                {crumb.to && !last ? (
+                  <Link
+                    to={crumb.to}
+                    className="min-h-0 truncate rounded-sm px-1 py-0.5 text-ink-3 no-underline transition-colors hover:bg-bg-2 hover:text-ink-2"
+                  >
+                    {crumb.label}
+                  </Link>
+                ) : (
+                  <span className={`truncate px-1 ${last ? 'font-medium text-ink' : 'text-ink-3'}`}>
+                    {crumb.label}
+                  </span>
+                )}
+              </Fragment>
+            )
+          })}
+        </nav>
+        {isDetail && (
+          <button
+            onClick={pinRecord}
+            title={isPinned ? 'Remove from favorites' : 'Add to favorites'}
+            className={`flex h-6 w-6 min-h-0 shrink-0 items-center justify-center rounded-md transition-colors ${
+              isPinned ? 'text-amber-500 hover:text-ink-3' : 'text-ink-3 hover:text-amber-500'
+            }`}
+          >
+            <Star className={`h-3.5 w-3.5 ${isPinned ? 'fill-current' : ''}`} />
+          </button>
+        )}
       </div>
 
-      <div className="flex items-center gap-2">
-        {/* Create anything, from anywhere */}
+      <div className="flex shrink-0 items-center gap-1">
+        {/* Global search — jump to any client/property/invoice/job (⌘/) */}
+        <button
+          onClick={openSearch}
+          className="flex h-7 w-7 min-h-0 items-center justify-center rounded-md text-ink-3 transition-colors hover:bg-bg-2 hover:text-ink-2"
+          title="Search everything (⌘/)"
+        >
+          <Search className="h-4 w-4" />
+        </button>
+        {/* AI assistant (⌘K) */}
+        <button
+          onClick={openAssistant}
+          className="flex h-7 w-7 min-h-0 items-center justify-center rounded-md text-ink-3 transition-colors hover:bg-bg-2 hover:text-ink-2"
+          title="Ask AI (⌘K)"
+        >
+          <Sparkles className="h-4 w-4" />
+        </button>
+        <div className="mx-1 h-4 w-px bg-hairline-2" />
         <NewMenu />
-        {/* Global search — jump to any client/property/invoice/job (Cmd+/) */}
-        <button
-          onClick={() => {
-            const event = new KeyboardEvent('keydown', { key: '/', metaKey: true, bubbles: true })
-            window.dispatchEvent(event)
-          }}
-          className="flex items-center gap-2.5 px-2.5 sm:px-3 h-9 rounded-lg border border-hairline bg-bg hover:bg-bg-2 transition-colors text-ink-3 hover:text-ink-2"
-          title="Search everything"
-        >
-          <Search className="w-4 h-4" />
-          <span className="hidden sm:inline text-xs font-medium">Search</span>
-          <div className="hidden sm:flex items-center gap-1 text-xs text-ink-3">
-            <Command className="w-3 h-3" />
-            <span>/</span>
-          </div>
-        </button>
-        {/* AI assistant (Cmd+K) */}
-        <button
-          onClick={() => {
-            const event = new KeyboardEvent('keydown', { key: 'k', metaKey: true, bubbles: true })
-            window.dispatchEvent(event)
-          }}
-          className="flex items-center gap-2.5 px-2.5 sm:px-3 h-9 rounded-lg border border-hairline bg-bg hover:bg-bg-2 transition-colors text-ink-3 hover:text-ink-2"
-          title="Ask AI"
-        >
-          <Sparkles className="w-4 h-4" />
-          <span className="hidden sm:inline text-xs font-medium">Ask AI</span>
-          <div className="hidden sm:flex items-center gap-1 text-xs text-ink-3">
-            <Command className="w-3 h-3" />
-            <span>K</span>
-          </div>
-        </button>
       </div>
     </header>
   )

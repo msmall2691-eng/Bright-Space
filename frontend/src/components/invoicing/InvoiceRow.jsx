@@ -27,7 +27,7 @@ export function InvoiceRow({
 
   return (
     <div
-      className={`group flex flex-wrap sm:grid sm:grid-cols-[2fr_1fr_1fr_1fr_auto] gap-2 sm:gap-4 items-center px-4 py-3.5 cursor-pointer
+      className={`group flex flex-wrap sm:grid sm:grid-cols-[2fr_1fr_1fr_1fr_auto] gap-2 sm:gap-4 items-center px-4 py-2.5 cursor-pointer
         hover:bg-bg transition-colors
         ${!isLast ? 'border-b border-hairline' : ''}
         ${isSelected ? 'bg-bg' : ''}`}

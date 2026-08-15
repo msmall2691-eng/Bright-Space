@@ -290,20 +290,11 @@ export default function DesignSystem() {
           </div>
         </Section>
 
-        <Section title="StatusBadge" description="components/ui/StatusBadge.jsx — 5 statuses × filled/outline.">
-          <div className="space-y-3">
-            <div className="flex items-center gap-3 flex-wrap">
-              <code className="text-[11px] text-ink-3 w-16 shrink-0">filled</code>
-              {STATUSES.map(s => (
-                <StatusBadge key={s} status={s} variant="filled">{s}</StatusBadge>
-              ))}
-            </div>
-            <div className="flex items-center gap-3 flex-wrap">
-              <code className="text-[11px] text-ink-3 w-16 shrink-0">outline</code>
-              {STATUSES.map(s => (
-                <StatusBadge key={s} status={s} variant="outline">{s}</StatusBadge>
-              ))}
-            </div>
+        <Section title="StatusBadge" description="components/ui/StatusBadge.jsx — the dot-pill: quiet bordered body, colored dot per status. One shape (the old filled/outline variants both render this).">
+          <div className="flex items-center gap-3 flex-wrap">
+            {STATUSES.map(s => (
+              <StatusBadge key={s} status={s}>{s}</StatusBadge>
+            ))}
           </div>
         </Section>
 
