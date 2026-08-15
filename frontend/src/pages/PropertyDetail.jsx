@@ -9,6 +9,8 @@ import Button from '../components/ui/Button'
 import RecordLink from '../components/RecordLink'
 import AiInsight from '../components/AiInsight'
 import GlassCard from '../components/ui/GlassCard'
+import { ICAL_SOURCES } from '../components/properties/constants'
+import { isStaleSync, relTimeAgo } from '../components/properties/utils'
 // Normalize API responses — some endpoints return raw arrays, others return
 // paginated envelopes like { items, total, limit, offset }.
 const toArray = (res) => Array.isArray(res) ? res : (res?.items ?? res?.data ?? [])
@@ -18,6 +20,83 @@ const PROPERTY_TYPE_CONFIG = {
   residential: { label: 'Residential', badge: 'bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-300', icon: Home },
   commercial: { label: 'Commercial', badge: 'bg-purple-100 text-purple-700 dark:bg-purple-900 dark:text-purple-300', icon: Building2 },
   str: { label: 'STR', badge: 'bg-amber-100 text-amber-700 dark:bg-amber-900 dark:text-amber-300', icon: Wind },
+}
+
+// Read-only per-feed status list for STR properties — same vocabulary as the
+// properties list and Sync Center (Synced / Stale / Failed / Never synced).
+// Display only: managing feeds lives at /properties/:id/icals.
+function CalendarFeedsCard({ property, navigate }) {
+  const feeds = property.icals || []
+  return (
+    <div className="bg-panel border border-hairline rounded-lg p-4 mb-4" data-testid="detail-feeds-card">
+      <div className="flex items-center justify-between gap-2 mb-2">
+        <h3 className="text-sm font-semibold text-ink">Calendar feeds</h3>
+        <button
+          onClick={() => navigate(`/properties/${property.id}/icals`)}
+          className="text-xs font-semibold text-indigo-600 hover:text-indigo-700 hover:underline"
+        >
+          Manage feeds →
+        </button>
+      </div>
+      {feeds.length === 0 ? (
+        <p className="text-xs text-ink-3">
+          No calendar feeds yet — turnovers can't auto-schedule until one is added.
+        </p>
+      ) : (
+        <ul className="divide-y divide-hairline/60">
+          {feeds.map(ical => {
+            const sourceLabel = ICAL_SOURCES.find(s => s.value === (ical.source || '').toLowerCase())?.label
+              || ical.source || 'Custom'
+            const failed = ical.last_sync_status === 'failed' || ical.last_sync_status === 'retrying'
+            const lastAt = relTimeAgo(ical.last_synced_at)
+            let pill
+            if (failed) {
+              pill = (
+                <span className="inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-full bg-red-50 dark:bg-red-500/10 text-red-700 dark:text-red-300"
+                  title={ical.last_sync_error || ''}>
+                  <AlertCircle className="w-3 h-3" /> Failed {lastAt || ''}
+                </span>
+              )
+            } else if (ical.last_synced_at) {
+              pill = isStaleSync(ical.last_synced_at) ? (
+                <span className="inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-full bg-amber-50 dark:bg-amber-500/10 text-amber-700 dark:text-amber-300"
+                  title="No clean sync in 24h+ — check this feed">
+                  <AlertCircle className="w-3 h-3" /> Stale · synced {lastAt}
+                </span>
+              ) : (
+                <span className="inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-full bg-emerald-50 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-300">
+                  <CheckCircle className="w-3 h-3" /> Synced {lastAt}
+                </span>
+              )
+            } else {
+              pill = (
+                <span className="inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-full bg-bg-2 text-ink-2">
+                  <Clock className="w-3 h-3" /> Never synced
+                </span>
+              )
+            }
+            return (
+              <li key={ical.id} className="py-2 first:pt-0 last:pb-0">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="text-[11px] font-semibold text-ink-2 uppercase tracking-wide">{sourceLabel}</span>
+                  {!ical.active && (
+                    <span className="text-[10px] font-semibold text-ink-3 bg-bg-2 px-1.5 py-0.5 rounded">paused</span>
+                  )}
+                  {pill}
+                </div>
+                <div className="text-xs text-ink-3 truncate font-mono mt-0.5" title={ical.url}>{ical.url}</div>
+                {failed && ical.last_sync_error && (
+                  <div className="mt-1 text-[11px] text-red-700 dark:text-red-300 bg-red-50 dark:bg-red-500/10 rounded p-1.5 font-mono break-all">
+                    {String(ical.last_sync_error).slice(0, 200)}
+                  </div>
+                )}
+              </li>
+            )
+          })}
+        </ul>
+      )}
+    </div>
+  )
 }
 
 const JOB_STATUS_CONFIG = {
@@ -351,6 +430,15 @@ export default function PropertyDetail() {
                     <AlertCircle className="w-3.5 h-3.5" />No feed
                   </span>
                 )}
+                {/* One click from "broken" to the fix — feed management page. */}
+                {property.property_type === 'str' && (property.ical_health === 'no_feed' || property.ical_health === 'stale') && (
+                  <button
+                    onClick={() => navigate(`/properties/${propertyId}/icals`)}
+                    className="text-xs font-semibold text-indigo-600 hover:text-indigo-700 hover:underline"
+                  >
+                    {property.ical_health === 'no_feed' ? 'Add feed →' : 'Check feed →'}
+                  </button>
+                )}
                 {property.property_type === 'str' && typeof property.turnovers_next_30d === 'number' && (
                   <span className="flex items-center gap-1 px-2 py-1 rounded text-xs font-medium text-ink-2 bg-bg-2"
                     title="Turnovers scheduled in the next 30 days">
@@ -397,6 +485,13 @@ export default function PropertyDetail() {
             <div className="bg-red-50 border border-red-200 text-red-700 dark:bg-red-950 dark:border-red-800 dark:text-red-300 px-4 py-3 rounded-lg mb-4 text-sm">
               {error}
             </div>
+          )}
+
+          {/* STR turnover pipeline health: which feeds exist and whether each
+              one is actually syncing — the data was already in the payload,
+              it just never rendered here. */}
+          {property.property_type === 'str' && (
+            <CalendarFeedsCard property={property} navigate={navigate} />
           )}
 
           {/* Cleaning Checklist — editable template per property, collapsed by
@@ -453,6 +548,12 @@ export default function PropertyDetail() {
                           <span className={`px-2 py-1 rounded-full text-xs font-medium whitespace-nowrap ${statusConfig.badge}`}>
                             {statusConfig.label}
                           </span>
+                          {job.job_type === 'str_turnover' && (
+                            <span className="flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium whitespace-nowrap bg-amber-100 text-amber-700 dark:bg-amber-900 dark:text-amber-300"
+                              title="Auto-created from this property's rental calendar feed">
+                              <Wind className="w-3 h-3" /> Turnover
+                            </span>
+                          )}
                         </div>
 
                         {/* Date + Time — one compact line */}
@@ -585,9 +686,11 @@ export default function PropertyDetail() {
               <Button variant="secondary" onClick={() => setShowJobDetails(false)} className="w-full sm:w-auto">
                 Close
               </Button>
-              <Button variant="primary" className="w-full sm:w-auto flex items-center gap-2">
+              {/* Was a dead button — now the promised path to the job page. */}
+              <Button variant="primary" className="w-full sm:w-auto flex items-center gap-2"
+                onClick={() => navigate(`/jobs/${selectedJob.id}`)}>
                 <Edit2 className="w-4 h-4" />
-                Edit Job
+                Open Job
               </Button>
             </div>
           </div>

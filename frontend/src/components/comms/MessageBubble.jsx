@@ -6,10 +6,12 @@ import { htmlToText, splitQuotedEmail } from '../../utils/format'
 /** Outbound delivery indicator. Covers the whole lifecycle so a message
  *  that's accepted-but-not-yet-delivered isn't a blank space:
  *  sending → sent → delivered → failed. */
+const FAILED_STATUSES = ['failed', 'undelivered', 'error']
+
 function DeliveryIcon({ status }) {
   const s = (status || '').toLowerCase()
-  if (s === 'failed' || s === 'undelivered' || s === 'error')
-    return <AlertTriangle className="w-3 h-3 text-red-200" aria-label="failed" />
+  if (FAILED_STATUSES.includes(s))
+    return <AlertTriangle className="w-3 h-3 text-red-300" aria-label="failed" />
   if (s === 'delivered' || s === 'read')
     return <CheckCircle2 className="w-3 h-3" aria-label="delivered" />
   if (s === 'sent')
@@ -40,6 +42,7 @@ export function MessageBubble({ m, isFirst, showTime, contactName }) {
   }
 
   const outbound = m.direction === 'outbound'
+  const failed = outbound && FAILED_STATUSES.includes((m.status || '').toLowerCase())
   const [showQuoted, setShowQuoted] = useState(false)
 
   // Clean the body once per message (not per render): HTML → text, then split
@@ -95,12 +98,20 @@ export function MessageBubble({ m, isFirst, showTime, contactName }) {
               )}
             </div>
           )}
-          <div className={`text-[11px] mt-1.5 flex items-center gap-1 font-medium ${outbound ? 'text-indigo-100 justify-end' : 'text-ink-2'}`}>
+          <div className={`text-[11px] mt-1.5 flex items-center gap-1 ${outbound ? 'font-medium text-indigo-100 justify-end' : 'text-ink-3'}`}>
             {fullTime(m.created_at)}
             {outbound && <DeliveryIcon status={m.status} />}
             {m.channel === 'email' && <Mail className="w-3 h-3 ml-1 opacity-50" />}
           </div>
         </div>
+        {/* Failed sends must be unmissable — the in-bubble icon alone is easy
+            to skim past. Visual only: no retry affordance exists in the app,
+            so none is invented here. */}
+        {failed && (
+          <div className="flex items-center justify-end gap-1 mt-1 px-1 text-[11px] font-medium text-red-600 dark:text-red-400">
+            <AlertTriangle className="w-3 h-3" /> Not delivered
+          </div>
+        )}
       </div>
     </div>
   )

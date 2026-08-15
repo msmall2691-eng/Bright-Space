@@ -1,3 +1,4 @@
+import { Link } from 'react-router-dom'
 import { X, Zap, ChevronDown, CheckCircle, AlertCircle, Clock, Edit2, Trash2, MessageSquare } from 'lucide-react'
 import Button from '../ui/Button'
 import GlassCard from '../ui/GlassCard'
@@ -91,11 +92,20 @@ export default function VisitDetailsDrawer({
               const name = (property?.name || '').trim()
               const addr = (property?.address || '').trim()
               const sameOrMissing = !name || name.toLowerCase() === addr.toLowerCase()
+              // Link the property text to its record when we have an id —
+              // navigation unmounts the whole Schedule page, so no explicit
+              // drawer close is needed.
+              const propId = property?.id ?? job?.property_id
+              const asPropertyLink = (text, cls) => propId != null ? (
+                <Link to={`/properties/${propId}`} className={`${cls} text-blue-500 hover:underline`}>{text}</Link>
+              ) : (
+                <span className={`${cls} text-ink`}>{text}</span>
+              )
               if (sameOrMissing) {
                 return (
                   <div>
                     <p className="text-xs font-semibold text-ink-2 uppercase mb-1">Address</p>
-                    <p className="text-sm sm:text-base text-ink break-words">{addr}</p>
+                    <p className="text-sm sm:text-base break-words">{asPropertyLink(addr, '')}</p>
                   </div>
                 )
               }
@@ -103,7 +113,7 @@ export default function VisitDetailsDrawer({
                 <>
                   <div>
                     <p className="text-xs font-semibold text-ink-2 uppercase mb-1">Property</p>
-                    <p className="text-sm sm:text-base text-ink">{name}</p>
+                    <p className="text-sm sm:text-base">{asPropertyLink(name, '')}</p>
                   </div>
                   <div>
                     <p className="text-xs font-semibold text-ink-2 uppercase mb-1">Address</p>
@@ -143,7 +153,15 @@ export default function VisitDetailsDrawer({
             <div>
               <p className="text-xs font-semibold text-ink-2 uppercase mb-1">Client</p>
               <div className="flex items-center justify-between gap-2">
-                <p className="text-sm sm:text-base text-ink">{job?.client_name}</p>
+                {/* Name links to the client record — it used to be dead text,
+                    forcing a detour through search to reach the client page. */}
+                {job?.client_id != null ? (
+                  <Link to={`/clients/${job.client_id}`} className="text-sm sm:text-base text-blue-500 hover:underline truncate">
+                    {job?.client_name}
+                  </Link>
+                ) : (
+                  <p className="text-sm sm:text-base text-ink">{job?.client_name}</p>
+                )}
                 {/* Message the customer without leaving the schedule — handy for
                     confirming or (silently) moving a visit. The parent owns the
                     contact lookup + composer so this stays closure-free. */}

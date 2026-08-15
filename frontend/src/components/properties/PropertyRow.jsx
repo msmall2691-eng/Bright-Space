@@ -102,6 +102,17 @@ export function PropertyRow({
                         <span className="h-1.5 w-1.5 rounded-full bg-red-500" />No feed
                       </span>
                     )}
+                    {/* A missed turnover means a guest walks into a dirty
+                        rental — a broken feed state gets its fix one click
+                        away, not buried behind expand-the-card. */}
+                    {(p.ical_health === 'no_feed' || p.ical_health === 'stale') && (
+                      <button
+                        onClick={(e) => { e.stopPropagation(); navigate(`/properties/${p.id}/icals`) }}
+                        className="text-[11px] font-semibold text-indigo-600 hover:text-indigo-700 hover:underline"
+                      >
+                        {p.ical_health === 'no_feed' ? 'Add feed →' : 'Check feed →'}
+                      </button>
+                    )}
                     {typeof p.turnovers_next_30d === 'number' && (
                       <span className="flex items-center gap-1 text-xs text-ink-3" title="Turnovers scheduled in the next 30 days">
                         <Calendar className="w-3 h-3" />{p.turnovers_next_30d} next 30d

@@ -1,3 +1,4 @@
+import { Link } from 'react-router-dom'
 import { ArrowLeft, Clock, CheckCircle2, User } from 'lucide-react'
 import { formatPhone } from '../../utils/display'
 import { CHANNEL_CONFIG } from './constants'
@@ -47,7 +48,17 @@ export function ThreadHeader({
         </div>
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2">
-            <h2 className="font-bold text-ink text-[15px] truncate">{contactDisplay(detail)}</h2>
+            {/* Linked client names go straight to the client record; unknown
+                senders (no client) stay plain text. */}
+            {detail.client?.id ? (
+              <h2 className="font-bold text-ink text-[15px] truncate">
+                <Link to={`/clients/${detail.client.id}`} className="hover:underline underline-offset-2">
+                  {contactDisplay(detail)}
+                </Link>
+              </h2>
+            ) : (
+              <h2 className="font-bold text-ink text-[15px] truncate">{contactDisplay(detail)}</h2>
+            )}
             <SlaBadge state={detail.sla_state} />
           </div>
           <div className="text-[12px] text-ink-3 mt-0.5 truncate">

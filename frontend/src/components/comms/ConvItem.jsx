@@ -1,3 +1,4 @@
+import { Link } from 'react-router-dom'
 import { CHANNEL_CONFIG } from './constants'
 import { contactDisplay, relTime } from './utils'
 import { Avatar } from './primitives'
@@ -5,7 +6,12 @@ import { htmlToText } from '../../utils/format'
 
 /** Left-list conversation row (Twenty CRM style): avatar + channel chip,
  *  name + relative time, preview, and Overdue/Unassigned chips when
- *  actionable. The unread pill floats right. */
+ *  actionable. The unread pill floats right.
+ *
+ *  The row is a div[role=button] (not a <button>) so the client name can be a
+ *  real <Link> to /clients/:id — nested interactive content inside a <button>
+ *  is invalid HTML. Enter/Space still select via onKeyDown, matching the
+ *  clickable-row pattern in ClientTableView. */
 export function ConvItem({ conv, active, onClick }) {
   const name = contactDisplay(conv)
   const unread = conv.unread_count > 0
@@ -13,15 +19,22 @@ export function ConvItem({ conv, active, onClick }) {
   const unassigned = !conv.assignee
   const channel = CHANNEL_CONFIG[conv.channel] || CHANNEL_CONFIG.sms
   const ChannelIcon = channel.icon
+  const clientId = conv.client?.id ?? conv.client_id
+
+  // Direction of the last real message, derived from timestamps the list
+  // payload already carries — an outbound-last thread previews as "You: …"
+  // so replied vs awaiting-reply threads read differently at a glance.
+  const lastOut = conv.last_outbound_at ? Date.parse(conv.last_outbound_at) : 0
+  const lastIn = conv.last_inbound_at ? Date.parse(conv.last_inbound_at) : 0
+  const lastIsOutbound = lastOut > 0 && lastOut >= lastIn
+
+  const nameCls = `text-[14px] truncate ${unread ? 'font-semibold text-ink' : 'font-medium text-ink-2'}`
 
   return (
-    <button onClick={onClick}
-      className={`group w-full text-left px-4 py-3 transition-colors border-b border-hairline ${
-        active
-          ? 'bg-bg-2'
-          : unread
-            ? 'bg-panel hover:bg-bg-2/60'
-            : 'bg-panel hover:bg-bg-2/60'
+    <div role="button" tabIndex={0} onClick={onClick}
+      onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onClick?.(e) } }}
+      className={`group w-full text-left px-4 py-3 transition-colors border-b border-hairline cursor-pointer ${
+        active ? 'bg-bg-2' : 'bg-panel hover:bg-bg-2/60'
       }`}>
       <div className="flex items-center gap-3">
         {/* Avatar with a neutral channel chip in the bottom-right corner. The
@@ -35,11 +48,17 @@ export function ConvItem({ conv, active, onClick }) {
         </div>
 
         <div className="flex-1 min-w-0">
-          {/* Name + time */}
+          {/* Name + time. Linked client names go to the client record; the
+              stopPropagation keeps the link from also selecting the row. */}
           <div className="flex items-baseline gap-2">
-            <span className={`text-[14px] truncate flex-1 ${unread ? 'font-semibold text-ink' : 'font-medium text-ink-2'}`}>
-              {name}
-            </span>
+            {clientId ? (
+              <Link to={`/clients/${clientId}`} onClick={e => e.stopPropagation()}
+                className={`${nameCls} flex-1 hover:underline underline-offset-2`}>
+                {name}
+              </Link>
+            ) : (
+              <span className={`${nameCls} flex-1`}>{name}</span>
+            )}
             <span className="text-[11px] text-ink-3 shrink-0 tabular-nums">
               {relTime(conv.last_message_at)}
             </span>
@@ -47,6 +66,7 @@ export function ConvItem({ conv, active, onClick }) {
 
           {/* Preview (single line) */}
           <p className={`text-[12.5px] truncate mt-0.5 ${unread ? 'text-ink-2' : 'text-ink-3'}`}>
+            {lastIsOutbound && conv.preview && <span className="text-ink-3">You: </span>}
             {htmlToText(conv.preview) || 'No messages yet'}
           </p>
 
@@ -73,6 +93,6 @@ export function ConvItem({ conv, active, onClick }) {
           </span>
         )}
       </div>
-    </button>
+    </div>
   )
 }

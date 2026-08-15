@@ -15,7 +15,12 @@ export default function UnassignedQueue({
   return (
     <div className="bg-bg-2 border border-hairline rounded-2xl p-3 flex flex-col min-w-0">
       <div className="flex items-center justify-between mb-3 px-1">
-        <span className="text-[10px] font-mono tracking-widest uppercase text-ink-3">
+        <span className="inline-flex items-center gap-1.5 text-[10px] font-mono tracking-widest uppercase text-ink-3">
+          {/* Amber dot — the same needs-a-cleaner cue the month chips and day
+              cards use, so the queue reads as "these are the amber ones". */}
+          {visits.length > 0 && (
+            <span className="w-[7px] h-[7px] rounded-full bg-amber-400 ring-2 ring-amber-200/70 dark:ring-amber-500/25 shrink-0" aria-hidden="true" />
+          )}
           Unassigned queue
         </span>
         <span className="text-[11px] font-mono tabular-nums px-2 py-0.5 rounded-full border border-hairline bg-panel text-ink">
@@ -57,8 +62,11 @@ export default function UnassignedQueue({
                   <div className="text-[11px] font-mono tabular-nums text-ink-3">
                     {start}{end && ` – ${end}`}
                   </div>
+                  {/* Client name first — same truncation priority as the month
+                      chips, and the same label the timeline block shows, so a
+                      drag between columns tracks one name. */}
                   <div className="text-[13.5px] font-semibold text-ink tracking-tight mt-0.5">
-                    {job?.title || client?.name || `Visit ${v.id}`}
+                    {client?.name || job?.title || `Visit ${v.id}`}
                   </div>
                   {prop?.address && (
                     <div className="text-[11.5px] text-ink-3 mt-0.5 truncate">

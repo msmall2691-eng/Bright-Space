@@ -582,6 +582,10 @@ export default function Schedule() {
           onLocalMove={applyLocalMove}
           onRefresh={refresh}
           toast={toast}
+          /* Phone fallback: Week is unusable at 390px, so the empty-grid hint
+             carries a real "Open Day view" button instead of pointing at the
+             toolbar. Pure view switch — same setViewMode the toolbar uses. */
+          onSwitchToDay={() => setViewMode('day')}
         />
       ) : viewMode === 'upcoming' ? (
         <AgendaUpcoming

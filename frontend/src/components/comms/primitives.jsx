@@ -114,9 +114,9 @@ export function Kbd({ children }) {
 export function DaySeparator({ label }) {
   return (
     <div className="flex items-center gap-3 my-4">
-      <div className="flex-1 h-px bg-bg-2" />
+      <div className="flex-1 h-px bg-hairline" />
       <span className="text-[11px] font-semibold text-ink-3 uppercase tracking-wider">{label}</span>
-      <div className="flex-1 h-px bg-bg-2" />
+      <div className="flex-1 h-px bg-hairline" />
     </div>
   )
 }

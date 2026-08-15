@@ -1,6 +1,6 @@
 import { AlertTriangle, CheckCircle, Clock, Trash2 } from 'lucide-react'
 import { ICAL_SOURCES } from './constants'
-import { relTimeAgo } from './utils'
+import { isStaleSync, relTimeAgo } from './utils'
 
 /** One row per iCal feed on a STR property. Shows the URL (truncated),
  *  source label, and a sync-status pill so the operator can see at a
@@ -28,7 +28,16 @@ export function IcalFeedRow({ ical, onRemove }) {
       </span>
     )
   } else if (status === 'ok' || ical.last_synced_at) {
-    statusPill = (
+    // A "Synced" pill on a feed that last synced days ago is a lie by
+    // omission — auto-sync runs every 15 min, so >24h without a clean sync
+    // means the feed is stale (same cutoff as the property-level rollup).
+    const stale = isStaleSync(ical.last_synced_at)
+    statusPill = stale ? (
+      <span className="inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-full bg-amber-50 dark:bg-amber-500/10 text-amber-700 dark:text-amber-300"
+        title="No clean sync in 24h+ — check this feed">
+        <AlertTriangle className="w-3 h-3" /> Stale · synced {lastAt || '—'}
+      </span>
+    ) : (
       <span className="inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-full bg-emerald-50 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-300">
         <CheckCircle className="w-3 h-3" /> Synced {lastAt || ''}
       </span>

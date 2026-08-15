@@ -14,6 +14,7 @@
  * Each block is draggable — drop it on a crew card in CrewUtilization to
  * (re)assign that visit (see DispatchBoard's commitAssign).
  */
+import { Check } from 'lucide-react'
 import { PROPERTY_TYPE_CONFIG } from './constants'
 
 const AXIS_START_HOUR = 6
@@ -117,6 +118,8 @@ export default function DispatchTimeline({
               .filter(Boolean)
               .slice(0, 2)
               .join(' + ')
+            const isDone = v.status === 'completed'
+            const blockLabel = client?.name || job?.title || `Visit ${v.id}`
             return (
               <button
                 key={v.id}
@@ -140,12 +143,16 @@ export default function DispatchTimeline({
                   background: unassigned ? undefined : color,
                   border: unassigned ? `1.5px dashed ${color}` : `1px solid rgba(0,0,0,0.08)`,
                 }}
+                title={`${start}${end ? ' – ' + end : ''} · ${blockLabel}${prop?.address && prop.address !== blockLabel ? ' · ' + prop.address : ''}${unassigned ? ' · needs crew' : crewLabel ? ' · ' + crewLabel : ''}${isDone ? ' · done' : ''}`}
               >
-                <div className="text-[10.5px] font-mono tabular-nums opacity-90">
+                <div className="text-[10.5px] font-mono tabular-nums opacity-90 flex items-center gap-1">
                   {start}{end && ` – ${end}`}
+                  {/* Worded/iconic "done" cue — a completed block otherwise looks
+                      identical to a scheduled one (fill color is job type). */}
+                  {isDone && <Check className="w-3 h-3 shrink-0" aria-label="Completed" />}
                 </div>
                 <div className="text-[12px] font-semibold tracking-tight leading-tight mt-0.5 truncate">
-                  {client?.name || job?.title || `Visit ${v.id}`}
+                  {blockLabel}
                 </div>
                 {(crewLabel || unassigned) && (
                   <div className={`text-[10.5px] mt-0.5 truncate flex items-center gap-1 ${unassigned ? 'font-semibold' : 'opacity-90'}`}>
