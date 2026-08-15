@@ -289,13 +289,24 @@ function ShiftRow({ shift, rates, ov, onChange }) {
   const eff = shiftEffective(shift, ov, rates)
   const label = shift.shift_title || shift.job_label || shift.property ||
     (shift.kind === 'unclassified' ? 'No job linked' : shift.kind)
+  // Cross-link the label to the record it names (the app's usual pattern —
+  // see SyncCenter's feed rows): a job title goes to the job, a property name
+  // to the property. Quiet inline style so the row still reads as a table;
+  // unlinked punches have no ids and stay plain text.
+  const href = shift.job_id && label === shift.job_label ? `/jobs/${shift.job_id}`
+    : shift.property_id && label === shift.property ? `/properties/${shift.property_id}`
+    : null
   return (
     <div className="bg-panel border border-hairline rounded-lg px-3 py-2">
       <div className="flex items-center justify-between gap-2 flex-wrap">
         <div className="flex items-center gap-2 min-w-0">
           <KindDot kind={shift.kind} weekend={shift.weekend} />
           <span className="text-ink-2 tabular-nums text-sm">{shift.date}</span>
-          <span className="text-ink-3 text-sm truncate">{label}</span>
+          {href ? (
+            <Link to={href} className="text-ink hover:text-indigo-600 no-underline text-sm truncate">{label}</Link>
+          ) : (
+            <span className="text-ink-3 text-sm truncate">{label}</span>
+          )}
           {shift.weekend && <span className="text-[11px] text-amber-400">wknd</span>}
           {shift.rate_pay && (
             <span className="inline-flex items-center gap-0.5 text-[10px] font-semibold text-purple-300 bg-purple-500/15 rounded px-1 py-0.5">

@@ -60,6 +60,11 @@ export function IcalFeedRow({ ical, onRemove }) {
               <span className="text-[10px] font-semibold text-ink-3 bg-bg-2 px-1.5 py-0.5 rounded">paused</span>
             )}
             {statusPill}
+            {/* Count from the last known-good sync — "what did this feed
+                actually produce?" without opening server logs. */}
+            {ical.last_events_seen != null && (
+              <span className="text-[11px] text-ink-3">{ical.last_events_seen} event{ical.last_events_seen === 1 ? '' : 's'}</span>
+            )}
           </div>
           <div className="text-xs text-ink-3 truncate font-mono" title={ical.url}>{ical.url}</div>
         </div>

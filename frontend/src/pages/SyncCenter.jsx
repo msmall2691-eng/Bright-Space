@@ -206,6 +206,11 @@ function ChannelCard({ ch, canToggle, canSync, busy, onToggle, onSync }) {
                       title={f.error || ''}>
                       <span className={`w-1.5 h-1.5 rounded-full ${dot}`} />
                       {label}
+                      {/* Last known-good event count — "synced 5m ago" alone
+                          can't tell an empty feed from a full one. */}
+                      {f.last_events_seen != null && (
+                        <span className="text-[11px] text-ink-3">· {f.last_events_seen} events</span>
+                      )}
                     </span>
                   </li>
                 )
