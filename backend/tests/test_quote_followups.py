@@ -71,6 +71,19 @@ def test_convert_to_job_creates_unscheduled_job(client_ctx):
     assert job.cleaner_ids == []
 
 
+def test_convert_to_job_unscheduled_inherits_quote_org(client_ctx):
+    """BB-MT-01 regression: the unscheduled direct-insert path used to leave
+    org_id NULL, unlike the scheduled path (which explicitly passes
+    quote.org_id to create_job). A NULL org_id job then surfaced on every
+    workspace's board/brief via the NULL-tolerant _org() tenant filter, not
+    just the quote's own org."""
+    db, c = client_ctx
+    q = _mk_quote(db, c.id, "QT-CONV-ORG", status="accepted", org_id=9)
+    out = convert_quote_to_job(q.id, db=db)
+    job = db.query(Job).filter(Job.id == out["id"]).first()
+    assert job.org_id == 9
+
+
 def test_convert_to_job_with_schedule_populates_date_and_crew(client_ctx):
     """The Convert-to-Job modal collects a date + crew and posts them so
     the resulting Job lands as "scheduled" with those fields populated —
