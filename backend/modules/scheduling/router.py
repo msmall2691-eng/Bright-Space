@@ -1481,11 +1481,21 @@ def schedule_audit(db: Session = Depends(get_db), org_id: int = Depends(current_
 @router.post("/sync-gcal", dependencies=[Depends(require_role("admin", "manager"))])
 def sync_from_gcal(db: Session = Depends(get_db)):
     """
-    Full two-way sync with Google Calendar.
-    Matches events to clients by: extendedProperties → attendee email → address.
+    Manual "sync now": poll Google Calendar, create/link Jobs for new events
+    (matched by extendedProperties → attendee email → address), and detect
+    cancellations. This endpoint calls sync_calendar() unconditionally —
+    it does NOT check calendar_source_of_truth itself. Actual two-way pull
+    (Google edits overwriting an existing linked Job) only ever happens when
+    that setting is "google", and that mode is hard-blocked inside
+    sync_calendar() regardless of who calls it — see GoogleWritebackDisabled.
     """
-    from integrations.gcal_sync import sync_calendar, sync_gcal_cancellations
-    result = sync_calendar(db)
+    from integrations.gcal_sync import sync_calendar, sync_gcal_cancellations, GoogleWritebackDisabled
+    try:
+        result = sync_calendar(db)
+    except GoogleWritebackDisabled as e:
+        # calendar_source_of_truth == "google" is hard-blocked in code — see
+        # scheduling-invariants (Rule 0 / R2). Surface as a clean 400, not a 500.
+        raise HTTPException(status_code=400, detail=str(e))
     if result.get("error"):
         raise HTTPException(status_code=502, detail=result["error"])
     # Reverse linkage check: catch events that were deleted in GCal

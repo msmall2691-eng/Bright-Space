@@ -52,6 +52,80 @@ TENANT_TABLES = [
     # router.py) — see 095's docstring for why `users` itself is deliberately
     # NOT in this list yet.
     "user_google_accounts", "push_subscriptions",
+    # `users` is DELIBERATELY excluded — re-audited 2026-08-16, still not safe.
+    # Re-read this whole comment before adding it; don't re-derive from scratch.
+    #
+    # 1. The gap is real: POLICY's USING clause above has no `OR org_id IS
+    #    NULL` branch. It only tolerates an *unset* `app.current_org_id` GUC
+    #    (background jobs / psql), not a NULL row once the GUC IS set. A
+    #    NULL-org `users` row matches neither `org_id = <org>` nor
+    #    `current_setting(...) IS NULL` and becomes invisible.
+    #
+    # 2. NULL-org `users` rows are NOT vestigial — they're live and expected.
+    #    `users.org_id` is nullable (models.py). Migration 027 (MT-1) never
+    #    included `users` in its backfill list; migration 049 added
+    #    `users.org_id` + `UPDATE users SET org_id = 1 WHERE org_id IS NULL`,
+    #    but ONLY inside an `if "org_id" not in existing_columns` guard — and
+    #    049's own docstring says production's `users` table already had
+    #    `org_id` (via `Base.metadata.create_all()`, pre-Alembic), so that
+    #    ADD COLUMN branch — and the backfill riding inside it — never ran
+    #    against production. No migration or script anywhere else runs
+    #    `UPDATE users SET org_id = ...`. So there is no evidence any
+    #    pre-MT-4 user row was ever backfilled; whether NULL-org rows exist
+    #    in production today is unconfirmed, not ruled out — confirming it
+    #    needs a real `SELECT count(*) FROM users WHERE org_id IS NULL`
+    #    against production, which nobody has run.
+    #
+    # 3. The app code doesn't treat this as hypothetical: it's coded against
+    #    today, present tense. `modules/ai/router.py`'s `_org()` docstring:
+    #    "rows from before the multi-tenant migration carry org_id NULL and
+    #    belong to the default workspace." And multiple `User` query sites
+    #    carry an explicit `or_(User.org_id == oid, User.org_id.is_(None))`
+    #    specifically to keep NULL-org cleaner accounts visible:
+    #    modules/crew/router.py (office_crew_threads, crew message send,
+    #    crew_roster, cleaner invite-resend), modules/payroll/router.py
+    #    (three cleaner-name lookup sites, each commented "cleaner_id is
+    #    intentionally non-unique and `users` isn't an RLS tenant table"),
+    #    modules/dispatch/router.py (employee roster). Turning RLS on for
+    #    `users` with the current USING clause would silently defeat every
+    #    one of those app-level filters — NULL-org cleaners would vanish from
+    #    rosters, payroll name lookups, dispatch's assignable-employee list,
+    #    and crew messaging. That's a live regression, not a theoretical one.
+    #
+    # 4. Separately risky: several `db.query(User).filter(User.id ==
+    #    current_user.id)` self-lookups (modules/crew/router.py `/me`, the
+    #    profile-update endpoint, calendar-token reset) re-fetch the caller's
+    #    own row inside a request whose RLS GUC may already be pinned to a
+    #    *different* value than the caller's real org_id: `current_org_id()`
+    #    (modules/auth/router.py) does
+    #    `oid = getattr(current_user, "org_id", None) or _default_org_id(db)`
+    #    — a NULL-org caller's GUC gets set to the default org, not left
+    #    unset. If RLS were on, that caller's own self-lookup would 404.
+    #
+    # Decision (2026-08-16, branch claude/app-layout-redesign-8vvynd):
+    # deferred. Do NOT add RLS for `users` until, in order:
+    #   a. Someone runs `SELECT id, email, role FROM users WHERE org_id IS
+    #      NULL` against production and the result is used to decide real
+    #      ownership per row (business decision — most likely org 1 for
+    #      anything that predates MT-4 self-signup).
+    #   b. A dedicated backfill migration sets those rows' org_id for real
+    #      (mirroring 027/049's `UPDATE ... SET org_id = 1` shape, but as its
+    #      own migration, not hidden inside a conditional ADD COLUMN).
+    #   c. Every `or_(User.org_id == oid, User.org_id.is_(None))` / `_org()`
+    #      site listed in point 3 is revisited — once backfilled, the NULL
+    #      branch is dead weight and should come out for clarity (not
+    #      required for correctness, but leaving it silently stale invites
+    #      the next person to assume NULL rows are still possible).
+    #   d. The self-lookup sites in point 4 are re-checked — safe once no
+    #      user can have org_id NULL (current_org_id's fallback then only
+    #      ever fires for the synthetic master-API-key admin, which has no
+    #      `users` row to look up anyway).
+    #   e. Only then: a migration mirroring 095's pattern
+    #      (`apply_org_rls(op.get_bind(), tables=["users"])` in `upgrade()`,
+    #      `drop_org_rls(...)` in `downgrade()`), and `users` added here.
+    # Until then this is the status quo from before this audit: `users` has
+    # zero RLS backstop on Postgres, and the app-level NULL-tolerant filters
+    # above are the only enforcement.
 ]
 
 POLICY = "bb_org_isolation"

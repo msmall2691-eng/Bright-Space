@@ -452,7 +452,7 @@ export default function SyncCenter() {
                 source of truth — it pushes out to Google, pulls Airbnb turnovers in, and keeps recurring
                 visits filled.{' '}
                 {googleAuthority
-                  ? 'Google is set as the calendar’s source of truth, so time changes you make in Google sync back here.'
+                  ? 'Two-way sync is selected but currently disabled — Google edits will NOT sync back here until this is switched back to BrightBase-master in Settings → Automation.'
                   : 'Edits made directly in Google don’t overwrite yours.'}
               </p>
             </div>

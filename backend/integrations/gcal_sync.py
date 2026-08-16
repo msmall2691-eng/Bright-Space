@@ -56,6 +56,12 @@ def calendar_source_of_truth(db: Session) -> str:
     return "google" if val == "google" else "brightbase"
 
 
+class GoogleWritebackDisabled(RuntimeError):
+    """calendar_source_of_truth == 'google' (legacy two-way pull) was
+    selected, but this mode is hard-blocked — see the guard at the top of
+    sync_calendar() for why."""
+
+
 def reassert_deleted_gcal_events(db: Session) -> dict:
     """One-way self-heal (BrightBase is master): find upcoming jobs whose Google
     event was DELETED in Google and clear the stale event id so the push step
@@ -388,7 +394,42 @@ def sync_calendar(db: Session, calendar_ids: list[str] | None = None) -> dict:
     4. For already-linked jobs, detect GCal changes and update
 
     Returns a summary of what happened.
+
+    HARD BLOCK (scheduling-invariants Rule 0 / R2): when
+    calendar_source_of_truth resolves to 'google', this function refuses to
+    run at all rather than silently pulling Google's edits over canonical Job
+    rows. Google Calendar is a projection, never a peer — see the
+    `scheduling-invariants` skill and docs/scheduling-sync-redesign.md
+    (Phase 4, "make Google strictly one-way"). The 'google'-mode pull logic
+    below is left in place, unreached, so a deliberate future re-enable
+    (Meg's explicit sign-off, per that skill's "Changing These Rules"
+    process) doesn't require resurrecting deleted code — just removing this
+    guard.
     """
+    source_of_truth = calendar_source_of_truth(db)
+    if source_of_truth == "google":
+        log.critical(
+            "[gcal-sync] BLOCKED: calendar_source_of_truth='google' (legacy "
+            "two-way pull) is disabled — pulling Google Calendar edits into "
+            "canonical Job rows violates scheduling-invariants Rule 0 / R2 "
+            "(no writeback from a projection). Settings -> Automation -> "
+            "Two-way sync is set to 'google' for this org; switch it back to "
+            "'BrightBase is the master' to resume syncing. sync_calendar() "
+            "is refusing to run until then."
+        )
+        raise GoogleWritebackDisabled(
+            "calendar_source_of_truth='google' (legacy two-way pull) is "
+            "hard-blocked: it lets Google Calendar edits overwrite canonical "
+            "BrightBase Job rows, which violates scheduling-invariants Rule 0 "
+            "/ R2 (no writeback from a projection — reading Google is only "
+            "for computing drift). Set Settings -> Automation -> Two-way "
+            "sync back to 'BrightBase is the master'. To deliberately "
+            "re-enable this mode, get explicit owner sign-off first and "
+            "follow the 'Changing These Rules' process in the "
+            "scheduling-invariants skill (see also "
+            "docs/scheduling-sync-redesign.md, Phase 4)."
+        )
+
     try:
         from integrations.google_calendar import _get_service
     except ImportError as e:
@@ -419,7 +460,9 @@ def sync_calendar(db: Session, calendar_ids: list[str] | None = None) -> dict:
         "drift_detected": 0,
         "errors": [],
     }
-    source_of_truth = calendar_source_of_truth(db)
+    # source_of_truth is resolved and guarded at the top of this function —
+    # by this point it can only be "brightbase" (the "google" case already
+    # raised GoogleWritebackDisabled above).
 
     incremental = env_flag("GCAL_INCREMENTAL_SYNC", True)
 
@@ -479,7 +522,13 @@ def sync_calendar(db: Session, calendar_ids: list[str] | None = None) -> dict:
                 # Source-of-truth: when BrightBase is the master (default), a
                 # reschedule/edit made directly in Google does NOT overwrite the
                 # job — it's surfaced as drift. BrightBase re-asserts its values on
-                # the next push. Only with source='google' do we pull edits back.
+                # the next push. source_of_truth is always "brightbase" here —
+                # the "google" (two-way pull) case is hard-blocked by the guard
+                # at the top of this function, which raises before this loop is
+                # ever reached. The `else` below (the pull) is therefore dead by
+                # design; it's left in place, not deleted, so a deliberate future
+                # re-enable doesn't require resurrecting removed code — see the
+                # guard's docstring/comment for the process to re-enable it.
                 if source_of_truth == "brightbase":
                     start = event.get("start", {})
                     parsed_start = _parse_event_datetime(start)

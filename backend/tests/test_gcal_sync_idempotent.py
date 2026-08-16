@@ -1,12 +1,23 @@
-"""GCal sync must be idempotent: a poll that finds no real change writes nothing.
+"""GCal sync must be idempotent: a poll that finds no real change flags no drift.
 
 Regression for the string-vs-date churn bug — _parse_event_datetime used to
 return string dates, so `new_date != job.scheduled_date` (str vs Date column) was
 always True and every poll rewrote a string into the column and bumped
 jobs_updated. Phase 1 of the reconciliation plan returns real date/time objects.
+
+calendar_source_of_truth='google' (legacy two-way pull, where a Google-side
+edit overwrites the linked Job) is hard-blocked in code — sync_calendar()
+raises GoogleWritebackDisabled immediately rather than running at all — per
+scheduling-invariants Rule 0 / R2 (no writeback from a projection). So the
+date-parsing regressions below are now exercised through the 'brightbase'
+(default, only-supported) mode: the same _parse_event_datetime comparison
+runs to decide drift_detected instead of jobs_updated, which is the actual
+reachable code path today.
 """
 from datetime import date, time
 from unittest.mock import patch, MagicMock
+
+import pytest
 
 from database.db import SessionLocal
 from database.models import Client, Job, Property
@@ -24,6 +35,21 @@ def _run_sync(db, events, source="brightbase"):
     with patch("integrations.google_calendar._get_service", return_value=_service_returning(events)), \
          patch("integrations.gcal_sync.calendar_source_of_truth", return_value=source):
         return gcal_sync.sync_calendar(db, calendar_ids=["primary"])
+
+
+def test_google_source_of_truth_is_hard_blocked():
+    """calendar_source_of_truth='google' must never run sync_calendar() at
+    all — it's a hard block, not a silent no-op, so a future accidental
+    re-enable of two-way pull fails loudly instead of quietly working."""
+    from integrations import gcal_sync
+    db = SessionLocal()
+    try:
+        with pytest.raises(gcal_sync.GoogleWritebackDisabled):
+            _run_sync(db, [{"id": "evt_blocked", "status": "confirmed",
+                             "summary": "x", "start": {"date": "2026-07-10"}}],
+                      source="google")
+    finally:
+        db.close()
 
 
 def test_sync_is_noop_when_nothing_changed():
@@ -52,10 +78,12 @@ def test_sync_is_noop_when_nothing_changed():
             "end": {"dateTime": "2026-07-10T13:00:00-04:00"},
         }
 
-        r1 = _run_sync(db, [event], source="google")
-        assert r1["jobs_updated"] == 0, "first identical poll should not rewrite the job"
-        r2 = _run_sync(db, [event], source="google")
-        assert r2["jobs_updated"] == 0, "second identical poll should also be a no-op"
+        r1 = _run_sync(db, [event], source="brightbase")
+        assert r1["jobs_updated"] == 0, "brightbase mode never writes back"
+        assert r1["drift_detected"] == 0, "first identical poll should flag no drift"
+        r2 = _run_sync(db, [event], source="brightbase")
+        assert r2["jobs_updated"] == 0
+        assert r2["drift_detected"] == 0, "second identical poll should also flag no drift"
 
         # And the job's columns are still real date/time objects (not strings).
         db.refresh(job)
@@ -71,8 +99,10 @@ def test_sync_is_noop_when_nothing_changed():
         db.close()
 
 
-def test_sync_applies_a_real_date_change_once():
-    """With source='google' (legacy pull), a real Google move updates the job once."""
+def test_sync_flags_a_real_date_change_as_drift_not_applied():
+    """A real Google-side move is detected as drift exactly once and NOT
+    applied to the job — 'google' (legacy pull) would have applied it, but
+    that mode is hard-blocked; 'brightbase' is the only reachable mode."""
     db = SessionLocal()
     try:
         client = Client(name="GCal Move Test", email="move@example.com")
@@ -94,13 +124,16 @@ def test_sync_applies_a_real_date_change_once():
             "start": {"dateTime": "2026-07-12T10:00:00-04:00"},
             "end": {"dateTime": "2026-07-12T13:00:00-04:00"},
         }
-        r1 = _run_sync(db, [moved], source="google")
-        assert r1["jobs_updated"] == 1
+        r1 = _run_sync(db, [moved], source="brightbase")
+        assert r1["jobs_updated"] == 0, "brightbase mode never writes back"
+        assert r1["drift_detected"] == 1, "the real move must be flagged as drift"
         db.refresh(job)
-        assert job.scheduled_date == date(2026, 7, 12)
-        # Re-polling the moved event is now a no-op (no churn).
-        r2 = _run_sync(db, [moved], source="google")
+        assert job.scheduled_date == date(2026, 7, 10), "job stays as BrightBase has it, NOT overwritten"
+        # Re-polling the same (still-drifted) event keeps flagging it — the
+        # job never got a chance to churn since it was never written.
+        r2 = _run_sync(db, [moved], source="brightbase")
         assert r2["jobs_updated"] == 0
+        assert r2["drift_detected"] == 1
     finally:
         db.rollback()
         db.query(Job).filter(Job.gcal_event_id == "evt_move_1").delete(synchronize_session=False)
@@ -142,10 +175,10 @@ def test_sync_does_not_churn_utc_z_form_event():
             "start": {"dateTime": "2026-07-10T13:00:00Z"},
             "end": {"dateTime": "2026-07-10T16:00:00Z"},
         }
-        r1 = _run_sync(db, [event], source="google")
-        assert r1["jobs_updated"] == 0, "13:00Z must match the stored 09:00 EDT — no churn"
-        r2 = _run_sync(db, [event], source="google")
-        assert r2["jobs_updated"] == 0
+        r1 = _run_sync(db, [event], source="brightbase")
+        assert r1["drift_detected"] == 0, "13:00Z must match the stored 09:00 EDT — no false drift"
+        r2 = _run_sync(db, [event], source="brightbase")
+        assert r2["drift_detected"] == 0
 
         db.refresh(job)
         # The stored local time is preserved, NOT overwritten to the UTC hour.
@@ -193,8 +226,8 @@ def test_sync_preserves_non_eastern_property_wall_clock():
             "start": {"dateTime": "2026-07-10T09:00:00-07:00", "timeZone": "America/Los_Angeles"},
             "end": {"dateTime": "2026-07-10T12:00:00-07:00", "timeZone": "America/Los_Angeles"},
         }
-        r1 = _run_sync(db, [event], source="google")
-        assert r1["jobs_updated"] == 0, "09:00 PT must stay 09:00 — not become 12:00 Eastern"
+        r1 = _run_sync(db, [event], source="brightbase")
+        assert r1["drift_detected"] == 0, "09:00 PT must stay 09:00 — not falsely flagged vs 12:00 Eastern"
         db.refresh(job)
         assert job.scheduled_date == date(2026, 7, 10)
         assert job.start_time == time(9, 0)

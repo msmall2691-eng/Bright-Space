@@ -173,10 +173,10 @@ export default function AutomationTab({ state, toast, active }) {
               onChange={e => setAutomationSettings(x => ({ ...x, calendar_source_of_truth: e.target.value }))}
               className="w-full sm:w-96 bg-bg-2 border border-hairline rounded-lg px-3 py-2 text-sm text-ink focus:outline-none focus:border-blue-400">
               <option value="brightbase">BrightBase is the master (recommended) — edits made in Google are re-asserted</option>
-              <option value="google">Two-way — a time/title edit made in Google syncs back into BrightBase</option>
+              <option value="google">Two-way (disabled) — a time/title edit made in Google would sync back into BrightBase</option>
             </select>
             {s.calendar_source_of_truth === 'google' && (
-              <p className="text-xs text-amber-600 mt-2">Two-way is on: moving an appointment in Google Calendar will move the BrightBase job to match. Be careful — a stray drag in Google will move a real job.</p>
+              <p className="text-xs text-amber-600 mt-2">Two-way is currently disabled: this option is saved but syncing will fail loudly (not silently apply Google's edits) until it's switched back to "BrightBase is the master." Ask an engineer if you actually need Google edits to overwrite jobs here.</p>
             )}
           </div>
 
