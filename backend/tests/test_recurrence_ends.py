@@ -18,6 +18,7 @@ from fastapi.testclient import TestClient
 from main import app
 from database.db import SessionLocal
 from database.models import Client, Property, RecurringSchedule, Job, RecurrenceException, Activity
+from utils.dates import business_today
 
 api = TestClient(app)
 
@@ -273,8 +274,15 @@ def test_daily_every_n_days_anchor_defaults_to_today_not_a_weekday(seeded):
     assert r.status_code == 201, r.text
     row = db.query(RecurringSchedule).get(r.json()["id"])
     db.refresh(row)
-    assert row.anchor_date == date.today(), (
-        f"expected anchor pinned to today ({date.today()}), got {row.anchor_date}"
+    # _ensure_anchor pins off business_today() (the app's Maine-timezone
+    # "today"), not the server/CI process's raw date.today() — comparing
+    # against the latter is flaky right around the UTC/Eastern day boundary
+    # (CI runs in UTC, so date.today() there can already be tomorrow while
+    # business_today() correctly still reads today). Match what the code
+    # under test actually uses.
+    expected = business_today()
+    assert row.anchor_date == expected, (
+        f"expected anchor pinned to business-today ({expected}), got {row.anchor_date}"
     )
 
 

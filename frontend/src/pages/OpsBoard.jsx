@@ -457,10 +457,18 @@ function BoardRow({ item, cleared, onToggle, onAction, actioningKey, confirmingK
 // individual items is still one tap away, nothing is deleted automatically.
 const COLLAPSED_BY_DEFAULT = new Set(['safe_to_ignore'])
 
-function Section({ section, items, clearedSet, onToggle, onAction, actioningKey, confirmingKey, headerLink, navigate, onClearAll, clearingSection }) {
+function Section({ section, items, clearedSet, onToggle, onAction, actioningKey, confirmingKey, setConfirmingKey, headerLink, navigate, onClearAll, clearingSection, filtersActive }) {
   const [open, setOpen] = useState(() => !COLLAPSED_BY_DEFAULT.has(section.key))
   if (!items.length) return null
   const collapsible = COLLAPSED_BY_DEFAULT.has(section.key)
+  // Codex review (PR #720): search/severity/hide-cleared narrow `items` to a
+  // subset, but the bulk endpoint clears the WHOLE section server-side — so
+  // "Clear all" while filtered would silently delete cards never shown. Only
+  // offer the bulk action with nothing narrowing the view; per-row Delete
+  // still works on whatever IS visible.
+  const canClearAll = collapsible && !filtersActive
+  const clearKey = `clear-section:${section.key}`
+  const confirmingClear = confirmingKey === clearKey
   return (
     <section className="mb-4 break-inside-avoid overflow-hidden rounded-2xl border border-hairline bg-panel">
       <header className="flex items-center gap-2 border-b border-hairline px-3.5 py-2.5">
@@ -482,10 +490,16 @@ function Section({ section, items, clearedSet, onToggle, onAction, actioningKey,
             {items.length}
           </span>
         )}
-        {collapsible && (
-          <button onClick={() => onClearAll(section.key)} disabled={clearingSection === section.key}
-            className="ml-auto shrink-0 text-[11px] font-semibold text-indigo-600 hover:text-indigo-700 disabled:opacity-40 dark:text-indigo-400">
-            {clearingSection === section.key ? 'Clearing…' : 'Clear all'}
+        {canClearAll && (
+          <button
+            onClick={() => {
+              if (confirmingClear) { onClearAll(section.key) } else { setConfirmingKey(clearKey) }
+            }}
+            disabled={clearingSection === section.key}
+            className={`ml-auto shrink-0 text-[11px] font-semibold disabled:opacity-40 ${
+              confirmingClear ? 'text-amber-700 dark:text-amber-400' : 'text-indigo-600 hover:text-indigo-700 dark:text-indigo-400'
+            }`}>
+            {clearingSection === section.key ? 'Clearing…' : confirmingClear ? 'Confirm?' : 'Clear all'}
           </button>
         )}
         {headerLink && (
@@ -637,6 +651,7 @@ export default function OpsBoard() {
   // endpoint the Ask panel's "Clear the noise" already used, now reachable
   // right where the pile actually sits instead of a separate surface.
   const clearAllInSection = useCallback(async (sectionKey) => {
+    setConfirmingKey(null)
     setClearingSection(sectionKey)
     try {
       const res = await post(`/api/inbox/triage/delete-all?section=${encodeURIComponent(sectionKey)}`, {})
@@ -829,7 +844,8 @@ export default function OpsBoard() {
                   clearedSet={cleared} onToggle={toggleCleared}
                   onAction={runAction} actioningKey={actioningKey} confirmingKey={confirmingKey}
                   headerLink={SECTION_LINKS[section.key]} navigate={navigate}
-                  onClearAll={clearAllInSection} clearingSection={clearingSection} />
+                  onClearAll={clearAllInSection} clearingSection={clearingSection}
+                  setConfirmingKey={setConfirmingKey} filtersActive={filtersActive} />
               ))}
             </div>
 
@@ -843,7 +859,8 @@ export default function OpsBoard() {
                   clearedSet={cleared} onToggle={toggleCleared}
                   onAction={runAction} actioningKey={actioningKey} confirmingKey={confirmingKey}
                   headerLink={SECTION_LINKS[section.key]} navigate={navigate}
-                  onClearAll={clearAllInSection} clearingSection={clearingSection} />
+                  onClearAll={clearAllInSection} clearingSection={clearingSection}
+                  setConfirmingKey={setConfirmingKey} filtersActive={filtersActive} />
               ))}
             </div>
           </>

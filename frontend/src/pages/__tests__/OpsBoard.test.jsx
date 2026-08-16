@@ -127,7 +127,7 @@ describe('OpsBoard', () => {
   // Owner: "so busy... full of spam" — the inbox-triage pile now collapses to
   // one line by default with a one-tap bulk clear right there, instead of
   // dumping every promo/delivery-failure card inline.
-  it('collapses Safe to Ignore by default with a one-tap clear', async () => {
+  it('collapses Safe to Ignore by default with a confirm-then-clear', async () => {
     const withNoise = {
       ...PAYLOAD,
       sections: PAYLOAD.sections.map(s => s.key === 'safe_to_ignore'
@@ -144,9 +144,32 @@ describe('OpsBoard', () => {
     await screen.findByText('No cleaner assigned')
     expect(screen.getByText('1 item you can ignore')).toBeTruthy()
     expect(screen.queryByText('Jotform')).toBeNull()   // collapsed: row not rendered
-    fireEvent.click(screen.getByRole('button', { name: /clear all/i }))
+    fireEvent.click(screen.getByRole('button', { name: /^clear all$/i }))
+    expect(post).not.toHaveBeenCalled()                // first click only asks
+    fireEvent.click(screen.getByRole('button', { name: /confirm\?/i }))
     expect(post).toHaveBeenCalledWith('/api/inbox/triage/delete-all?section=safe_to_ignore', {})
     expect(await screen.findByText(/Cleared 1 item/i)).toBeTruthy()
+  })
+
+  it('hides Clear All while search/filters narrow the board', async () => {
+    const withNoise = {
+      ...PAYLOAD,
+      sections: PAYLOAD.sections.map(s => s.key === 'safe_to_ignore'
+        ? { ...s, items: [
+            { id: 'triage:1', severity: 'info', title: 'Jotform', body: "Today's last chance", meta: '1d',
+              tags: [{ label: 'PROMOTIONS', tone: 'gray' }], actions: [] },
+          ] }
+        : s),
+    }
+    get.mockResolvedValue(withNoise)
+    renderBoard()
+    await screen.findByText('No cleaner assigned')
+    expect(screen.getByRole('button', { name: /^clear all$/i })).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: /filters/i }))
+    fireEvent.change(screen.getByPlaceholderText(/search everything/i), { target: { value: 'wells' } })
+    // Narrowed to a search match — the section-wide bulk action must not be
+    // offered while it would delete cards the search hid (Codex review).
+    expect(screen.queryByRole('button', { name: /^clear all$/i })).toBeNull()
   })
 
   it('expands Safe to Ignore on click to review items', async () => {
