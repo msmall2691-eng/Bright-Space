@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, Link } from 'react-router-dom'
 import { parseISO, format } from 'date-fns'
 import { Phone, Mail, MapPin, Home, CalendarDays, StickyNote, MessageCircle } from 'lucide-react'
 import { get, patch } from '../../api'
@@ -25,9 +25,9 @@ function InfoRow({ icon: Icon, children, href }) {
   )
   if (!href) return <div className="py-1">{body}</div>
   return (
-    <a href={href} className="block min-h-0 rounded-sm py-1 no-underline hover:bg-bg-2">
+    <Link to={href} className="block min-h-0 rounded-sm py-1 no-underline hover:bg-bg-2">
       {body}
-    </a>
+    </Link>
   )
 }
 
@@ -78,14 +78,17 @@ function EditableRow({ icon: Icon, value, displayValue, placeholder = 'Add', typ
   )
 }
 
+// The whole row is the job record — this used to be inert text (name, date,
+// status) with no way to open the job it described.
 function VisitRow({ v }) {
   return (
-    <div className="flex items-center gap-2.5 border-b border-hairline py-1.5 text-[13px] last:border-b-0">
+    <Link to={`/jobs/${v.id}`}
+      className="flex items-center gap-2.5 border-b border-hairline py-1.5 text-[13px] last:border-b-0 no-underline hover:bg-bg-2 -mx-1 px-1 rounded-sm transition-colors">
       <span className="whitespace-nowrap tabular-nums text-ink">{visitDate(v.scheduled_date)}</span>
       {v.start_time && <span className="whitespace-nowrap text-[11px] text-ink-3">{v.start_time}</span>}
       <span className="min-w-0 flex-1 truncate text-ink-2">{v.title || v.property_name || v.address || ''}</span>
       <span className="shrink-0 text-[11px] capitalize text-ink-3">{v.status}</span>
-    </div>
+    </Link>
   )
 }
 
@@ -213,7 +216,7 @@ export default function ClientPeek({ clientId, onClose, onPrev, onNext, hasPrev,
             <>
               <SectionLabel>Properties</SectionLabel>
               {c.properties.map(p => (
-                <InfoRow key={p.id} icon={Home}>
+                <InfoRow key={p.id} icon={Home} href={`/properties/${p.id}`}>
                   <span className="text-ink">{p.name}</span>
                   {p.address && <span className="text-ink-3"> — {p.address}</span>}
                 </InfoRow>

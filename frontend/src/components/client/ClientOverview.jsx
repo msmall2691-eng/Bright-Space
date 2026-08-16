@@ -117,7 +117,7 @@ export default function ClientOverview({
         {/* Needs attention */}
         <Card title="Needs attention" icon={AlertCircle} iconColor="text-amber-500"
           badge={attentionCount > 0
-            ? <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-700">{attentionCount}</span>
+            ? <span className="text-[11px] font-semibold text-ink-3 tabular-nums">{attentionCount}</span>
             : null}
           className="lg:col-span-2" padded={false}>
           <div className="p-2">

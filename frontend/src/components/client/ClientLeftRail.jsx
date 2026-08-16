@@ -104,12 +104,15 @@ export default function ClientLeftRail({
         />
       </div>
 
+      {/* "Pipeline" is business/lifecycle stats (upcoming, revenue, owed) —
+          a "Google Cal synced" row used to live here too, mixing a calendar-
+          sync fact into a business summary (the same conflation the Schedule
+          tab's GCal widget had). Sync facts belong on the Schedule tab. */}
       <div className="p-4 border-b border-hairline space-y-2">
         <div className="text-[10px] font-semibold uppercase tracking-widest text-ink-3 mb-1">Pipeline</div>
         <div className="flex justify-between text-xs"><span className="text-ink-3">Upcoming</span><span className="font-semibold text-ink">{visitStats?.upcoming ?? upcomingJobs.length}</span></div>
         <div className="flex justify-between text-xs"><span className="text-ink-3">Revenue</span><span className="font-semibold text-emerald-600">${totalRevenue.toFixed(0)}</span></div>
         <div className="flex justify-between text-xs"><span className="text-ink-3">Outstanding</span><span className={`font-semibold ${outstanding > 0 ? 'text-amber-600' : 'text-ink'}`}>${outstanding.toFixed(0)}</span></div>
-        <div className="flex justify-between text-xs"><span className="text-ink-3">Google Cal synced</span><span className="font-semibold text-indigo-600">{visitStats?.gcal_synced ?? 0}</span></div>
       </div>
 
       <div className="p-4 space-y-1.5">

@@ -76,8 +76,9 @@ export default function MessagesTab({
           </div>
         </div>
       ) : (
-        <div className="bg-yellow-500/10 border border-yellow-500/30 text-yellow-600 text-sm rounded-xl p-4 mb-4">
-          Add a phone number to this client to enable SMS.
+        <div className="flex items-center gap-2 px-3 py-2 rounded-lg border border-hairline bg-panel text-[12.5px] mb-4">
+          <span className="w-1.5 h-1.5 rounded-full shrink-0 bg-amber-500" aria-hidden="true" />
+          <span className="text-ink-2">Add a phone number to this client to enable SMS.</span>
         </div>
       ))}
 
