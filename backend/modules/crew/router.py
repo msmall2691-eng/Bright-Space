@@ -2211,12 +2211,13 @@ def text_client(
     try:
         import os
         conv = find_or_create_conversation(db, channel="sms", client_id=job.client_id,
-                                           external_contact=to)
+                                           external_contact=to, org_id=oid)
         m = Message(client_id=job.client_id, conversation_id=conv.id, channel="sms",
                     direction="outbound",
                     from_addr=_normalize_contact(os.getenv("TWILIO_PHONE_NUMBER", "")),
                     to_addr=to, body=msg_body,
-                    status=result.get("status", "sent"), external_id=result.get("sid"))
+                    status=result.get("status", "sent"), external_id=result.get("sid"),
+                    org_id=oid)  # BB-MT-01
         db.add(m); db.flush()
         _apply_outbound(conv, m)
         from utils.activity_logger import log_activity

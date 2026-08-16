@@ -267,6 +267,10 @@ def _backfill_conversations():
                     subject=msg.subject,
                     status="resolved",
                     last_message_at=msg.created_at,
+                    # BB-MT-01: inherit the orphan message's own org_id (may
+                    # itself be NULL for pre-fix legacy rows — that's honest,
+                    # not guessed).
+                    org_id=msg.org_id,
                 )
                 db.add(conv)
                 db.flush()
@@ -314,6 +318,10 @@ def _bootstrap_admin_user():
 
         password_hash = hash_password(admin_password)
 
+        # BB-MT-01 audit: org_id intentionally left unset. This runs at boot,
+        # before any org necessarily exists yet (it's how a fresh deploy gets
+        # its first login) — there's no natural org to stamp, the same
+        # "genuinely no context" case as _bootstrap-time seams elsewhere.
         admin = User(
             email=admin_email,
             password_hash=password_hash,
@@ -391,6 +399,8 @@ def _backfill_missing_properties():
                     # Create new property
                     prop = Property(
                         client_id=job.client_id,
+                        # BB-MT-01: inherit the orphaned job's own org_id.
+                        org_id=job.org_id,
                         name=address_line,
                         address=address_line,
                         property_type=property_type,

@@ -95,6 +95,7 @@ def _thread_outbound_reminder(db: Session, job: Job, client: Client, body: str, 
         db, channel="sms",
         client_id=client.id,
         external_contact=to_normalized,
+        org_id=client.org_id,
     )
     if conv.client_id is None:
         conv.client_id = client.id
@@ -109,6 +110,7 @@ def _thread_outbound_reminder(db: Session, job: Job, client: Client, body: str, 
         status="sent",
         external_id=sid,
         author="system:reminder",
+        org_id=client.org_id,  # BB-MT-01
     )
     db.add(msg)
     db.flush()

@@ -45,6 +45,13 @@ TENANT_TABLES = [
     # Autopilot approval gate (migration 091): AI-proposed actions awaiting a
     # human decision, org-scoped.
     "proposed_actions",
+    # MT-3 audit (migration 095): both tables have carried org_id since they
+    # were created but were never added here, so they had zero RLS backstop
+    # on Postgres. org_id is NOT NULL on user_google_accounts (safe); nullable
+    # on push_subscriptions but every write site stamps it (modules/push/
+    # router.py) — see 095's docstring for why `users` itself is deliberately
+    # NOT in this list yet.
+    "user_google_accounts", "push_subscriptions",
 ]
 
 POLICY = "bb_org_isolation"

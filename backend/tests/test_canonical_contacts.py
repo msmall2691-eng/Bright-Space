@@ -105,3 +105,20 @@ def test_convert_populates_canonical_contacts_and_dedupes_returning_customer(db)
         assert found.id == cid
     finally:
         _cleanup(db, cid)
+
+
+def test_add_contact_email_and_phone_inherit_client_org(db):
+    """BB-MT-01: ContactEmail/ContactPhone org_id was never stamped — every
+    add_contact_email/add_contact_phone call left it NULL and surfaced on
+    every workspace via the NULL-tolerant _org() filter. Both helpers now
+    inherit org_id from the Client object already passed in."""
+    c = Client(name="Org Inherit Client", status="lead", org_id=21)
+    db.add(c); db.commit(); db.refresh(c)
+    try:
+        ce = add_contact_email(db, c, f"orginherit-{uuid.uuid4().hex[:8]}@example.com", source="manual")
+        cp = add_contact_phone(db, c, "+12075559911", source="manual")
+        db.commit()
+        assert ce.org_id == 21
+        assert cp.org_id == 21
+    finally:
+        _cleanup(db, c.id)

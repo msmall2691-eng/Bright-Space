@@ -22,7 +22,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, joinedload, selectinload
 
 from database.db import get_db
-from modules.auth.router import require_role
+from modules.auth.router import require_role, current_org_id
 from database.models import Message, Conversation, Client, LeadIntake, ContactPhone
 from integrations.twilio_client import send_sms
 from integrations.email import send_email as _send_email
@@ -364,6 +364,7 @@ def find_or_create_conversation(
     client_id: Optional[int] = None,
     external_contact: Optional[str] = None,
     subject: Optional[str] = None,
+    org_id: Optional[int] = None,
 ) -> Conversation:
     """
     Find the conversation for this contact + channel, or create a new one.
@@ -379,6 +380,12 @@ def find_or_create_conversation(
     _apply_inbound. The insert runs in a savepoint so a lost race with a
     concurrent writer (e.g. the SMS webhook) degrades to returning the
     surviving row instead of aborting the caller's transaction.
+
+    org_id (BB-MT-01): stamped on a newly-created Conversation only — this was
+    never set anywhere in the codebase, so every conversation's org_id was
+    NULL and surfaced on every workspace via the NULL-tolerant _org() filter.
+    Pass the caller's org_id (or the anchor client's) when known; a caller
+    with no resolvable org (e.g. the shared legacy Gmail inbox) may omit it.
     """
     external_contact = _normalize_contact(external_contact)
     q = db.query(Conversation).filter(Conversation.channel == channel)
@@ -409,6 +416,7 @@ def find_or_create_conversation(
                 status="open",
                 priority="normal",
                 assignee=DEFAULT_ASSIGNEE,
+                org_id=org_id,
             )
             db.add(conv)
         return conv
@@ -647,6 +655,7 @@ def send_reply(conv_id: int, data: SendReplyRequest, db: Session = Depends(get_d
         external_id=external_id,
         author=data.author,
         is_internal_note=False,
+        org_id=conv.org_id,  # BB-MT-01: inherit the conversation's org
     )
     db.add(msg)
     db.flush()
@@ -674,6 +683,7 @@ def add_internal_note(conv_id: int, data: InternalNoteRequest, db: Session = Dep
         status="sent",
         author=data.author,
         is_internal_note=True,
+        org_id=conv.org_id,  # BB-MT-01: inherit the conversation's org
     )
     db.add(msg)
     db.commit()
@@ -872,7 +882,8 @@ def client_comms(client_id: int, db: Session = Depends(get_db)):
 
 
 @router.post("/sms", response_model=Union[MessageRead, SMSPersistenceError], dependencies=[Depends(require_role("admin", "manager"))])
-def send_sms_message(data: SMSRequest, db: Session = Depends(get_db)):
+def send_sms_message(data: SMSRequest, db: Session = Depends(get_db),
+                     org_id: int = Depends(current_org_id)):
     """Send an SMS via Twilio — attaches to a conversation automatically.
     If no client_id provided, tries to match the destination phone to an existing client.
     """
@@ -903,6 +914,7 @@ def send_sms_message(data: SMSRequest, db: Session = Depends(get_db)):
             db, channel="sms",
             client_id=client_id,
             external_contact=to_normalized,
+            org_id=org_id,
         )
         if client_id and not conv.client_id:
             conv.client_id = client_id
@@ -917,6 +929,7 @@ def send_sms_message(data: SMSRequest, db: Session = Depends(get_db)):
             body=data.body,
             status=result.get("status", "sent"),
             external_id=result.get("sid"),
+            org_id=org_id,  # BB-MT-01
         )
         db.add(msg)
         db.flush()
@@ -989,7 +1002,8 @@ def _send_email_via_gmail_or_smtp(db: Session, user, *, to, subject, body, conv)
 
 @router.post("/email", response_model=MessageRead)
 def send_email_message(data: EmailRequest, db: Session = Depends(get_db),
-                       current_user=Depends(require_role("admin", "manager"))):
+                       current_user=Depends(require_role("admin", "manager")),
+                       org_id: int = Depends(current_org_id)):
     """Send an email — through the sender's connected Gmail when available (real
     Sent + threads back), else SMTP. Attaches to a conversation automatically."""
     conv = find_or_create_conversation(
@@ -997,6 +1011,7 @@ def send_email_message(data: EmailRequest, db: Session = Depends(get_db),
         client_id=data.client_id,
         external_contact=data.to,
         subject=data.subject,
+        org_id=org_id,
     )
     try:
         from_addr, external_id = _send_email_via_gmail_or_smtp(
@@ -1014,6 +1029,7 @@ def send_email_message(data: EmailRequest, db: Session = Depends(get_db),
         subject=data.subject,
         body=data.body,
         status="sent",
+        org_id=org_id,  # BB-MT-01
         external_id=external_id,
     )
     db.add(msg)
@@ -1111,6 +1127,7 @@ async def twilio_inbound(request: Request, background_tasks: BackgroundTasks, db
                 phone=from_number_normalized,
                 phone_type="mobile",
                 source="twilio",
+                org_id=client.org_id,  # BB-MT-01: inherit the matched client's org
             )
             db.add(new_contact)
             logger.info(f"[twilio] Added contact phone {from_number_normalized} for client #{client.id}")
@@ -1129,6 +1146,12 @@ async def twilio_inbound(request: Request, background_tasks: BackgroundTasks, db
                 logger.warning(f"[twilio] Auto-merge failed (non-fatal): {e}")
     else:
         logger.info(f"[twilio] New contact from {from_number_normalized}")
+        # BB-MT-01: org_id intentionally left unset here. Unlike the Gmail
+        # per-account sync (which knows which member's mailbox produced the
+        # lead), there's a single shared TWILIO_PHONE_NUMBER for the whole
+        # deployment with no to_number → org mapping, so an inbound SMS from
+        # an unrecognized number has no resolvable org — same "no natural
+        # org" case as the legacy shared Gmail inbox (see run_inbox_sync).
         client = Client(
             name=from_number_normalized,
             phone=from_number_normalized,
@@ -1142,6 +1165,7 @@ async def twilio_inbound(request: Request, background_tasks: BackgroundTasks, db
         db, channel="sms",
         client_id=client.id,
         external_contact=from_number_normalized,
+        org_id=client.org_id,
     )
     msg = Message(
         client_id=client.id,
@@ -1153,6 +1177,7 @@ async def twilio_inbound(request: Request, background_tasks: BackgroundTasks, db
         body=body,
         status="received",
         external_id=sid,
+        org_id=client.org_id,  # BB-MT-01
     )
     db.add(msg)
     db.flush()

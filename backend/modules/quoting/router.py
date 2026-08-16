@@ -829,7 +829,7 @@ def send_quote(quote_id: int, body: QuoteSendRequest = QuoteSendRequest(), db: S
                 )
                 if res.get("success"):
                     results["email"] = "sent"
-                    _log_integration(db, entity_type="quote", entity_id=quote.id, provider="email",
+                    _log_integration(db, entity_type="quote", entity_id=quote.id, org_id=quote.org_id, provider="email",
                                      action="send", status="ok", external_id=res.get("email_id"),
                                      recipient=to_email, commit=False)
                 else:
@@ -839,7 +839,7 @@ def send_quote(quote_id: int, body: QuoteSendRequest = QuoteSendRequest(), db: S
                     real_error = str(res.get("error") or "email could not be sent")
                     errors.append(real_error)
                     logger.error(f"Quote {quote.id} email send failed: {real_error}")
-                    _log_integration(db, entity_type="quote", entity_id=quote.id, provider="email",
+                    _log_integration(db, entity_type="quote", entity_id=quote.id, org_id=quote.org_id, provider="email",
                                      action="send", status="failed", recipient=to_email,
                                      detail=real_error, commit=False)
             except Exception as e:
@@ -849,7 +849,7 @@ def send_quote(quote_id: int, body: QuoteSendRequest = QuoteSendRequest(), db: S
                 # not be sent", and capture the traceback.
                 errors.append(str(e) or "email could not be sent")
                 logger.exception(f"Quote {quote.id} email send error")
-                _log_integration(db, entity_type="quote", entity_id=quote.id, provider="email",
+                _log_integration(db, entity_type="quote", entity_id=quote.id, org_id=quote.org_id, provider="email",
                                  action="send", status="failed", recipient=to_email,
                                  detail=str(e), commit=False)
 
@@ -864,7 +864,7 @@ def send_quote(quote_id: int, body: QuoteSendRequest = QuoteSendRequest(), db: S
             # malformed numbers. Fail cleanly here with a reason the UI can show.
             results["sms"] = "invalid phone number"
             errors.append("invalid phone number")
-            _log_integration(db, entity_type="quote", entity_id=quote.id, provider="sms",
+            _log_integration(db, entity_type="quote", entity_id=quote.id, org_id=quote.org_id, provider="sms",
                              action="send", status="failed", recipient=to_phone,
                              detail="invalid phone number (placeholder or bad format)", commit=False)
         else:
@@ -878,14 +878,14 @@ def send_quote(quote_id: int, body: QuoteSendRequest = QuoteSendRequest(), db: S
                 )
                 sms_result = send_sms(to=(normalize_e164(to_phone) or to_phone), body=msg)
                 results["sms"] = "sent"
-                _log_integration(db, entity_type="quote", entity_id=quote.id, provider="sms",
+                _log_integration(db, entity_type="quote", entity_id=quote.id, org_id=quote.org_id, provider="sms",
                                  action="send", status="ok", external_id=sms_result.get("sid"),
                                  recipient=to_phone, commit=False)
             except Exception as e:
                 results["sms"] = "failed"
                 errors.append("text message could not be sent")
                 logger.warning(f"Quote {quote.id} SMS send error: {e}")
-                _log_integration(db, entity_type="quote", entity_id=quote.id, provider="sms",
+                _log_integration(db, entity_type="quote", entity_id=quote.id, org_id=quote.org_id, provider="sms",
                                  action="send", status="failed", recipient=to_phone,
                                  detail=str(e), commit=False)
 
@@ -1087,6 +1087,10 @@ def _resolve_property_for_quote(db: Session, quote: Quote, prop_type: str) -> Pr
         addr = (quote.address or "Address TBD").strip() or "Address TBD"
         prop = Property(
             client_id=quote.client_id,
+            # BB-MT-01: inherit the quote's org (mirrors org_id=quote.org_id
+            # on the Job conversion paths a few lines below) — this was
+            # previously left NULL and surfaced on every workspace.
+            org_id=quote.org_id,
             name=addr.split("\n")[0][:255],
             address=addr,
             property_type=prop_type,
@@ -1918,9 +1922,13 @@ def _qr_to_response(row: LeadIntake) -> dict:
 
 
 @router.post("/requests/", status_code=201, dependencies=[Depends(require_role("admin", "manager"))])
-def create_quote_request(request_data: QuoteRequestCreate, db: Session = Depends(get_db)):
+def create_quote_request(request_data: QuoteRequestCreate, db: Session = Depends(get_db),
+                         org_id: int = Depends(current_org_id)):
     data = request_data.model_dump()
     pref = data.get("preferred_date")
+    # BB-MT-01: this route had no org_id dependency at all (same class of gap
+    # as admin's CSV client import) — every staff-created quote request left
+    # org_id NULL and surfaced on every workspace's queue.
     row = LeadIntake(
         client_id=data.get("client_id"),
         name=data["requester_name"],
@@ -1933,6 +1941,7 @@ def create_quote_request(request_data: QuoteRequestCreate, db: Session = Depends
         preferred_time=data.get("preferred_time"),
         source=_QR_SOURCE,
         status="new",
+        org_id=org_id,
     )
     db.add(row)
     db.commit()

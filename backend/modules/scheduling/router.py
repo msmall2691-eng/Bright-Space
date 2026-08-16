@@ -1091,16 +1091,16 @@ def create_job(data: JobCreate, db: Session = Depends(get_db), org_id: int = Dep
                 )
                 db.commit()
                 gcal_status["synced"] = True
-                _log_integration(db, entity_type="job", entity_id=job.id, provider="gcal",
+                _log_integration(db, entity_type="job", entity_id=job.id, org_id=job.org_id, provider="gcal",
                                  action="create", status="ok", external_id=event_id)
             else:
                 gcal_status["reason"] = "error"
-                _log_integration(db, entity_type="job", entity_id=job.id, provider="gcal",
+                _log_integration(db, entity_type="job", entity_id=job.id, org_id=job.org_id, provider="gcal",
                                  action="create", status="failed", detail="create_event returned no id")
     except Exception as e:
         logger.warning(f"GCal push failed for job {job.id}: {e}")
         gcal_status["reason"] = "error"
-        _log_integration(db, entity_type="job", entity_id=job.id, provider="gcal",
+        _log_integration(db, entity_type="job", entity_id=job.id, org_id=job.org_id, provider="gcal",
                          action="create", status="failed", detail=str(e))
 
     # Connecteam removal (step 3): job creation no longer auto-dispatches a
@@ -3152,16 +3152,16 @@ def update_job(job_id: int, data: JobUpdate, db: Session = Depends(get_db), org_
                                 owner_account_id=getattr(job, "gcal_account_id", None),
                                 send_updates=_cancel_su):
                     job.gcal_event_id = None
-                    _log_integration(db, entity_type="job", entity_id=job.id, provider="gcal",
+                    _log_integration(db, entity_type="job", entity_id=job.id, org_id=job.org_id, provider="gcal",
                                      action="delete", status="ok", external_id=old_event_id, commit=False)
                 else:
                     logger.warning(f"GCal delete did not apply for cancelled job {job.id}; keeping event id to retry")
-                    _log_integration(db, entity_type="job", entity_id=job.id, provider="gcal",
+                    _log_integration(db, entity_type="job", entity_id=job.id, org_id=job.org_id, provider="gcal",
                                      action="delete", status="failed", external_id=old_event_id,
                                      detail="delete_event returned False (kept id to retry)", commit=False)
             except Exception as e:
                 logger.warning(f"GCal delete failed for cancelled job {job.id}: {e}")
-                _log_integration(db, entity_type="job", entity_id=job.id, provider="gcal",
+                _log_integration(db, entity_type="job", entity_id=job.id, org_id=job.org_id, provider="gcal",
                                  action="delete", status="failed", external_id=old_event_id,
                                  detail=str(e), commit=False)
         db.commit()
@@ -3276,7 +3276,7 @@ def update_job(job_id: int, data: JobUpdate, db: Session = Depends(get_db), org_
                 if not update_ok:
                     logger.warning(f"GCal update did not apply for job {job.id}; DB and "
                                    f"calendar may differ until the next edit")
-                    _log_integration(db, entity_type="job", entity_id=job.id, provider="gcal",
+                    _log_integration(db, entity_type="job", entity_id=job.id, org_id=job.org_id, provider="gcal",
                                      action="update", status="failed", external_id=job.gcal_event_id,
                                      detail="update_event returned False", commit=False)
                     db.commit()
@@ -3381,13 +3381,13 @@ def delete_job(job_id: int, db: Session = Depends(get_db), org_id: int = Depends
             if not deleted_ok:
                 logger.warning(f"GCal delete did not apply for deleted job {job.id}; "
                                f"event {old_event_id} may be orphaned on the calendar")
-                _log_integration(db, entity_type="job", entity_id=job.id, provider="gcal",
+                _log_integration(db, entity_type="job", entity_id=job.id, org_id=job.org_id, provider="gcal",
                                  action="delete", status="failed", external_id=old_event_id,
                                  detail="delete_event returned False on hard-delete (possible orphan)",
                                  commit=False)
         except Exception as e:
             logger.warning(f"GCal delete failed for job {job.id}: {e}")
-            _log_integration(db, entity_type="job", entity_id=job.id, provider="gcal",
+            _log_integration(db, entity_type="job", entity_id=job.id, org_id=job.org_id, provider="gcal",
                              action="delete", status="failed", external_id=old_event_id,
                              detail=str(e), commit=False)
     db.delete(job)

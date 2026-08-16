@@ -17,6 +17,34 @@ from sqlalchemy.orm import Session
 from database.models import Activity, ActivityType
 
 
+def _resolve_activity_org_id(db: Session, *, client_id=None, opportunity_id=None,
+                              job_id=None) -> Optional[int]:
+    """BB-MT-01: Activity.org_id was never stamped anywhere in the codebase —
+    every write site passed only the anchor id(s), so every activity row's
+    org_id was NULL and surfaced on every workspace's timeline via the
+    NULL-tolerant _org() filter, same root cause as the Client/Job gaps.
+
+    Callers that already hold the anchor object (a Job, an Invoice) should
+    pass org_id explicitly instead — this is the fallback for the many call
+    sites that only have a bare id. One cheap indexed lookup, only run when
+    the caller didn't already supply org_id.
+    """
+    from database.models import Client, Job, Opportunity
+    if job_id:
+        row = db.query(Job.org_id).filter(Job.id == job_id).first()
+        if row and row[0] is not None:
+            return row[0]
+    if client_id:
+        row = db.query(Client.org_id).filter(Client.id == client_id).first()
+        if row and row[0] is not None:
+            return row[0]
+    if opportunity_id:
+        row = db.query(Opportunity.org_id).filter(Opportunity.id == opportunity_id).first()
+        if row and row[0] is not None:
+            return row[0]
+    return None
+
+
 def log_activity(
     db: Session,
     activity_type: str,
@@ -29,6 +57,7 @@ def log_activity(
     summary: Optional[str] = None,
     extra_data: Optional[dict] = None,
     commit: bool = False,
+    org_id: Optional[int] = None,
 ) -> Optional[Activity]:
     """Add an Activity row. Returns the row (or None if no anchor was given).
 
@@ -36,9 +65,16 @@ def log_activity(
     otherwise the row is orphaned and the timeline has no place to render it.
     We don't raise (logging shouldn't break the parent operation), but we do
     skip the write when nothing's anchored.
+
+    org_id: pass it explicitly when the caller already has the anchor object
+    in hand (job.org_id, invoice.org_id) to skip the lookup; otherwise it's
+    resolved from whichever anchor id was given (MT-3).
     """
     if not (client_id or opportunity_id or job_id):
         return None
+    if org_id is None:
+        org_id = _resolve_activity_org_id(
+            db, client_id=client_id, opportunity_id=opportunity_id, job_id=job_id)
     a = Activity(
         client_id=client_id,
         opportunity_id=opportunity_id,
@@ -48,6 +84,7 @@ def log_activity(
         activity_type=activity_type,
         summary=summary,
         extra_data=extra_data or {},
+        org_id=org_id,
     )
     db.add(a)
     if commit:
@@ -68,6 +105,7 @@ def log_job_created(db: Session, job, actor: str = "system") -> Optional[Activit
         ActivityType.JOB_CREATED.value,
         client_id=job.client_id,
         job_id=job.id,
+        org_id=job.org_id,
         actor=actor,
         summary=f"Job scheduled: {job.title}",
         extra_data={
@@ -99,6 +137,7 @@ def promote_client_from_lead(db, client_id, *, reason: str, actor: str = "system
         client.status = "active"
         log_activity(
             db, "client_promoted", client_id=client_id, actor=actor,
+            org_id=client.org_id,
             summary="Lead promoted to active customer",
             extra_data={"reason": reason},
         )
@@ -133,6 +172,7 @@ def log_job_status_change(db: Session, job, prev_status: str, actor: str = "syst
         activity_type,
         client_id=job.client_id,
         job_id=job.id,
+        org_id=job.org_id,
         actor=actor,
         summary=f"Job {status}: {job.title}" + (f' — "{note}"' if note else ""),
         extra_data=extra,
@@ -223,6 +263,7 @@ def log_invoice_created(db: Session, invoice, actor: str = "admin") -> Optional[
         db,
         ActivityType.INVOICE_CREATED.value,
         client_id=getattr(invoice, "client_id", None),
+        org_id=getattr(invoice, "org_id", None),
         actor=actor,
         summary=f"Invoice {getattr(invoice, 'invoice_number', '') or ''} created"
                 + (f" for ${float(total):.2f}" if total is not None else ""),
@@ -243,6 +284,7 @@ def log_invoice_paid(db: Session, invoice, actor: str = "admin") -> Optional[Act
         db,
         ActivityType.INVOICE_PAID.value,
         client_id=getattr(invoice, "client_id", None),
+        org_id=getattr(invoice, "org_id", None),
         actor=actor,
         summary=f"Invoice {getattr(invoice, 'invoice_number', '') or ''} paid"
                 + (f" — ${float(total):.2f}" if total is not None else ""),
@@ -266,6 +308,7 @@ def log_visit_skipped(db: Session, job, reason: Optional[str] = None) -> Optiona
         ActivityType.JOB_CANCELLED.value,
         client_id=job.client_id,
         job_id=job.id,
+        org_id=job.org_id,
         actor="admin",
         summary=f"Skipped on {job.scheduled_date}" + (f": {reason}" if reason else ""),
         extra_data={

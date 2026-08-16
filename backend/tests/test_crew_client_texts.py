@@ -66,7 +66,7 @@ def world(monkeypatch):
     db.add_all([today_job, tomorrow_job]); db.commit()
     db.refresh(today_job); db.refresh(tomorrow_job)
     ids = {"jobs": [today_job.id, tomorrow_job.id], "prop": p.id, "client": c.id}
-    out = {"sent": sent, "today": today_job.id, "tomorrow": tomorrow_job.id}
+    out = {"sent": sent, "today": today_job.id, "tomorrow": tomorrow_job.id, "client": c.id}
     db.close()
     yield out
     db = SessionLocal()
@@ -96,6 +96,16 @@ def test_no_phone_in_payload_and_structured_send(world):
         assert "on the way" in body
         assert "It's Sasha today!" in body            # personal line rides inside
         assert world["sent"][0]["to"].endswith("2075550166")
+
+        # BB-MT-01: the Message/Conversation this send creates must carry the
+        # caller's org_id — previously left NULL and surfaced on every
+        # workspace's inbox via the NULL-tolerant _org() filter.
+        db = SessionLocal()
+        msg = (db.query(Message).filter(Message.client_id == world["client"])
+               .order_by(Message.id.desc()).first())
+        assert msg.org_id == 1
+        assert msg.conversation.org_id == 1
+        db.close()
 
         # Once per (job, template): the timeline guard blocks a resend.
         r = api.post(f"/api/crew/jobs/{world['today']}/notify-client",

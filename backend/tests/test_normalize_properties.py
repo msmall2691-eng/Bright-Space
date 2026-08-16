@@ -1,9 +1,12 @@
 """Tests for the property normalization admin endpoint."""
+import uuid
 import pytest
 from datetime import datetime
 from sqlalchemy.exc import IntegrityError
+from fastapi.testclient import TestClient
 from database.models import Property, Client, PropertyIcal
 from database.db import SessionLocal
+from main import app
 
 
 class TestNormalizePropertiesEndpoint:
@@ -390,6 +393,45 @@ class TestNormalizePropertiesEndpoint:
 
         finally:
             db.close()
+
+
+def test_add_ical_url_stamps_the_property_org():
+    """BB-MT-01: PropertyIcal.org_id was never stamped — every feed added via
+    POST /{property_id}/icals left it NULL and surfaced on every workspace's
+    listing via the NULL-tolerant _org() filter. It now inherits the parent
+    Property's org_id, which is checked here with a NON-default org so a
+    coincidental match with the caller's own (default) org can't hide a
+    regression."""
+    db = SessionLocal()
+    tag = uuid.uuid4().hex[:8]
+    c = Client(name=f"Ical Org Client {tag}", status="active", org_id=77)
+    db.add(c); db.commit(); db.refresh(c)
+    prop = Property(client_id=c.id, name="Turnover House", address=f"1 Feed St {tag}",
+                    property_type="str", org_id=77)
+    db.add(prop); db.commit(); db.refresh(prop)
+    prop_id, client_id = prop.id, c.id
+    db.close()
+    try:
+        client = TestClient(app)
+        r = client.post(
+            f"/api/properties/{prop_id}/icals",
+            json={"url": f"https://www.airbnb.com/calendar/ical/{tag}.ics", "source": "airbnb"},
+        )
+        assert r.status_code == 201, r.text
+        db2 = SessionLocal()
+        try:
+            ical = db2.query(PropertyIcal).filter(PropertyIcal.property_id == prop_id).one()
+            assert ical.org_id == 77
+        finally:
+            db2.query(PropertyIcal).filter(PropertyIcal.property_id == prop_id).delete(synchronize_session=False)
+            db2.commit()
+            db2.close()
+    finally:
+        db3 = SessionLocal()
+        db3.query(Property).filter(Property.id == prop_id).delete(synchronize_session=False)
+        db3.query(Client).filter(Client.id == client_id).delete(synchronize_session=False)
+        db3.commit()
+        db3.close()
 
 
 if __name__ == "__main__":

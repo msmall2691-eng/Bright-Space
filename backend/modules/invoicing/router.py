@@ -323,7 +323,8 @@ def send_invoice(invoice_id: int, data: SendInvoiceRequest, db: Session = Depend
             results["email"] = "sent"
             msg = Message(client_id=inv.client_id, channel="email", direction="outbound",
                           from_addr=os.getenv("SMTP_USER", ""), to_addr=to_email,
-                          body=f"Invoice {inv_num} sent via email", status="sent")
+                          body=f"Invoice {inv_num} sent via email", status="sent",
+                          org_id=inv.org_id)  # BB-MT-01
             db.add(msg)
         except Exception as e:
             results["email"] = f"failed: {str(e)}"
@@ -339,7 +340,8 @@ def send_invoice(invoice_id: int, data: SendInvoiceRequest, db: Session = Depend
             send_sms(to=to_phone, body=sms_body)
             results["sms"] = "sent"
             msg = Message(client_id=inv.client_id, channel="sms", direction="outbound",
-                          from_addr=company_phone, to_addr=to_phone, body=sms_body, status="sent")
+                          from_addr=company_phone, to_addr=to_phone, body=sms_body, status="sent",
+                          org_id=inv.org_id)  # BB-MT-01
             db.add(msg)
         except Exception as e:
             results["sms"] = f"failed: {str(e)}"
@@ -398,6 +400,7 @@ def process_payment(invoice_id: int, data: dict, db: Session = Depends(get_db)):
         to_addr=data.get("phone", ""),
         body=f"Payment received: ${inv.total}",
         status="received",
+        org_id=inv.org_id,  # BB-MT-01
     )
     db.add(msg)
     # Timeline: log the paid transition (once) alongside the payment message.

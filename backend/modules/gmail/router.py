@@ -45,7 +45,8 @@ def _match_email_to_client(email_addr: str, db: Session):
     ).first()
 
 
-def _ensure_contact_email(client_id: int, email: str, source: str, db: Session):
+def _ensure_contact_email(client_id: int, email: str, source: str, db: Session,
+                          org_id: Optional[int] = None):
     addr = email.strip().lower()
     existing = db.query(ContactEmail).filter(
         ContactEmail.client_id == client_id,
@@ -55,11 +56,15 @@ def _ensure_contact_email(client_id: int, email: str, source: str, db: Session):
         has_any = db.query(ContactEmail).filter(
             ContactEmail.client_id == client_id
         ).first()
+        # BB-MT-01: org_id was never stamped here; callers pass the matched/
+        # created client's own org_id (same class of gap as the Client fix
+        # a few lines below in run_inbox_sync).
         ce = ContactEmail(
             client_id=client_id,
             email=addr,
             is_primary=not has_any,
             source=source,
+            org_id=org_id,
         )
         db.add(ce)
     return existing
@@ -91,7 +96,8 @@ def _parse_email_dt(value: str):
 
 
 def _thread_inbound_email(db: Session, client_id: int, em: dict,
-                          account_id: Optional[int] = None) -> bool:
+                          account_id: Optional[int] = None,
+                          org_id: Optional[int] = None) -> bool:
     """Attach an inbound email to a Conversation (channel='email'), mirroring
     the SMS webhook so emails show up in the unified inbox threaded by client.
 
@@ -100,7 +106,10 @@ def _thread_inbound_email(db: Session, client_id: int, em: dict,
     so SLA / unread / last-activity bookkeeping stays identical to SMS.
 
     account_id stamps which member's connected Google account synced the
-    message in (None = the legacy shared business inbox).
+    message in (None = the legacy shared business inbox). org_id (BB-MT-01)
+    mirrors it: the per-account path passes its account's org, the shared
+    inbox passes None — same legacy-NULL contract as the Client auto-create
+    a few lines up in run_inbox_sync.
     """
     # Lazy import avoids any import-order coupling between the two routers.
     from modules.comms.router import find_or_create_conversation, _apply_inbound
@@ -117,6 +126,7 @@ def _thread_inbound_email(db: Session, client_id: int, em: dict,
                     client_id=client_id,
                     external_contact=em.get("from_email", ""),
                     subject=em.get("subject", ""),
+                    org_id=org_id,
                 )
                 existing.conversation_id = conv.id
                 if conv.client_id is None and client_id:
@@ -129,6 +139,7 @@ def _thread_inbound_email(db: Session, client_id: int, em: dict,
         client_id=client_id,
         external_contact=from_addr,
         subject=em.get("subject", ""),
+        org_id=org_id,
     )
     if conv.client_id is None and client_id:
         conv.client_id = client_id
@@ -149,6 +160,7 @@ def _thread_inbound_email(db: Session, client_id: int, em: dict,
         is_internal_note=False,
         synced_by_google_account_id=account_id,
         created_at=_parse_email_dt(em.get("date")) or datetime.now(timezone.utc),
+        org_id=org_id,  # BB-MT-01
     )
     db.add(msg)
     db.flush()
@@ -223,7 +235,7 @@ def run_inbox_sync(
         if addr not in client_cache:
             c = _match_email_to_client(addr, db)
             if c:
-                _ensure_contact_email(c.id, addr, "gmail_sync", db)
+                _ensure_contact_email(c.id, addr, "gmail_sync", db, org_id=c.org_id)
                 c.last_contacted_at = datetime.now(timezone.utc)
                 c.email_verified = True
             elif auto_enrich and addr:
@@ -263,13 +275,14 @@ def run_inbox_sync(
                     )
                     db.add(c)
                     db.flush()
-                    _ensure_contact_email(c.id, addr, "gmail_sync", db)
+                    _ensure_contact_email(c.id, addr, "gmail_sync", db, org_id=c.org_id)
                     _log_activity(
                         db,
                         client_id=c.id,
                         activity_type="email_received",
                         summary=f"Auto-created from email: {em.get('subject', '(no subject)')}",
                         extra_data={"from_email": addr, "from_name": from_name},
+                        org_id=c.org_id,
                     )
                     new_contacts += 1
             else:
@@ -320,7 +333,8 @@ def run_inbox_sync(
             # recorded, so the tick retried (and re-failed) it forever.
             try:
                 with db.begin_nested():
-                    created = _thread_inbound_email(db, client_id, em, account_id=source_account_id)
+                    created = _thread_inbound_email(db, client_id, em, account_id=source_account_id,
+                                                    org_id=org_id)
             except Exception as e:
                 logger.warning(f"[gmail] threading failed for message "
                                f"{em.get('message_id') or '(no id)'} from {em.get('from_email')}: {e}")

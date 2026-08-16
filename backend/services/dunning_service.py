@@ -114,6 +114,7 @@ def _record_outbound_message(db: Session, inv: Invoice, to_email: str, stage: in
         body=f"Overdue reminder #{stage} for invoice {inv.invoice_number or inv.id}",
         status="sent",
         author="system:dunning",
+        org_id=inv.org_id,  # BB-MT-01
     )
     db.add(msg)
 
