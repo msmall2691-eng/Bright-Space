@@ -1,12 +1,25 @@
 import { useState, useEffect, useMemo } from 'react'
-import { X, Search, Check, User, Zap, Trash2, Ban, ChevronDown, AlertTriangle } from 'lucide-react'
+import { X, Search, User, Trash2, Ban, ChevronDown } from 'lucide-react'
 import { get, patch, post, del } from '../api'
 import Button from './ui/Button'
+import InlineSelect from './InlineSelect'
 import { useEmployees } from '../hooks/useEmployees'
 import RecurrenceScopeDialog from './schedule/RecurrenceScopeDialog'
 import { isoDateToBackendDow } from '../utils/recurringReschedule'
 import { confirmDialog } from '../utils/confirmBus'
 import { normalizeEmployee } from '../utils/employees'
+
+// Same dot+word vocabulary as JobDetail's STATUS_OPTIONS — this modal used to
+// render status as solid-filled pill buttons (a different idiom from every
+// other status control in the app). Kept local rather than importing from
+// JobDetail so the two pages don't couple on each other's module.
+const STATUS_OPTIONS = [
+  { value: 'unscheduled', label: 'unscheduled', dot: 'bg-amber-500' },
+  { value: 'scheduled',   label: 'scheduled',   dot: 'bg-blue-500' },
+  { value: 'in_progress', label: 'in progress', dot: 'bg-amber-500' },
+  { value: 'completed',   label: 'completed',   dot: 'bg-emerald-500' },
+  { value: 'cancelled',   label: 'cancelled',   dot: 'bg-ink-3' },
+]
 
 export default function JobEditModal({ job, properties = [], clients = [], onClose, onSave, notify }) {
   const isNew = !job?.id
@@ -438,17 +451,18 @@ export default function JobEditModal({ job, properties = [], clients = [], onClo
       {/* Right-side drawer (Twenty-style): full-height, slides over the record */}
       <div className="relative h-full w-full sm:max-w-lg bg-panel shadow-2xl flex flex-col overflow-hidden animate-fade-in">
         {/* Header */}
-        <div className="flex items-center justify-between bg-gradient-to-r from-blue-500 to-indigo-600 p-4 sm:p-6 text-white">
+        <div className="flex items-center justify-between border-b border-hairline p-4 sm:p-6">
           <div className="flex items-center gap-2 min-w-0">
-            <h2 className="text-xl sm:text-2xl font-bold truncate">{isNew ? "New Job" : "Edit Job"}</h2>
+            <h2 className="text-lg sm:text-xl font-semibold text-ink truncate">{isNew ? "New Job" : "Edit Job"}</h2>
             {isRecurring && (
-              <span className="shrink-0 text-[11px] font-semibold bg-white/20 px-2 py-1 rounded-full">
+              <span className="shrink-0 flex items-center gap-1.5 text-[11px] font-medium text-ink-3">
+                <span className="w-1.5 h-1.5 rounded-full bg-violet-500" aria-hidden="true" />
                 Repeating visit
               </span>
             )}
           </div>
-          <button onClick={onClose} className="p-2 sm:p-1 hover:bg-blue-400 rounded transition-colors -mr-2 sm:mr-0">
-            <X className="w-5 sm:w-6 h-5 sm:h-6" />
+          <button onClick={onClose} className="p-2 -mr-2 text-ink-3 hover:text-ink hover:bg-bg-2 rounded-lg transition-colors" aria-label="Close">
+            <X className="w-5 h-5" />
           </button>
         </div>
 
@@ -463,29 +477,8 @@ export default function JobEditModal({ job, properties = [], clients = [], onClo
           {!isNew && (
             <div>
               <label className="block text-sm font-semibold text-ink-2 mb-2">Status</label>
-              <div className="flex flex-wrap gap-1.5">
-                {[
-                  { v: 'unscheduled', label: 'Unscheduled', activeCls: 'bg-amber-500 text-white border-amber-500' },
-                  { v: 'scheduled',   label: 'Scheduled',   activeCls: 'bg-indigo-600 text-white border-indigo-600' },
-                  { v: 'in_progress', label: 'In progress', activeCls: 'bg-amber-600 text-white border-amber-600' },
-                  { v: 'completed',   label: 'Completed',   activeCls: 'bg-emerald-600 text-white border-emerald-600' },
-                  { v: 'cancelled',   label: 'Cancelled',   activeCls: 'bg-ink-3 text-white border-ink-3' },
-                ].map(({ v, label, activeCls }) => {
-                  const active = formData.status === v
-                  return (
-                    <button
-                      key={v}
-                      type="button"
-                      onClick={() => setFormData(f => ({ ...f, status: v }))}
-                      className={`px-3 py-1.5 rounded-full border text-[12px] font-semibold transition-colors ${
-                        active ? activeCls : 'bg-bg-2 text-ink-2 border-hairline hover:bg-hairline'
-                      }`}
-                    >
-                      {label}
-                    </button>
-                  )
-                })}
-              </div>
+              <InlineSelect value={formData.status} options={STATUS_OPTIONS}
+                onSelect={(v) => setFormData(f => ({ ...f, status: v }))} />
             </div>
           )}
 
@@ -581,13 +574,13 @@ export default function JobEditModal({ job, properties = [], clients = [], onClo
               same day (morning turnover + afternoon deep clean), so this is
               informational and dismissible, not a validation error. */}
           {!dismissedPropertyWarning && propertyConflicts.length > 0 && (
-            <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 flex items-start gap-2">
-              <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
-              <div className="flex-1 min-w-0 text-sm">
-                <p className="font-semibold text-amber-800">
+            <div className="flex items-start gap-2.5 rounded-lg border border-hairline bg-panel px-3 py-2.5 text-sm">
+              <span className="w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0 mt-1.5" aria-hidden="true" />
+              <div className="flex-1 min-w-0">
+                <p className="font-medium text-ink">
                   {propertyConflicts.some(c => c.overlaps) ? 'Overlapping job at this property' : 'Another job at this property that day'}
                 </p>
-                <ul className="mt-1 space-y-0.5 text-amber-900">
+                <ul className="mt-1 space-y-0.5 text-ink-2">
                   {propertyConflicts.map(c => (
                     <li key={c.job_id} className="truncate">
                       {c.title}{c.start_time ? ` · ${c.start_time.slice(0, 5)}–${(c.end_time || '').slice(0, 5)}` : ''}
@@ -599,7 +592,7 @@ export default function JobEditModal({ job, properties = [], clients = [], onClo
               <button
                 type="button"
                 onClick={() => setDismissedPropertyWarning(true)}
-                className="shrink-0 p-1 text-amber-500 hover:text-amber-700"
+                className="shrink-0 p-1 text-ink-3 hover:text-ink-2"
                 aria-label="Dismiss warning"
               >
                 <X className="w-3.5 h-3.5" />
@@ -616,14 +609,14 @@ export default function JobEditModal({ job, properties = [], clients = [], onClo
 
             {/* Assigned Cleaners Chips */}
             {assignedCleaners.length > 0 && (
-              <div className="flex flex-wrap gap-2 mb-3">
+              <div className="flex flex-wrap gap-1.5 mb-3">
                 {assignedCleaners.map(cleaner => (
-                  <div key={cleaner.id} className="flex items-center gap-2 bg-green-100 text-green-700 px-3 py-2 sm:py-2 rounded-full text-xs sm:text-sm">
-                    <Check className="w-3 h-3 sm:w-4 sm:h-4" />
+                  <div key={cleaner.id} className="flex items-center gap-1.5 bg-bg-2 border border-hairline-2 text-ink-2 px-2.5 py-1.5 rounded-md text-xs sm:text-sm">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" aria-hidden="true" />
                     <span className="truncate">{cleaner.name}</span>
                     <button
                       onClick={() => handleRemoveCleaner(cleaner.id)}
-                      className="ml-1 hover:bg-green-200 rounded-full p-0.5 -mr-1"
+                      className="ml-0.5 hover:text-red-500 rounded-full p-0.5 -mr-1"
                     >
                       <X className="w-3 h-3" />
                     </button>
@@ -696,8 +689,8 @@ export default function JobEditModal({ job, properties = [], clients = [], onClo
             </div>
 
             {assignedCleaners.length === 0 && (
-              <p className="text-xs text-amber-600 mt-2 flex items-center gap-1">
-                <Zap className="w-3 h-3" />
+              <p className="text-xs text-ink-3 mt-2 flex items-center gap-1.5">
+                <span className="w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0" aria-hidden="true" />
                 No cleaners assigned
               </p>
             )}
@@ -802,20 +795,20 @@ export default function JobEditModal({ job, properties = [], clients = [], onClo
               />
             </div>
 
-            {/* Dispatch Status Indicator */}
-            {!isNew && <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-              <div className="flex items-center gap-3">
-                <div className={`w-3 h-3 rounded-full flex-shrink-0 ${job?.dispatched ? 'bg-green-500' : 'bg-ink-3'}`} />
-                <div className="min-w-0">
-                  <p className="text-xs sm:text-sm font-semibold text-ink">
-                    {job?.dispatched ? '✅ Dispatched' : '⏳ Not Dispatched'}
+            {/* Dispatch status */}
+            {!isNew && (
+              <div className="flex items-center gap-2.5 rounded-lg border border-hairline bg-panel px-3 py-2.5">
+                <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${job?.dispatched ? 'bg-emerald-500' : 'bg-ink-3'}`} aria-hidden="true" />
+                <div className="min-w-0 text-sm">
+                  <p className="font-medium text-ink">
+                    {job?.dispatched ? 'Dispatched' : 'Not dispatched'}
                   </p>
-                  <p className="text-xs text-ink-2">
+                  <p className="text-xs text-ink-3">
                     {job?.dispatched ? 'This job has been sent to cleaners' : 'Job is ready to dispatch'}
                   </p>
                 </div>
               </div>
-            </div>}
+            )}
           </>)}
 
           {error && (
@@ -825,16 +818,19 @@ export default function JobEditModal({ job, properties = [], clients = [], onClo
           )}
 
           {conflict && (
-            <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 text-sm">
-              <p className="font-semibold text-amber-800 mb-1">Scheduling conflict</p>
-              <p className="text-amber-900 mb-3">{conflict}</p>
-              <button
-                onClick={() => handleSave(true)}
-                disabled={saving}
-                className="w-full sm:w-auto px-4 py-2.5 bg-amber-600 hover:bg-amber-700 disabled:opacity-60 text-white rounded-lg text-sm font-semibold transition-colors"
-              >
-                {saving ? 'Saving…' : 'Save anyway (override conflict)'}
-              </button>
+            <div className="flex items-start gap-2.5 rounded-lg border border-hairline bg-panel px-3 py-2.5 text-sm">
+              <span className="w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0 mt-1.5" aria-hidden="true" />
+              <div className="flex-1 min-w-0">
+                <p className="font-medium text-ink mb-1">Scheduling conflict</p>
+                <p className="text-ink-2 mb-2">{conflict}</p>
+                <button
+                  onClick={() => handleSave(true)}
+                  disabled={saving}
+                  className="w-full sm:w-auto px-3 py-1.5 rounded-md bg-panel border border-hairline-2 text-ink-2 hover:bg-bg-2 disabled:opacity-60 text-xs font-medium transition-colors"
+                >
+                  {saving ? 'Saving…' : 'Save anyway (override conflict)'}
+                </button>
+              </div>
             </div>
           )}
         </div>
