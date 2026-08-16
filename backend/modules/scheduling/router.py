@@ -43,6 +43,16 @@ class JobCreate(BaseModel):
     custom_fields: Optional[dict] = {}
     # When true, bypass the cleaner double-booking guard (intentional overlap).
     allow_conflicts: Optional[bool] = False
+    # Set only when this Job is being PROMOTED from an already-existing Google
+    # Calendar event (services/proposals.py's create_job_from_gcal proposal
+    # execution — the inbox-pattern replacement for gcal_sync.py's old direct
+    # `db.add(Job(...))`). Stamped straight onto the Job rather than pushed
+    # again below — the event already exists on Google, it's what was matched
+    # from — and it's what lets the next sync poll find this Job via the
+    # existing gcal_event_id lookup instead of re-proposing it. A normal
+    # human-created job never sets these; JobCreateModal.jsx does not send them.
+    gcal_event_id: Optional[str] = None
+    gcal_ical_uid: Optional[str] = None
 
 
 class JobUpdate(BaseModel):
@@ -1051,57 +1061,65 @@ def create_job(data: JobCreate, db: Session = Depends(get_db), org_id: int = Dep
     # whether it landed on Google — instead of silently leaving an app-only
     # appointment that has to be "pushed" later.
     gcal_status = {"synced": False, "reason": None}
-    try:
-        from integrations.google_calendar import create_event, is_configured
-        if not is_configured():
-            gcal_status["reason"] = "not_connected"
-        else:
-            client = db.query(Client).filter(Client.id == job.client_id).first()
-            client_dict = {"id": client.id if client else None, "name": client.name if client else "", "email": getattr(client, "email", None)}
-            job_dict = {
-                "id": job.id, "title": job.title, "job_type": job.job_type or "residential",
-                "scheduled_date": job.scheduled_date, "start_time": job.start_time,
-                "end_time": job.end_time, "address": job.address, "notes": job.notes,
-                "property_id": job.property_id,
-            }
-            # Invite the customer (attendee + email) so the cleaning lands on
-            # their own calendar — gated by the Settings toggle and requires an
-            # email to invite to.
-            from modules.settings.router import (
-                customer_invites_enabled, customer_notify_enabled, gcal_reminder_overrides,
-            )
-            invite = customer_invites_enabled(db) and bool(client and client.email)
-            # notify controls whether Google EMAILS the customer; reminders come
-            # from the operator's Settings choice (default: Google's own).
-            _su = "all" if (invite and customer_notify_enabled(db)) else "none"
-            event_id = create_event(job_dict, client_dict, send_invite=invite,
-                                    reminders=gcal_reminder_overrides(db), send_updates=_su)
-            if event_id:
-                job.calendar_invite_sent = invite
-                job.gcal_event_id = event_id
-                from integrations.google_calendar import active_account_id as _gcal_acct
-                job.gcal_account_id = _gcal_acct()
-                db.commit()
-                db.refresh(job)
-                log_calendar_event(
-                    db, "created",
-                    client_id=job.client_id, job_id=job.id,
-                    title=job.title, gcal_event_id=event_id,
-                    scheduled_date=str(job.scheduled_date) if job.scheduled_date else None,
-                )
-                db.commit()
-                gcal_status["synced"] = True
-                _log_integration(db, entity_type="job", entity_id=job.id, org_id=job.org_id, provider="gcal",
-                                 action="create", status="ok", external_id=event_id)
+    if job.gcal_event_id:
+        # Already linked to a real Google Calendar event — this Job was
+        # promoted from a matched GCal event (create_job_from_gcal proposal
+        # execution), not created fresh. Pushing here would create a
+        # DUPLICATE event on Google for the same booking; the event this Job
+        # is linked to already exists there. Nothing to push.
+        gcal_status = {"synced": True, "reason": "already_linked"}
+    else:
+        try:
+            from integrations.google_calendar import create_event, is_configured
+            if not is_configured():
+                gcal_status["reason"] = "not_connected"
             else:
-                gcal_status["reason"] = "error"
-                _log_integration(db, entity_type="job", entity_id=job.id, org_id=job.org_id, provider="gcal",
-                                 action="create", status="failed", detail="create_event returned no id")
-    except Exception as e:
-        logger.warning(f"GCal push failed for job {job.id}: {e}")
-        gcal_status["reason"] = "error"
-        _log_integration(db, entity_type="job", entity_id=job.id, org_id=job.org_id, provider="gcal",
-                         action="create", status="failed", detail=str(e))
+                client = db.query(Client).filter(Client.id == job.client_id).first()
+                client_dict = {"id": client.id if client else None, "name": client.name if client else "", "email": getattr(client, "email", None)}
+                job_dict = {
+                    "id": job.id, "title": job.title, "job_type": job.job_type or "residential",
+                    "scheduled_date": job.scheduled_date, "start_time": job.start_time,
+                    "end_time": job.end_time, "address": job.address, "notes": job.notes,
+                    "property_id": job.property_id,
+                }
+                # Invite the customer (attendee + email) so the cleaning lands on
+                # their own calendar — gated by the Settings toggle and requires an
+                # email to invite to.
+                from modules.settings.router import (
+                    customer_invites_enabled, customer_notify_enabled, gcal_reminder_overrides,
+                )
+                invite = customer_invites_enabled(db) and bool(client and client.email)
+                # notify controls whether Google EMAILS the customer; reminders come
+                # from the operator's Settings choice (default: Google's own).
+                _su = "all" if (invite and customer_notify_enabled(db)) else "none"
+                event_id = create_event(job_dict, client_dict, send_invite=invite,
+                                        reminders=gcal_reminder_overrides(db), send_updates=_su)
+                if event_id:
+                    job.calendar_invite_sent = invite
+                    job.gcal_event_id = event_id
+                    from integrations.google_calendar import active_account_id as _gcal_acct
+                    job.gcal_account_id = _gcal_acct()
+                    db.commit()
+                    db.refresh(job)
+                    log_calendar_event(
+                        db, "created",
+                        client_id=job.client_id, job_id=job.id,
+                        title=job.title, gcal_event_id=event_id,
+                        scheduled_date=str(job.scheduled_date) if job.scheduled_date else None,
+                    )
+                    db.commit()
+                    gcal_status["synced"] = True
+                    _log_integration(db, entity_type="job", entity_id=job.id, org_id=job.org_id, provider="gcal",
+                                     action="create", status="ok", external_id=event_id)
+                else:
+                    gcal_status["reason"] = "error"
+                    _log_integration(db, entity_type="job", entity_id=job.id, org_id=job.org_id, provider="gcal",
+                                     action="create", status="failed", detail="create_event returned no id")
+        except Exception as e:
+            logger.warning(f"GCal push failed for job {job.id}: {e}")
+            gcal_status["reason"] = "error"
+            _log_integration(db, entity_type="job", entity_id=job.id, org_id=job.org_id, provider="gcal",
+                             action="create", status="failed", detail=str(e))
 
     # Connecteam removal (step 3): job creation no longer auto-dispatches a
     # shift to Connecteam — the crew sees new work on their native My Day

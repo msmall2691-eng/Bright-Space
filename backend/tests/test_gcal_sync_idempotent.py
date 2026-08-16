@@ -304,7 +304,7 @@ def test_ical_uid_relinks_recreated_event_no_duplicate():
             "end": {"dateTime": "2026-07-10T13:00:00-04:00"},
         }
         r = _run_sync(db, [recreated])
-        assert r["jobs_created"] == 0            # no duplicate job
+        assert r["proposals_created"] == 0       # no duplicate proposal or job
         db.refresh(job)
         assert job.gcal_event_id == "new_evt"    # relinked to the new event id
     finally:

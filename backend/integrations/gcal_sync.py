@@ -1,14 +1,23 @@
 """
 Google Calendar Sync Engine — polls GCal and links events to BrightBase clients.
 
-This is the core of the "GCal as source of truth" model. It works like Copper CRM:
+This works like Copper CRM, with one correction (scheduling-invariants Rule 0
+/ R2 — Google Calendar is a read-only projection, never a peer that writes
+canonical state):
   1. Poll your Google Calendars for events
   2. Match each event to a BrightBase client using three methods:
      a. extendedProperties.private.client_id (exact, for events BrightBase created)
      b. Attendee email matching (proven pattern from Copper/HubSpot/Twenty)
      c. Location/address matching (fallback for events with no attendees)
-  3. Create or update Job records in BrightBase linked to the matched client
-  4. Detect changes (reschedules, cancellations) and update accordingly
+  3. A matched event with no existing linked Job is NOT created directly —
+     it's recorded as a pending ProposedAction (kind="create_job_from_gcal",
+     services/proposals.py), the same inbox pattern iCal/Airbnb turnover feeds
+     use (raw capture, then human promotion). A human approves it on the Ops
+     board to create the real Job (through create_job — the same write path
+     JobCreateModal.jsx uses) or dismisses it to ignore the event.
+  4. For already-linked jobs (found via Job.gcal_event_id), detect changes
+     (reschedules, cancellations) and update accordingly — untouched by the
+     above; that's not the creation path.
 
 You work in Google Calendar. BrightBase just watches and adds the business layer.
 """
@@ -18,10 +27,20 @@ import logging
 from datetime import datetime, timedelta, timezone, date, time
 from zoneinfo import ZoneInfo
 from sqlalchemy.orm import Session
-from database.models import Job, Client, Property
+from database.models import Job, Client, Property, ProposedAction
+from services.proposals import create_proposal
 from config import env_flag
 
 log = logging.getLogger(__name__)
+
+# Human-readable phrasing for each 3-tier match method, used in the proposal
+# detail shown on the Ops board's review queue.
+_MATCH_LABELS = {
+    "extendedProperties": "a BrightBase-tagged event",
+    "attendee_email": "the guest's email address",
+    "address_property": "the property address",
+    "address_client": "the client's address",
+}
 
 # Business wall-clock timezone. GCal hands back an *instant* — sometimes as UTC
 # ("…Z"), sometimes with an explicit offset. Jobs are scheduled and displayed in
@@ -390,7 +409,11 @@ def sync_calendar(db: Session, calendar_ids: list[str] | None = None) -> dict:
     For each event found:
     1. Skip if it's already linked to a Job (via gcal_event_id)
     2. Try to match to a client (extendedProperties → email → address)
-    3. Create a Job record linked to the matched client
+    3. A matched event proposes a Job (ProposedAction, kind=
+       "create_job_from_gcal") for human review instead of creating one
+       directly — scheduling-invariants Rule 0 / R2: Google Calendar is a
+       projection, not a sanctioned inbox, so a read from it must never write
+       canonical state. See services/proposals.py.
     4. For already-linked jobs, detect GCal changes and update
 
     Returns a summary of what happened.
@@ -452,7 +475,12 @@ def sync_calendar(db: Session, calendar_ids: list[str] | None = None) -> dict:
     results = {
         "calendars_synced": 0,
         "events_scanned": 0,
-        "jobs_created": 0,
+        # Matched events land here for review, not straight into Job rows
+        # (scheduling-invariants R2) — see the create_job_from_gcal proposal
+        # block below. "jobs_created" is gone: this path no longer creates
+        # jobs directly, so a stale key that always reads 0 would mislead.
+        "proposals_created": 0,
+        "proposals_skipped": 0,   # matched event already has a proposal on file (any status)
         "jobs_updated": 0,
         "jobs_cancelled": 0,
         "matched_by": {"extendedProperties": 0, "attendee_email": 0, "address_property": 0, "address_client": 0},
@@ -625,36 +653,76 @@ def sync_calendar(db: Session, calendar_ids: list[str] | None = None) -> dict:
             results["matched_by"][match["method"]] += 1
             client = match["client"]
             job_type = _infer_job_type(event, match)
+            effective_start = start_time or time(9, 0)
+            effective_end = end_time or time(12, 0)
+            org_id = client.org_id
 
-            # Create the job
-            job = Job(
-                client_id=client.id,
-                # BB-MT-01: inherit the matched client's org — this was
-                # previously left NULL and surfaced on every workspace.
-                org_id=client.org_id,
-                property_id=match.get("property_id"),
-                job_type=job_type,
-                title=event.get("summary", "Cleaning"),
-                scheduled_date=sched_date,
-                start_time=start_time or time(9, 0),
-                end_time=end_time or time(12, 0),
-                address=event.get("location", client.address or ""),
-                gcal_event_id=gcal_id,
-                gcal_ical_uid=event.get("iCalUID"),
-                calendar_invite_sent=bool(event.get("attendees")),
-                status="scheduled",
-                notes=_s(event.get("description")),
+            # scheduling-invariants Rule 0 / R2: a matched event does NOT
+            # become a Job directly from this read — Google Calendar is a
+            # projection, not a sanctioned inbox (only iCal/Airbnb feeds are).
+            # Record a ProposedAction instead (the same raw-capture-then-
+            # promote pattern those feeds use); a human approves it on the Ops
+            # board to create the real Job through create_job (conflict
+            # detection + the real GCal push ride along), or dismisses it to
+            # ignore the event. Deterministic payload (no wall-clock values)
+            # so create_proposal's own pending-dedupe is effective across polls.
+            title = (f"New job from Google Calendar: "
+                     f"'{event.get('summary', 'Cleaning')}' on {sched_date.isoformat()}")
+            detail = (
+                f"Matched to {client.name} by {_MATCH_LABELS.get(match['method'], match['method'])} "
+                f"· {effective_start.strftime('%H:%M')}–{effective_end.strftime('%H:%M')}. "
+                f"Approving creates the job through the normal schedule write path; "
+                f"dismissing ignores this calendar event."
             )
-            db.add(job)
-            results["jobs_created"] += 1
+            payload = {
+                "client_id": client.id,
+                "title": event.get("summary", "Cleaning"),
+                "job_type": job_type,
+                "scheduled_date": sched_date.isoformat(),
+                "start_time": effective_start.strftime("%H:%M"),
+                "end_time": effective_end.strftime("%H:%M"),
+                "address": event.get("location", client.address or ""),
+                "property_id": match.get("property_id"),
+                "notes": _s(event.get("description")),
+                "gcal_event_id": gcal_id,
+                "gcal_ical_uid": event.get("iCalUID"),
+            }
+
+            # Idempotency beyond create_proposal's own pending-dedupe: a
+            # proposal for this exact event already exists in ANY status —
+            # pending (don't duplicate the review queue), dismissed (a human
+            # already said no; don't re-ask every poll — the earlier "spam"
+            # complaint pattern, just relocated), executed (its Job should
+            # already be caught by the gcal_event_id lookup above — this is
+            # belt-and-suspenders), or failed (a stale client match or
+            # conflict at approval time doesn't self-heal just because the
+            # poll ran again; treated the same as dismissed — a human needs to
+            # look at it and act, e.g. create the job by hand). So: propose
+            # once per event, ever, unless a human's own decision reopens it.
+            already_proposed = any(
+                (row.payload or {}).get("gcal_event_id") == gcal_id
+                for row in db.query(ProposedAction).filter(
+                    ProposedAction.org_id == org_id,
+                    ProposedAction.kind == "create_job_from_gcal",
+                ).all()
+            )
+            if already_proposed:
+                results["proposals_skipped"] += 1
+                continue
+
+            create_proposal(
+                db, org_id=org_id, agent_id="mia", kind="create_job_from_gcal",
+                title=title, detail=detail, payload=payload,
+            )
+            results["proposals_created"] += 1
 
     db.commit()
 
-    total = results["jobs_created"] + results["jobs_updated"] + results["jobs_cancelled"]
+    total = results["proposals_created"] + results["jobs_updated"] + results["jobs_cancelled"]
     results["message"] = (
         f"Synced {results['events_scanned']} events from {results['calendars_synced']} calendar(s). "
-        f"Created {results['jobs_created']}, updated {results['jobs_updated']}, "
-        f"cancelled {results['jobs_cancelled']}. "
+        f"{results['proposals_created']} new job(s) proposed for review, "
+        f"updated {results['jobs_updated']}, cancelled {results['jobs_cancelled']}. "
         f"{results['unmatched']} unmatched."
     )
     return results
