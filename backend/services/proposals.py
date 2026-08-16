@@ -36,7 +36,7 @@ PROPOSAL_STATUSES = ("pending", "approved", "dismissed", "executed", "failed")
 
 # The full set of kinds automation may propose. Executing anything else is
 # refused at create time, so a bad payload can't smuggle in a new verb.
-ALLOWED_KINDS = ("assign_cleaner", "send_sms")
+ALLOWED_KINDS = ("assign_cleaner", "send_sms", "create_job_from_gcal")
 
 
 def _utcnow():
@@ -59,6 +59,20 @@ def _validate_payload(kind: str, payload: dict) -> None:
             raise ValueError("send_sms payload requires body")
         if not payload.get("conversation_id") and not payload.get("client_id"):
             raise ValueError("send_sms payload requires conversation_id or client_id")
+    elif kind == "create_job_from_gcal":
+        # Everything _execute_create_job_from_gcal needs to build a JobCreate
+        # and call scheduling's create_job — there's no separate staging row
+        # holding the raw event, so the payload IS the record. gcal_event_id
+        # is required even though JobCreate doesn't otherwise need one: it's
+        # what stamps the new Job so the next sync_calendar() poll finds it
+        # via the existing gcal_event_id lookup and takes the already-linked
+        # branch instead of re-proposing (see gcal_sync.py).
+        required = ("client_id", "title", "scheduled_date", "start_time",
+                    "end_time", "gcal_event_id")
+        missing = [f for f in required if not payload.get(f)]
+        if missing:
+            raise ValueError(
+                f"create_job_from_gcal payload requires {', '.join(missing)}")
 
 
 def create_proposal(db: Session, org_id: int, agent_id: str, kind: str,
@@ -150,6 +164,8 @@ def execute_proposal(db: Session, proposal: ProposedAction,
         elif proposal.kind == "send_sms":
             result = _execute_send_sms(db, proposal.org_id, payload,
                                        author=proposal.agent_id)
+        elif proposal.kind == "create_job_from_gcal":
+            result = _execute_create_job_from_gcal(db, proposal.org_id, payload)
         else:  # pragma: no cover — create_proposal enforces the allowlist
             raise ValueError(f"Unknown proposal kind '{proposal.kind}'")
     except Exception as e:
@@ -237,6 +253,44 @@ def _execute_send_sms(db: Session, org_id: int, payload: dict,
             "conversation_id": (msg or {}).get("conversation_id"),
             "message_id": (msg or {}).get("id"),
             "status": (msg or {}).get("status")}
+
+
+def _execute_create_job_from_gcal(db: Session, org_id: int, payload: dict) -> dict:
+    """Promote a matched-but-unlinked Google Calendar event into a real Job
+    via the EXISTING write path: scheduling's create_job — the exact function
+    JobCreateModal.jsx hits when a human creates a job. Its conflict/
+    duplicate/capacity guards and the Google Calendar push ride along, which
+    the raw `Job(...)` insert this replaces (gcal_sync.py) bypassed entirely
+    (scheduling-invariants R2: no canonical writes from a projection read).
+
+    gcal_event_id/gcal_ical_uid travel on JobCreate (additive fields — see
+    modules/scheduling/router.py) so create_job stamps them on the new Job in
+    the same write, and skips re-pushing a duplicate event to Google: the
+    event already exists there, it's what this proposal was matched from.
+    That stamped id is what lets the next sync_calendar() poll find this Job
+    via its existing `Job.gcal_event_id` lookup and take the already-linked
+    branch instead of proposing again."""
+    from modules.scheduling import router as scheduling_router
+
+    job_data = scheduling_router.JobCreate(
+        client_id=int(payload["client_id"]),
+        title=str(payload["title"]),
+        job_type=payload.get("job_type") or "residential",
+        scheduled_date=str(payload["scheduled_date"]),
+        start_time=str(payload["start_time"]),
+        end_time=str(payload["end_time"]),
+        address=payload.get("address"),
+        property_id=payload.get("property_id"),
+        notes=payload.get("notes"),
+        gcal_event_id=str(payload["gcal_event_id"]),
+        gcal_ical_uid=payload.get("gcal_ical_uid"),
+    )
+    job_dict = scheduling_router.create_job(job_data, db=db, org_id=org_id)
+    return {
+        "job_id": (job_dict or {}).get("id"),
+        "gcal_event_id": payload["gcal_event_id"],
+        "client_id": payload["client_id"],
+    }
 
 
 def propose_turnover_assignments(db: Session, picks: list[dict],
