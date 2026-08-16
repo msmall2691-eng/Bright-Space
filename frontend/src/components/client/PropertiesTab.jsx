@@ -1,6 +1,6 @@
 import { Link } from 'react-router-dom'
 import {
-  Plus, CheckCircle, AlertCircle, X, RefreshCw, Trash2,
+  Plus, X, RefreshCw, Trash2,
   Home, MapPin, Calendar,
 } from 'lucide-react'
 import {
@@ -33,10 +33,10 @@ export default function PropertiesTab({
       </div>
 
       {syncBanner && (
-        <div className={`flex items-start gap-2 rounded-lg p-3 mb-3 text-xs border ${syncBanner.ok ? 'bg-emerald-50 border-emerald-200 text-emerald-700' : 'bg-red-50 border-red-200 text-red-700'}`}>
-          {syncBanner.ok ? <CheckCircle className="w-3.5 h-3.5 mt-0.5 shrink-0" /> : <AlertCircle className="w-3.5 h-3.5 mt-0.5 shrink-0" />}
-          <span className="flex-1">{syncBanner.message}</span>
-          <button onClick={() => setSyncBanner(null)} className="opacity-60 hover:opacity-100"><X className="w-3 h-3" /></button>
+        <div className="flex items-start gap-2 rounded-lg p-3 mb-3 text-xs border border-hairline bg-panel">
+          <span className={`w-1.5 h-1.5 rounded-full shrink-0 mt-1 ${syncBanner.ok ? 'bg-emerald-500' : 'bg-red-500'}`} aria-hidden="true" />
+          <span className="flex-1 text-ink-2">{syncBanner.message}</span>
+          <button onClick={() => setSyncBanner(null)} className="text-ink-3 hover:text-ink-2"><X className="w-3 h-3" /></button>
         </div>
       )}
 

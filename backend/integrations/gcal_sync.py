@@ -580,6 +580,9 @@ def sync_calendar(db: Session, calendar_ids: list[str] | None = None) -> dict:
             # Create the job
             job = Job(
                 client_id=client.id,
+                # BB-MT-01: inherit the matched client's org — this was
+                # previously left NULL and surfaced on every workspace.
+                org_id=client.org_id,
                 property_id=match.get("property_id"),
                 job_type=job_type,
                 title=event.get("summary", "Cleaning"),

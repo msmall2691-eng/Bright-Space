@@ -91,6 +91,43 @@ def test_cleaner_role_cannot_create_quote_request():
         _cleanup_user(user.id)
 
 
+def test_quote_request_is_stamped_with_creator_org():
+    """BB-MT-01: POST /api/quotes/requests/ had no org_id dependency at all
+    (same class of gap as admin's CSV client import) — every staff-created
+    quote request landed with org_id NULL and surfaced on every workspace's
+    queue via the NULL-tolerant _org() filter."""
+    from database.models import LeadIntake
+
+    db = SessionLocal()
+    email = f"admin-org-{uuid.uuid4().hex[:8]}@example.com"
+    user = User(email=email, role="admin", full_name="Org Admin", active=True,
+               status="active", org_id=31)
+    db.add(user)
+    db.commit()
+    db.refresh(user)
+    db.close()
+    try:
+        token = create_jwt(user.id, user.email, user.role)
+        r = client.post(
+            "/api/quotes/requests/",
+            json={"requester_name": "Org Stamped Requester",
+                 "requester_email": f"org-stamped-{uuid.uuid4().hex[:8]}@example.com",
+                 "service_type": "residential"},
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert r.status_code == 201, r.text
+        db2 = SessionLocal()
+        try:
+            intake = db2.query(LeadIntake).filter(LeadIntake.id == r.json()["id"]).one()
+            assert intake.org_id == 31
+        finally:
+            db2.query(LeadIntake).filter(LeadIntake.id == r.json()["id"]).delete(synchronize_session=False)
+            db2.commit()
+            db2.close()
+    finally:
+        _cleanup_user(user.id)
+
+
 def test_admin_role_can_still_patch_field_definition():
     """Sanity check: the fix gates by ROLE, not by breaking the endpoint
     entirely — an admin JWT must still reach it (404 for a nonexistent id,

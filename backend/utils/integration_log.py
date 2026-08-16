@@ -22,6 +22,7 @@ def log_integration_event(
     detail=None,
     recipient=None,
     commit: bool = True,
+    org_id=None,
 ) -> None:
     """Record an outbound integration attempt. Best-effort, never raises.
 
@@ -34,6 +35,11 @@ def log_integration_event(
     always stored in request_payload as "to <recipient>" — even on failures —
     so the quote delivery history can show who the send attempt targeted
     regardless of outcome.
+
+    `org_id` (BB-MT-01): every call site anchors this row to a Job or Quote it
+    already has loaded — pass that object's org_id through so this row is
+    stamped like everything else, instead of surfacing on every workspace's
+    integration history via the NULL-tolerant _org() filter.
     """
     try:
         from database.models import IntegrationEvent
@@ -52,6 +58,7 @@ def log_integration_event(
             external_id=str(external_id) if external_id is not None else None,
             error_message=note if (is_failure and note) else None,
             request_payload=rp,
+            org_id=org_id,
         )
         if commit:
             db.add(row)

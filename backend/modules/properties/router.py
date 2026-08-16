@@ -842,6 +842,9 @@ def add_ical_url(property_id: int, data: PropertyIcalSchema, db: Session = Depen
 
     ical = PropertyIcal(
         property_id=property_id,
+        # BB-MT-01: inherit the parent property's org — this was previously
+        # left NULL and surfaced on every workspace's iCal listing.
+        org_id=prop.org_id,
         url=url,
         source=data.source,
         active=data.active if data.active is not None else True,

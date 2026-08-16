@@ -62,7 +62,11 @@ def opp_to_dict(o):
 
 
 def log_activity(db, *, client_id=None, opportunity_id=None, actor=None,
-                 activity_type, summary=None, extra_data=None):
+                 activity_type, summary=None, extra_data=None, org_id=None):
+    # BB-MT-01: org_id was never stamped here — every opportunity activity
+    # row's org_id was NULL and surfaced on every workspace's timeline via
+    # the NULL-tolerant _org() filter. Callers below already have the
+    # Opportunity object in hand and pass its org_id explicitly.
     a = Activity(
         client_id=client_id,
         opportunity_id=opportunity_id,
@@ -70,6 +74,7 @@ def log_activity(db, *, client_id=None, opportunity_id=None, actor=None,
         activity_type=activity_type,
         summary=summary,
         extra_data=extra_data or {},
+        org_id=org_id,
     )
     db.add(a)
 
@@ -221,6 +226,7 @@ def create_opportunity(data: OpportunityCreate, db: Session = Depends(get_db), o
         activity_type="opportunity_created",
         summary=f"Created opportunity: {data.title}",
         extra_data={"stage": data.stage, "amount": data.amount},
+        org_id=o.org_id,
     )
     db.commit()
     db.refresh(o)
@@ -250,6 +256,7 @@ def update_opportunity(opp_id: int, data: OpportunityUpdate, db: Session = Depen
             activity_type="opportunity_stage_changed",
             summary=f"Stage changed: {old_stage} → {updates['stage']}",
             extra_data={"old_stage": old_stage, "new_stage": updates["stage"]},
+            org_id=o.org_id,
         )
         if updates["stage"] == "won" and o.client:
             # Lifecycle "customer" is now derived from opportunities; only the
@@ -263,6 +270,7 @@ def update_opportunity(opp_id: int, data: OpportunityUpdate, db: Session = Depen
                 actor=data.owner or o.owner,
                 activity_type="opportunity_won",
                 summary=f"Opportunity won: {o.title}",
+                org_id=o.org_id,
             )
 
     db.commit()
@@ -311,7 +319,7 @@ def add_opportunity_note(opp_id: int, data: OpportunityNoteRequest,
     act = _log_activity(
         db, ActivityType.NOTE_ADDED.value,
         client_id=o.client_id, opportunity_id=o.id, actor=actor, summary=body,
-        extra_data={"note": True}, commit=False,
+        extra_data={"note": True}, commit=False, org_id=o.org_id,
     )
     if not act:
         raise HTTPException(status_code=500, detail="Could not record note")

@@ -70,3 +70,25 @@ describe('ClientPeek — inline edit', () => {
     expect(await screen.findByDisplayValue('2075550100')).toBeTruthy()
   })
 })
+
+describe('ClientPeek — linear connectivity', () => {
+  it('links a listed property to its record (previously inert text)', async () => {
+    get.mockResolvedValue({
+      ...PROFILE,
+      properties: [{ id: 88, name: 'Lake House', address: '3 Shore Rd' }],
+    })
+    renderPeek()
+    const link = await screen.findByText('Lake House')
+    expect(link.closest('a').getAttribute('href')).toBe('/properties/88')
+  })
+
+  it('links an upcoming visit row to its job (previously inert text)', async () => {
+    get.mockResolvedValue({
+      ...PROFILE,
+      upcoming_visits: [{ id: 99, scheduled_date: '2026-08-20', title: 'Biweekly clean', status: 'scheduled' }],
+    })
+    renderPeek()
+    const link = await screen.findByText('Biweekly clean')
+    expect(link.closest('a').getAttribute('href')).toBe('/jobs/99')
+  })
+})

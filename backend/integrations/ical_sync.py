@@ -549,6 +549,9 @@ def _sync_ical_url(db: Session, prop: Property, ical_url: str, ical_source_label
         if not event:
             event = ICalEvent(
                 property_id=prop.id,
+                # BB-MT-01: inherit the parent property's org — this was
+                # previously left NULL and surfaced on every workspace.
+                org_id=prop.org_id,
                 property_ical_id=property_ical.id if property_ical else None,
                 uid=uid,
                 summary=summary,
@@ -763,6 +766,9 @@ def _sync_ical_url(db: Session, prop: Property, ical_url: str, ical_source_label
 
             job = Job(
                 client_id=prop.client_id,
+                # BB-MT-01: inherit the parent property's org — this was
+                # previously left NULL and surfaced on every workspace.
+                org_id=prop.org_id,
                 property_id=prop.id,
                 job_type="str_turnover",
                 title=f"Turnover — {prop.name}",

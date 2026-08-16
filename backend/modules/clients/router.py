@@ -1143,6 +1143,7 @@ def update_client(client_id: int, data: ClientUpdate, db: Session = Depends(get_
                         is_primary=True,
                         phone_type="mobile",
                         source="manual",
+                        org_id=locked.org_id,  # BB-MT-01: inherit the client's org
                     )
                     db.add(cp)
                 else:
@@ -1344,6 +1345,7 @@ def add_client_phone(client_id: int, data: ContactPhoneCreate, db: Session = Dep
         is_primary=data.is_primary,
         phone_type=data.phone_type,
         source="manual",
+        org_id=client.org_id,  # BB-MT-01: inherit the client's org
     )
     if data.is_primary or not client.phone:
         db.query(ContactPhone).filter(ContactPhone.client_id == client_id).update({"is_primary": False})

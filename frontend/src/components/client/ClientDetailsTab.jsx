@@ -1,3 +1,4 @@
+import { Link } from 'react-router-dom'
 import { Calendar, ChevronRight, Save } from 'lucide-react'
 
 /** The Details / Edit tab: upcoming-cleanings strip, contact info form,
@@ -19,16 +20,19 @@ export default function ClientDetailsTab({
             <span className="text-xs font-semibold text-ink-2 uppercase tracking-wide">Upcoming Cleanings</span>
           </div>
           <div className="flex gap-2 overflow-x-auto pb-2">
+            {/* Each card is the job record — this used to be inert text with
+                no way to open the job it named. */}
             {upcomingJobs.slice(0, 5).map(j => {
               const typeColor = j.job_type === 'str_turnover' ? 'border-orange-400/30 bg-orange-500/10' : j.job_type === 'commercial' ? 'border-green-400/30 bg-green-500/10' : 'border-blue-400/30 bg-blue-500/10'
               const textColor = j.job_type === 'str_turnover' ? 'text-orange-600' : j.job_type === 'commercial' ? 'text-green-600' : 'text-indigo-600'
               return (
-                <div key={j.id} className={`flex-shrink-0 ${typeColor} border rounded-lg px-3 py-2 min-w-[130px]`}>
+                <Link key={j.id} to={`/jobs/${j.id}`}
+                  className={`flex-shrink-0 ${typeColor} border rounded-lg px-3 py-2 min-w-[130px] no-underline hover:brightness-95 transition-[filter]`}>
                   <div className={`text-xs font-semibold ${textColor}`}>
                     {new Date(j.scheduled_date + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}
                   </div>
                   <div className={`text-[11px] ${textColor} mt-0.5`}>{j.start_time} – {j.end_time}</div>
-                </div>
+                </Link>
               )
             })}
           </div>

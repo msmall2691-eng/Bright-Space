@@ -115,7 +115,10 @@ def add_contact_email(db: Session, client: Client, email: Optional[str], source:
     if existing:
         return existing
     is_primary = db.query(ContactEmail).filter(ContactEmail.client_id == client.id).count() == 0
-    ce = ContactEmail(client_id=client.id, email=e, source=source, is_primary=is_primary)
+    # BB-MT-01: org_id was never stamped here; inherit from the client we
+    # already have in hand (same class of gap as the Client/Job fixes).
+    ce = ContactEmail(client_id=client.id, email=e, source=source, is_primary=is_primary,
+                      org_id=client.org_id)
     db.add(ce)
     return ce
 
@@ -135,7 +138,10 @@ def add_contact_phone(db: Session, client: Client, phone: Optional[str], source:
     if existing:
         return existing
     is_primary = db.query(ContactPhone).filter(ContactPhone.client_id == client.id).count() == 0
+    # BB-MT-01: org_id was never stamped here; inherit from the client we
+    # already have in hand (same class of gap as the Client/Job fixes).
     cp = ContactPhone(client_id=client.id, phone=n, phone_tail=phone_last10(n),
-                      source=source, is_primary=is_primary, phone_type=phone_type)
+                      source=source, is_primary=is_primary, phone_type=phone_type,
+                      org_id=client.org_id)
     db.add(cp)
     return cp

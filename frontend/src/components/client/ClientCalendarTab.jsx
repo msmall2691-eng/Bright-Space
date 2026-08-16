@@ -205,19 +205,38 @@ export default function ClientCalendarTab({ jobs, upcomingJobs, pastJobs, naviga
         )}
       </div>
 
-      {/* GCal sync summary */}
+      {/* Two separate facts were living under one "Google Calendar" banner:
+          sync state (synced / invites sent, which really is about the
+          calendar) and visit-history counts (upcoming / completed /
+          cancelled, which aren't — a client with a long-running biweekly
+          series can rack up a double-digit cancelled count purely from
+          ordinary this-visit-only reschedules, and showing that in red under
+          a calendar icon reads as a sync failure that isn't there). Split
+          into two quiet hairline rows (owner: no solid tinted banners) so
+          "cancelled" reads as visit history, not a calendar alarm. */}
       {visitStats && (
-        <div className="bg-indigo-50 border border-indigo-200 rounded-xl p-4 flex items-center gap-4 flex-wrap">
-          <div className="flex items-center gap-2">
-            <Calendar className="w-4 h-4 text-indigo-500" />
-            <span className="text-sm font-medium text-indigo-700">Google Calendar</span>
+        <div className="space-y-1.5">
+          <div className="flex items-center gap-2 px-3 py-2 rounded-lg border border-hairline bg-panel text-[12.5px] flex-wrap">
+            <Calendar className="w-3.5 h-3.5 text-ink-3 shrink-0" />
+            <span className="text-ink-2 font-medium">Google Calendar</span>
+            <span className="text-ink-3">·</span>
+            <span className="text-ink"><strong>{visitStats.gcal_synced}</strong> synced</span>
+            <span className="text-ink-3">·</span>
+            <span className="text-ink"><strong>{visitStats.invites_sent}</strong> invites sent</span>
           </div>
-          <div className="flex gap-4 text-xs">
-            <span className="text-indigo-600"><strong>{visitStats.gcal_synced}</strong> synced</span>
-            <span className="text-emerald-600"><strong>{visitStats.invites_sent}</strong> invites sent</span>
-            <span className="text-indigo-600"><strong>{visitStats.upcoming}</strong> upcoming</span>
-            <span className="text-ink-3"><strong>{visitStats.completed}</strong> completed</span>
-            {visitStats.cancelled > 0 && <span className="text-red-500"><strong>{visitStats.cancelled}</strong> cancelled</span>}
+          <div className="flex items-center gap-2 px-3 py-2 rounded-lg border border-hairline bg-panel text-[12.5px] flex-wrap">
+            <span className="w-1.5 h-1.5 rounded-full shrink-0 bg-indigo-400" aria-hidden="true" />
+            <span className="text-ink-2 font-medium">Visit history</span>
+            <span className="text-ink-3">·</span>
+            <span className="text-ink"><strong>{visitStats.upcoming}</strong> upcoming</span>
+            <span className="text-ink-3">·</span>
+            <span className="text-ink"><strong>{visitStats.completed}</strong> completed</span>
+            {visitStats.cancelled > 0 && (
+              <>
+                <span className="text-ink-3">·</span>
+                <span className="text-ink-2"><strong>{visitStats.cancelled}</strong> cancelled</span>
+              </>
+            )}
           </div>
         </div>
       )}

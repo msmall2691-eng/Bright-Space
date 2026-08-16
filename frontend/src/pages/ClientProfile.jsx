@@ -43,8 +43,10 @@ function Tab({ label, icon: Icon, active, count, onClick }) {
       }`}>
       <Icon className="w-4 h-4" />
       {label}
+      {/* Plain count next to the label, never a filled chip — owner vetoed
+          count bubbles on tabs/nav (matches MessagesTab / ActivityTimeline). */}
       {count > 0 && (
-        <span className={`text-xs px-1.5 py-0.5 rounded-full ${active ? 'bg-blue-500/15 text-blue-500' : 'bg-bg-2 text-ink-3'}`}>
+        <span className={`text-xs tabular-nums ${active ? 'text-blue-500' : 'text-ink-3'}`}>
           {count}
         </span>
       )}
