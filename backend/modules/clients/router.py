@@ -1475,7 +1475,8 @@ def _parse_address(raw: str):
 
 
 @router.post("/import-xlsx", dependencies=[Depends(require_role("admin", "manager"))])
-async def import_clients_xlsx(file: UploadFile = File(...), db: Session = Depends(get_db)):
+async def import_clients_xlsx(file: UploadFile = File(...), db: Session = Depends(get_db),
+                              org_id: int = Depends(current_org_id)):
     """Import clients from an Excel (.xlsx) file exported from Connecteam or similar."""
     try:
         import openpyxl
@@ -1529,6 +1530,7 @@ async def import_clients_xlsx(file: UploadFile = File(...), db: Session = Depend
                 zip_code=parsed["zip_code"] or None,
                 status="active",
                 source="xlsx_import",
+                org_id=org_id,
             )
             db.add(client)
             existing.add(name.lower())

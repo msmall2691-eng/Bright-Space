@@ -254,6 +254,12 @@ def run_inbox_sync(
                         # Trace WHY this lead was auto-created (reply vs cleaning intent).
                         source_detail=f"gmail auto-enrich:{reason}",
                         email_verified=True,
+                        # BB-MT-01: the per-account path passes its account's org_id
+                        # (see run_inbox_sync's docstring) — leaving this off left every
+                        # auto-created lead org_id NULL, so the NULL-tolerant _org()
+                        # filter surfaced it on EVERY workspace's board/brief, not just
+                        # the one whose inbox produced it.
+                        org_id=org_id,
                     )
                     db.add(c)
                     db.flush()

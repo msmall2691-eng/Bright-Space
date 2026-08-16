@@ -345,6 +345,24 @@ export default function Crew() {
                       {rateInput(row, 'pay_rate_rental', row.pay_rate_rental, 'Rental $/hr')}
                       {rateInput(row, 'pay_rate_deep', row.pay_rate_deep, 'Deep $/hr')}
                     </div>
+                    {/* Feeds Payroll's pre-calculated drive mileage (home → first
+                        job → between houses). Kept here too, not just in Settings
+                        → Users, so mileage isn't the one cleaner field that lives
+                        on a different page than everything else about them. */}
+                    <label className="block mt-2.5">
+                      <span className="text-[11px] text-ink-3">Home address <span className="font-normal">(for payroll drive mileage)</span></span>
+                      <input
+                        key={`${row.id}-home-${row.home_address || ''}`}
+                        defaultValue={row.home_address || ''}
+                        placeholder="e.g. 12 Main St, Brunswick, ME"
+                        disabled={busyId === row.id}
+                        onBlur={(e) => {
+                          const v = e.target.value.trim()
+                          if (v !== (row.home_address || '')) savePatch(row.id, { home_address: v })
+                        }}
+                        className="mt-0.5 w-full bg-panel border border-hairline rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                      />
+                    </label>
                   </div>
                 )
               })}

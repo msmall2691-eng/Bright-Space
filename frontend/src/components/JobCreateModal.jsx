@@ -30,58 +30,66 @@ const FREQUENCIES = [
 
 const WEEK_LABELS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
 
-/** Amber "this slot conflicts" prompt with a one-click override. Shown when
+/** "This slot conflicts" prompt with a one-click override. Shown when
  *  create_job returns a 409 (cleaner double-booked, time off, over capacity, or
- *  the slot is already busy on Google Calendar). */
+ *  the slot is already busy on Google Calendar). Quiet hairline card + amber
+ *  dot (the owner-vetoed pattern is a solid tinted banner) — matches
+ *  components/schedule/OpsAlerts.jsx. */
 function ConflictPrompt({ conflict, saving, onCancel, onOverride }) {
   if (!conflict) return null
   return (
-    <div className="bg-amber-50 border border-amber-200 rounded-lg px-3 py-2.5 text-xs">
-      <p className="font-semibold text-amber-800 mb-1">Scheduling conflict</p>
-      <p className="text-amber-900 mb-2">{conflict}</p>
-      <div className="flex gap-2">
-        <button type="button" onClick={onCancel}
-          className="px-3 py-1.5 rounded-md bg-bg-2 text-ink-2 hover:bg-hairline">Pick another time</button>
-        <button type="button" onClick={onOverride} disabled={saving}
-          className="px-3 py-1.5 rounded-md bg-amber-600 hover:bg-amber-700 text-white disabled:opacity-50">
-          {saving ? 'Booking…' : 'Book anyway'}
-        </button>
+    <div className="flex items-start gap-2.5 px-3 py-2.5 rounded-lg border border-hairline bg-panel text-xs">
+      <span className="w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0 mt-1" aria-hidden="true" />
+      <div className="flex-1 min-w-0">
+        <p className="font-medium text-ink mb-1">Scheduling conflict</p>
+        <p className="text-ink-2 mb-2">{conflict}</p>
+        <div className="flex gap-2">
+          <button type="button" onClick={onCancel}
+            className="px-3 py-1.5 rounded-md bg-bg-2 border border-hairline-2 text-ink-2 hover:bg-hairline">Pick another time</button>
+          <button type="button" onClick={onOverride} disabled={saving}
+            className="px-3 py-1.5 rounded-md bg-panel border border-hairline-2 text-ink-2 hover:bg-bg-2 font-medium disabled:opacity-50">
+            {saving ? 'Booking…' : 'Book anyway'}
+          </button>
+        </div>
       </div>
     </div>
   )
 }
 
-/** Amber "this client already has a similar series" prompt. Shown when
+/** "This client already has a similar series" prompt. Shown when
  *  POST /api/recurring 409s with detail=similar_series_exists (the backend's
  *  pre-create duplicate guard). Mirrors ConflictPrompt's escape-hatch UX:
  *  link to the existing series, or resubmit with allow_duplicate=true. */
 function DuplicateSeriesPrompt({ matches, saving, onCancel, onOverride }) {
   if (!matches || !matches.length) return null
   return (
-    <div className="bg-amber-50 border border-amber-200 rounded-lg px-3 py-2.5 text-xs"
+    <div className="flex items-start gap-2.5 px-3 py-2.5 rounded-lg border border-hairline bg-panel text-xs"
       data-testid="job-create-duplicate-series-prompt">
-      <p className="font-semibold text-amber-800 mb-1">Similar recurring series already exists</p>
-      <ul className="text-amber-900 mb-2 space-y-1">
-        {matches.map(m => (
-          <li key={m.id}>
-            This client already has: {m.cadence}
-            {m.property_name ? ` at ${m.property_name}` : m.address ? ` at ${m.address}` : ''}
-            {` — ${m.upcoming_job_count || 0} upcoming`}
-            {' · '}
-            <a href={`/recurring?series=${m.id}`}
-              className="font-semibold underline text-amber-800 hover:text-amber-900">
-              Open existing
-            </a>
-          </li>
-        ))}
-      </ul>
-      <div className="flex gap-2">
-        <button type="button" onClick={onCancel}
-          className="px-3 py-1.5 rounded-md bg-bg-2 text-ink-2 hover:bg-hairline">Never mind</button>
-        <button type="button" onClick={onOverride} disabled={saving}
-          className="px-3 py-1.5 rounded-md bg-amber-600 hover:bg-amber-700 text-white disabled:opacity-50">
-          {saving ? 'Creating…' : 'Create anyway'}
-        </button>
+      <span className="w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0 mt-1" aria-hidden="true" />
+      <div className="flex-1 min-w-0">
+        <p className="font-medium text-ink mb-1">Similar recurring series already exists</p>
+        <ul className="text-ink-2 mb-2 space-y-1">
+          {matches.map(m => (
+            <li key={m.id}>
+              This client already has: {m.cadence}
+              {m.property_name ? ` at ${m.property_name}` : m.address ? ` at ${m.address}` : ''}
+              {` — ${m.upcoming_job_count || 0} upcoming`}
+              {' · '}
+              <a href={`/recurring?series=${m.id}`}
+                className="font-medium underline text-ink hover:text-indigo-600">
+                Open existing
+              </a>
+            </li>
+          ))}
+        </ul>
+        <div className="flex gap-2">
+          <button type="button" onClick={onCancel}
+            className="px-3 py-1.5 rounded-md bg-bg-2 border border-hairline-2 text-ink-2 hover:bg-hairline">Never mind</button>
+          <button type="button" onClick={onOverride} disabled={saving}
+            className="px-3 py-1.5 rounded-md bg-panel border border-hairline-2 text-ink-2 hover:bg-bg-2 font-medium disabled:opacity-50">
+            {saving ? 'Creating…' : 'Create anyway'}
+          </button>
+        </div>
       </div>
     </div>
   )

@@ -450,12 +450,20 @@ export default function Quoting() {
       const body = { ...form, client_id: parseInt(clientId), tax_rate: parseFloat(form.tax_rate) || 0 }
       if (selected) {
         await patch(`/api/quotes/${selected.id}`, body)
+        await loadQuotes(); await loadIntakes()
+        setPanel(null)
+        showToast('Quote updated')
       } else {
-        await post('/api/quotes', body)
+        const created = await post('/api/quotes', body)
+        await loadQuotes(); await loadIntakes()
+        // Keep the panel open on the freshly-created quote instead of closing
+        // it — a stressed owner quoting a lead on the phone wants "Create" to
+        // immediately offer "Send" (which only shows once `selected` is set),
+        // not to close the panel and make her hunt the new row out of the
+        // full list to find the Send button.
+        setSelected(safeQuote(created))
+        showToast('Quote created — ready to send')
       }
-      await loadQuotes(); await loadIntakes()
-      setPanel(null)
-      showToast(selected ? 'Quote updated' : 'Quote created')
     } catch (e) { showToast(e.message || 'Error saving quote') }
     setSaving(false)
   }
@@ -626,7 +634,12 @@ export default function Quoting() {
             <button onClick={() => switchTab('follow-ups')}
               className={`shrink-0 px-3 sm:px-4 py-1.5 rounded-md text-sm font-medium transition-colors flex items-center gap-1.5 ${tab === 'follow-ups' ? 'bg-bg-2 text-ink' : 'text-ink-3 hover:text-ink-3'}`}>
               Follow-ups
-              {followUps.length > 0 && <span className="bg-amber-500 text-black text-xs font-bold px-1.5 py-0.5 rounded-full leading-none">{followUps.length}</span>}
+              {followUps.length > 0 && (
+                <span className="flex items-center gap-1 text-ink-3">
+                  <span className="w-1.5 h-1.5 rounded-full bg-amber-500" aria-hidden="true" />
+                  <span className="font-semibold">{followUps.length}</span>
+                </span>
+              )}
             </button>
             <button onClick={() => switchTab('archived')}
               className={`shrink-0 px-3 sm:px-4 py-1.5 rounded-md text-sm font-medium transition-colors ${tab === 'archived' ? 'bg-bg-2 text-ink' : 'text-ink-3 hover:text-ink-3'}`}>

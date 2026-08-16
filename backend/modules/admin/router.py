@@ -13,7 +13,7 @@ from database.models import (
     Job, LeadIntake, Quote, Invoice, Conversation, Message,
     Opportunity, ContactEmail, ContactPhone, Activity,
 )
-from modules.auth.router import require_role
+from modules.auth.router import require_role, current_org_id
 from utils.phone import normalize_e164, phone_tail
 
 log = logging.getLogger(__name__)
@@ -29,7 +29,8 @@ router = APIRouter()
 async def import_clients(
     file: UploadFile = File(...),
     dry_run: bool = True,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    org_id: int = Depends(current_org_id),
 ):
     """
     Import clients from Jobber CSV export.
@@ -174,6 +175,7 @@ async def import_clients(
                 phone=client_data['phone'],
                 phone_tail=phone_tail(client_data['phone']) if client_data['phone'] else None,
                 status=client_data['status'],
+                org_id=org_id,
             )
             db.add(new_client)
             created_count += 1

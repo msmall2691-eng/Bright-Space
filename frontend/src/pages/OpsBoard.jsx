@@ -448,17 +448,60 @@ function BoardRow({ item, cleared, onToggle, onAction, actioningKey, confirmingK
   )
 }
 
-function Section({ section, items, clearedSet, onToggle, onAction, actioningKey, confirmingKey, headerLink, navigate }) {
+// Owner report: the inbox-triage pile (marketing email, delivery-failure
+// notices — literally named "Safe to Ignore" by the backend) rendered fully
+// expanded by default, so Home read as "so busy... full of spam." The bulk
+// "Clear the noise" action already existed but only inside the separate Ask
+// panel, disconnected from the pile it clears. This section now collapses to
+// one quiet line by default with the clear action right there — reviewing
+// individual items is still one tap away, nothing is deleted automatically.
+const COLLAPSED_BY_DEFAULT = new Set(['safe_to_ignore'])
+
+function Section({ section, items, clearedSet, onToggle, onAction, actioningKey, confirmingKey, setConfirmingKey, headerLink, navigate, onClearAll, clearingSection, filtersActive }) {
+  const [open, setOpen] = useState(() => !COLLAPSED_BY_DEFAULT.has(section.key))
   if (!items.length) return null
+  const collapsible = COLLAPSED_BY_DEFAULT.has(section.key)
+  // Codex review (PR #720): search/severity/hide-cleared narrow `items` to a
+  // subset, but the bulk endpoint clears the WHOLE section server-side — so
+  // "Clear all" while filtered would silently delete cards never shown. Only
+  // offer the bulk action with nothing narrowing the view; per-row Delete
+  // still works on whatever IS visible.
+  const canClearAll = collapsible && !filtersActive
+  const clearKey = `clear-section:${section.key}`
+  const confirmingClear = confirmingKey === clearKey
   return (
     <section className="mb-4 break-inside-avoid overflow-hidden rounded-2xl border border-hairline bg-panel">
       <header className="flex items-center gap-2 border-b border-hairline px-3.5 py-2.5">
         <span className="text-[13px] leading-none">{section.icon}</span>
-        <h2 className="text-[11px] font-medium text-ink-3">{section.title}</h2>
+        {collapsible ? (
+          <button onClick={() => setOpen(v => !v)}
+            className="flex min-w-0 flex-1 items-center gap-1.5 text-left">
+            <h2 className="text-[11px] font-medium text-ink-3">
+              {items.length} item{items.length === 1 ? '' : 's'} you can ignore
+            </h2>
+            <ChevronDown className={`h-3 w-3 shrink-0 text-ink-3 transition-transform ${open ? 'rotate-180' : ''}`} />
+          </button>
+        ) : (
+          <h2 className="text-[11px] font-medium text-ink-3">{section.title}</h2>
+        )}
         {/* Plain number, not a count bubble (owner veto). */}
-        <span className="ml-auto text-[11px] font-semibold tabular-nums text-ink-3">
-          {items.length}
-        </span>
+        {!collapsible && (
+          <span className="ml-auto text-[11px] font-semibold tabular-nums text-ink-3">
+            {items.length}
+          </span>
+        )}
+        {canClearAll && (
+          <button
+            onClick={() => {
+              if (confirmingClear) { onClearAll(section.key) } else { setConfirmingKey(clearKey) }
+            }}
+            disabled={clearingSection === section.key}
+            className={`ml-auto shrink-0 text-[11px] font-semibold disabled:opacity-40 ${
+              confirmingClear ? 'text-amber-700 dark:text-amber-400' : 'text-indigo-600 hover:text-indigo-700 dark:text-indigo-400'
+            }`}>
+            {clearingSection === section.key ? 'Clearing…' : confirmingClear ? 'Confirm?' : 'Clear all'}
+          </button>
+        )}
         {headerLink && (
           <button onClick={() => navigate(headerLink.to)}
             className="inline-flex items-center gap-0.5 text-[11px] font-semibold text-indigo-600 transition-all hover:gap-1 dark:text-indigo-400">
@@ -466,12 +509,14 @@ function Section({ section, items, clearedSet, onToggle, onAction, actioningKey,
           </button>
         )}
       </header>
-      <div className="divide-y divide-hairline">
-        {items.map(it => (
-          <BoardRow key={it.id} item={it} cleared={clearedSet.has(it.id)} onToggle={onToggle}
-            onAction={onAction} actioningKey={actioningKey} confirmingKey={confirmingKey} />
-        ))}
-      </div>
+      {open && (
+        <div className="divide-y divide-hairline">
+          {items.map(it => (
+            <BoardRow key={it.id} item={it} cleared={clearedSet.has(it.id)} onToggle={onToggle}
+              onAction={onAction} actioningKey={actioningKey} confirmingKey={confirmingKey} />
+          ))}
+        </div>
+      )}
     </section>
   )
 }
@@ -512,6 +557,7 @@ export default function OpsBoard() {
   const [actioningKey, setActioningKey] = useState(null)
   const [confirmingKey, setConfirmingKey] = useState(null)
   const [assistantOpen, setAssistantOpen] = useState(false)
+  const [clearingSection, setClearingSection] = useState(null)
   const searchRef = useRef(null)
 
   const load = useCallback(async (isRefresh) => {
@@ -600,6 +646,23 @@ export default function OpsBoard() {
       setActioningKey(null)
     }
   }, [confirmingKey, navigate, markCleared])
+
+  // Bulk-clears one collapsed section (Safe to Ignore) in place — same
+  // endpoint the Ask panel's "Clear the noise" already used, now reachable
+  // right where the pile actually sits instead of a separate surface.
+  const clearAllInSection = useCallback(async (sectionKey) => {
+    setConfirmingKey(null)
+    setClearingSection(sectionKey)
+    try {
+      const res = await post(`/api/inbox/triage/delete-all?section=${encodeURIComponent(sectionKey)}`, {})
+      setNote(`Cleared ${res?.deleted ?? 0} item${res?.deleted === 1 ? '' : 's'}`)
+      await load(true)
+    } catch {
+      setNote('Could not clear those — nothing was changed.')
+    } finally {
+      setClearingSection(null)
+    }
+  }, [load])
 
   const sections = data?.sections || []
   const allItems = useMemo(() => sections.flatMap(s => s.items), [sections])
@@ -780,7 +843,9 @@ export default function OpsBoard() {
                 <Section key={section.key} section={section} items={items}
                   clearedSet={cleared} onToggle={toggleCleared}
                   onAction={runAction} actioningKey={actioningKey} confirmingKey={confirmingKey}
-                  headerLink={SECTION_LINKS[section.key]} navigate={navigate} />
+                  headerLink={SECTION_LINKS[section.key]} navigate={navigate}
+                  onClearAll={clearAllInSection} clearingSection={clearingSection}
+                  setConfirmingKey={setConfirmingKey} filtersActive={filtersActive} />
               ))}
             </div>
 
@@ -793,7 +858,9 @@ export default function OpsBoard() {
                 <Section key={section.key} section={section} items={items}
                   clearedSet={cleared} onToggle={toggleCleared}
                   onAction={runAction} actioningKey={actioningKey} confirmingKey={confirmingKey}
-                  headerLink={SECTION_LINKS[section.key]} navigate={navigate} />
+                  headerLink={SECTION_LINKS[section.key]} navigate={navigate}
+                  onClearAll={clearAllInSection} clearingSection={clearingSection}
+                  setConfirmingKey={setConfirmingKey} filtersActive={filtersActive} />
               ))}
             </div>
           </>

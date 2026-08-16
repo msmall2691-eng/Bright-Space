@@ -1180,6 +1180,12 @@ def _convert_quote_to_job(
         status="unscheduled",
         cleaner_ids=[str(c) for c in cleaner_ids] if cleaner_ids else [],
         notes=quote.notes,
+        # BB-MT-01: unlike the scheduled path just above (which explicitly
+        # passes quote.org_id to create_job for this exact reason), this
+        # direct-insert left org_id NULL — every unscheduled quote→job
+        # conversion then surfaced on EVERY workspace's board/brief via the
+        # NULL-tolerant _org() filter, not just the quote's own org.
+        org_id=quote.org_id,
     )
     db.add(job)
     quote.status = "converted"

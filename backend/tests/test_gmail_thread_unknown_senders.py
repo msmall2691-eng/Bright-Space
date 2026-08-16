@@ -94,6 +94,23 @@ def test_unmatched_sender_with_keyword_creates_client_and_threads(db):
         _cleanup(db, em["message_id"], em["from_email"])
 
 
+def test_auto_created_lead_is_stamped_with_the_syncing_account_org(db):
+    """BB-MT-01 regression: an auto-created lead used to land with org_id
+    NULL regardless of which account's sync produced it. The NULL-tolerant
+    _org() tenant filter (MT-3) then surfaced that lead on EVERY workspace's
+    board/brief, not just the one whose inbox it came from. org_id must be
+    stamped from the org_id run_inbox_sync was called with."""
+    em = _email(subject="Need a cleaning quote", body="Looking for biweekly cleaning")
+    try:
+        result = run_inbox_sync(db, emails=[em], org_id=7)
+        assert result["summary"]["new_contacts_created"] == 1
+
+        client = db.query(Client).filter(Client.email == em["from_email"].lower()).one()
+        assert client.org_id == 7
+    finally:
+        _cleanup(db, em["message_id"], em["from_email"])
+
+
 def test_bulk_mail_is_not_threaded(db):
     """Newsletter/ESP headers still keep an email out of the inbox entirely —
     'non-bulk' in the audit's fix instruction is the operative word."""

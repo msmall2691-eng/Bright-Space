@@ -2713,6 +2713,11 @@ def _crew_row(u: User) -> dict:
         "pay_rate_residential": u.pay_rate_residential,
         "pay_rate_rental": u.pay_rate_rental,
         "pay_rate_deep": u.pay_rate_deep,
+        # Drive-mileage source for Payroll (home → first job → between houses).
+        # Editable from Settings → Users too (same PATCH /api/auth/users/{id}
+        # field) — surfaced here so it isn't the one cleaner field that's only
+        # reachable from a different page than the rest of their info.
+        "home_address": u.home_address,
         "status": u.status or "active",
         # True once they've set a password (accepted the invite) or logged in.
         "activated": bool(u.password_hash) or u.last_login_at is not None,

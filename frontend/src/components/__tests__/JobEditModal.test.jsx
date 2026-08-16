@@ -61,8 +61,10 @@ describe('JobEditModal — everything editable', () => {
     const title = screen.getByDisplayValue('Original title')
     fireEvent.change(title, { target: { value: 'Renamed — deep clean' } })
 
-    // Status is a pill row (button), not a <select> — click the target pill.
-    fireEvent.click(screen.getByRole('button', { name: 'In progress' }))
+    // Status is an InlineSelect (dot+word chip that opens a dropdown), not a
+    // pill row or a <select> — open it, then pick the target option.
+    fireEvent.click(screen.getByTitle('Click to change'))
+    fireEvent.click(screen.getByRole('button', { name: 'in progress' }))
 
     // Type and address live behind "Advanced options" (collapsed by default
     // when the job has no notes) — open it before querying those fields.

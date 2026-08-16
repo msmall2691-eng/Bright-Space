@@ -1660,7 +1660,8 @@ def _compute_followups(db: Session, org_id: int) -> dict:
             RecurringSchedule.active == True,  # noqa: E712
             _org(RecurringSchedule, org_id)).all():
         cnt = db.query(Job).filter(
-            Job.recurring_schedule_id == s.id, Job.scheduled_date >= today
+            Job.recurring_schedule_id == s.id, Job.scheduled_date >= today,
+            _org(Job, org_id),
         ).count()
         if cnt == 0:
             empty_recurring.append(s)
