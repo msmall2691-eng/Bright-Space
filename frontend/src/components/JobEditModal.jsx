@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useRef } from 'react'
 import { X, Search, User, Trash2, Ban, ChevronDown } from 'lucide-react'
 import { get, patch, post, del } from '../api'
 import Button from './ui/Button'
@@ -21,25 +21,44 @@ const STATUS_OPTIONS = [
   { value: 'cancelled',   label: 'cancelled',   dot: 'bg-ink-3' },
 ]
 
+// Shape shared by `formData` (the live draft) and `saved` (the last value
+// actually persisted to the server). Keeping both initialized from the same
+// function guarantees they can be compared field-by-field without a shape
+// mismatch — see isFieldChanged below.
+const initialFieldValues = (j) => ({
+  title: j?.title || '',
+  job_type: j?.job_type || 'residential',
+  pay_mode: j?.pay_mode || 'auto',
+  pay_rate_bump: j?.pay_rate_bump ?? '',
+  status: j?.status || 'scheduled',
+  property_id: j?.property_id || '',
+  address: j?.address || '',
+  cleaner_ids: j?.cleaner_ids || [],
+  notes: j?.notes || '',
+  scheduled_date: j?.scheduled_date || '',
+  start_time: (j?.start_time || '').slice(0, 5),
+  end_time: (j?.end_time || '').slice(0, 5),
+})
+
 export default function JobEditModal({ job, properties = [], clients = [], onClose, onSave, notify }) {
   const isNew = !job?.id
   const isRecurring = !isNew && Boolean(job?.recurring_schedule_id)
   // 'edit' | 'delete' | null — which scope prompt (if any) is currently showing.
   const [scopeDialog, setScopeDialog] = useState(null)
-  const [formData, setFormData] = useState({
-    title: job?.title || '',
-    job_type: job?.job_type || 'residential',
-    pay_mode: job?.pay_mode || 'auto',
-    pay_rate_bump: job?.pay_rate_bump ?? '',
-    status: job?.status || 'scheduled',
-    property_id: job?.property_id || '',
-    address: job?.address || '',
-    cleaner_ids: job?.cleaner_ids || [],
-    notes: job?.notes || '',
-    scheduled_date: job?.scheduled_date || '',
-    start_time: (job?.start_time || '').slice(0, 5),
-    end_time: (job?.end_time || '').slice(0, 5),
-  })
+  const [formData, setFormData] = useState(() => initialFieldValues(job))
+  // Last value actually persisted for an EXISTING, non-recurring job — the
+  // baseline isFieldChanged compares against so a field that's blurred
+  // without being edited doesn't fire a needless PATCH (or, worse, pop the
+  // recurring scope dialog for a no-op "change"). Only saveField() advances
+  // this; a recurring job's fields never update it mid-session (see
+  // commitField's header comment) so the comparison stays pinned to what was
+  // on the job when the modal opened, which is exactly the right baseline
+  // for "did the user actually change anything since then."
+  const [saved, setSaved] = useState(() => initialFieldValues(job))
+  // The exact single-field PATCH body that most recently hit a 409, so
+  // "Save anyway" can resubmit precisely that with allow_conflicts — never a
+  // stale or unrelated payload.
+  const [pendingRetry, setPendingRetry] = useState(null)
   const [cleanerSearch, setCleanerSearch] = useState('')
   const [showCleanerDropdown, setShowCleanerDropdown] = useState(false)
   const [saving, setSaving] = useState(false)
@@ -126,29 +145,113 @@ export default function JobEditModal({ job, properties = [], clients = [], onClo
   )
 
   const handlePropertyChange = (e) => {
-    const prop = properties.find(p => p.id === parseInt(e.target.value))
-    setFormData(prev => ({
-      ...prev,
-      property_id: e.target.value,
-      // Smart default only — never clobber an address the operator typed.
-      address: prev.address || prop?.address || '',
-    }))
+    const propId = e.target.value
+    const prop = properties.find(p => p.id === parseInt(propId))
+    // Smart default only — never clobber an address the operator typed.
+    const nextAddress = formData.address || prop?.address || ''
+    setFormData(prev => ({ ...prev, property_id: propId, address: nextAddress }))
+    // One user action (picking a property) can touch two fields at once —
+    // commit them together rather than forcing an artificial second PATCH
+    // for the address's smart-fill.
+    const body = {}
+    if (isFieldChanged('property_id', propId)) body.property_id = parseInt(propId) || null
+    if (isFieldChanged('address', nextAddress)) body.address = nextAddress
+    if (Object.keys(body).length) commitField(body)
   }
 
   const handleAddCleaner = (cleanerId) => {
-    setFormData(prev => ({
-      ...prev,
-      cleaner_ids: [...prev.cleaner_ids, cleanerId]
-    }))
+    const next = [...formData.cleaner_ids, cleanerId]
+    setFormData(prev => ({ ...prev, cleaner_ids: next }))
     setCleanerSearch('')
     setShowCleanerDropdown(false)
+    if (isFieldChanged('cleaner_ids', next)) commitField({ cleaner_ids: next })
   }
 
   const handleRemoveCleaner = (cleanerId) => {
-    setFormData(prev => ({
-      ...prev,
-      cleaner_ids: prev.cleaner_ids.filter(id => id !== cleanerId)
-    }))
+    const next = formData.cleaner_ids.filter(id => id !== cleanerId)
+    setFormData(prev => ({ ...prev, cleaner_ids: next }))
+    if (isFieldChanged('cleaner_ids', next)) commitField({ cleaner_ids: next })
+  }
+
+  // Raw-value comparison against the last-persisted baseline — see `saved`'s
+  // header comment. Scalar fields compare as strings (formData/DOM values are
+  // sometimes numbers, sometimes strings, e.g. property_id); cleaner_ids
+  // compares by array contents.
+  const isFieldChanged = (key, rawValue) => (
+    key === 'cleaner_ids'
+      ? JSON.stringify(rawValue) !== JSON.stringify(saved.cleaner_ids)
+      : String(rawValue ?? '') !== String(saved[key] ?? '')
+  )
+
+  // Routes one already-confirmed-changed field to the right save mechanism.
+  // Called only after the caller has checked isFieldChanged, so every call
+  // here represents a real edit.
+  //
+  //  - New job: no id exists to PATCH yet. formData already holds the draft;
+  //    the Create Job button (handleSave/performDirectSave) batches
+  //    everything in one POST, unchanged from before this conversion.
+  //  - Recurring job: which occurrences a change applies to is ambiguous
+  //    (this / this-and-future / all), and applying it needs the
+  //    reschedule/split/resync machinery, not a bare PATCH — so this shows
+  //    the SAME scope dialog the old global Save button used to show on
+  //    ANY field change, and the write waits for performRecurringSave once
+  //    the operator resolves it. formData keeps accumulating edits across
+  //    dialog cancellations, so nothing is lost if they "Never mind" and
+  //    keep editing before finally choosing a scope.
+  //  - Otherwise (existing, non-recurring job): PATCH just this field,
+  //    immediately — the JobDetail-style auto-save this conversion adds.
+  const commitField = (body) => {
+    if (isNew) return
+    if (isRecurring) {
+      setScopeDialog('edit')
+      return
+    }
+    saveField(body)
+  }
+
+  // Per-field auto-save for an existing, non-recurring job. Success advances
+  // `saved` so later edits compare against what's actually on the server; a
+  // conflict-shaped error surfaces the same "Save anyway" override the old
+  // batch Save offered, scoped to just this field's payload; any other
+  // error shows the banner and reverts the optimistic edit so the field
+  // doesn't keep displaying a value that silently failed to persist.
+  //
+  // Queued (not fired directly): the old modal only ever issued one PATCH
+  // per click of the global Save button, so requests could never race. Auto-
+  // save can now fire several close together (tab through a few fields
+  // quickly) — chaining through saveQueueRef keeps them applied in the order
+  // the operator made them instead of trusting the network to preserve it.
+  const saveQueueRef = useRef(Promise.resolve())
+  const saveField = (body, allowConflicts = false) => {
+    const run = async () => {
+      setSaving(true)
+      setError('')
+      try {
+        const payload = { ...body, notify_customer: notifyCustomer, allow_conflicts: allowConflicts }
+        const updated = await patch(`/api/jobs/${job.id}`, payload)
+        setConflict(null)
+        setPendingRetry(null)
+        setSaved(s => ({ ...s, ...body }))
+        notifyParent('update', updated)
+      } catch (err) {
+        const msg = err.message || 'Failed to save job'
+        if (/conflict|unavailable|over capacity|time off|already booked/i.test(msg)) {
+          setConflict(msg)
+          setPendingRetry(body)
+        } else {
+          setError(msg)
+          setFormData(f => {
+            const reverted = { ...f }
+            for (const k of Object.keys(body)) reverted[k] = saved[k]
+            return reverted
+          })
+        }
+      } finally {
+        setSaving(false)
+      }
+    }
+    saveQueueRef.current = saveQueueRef.current.then(run)
+    return saveQueueRef.current
   }
 
   // A 409 means a real scheduling conflict (double-booked cleaner, time off,
@@ -218,7 +321,11 @@ export default function JobEditModal({ job, properties = [], clients = [], onClo
     if (!(await confirmDialog('Cancel this job? It will be marked cancelled.', { confirmLabel: 'Cancel job', danger: true }))) return
     setRemoving(true)
     setError('')
-    const prevStatus = job.status
+    // `saved.status` — not `job.status` — reflects what's actually
+    // persisted right now: the status field auto-saves independently (see
+    // commitField), so the `job` prop can be stale by the time Cancel is
+    // clicked in the same session.
+    const prevStatus = saved.status
     try {
       const updated = await patch(`/api/jobs/${job.id}`, { status: 'cancelled' })
       // "Removes the fear" (Tier 1 roadmap): an Undo action on the toast
@@ -247,25 +354,18 @@ export default function JobEditModal({ job, properties = [], clients = [], onClo
     }
   }
 
-  // Entry point for the Save button. A recurring job's edit is ambiguous \u2014
-  // does a date/time/crew change apply to just this occurrence, this-and-
-  // future, or the whole series? \u2014 so it interrupts here for the scope
-  // dialog instead of saving right away; performDirectSave/performRecurringSave
-  // (below) do the actual work once that's resolved.
+  // Entry point for the Create Job button. Existing jobs never reach this
+  // any more: they auto-save per field via commitField/saveField above (this
+  // modal's batch-Save-to-per-field-auto-save conversion). A brand-new job
+  // has no id to PATCH individual fields against yet, so creation still
+  // batches every field into one POST, exactly like the old global Save did.
   const handleSave = async (allowConflicts = false) => {
     if (!formData.property_id) {
       setError('Please select a property')
       return
     }
-    if (isNew && !formData.scheduled_date) {
+    if (!formData.scheduled_date) {
       setError('Please pick a date')
-      return
-    }
-    if (isRecurring) {
-      // Recurring endpoints (reschedule/split/resync) don't have a
-      // conflict-check pass, so there's no allowConflicts to carry through —
-      // the scope choice is the only thing performRecurringSave needs.
-      setScopeDialog('edit')
       return
     }
     await performDirectSave(allowConflicts)
@@ -293,17 +393,9 @@ export default function JobEditModal({ job, properties = [], clients = [], onClo
         end_time: formData.end_time || null,
         allow_conflicts: allowConflicts,
       }
-      // Existing-job edits carry the per-move notify choice; a new job's invite
-      // follows the normal booking settings, so don't send it on create.
-      if (!isNew) payload.notify_customer = notifyCustomer
-      let updated
-      if (isNew) {
-        if (prop?.client_id) payload.client_id = prop.client_id
-        updated = await post('/api/jobs', payload)
-      } else {
-        updated = await patch(`/api/jobs/${job.id}`, payload)
-      }
-      notifyParent(isNew ? 'create' : 'update', updated)
+      if (prop?.client_id) payload.client_id = prop.client_id
+      const created = await post('/api/jobs', payload)
+      notifyParent('create', created)
       onClose()
     } catch (err) {
       const msg = err.message || 'Failed to save job'
@@ -461,9 +553,14 @@ export default function JobEditModal({ job, properties = [], clients = [], onClo
               </span>
             )}
           </div>
-          <button onClick={onClose} className="p-2 -mr-2 text-ink-3 hover:text-ink hover:bg-bg-2 rounded-lg transition-colors" aria-label="Close">
-            <X className="w-5 h-5" />
-          </button>
+          <div className="flex items-center gap-3 shrink-0">
+            {!isNew && saving && (
+              <span className="text-[11px] text-ink-3">Saving…</span>
+            )}
+            <button onClick={onClose} className="p-2 -mr-2 text-ink-3 hover:text-ink hover:bg-bg-2 rounded-lg transition-colors" aria-label="Close">
+              <X className="w-5 h-5" />
+            </button>
+          </div>
         </div>
 
         {/* Content */}
@@ -478,30 +575,49 @@ export default function JobEditModal({ job, properties = [], clients = [], onClo
             <div>
               <label className="block text-sm font-semibold text-ink-2 mb-2">Status</label>
               <InlineSelect value={formData.status} options={STATUS_OPTIONS}
-                onSelect={(v) => setFormData(f => ({ ...f, status: v }))} />
+                onSelect={(v) => {
+                  setFormData(f => ({ ...f, status: v }))
+                  if (isFieldChanged('status', v)) commitField({ status: v })
+                }} />
             </div>
           )}
 
-          {/* Title — editable on EVERY job, not just new ones */}
+          {/* Title — editable on EVERY job, not just new ones. Auto-saves on
+              blur for an existing, non-recurring job (falls back to the
+              property-derived default just like the old batch Save did if
+              left blank); a recurring job's blur opens the scope dialog
+              instead of writing directly — see commitField. */}
           <div>
             <label className="block text-sm font-semibold text-ink-2 mb-2">Job Title</label>
             <input
               type="text"
               value={formData.title}
               onChange={e => setFormData(f => ({ ...f, title: e.target.value }))}
+              onBlur={() => {
+                const prop = properties.find(p => p.id === parseInt(formData.property_id))
+                const value = formData.title || (prop ? `Cleaning — ${prop.name}` : 'Cleaning')
+                if (value !== formData.title) setFormData(f => ({ ...f, title: value }))
+                if (isFieldChanged('title', value)) commitField({ title: value })
+              }}
               placeholder="Job title (auto-fills from property if blank)"
               className="w-full px-3 py-3 border border-hairline rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent text-base font-medium"
             />
           </div>
 
-          {/* Date + times — finally editable */}
+          {/* Date + times — finally editable. Each commits independently the
+              moment it changes (a native date/time picker's onChange already
+              means "the operator picked a final value", unlike free text). */}
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
             <div className="col-span-2 sm:col-span-1">
               <label className="block text-sm font-semibold text-ink-2 mb-2">Date</label>
               <input
                 type="date"
                 value={formData.scheduled_date || ''}
-                onChange={e => setFormData(f => ({ ...f, scheduled_date: e.target.value }))}
+                onChange={e => {
+                  const v = e.target.value
+                  setFormData(f => ({ ...f, scheduled_date: v }))
+                  if (isFieldChanged('scheduled_date', v)) commitField({ scheduled_date: v || null })
+                }}
                 className="w-full px-3 py-3 border border-hairline rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent text-base"
               />
             </div>
@@ -510,7 +626,11 @@ export default function JobEditModal({ job, properties = [], clients = [], onClo
               <input
                 type="time"
                 value={formData.start_time || ''}
-                onChange={e => setFormData(f => ({ ...f, start_time: e.target.value }))}
+                onChange={e => {
+                  const v = e.target.value
+                  setFormData(f => ({ ...f, start_time: v }))
+                  if (isFieldChanged('start_time', v)) commitField({ start_time: v || null })
+                }}
                 className="w-full px-3 py-3 border border-hairline rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent text-base"
               />
             </div>
@@ -519,7 +639,11 @@ export default function JobEditModal({ job, properties = [], clients = [], onClo
               <input
                 type="time"
                 value={formData.end_time || ''}
-                onChange={e => setFormData(f => ({ ...f, end_time: e.target.value }))}
+                onChange={e => {
+                  const v = e.target.value
+                  setFormData(f => ({ ...f, end_time: v }))
+                  if (isFieldChanged('end_time', v)) commitField({ end_time: v || null })
+                }}
                 className="w-full px-3 py-3 border border-hairline rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent text-base"
               />
             </div>
@@ -719,7 +843,11 @@ export default function JobEditModal({ job, properties = [], clients = [], onClo
               <label className="block text-sm font-semibold text-ink-2 mb-2">Job Type</label>
               <select
                 value={formData.job_type}
-                onChange={e => setFormData(f => ({ ...f, job_type: e.target.value }))}
+                onChange={e => {
+                  const v = e.target.value
+                  setFormData(f => ({ ...f, job_type: v }))
+                  if (isFieldChanged('job_type', v)) commitField({ job_type: v })
+                }}
                 className="w-full px-3 py-3 border border-hairline rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent text-base bg-panel"
               >
                 {!['residential', 'deep_clean', 'commercial', 'str_turnover', 'one_time'].includes(formData.job_type) && (
@@ -740,7 +868,11 @@ export default function JobEditModal({ job, properties = [], clients = [], onClo
                 <label className="block text-sm font-semibold text-ink-2 mb-2">Pay</label>
                 <select
                   value={formData.pay_mode}
-                  onChange={e => setFormData(f => ({ ...f, pay_mode: e.target.value }))}
+                  onChange={e => {
+                    const v = e.target.value
+                    setFormData(f => ({ ...f, pay_mode: v }))
+                    if (isFieldChanged('pay_mode', v)) commitField({ pay_mode: v })
+                  }}
                   className="w-full px-3 py-3 border border-hairline rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent text-base bg-panel"
                 >
                   <option value="auto">Auto — weekend = piece rate, weekday = hourly</option>
@@ -762,6 +894,12 @@ export default function JobEditModal({ job, properties = [], clients = [], onClo
                 step="0.5"
                 value={formData.pay_rate_bump}
                 onChange={e => setFormData(f => ({ ...f, pay_rate_bump: e.target.value }))}
+                onBlur={() => {
+                  if (!isFieldChanged('pay_rate_bump', formData.pay_rate_bump)) return
+                  const v = formData.pay_rate_bump === '' || formData.pay_rate_bump == null
+                    ? null : Number(formData.pay_rate_bump) || 0
+                  commitField({ pay_rate_bump: v })
+                }}
                 placeholder="0 — no bump"
                 className="w-full px-3 py-3 border border-hairline rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent text-base"
               />
@@ -778,6 +916,7 @@ export default function JobEditModal({ job, properties = [], clients = [], onClo
                 type="text"
                 value={formData.address}
                 onChange={e => setFormData(f => ({ ...f, address: e.target.value }))}
+                onBlur={() => { if (isFieldChanged('address', formData.address)) commitField({ address: formData.address }) }}
                 placeholder="Service address (auto-fills from the property)"
                 className="w-full px-3 py-3 border border-hairline rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent text-base"
               />
@@ -789,6 +928,7 @@ export default function JobEditModal({ job, properties = [], clients = [], onClo
               <textarea
                 value={formData.notes}
                 onChange={(e) => setFormData(prev => ({ ...prev, notes: e.target.value }))}
+                onBlur={() => { if (isFieldChanged('notes', formData.notes)) commitField({ notes: formData.notes }) }}
                 placeholder="Add any notes about this job..."
                 rows={3}
                 className="w-full px-4 py-3 border border-hairline rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent resize-none text-base"
@@ -824,7 +964,17 @@ export default function JobEditModal({ job, properties = [], clients = [], onClo
                 <p className="font-medium text-ink mb-1">Scheduling conflict</p>
                 <p className="text-ink-2 mb-2">{conflict}</p>
                 <button
-                  onClick={() => handleSave(true)}
+                  onClick={() => {
+                    // Existing-job per-field conflict: retry exactly the
+                    // payload that 409'd, this time with allow_conflicts.
+                    if (pendingRetry) { saveField(pendingRetry, true); return }
+                    // Recurring endpoints (reschedule/split/resync) don't
+                    // have a conflict-check pass to override — reopening the
+                    // scope dialog is what the old global Save did here too.
+                    if (isRecurring) { setScopeDialog('edit'); return }
+                    // New-job creation conflict.
+                    handleSave(true)
+                  }}
                   disabled={saving}
                   className="w-full sm:w-auto px-3 py-1.5 rounded-md bg-panel border border-hairline-2 text-ink-2 hover:bg-bg-2 disabled:opacity-60 text-xs font-medium transition-colors"
                 >
@@ -862,9 +1012,15 @@ export default function JobEditModal({ job, properties = [], clients = [], onClo
             <Button variant="secondary" onClick={onClose} className="w-full sm:w-auto">
               Close
             </Button>
-            <Button variant="primary" onClick={() => handleSave(false)} disabled={saving || removing} className="w-full sm:w-auto">
-              {saving ? 'Saving...' : (isNew ? 'Create Job' : 'Save Changes')}
-            </Button>
+            {/* Existing jobs auto-save per field (see commitField/saveField) —
+                there's nothing left for a global Save button to batch. Only
+                a brand-new job, which has no id to PATCH against yet, still
+                needs an explicit submit. */}
+            {isNew && (
+              <Button variant="primary" onClick={() => handleSave(false)} disabled={saving || removing} className="w-full sm:w-auto">
+                {saving ? 'Saving...' : 'Create Job'}
+              </Button>
+            )}
           </div>
         </div>
       </div>
