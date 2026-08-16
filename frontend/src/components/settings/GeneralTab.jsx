@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
-import { CheckCircle, Loader2 } from 'lucide-react'
+import { Link } from 'react-router-dom'
+import { CheckCircle, Loader2, ArrowRight } from 'lucide-react'
 import { del, get, post, upload } from '../../api'
 import { applyTheme, getTheme, applyAccent, getAccent, ACCENTS } from '../../theme'
 import NotificationsCard from './NotificationsCard'
@@ -323,6 +324,20 @@ export default function GeneralTab({ toast, active, dangerZone }) {
               className="px-4 py-2 rounded-lg text-sm font-medium bg-indigo-600 hover:bg-indigo-700 text-white disabled:opacity-60">
               {propertyMediaSaving ? 'Saving…' : 'Save property settings'}
             </button>
+          </div>
+        </div>
+
+        <div>
+          <h2 className="text-lg font-bold text-ink mb-4">Data Quality</h2>
+          <div className="bg-panel rounded-xl border border-hairline p-5">
+            <p className="text-sm text-ink-2">
+              Review and merge duplicate clients and properties, and catch other
+              data-quality gaps intake dedup can't reach.
+            </p>
+            <Link to="/cleanup"
+              className="mt-3 inline-flex items-center gap-1 text-sm font-semibold text-indigo-600 transition-all hover:gap-1.5 dark:text-indigo-400">
+              Open Tidy Up<ArrowRight className="h-3.5 w-3.5" />
+            </Link>
           </div>
         </div>
 
