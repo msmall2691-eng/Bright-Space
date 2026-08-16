@@ -123,4 +123,46 @@ describe('OpsBoard', () => {
     fireEvent.click(screen.getByRole('button', { name: /confirm\?/i }))
     expect(post).toHaveBeenCalledWith('/api/invoices/9/pay', {})
   })
+
+  // Owner: "so busy... full of spam" — the inbox-triage pile now collapses to
+  // one line by default with a one-tap bulk clear right there, instead of
+  // dumping every promo/delivery-failure card inline.
+  it('collapses Safe to Ignore by default with a one-tap clear', async () => {
+    const withNoise = {
+      ...PAYLOAD,
+      sections: PAYLOAD.sections.map(s => s.key === 'safe_to_ignore'
+        ? { ...s, items: [
+            { id: 'triage:1', severity: 'info', title: 'Jotform', body: "Today's your last chance", meta: '1d',
+              tags: [{ label: 'PROMOTIONS', tone: 'gray' }],
+              actions: [{ label: 'Delete', kind: 'api', method: 'POST', endpoint: '/api/inbox/triage/1/delete', body: {}, done: 'Deleted' }] },
+          ] }
+        : s),
+    }
+    get.mockResolvedValue(withNoise)
+    post.mockResolvedValue({ deleted: 1, gmail_trashed: 1 })
+    renderBoard()
+    await screen.findByText('No cleaner assigned')
+    expect(screen.getByText('1 item you can ignore')).toBeTruthy()
+    expect(screen.queryByText('Jotform')).toBeNull()   // collapsed: row not rendered
+    fireEvent.click(screen.getByRole('button', { name: /clear all/i }))
+    expect(post).toHaveBeenCalledWith('/api/inbox/triage/delete-all?section=safe_to_ignore', {})
+    expect(await screen.findByText(/Cleared 1 item/i)).toBeTruthy()
+  })
+
+  it('expands Safe to Ignore on click to review items', async () => {
+    const withNoise = {
+      ...PAYLOAD,
+      sections: PAYLOAD.sections.map(s => s.key === 'safe_to_ignore'
+        ? { ...s, items: [
+            { id: 'triage:1', severity: 'info', title: 'Jotform', body: "Today's last chance", meta: '1d',
+              tags: [{ label: 'PROMOTIONS', tone: 'gray' }], actions: [] },
+          ] }
+        : s),
+    }
+    get.mockResolvedValue(withNoise)
+    renderBoard()
+    await screen.findByText('No cleaner assigned')
+    fireEvent.click(screen.getByText('1 item you can ignore'))
+    expect(await screen.findByText('Jotform')).toBeTruthy()
+  })
 })
