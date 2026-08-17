@@ -5,12 +5,14 @@ import { get } from '../api'
 // Read-only CRM health snapshot, backed by GET /api/clients/health. Answers
 // "how many of these leads are actually real?" before any cleanup runs — it never
 // mutates anything. Buckets are mutually exclusive and sum to the total.
+// Dot+word, not filled chips (owner's veto of tinted pill bubbles) — a small
+// colored dot carries the bucket's hue, the label stays plain ink.
 const BUCKET_META = {
-  real:           { label: 'Real',            cls: 'bg-emerald-500/15 text-emerald-500 border-emerald-500/20' },
-  duplicate:      { label: 'Duplicates',      cls: 'bg-amber-500/15 text-amber-500 border-amber-500/20' },
-  spam_marketing: { label: 'Spam / marketing', cls: 'bg-rose-500/15 text-rose-500 border-rose-500/20' },
-  incomplete:     { label: 'Incomplete',      cls: 'bg-sky-500/15 text-sky-500 border-sky-500/20' },
-  test:           { label: 'Test / junk',     cls: 'bg-zinc-500/15 text-zinc-400 border-zinc-500/20' },
+  real:           { label: 'Real',            dot: 'bg-emerald-500' },
+  duplicate:      { label: 'Duplicates',      dot: 'bg-amber-500' },
+  spam_marketing: { label: 'Spam / marketing', dot: 'bg-rose-500' },
+  incomplete:     { label: 'Incomplete',      dot: 'bg-sky-500' },
+  test:           { label: 'Test / junk',     dot: 'bg-zinc-500' },
 }
 const ORDER = ['real', 'duplicate', 'spam_marketing', 'incomplete', 'test']
 
@@ -93,12 +95,14 @@ export default function CRMHealthPanel({ onSelectBucket }) {
                       key={k}
                       onClick={() => onSelectBucket(k, ids)}
                       title={`Filter to ${m.label.toLowerCase()} — the banner offers bulk actions`}
-                      className={`px-2 py-1 rounded-md text-[11px] font-medium border hover:brightness-95 transition ${m.cls}`}
+                      className="inline-flex items-center gap-1.5 px-2 py-1 rounded-md text-[11px] font-medium border border-hairline-2 bg-panel text-ink-2 hover:bg-bg-2 transition-colors"
                     >
+                      <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${m.dot}`} aria-hidden="true" />
                       {m.label}: {n} →
                     </button>
                   ) : (
-                    <span key={k} className={`px-2 py-1 rounded-md text-[11px] font-medium border ${m.cls}`}>
+                    <span key={k} className="inline-flex items-center gap-1.5 px-2 py-1 rounded-md text-[11px] font-medium border border-hairline-2 bg-panel text-ink-2">
+                      <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${m.dot}`} aria-hidden="true" />
                       {m.label}: {n}
                     </span>
                   )

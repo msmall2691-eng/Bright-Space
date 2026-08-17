@@ -1,4 +1,4 @@
-import { AlertCircle, CheckCircle, Trash2, X } from 'lucide-react'
+import { Trash2, X } from 'lucide-react'
 
 /** Selection + bulk action row above the property list.
  *  Left: "Select all (N)" checkbox. Right (when any row is selected):
@@ -53,16 +53,14 @@ export function BulkActionBar({
  *  results when the payload doesn't include a top-level count. */
 export function SyncResultBanner({ syncResult, onDismiss }) {
   return (
-    <div className={`flex items-start gap-2 rounded-xl p-4 mb-4 text-sm border ${syncResult.ok ? 'bg-green-500/10 border-green-500/30 text-green-400' : 'bg-red-500/10 border-red-500/30 text-red-400'}`}>
-      {syncResult.ok
-        ? <CheckCircle className="w-4 h-4 mt-0.5 shrink-0" />
-        : <AlertCircle className="w-4 h-4 mt-0.5 shrink-0" />}
-      <div>
+    <div className="flex items-center gap-2.5 rounded-lg border border-hairline bg-panel px-3 py-2 mb-4 text-[12.5px]">
+      <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${syncResult.ok ? 'bg-emerald-500' : 'bg-red-500'}`} aria-hidden="true" />
+      <span className="flex-1 text-ink">
         {syncResult.ok
           ? `Sync complete — ${syncResult.jobs_created ?? syncResult.results?.reduce((s, r) => s + (r.jobs_created || 0), 0) ?? 0} new turnover job(s) created`
           : `Sync failed: ${syncResult.error || syncResult.detail}`}
-      </div>
-      <button onClick={onDismiss} className="ml-auto opacity-60 hover:opacity-100"><X className="w-3.5 h-3.5" /></button>
+      </span>
+      <button onClick={onDismiss} className="text-ink-3 hover:text-ink-2 shrink-0"><X className="w-3.5 h-3.5" /></button>
     </div>
   )
 }

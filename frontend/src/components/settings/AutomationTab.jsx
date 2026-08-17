@@ -292,10 +292,11 @@ export default function AutomationTab({ state, toast, active }) {
                       the reason so Meg doesn't wonder why flipping the switch
                       doesn't do anything. */}
                   {msgStatus.env_disabled && (
-                    <p className="text-xs text-amber-700 dark:text-amber-300 mt-1.5 bg-amber-50 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-500/25 rounded-md px-2 py-1.5">
-                      Deployment kill-switch is active
+                    <p className="flex items-start gap-1.5 text-xs text-ink-2 mt-1.5 bg-panel border border-hairline rounded-md px-2 py-1.5">
+                      <span className="h-1.5 w-1.5 rounded-full bg-amber-500 shrink-0 mt-1" aria-hidden="true" />
+                      <span>Deployment kill-switch is active
                       (<code className="text-[10px]">JOB_SMS_REMINDERS_ENABLED=0</code>). Ask
-                      your ops contact to lift it before this toggle takes effect.
+                      your ops contact to lift it before this toggle takes effect.</span>
                     </p>
                   )}
                 </div>
@@ -316,10 +317,11 @@ export default function AutomationTab({ state, toast, active }) {
                       : 'Currently OFF — overdue invoices are not chased automatically.'}
                   </p>
                   {msgStatus.invoice_dunning_env_disabled && (
-                    <p className="text-xs text-amber-700 dark:text-amber-300 mt-1.5 bg-amber-50 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-500/25 rounded-md px-2 py-1.5">
-                      Deployment kill-switch is active
+                    <p className="flex items-start gap-1.5 text-xs text-ink-2 mt-1.5 bg-panel border border-hairline rounded-md px-2 py-1.5">
+                      <span className="h-1.5 w-1.5 rounded-full bg-amber-500 shrink-0 mt-1" aria-hidden="true" />
+                      <span>Deployment kill-switch is active
                       (<code className="text-[10px]">JOB_DUNNING_ENABLED=0</code>). Ask your ops
-                      contact to lift it before this toggle takes effect.
+                      contact to lift it before this toggle takes effect.</span>
                     </p>
                   )}
                 </div>

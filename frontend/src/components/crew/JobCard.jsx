@@ -16,6 +16,7 @@ import {
   QrCode,
 } from 'lucide-react'
 import { wifiQrPayload, qrMatrix, qrSvgPath } from './wifiQr'
+import StatusBadge from '../ui/StatusBadge'
 
 export const SOFT = 'bg-panel rounded-xl border border-hairline shadow-glass-sm'
 
@@ -270,13 +271,9 @@ export default function JobCard({ job, clockable = false, activeEntry = null, on
           )}
         </div>
         {done ? (
-          <span className="shrink-0 inline-flex items-center gap-1 rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-300 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide">
-            <CheckCircle2 className="w-3 h-3" /> Done
-          </span>
+          <StatusBadge status="success" className="shrink-0">Done</StatusBadge>
         ) : isTurnover && (
-          <span className="shrink-0 rounded-full bg-blue-500/10 text-blue-600 dark:text-blue-300 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide">
-            Turnover
-          </span>
+          <StatusBadge status="info" className="shrink-0">Turnover</StatusBadge>
         )}
       </div>
 
@@ -297,7 +294,7 @@ export default function JobCard({ job, clockable = false, activeEntry = null, on
                    texts go out structured, from the business line, logged
                    where the office reads them. */
                 <button onClick={onTextClient}
-                  className="inline-flex items-center gap-1 text-[12px] font-semibold text-blue-600 dark:text-blue-400 bg-blue-500/10 border border-blue-500/20 rounded-full px-2 py-0.5 active:opacity-60">
+                  className="inline-flex items-center gap-1 text-[12px] font-medium text-ink-2 bg-panel border border-hairline-2 rounded-md px-2 py-0.5 hover:bg-bg-2 active:opacity-60 transition-colors">
                   <Phone className="w-3 h-3" /> Text client
                 </button>
               )}

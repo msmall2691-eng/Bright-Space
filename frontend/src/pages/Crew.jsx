@@ -70,7 +70,20 @@ function pill(row) {
   return { label: 'Invited', dot: 'bg-amber-500' }
 }
 
+// "Add & send invite" (POST /api/crew), "Resend" (POST /crew/{id}/resend-invite),
+// and every inline field edit here (PATCH /api/auth/users/{id} — name, email,
+// crew ID, pay rates, home address, lead checkbox) are admin-only on the
+// backend (backend/modules/crew/router.py, backend/modules/auth/router.py).
+// The roster itself is admin+manager (GET /api/crew/roster), so managers can
+// reach this page — gate just the writes so a manager's save doesn't
+// silently 403.
+function useIsAdmin() {
+  try { return JSON.parse(localStorage.getItem('brightbase_user') || '{}').role === 'admin' }
+  catch { return false }
+}
+
 export default function Crew() {
+  const isAdmin = useIsAdmin()
   const [rows, setRows] = useState([])
   const [unclaimed, setUnclaimed] = useState([])
   const [loading, setLoading] = useState(true)
@@ -171,19 +184,19 @@ export default function Crew() {
   }
 
   const rateInput = (row, field, value, placeholder) => (
-    <label className="block">
+    <label className="block" title={isAdmin ? undefined : 'Admin only'}>
       <span className="text-[11px] text-ink-3">{placeholder}</span>
       <input
         key={`${row.id}-${field}-${value ?? ''}`}
         type="number" step="0.5" min="0"
         defaultValue={value ?? ''}
         placeholder="$/hr"
-        disabled={busyId === row.id}
+        disabled={busyId === row.id || !isAdmin}
         onBlur={(e) => {
           const v = numOrNull(e.target.value)
           if (v !== (value ?? null)) savePatch(row.id, { [field]: v })
         }}
-        className="mt-0.5 w-full bg-panel border border-hairline rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+        className="mt-0.5 w-full bg-panel border border-hairline rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 disabled:opacity-60 disabled:cursor-not-allowed"
       />
     </label>
   )
@@ -264,8 +277,9 @@ export default function Crew() {
                           <span className={`h-1.5 w-1.5 rounded-full ${p.dot}`} /> {p.label}
                         </span>
                         {!row.activated && (row.status || '') !== 'disabled' && (
-                          <button onClick={() => resend(row.id)} disabled={busyId === row.id}
-                            className="text-xs font-medium text-indigo-600 hover:text-indigo-700 disabled:opacity-60 inline-flex items-center gap-1">
+                          <button onClick={() => resend(row.id)} disabled={busyId === row.id || !isAdmin}
+                            title={isAdmin ? undefined : 'Admin only'}
+                            className="text-xs font-medium text-indigo-600 hover:text-indigo-700 disabled:opacity-60 disabled:cursor-not-allowed inline-flex items-center gap-1">
                             <Mail className="w-3.5 h-3.5" /> Resend
                           </button>
                         )}
@@ -284,10 +298,11 @@ export default function Crew() {
                         {draftingId === row.id ? 'Drafting…' : 'Draft day plan'}
                       </button>
                     </div>
-                    <label className="flex items-center gap-2 mb-2 text-[12px] font-medium text-ink-2 cursor-pointer ml-3">
+                    <label className="flex items-center gap-2 mb-2 text-[12px] font-medium text-ink-2 cursor-pointer ml-3"
+                      title={isAdmin ? undefined : 'Admin only'}>
                       <input type="checkbox"
                         checked={!!row.can_view_full_schedule}
-                        disabled={busyId === row.id}
+                        disabled={busyId === row.id || !isAdmin}
                         onChange={(e) => savePatch(row.id, { can_view_full_schedule: e.target.checked })} />
                       Lead — sees the whole crew's schedule (names &amp; times only, never door codes)
                     </label>
@@ -296,49 +311,49 @@ export default function Crew() {
                         422s on blank/invalid and 409s on a duplicate email, and
                         savePatch toasts that message and resyncs. */}
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 mb-2.5">
-                      <label className="block">
+                      <label className="block" title={isAdmin ? undefined : 'Admin only'}>
                         <span className="text-[11px] text-ink-3">Name</span>
                         <input
                           key={`${row.id}-name-${row.full_name || ''}`}
                           defaultValue={row.full_name || ''}
                           placeholder="Full name"
-                          disabled={busyId === row.id}
+                          disabled={busyId === row.id || !isAdmin}
                           onBlur={(e) => {
                             const v = e.target.value.trim()
                             if (v !== (row.full_name || '')) savePatch(row.id, { full_name: v })
                           }}
-                          className="mt-0.5 w-full bg-panel border border-hairline rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                          className="mt-0.5 w-full bg-panel border border-hairline rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 disabled:opacity-60 disabled:cursor-not-allowed"
                         />
                       </label>
-                      <label className="block">
+                      <label className="block" title={isAdmin ? undefined : 'Admin only'}>
                         <span className="text-[11px] text-ink-3">Email</span>
                         <input
                           key={`${row.id}-email-${row.email || ''}`}
                           type="email"
                           defaultValue={row.email || ''}
                           placeholder="cleaner@email.com"
-                          disabled={busyId === row.id}
+                          disabled={busyId === row.id || !isAdmin}
                           onBlur={(e) => {
                             const v = e.target.value.trim()
                             if (v !== (row.email || '')) savePatch(row.id, { email: v })
                           }}
-                          className="mt-0.5 w-full bg-panel border border-hairline rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                          className="mt-0.5 w-full bg-panel border border-hairline rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 disabled:opacity-60 disabled:cursor-not-allowed"
                         />
                       </label>
                     </div>
                     <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
-                      <label className="block">
+                      <label className="block" title={isAdmin ? undefined : 'Admin only'}>
                         <span className="text-[11px] text-ink-3">Crew ID</span>
                         <input
                           key={`${row.id}-cid-${row.cleaner_id || ''}`}
                           defaultValue={row.cleaner_id || ''}
                           placeholder="—"
-                          disabled={busyId === row.id}
+                          disabled={busyId === row.id || !isAdmin}
                           onBlur={(e) => {
                             const v = e.target.value.trim()
                             if (v !== (row.cleaner_id || '')) savePatch(row.id, { cleaner_id: v })
                           }}
-                          className="mt-0.5 w-full bg-panel border border-hairline rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                          className="mt-0.5 w-full bg-panel border border-hairline rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 disabled:opacity-60 disabled:cursor-not-allowed"
                         />
                       </label>
                       {rateInput(row, 'pay_rate_residential', row.pay_rate_residential, 'Residential $/hr')}
@@ -349,18 +364,18 @@ export default function Crew() {
                         job → between houses). Kept here too, not just in Settings
                         → Users, so mileage isn't the one cleaner field that lives
                         on a different page than everything else about them. */}
-                    <label className="block mt-2.5">
+                    <label className="block mt-2.5" title={isAdmin ? undefined : 'Admin only'}>
                       <span className="text-[11px] text-ink-3">Home address <span className="font-normal">(for payroll drive mileage)</span></span>
                       <input
                         key={`${row.id}-home-${row.home_address || ''}`}
                         defaultValue={row.home_address || ''}
                         placeholder="e.g. 12 Main St, Brunswick, ME"
-                        disabled={busyId === row.id}
+                        disabled={busyId === row.id || !isAdmin}
                         onBlur={(e) => {
                           const v = e.target.value.trim()
                           if (v !== (row.home_address || '')) savePatch(row.id, { home_address: v })
                         }}
-                        className="mt-0.5 w-full bg-panel border border-hairline rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                        className="mt-0.5 w-full bg-panel border border-hairline rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 disabled:opacity-60 disabled:cursor-not-allowed"
                       />
                     </label>
                   </div>
@@ -370,10 +385,15 @@ export default function Crew() {
           )}
         </div>
 
-        {/* Add cleaner — kept below the roster: day-to-day the office reads/edits the roster; adding someone is the occasional flow. */}
+        {/* Add cleaner — kept below the roster: day-to-day the office reads/edits the roster; adding someone is the occasional flow.
+            POST /api/crew is admin-only on the backend, so the whole form is
+            disabled (not hidden — a manager should still see the option
+            exists) for non-admins via the native <fieldset disabled>. */}
         <form onSubmit={addCleaner} className="border border-hairline bg-panel rounded-xl p-4">
+          <fieldset disabled={!isAdmin} className="disabled:opacity-60">
           <div className="flex items-center gap-2 text-ink font-semibold text-sm mb-3">
             <UserPlus className="w-4 h-4 text-indigo-500" /> Add a cleaner
+            {!isAdmin && <span className="text-[11px] font-normal text-ink-3">— admin only</span>}
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <label className="block">
@@ -415,11 +435,13 @@ export default function Crew() {
           </div>
           <div className="flex items-center gap-2 mt-3">
             <button type="submit" disabled={adding}
-              className="text-sm font-medium bg-indigo-600 hover:bg-indigo-700 disabled:opacity-60 text-white px-4 py-2 rounded-md inline-flex items-center gap-1.5 transition-colors">
+              title={isAdmin ? undefined : 'Admin only'}
+              className="text-sm font-medium bg-indigo-600 hover:bg-indigo-700 disabled:opacity-60 disabled:cursor-not-allowed text-white px-4 py-2 rounded-md inline-flex items-center gap-1.5 transition-colors">
               <Mail className="w-4 h-4" /> {adding ? 'Sending…' : 'Add & send invite'}
             </button>
             <span className="text-[11px] text-ink-3">They’ll get an email with a link to set their password (good for 7 days).</span>
           </div>
+          </fieldset>
         </form>
 
         <CrewDocsAdmin />

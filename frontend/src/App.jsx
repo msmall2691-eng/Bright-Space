@@ -7,7 +7,6 @@ import PageAssistant from './components/PageAssistant'
 import GlobalSearch from './components/GlobalSearch'
 import Login from './pages/Login'
 import PendingApproval from './pages/PendingApproval'
-import Dashboard from './pages/Dashboard'
 import OpsBoard from './pages/OpsBoard'
 import MyDay from './pages/MyDay'
 import Requests from './pages/Requests'
@@ -325,9 +324,6 @@ export default function App() {
             <Routes>
               <Route path="/" element={<Navigate to="/dashboard" replace />} />
               <Route path="/dashboard" element={<OpsBoard />} />
-              {/* The previous Twenty-style command center, preserved and still
-                  reachable (nothing deleted — the Ops Board just took /dashboard). */}
-              <Route path="/dashboard/classic" element={<Dashboard />} />
               {/* Today merged into the Dashboard's "Today's schedule" section. */}
               <Route path="/today" element={<Navigate to="/dashboard" replace />} />
               <Route path="/workspace" element={<Workspace />} />

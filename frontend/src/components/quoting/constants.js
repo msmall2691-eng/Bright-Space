@@ -19,6 +19,20 @@ export const QUOTE_STATUS_DOTS = {
   expired: 'bg-amber-500',
 }
 
+// StatusBadge tone per quote status, derived from QUOTE_STATUS_DOTS above so
+// the color intent stays in one place — StatusBadge only speaks the five-tone
+// vocabulary (success/warning/danger/info/neutral), not arbitrary hues.
+export const QUOTE_STATUS_VARIANT = {
+  draft: 'neutral',
+  sent: 'info',
+  viewed: 'info',
+  changes_requested: 'warning',
+  accepted: 'success',
+  converted: 'success',
+  declined: 'danger',
+  expired: 'warning',
+}
+
 export const LEAD_STATUS_DOTS = {
   new:       'bg-amber-500',
   reviewed:  'bg-blue-500',

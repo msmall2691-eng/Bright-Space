@@ -8,12 +8,9 @@
 import { useCallback, useEffect, useState } from 'react'
 import { CalendarOff, X } from 'lucide-react'
 import { get, post, del } from '../../api'
+import StatusBadge from '../ui/StatusBadge'
 
-const CHIP = {
-  requested: 'bg-amber-500/10 border-amber-500/30 text-amber-700 dark:text-amber-300',
-  approved: 'bg-emerald-500/10 border-emerald-500/30 text-emerald-700 dark:text-emerald-300',
-  denied: 'bg-bg-2 border-hairline text-ink-3 line-through',
-}
+const STATUS = { requested: 'warning', approved: 'success', denied: 'neutral' }
 const LABEL = { requested: 'Pending', approved: 'Approved', denied: 'Not approved' }
 
 export default function CrewTimeOff() {
@@ -121,9 +118,9 @@ export default function CrewTimeOff() {
                 {r.reason ? <span className="text-ink-3"> · {r.reason}</span> : ''}
               </span>
               <span className="flex items-center gap-1 shrink-0">
-                <span className={`text-[10px] font-semibold border rounded-full px-1.5 py-0.5 ${CHIP[r.status] || CHIP.requested}`}>
+                <StatusBadge status={STATUS[r.status] || 'neutral'} className={r.status === 'denied' ? 'line-through' : ''}>
                   {LABEL[r.status] || r.status}
-                </span>
+                </StatusBadge>
                 {r.status === 'requested' && (
                   <button onClick={() => withdraw(r.id)} disabled={busy} title="Withdraw"
                     className="text-ink-3 hover:text-ink-2 p-0.5"><X className="w-3.5 h-3.5" /></button>

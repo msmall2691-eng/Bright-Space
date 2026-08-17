@@ -114,9 +114,7 @@ export default function BoardAssistant({ open, onClose, sections, navigate, onAc
         sm:inset-x-auto sm:inset-y-0 sm:right-0 sm:w-[400px] sm:max-h-none sm:rounded-none sm:border-y-0 sm:border-r-0">
         {/* Header */}
         <div className="flex items-center gap-2.5 border-b border-hairline px-4 py-3">
-          <span className="grid h-8 w-8 place-items-center rounded-full bg-indigo-500/10 text-indigo-500">
-            <Sparkles className="h-4 w-4" />
-          </span>
+          <Sparkles className="h-4 w-4 text-ink-2" />
           <div className="min-w-0 flex-1">
             <p className="text-[13px] font-semibold leading-tight text-ink">Ask</p>
             <p className="text-[11px] leading-tight text-ink-3">Your board assistant</p>
@@ -169,14 +167,14 @@ export default function BoardAssistant({ open, onClose, sections, navigate, onAc
                 <p className="mb-1.5 px-1 text-[10px] font-bold uppercase tracking-wider text-ink-3">Quick actions</p>
                 <div className="flex flex-wrap gap-1.5">
                   <button onClick={draftReminders}
-                    className="inline-flex items-center gap-1 rounded-lg border border-indigo-200 bg-indigo-50 px-2.5 py-1.5 text-[12px] font-medium text-indigo-700 hover:bg-indigo-100 dark:border-indigo-500/30 dark:bg-indigo-500/15 dark:text-indigo-300">
+                    className="inline-flex items-center gap-1 rounded-md border border-hairline-2 bg-panel px-2.5 py-1.5 text-[12px] font-medium text-ink-2 hover:bg-bg-2">
                     <Zap className="h-3 w-3" /> Draft overdue reminders
                   </button>
                   <button onClick={clearNoise}
-                    className={`inline-flex items-center gap-1 rounded-lg border px-2.5 py-1.5 text-[12px] font-medium ${
+                    className={`inline-flex items-center gap-1 rounded-md border px-2.5 py-1.5 text-[12px] font-medium ${
                       confirmClear
-                        ? 'border-rose-300 bg-rose-50 text-rose-700 hover:bg-rose-100 dark:border-rose-500/40 dark:bg-rose-500/15 dark:text-rose-300'
-                        : 'border-hairline bg-bg text-ink-2 hover:bg-bg-2'}`}>
+                        ? 'border-rose-400 text-rose-600 dark:text-rose-300'
+                        : 'border-hairline-2 bg-panel text-ink-2 hover:bg-bg-2'}`}>
                     <Trash2 className="h-3 w-3" />
                     {confirmClear
                       ? `Delete ${noiseCount}? Tap to confirm`

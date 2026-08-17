@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { Calendar as CalendarIcon, ExternalLink, Settings } from 'lucide-react'
 import { get } from '../../api'
+import { EmptyState } from '../ui'
 
 /**
  * The main Schedule page's "Google" view — Google Calendar embedded INSIDE
@@ -35,26 +36,23 @@ export default function GoogleCalendarView({ reloadKey = 0 }) {
   if (!embed.configured || !embed.url) {
     return (
       <div className="flex-1 grid place-items-center p-6">
-        <div className="max-w-sm text-center">
-          <div className="mx-auto mb-3 grid place-items-center w-12 h-12 rounded-2xl bg-emerald-50 dark:bg-emerald-500/15 text-emerald-600 dark:text-emerald-300">
-            <CalendarIcon className="w-6 h-6" />
-          </div>
-          <h3 className="text-base font-bold text-ink mb-1">Google Calendar not embedded yet</h3>
-          <p className="text-sm text-ink-3 mb-4">
-            Paste your calendar’s embed link in Settings → Integrations to see it
-            right here. Your jobs already sync to Google automatically.
-          </p>
-          <div className="flex items-center justify-center gap-2">
-            <a href="/settings#integrations"
-              className="inline-flex items-center gap-1.5 h-9 px-3 rounded-lg bg-indigo-600 text-white text-sm font-semibold">
-              <Settings className="w-4 h-4" /> Open Settings
-            </a>
-            <a href="https://calendar.google.com" target="_blank" rel="noopener noreferrer"
-              className="inline-flex items-center gap-1.5 h-9 px-3 rounded-lg bg-bg-2 text-ink-2 text-sm font-semibold">
-              <ExternalLink className="w-4 h-4" /> Google Calendar
-            </a>
-          </div>
-        </div>
+        <EmptyState
+          icon={CalendarIcon}
+          title="Google Calendar not embedded yet"
+          description="Paste your calendar’s embed link in Settings → Integrations to see it right here. Your jobs already sync to Google automatically."
+          action={
+            <div className="flex items-center justify-center gap-2">
+              <a href="/settings#integrations"
+                className="inline-flex items-center gap-1.5 h-9 px-3 rounded-lg bg-indigo-600 text-white text-sm font-semibold">
+                <Settings className="w-4 h-4" /> Open Settings
+              </a>
+              <a href="https://calendar.google.com" target="_blank" rel="noopener noreferrer"
+                className="inline-flex items-center gap-1.5 h-9 px-3 rounded-lg bg-bg-2 text-ink-2 text-sm font-semibold">
+                <ExternalLink className="w-4 h-4" /> Google Calendar
+              </a>
+            </div>
+          }
+        />
       </div>
     )
   }

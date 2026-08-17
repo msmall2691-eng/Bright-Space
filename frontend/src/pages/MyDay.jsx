@@ -246,15 +246,18 @@ function CrewTabBar({ tab, setTab, chatUnread = 0 }) {
           <button key={key} onClick={() => setTab(key)}
             className={`py-2.5 flex flex-col items-center gap-0.5 text-[11px] font-semibold transition-colors ${
               tab === key ? 'text-blue-600 dark:text-blue-400' : 'text-ink-3 hover:text-ink-2'}`}>
-            <span className="relative">
-              <Icon className="w-5 h-5" strokeWidth={tab === key ? 2.4 : 2} />
+            <Icon className="w-5 h-5" strokeWidth={tab === key ? 2.4 : 2} />
+            <span className="inline-flex items-center gap-1">
+              {label}
               {key === 'chat' && chatUnread > 0 && (
-                <span className="absolute -top-1 -right-2 min-w-4 h-4 px-1 rounded-full bg-red-500 text-white text-[9px] font-bold grid place-items-center tabular-nums">
-                  {chatUnread > 9 ? '9+' : chatUnread}
+                <span className="inline-flex items-center gap-1">
+                  <span className="w-1.5 h-1.5 rounded-full bg-red-500" aria-hidden="true" />
+                  <span className="text-[10px] font-bold text-ink tabular-nums">
+                    {chatUnread > 99 ? '99+' : chatUnread}
+                  </span>
                 </span>
               )}
             </span>
-            {label}
           </button>
         ))}
       </div>
@@ -510,13 +513,22 @@ export default function MyDay() {
 
         {staleAt && (
           /* Offline fallback in effect: reading works from the cached copy;
-             buttons will fail until service returns. Tapping retries. */
-          <button onClick={() => fetchDay()}
-            className="w-full bg-amber-500/15 border-b border-amber-500/30 text-amber-800 dark:text-amber-300 px-4 py-2 text-[12px] font-medium text-left">
-            No connection — showing your schedule saved at{' '}
-            {new Date(staleAt).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}.
-            Tap to retry.
-          </button>
+             buttons will fail until service returns. Persistent (sticky,
+             stays until a fetch succeeds) — quiet hairline-card treatment
+             per the design language rather than a full-bleed colored bar. */
+          <div className="flex items-center justify-between gap-2 border-b border-hairline bg-panel px-4 py-2">
+            <span className="text-[12px] text-ink-2 flex items-center gap-1.5 min-w-0">
+              <span className="w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0" aria-hidden="true" />
+              <span className="truncate">
+                No connection — showing your schedule saved at{' '}
+                {new Date(staleAt).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}.
+              </span>
+            </span>
+            <button onClick={() => fetchDay()}
+              className="shrink-0 min-h-8 text-[12px] font-medium text-ink-2 border border-hairline-2 rounded-md px-2.5 py-1 hover:bg-bg-2 transition-colors">
+              Tap to retry
+            </button>
+          </div>
         )}
 
         {active && (

@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { Home, Search, RefreshCw, ChevronRight, Plus } from 'lucide-react'
 import { EmptyState, PageHero } from '../components/ui'
@@ -64,6 +64,21 @@ export default function Properties() {
     confirmNewProperty,
     resetAfterSave,
   } = usePropertyForm({ clients, setClients })
+
+  // Deep-link entry point: PropertyDetail's "Edit Property" button lands
+  // here with ?edit=<id>. Reuse the exact same openEdit() the row's own
+  // Edit button calls, then drop the param so back/refresh doesn't
+  // re-trigger the modal.
+  useEffect(() => {
+    const editId = searchParams.get('edit')
+    if (!editId) return
+    const target = properties.find(p => String(p.id) === editId)
+    if (!target) return
+    openEdit(target)
+    const next = new URLSearchParams(searchParams)
+    next.delete('edit')
+    setSearchParams(next, { replace: true })
+  }, [searchParams, properties, openEdit, setSearchParams])
 
   const [expandedPropId, setExpandedPropId] = useState(null)
   const [icalForm, setIcalForm] = useState({ url: '', source: '' })
@@ -183,26 +198,30 @@ export default function Properties() {
               {feedAttentionCount > 0 && (
                 /* Needs-attention-first nudge: STRs whose turnover feed is
                    missing or stale — the "guest walks into a dirty rental"
-                   failure mode. One chip, work it down to zero. */
+                   failure mode. One chip, work it down to zero. Quiet
+                   dot+word filter chip — same shape as the icalPill in
+                   client/PropertiesTab.jsx, no fill. */
                 <button onClick={() => setFeedAttentionOnly(v => !v)} aria-pressed={feedAttentionOnly}
-                  className={`inline-flex items-center gap-1.5 text-[12px] font-semibold px-3 py-1.5 rounded-full border transition-colors ${
+                  className={`inline-flex items-center gap-1.5 text-[11px] font-medium px-2.5 py-1 rounded-md border transition-colors ${
                     feedAttentionOnly
-                      ? 'bg-red-500 border-red-500 text-white'
-                      : 'bg-red-50 border-red-300 text-red-800 hover:bg-red-100'}`}>
-                  📅 Turnover feed needs attention ({feedAttentionCount})
-                  {feedAttentionOnly && <span className="opacity-80">· showing only these</span>}
+                      ? 'bg-bg-2 border-hairline-2 text-ink'
+                      : 'bg-panel border-hairline text-ink-2 hover:bg-bg-2'}`}>
+                  <span className="w-1.5 h-1.5 rounded-full shrink-0 bg-red-500" aria-hidden="true" />
+                  Turnover feed needs attention ({feedAttentionCount})
+                  {feedAttentionOnly && <span className="text-ink-3">· showing only these</span>}
                 </button>
               )}
               {missingAccessCount > 0 && (
                 /* The batch-fill sweep: every property here shows crew "no access
                    info on file". One chip, then work the list down to zero. */
                 <button onClick={() => setMissingAccessOnly(v => !v)} aria-pressed={missingAccessOnly}
-                  className={`inline-flex items-center gap-1.5 text-[12px] font-semibold px-3 py-1.5 rounded-full border transition-colors ${
+                  className={`inline-flex items-center gap-1.5 text-[11px] font-medium px-2.5 py-1 rounded-md border transition-colors ${
                     missingAccessOnly
-                      ? 'bg-amber-500 border-amber-500 text-white'
-                      : 'bg-amber-50 border-amber-300 text-amber-800 hover:bg-amber-100'}`}>
-                  🔑 Missing access info ({missingAccessCount})
-                  {missingAccessOnly && <span className="opacity-80">· showing only these</span>}
+                      ? 'bg-bg-2 border-hairline-2 text-ink'
+                      : 'bg-panel border-hairline text-ink-2 hover:bg-bg-2'}`}>
+                  <span className="w-1.5 h-1.5 rounded-full shrink-0 bg-amber-500" aria-hidden="true" />
+                  Missing access info ({missingAccessCount})
+                  {missingAccessOnly && <span className="text-ink-3">· showing only these</span>}
                 </button>
               )}
             </div>

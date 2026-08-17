@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import {
   Search, Download, Clock, Car, DollarSign, User, CalendarRange,
-  Home, KeyRound, Sun, AlertTriangle, Settings2, ChevronDown, Save, Check, Tag,
+  Home, KeyRound, Sun, AlertTriangle, Settings2, ChevronDown, Save, Check,
   Send, X, Sparkles,
 } from 'lucide-react'
 import { get, put, patch, post } from '../api'
@@ -22,6 +22,17 @@ const round2 = (n) => Math.round((Number(n) || 0) * 100) / 100
 function isoDaysAgo(n) {
   const d = new Date(); d.setDate(d.getDate() - n)
   return d.toISOString().slice(0, 10)
+}
+
+// "Save rates" (PUT /api/payroll/rates) and "Send to Square"
+// (POST /api/payroll/send-to-square, both dry-run preview and confirm) are
+// admin-only on the backend (backend/modules/payroll/router.py). Viewing
+// this page and its rates (GET /api/payroll/summary, /rates) is
+// admin+manager, so managers can reach it — gate just the two writes so a
+// manager's click doesn't silently 403.
+function isAdminUser() {
+  try { return JSON.parse(localStorage.getItem('brightbase_user') || '{}').role === 'admin' }
+  catch { return false }
 }
 
 // Effective pay for one shift given a manual override. Returns { pay, mode }.
@@ -49,6 +60,7 @@ function employeeAdjusted(emp, overrides, rates) {
 }
 
 export default function Payroll() {
+  const isAdmin = isAdminUser()
   const [startDate, setStartDate] = useState(isoDaysAgo(14))
   const [endDate, setEndDate] = useState(isoDaysAgo(0))
   const [data, setData] = useState(null)
@@ -163,10 +175,12 @@ export default function Payroll() {
                 className="flex items-center gap-2 bg-panel hover:bg-bg-2 border border-hairline px-4 py-2 rounded-lg text-sm font-medium transition-colors">
                 <Download className="w-4 h-4" />Export CSV
               </button>
-              <button onClick={() => sendSquare(true)} disabled={square?.busy}
-                className="flex items-center gap-2 bg-panel hover:bg-bg-2 border border-hairline px-4 py-2 rounded-lg text-sm font-medium transition-colors">
-                <Send className="w-4 h-4" />Send to Square
-              </button>
+              {isAdmin && (
+                <button onClick={() => sendSquare(true)} disabled={square?.busy}
+                  className="flex items-center gap-2 bg-panel hover:bg-bg-2 border border-hairline px-4 py-2 rounded-lg text-sm font-medium transition-colors">
+                  <Send className="w-4 h-4" />Send to Square
+                </button>
+              )}
             </>
           )}
         </div>
@@ -176,15 +190,18 @@ export default function Payroll() {
         <RatesPanel />
 
         {error && (
-          <div className="text-sm text-red-400 bg-red-500/10 border border-red-500/30 rounded-xl p-4">{error}</div>
+          <div className="flex items-start gap-2 text-sm text-ink-2 bg-panel border border-hairline rounded-xl p-4">
+            <span className="h-1.5 w-1.5 rounded-full bg-red-500 shrink-0 mt-1.5" aria-hidden="true" />
+            {error}
+          </div>
         )}
 
         {data && (
           <>
             {data.warnings?.length > 0 && (
-              <div className="text-sm bg-amber-500/10 border border-amber-500/30 rounded-xl p-4">
-                <div className="flex items-center gap-2 font-medium text-amber-400 mb-1.5">
-                  <AlertTriangle className="w-4 h-4" />Needs attention
+              <div className="text-sm bg-panel border border-hairline rounded-xl p-4">
+                <div className="flex items-center gap-2 font-medium text-ink mb-1.5">
+                  <span className="h-1.5 w-1.5 rounded-full bg-amber-500 shrink-0" aria-hidden="true" />Needs attention
                 </div>
                 <ul className="list-disc pl-5 space-y-0.5 text-ink-2">
                   {data.warnings.map((w, i) => <li key={i}>{w}</li>)}
@@ -311,8 +328,8 @@ function ShiftRow({ shift, rates, ov, onChange }) {
           )}
           {shift.weekend && <span className="text-[11px] text-amber-400">wknd</span>}
           {shift.rate_pay && (
-            <span className="inline-flex items-center gap-0.5 text-[10px] font-semibold text-purple-300 bg-purple-500/15 rounded px-1 py-0.5">
-              <Tag className="w-2.5 h-2.5" />Rate Pay
+            <span className="inline-flex items-center gap-1 text-[11px] text-ink-3">
+              <span className="h-1.5 w-1.5 rounded-full bg-purple-400 shrink-0" aria-hidden="true" />Rate Pay
             </span>
           )}
         </div>
@@ -412,9 +429,10 @@ function SquarePanel({ square, onClose, onConfirm }) {
             </div>
           )}
           {d.unmatched?.length > 0 && (
-            <div className="text-xs bg-amber-500/10 border border-amber-500/30 rounded-lg p-2.5 mb-3 text-ink-2">
-              <span className="text-amber-400 font-medium">Not matched to a Square team member:</span>{' '}
-              {d.unmatched.join(', ')}. Their timecards are skipped — match names/emails in Square, or set them up there.
+            <div className="flex items-start gap-2 text-xs bg-panel border border-hairline rounded-lg p-2.5 mb-3 text-ink-2">
+              <span className="h-1.5 w-1.5 rounded-full bg-amber-500 shrink-0 mt-1" aria-hidden="true" />
+              <span><span className="font-medium text-ink">Not matched to a Square team member:</span>{' '}
+              {d.unmatched.join(', ')}. Their timecards are skipped — match names/emails in Square, or set them up there.</span>
             </div>
           )}
           <div className="space-y-1.5 mb-3">
@@ -453,9 +471,11 @@ function SquarePanel({ square, onClose, onConfirm }) {
           </div>
           <div className="text-ink-3">Import them from the Square Payroll dashboard, then add the piece-rate + mileage adjustments.</div>
           {d.errors?.length > 0 && (
-            <div className="text-xs bg-red-500/10 border border-red-500/30 rounded-lg p-2.5 mt-2">
-              <div className="text-red-400 font-medium mb-1">{d.errors.length} failed:</div>
-              <ul className="list-disc pl-4 space-y-0.5">
+            <div className="text-xs bg-panel border border-hairline rounded-lg p-2.5 mt-2">
+              <div className="flex items-center gap-1.5 text-ink font-medium mb-1">
+                <span className="h-1.5 w-1.5 rounded-full bg-red-500 shrink-0" aria-hidden="true" />{d.errors.length} failed:
+              </div>
+              <ul className="list-disc pl-4 space-y-0.5 text-ink-2">
                 {d.errors.slice(0, 8).map((er, i) => <li key={i}>{er.employee}: {er.error}</li>)}
               </ul>
             </div>
@@ -591,6 +611,7 @@ function MileagePanel({ startDate, endDate }) {
 
 // ── Editable pay rates + per-property weekend turnover rates ────────────────
 function RatesPanel() {
+  const isAdmin = isAdminUser()
   const [open, setOpen] = useState(false)
   const [rates, setRates] = useState(null)
   const [props, setProps] = useState([])
@@ -650,8 +671,9 @@ function RatesPanel() {
                   onChange={v => setRates({ ...rates, deep_clean_rate: v })} />
                 <RateInput label="Mileage $/mi" value={rates.mileage_rate} step="0.01"
                   onChange={v => setRates({ ...rates, mileage_rate: v })} />
-                <button onClick={saveRates} disabled={savingRates}
-                  className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white disabled:bg-bg-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors">
+                <button onClick={saveRates} disabled={savingRates || !isAdmin}
+                  title={isAdmin ? undefined : 'Admin only'}
+                  className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white disabled:bg-bg-2 disabled:text-ink-3 disabled:cursor-not-allowed px-4 py-2 rounded-lg text-sm font-medium transition-colors">
                   {savedRates ? <Check className="w-4 h-4" /> : <Save className="w-4 h-4" />}
                   {savedRates ? 'Saved' : savingRates ? 'Saving…' : 'Save rates'}
                 </button>

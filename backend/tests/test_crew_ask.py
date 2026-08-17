@@ -1,10 +1,12 @@
 """Crew Ask assistant — grounding and gating.
 
-The security property that matters: the context is built from THIS
-cleaner's visibility only — another cleaner's door codes never enter the
-prompt, so no phrasing can leak them. Also: unconfigured key degrades to a
-friendly 409, the Anthropic call is mocked at the client seam, and the
-question length is capped.
+The security property that matters: door codes, access notes, and WiFi
+passwords NEVER enter the prompt — not even the cleaner's own (BB-SEC-08..12:
+access details ride only /api/crew/* to the assigned cleaner, never an AI
+prompt). The context instead carries a flag so the assistant can point back
+to the job card. Also: unconfigured key degrades to a friendly 409, the
+Anthropic call is mocked at the client seam, and the question length is
+capped.
 """
 import uuid
 from datetime import time
@@ -72,8 +74,9 @@ def test_context_contains_only_own_jobs(world):
     db = SessionLocal()
     ctx = build_ask_context(db, _Cleaner(9901, "CT-ask-A"))
     db.close()
-    assert "1111" in ctx           # own door code present
-    assert "2222" not in ctx       # the other cleaner's code NEVER in the prompt
+    assert "1111" not in ctx       # door codes never enter the prompt — not even their own
+    assert "2222" not in ctx       # nor another cleaner's
+    assert "access details are on the job card" in ctx  # flag stands in for it
     assert "A House" in ctx and "B House" not in ctx
 
 
@@ -103,9 +106,9 @@ def test_ask_roundtrip_with_mocked_model(world, monkeypatch):
         r = api.post("/api/crew/ask", json={"question": "When do I start?"})
         assert r.status_code == 200
         assert r.json()["answer"] == "Your job is at 9 AM."
-        # The system prompt carries the grounded context (their code in, the
-        # other house's code out) and the rules header.
-        assert "1111" in captured["system"] and "2222" not in captured["system"]
+        # The system prompt carries the grounded context (no door codes at
+        # all, own or otherwise) and the rules header.
+        assert "1111" not in captured["system"] and "2222" not in captured["system"]
         assert "Answer ONLY from the CONTEXT" in captured["system"]
 
         # Length cap.

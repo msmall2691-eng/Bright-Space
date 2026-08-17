@@ -129,48 +129,49 @@ function BucketFilterBanner({
     } finally { setBusy(false) }
   }
 
+  const SECONDARY_BTN = 'font-medium text-ink-2 bg-panel border border-hairline-2 hover:bg-bg-2 disabled:opacity-50 px-2.5 py-1 rounded-md transition-colors'
+
   return (
-    <div className="mb-3 rounded-lg border border-amber-200 dark:border-amber-500/25 bg-amber-50 dark:bg-amber-500/10 px-3 py-2 text-[12px] text-amber-800 dark:text-amber-300">
+    <div className="mb-3 rounded-lg border border-hairline bg-panel px-3 py-2 text-[12px] text-ink">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <span>
+        <span className="flex items-center gap-2">
+          <span className="w-1.5 h-1.5 rounded-full shrink-0 bg-amber-500" aria-hidden="true" />
           Showing <span className="font-semibold">{bucketFilter.label}</span> —
           {' '}{filteredCount} of {baseCount}
         </span>
         <div className="flex items-center gap-2">
           {isArchivable && (
-            <button onClick={doArchive} disabled={busy || !filteredCount}
-              className="font-semibold text-white bg-amber-600 hover:bg-amber-700 disabled:opacity-50 px-2.5 py-1 rounded-md">
+            <button onClick={doArchive} disabled={busy || !filteredCount} className={SECONDARY_BTN}>
               {busy ? 'Archiving…' : `Archive ${filteredCount}`}
             </button>
           )}
           {isDuplicate && !dupPreview && (
-            <button onClick={previewMerge} disabled={busy}
-              className="font-semibold text-white bg-amber-600 hover:bg-amber-700 disabled:opacity-50 px-2.5 py-1 rounded-md">
+            <button onClick={previewMerge} disabled={busy} className={SECONDARY_BTN}>
               {busy ? 'Analyzing…' : 'Auto-merge safe duplicates'}
             </button>
           )}
           {isDuplicate && reviewablePairCount > 0 && (
             <button onClick={onReviewPairs} disabled={busy}
               title="Step through real-named duplicate pairs the auto-merge can't touch"
-              className="font-semibold text-amber-800 border border-amber-400 hover:bg-amber-100 disabled:opacity-50 px-2.5 py-1 rounded-md">
+              className={SECONDARY_BTN}>
               Review {reviewablePairCount} pair{reviewablePairCount === 1 ? '' : 's'}
             </button>
           )}
           {isIncomplete && filteredCount > 0 && (
             <button onClick={onEditFirst}
               title="Open the first record's edit form to add missing phone / email"
-              className="font-semibold text-amber-800 border border-amber-400 hover:bg-amber-100 px-2.5 py-1 rounded-md">
+              className={SECONDARY_BTN}>
               Edit next →
             </button>
           )}
           <button onClick={onClear}
-            className="font-semibold underline underline-offset-2 hover:text-amber-900">
+            className="font-medium text-ink-3 underline underline-offset-2 hover:text-ink-2">
             Clear filter
           </button>
         </div>
       </div>
       {isDuplicate && dupPreview && (
-        <div className="mt-2 text-amber-900">
+        <div className="mt-2 text-ink-2">
           {dupPreview.length === 0 ? (
             <span>No auto-safe merges found. Duplicates need manual review — pick two rows and use the toolbar's Merge action.</span>
           ) : (
@@ -178,11 +179,10 @@ function BucketFilterBanner({
               <span>Preview: {dupPreview.length} group{dupPreview.length === 1 ? '' : 's'} can be auto-merged (placeholder-named rows into real-named keepers by email).</span>
               <div className="flex items-center gap-2">
                 <button onClick={() => setDupPreview(null)}
-                  className="font-semibold text-amber-800 hover:text-amber-900 underline underline-offset-2">
+                  className="font-medium text-ink-3 hover:text-ink-2 underline underline-offset-2">
                   Cancel
                 </button>
-                <button onClick={applyMerge} disabled={busy}
-                  className="font-semibold text-white bg-amber-700 hover:bg-amber-800 disabled:opacity-50 px-2.5 py-1 rounded-md">
+                <button onClick={applyMerge} disabled={busy} className={SECONDARY_BTN}>
                   {busy ? 'Merging…' : `Apply merge (${dupPreview.length})`}
                 </button>
               </div>

@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { get, patch } from '../api'
-import { X, Link2, Loader, CheckCircle } from 'lucide-react'
+import { X, Link2, Loader } from 'lucide-react'
 import { toast } from '../utils/toastBus'
 
 // Stage hue as a small dot over a quiet chip (no tinted pill bubbles).
@@ -88,10 +88,10 @@ export default function OpportunityLinker({ clientId, itemType, itemId, itemName
 
   return (
     <div>
-      {/* Button to open modal */}
+      {/* Button to open modal — plain hairline secondary, not a tinted trigger. */}
       <button
         onClick={() => setShowModal(true)}
-        className="inline-flex items-center gap-2 px-3 py-2 bg-purple-50 hover:bg-purple-100 text-purple-600 rounded-lg text-sm font-medium transition-colors"
+        className="inline-flex items-center gap-2 px-3 py-2 bg-panel border border-hairline-2 text-ink-2 hover:bg-bg-2 rounded-md text-sm font-medium transition-colors"
       >
         <Link2 className="w-4 h-4" />
         {currentOpportunityId ? 'Change Opportunity' : 'Link to Opportunity'}
@@ -136,10 +136,10 @@ export default function OpportunityLinker({ clientId, itemType, itemId, itemName
                       <button
                         key={opp.id}
                         onClick={() => setSelectedOppId(opp.id)}
-                        className={`w-full text-left p-3 rounded-lg border-2 transition-all ${
+                        className={`w-full text-left p-3 rounded-lg border-2 bg-panel transition-colors ${
                           selectedOppId === opp.id
-                            ? 'border-purple-500 bg-purple-50'
-                            : 'border-hairline hover:border-hairline'
+                            ? 'border-indigo-600'
+                            : 'border-hairline hover:border-hairline-2'
                         }`}
                       >
                         <div className="flex items-start justify-between">
@@ -161,23 +161,25 @@ export default function OpportunityLinker({ clientId, itemType, itemId, itemName
                 </div>
               )}
 
-              {/* Current link status */}
+              {/* Current link status — hairline card + dot, not a filled banner. */}
               {currentOpp && (
-                <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-3 flex items-center gap-2">
-                  <CheckCircle className="w-5 h-5 text-emerald-600 flex-shrink-0" />
-                  <div>
-                    <div className="text-sm font-medium text-emerald-900">Currently linked</div>
-                    <div className="text-xs text-emerald-700">{currentOpp.title}</div>
+                <div className="flex items-center gap-2.5 rounded-lg border border-hairline bg-panel p-3">
+                  <span className="w-1.5 h-1.5 rounded-full shrink-0 bg-emerald-500" aria-hidden="true" />
+                  <div className="min-w-0">
+                    <div className="text-sm font-medium text-ink">Currently linked</div>
+                    <div className="text-xs text-ink-2 truncate">{currentOpp.title}</div>
                   </div>
                 </div>
               )}
             </div>
 
-            {/* Footer */}
+            {/* Footer — exactly one primary action (Link, filled indigo).
+                Cancel and Unlink are both plain hairline secondaries so they
+                don't compete with it for attention. */}
             <div className="flex gap-2 p-6 border-t border-hairline bg-bg">
               <button
                 onClick={() => setShowModal(false)}
-                className="flex-1 px-4 py-2 border border-hairline rounded-lg text-ink-2 font-medium hover:bg-bg-2 transition-colors"
+                className="flex-1 px-4 py-2 rounded-lg bg-panel border border-hairline-2 text-ink-2 font-medium hover:bg-bg-2 transition-colors"
               >
                 Cancel
               </button>
@@ -185,7 +187,7 @@ export default function OpportunityLinker({ clientId, itemType, itemId, itemName
                 <button
                   onClick={handleUnlink}
                   disabled={saving}
-                  className="flex-1 px-4 py-2 border border-red-300 bg-red-50 text-red-700 rounded-lg font-medium hover:bg-red-100 disabled:opacity-50 transition-colors"
+                  className="flex-1 px-4 py-2 rounded-lg bg-panel border border-hairline-2 text-ink-2 font-medium hover:bg-bg-2 disabled:opacity-50 transition-colors"
                 >
                   {saving ? 'Unlinking...' : 'Unlink'}
                 </button>
@@ -193,7 +195,7 @@ export default function OpportunityLinker({ clientId, itemType, itemId, itemName
               <button
                 onClick={handleLink}
                 disabled={!selectedOppId || saving}
-                className="flex-1 px-4 py-2 bg-purple-600 text-white rounded-lg font-medium hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                className="flex-1 px-4 py-2 bg-indigo-600 text-white rounded-lg font-medium hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
               >
                 {saving ? 'Linking...' : 'Link'}
               </button>

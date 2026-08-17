@@ -19,13 +19,15 @@ export const FIELD_TYPES = [
   { value: 'textarea', label: 'Long text' },
 ]
 
+// Field-type indicator = dot + word (design law: no tinted pill backgrounds).
+// Keyed by field type value; each entry is just the dot color class.
 export const TYPE_BADGE = {
-  text:     'bg-bg-2 text-ink-3',
-  number:   'bg-blue-50 dark:bg-blue-500/15 text-blue-700 dark:text-blue-300',
-  date:     'bg-violet-50 dark:bg-violet-500/15 text-violet-700 dark:text-violet-300',
-  select:   'bg-amber-50 dark:bg-amber-500/15 text-amber-700 dark:text-amber-300',
-  checkbox: 'bg-emerald-50 dark:bg-emerald-500/15 text-emerald-700 dark:text-emerald-300',
-  textarea: 'bg-bg-2 text-ink-3',
+  text:     'bg-ink-3',
+  number:   'bg-blue-500',
+  date:     'bg-violet-500',
+  select:   'bg-amber-500',
+  checkbox: 'bg-emerald-500',
+  textarea: 'bg-ink-3',
 }
 
 export const EMPTY_FORM = { name: '', field_type: 'text', options: '', required: false, sort_order: 0 }
