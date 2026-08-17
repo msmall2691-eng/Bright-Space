@@ -2254,8 +2254,11 @@ Rules:
   guides.
 - Be brief and concrete — a phone answer, not an essay. Bullet lists only
   when listing jobs.
-- NEVER invent door codes, addresses, times, or prices. Quote them exactly
-  from the context or say you don't have them.
+- NEVER invent addresses, times, or prices. Quote them exactly from the
+  context or say you don't have them.
+- You do NOT have door codes, access notes, or WiFi passwords, even for the
+  cleaner's own jobs — that's by design. If asked, say those are on the job
+  card (tap the job in Today/Schedule) and never guess or make one up.
 - Do not discuss pay rates, other cleaners' schedules beyond names shown,
   or anything not in the context."""
 
@@ -2284,12 +2287,16 @@ def build_ask_context(db: Session, current_user: User) -> str:
         for j in mine[:30]:
             r = _job_row(j, names, current_user.cleaner_id,
                          house_notes=house_notes.get(j.property_id))
+            has_access_details = bool(r['house_code'] or r['access_notes'] or r['wifi_ssid'])
             line = (f"- {r['scheduled_date']} {r['start_time'] or ''}-{r['end_time'] or ''} "
                     f"{r['property_name'] or r['title']} at {r['address'] or 'address TBD'}."
                     f" Client: {r['client_name'] or 'n/a'}."
-                    + (f" Door code: {r['house_code']}." if r['house_code'] else "")
-                    + (f" Access: {r['access_notes']}." if r['access_notes'] else "")
-                    + (f" WiFi: {r['wifi_ssid']} / {r['wifi_password']}." if r['wifi_ssid'] else "")
+                    # Door code / access notes / WiFi password are deliberately
+                    # NOT included here (BB-SEC-08..12: access details never
+                    # ride an AI prompt, only /api/crew/* to the assigned
+                    # cleaner). Just a flag so the assistant can point back to
+                    # the job card instead of claiming there's nothing there.
+                    + (" (access details are on the job card)" if has_access_details else "")
                     + (f" Teammates: {', '.join(r['teammates'])}." if r['teammates'] else "")
                     + (f" Office notes: {r['notes']}" if r['notes'] else "")
                     + ((" House notes: " + " | ".join(n['body'] for n in r['house_notes']))

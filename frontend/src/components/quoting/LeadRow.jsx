@@ -79,7 +79,7 @@ export default function LeadRow({
         <div className="flex flex-wrap sm:flex-col gap-1.5 shrink-0 w-full sm:w-auto">
           {canEdit && intake.status === 'new' && (
             <button onClick={() => onMarkReviewed(intake.id)}
-              className="text-xs px-3 py-2 sm:py-1.5 bg-bg-2 hover:bg-bg-2 text-ink-2 rounded-lg transition-colors border border-hairline">
+              className="text-xs px-3 py-2 sm:py-1.5 bg-bg-2 hover:bg-bg-3 text-ink-2 rounded-lg transition-colors border border-hairline">
               Mark Reviewed
             </button>
           )}
@@ -91,7 +91,7 @@ export default function LeadRow({
           )}
           {intake.client_id && (
             <button onClick={() => onOpenClient(intake.client_id)}
-              className="text-xs px-3 py-2 sm:py-1.5 bg-bg-2 hover:bg-bg-2 text-ink-3 rounded-lg transition-colors">
+              className="text-xs px-3 py-2 sm:py-1.5 bg-bg-2 hover:bg-bg-3 text-ink-3 rounded-lg transition-colors">
               View Client
             </button>
           )}

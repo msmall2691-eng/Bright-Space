@@ -16,9 +16,21 @@ export default function Settings() {
   // the Google-view empty state → /settings#integrations). Falls back to
   // General — where company identity, brand color, terms, and the danger zone
   // live — which is the natural first stop otherwise.
+  // Users management is admin-only (the backend enforces it; this hides the
+  // tab). Custom Fields (/api/fields — see modules/fields/router.py) and
+  // Email (GET/POST /api/settings/email — see modules/settings/router.py)
+  // are ALSO admin-only on the backend; a manager/viewer landing on either
+  // gets a silently-swallowed 403 and a misleading empty/disconnected state,
+  // so those tabs are gated the same way.
+  const isAdmin = (() => {
+    try { return JSON.parse(localStorage.getItem('brightbase_user') || '{}').role === 'admin' }
+    catch { return false }
+  })()
   const sectionFromHash = () => {
     const h = (window.location.hash || '').replace(/^#/, '').split('?')[0]
-    return ['general', 'integrations', 'automation', 'email', 'fields', 'users'].includes(h) ? h : 'general'
+    const allowed = ['general', 'integrations', 'automation']
+      .concat(isAdmin ? ['email', 'fields', 'users'] : [])
+    return allowed.includes(h) ? h : 'general'
   }
   const [section, setSection] = useState(sectionFromHash) // 'fields' | 'email' | 'general' | 'integrations' | 'automation' | 'users'
   // Keep the tab in step if the hash changes while Settings is already open.
@@ -27,14 +39,9 @@ export default function Settings() {
     window.addEventListener('hashchange', onHash)
     return () => window.removeEventListener('hashchange', onHash)
   }, [])
-  // Users management is admin-only (the backend enforces it; this hides the tab).
-  const isAdmin = (() => {
-    try { return JSON.parse(localStorage.getItem('brightbase_user') || '{}').role === 'admin' }
-    catch { return false }
-  })()
   const toast = (message, type = 'success') => pushToast(message, type)
 
-  const customFields = useCustomFieldsTab({ toast })
+  const customFields = useCustomFieldsTab({ toast, enabled: isAdmin })
   const automation = useAutomationSettings({
     toast,
     active: section === 'integrations' || section === 'automation' || section === 'general',
@@ -68,14 +75,18 @@ export default function Settings() {
                 className={`shrink-0 whitespace-nowrap flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${section === 'automation' ? 'bg-indigo-600 text-white' : 'bg-panel text-ink-2 border border-hairline hover:border-hairline-2'}`}>
                 <RefreshCw className="w-3.5 h-3.5" /> Automation
               </button>
-              <button onClick={() => setSection('email')}
-                className={`shrink-0 whitespace-nowrap flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${section === 'email' ? 'bg-indigo-600 text-white' : 'bg-panel text-ink-2 border border-hairline hover:border-hairline-2'}`}>
-                <Mail className="w-3.5 h-3.5" /> Email
-              </button>
-              <button onClick={() => setSection('fields')}
-                className={`shrink-0 whitespace-nowrap flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${section === 'fields' ? 'bg-indigo-600 text-white' : 'bg-panel text-ink-2 border border-hairline hover:border-hairline-2'}`}>
-                <Settings2 className="w-3.5 h-3.5" /> Custom Fields
-              </button>
+              {isAdmin && (
+                <button onClick={() => setSection('email')}
+                  className={`shrink-0 whitespace-nowrap flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${section === 'email' ? 'bg-indigo-600 text-white' : 'bg-panel text-ink-2 border border-hairline hover:border-hairline-2'}`}>
+                  <Mail className="w-3.5 h-3.5" /> Email
+                </button>
+              )}
+              {isAdmin && (
+                <button onClick={() => setSection('fields')}
+                  className={`shrink-0 whitespace-nowrap flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${section === 'fields' ? 'bg-indigo-600 text-white' : 'bg-panel text-ink-2 border border-hairline hover:border-hairline-2'}`}>
+                  <Settings2 className="w-3.5 h-3.5" /> Custom Fields
+                </button>
+              )}
               {isAdmin && (
                 <button onClick={() => setSection('users')}
                   className={`shrink-0 whitespace-nowrap flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${section === 'users' ? 'bg-indigo-600 text-white' : 'bg-panel text-ink-2 border border-hairline hover:border-hairline-2'}`}>
@@ -115,15 +126,15 @@ export default function Settings() {
         {/* === AUTOMATION SECTION === */}
         {section === 'automation' && <AutomationTab state={automation} toast={toast} active={section === 'automation'} />}
 
-        {/* === EMAIL SETTINGS SECTION === */}
-        {section === 'email' && <EmailTab toast={toast} active={section === 'email'} />}
+        {/* === EMAIL SETTINGS SECTION (admin only) === */}
+        {section === 'email' && isAdmin && <EmailTab toast={toast} active={section === 'email'} />}
 
-        {/* === CUSTOM FIELDS SECTION === */}
-        {section === 'fields' && <CustomFieldsBody state={customFields} />}
+        {/* === CUSTOM FIELDS SECTION (admin only) === */}
+        {section === 'fields' && isAdmin && <CustomFieldsBody state={customFields} />}
       </div>
 
       {/* Side panel */}
-      {section === 'fields' && <CustomFieldsSidePanel state={customFields} />}
+      {section === 'fields' && isAdmin && <CustomFieldsSidePanel state={customFields} />}
 
     </div>
   )

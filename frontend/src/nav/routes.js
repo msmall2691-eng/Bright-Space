@@ -166,7 +166,6 @@ export function recordFromPath(pathname) {
 
 /** Routes reachable outside the nav (redirect targets, internal pages). */
 const EXTRA_ROUTES = {
-  '/dashboard/classic': { label: 'Classic dashboard', section: null },
   '/cleanup':           { label: 'Tidy Up', section: null },
   '/design-system':     { label: 'Design system', section: null },
   // Reachable from Deals' "Board view" link, not a sidebar item — see the

@@ -24,16 +24,19 @@ function DeliveryIcon({ status }) {
  *  amber card; regular messages align right (outbound) or left (inbound)
  *  with subject header, body, timestamp, and delivery status icons. */
 export function MessageBubble({ m, isFirst, showTime, contactName }) {
-  // Internal note — flat amber card (no glass/blur), on-token border.
+  // Internal note — flat hairline card with an amber dot marker (no filled
+  // amber background — owner's veto of tinted banners); amber-toned text
+  // still carries the "this is a note, not sent" distinction.
   if (m.is_internal_note) {
     return (
       <div className="flex justify-center my-3">
-        <div className="max-w-[85%] bg-amber-50 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-500/25 text-amber-900 dark:text-amber-200 text-[13px] px-4 py-2.5 rounded-2xl">
-          <div className="flex items-center gap-1.5 text-[10px] font-semibold text-amber-600 dark:text-amber-300 mb-1">
+        <div className="max-w-[85%] bg-bg-2 border border-hairline text-ink text-[13px] px-4 py-2.5 rounded-2xl">
+          <div className="flex items-center gap-1.5 text-[10px] font-semibold text-amber-600 dark:text-amber-400 mb-1">
+            <span className="w-1.5 h-1.5 rounded-full shrink-0 bg-amber-500" aria-hidden="true" />
             <StickyNote className="w-3 h-3" />
             Internal note
-            {m.author && <span className="font-normal text-amber-500">— {m.author}</span>}
-            <span className="ml-auto font-normal text-amber-500/80">{fullTime(m.created_at)}</span>
+            {m.author && <span className="font-normal text-ink-3">— {m.author}</span>}
+            <span className="ml-auto font-normal text-ink-3">{fullTime(m.created_at)}</span>
           </div>
           <div className="whitespace-pre-wrap break-words leading-relaxed">{htmlToText(m.body)}</div>
         </div>

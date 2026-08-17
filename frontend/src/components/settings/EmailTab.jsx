@@ -90,11 +90,12 @@ export default function EmailTab({ toast, active }) {
           </p>
         </div>
 
-        {/* Status indicator */}
-        <div className={`flex items-center gap-3 p-4 rounded-xl border mb-5 ${hasCredentials ? 'bg-emerald-50 dark:bg-emerald-500/10 border-emerald-200 dark:border-emerald-500/25' : 'bg-amber-50 dark:bg-amber-500/10 border-amber-200 dark:border-amber-500/25'}`}>
+        {/* Status indicator — hairline card + dot (design law: no filled/tinted banners). */}
+        <div className="flex items-start gap-3 p-4 rounded-xl border border-hairline bg-panel mb-5">
+          <span className={`mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full ${hasCredentials ? 'bg-emerald-500' : 'bg-amber-500'}`} aria-hidden="true" />
           {hasCredentials
-            ? <><CheckCircle className="w-5 h-5 text-emerald-600 shrink-0" /><div><div className="text-sm font-medium text-emerald-800 dark:text-emerald-300">Credentials Found</div><div className="text-xs text-emerald-600">{credentialsSource === 'env' ? 'Using Railway environment variables (SMTP_USER / SMTP_PASS)' : 'Using saved database settings'}</div></div></>
-            : <><AlertTriangle className="w-5 h-5 text-amber-600 shrink-0" /><div><div className="text-sm font-medium text-amber-800 dark:text-amber-300">Not Connected</div><div className="text-xs text-amber-600">Enter your Gmail address and App Password, or set SMTP_USER and SMTP_PASS env vars on Railway</div></div></>
+            ? <div><div className="text-sm font-medium text-ink">Credentials Found</div><div className="text-xs text-ink-3">{credentialsSource === 'env' ? 'Using Railway environment variables (SMTP_USER / SMTP_PASS)' : 'Using saved database settings'}</div></div>
+            : <div><div className="text-sm font-medium text-ink">Not Connected</div><div className="text-xs text-ink-3">Enter your Gmail address and App Password, or set SMTP_USER and SMTP_PASS env vars on Railway</div></div>
           }
         </div>
 
@@ -106,11 +107,7 @@ export default function EmailTab({ toast, active }) {
           const ok = lastSync.status === 'ok'
           const authFail = lastSync.status === 'auth_failed'
           const noCreds = lastSync.status === 'no_credentials'
-          const cls = ok
-            ? 'bg-emerald-50 dark:bg-emerald-500/10 border-emerald-200 dark:border-emerald-500/25 text-emerald-800 dark:text-emerald-300'
-            : authFail
-              ? 'bg-red-50 dark:bg-red-500/10 border-red-200 dark:border-red-500/25 text-red-800 dark:text-red-300'
-              : 'bg-amber-50 dark:bg-amber-500/10 border-amber-200 dark:border-amber-500/25 text-amber-800 dark:text-amber-300'
+          const dot = ok ? 'bg-emerald-500' : authFail ? 'bg-red-500' : 'bg-amber-500'
           const when = relAgo(lastSync.at)
           const title = ok ? 'Auto-sync is working'
             : authFail ? 'Authentication failed — check your App Password'
@@ -121,11 +118,11 @@ export default function EmailTab({ toast, active }) {
             : authFail ? `Your Gmail App Password looks expired or wrong. Generate a new one and save it below. (Last checked ${when}.)`
             : (lastSync.error || `Last checked ${when}.`)
           return (
-            <div className={`flex items-start gap-3 p-4 rounded-xl border mb-5 ${cls}`}>
-              {ok ? <CheckCircle className="w-5 h-5 shrink-0 mt-0.5" /> : <AlertTriangle className="w-5 h-5 shrink-0 mt-0.5" />}
+            <div className="flex items-start gap-3 p-4 rounded-xl border border-hairline bg-panel mb-5">
+              <span className={`mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full ${dot}`} aria-hidden="true" />
               <div>
-                <div className="text-sm font-semibold">{title}</div>
-                <div className="text-xs opacity-90 mt-0.5">{sub}</div>
+                <div className="text-sm font-semibold text-ink">{title}</div>
+                <div className="text-xs text-ink-3 mt-0.5">{sub}</div>
               </div>
             </div>
           )

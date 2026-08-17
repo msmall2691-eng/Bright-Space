@@ -5,17 +5,6 @@
 export const SOFT_CARD =
   'bg-panel rounded-xl border border-hairline shadow-glass-sm'
 
-/** Map the existing iconColor tokens (passed by tile call sites) to a
- *  tinted chip so the icons read as colored badges without touching any
- *  call site. */
-export const CHIP = {
-  'text-blue-500':    'bg-blue-50 dark:bg-blue-500/15 text-blue-600 dark:text-blue-300',
-  'text-violet-500':  'bg-violet-50 dark:bg-violet-500/15 text-violet-600 dark:text-violet-300',
-  'text-purple-500':  'bg-purple-50 dark:bg-purple-500/15 text-purple-600 dark:text-purple-300',
-  'text-amber-500':   'bg-amber-50 dark:bg-amber-500/15 text-amber-600 dark:text-amber-300',
-  'text-emerald-500': 'bg-emerald-50 dark:bg-emerald-500/15 text-emerald-600 dark:text-emerald-300',
-}
-
 /** Tinted "tone" backgrounds for actionable rows/callouts that stay legible in
  *  BOTH themes — light -50 fills read as washed-out near-white bars on the dark
  *  canvas, so each carries a translucent dark variant. */

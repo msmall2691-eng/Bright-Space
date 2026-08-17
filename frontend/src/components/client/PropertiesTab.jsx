@@ -239,7 +239,7 @@ export default function PropertiesTab({
                     ) : (
                       <button type="button" onClick={() => setShowIcalForm(true)}
                         data-testid="client-property-ical-add"
-                        className="w-full text-xs text-blue-600 hover:text-blue-700 border border-blue-200 bg-blue-50/50 hover:bg-blue-50 px-3 py-2 rounded-lg transition-colors">
+                        className="w-full bg-panel border border-hairline-2 text-ink-2 hover:bg-bg-2 px-3 py-2 rounded-md text-xs font-medium transition-colors">
                         + Add Calendar Feed
                       </button>
                     )}
@@ -340,7 +340,7 @@ export default function PropertiesTab({
                       onClick={(e) => { e.stopPropagation(); syncProperty(p.id) }}
                       disabled={syncingPropId === p.id}
                       data-testid="client-property-sync"
-                      className="flex items-center gap-1 text-xs bg-amber-50 hover:bg-amber-100 text-amber-700 border border-amber-200 px-2.5 py-1.5 rounded-lg transition-colors disabled:opacity-50"
+                      className="flex items-center gap-1 text-xs font-medium bg-panel border border-hairline-2 text-ink-2 hover:bg-bg-2 px-2.5 py-1.5 rounded-md transition-colors disabled:opacity-50"
                       title="Sync iCal feeds and auto-create turnover jobs"
                     >
                       <RefreshCw className={`w-3 h-3 ${syncingPropId === p.id ? 'animate-spin' : ''}`} />
@@ -350,7 +350,7 @@ export default function PropertiesTab({
                   <button
                     onClick={(e) => { e.stopPropagation(); navigate(`/properties/${p.id}`) }}
                     data-testid="client-property-view-jobs"
-                    className="flex items-center gap-1 text-xs text-blue-600 hover:text-blue-700 bg-blue-50 hover:bg-blue-100 border border-blue-200 px-2.5 py-1.5 rounded-lg transition-colors"
+                    className="flex items-center gap-1 text-xs font-medium bg-panel border border-hairline-2 text-ink-2 hover:bg-bg-2 px-2.5 py-1.5 rounded-md transition-colors"
                     title="View jobs and visits for this property"
                   >
                     <Calendar className="w-3 h-3" /> Jobs
@@ -365,7 +365,7 @@ export default function PropertiesTab({
                   </button>
                   <button
                     onClick={(e) => { e.stopPropagation(); openEditProp(p) }}
-                    className="text-xs text-ink-2 hover:text-ink bg-bg-2 hover:bg-bg-2 px-2.5 py-1.5 rounded-lg transition-colors"
+                    className="text-xs font-medium bg-panel border border-hairline-2 text-ink-2 hover:bg-bg-2 px-2.5 py-1.5 rounded-md transition-colors"
                   >
                     Edit
                   </button>

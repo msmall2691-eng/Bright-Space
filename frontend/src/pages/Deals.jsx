@@ -18,8 +18,10 @@ import { LayoutGrid, RefreshCw, Search, ArrowUp, ArrowDown, ArrowRight, Rocket, 
 import { del } from '../api'
 import { confirmDialog } from '../utils/confirmBus'
 import PageHero from '../components/ui/PageHero'
+import StatusBadge from '../components/ui/StatusBadge'
 import { useDeals } from '../hooks/useDeals'
 import LaunchStepper from '../components/launch/LaunchStepper'
+import { QUOTE_STATUS_VARIANT } from '../components/quoting/constants'
 
 // The continuum, inbox-first. `inbox` is the derived lead phase; the rest are
 // real Opportunity stages a deal can be moved between.
@@ -230,7 +232,7 @@ export default function Deals() {
                       <td className="bb-td text-right tabular-nums font-semibold text-ink-2">{money(d.amount)}</td>
                       <td className="bb-td">
                         {d.quote_status
-                          ? <span className="text-[11px] px-1.5 py-0.5 rounded-full bg-bg-2 text-ink-2 border border-hairline capitalize">{String(d.quote_status).replace(/_/g, ' ')}</span>
+                          ? <StatusBadge status={QUOTE_STATUS_VARIANT[d.quote_status] || 'neutral'}>{String(d.quote_status).replace(/_/g, ' ')}</StatusBadge>
                           : <span className="text-ink-3">—</span>}
                       </td>
                       <td className="bb-td">

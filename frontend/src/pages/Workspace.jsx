@@ -139,7 +139,7 @@ function UserBubble({ text }) {
 function ErrorBubble({ text }) {
   return (
     <div className="flex justify-center my-2">
-      <div className="text-[12px] text-red-600 bg-red-50 border border-red-100 rounded-lg px-3 py-1.5">
+      <div className="text-[12px] text-red-600 dark:text-red-300 bg-red-50 dark:bg-red-500/10 border border-red-100 dark:border-red-500/25 rounded-lg px-3 py-1.5">
         {text}
       </div>
     </div>

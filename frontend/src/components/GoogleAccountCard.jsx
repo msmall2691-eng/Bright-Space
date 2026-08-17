@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
-import { Mail, Calendar, Link2, Unlink, AlertTriangle, CheckCircle } from 'lucide-react'
+import { Mail, Calendar, Link2, Unlink, CheckCircle } from 'lucide-react'
 import { get, patch, del } from '../api'
 import { confirmDialog } from '../utils/confirmBus'
 
@@ -89,9 +89,8 @@ export default function GoogleAccountCard() {
       </div>
 
       {notice && (
-        <div className={`text-xs rounded-lg px-3 py-2 my-2 border ${notice.tone === 'ok'
-          ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
-          : 'bg-amber-50 text-amber-800 border-amber-200'}`}>
+        <div className="flex items-center gap-2 text-xs rounded-lg px-3 py-2 my-2 border border-hairline bg-panel text-ink-2">
+          <span className={`h-1.5 w-1.5 rounded-full shrink-0 ${notice.tone === 'ok' ? 'bg-emerald-500' : 'bg-amber-500'}`} aria-hidden="true" />
           {notice.msg}
         </div>
       )}
@@ -102,7 +101,8 @@ export default function GoogleAccountCard() {
             <p className="text-xs text-ink-3 mb-2">Google OAuth isn't configured on the server.</p>
           )}
           {acct && acct.encryption_available === false && (
-            <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 mb-2">
+            <p className="flex items-center gap-2 text-xs text-ink-2 bg-panel border border-hairline rounded-lg px-3 py-2 mb-2">
+              <span className="h-1.5 w-1.5 rounded-full bg-amber-500 shrink-0" aria-hidden="true" />
               Connecting Google needs a stable server secret. Set <code>JWT_SECRET</code> in your
               server environment (Railway → Variables), then redeploy and try again.
             </p>
@@ -118,15 +118,20 @@ export default function GoogleAccountCard() {
           <div className="flex items-center gap-2 text-sm">
             <span className="font-medium text-ink">{acct.email}</span>
             {acct.status === 'expired' ? (
-              <span className="flex items-center gap-1 text-[11px] px-2 py-0.5 rounded-full border bg-amber-50 text-amber-700 border-amber-200">
-                <AlertTriangle className="w-3 h-3" /> reconnect needed
+              <span className="inline-flex items-center gap-1.5 text-[11px] px-2 h-5 rounded-sm border border-hairline-2 bg-panel text-ink-2 font-medium">
+                <span className="h-1.5 w-1.5 rounded-full bg-amber-500 shrink-0" aria-hidden="true" /> reconnect needed
               </span>
             ) : (
-              <span className="text-[11px] px-2 py-0.5 rounded-full border bg-emerald-50 text-emerald-700 border-emerald-200">connected</span>
+              <span className="inline-flex items-center gap-1.5 text-[11px] px-2 h-5 rounded-sm border border-hairline-2 bg-panel text-ink-2 font-medium">
+                <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 shrink-0" aria-hidden="true" /> connected
+              </span>
             )}
           </div>
           {acct.last_sync_error && (
-            <p className="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">{acct.last_sync_error}</p>
+            <p className="flex items-center gap-2 text-xs text-ink-2 bg-panel border border-hairline rounded-lg px-3 py-2">
+              <span className="h-1.5 w-1.5 rounded-full bg-amber-500 shrink-0" aria-hidden="true" />
+              {acct.last_sync_error}
+            </p>
           )}
 
           <div className="space-y-2">

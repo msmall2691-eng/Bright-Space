@@ -1,4 +1,4 @@
-import { X, Wand2, Clock, User } from 'lucide-react'
+import { X, Wand2, Clock } from 'lucide-react'
 import Button from '../ui/Button'
 
 /** Two preview-then-confirm modals for the Tools menu. Both accept the
@@ -42,8 +42,9 @@ export function AutoAssignModal({ state, onCancel, onRun, empName }) {
                         <div className="text-[13px] font-medium text-ink truncate">{a.title}</div>
                         <div className="text-[11px] text-ink-3">{a.date}</div>
                       </div>
-                      <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-emerald-700 bg-emerald-50 px-2 py-1 rounded shrink-0">
-                        <User className="w-3 h-3" /> {empName(a.cleaner_id)}
+                      <span className="inline-flex items-center gap-1.5 text-[11px] font-medium text-ink-2 shrink-0">
+                        <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-emerald-500" aria-hidden />
+                        {empName(a.cleaner_id)}
                       </span>
                     </div>
                   ))}
@@ -52,13 +53,16 @@ export function AutoAssignModal({ state, onCancel, onRun, empName }) {
                 <div className="py-6 text-center text-[13px] text-ink-3">No turnovers could be auto-assigned.</div>
               )}
               {unassignable.length > 0 && (
-                <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2">
-                  <div className="text-[11px] font-semibold text-amber-700 mb-1">
-                    {unassignable.length} couldn’t be filled (no available cleaner)
+                <div className="flex items-start gap-2.5 rounded-lg border border-hairline bg-panel px-3 py-2">
+                  <span className="w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0 mt-1" aria-hidden="true" />
+                  <div className="flex-1 min-w-0">
+                    <div className="text-[11px] font-medium text-ink mb-1">
+                      {unassignable.length} couldn’t be filled (no available cleaner)
+                    </div>
+                    {unassignable.map(u => (
+                      <div key={u.job_id} className="text-[11px] text-ink-3">{u.title} · {u.date}</div>
+                    ))}
                   </div>
-                  {unassignable.map(u => (
-                    <div key={u.job_id} className="text-[11px] text-amber-700/90">{u.title} · {u.date}</div>
-                  ))}
                 </div>
               )}
             </>
@@ -120,7 +124,7 @@ export function FixTimesModal({ state, onCancel, onRun }) {
                     <div className="text-[13px] font-medium text-ink truncate">{j.title}</div>
                     <div className="text-[11px] text-ink-3">{j.scheduled_date} · {j.source.replace(/_/g, ' ')}</div>
                   </div>
-                  <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-blue-700 bg-blue-50 px-2 py-1 rounded shrink-0 tabular-nums">
+                  <span className="text-[11px] font-medium text-ink-2 shrink-0 tabular-nums">
                     {j.new_start}–{(j.new_end || '').slice(0, 5)}
                   </span>
                 </div>

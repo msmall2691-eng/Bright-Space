@@ -108,14 +108,11 @@ export default function IntegrationsTab({ toast, active }) {
                 </div>
               </div>
               <div className="flex items-center gap-2">
-                <span className={`px-3 py-1.5 rounded-lg text-xs font-medium border ${
-                  gcalConn.loading
-                    ? 'bg-bg-2 text-ink-3 border-hairline'
-                    : gcalConn.connected
-                      ? 'bg-emerald-50 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border-emerald-200 dark:border-emerald-500/25'
-                      : 'bg-red-50 dark:bg-red-500/10 text-red-700 dark:text-red-300 border-red-200 dark:border-red-500/25'
-                }`}>
-                  {gcalConn.loading ? 'Checking…' : gcalConn.connected ? '✓ Connected' : '✗ Not connected'}
+                <span className="inline-flex h-6 items-center gap-1.5 rounded-sm border border-hairline-2 bg-panel px-2 text-[11px] font-medium text-ink-2">
+                  <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${
+                    gcalConn.loading ? 'bg-ink-3' : gcalConn.connected ? 'bg-emerald-500' : 'bg-red-500'
+                  }`} aria-hidden="true" />
+                  {gcalConn.loading ? 'Checking…' : gcalConn.connected ? 'Connected' : 'Not connected'}
                 </span>
                 {!gcalConn.loading && !gcalConn.connected && gcalConn.oauth_available && (
                   <button onClick={connectGoogle} disabled={gcalConnecting}
@@ -126,13 +123,16 @@ export default function IntegrationsTab({ toast, active }) {
               </div>
             </div>
             {!gcalConn.loading && !gcalConn.connected && (
-              <div className="mt-3 text-xs bg-red-50 border border-red-200 text-red-700 dark:bg-red-950 dark:border-red-800 dark:text-red-300 rounded-lg p-3 leading-relaxed">
-                <div className="font-semibold mb-1">Appointments aren't reaching Google.</div>
-                {gcalConn.detail || 'Google Calendar credentials are missing or invalid on the server.'}
+              <div className="mt-3 text-xs bg-panel border border-hairline rounded-lg p-3 leading-relaxed">
+                <div className="flex items-center gap-1.5 font-semibold text-ink mb-1">
+                  <span className="h-1.5 w-1.5 rounded-full bg-red-500 shrink-0" aria-hidden="true" />
+                  Appointments aren't reaching Google.
+                </div>
+                <span className="text-ink-2">{gcalConn.detail || 'Google Calendar credentials are missing or invalid on the server.'}</span>
                 {!gcalConn.oauth_available && (
-                  <div className="mt-1 text-[11px]">
+                  <div className="mt-1 text-[11px] text-ink-3">
                     To enable one-click connect, add a Google "Web" OAuth client on the server
-                    (GOOGLE_CREDENTIALS_B64) with redirect URI <code className="bg-red-100 px-1 rounded">/api/settings/google/callback</code>.
+                    (GOOGLE_CREDENTIALS_B64) with redirect URI <code className="bg-bg-2 px-1 rounded">/api/settings/google/callback</code>.
                   </div>
                 )}
               </div>
@@ -202,14 +202,11 @@ export default function IntegrationsTab({ toast, active }) {
                   <p className="text-xs text-ink-3">Inbound email is synced from connected Google accounts and linked to clients</p>
                 </div>
               </div>
-              <span className={`px-3 py-1.5 rounded-lg text-xs font-medium border ${
-                gmailConn.loading
-                  ? 'bg-bg-2 text-ink-3 border-hairline'
-                  : gmailConn.connected
-                    ? 'bg-emerald-50 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border-emerald-200 dark:border-emerald-500/25'
-                    : 'bg-red-50 dark:bg-red-500/10 text-red-700 dark:text-red-300 border-red-200 dark:border-red-500/25'
-              }`}>
-                {gmailConn.loading ? 'Checking…' : gmailConn.connected ? '✓ Connected' : '✗ Not connected'}
+              <span className="inline-flex h-6 items-center gap-1.5 rounded-sm border border-hairline-2 bg-panel px-2 text-[11px] font-medium text-ink-2 shrink-0">
+                <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${
+                  gmailConn.loading ? 'bg-ink-3' : gmailConn.connected ? 'bg-emerald-500' : 'bg-red-500'
+                }`} aria-hidden="true" />
+                {gmailConn.loading ? 'Checking…' : gmailConn.connected ? 'Connected' : 'Not connected'}
               </span>
             </div>
             {!gmailConn.loading && Array.isArray(gmailConn.accounts) && gmailConn.accounts.length > 0 && (
@@ -332,8 +329,9 @@ function SquareCard({ toast, active }) {
             </p>
           </div>
         </div>
-        <span className={`px-3 py-1.5 rounded-full text-[11px] font-medium border ${st.loading ? 'bg-bg-2 text-ink-3 border-hairline' : st.configured ? 'bg-emerald-500/10 text-emerald-500 border-emerald-500/30' : 'bg-bg-2 text-ink-3 border-hairline'}`}>
-          {st.loading ? 'Checking…' : st.configured ? '✓ Connected' : 'Not connected'}
+        <span className="inline-flex h-6 items-center gap-1.5 rounded-sm border border-hairline-2 bg-panel px-2 text-[11px] font-medium text-ink-2 shrink-0">
+          <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${st.loading ? 'bg-ink-3' : st.configured ? 'bg-emerald-500' : 'bg-ink-3'}`} aria-hidden="true" />
+          {st.loading ? 'Checking…' : st.configured ? 'Connected' : 'Not connected'}
         </span>
       </div>
 

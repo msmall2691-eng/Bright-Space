@@ -6,8 +6,11 @@ function EmailCard({ em }) {
   return (
     <div className="bg-panel border border-hairline rounded-xl p-4 hover:shadow-sm transition-all">
       <div className="flex items-start gap-3">
-        <div className={`w-9 h-9 rounded-full flex items-center justify-center shrink-0 ${outbound ? 'bg-blue-100' : 'bg-cyan-100'}`}>
-          <Mail className={`w-4 h-4 ${outbound ? 'text-indigo-600' : 'text-cyan-600'}`} />
+        {/* Neutral avatar circle — the direction dot below already carries
+            the sent/received distinction, so the circle doesn't need to
+            double as a status indicator. */}
+        <div className="w-9 h-9 rounded-full flex items-center justify-center shrink-0 bg-bg-2">
+          <Mail className="w-4 h-4 text-ink-3" />
         </div>
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2">
@@ -17,7 +20,9 @@ function EmailCard({ em }) {
             </span>
           </div>
           <div className="text-xs text-ink-3 mt-0.5 flex items-center gap-1.5">
-            <span className={`text-[9px] px-1.5 py-0.5 rounded-full font-medium ${outbound ? 'bg-blue-50 text-blue-600' : 'bg-cyan-50 text-cyan-600'}`}>
+            {/* Dot+word, not a filled pill (owner's veto of tinted chips). */}
+            <span className="inline-flex items-center gap-1 text-[9px] font-medium text-ink-3">
+              <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${outbound ? 'bg-blue-500' : 'bg-cyan-500'}`} aria-hidden="true" />
               {outbound ? 'Sent' : 'Received'}
             </span>
             <span className="truncate">{outbound ? `To: ${em.to_addr || ''}` : (em.from_addr || '')}</span>

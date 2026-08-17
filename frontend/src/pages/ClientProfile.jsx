@@ -63,8 +63,10 @@ function SubNav({ items, active, onSelect }) {
     <div className="flex items-center gap-1 px-4 sm:px-6 py-2 border-b border-hairline bg-bg/40 overflow-x-auto">
       {items.map(it => (
         <button key={it.key} onClick={() => onSelect(it.key)}
-          className={`px-3 py-1.5 rounded-lg text-xs font-medium whitespace-nowrap transition-colors ${
-            active === it.key ? 'bg-blue-500/15 text-blue-500' : 'text-ink-3 hover:text-ink-2 hover:bg-bg-2'
+          className={`px-3 py-1.5 rounded-lg text-xs font-medium whitespace-nowrap border-b-2 transition-colors ${
+            active === it.key
+              ? 'border-blue-500 text-blue-500'
+              : 'border-transparent text-ink-3 hover:text-ink-2 hover:bg-bg-2'
           }`}>
           {it.label}
           {it.count > 0 && <span className="ml-1.5 opacity-70">{it.count}</span>}

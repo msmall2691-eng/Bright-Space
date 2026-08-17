@@ -97,7 +97,7 @@ export default function DangerZone({ toast, automationSettings, setAutomationSet
       {showDangerZone && (<>
 
       {/* Pause all syncs (reversible) */}
-      <div className="bg-panel rounded-xl border border-amber-200 dark:border-amber-500/25 p-6 space-y-4 mb-4">
+      <div className="bg-panel rounded-xl border border-hairline p-6 space-y-4 mb-4">
         <div>
           <h3 className="text-sm font-semibold text-ink">Pause all syncs</h3>
           <p className="text-xs text-ink-3 mt-1">
@@ -122,7 +122,7 @@ export default function DangerZone({ toast, automationSettings, setAutomationSet
       </div>
 
       {/* Unlink calendars (irreversible — but data preserved) */}
-      <div className="bg-panel rounded-xl border border-orange-200 dark:border-orange-500/25 p-6 space-y-4 mb-4">
+      <div className="bg-panel rounded-xl border border-hairline p-6 space-y-4 mb-4">
         <div>
           <h3 className="text-sm font-semibold text-ink">Unlink calendars</h3>
           <p className="text-xs text-ink-3 mt-1">
@@ -167,9 +167,11 @@ export default function DangerZone({ toast, automationSettings, setAutomationSet
           {unlinking ? 'Unlinking...' : 'Unlink calendars'}
         </button>
         {unlinkResult && !unlinkResult.error && (
-          <div className="bg-emerald-50 dark:bg-emerald-500/10 border border-emerald-200 dark:border-emerald-500/25 text-emerald-800 dark:text-emerald-300 rounded-lg p-3 text-xs">
-            <div className="font-semibold mb-1">✓ Unlinked</div>
-            <ul className="list-disc list-inside space-y-0.5">
+          <div className="bg-panel border border-hairline rounded-lg p-3 text-xs">
+            <div className="flex items-center gap-1.5 font-semibold text-ink mb-1">
+              <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 shrink-0" aria-hidden="true" /> Unlinked
+            </div>
+            <ul className="list-disc list-inside space-y-0.5 text-ink-2">
               <li>Jobs cleared: {unlinkResult.jobs_unlinked}</li>
               <li>Visits cleared: {unlinkResult.visits_unlinked}</li>
               <li>iCal feeds deactivated: {unlinkResult.ical_feeds_deactivated}</li>
@@ -177,13 +179,14 @@ export default function DangerZone({ toast, automationSettings, setAutomationSet
           </div>
         )}
         {unlinkResult?.error && (
-          <div className="bg-red-50 border border-red-200 text-red-700 dark:bg-red-950 dark:border-red-800 dark:text-red-300 rounded-lg p-3 text-xs">
+          <div className="bg-panel border border-hairline rounded-lg p-3 text-xs text-ink-2 flex items-start gap-1.5">
+            <span className="h-1.5 w-1.5 rounded-full bg-red-500 shrink-0 mt-1" aria-hidden="true" />
             Unlink failed: {unlinkResult.error}
           </div>
         )}
       </div>
 
-      <div className="bg-panel rounded-xl border border-red-200 dark:border-red-500/25 p-6 space-y-4">
+      <div className="bg-panel rounded-xl border border-hairline p-6 space-y-4">
         <div>
           <h3 className="text-sm font-semibold text-ink">Reset all data</h3>
           <p className="text-xs text-ink-3 mt-1">
@@ -214,11 +217,12 @@ export default function DangerZone({ toast, automationSettings, setAutomationSet
           {resetting ? 'Deleting...' : 'Reset all data'}
         </button>
         {resetResult && !resetResult.error && (
-          <div className="bg-emerald-50 dark:bg-emerald-500/10 border border-emerald-200 dark:border-emerald-500/25 text-emerald-800 dark:text-emerald-300 rounded-lg p-3 text-xs">
-            <div className="font-semibold mb-1">
-              ✓ Deleted {resetResult.deleted_total} rows
+          <div className="bg-panel border border-hairline rounded-lg p-3 text-xs">
+            <div className="flex items-center gap-1.5 font-semibold text-ink mb-1">
+              <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 shrink-0" aria-hidden="true" />
+              Deleted {resetResult.deleted_total} rows
             </div>
-            <ul className="list-disc list-inside space-y-0.5">
+            <ul className="list-disc list-inside space-y-0.5 text-ink-2">
               {Object.entries(resetResult.deleted_by_table || {})
                 .filter(([, n]) => n > 0)
                 .map(([table, n]) => (
@@ -228,7 +232,8 @@ export default function DangerZone({ toast, automationSettings, setAutomationSet
           </div>
         )}
         {resetResult?.error && (
-          <div className="bg-red-50 border border-red-200 text-red-700 dark:bg-red-950 dark:border-red-800 dark:text-red-300 rounded-lg p-3 text-xs">
+          <div className="bg-panel border border-hairline rounded-lg p-3 text-xs text-ink-2 flex items-start gap-1.5">
+            <span className="h-1.5 w-1.5 rounded-full bg-red-500 shrink-0 mt-1" aria-hidden="true" />
             Reset failed: {resetResult.error}
           </div>
         )}

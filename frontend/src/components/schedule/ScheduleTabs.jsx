@@ -106,9 +106,9 @@ export function RecurringCreateModal({ clients, properties, onClose, onCreated }
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-end sm:items-center sm:justify-center">
       <div className="w-full sm:max-w-2xl bg-panel rounded-t-2xl sm:rounded-lg shadow-xl overflow-hidden flex flex-col max-h-[92dvh]">
-        <div className="flex items-center justify-between bg-gradient-to-r from-blue-500 to-indigo-600 p-4 sm:p-6 text-white">
-          <h2 className="text-xl sm:text-2xl font-bold">New recurring schedule</h2>
-          <button onClick={onClose} className="p-2 hover:bg-blue-400 rounded"><X className="w-5 h-5" /></button>
+        <div className="flex items-center justify-between bg-panel border-b border-hairline p-4 sm:p-6">
+          <h2 className="text-xl sm:text-2xl font-semibold text-ink">New recurring schedule</h2>
+          <button onClick={onClose} className="p-2 text-ink-3 hover:text-ink-2 hover:bg-bg-2 rounded"><X className="w-5 h-5" /></button>
         </div>
         <div className="overflow-y-auto overscroll-contain flex-1 p-4 sm:p-6 space-y-4">
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -208,30 +208,33 @@ export function RecurringCreateModal({ clients, properties, onClose, onCreated }
             <textarea value={form.notes} onChange={e => setForm(f => ({...f, notes: e.target.value}))} rows={2} className="w-full px-3 py-2 border border-hairline rounded-lg" />
           </div>
           {dupMatches && dupMatches.length > 0 && (
-            <div className="p-3 bg-amber-50 border border-amber-200 rounded text-sm"
+            <div className="flex items-start gap-2.5 px-3 py-2.5 rounded-lg border border-hairline bg-panel text-xs"
               data-testid="recurring-create-duplicate-prompt">
-              <p className="font-semibold text-amber-800 mb-1">Similar recurring series already exists</p>
-              <ul className="text-amber-900 mb-2 space-y-1 text-xs">
-                {dupMatches.map(m => (
-                  <li key={m.id}>
-                    This client already has: {m.cadence}
-                    {m.property_name ? ` at ${m.property_name}` : m.address ? ` at ${m.address}` : ''}
-                    {` — ${m.upcoming_job_count || 0} upcoming`}
-                    {' · '}
-                    <a href={`/recurring?series=${m.id}`}
-                      className="font-semibold underline text-amber-800 hover:text-amber-900">
-                      Open existing
-                    </a>
-                  </li>
-                ))}
-              </ul>
-              <div className="flex gap-2">
-                <button type="button" onClick={() => setDupMatches(null)}
-                  className="px-3 py-1.5 rounded-md bg-bg-2 text-ink-2 hover:bg-hairline text-xs">Never mind</button>
-                <button type="button" onClick={() => submit(true)} disabled={saving}
-                  className="px-3 py-1.5 rounded-md bg-amber-600 hover:bg-amber-700 text-white disabled:opacity-50 text-xs">
-                  {saving ? 'Creating...' : 'Create anyway'}
-                </button>
+              <span className="w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0 mt-1" aria-hidden="true" />
+              <div className="flex-1 min-w-0">
+                <p className="font-medium text-ink mb-1">Similar recurring series already exists</p>
+                <ul className="text-ink-2 mb-2 space-y-1">
+                  {dupMatches.map(m => (
+                    <li key={m.id}>
+                      This client already has: {m.cadence}
+                      {m.property_name ? ` at ${m.property_name}` : m.address ? ` at ${m.address}` : ''}
+                      {` — ${m.upcoming_job_count || 0} upcoming`}
+                      {' · '}
+                      <a href={`/recurring?series=${m.id}`}
+                        className="font-medium underline text-ink hover:text-indigo-600">
+                        Open existing
+                      </a>
+                    </li>
+                  ))}
+                </ul>
+                <div className="flex gap-2">
+                  <button type="button" onClick={() => setDupMatches(null)}
+                    className="px-3 py-1.5 rounded-md bg-bg-2 border border-hairline-2 text-ink-2 hover:bg-hairline">Never mind</button>
+                  <button type="button" onClick={() => submit(true)} disabled={saving}
+                    className="px-3 py-1.5 rounded-md bg-panel border border-hairline-2 text-ink-2 hover:bg-bg-2 font-medium disabled:opacity-50">
+                    {saving ? 'Creating…' : 'Create anyway'}
+                  </button>
+                </div>
               </div>
             </div>
           )}

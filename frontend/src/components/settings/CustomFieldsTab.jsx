@@ -12,7 +12,10 @@ import {
  *  panel is a sibling of the main column. Solved by exposing the state
  *  from a hook + two render bodies the parent slots into the right places. */
 
-export function useCustomFieldsTab({ toast }) {
+// `enabled` gates the fetch — /api/fields is admin-only on the backend
+// (modules/fields/router.py), so a manager/viewer would otherwise get a
+// silently-swallowed 403 on every Settings page load, tab visible or not.
+export function useCustomFieldsTab({ toast, enabled = true }) {
   const [entityTab, setEntityTab] = useState('client')
   const [fields, setFields] = useState([])
   const [panel, setPanel] = useState(null)
@@ -23,7 +26,7 @@ export function useCustomFieldsTab({ toast }) {
     get(`/api/fields?entity_type=${entityTab}`).then(setFields).catch(err => console.error("[Settings]", err)),
     [entityTab]
   )
-  useEffect(() => { load() }, [load])
+  useEffect(() => { if (enabled) load() }, [enabled, load])
 
   const openNew = () => { setForm({ ...EMPTY_FORM }); setPanel('new') }
   const openEdit = (field) => {
@@ -150,7 +153,8 @@ export function CustomFieldsBody({ state }) {
               </div>
 
               <div>
-                <span className={`text-[11px] font-medium px-2 py-0.5 rounded-full ${TYPE_BADGE[field.field_type] || TYPE_BADGE.text}`}>
+                <span className="inline-flex items-center gap-1.5 text-[11px] font-medium text-ink-2">
+                  <span className={`h-1.5 w-1.5 rounded-full shrink-0 ${TYPE_BADGE[field.field_type] || TYPE_BADGE.text}`} aria-hidden="true" />
                   {FIELD_TYPES.find(t => t.value === field.field_type)?.label || field.field_type}
                 </span>
               </div>

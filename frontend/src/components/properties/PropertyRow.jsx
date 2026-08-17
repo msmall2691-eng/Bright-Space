@@ -147,18 +147,18 @@ export function PropertyRow({
           <div className="flex flex-wrap items-center gap-2 sm:ml-2 shrink-0">
             {pType === 'str' && (p.icals?.length || 0) > 0 && (
               <button onClick={(e) => { e.stopPropagation(); syncOne(p.id) }} disabled={syncing === p.id}
-                className="flex items-center gap-1.5 bg-orange-600/20 hover:bg-orange-600/30 text-orange-400 border border-orange-600/30 px-3 py-1.5 rounded-lg text-xs transition-colors">
+                className="flex items-center gap-1.5 bg-panel border border-hairline-2 text-ink-2 hover:bg-bg-2 px-3 py-1.5 rounded-md text-xs font-medium transition-colors">
                 <RefreshCw className={`w-3.5 h-3.5 ${syncing === p.id ? 'animate-spin' : ''}`} />
                 {syncing === p.id ? 'Syncing...' : 'Sync'}
               </button>
             )}
             <button onClick={(e) => { e.stopPropagation(); navigate(`/properties/${p.id}`) }}
-              className="text-xs text-blue-600 dark:text-blue-300 hover:text-blue-900 bg-blue-100 dark:bg-blue-500/15 hover:bg-blue-200 dark:hover:bg-blue-500/25 px-3 py-1.5 rounded-lg transition-colors flex items-center gap-1">
+              className="flex items-center gap-1 bg-panel border border-hairline-2 text-ink-2 hover:bg-bg-2 px-3 py-1.5 rounded-md text-xs font-medium transition-colors">
               <Calendar className="w-3.5 h-3.5" />
               Jobs
             </button>
             <button onClick={(e) => { e.stopPropagation(); openEdit(p) }}
-              className="text-xs text-ink-3 hover:text-ink bg-bg-2 hover:bg-bg-2 px-3 py-1.5 rounded-lg transition-colors">
+              className="bg-panel border border-hairline-2 text-ink-2 hover:bg-bg-2 px-3 py-1.5 rounded-md text-xs font-medium transition-colors">
               Edit
             </button>
             {/* Honest label: the backend's DELETE is a soft deactivate

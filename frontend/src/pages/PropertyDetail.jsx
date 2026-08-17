@@ -18,9 +18,9 @@ const toArray = (res) => Array.isArray(res) ? res : (res?.items ?? res?.data ?? 
 
 
 const PROPERTY_TYPE_CONFIG = {
-  residential: { label: 'Residential', badge: 'bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-300', icon: Home },
-  commercial: { label: 'Commercial', badge: 'bg-purple-100 text-purple-700 dark:bg-purple-900 dark:text-purple-300', icon: Building2 },
-  str: { label: 'STR', badge: 'bg-amber-100 text-amber-700 dark:bg-amber-900 dark:text-amber-300', icon: Wind },
+  residential: { label: 'Residential', icon: Home },
+  commercial: { label: 'Commercial', icon: Building2 },
+  str: { label: 'STR', icon: Wind },
 }
 
 // Read-only per-feed status list for STR properties — same vocabulary as the
@@ -203,12 +203,12 @@ function QuotesCard({ quotes }) {
 }
 
 const JOB_STATUS_CONFIG = {
-  unscheduled: { label: 'Unscheduled', dot: 'bg-amber-500', badge: 'bg-amber-100 text-amber-700 dark:bg-amber-900 dark:text-amber-300' },
-  scheduled: { label: 'Scheduled', dot: 'bg-blue-500', badge: 'bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-300' },
-  dispatched: { label: 'Dispatched', dot: 'bg-green-500', badge: 'bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-300' },
-  in_progress: { label: 'In Progress', dot: 'bg-amber-500', badge: 'bg-amber-100 text-amber-700 dark:bg-amber-900 dark:text-amber-300' },
-  completed: { label: 'Completed', dot: 'bg-green-600', badge: 'bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-300' },
-  cancelled: { label: 'Cancelled', dot: 'bg-red-500', badge: 'bg-red-100 text-red-700 dark:bg-red-900 dark:text-red-300' },
+  unscheduled: { label: 'Unscheduled', dot: 'bg-amber-500' },
+  scheduled: { label: 'Scheduled', dot: 'bg-blue-500' },
+  dispatched: { label: 'Dispatched', dot: 'bg-green-500' },
+  in_progress: { label: 'In Progress', dot: 'bg-amber-500' },
+  completed: { label: 'Completed', dot: 'bg-green-600' },
+  cancelled: { label: 'Cancelled', dot: 'bg-red-500' },
 }
 
 // Inline checklist editor. Areas + tasks per property.
@@ -605,7 +605,8 @@ export default function PropertyDetail() {
           {/* AI-enriched gist of the property: specs, access, notable notes. */}
           <AiInsight type="property" id={propertyId} className="mb-4" />
           {error && (
-            <div className="bg-red-50 border border-red-200 text-red-700 dark:bg-red-950 dark:border-red-800 dark:text-red-300 px-4 py-3 rounded-lg mb-4 text-sm">
+            <div className="flex items-center gap-2 border border-hairline bg-panel rounded-lg px-4 py-3 mb-4 text-sm text-ink">
+              <span className="w-1.5 h-1.5 rounded-full shrink-0 bg-red-500" aria-hidden="true" />
               {error}
             </div>
           )}
@@ -651,7 +652,8 @@ export default function PropertyDetail() {
               <div className="text-center py-12">
                 <Calendar className="w-12 h-12 text-ink-3 mx-auto mb-3" />
                 <p className="text-ink-2">No jobs scheduled for this property</p>
-                <Button variant="primary" size="sm" className="mt-4">
+                <Button variant="primary" size="sm" className="mt-4"
+                  onClick={() => navigate(`/schedule?newJob=1&property_id=${propertyId}`)}>
                   <Plus className="w-4 h-4 mr-2" />
                   Create First Job
                 </Button>
@@ -738,14 +740,14 @@ export default function PropertyDetail() {
         <div className="fixed inset-0 bg-black bg-opacity-50 z-40 flex items-end sm:items-center sm:justify-center">
           <div className="w-full sm:w-full max-w-2xl bg-panel rounded-t-2xl sm:rounded-lg shadow-xl overflow-hidden sm:max-h-[90dvh] flex flex-col max-h-[92dvh]">
             {/* Header */}
-            <div className="bg-gradient-to-r from-blue-500 to-indigo-600 p-4 sm:p-6 text-white flex items-center justify-between">
+            <div className="bg-panel border-b border-hairline p-4 sm:p-6 flex items-center justify-between">
               <div>
-                <h2 className="text-xl sm:text-2xl font-bold">{selectedJob.title}</h2>
-                <p className="text-xs sm:text-sm text-blue-100">Job #{selectedJob.id}</p>
+                <h2 className="text-xl sm:text-2xl font-bold text-ink">{selectedJob.title}</h2>
+                <p className="text-xs sm:text-sm text-ink-3">Job #{selectedJob.id}</p>
               </div>
               <button
                 onClick={() => setShowJobDetails(false)}
-                className="p-2 hover:bg-blue-400 rounded transition-colors -mr-2 sm:mr-0"
+                className="p-2 hover:bg-bg-2 rounded text-ink-2 transition-colors -mr-2 sm:mr-0"
               >
                 ✕
               </button>

@@ -135,34 +135,55 @@ export default function QuoteEditPanel({
             <OriginalRequestCard intake={selectedIntake} defaultOpen />
           )}
 
-          {/* Delivery banner — the last send attempt failed */}
+          {/* Delivery + customer-response attention cards — hairline card with
+              a severity dot (owner-vetoed solid tinted banners), matching
+              components/schedule/OpsAlerts.jsx's established pattern. */}
           {selected && selected.last_send_error && ['draft', 'sent', 'viewed'].includes(selected.status) && (
-            <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm">
-              <div className="font-semibold text-red-800 mb-1">Last send failed — the customer didn't get this quote</div>
-              <div className="text-red-900">{selected.last_send_error}</div>
-              {selected.last_send_attempt_at && <div className="text-[11px] text-red-700 mt-1">{new Date(selected.last_send_attempt_at).toLocaleString()}</div>}
+            <div className="rounded-lg border border-hairline bg-panel p-3 text-sm">
+              <div className="flex items-start gap-2">
+                <span className="w-1.5 h-1.5 rounded-full shrink-0 mt-1.5 bg-red-500" aria-hidden="true" />
+                <div className="min-w-0">
+                  <div className="font-semibold text-ink mb-1">Last send failed — the customer didn't get this quote</div>
+                  <div className="text-ink-2">{selected.last_send_error}</div>
+                  {selected.last_send_attempt_at && <div className="text-[11px] text-ink-3 mt-1">{new Date(selected.last_send_attempt_at).toLocaleString()}</div>}
+                </div>
+              </div>
             </div>
           )}
 
-          {/* Customer response banners */}
           {selected && selected.requested_changes_message && (
-            <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm">
-              <div className="font-semibold text-amber-800 mb-1">Customer requested changes</div>
-              <div className="text-amber-900 whitespace-pre-wrap">“{selected.requested_changes_message}”</div>
-              {selected.requested_changes_at && <div className="text-[11px] text-amber-700 mt-1">{new Date(selected.requested_changes_at).toLocaleString()}</div>}
+            <div className="rounded-lg border border-hairline bg-panel p-3 text-sm">
+              <div className="flex items-start gap-2">
+                <span className="w-1.5 h-1.5 rounded-full shrink-0 mt-1.5 bg-amber-500" aria-hidden="true" />
+                <div className="min-w-0">
+                  <div className="font-semibold text-ink mb-1">Customer requested changes</div>
+                  <div className="text-ink-2 whitespace-pre-wrap">“{selected.requested_changes_message}”</div>
+                  {selected.requested_changes_at && <div className="text-[11px] text-ink-3 mt-1">{new Date(selected.requested_changes_at).toLocaleString()}</div>}
+                </div>
+              </div>
             </div>
           )}
           {selected && selected.status === 'accepted' && (
-            <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm">
-              <div className="font-semibold text-emerald-800">Accepted{selected.accepted_by_name ? ` by ${selected.accepted_by_name}` : ''} ✓</div>
-              {selected.accepted_at && <div className="text-[11px] text-emerald-700 mt-0.5">{new Date(selected.accepted_at).toLocaleString()}</div>}
+            <div className="rounded-lg border border-hairline bg-panel p-3 text-sm">
+              <div className="flex items-start gap-2">
+                <span className="w-1.5 h-1.5 rounded-full shrink-0 mt-1.5 bg-emerald-500" aria-hidden="true" />
+                <div className="min-w-0">
+                  <div className="font-semibold text-ink">Accepted{selected.accepted_by_name ? ` by ${selected.accepted_by_name}` : ''} ✓</div>
+                  {selected.accepted_at && <div className="text-[11px] text-ink-3 mt-0.5">{new Date(selected.accepted_at).toLocaleString()}</div>}
+                </div>
+              </div>
             </div>
           )}
           {selected && selected.status === 'declined' && (
-            <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm">
-              <div className="font-semibold text-red-800">Declined{selected.declined_by_name ? ` by ${selected.declined_by_name}` : ''}</div>
-              {selected.declined_reason && <div className="text-red-900 mt-0.5">“{selected.declined_reason}”</div>}
-              {selected.declined_at && <div className="text-[11px] text-red-700 mt-0.5">{new Date(selected.declined_at).toLocaleString()}</div>}
+            <div className="rounded-lg border border-hairline bg-panel p-3 text-sm">
+              <div className="flex items-start gap-2">
+                <span className="w-1.5 h-1.5 rounded-full shrink-0 mt-1.5 bg-red-500" aria-hidden="true" />
+                <div className="min-w-0">
+                  <div className="font-semibold text-ink">Declined{selected.declined_by_name ? ` by ${selected.declined_by_name}` : ''}</div>
+                  {selected.declined_reason && <div className="text-ink-2 mt-0.5">“{selected.declined_reason}”</div>}
+                  {selected.declined_at && <div className="text-[11px] text-ink-3 mt-0.5">{new Date(selected.declined_at).toLocaleString()}</div>}
+                </div>
+              </div>
             </div>
           )}
 

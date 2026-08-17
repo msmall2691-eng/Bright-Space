@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { Bell, Clock } from 'lucide-react'
-import { CHANNEL_CONFIG, SLA_CONFIG, PRIORITY_COLORS } from './constants'
+import { CHANNEL_CONFIG, PRIORITY_COLORS } from './constants'
 import { isSupported as notificationsSupported, getPermission as getNotifPermission, requestPermission as requestNotifPermission } from '../../utils/notifications'
 
 /** Small pure display components used across the Comms inbox — no external
@@ -68,10 +68,13 @@ export function Avatar({ name, size = 'md', className = '', online }) {
 export function ChannelBadge({ channel, compact = false }) {
   const c = CHANNEL_CONFIG[channel] || CHANNEL_CONFIG.sms
   const Icon = c.icon
-  if (compact) return <Icon className={`w-3.5 h-3.5 ${c.text}`} />
+  if (compact) return <Icon className="w-3.5 h-3.5 text-ink-3" />
+  // Dot+word, not a tinted chip — the dot carries the channel's hue, the
+  // label stays plain ink (owner's veto of filled pill bubbles).
   return (
-    <span className={`inline-flex items-center gap-1 text-[10px] font-semibold px-1.5 py-0.5 rounded-md ${c.bg} ${c.text}`}>
-      <Icon className="w-3 h-3" /> {c.label}
+    <span className="inline-flex items-center gap-1.5 text-[10px] font-medium text-ink-2">
+      <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${c.dot}`} aria-hidden="true" />
+      {c.label}
     </span>
   )
 }

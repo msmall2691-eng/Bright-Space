@@ -11,10 +11,10 @@ import { ArrowLeft, Search, Send } from 'lucide-react'
 import { post } from '../../api'
 
 const SUGGESTIONS = [
-  "What's the door code for my next job?",
   'What am I doing tomorrow?',
   'How do we clean stainless steel?',
-  "What's the WiFi at today's house?",
+  'Who else is on my job today?',
+  'What did the office say about my next job?',
 ]
 
 function AskThread({ initialQuestion, onClose }) {

@@ -4,6 +4,7 @@ import { LayoutGrid, RefreshCw, GripVertical, Search, DollarSign, Calendar, Rows
 import { get, patch } from '../api'
 import SavedViewsBar from '../components/SavedViewsBar'
 import PageHero from '../components/ui/PageHero'
+import StatusBadge from '../components/ui/StatusBadge'
 
 // Canonical opportunity pipeline (matches backend Opportunity.stage + the chips
 // already used on the client profile / OpportunityLinker).
@@ -215,9 +216,9 @@ export default function Pipeline() {
                             </span>
                             <div className="flex items-center gap-1.5 shrink-0">
                               {o.service_type && (
-                                <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-bg-2 text-ink-3 border border-hairline capitalize">
+                                <StatusBadge status="neutral">
                                   {String(o.service_type).replace(/_/g, ' ')}
-                                </span>
+                                </StatusBadge>
                               )}
                               {o.created_at && (
                                 <span className="flex items-center gap-0.5 text-[10px] text-ink-3">

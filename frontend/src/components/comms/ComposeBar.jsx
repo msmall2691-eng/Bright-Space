@@ -90,8 +90,9 @@ export function ComposeBar({
       )}
 
       {/* Appointment-aware quick-replies — pull the customer's real next visit
-          into a ready-to-send reminder / confirmation. Distinct (filled) style
-          from the plain canned chips since these drop in a whole message. */}
+          into a ready-to-send reminder / confirmation. Same hairline
+          secondary-button style as the canned chips below (owner's veto of
+          filled pill bubbles) — these drop in a whole message, not append. */}
       {showApptChips && (
         <div className="flex items-center gap-1.5 mb-2 overflow-x-auto pb-1 scrollbar-thin">
           <span className="shrink-0 text-[10px] font-semibold text-ink-3 uppercase tracking-wide pr-0.5">
@@ -99,12 +100,12 @@ export function ComposeBar({
           </span>
           <button
             onClick={() => onFillReply(apptReminderText({ job: nextAppt, firstName, company: companyName }))}
-            className="shrink-0 inline-flex items-center gap-1 text-[11px] font-semibold px-2.5 py-1.5 rounded-full bg-indigo-500/10 text-indigo-700 dark:text-indigo-300 hover:bg-indigo-500/20 transition-colors whitespace-nowrap">
+            className="shrink-0 inline-flex items-center gap-1 text-[11px] font-medium px-2.5 py-1.5 rounded-md border border-hairline-2 bg-panel text-ink-2 hover:bg-bg-2 transition-colors whitespace-nowrap">
             <BellRing className="w-3 h-3" /> Remind
           </button>
           <button
             onClick={() => onFillReply(apptConfirmText({ job: nextAppt, firstName }))}
-            className="shrink-0 inline-flex items-center gap-1 text-[11px] font-semibold px-2.5 py-1.5 rounded-full bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-500/20 transition-colors whitespace-nowrap">
+            className="shrink-0 inline-flex items-center gap-1 text-[11px] font-medium px-2.5 py-1.5 rounded-md border border-hairline-2 bg-panel text-ink-2 hover:bg-bg-2 transition-colors whitespace-nowrap">
             <CalendarCheck className="w-3 h-3" /> Confirm
           </button>
         </div>
@@ -115,7 +116,7 @@ export function ComposeBar({
         <div className="flex gap-1.5 mb-2 overflow-x-auto pb-1 scrollbar-thin">
           {CANNED_REPLIES.map(t => (
             <button key={t} onClick={() => setReply(prev => prev ? prev + ' ' + t : t)}
-              className="shrink-0 text-[11px] font-medium px-2.5 py-1.5 rounded-full border border-hairline bg-panel text-ink-2 hover:bg-indigo-500/10 hover:text-indigo-700 dark:hover:text-indigo-300 hover:border-indigo-200 dark:hover:border-indigo-500/30 transition-colors whitespace-nowrap">
+              className="shrink-0 text-[11px] font-medium px-2.5 py-1.5 rounded-md border border-hairline-2 bg-panel text-ink-2 hover:bg-bg-2 transition-colors whitespace-nowrap">
               {t}
             </button>
           ))}

@@ -95,7 +95,7 @@ export function ClientForm({
                     </div>
                     <div className="flex items-center gap-1">
                       {p.is_primary ? (
-                        <span className="text-[10px] font-semibold px-2 py-0.5 bg-blue-100 text-blue-600 rounded-full">Primary</span>
+                        <span className="text-[10px] font-medium text-ink-3">Primary</span>
                       ) : (
                         <button onClick={() => setPhonePrimary(p.id)} className="text-[10px] px-2 py-0.5 text-ink-3 hover:text-ink-2 hover:bg-bg-2 rounded transition-colors">
                           Set Primary
@@ -189,8 +189,11 @@ export function ClientForm({
         />
       </div>
       {dupes.length > 0 && (
-        <div className="mx-6 mb-2 text-[12px] text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
-          <div className="font-semibold mb-1">Possible duplicate{dupes.length > 1 ? 's' : ''} found:</div>
+        <div className="mx-6 mb-2 text-[12px] text-ink bg-panel border border-hairline rounded-lg px-3 py-2">
+          <div className="font-semibold mb-1 flex items-center gap-1.5">
+            <span className="w-1.5 h-1.5 rounded-full shrink-0 bg-amber-500" aria-hidden="true" />
+            Possible duplicate{dupes.length > 1 ? 's' : ''} found:
+          </div>
           <ul className="space-y-0.5">
             {dupes.map(d => (
               <li key={d.id} className="flex items-center justify-between gap-2">
@@ -200,11 +203,14 @@ export function ClientForm({
               </li>
             ))}
           </ul>
-          <div className="mt-1 text-amber-600">Save again to create anyway.</div>
+          <div className="mt-1 text-ink-3">Save again to create anyway.</div>
         </div>
       )}
       {saveError && (
-        <div className="mx-6 mb-2 text-[12px] text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{saveError}</div>
+        <div className="mx-6 mb-2 text-[12px] text-ink bg-panel border border-hairline rounded-lg px-3 py-2 flex items-center gap-1.5">
+          <span className="w-1.5 h-1.5 rounded-full shrink-0 bg-red-500" aria-hidden="true" />
+          {saveError}
+        </div>
       )}
       <div className="p-6 pb-bottomnav sm:pb-6 border-t border-hairline flex gap-3">
         {selected && (

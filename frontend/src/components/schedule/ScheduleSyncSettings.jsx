@@ -29,10 +29,10 @@ function Toggle({ on, onChange, disabled }) {
   )
 }
 
-function Row({ icon: Icon, tint, title, desc, children }) {
+function Row({ icon: Icon, title, desc, children }) {
   return (
     <div className="flex items-start gap-3 px-4 py-3.5">
-      <div className={`w-8 h-8 rounded-lg grid place-items-center shrink-0 ${tint}`}><Icon className="w-4 h-4" /></div>
+      <div className="w-8 h-8 rounded-lg bg-bg-2 grid place-items-center shrink-0"><Icon className="w-4 h-4 text-ink-2" /></div>
       <div className="min-w-0 flex-1">
         <div className="text-sm font-semibold text-ink">{title}</div>
         <div className="text-xs text-ink-3 mt-0.5 leading-relaxed">{desc}</div>
@@ -95,7 +95,7 @@ export default function ScheduleSyncSettings({ open, onClose }) {
             <div>
               <div className="px-4 pt-3 pb-1 text-[11px] font-semibold uppercase tracking-wider text-ink-3">Google Calendar</div>
               <div className="flex items-center justify-between">
-                <Row icon={Calendar} tint="bg-blue-500/15 text-blue-500"
+                <Row icon={Calendar}
                   title="Live push to Google"
                   desc="BrightBase is the master: your schedule pushes to Google in real time and stays the source of truth. Edits made directly in Google aren't pulled back. (Needs Google connected.)" />
                 <div className="pr-4"><Toggle on={s.gcal_live_sync !== false} onChange={v => save({ gcal_live_sync: v })} /></div>
@@ -106,7 +106,7 @@ export default function ScheduleSyncSettings({ open, onClose }) {
             <div>
               <div className="px-4 pt-3 pb-1 text-[11px] font-semibold uppercase tracking-wider text-ink-3">Airbnb &amp; rentals</div>
               <div className="flex items-center justify-between">
-                <Row icon={Home} tint="bg-amber-500/15 text-amber-500"
+                <Row icon={Home}
                   title="Auto-import turnovers"
                   desc="Pull Airbnb/VRBO checkout calendars and create turnover jobs automatically." />
                 <div className="pr-4"><Toggle on={s.ical_auto_sync_enabled !== false} onChange={v => save({ ical_auto_sync_enabled: v })} /></div>
@@ -117,7 +117,7 @@ export default function ScheduleSyncSettings({ open, onClose }) {
             <div>
               <div className="px-4 pt-3 pb-1 text-[11px] font-semibold uppercase tracking-wider text-ink-3">Recurring cleanings</div>
               <div className="flex items-center justify-between">
-                <Row icon={Repeat} tint="bg-emerald-500/15 text-emerald-500"
+                <Row icon={Repeat}
                   title="Auto-generate upcoming visits"
                   desc="Keep materializing the next visits for every active recurring series. To pause one specific client, use the Recurring page instead." />
                 <div className="pr-4"><Toggle on={s.recurring_auto_generate_enabled !== false} onChange={v => save({ recurring_auto_generate_enabled: v })} /></div>

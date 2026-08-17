@@ -40,11 +40,12 @@ export function ThreadHeader({
           <ArrowLeft className="w-4 h-4" />
         </button>
 
-        {/* Avatar with channel chip in corner — matches the inbox row */}
+        {/* Avatar with a neutral channel chip in the corner — matches the
+            inbox row (ConvItem): icon carries the channel, not color. */}
         <div className="relative shrink-0">
           <Avatar name={detail.client?.name || detail.external_contact} size="md" />
-          <div className={`absolute -bottom-0.5 -right-0.5 w-4 h-4 rounded-full ${ch.bg} ring-2 ring-panel flex items-center justify-center`}>
-            <ChannelIcon className={`w-2.5 h-2.5 ${ch.text}`} />
+          <div className="absolute -bottom-0.5 -right-0.5 w-4 h-4 rounded-full bg-bg-2 ring-2 ring-panel flex items-center justify-center">
+            <ChannelIcon className="w-2.5 h-2.5 text-ink-3" />
           </div>
         </div>
         <div className="flex-1 min-w-0">
