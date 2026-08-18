@@ -263,7 +263,7 @@ export function OpportunitiesTab({ opportunities, navigate }) {
     <div className="max-w-2xl space-y-3">
       <div className="flex items-center justify-between mb-4">
         <p className="text-sm text-ink-3">{opportunities.length} opportunit{opportunities.length !== 1 ? 'ies' : 'y'}</p>
-        <button onClick={() => navigate('/pipeline')}
+        <button onClick={() => navigate('/deals?view=board')}
           className="flex items-center gap-1.5 text-xs bg-indigo-600 hover:bg-indigo-700 text-white px-3 py-1.5 rounded-lg transition-colors">
           <Plus className="w-3.5 h-3.5" /> New Deal
         </button>

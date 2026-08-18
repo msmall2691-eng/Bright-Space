@@ -153,6 +153,7 @@ export default function JobCreateModal({
   const [properties, setProperties] = useState([])
   const [loadingProps, setLoadingProps] = useState(false)
   const [recurring, setRecurring] = useState(defaultRecurring)
+  const [icalUrl, setIcalUrl] = useState('')
   // Pre-fill the recurring cadence from the customer's stated frequency (carried
   // from the lead through the quote) so a won quote is one confirm away.
   const seedFreq = ['weekly', 'biweekly', 'monthly'].includes((initialFrequency || '').toLowerCase())
@@ -507,6 +508,15 @@ export default function JobCreateModal({
           : null,
       }))
     } catch { /* storage unavailable — proceed without a draft */ }
+    // Best-effort: an Airbnb/VRBO calendar pasted into the STR field above
+    // attaches to the property once the job/series is confirmed. A failure
+    // here shouldn't undo or block the job that already saved successfully —
+    // the office can still add it later from the property, same as today.
+    const saveIcalIfNeeded = async () => {
+      if (!icalUrl.trim() || !form.property_id) return
+      try { await post(`/api/properties/${form.property_id}/icals`, { url: icalUrl.trim() }) }
+      catch (e) { console.error('[JobCreateModal] could not save the iCal feed', e) }
+    }
     try {
       if (recurring) {
         const body = {
@@ -535,6 +545,7 @@ export default function JobCreateModal({
         const sched = await post('/api/recurring', body)
         if (!sched) return  // 401 → redirecting to /login; keep the draft to restore
         try { localStorage.removeItem(JOB_DRAFT_KEY) } catch { /* ignore */ }
+        await saveIcalIfNeeded()
         onCreated?.({ kind: 'recurring', schedule: sched })
         onClose?.()
         return
@@ -558,6 +569,7 @@ export default function JobCreateModal({
       const job = await post('/api/jobs', body)
       if (!job) return  // 401 → redirecting to /login; keep the draft to restore
       try { localStorage.removeItem(JOB_DRAFT_KEY) } catch { /* ignore */ }
+      await saveIcalIfNeeded()
       onCreated?.({ kind: 'job', job, gcal: job?.gcal })
       onClose?.()
     } catch (e) {
@@ -949,6 +961,29 @@ export default function JobCreateModal({
               />
             </button>
           </div>
+
+          {/* Airbnb/VRBO calendar — only makes sense once there's a real
+              short-term-rental property to attach it to. Folds iCal setup
+              into the same moment the office already picked one-time vs
+              recurring, instead of a separate destination they'd have to
+              already know exists (property edit -> Calendar Feeds). */}
+          {form.job_type === 'str_turnover' && form.property_id && (
+            <div>
+              <label className="block text-xs text-ink-2 font-medium mb-1">
+                Airbnb / VRBO calendar <span className="text-ink-3 font-normal">(optional)</span>
+              </label>
+              <input
+                type="url"
+                value={icalUrl}
+                onChange={e => setIcalUrl(e.target.value)}
+                placeholder="Paste the calendar export URL from Airbnb or VRBO"
+                className="w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-400"
+              />
+              <p className="text-[11px] text-ink-3 mt-1">
+                Keeps future bookings in sync automatically — add it now or later from the property.
+              </p>
+            </div>
+          )}
 
           {/* Recurring scheduling options — only when Repeat is on. The
               compact Date field above hides in recurring mode; these

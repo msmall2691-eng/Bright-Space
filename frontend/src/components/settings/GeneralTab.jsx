@@ -4,6 +4,7 @@ import { CheckCircle, Loader2, ArrowRight } from 'lucide-react'
 import { del, get, post, upload } from '../../api'
 import { applyTheme, getTheme, applyAccent, getAccent, ACCENTS } from '../../theme'
 import NotificationsCard from './NotificationsCard'
+import { AutomationSection } from './AutomationTab'
 import { inp, lbl } from './constants'
 
 // Swatch color per accent (a representative 500/600) for the picker dots.
@@ -16,12 +17,20 @@ const ACCENT_SWATCH = {
 import ServiceScopesEditor from './ServiceScopesEditor'
 
 /** General settings tab — Appearance + Company Info + Logo + Service
- *  Descriptions + Property Photos & Data + Regional Settings + main
- *  Save Changes button. Owns all its own state (there are no cross-tab
- *  reads on any of these fields). Parent supplies `toast` + a
+ *  Descriptions + Property Photos & Data + Auto-Sync & Automation +
+ *  Regional Settings + main Save Changes button. Owns all its own state
+ *  (there are no cross-tab reads on any of these fields, other than
+ *  Automation's). Parent supplies `toast`, the shared `automation` state
+ *  (from `useAutomationSettings` — Integrations' iCal Turnover card and
+ *  Danger Zone read the same hook, so it lives one level up), and a
  *  `dangerZone` render slot so the DangerZone component keeps living at
- *  the bottom of this tab without cross-importing here. */
-export default function GeneralTab({ toast, active, dangerZone }) {
+ *  the bottom of this tab without cross-importing here.
+ *
+ *  Automation used to be its own top-level Settings tab; folded in here
+ *  (Aug 2026 nav simplification) since it's the same "how this workspace
+ *  behaves" territory General already anchors — one section among several,
+ *  not a separate destination. */
+export default function GeneralTab({ toast, active, automation, dangerZone }) {
   const [themeChoice, setThemeChoice] = useState(getTheme())
   const [accentChoice, setAccentChoice] = useState(getAccent())
   const [showScout, setShowScout] = useState(() => localStorage.getItem('brightbase_hide_scout') !== '1')
@@ -326,6 +335,8 @@ export default function GeneralTab({ toast, active, dangerZone }) {
             </button>
           </div>
         </div>
+
+        {automation && <AutomationSection state={automation} toast={toast} active={active} />}
 
         <div>
           <h2 className="text-lg font-bold text-ink mb-4">Data Quality</h2>

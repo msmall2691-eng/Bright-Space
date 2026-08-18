@@ -14,12 +14,10 @@ import {
  * gates — e.g. /api/dashboard/owner 403s viewers, so viewers don't get a link
  * that only errors).
  *
- * Pipeline (`/pipeline`) intentionally has no entry here. Deals is the
- * unified deal board (see its header comment) and already carries the same
- * per-row stage-change action as Pipeline's drag-and-drop, so the kanban no
- * longer needs its own sidebar row — it's one click away as "Board view"
- * from Deals instead. The route and page are untouched; see EXTRA_ROUTES
- * below for its breadcrumb.
+ * Pipeline was merged into Deals (Aug 2026 nav simplification) as its Board
+ * view — `/deals?view=board` — instead of a separate page/route, so it has
+ * no entry here and no breadcrumb of its own; `/pipeline` now just redirects
+ * to that URL (see App.jsx) for old bookmarks/links.
  */
 export const NAV_SECTIONS = [
   {
@@ -168,9 +166,6 @@ export function recordFromPath(pathname) {
 const EXTRA_ROUTES = {
   '/cleanup':           { label: 'Tidy Up', section: null },
   '/design-system':     { label: 'Design system', section: null },
-  // Reachable from Deals' "Board view" link, not a sidebar item — see the
-  // comment above NAV_SECTIONS.
-  '/pipeline':          { label: 'Pipeline', section: 'Sales' },
 }
 
 /**

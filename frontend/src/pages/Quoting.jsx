@@ -5,7 +5,6 @@ import SavedViewsBar from '../components/SavedViewsBar'
 import PageHero from '../components/ui/PageHero'
 import InlineSelect from '../components/InlineSelect'
 import JobCreateModal from '../components/JobCreateModal'
-import ConvertToJobModal from '../components/quoting/ConvertToJobModal'
 import { get, post, patch } from "../api"
 import { formatDate, combineAddress } from '../utils/format'
 import { pushToast } from '../utils/toastBus'
@@ -553,16 +552,6 @@ export default function Quoting() {
     setSending(false)
   }
 
-  // Convert-to-Job opens the ConvertToJobModal so the operator picks a date
-  // + crew at conversion time. Prior behavior (silent create + Scheduling
-  // page hop) hid the fact that no date had been set, so undated jobs sat
-  // stale under a "Scheduled" badge that the Schedule calendar never showed.
-  const [convertingQuote, setConvertingQuote] = useState(null)
-  const openConvertToJob = (quoteId) => {
-    const q = quotes.find(x => x.id === quoteId) || safeQuote({ id: quoteId })
-    setConvertingQuote(q)
-  }
-  const convertToJob = openConvertToJob  // legacy name; row buttons still call this
 
   // Permanent (hard) delete is admin-only and lives in the Archived view.
   const isAdmin = (() => {
@@ -917,22 +906,6 @@ export default function Quoting() {
           defaultRecurring
           onClose={() => setScheduleQuote(null)}
           onCreated={finishOnboard}
-        />
-      )}
-
-      {convertingQuote && (
-        <ConvertToJobModal
-          quote={convertingQuote}
-          onClose={() => setConvertingQuote(null)}
-          onConverted={(job) => {
-            setConvertingQuote(null)
-            showToast(job.scheduled_date
-              ? `Job scheduled for ${job.scheduled_date}`
-              : 'Job created — set the date in Scheduling')
-            loadQuotes()
-            navigate(`/jobs/${job.id}`)
-          }}
-          onError={(msg) => showToast(msg || 'Could not convert to job')}
         />
       )}
 

@@ -10,7 +10,6 @@ import PendingApproval from './pages/PendingApproval'
 import OpsBoard from './pages/OpsBoard'
 import MyDay from './pages/MyDay'
 import Requests from './pages/Requests'
-import Pipeline from './pages/Pipeline'
 import Deals from './pages/Deals'
 import PublicQuote from './pages/PublicQuote'
 import PublicPayment from './pages/PublicPayment'
@@ -331,7 +330,9 @@ export default function App() {
               <Route path="/clients/:id" element={<ClientProfile />} />
               <Route path="/requests" element={<Requests />} />
               <Route path="/requests/:id" element={<RequestDetail />} />
-              <Route path="/pipeline" element={<Pipeline />} />
+              {/* Pipeline merged into Deals' Board view — redirect any old
+                  bookmarks/links instead of leaving them 404. */}
+              <Route path="/pipeline" element={<Navigate to="/deals?view=board" replace />} />
               <Route path="/deals" element={<Deals />} />
               <Route path="/opportunities/:id" element={<OpportunityDetail />} />
               <Route path="/jobs/:id" element={<JobDetail />} />

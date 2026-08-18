@@ -13,7 +13,7 @@ import InlineSelect from '../components/InlineSelect'
 import InlineEditField from '../components/InlineEditField'
 import RecordSkeleton from '../components/record/RecordSkeleton'
 import { EmptyState } from '../components/ui'
-import ConvertToJobModal from '../components/quoting/ConvertToJobModal'
+import JobCreateModal from '../components/JobCreateModal'
 import SendQuotePanel from '../components/quoting/SendQuotePanel'
 import OriginalRequestCard from '../components/quoting/OriginalRequestCard'
 import { isPlaceholderName } from '../components/quoting/constants'
@@ -58,7 +58,6 @@ export default function QuoteDetail() {
   const [quote, setQuote] = useState(null)
   const [loading, setLoading] = useState(true)
   const [notFound, setNotFound] = useState(false)
-  const [converting, setConverting] = useState(false)
   const [deliveryHistory, setDeliveryHistory] = useState([])
   const [company, setCompany] = useState({ company_name: 'The Maine Cleaning Co.' })
   const [sendOpen, setSendOpen] = useState(false)
@@ -334,22 +333,35 @@ export default function QuoteDetail() {
 
             {canEdit() && !quote.job && quote.status !== 'converted' && (
               <div className="border-t border-hairline pt-3">
-                <button onClick={openConvertModal} disabled={converting}
-                  className="w-full flex items-center justify-center gap-1.5 bg-bg-2 hover:bg-bg-3 border border-hairline disabled:opacity-50 text-ink-2 px-3 py-2 rounded-lg text-[12px] font-medium transition-colors">
-                  <Calendar className="w-3.5 h-3.5" /> {converting ? 'Converting…' : 'Convert to job'}
+                <button onClick={openConvertModal}
+                  className="w-full flex items-center justify-center gap-1.5 bg-bg-2 hover:bg-bg-3 border border-hairline text-ink-2 px-3 py-2 rounded-lg text-[12px] font-medium transition-colors">
+                  <Calendar className="w-3.5 h-3.5" /> Convert to job
                 </button>
               </div>
             )}
           </div>
           {convertModalOpen && (
-            <ConvertToJobModal
-              quote={quote}
+            <JobCreateModal
+              clientId={quote.client_id}
+              clientName={quote.client_name}
+              initialPropertyId={quote.property_id || null}
+              initialJobType={quote.service_type === 'str' ? 'str_turnover' : quote.service_type === 'commercial' ? 'commercial' : 'residential'}
+              initialTitle={quote.title || `${quote.client_name} — Clean`}
+              initialQuoteId={quote.id}
+              initialFrequency={quote.frequency || null}
+              defaultRecurring
               onClose={() => setConvertModalOpen(false)}
-              onConverted={(job) => {
+              onCreated={async (result) => {
+                try { await patch(`/api/quotes/${quote.id}`, { status: 'converted' }) } catch { /* non-fatal */ }
                 setConvertModalOpen(false)
-                navigate(`/jobs/${job.id}`)
+                // JobCreateModal's onCreated shape differs by mode: a one-time
+                // job lands on its own detail page; a recurring series has no
+                // single job yet (generate_jobs runs async), so land on the
+                // series instead — matching Quoting.jsx's own finishOnboard,
+                // which doesn't attempt to navigate into either.
+                if (result?.kind === 'job' && result.job?.id) navigate(`/jobs/${result.job.id}`)
+                else if (result?.kind === 'recurring' && result.schedule?.id) navigate(`/recurring?series=${result.schedule.id}`)
               }}
-              onError={(msg) => toast.error(msg || 'Could not convert to job')}
             />
           )}
 

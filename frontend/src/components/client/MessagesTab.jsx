@@ -38,6 +38,7 @@ export default function MessagesTab({
   client, messages, emails,
   commsFilter, setCommsFilter,
   smsText, setSmsText, sendSms, sending,
+  emailSubject, setEmailSubject, emailBody, setEmailBody, sendEmail, sendingEmail,
 }) {
   return (
     <div className="max-w-2xl">
@@ -64,7 +65,7 @@ export default function MessagesTab({
 
       {/* SMS compose (visible on All + SMS) */}
       {commsFilter !== 'email' && (client.phone ? (
-        <div className="bg-panel border border-hairline rounded-xl p-4 mb-4">
+        <div id="sms-compose" className="bg-panel border border-hairline rounded-xl p-4 mb-4">
           <div className="flex items-center gap-2 mb-2">
             <MessageSquare className="w-4 h-4 text-purple-400" />
             <span className="text-sm font-medium text-ink">Send SMS to {client.phone}</span>
@@ -81,9 +82,40 @@ export default function MessagesTab({
           </div>
         </div>
       ) : (
-        <div className="flex items-center gap-2 px-3 py-2 rounded-lg border border-hairline bg-panel text-[12.5px] mb-4">
+        <div id="sms-compose" className="flex items-center gap-2 px-3 py-2 rounded-lg border border-hairline bg-panel text-[12.5px] mb-4">
           <span className="w-1.5 h-1.5 rounded-full shrink-0 bg-amber-500" aria-hidden="true" />
           <span className="text-ink-2">Add a phone number to this client to enable SMS.</span>
+        </div>
+      ))}
+
+      {/* Email compose (visible on All + Email) — mirrors the SMS compose
+          card exactly, plus a subject field (email needs one, SMS doesn't). */}
+      {commsFilter !== 'sms' && (client.email ? (
+        <div id="email-compose" className="bg-panel border border-hairline rounded-xl p-4 mb-4">
+          <div className="flex items-center gap-2 mb-2">
+            <Mail className="w-4 h-4 text-blue-400" />
+            <span className="text-sm font-medium text-ink">Email {client.email}</span>
+          </div>
+          <div className="space-y-2">
+            <input value={emailSubject} onChange={e => setEmailSubject(e.target.value)}
+              placeholder="Subject"
+              className="w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-hairline" />
+            <textarea value={emailBody} onChange={e => setEmailBody(e.target.value)}
+              placeholder="Write a message..."
+              rows={3}
+              className="w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-hairline resize-none" />
+            <div className="flex justify-end">
+              <button onClick={sendEmail} disabled={sendingEmail || !emailBody.trim()}
+                className="flex items-center gap-1.5 bg-indigo-600 hover:bg-indigo-700 text-white disabled:bg-bg-2 px-4 py-2 rounded-lg text-sm transition-colors">
+                <Send className="w-3.5 h-3.5" />{sendingEmail ? '...' : 'Send'}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : (
+        <div id="email-compose" className="flex items-center gap-2 px-3 py-2 rounded-lg border border-hairline bg-panel text-[12.5px] mb-4">
+          <span className="w-1.5 h-1.5 rounded-full shrink-0 bg-amber-500" aria-hidden="true" />
+          <span className="text-ink-2">No email on file — add one to send.</span>
         </div>
       ))}
 

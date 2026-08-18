@@ -15,7 +15,7 @@ import ClientDetailsTab from '../components/client/ClientDetailsTab'
 import ClientOverview from '../components/client/ClientOverview'
 import ClientProfileSkeleton from '../components/client/ClientProfileSkeleton'
 import {
-  RecurringTab, JobsListTab, QuotesListTab, InvoicesListTab, OpportunitiesTab,
+  QuotesListTab, InvoicesListTab, OpportunitiesTab,
 } from '../components/client/ClientListTabs'
 import { useClientProfileData } from '../hooks/useClientProfileData'
 import {
@@ -55,9 +55,20 @@ function Tab({ label, icon: Icon, active, count, onClick }) {
 }
 
 // Second-level pills for a top Tab that covers more than one sub-view.
-// Both "Schedule" and "Money" only ever landed on their first sub-view
-// (calendar / quotes) — 'jobs'/'recurring' and 'invoices'/'opportunities'
-// were real tab values with real content, just unreachable from the UI.
+//
+// Aug-2026 nav-simplification audit: both "Schedule" and "Money" only ever
+// *landed* on their first sub-view (calendar / quotes) via the top Tab, but
+// that didn't make the others dead — ClientOverview's KPI tiles ("Visits
+// done" → jobs, "Recurring" → recurring, "Balance owed" → invoices) already
+// linked straight to them, duplicating this SubNav as a second path to the
+// same content. Only Money's "Opportunities" had no other route in at all.
+// Resolution: Schedule's SubNav is gone — its two options are folded inline
+// into the Calendar tab itself (see ClientCalendarTab's disclosure sections)
+// since a Google Calendar embed doesn't need siblings, and the KPI tiles now
+// point at the one Calendar destination. Money's SubNav survives as the
+// page's one remaining lightweight sub-control: three genuinely distinct,
+// substantial lists (quotes/invoices/opportunities) that don't fold
+// naturally into each other, and "Opportunities" still has no other way in.
 function SubNav({ items, active, onSelect }) {
   return (
     <div className="flex items-center gap-1 px-4 sm:px-6 py-2 border-b border-hairline bg-bg/40 overflow-x-auto">
@@ -118,6 +129,9 @@ export default function ClientProfile() {
   const [saving, setSaving] = useState(false)
   const [smsText, setSmsText] = useState('')
   const [sending, setSending] = useState(false)
+  const [emailSubject, setEmailSubject] = useState('')
+  const [emailBody, setEmailBody] = useState('')
+  const [sendingEmail, setSendingEmail] = useState(false)
   const [showBilling, setShowBilling] = useState(false)
   // Quick-add contact (banner expands inline so phone/email can be saved
   // without leaving the current tab — particularly important on mobile).
@@ -334,6 +348,49 @@ export default function ClientProfile() {
     setSending(false)
   }
 
+  const sendEmail = async () => {
+    if (!emailBody.trim() || !client?.email) return
+    setSendingEmail(true)
+    try {
+      await post('/api/comms/email', {
+        to: client.email,
+        subject: emailSubject.trim() || '(no subject)',
+        body: emailBody,
+        client_id: parseInt(id),
+      })
+    } catch (e) {
+      console.error('[ClientProfile] sendEmail error:', e)
+      toast.error('Failed to send email')
+    }
+    setEmailSubject(''); setEmailBody('')
+    await load()
+    setSendingEmail(false)
+  }
+
+  // Quick-action "Text"/"Email" both land on the Messages tab, then scroll the
+  // relevant compose box into view (it's already on-screen once the tab
+  // switches, but this keeps it in frame if the feed has pushed it down).
+  const goToCompose = (anchorId) => {
+    setTab('messages')
+    requestAnimationFrame(() => {
+      document.getElementById(anchorId)?.scrollIntoView({ block: 'nearest' })
+    })
+  }
+
+  // Same pattern for the Overview KPI tiles that used to land on their own
+  // "jobs"/"recurring" tab — those are now disclosure sections inline on the
+  // Calendar tab, so land there, pop the section open, and scroll to it.
+  const goToScheduleSection = (anchorId) => {
+    setTab('calendar')
+    requestAnimationFrame(() => {
+      const el = document.getElementById(anchorId)
+      if (el) {
+        if ('open' in el) el.open = true
+        el.scrollIntoView({ block: 'nearest' })
+      }
+    })
+  }
+
   if (!client) return <ClientProfileSkeleton />
 
   return (
@@ -376,9 +433,15 @@ export default function ClientProfile() {
           className="flex items-center justify-center sm:justify-start gap-1.5 text-xs bg-bg-2 hover:bg-bg-2 border border-hairline px-3 py-2 min-h-[44px] sm:min-h-0 sm:py-1.5 rounded-lg transition-colors">
           <Receipt className="w-3.5 h-3.5 text-green-400" /> <span className="hidden sm:inline">New Invoice</span>
         </button>
-        <button onClick={() => setTab('messages')}
+        <button onClick={() => goToCompose('sms-compose')}
+          data-testid="client-action-text"
           className="flex items-center justify-center sm:justify-start gap-1.5 text-xs bg-bg-2 hover:bg-bg-2 border border-hairline px-3 py-2 min-h-[44px] sm:min-h-0 sm:py-1.5 rounded-lg transition-colors">
-          <MessageSquare className="w-3.5 h-3.5 text-purple-400" /> <span className="hidden sm:inline">Send SMS</span>
+          <MessageSquare className="w-3.5 h-3.5 text-purple-400" /> <span className="hidden sm:inline">Text</span>
+        </button>
+        <button onClick={() => goToCompose('email-compose')}
+          data-testid="client-action-email"
+          className="flex items-center justify-center sm:justify-start gap-1.5 text-xs bg-bg-2 hover:bg-bg-2 border border-hairline px-3 py-2 min-h-[44px] sm:min-h-0 sm:py-1.5 rounded-lg transition-colors">
+          <Mail className="w-3.5 h-3.5 text-blue-400" /> <span className="hidden sm:inline">Email</span>
         </button>
       </div>
 
@@ -386,23 +449,12 @@ export default function ClientProfile() {
       <div className="flex border-b border-hairline px-4 sm:px-6 bg-panel/95 backdrop-blur shrink-0 overflow-x-auto sticky top-0 z-20 sm:static sm:bg-panel/30 sm:backdrop-blur-0" data-testid="client-profile-tabs">
         <Tab label="Overview" icon={LayoutGrid} active={['overview', 'details', 'crm'].includes(tab)} count={0} onClick={() => setTab('overview')} />
         <Tab label="Properties" icon={Home} active={tab === 'properties'} count={properties.length} onClick={() => setTab('properties')} />
-        <Tab label="Schedule" icon={Calendar} active={['calendar', 'recurring', 'jobs'].includes(tab)} count={upcomingJobs.length} onClick={() => setTab('calendar')} />
+        <Tab label="Schedule" icon={Calendar} active={tab === 'calendar'} count={upcomingJobs.length} onClick={() => setTab('calendar')} />
         <Tab label="Timeline" icon={Clock} active={tab === 'activity'} count={allActivity.length} onClick={() => setTab('activity')} />
         <Tab label="Messages" icon={MessageSquare} active={tab === 'messages'} count={messages.length + emails.length} onClick={() => setTab('messages')} />
         <Tab label="Money" icon={DollarSign} active={['quotes', 'invoices', 'opportunities'].includes(tab)} count={quotes.length + invoices.length} onClick={() => setTab('quotes')} />
       </div>
 
-      {['calendar', 'jobs', 'recurring'].includes(tab) && (
-        <SubNav
-          active={tab}
-          onSelect={setTab}
-          items={[
-            { key: 'calendar', label: 'Calendar' },
-            { key: 'jobs', label: 'All Jobs', count: jobs.length },
-            { key: 'recurring', label: 'Recurring', count: schedules.length },
-          ]}
-        />
-      )}
       {['quotes', 'invoices', 'opportunities'].includes(tab) && (
         <SubNav
           active={tab}
@@ -422,6 +474,7 @@ export default function ClientProfile() {
         {tab === 'overview' && (
           <ClientOverview
             client={client} navigate={navigate} setTab={setTab}
+            goToScheduleSection={goToScheduleSection}
             totalRevenue={totalRevenue} outstanding={outstanding}
             invoices={invoices} quotes={quotes}
             upcomingJobs={upcomingJobs} pastJobs={pastJobs}
@@ -446,7 +499,10 @@ export default function ClientProfile() {
           />
         )}
 
-        {/* Calendar — Twenty-style mini calendar + event list */}
+        {/* Calendar — Twenty-style mini calendar + event list. Also carries the
+            client's recurring schedules and full job history as inline
+            disclosure sections (folded in from the retired Schedule SubNav —
+            see the comment above SubNav in this file). */}
         {tab === 'calendar' && (
           <ClientCalendarTab
             jobs={jobs}
@@ -461,6 +517,9 @@ export default function ClientProfile() {
             onEditJob={(j) => setEditJob(j)}
             onChanged={() => { load(); setGcalReload(k => k + 1) }}
             toast={toast}
+            schedules={schedules}
+            properties={properties}
+            onLinked={() => load()}
           />
         )}
 
@@ -478,19 +537,6 @@ export default function ClientProfile() {
             addIcal={addIcal} removeIcal={removeIcal}
             syncingPropId={syncingPropId} syncProperty={syncProperty}
             syncBanner={syncBanner} setSyncBanner={setSyncBanner}
-          />
-        )}
-
-        {/* Recurring schedules */}
-        {tab === 'recurring' && (
-          <RecurringTab schedules={schedules} upcomingJobs={upcomingJobs} properties={properties} />
-        )}
-
-        {/* Jobs */}
-        {tab === 'jobs' && (
-          <JobsListTab
-            jobs={jobs} upcomingJobs={upcomingJobs} pastJobs={pastJobs}
-            clientId={id} onLinked={() => load()}
           />
         )}
 
@@ -516,6 +562,9 @@ export default function ClientProfile() {
             commsFilter={commsFilter} setCommsFilter={setCommsFilter}
             smsText={smsText} setSmsText={setSmsText}
             sendSms={sendSms} sending={sending}
+            emailSubject={emailSubject} setEmailSubject={setEmailSubject}
+            emailBody={emailBody} setEmailBody={setEmailBody}
+            sendEmail={sendEmail} sendingEmail={sendingEmail}
           />
         )}
 

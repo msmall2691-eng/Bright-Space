@@ -114,8 +114,8 @@ export default function OpportunityDetail() {
   if (notFound || !opp) {
     return (
       <div className="p-6">
-        <button onClick={() => navigate('/pipeline')} className="flex items-center gap-1.5 text-[13px] text-ink-3 hover:text-ink-2 mb-4">
-          <ArrowLeft className="w-4 h-4" /> Back to Pipeline
+        <button onClick={() => navigate('/deals?view=board')} className="flex items-center gap-1.5 text-[13px] text-ink-3 hover:text-ink-2 mb-4">
+          <ArrowLeft className="w-4 h-4" /> Back to Deals
         </button>
         <EmptyState icon={TrendingUp} title="Opportunity not found" description="It may have been deleted or moved to another workspace." />
       </div>
@@ -125,8 +125,8 @@ export default function OpportunityDetail() {
   return (
     <div className="h-full overflow-y-auto">
       <div className="p-4 sm:p-6 max-w-[1400px] mx-auto">
-        <button onClick={() => navigate('/pipeline')} className="flex items-center gap-1.5 text-[13px] text-ink-3 hover:text-ink-2 mb-4">
-          <ArrowLeft className="w-4 h-4" /> Back to Pipeline
+        <button onClick={() => navigate('/deals?view=board')} className="flex items-center gap-1.5 text-[13px] text-ink-3 hover:text-ink-2 mb-4">
+          <ArrowLeft className="w-4 h-4" /> Back to Deals
         </button>
 
         <div className="grid grid-cols-1 lg:grid-cols-[300px_minmax(0,1fr)_320px] gap-4">

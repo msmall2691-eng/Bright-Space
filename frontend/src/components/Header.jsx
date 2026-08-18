@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect, Fragment } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import {
-  Menu, Search, Sparkles, Plus, ChevronDown, PanelLeft, Star,
+  Menu, Plus, ChevronDown, PanelLeft, Star,
 } from 'lucide-react'
 import { crumbsFor, createActionsFor, currentRole } from '../nav/routes'
 import { useFavorites, toggleFavorite } from '../nav/favorites'
@@ -81,13 +81,6 @@ export default function Header({ onMenuToggle, sidebarCollapsed, onSidebarExpand
     })
   }
 
-  const openSearch = () => {
-    window.dispatchEvent(new KeyboardEvent('keydown', { key: '/', metaKey: true, bubbles: true }))
-  }
-  const openAssistant = () => {
-    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'k', metaKey: true, bubbles: true }))
-  }
-
   return (
     <header className="no-print relative z-20 flex h-11 shrink-0 items-center justify-between gap-3 border-b border-hairline bg-panel px-3 sm:px-4">
       <div className="flex min-w-0 flex-1 items-center gap-1.5">
@@ -144,30 +137,13 @@ export default function Header({ onMenuToggle, sidebarCollapsed, onSidebarExpand
       </div>
 
       <div className="flex shrink-0 items-center gap-1">
-        {/* Global search — jump to any client/property/invoice/job (⌘/) */}
-        <button
-          onClick={openSearch}
-          className="flex h-7 w-7 min-h-0 items-center justify-center rounded-md text-ink-3 transition-colors hover:bg-bg-2 hover:text-ink-2"
-          title="Search everything (⌘/)"
-        >
-          <Search className="h-4 w-4" />
-        </button>
-        {/* AI assistant (⌘K) */}
-        <button
-          onClick={openAssistant}
-          className="flex h-7 w-7 min-h-0 items-center justify-center rounded-md text-ink-3 transition-colors hover:bg-bg-2 hover:text-ink-2"
-          title="Ask AI (⌘K)"
-        >
-          <Sparkles className="h-4 w-4" />
-        </button>
+        {/* Search (⌘/) and Ask AI (⌘K) used to be duplicated here — they're
+            the Sidebar's "System rows" now, the single source (Aug 2026 nav
+            simplification: same commands, same shortcuts, one less pair of
+            icons). */}
         {/* Every create is an admin/manager write — a viewer gets no "+ New"
             (a menu of guaranteed 403s is worse than no menu). */}
-        {createActions.length > 0 && (
-          <>
-            <div className="mx-1 h-4 w-px bg-hairline-2" />
-            <NewMenu actions={createActions} />
-          </>
-        )}
+        {createActions.length > 0 && <NewMenu actions={createActions} />}
       </div>
     </header>
   )
