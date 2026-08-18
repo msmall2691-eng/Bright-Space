@@ -38,36 +38,47 @@ def _lead_amount(lead):
     return hi if hi is not None else lo
 
 
-def _most_advanced_quote_status(quotes):
-    """The status of the furthest-along quote on a deal — ranked by the stage
-    each quote status maps to (a converted quote outranks a draft one), tie-
-    broken by id so the newest wins. None when the deal has no quotes."""
+def _leading_quote(quotes):
+    """The furthest-along quote on a deal — ranked by the stage each quote
+    status maps to (a converted quote outranks a draft one), tie-broken by
+    insertion order so the newest wins. None when the deal has no quotes.
+
+    An Opportunity can have >1 Quote (relationship is 1:many — see
+    `Opportunity.quotes` in database/models.py), so this is deliberately a
+    "leading record" pick, not the only quote that exists. It's the same
+    quote whose status becomes the card's `quote_status`, so the id and the
+    displayed badge always point at the same row (what the card links to)."""
     best, best_rank = None, -1
     for q in quotes or []:
         rank = STAGE_RANK.get(QUOTE_STATUS_STAGE.get(q.status, "quoted"), 0)
         if rank >= best_rank:
             best, best_rank = q, rank
-    return best.status if best else None
+    return best
 
 
-def _job_state(jobs):
-    """Coarsest single signal of where a deal's work sits, furthest-along first.
-    `done` > `scheduled` > None (no schedulable job yet). (The old intermediate
-    'dispatched' state read Connecteam shift ids — gone with the removal; a
-    scheduled+assigned job IS dispatched now, the crew sees it on My Day.)"""
-    done = scheduled = False
+def _leading_job(jobs):
+    """Coarsest single signal of where a deal's work sits, plus the specific
+    job that earns it, furthest-along first: `done` > `scheduled` > none.
+    (The old intermediate 'dispatched' state read Connecteam shift ids — gone
+    with the removal; a scheduled+assigned job IS dispatched now, the crew
+    sees it on My Day.)
+
+    An Opportunity can have >1 Job (relationship is 1:many), so — like
+    `_leading_quote` — this returns the one representative job matching the
+    displayed `job_state`, not the full set."""
+    done_job = scheduled_job = None
     for j in jobs or []:
         if j.status == "cancelled":
             continue
-        if j.status == "completed":
-            done = True
-        if getattr(j, "scheduled_date", None):
-            scheduled = True
-    if done:
-        return "done"
-    if scheduled:
-        return "scheduled"
-    return None
+        if j.status == "completed" and done_job is None:
+            done_job = j
+        if getattr(j, "scheduled_date", None) and scheduled_job is None:
+            scheduled_job = j
+    if done_job:
+        return "done", done_job
+    if scheduled_job:
+        return "scheduled", scheduled_job
+    return None, None
 
 
 def _age_days(created_at):
@@ -92,7 +103,11 @@ def _lead_card(lead, quote=None):
         "amount": _lead_amount(lead),
         "service_type": lead.service_type,
         "quote_status": getattr(quote, "status", None) if quote else None,
+        # `quote` here is the lead's own converted_quote_id lookup, already
+        # org-scoped by the caller's batch query below — safe to expose as-is.
+        "quote_id": getattr(quote, "id", None) if quote else None,
         "job_state": None,
+        "job_id": None,  # an un-triaged lead has no Opportunity yet, so no job
         "source": lead.source,
         "owner": getattr(lead, "assigned_to", None),
         "priority": getattr(lead, "priority", "normal"),
@@ -102,6 +117,8 @@ def _lead_card(lead, quote=None):
 
 
 def _deal_card(opp):
+    leading_quote = _leading_quote(getattr(opp, "quotes", None))
+    job_state, leading_job = _leading_job(getattr(opp, "jobs", None))
     return {
         "kind": "deal",
         "id": f"deal-{opp.id}",
@@ -114,8 +131,14 @@ def _deal_card(opp):
         "title": opp.title,
         "amount": opp.amount,
         "service_type": opp.service_type,
-        "quote_status": _most_advanced_quote_status(getattr(opp, "quotes", None)),
-        "job_state": _job_state(getattr(opp, "jobs", None)),
+        "quote_status": leading_quote.status if leading_quote else None,
+        # id of the same quote the `quote_status` badge represents — both are
+        # org-scoped for free: `opp` was already filtered to this org above,
+        # and quotes/jobs are loaded strictly via that opportunity's FK, so
+        # they can't belong to another tenant.
+        "quote_id": leading_quote.id if leading_quote else None,
+        "job_state": job_state,
+        "job_id": leading_job.id if leading_job else None,
         "source": None,
         "owner": opp.owner,
         "priority": "normal",

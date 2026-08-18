@@ -70,4 +70,21 @@ describe('Deals board', () => {
     expect(within(row).getByText('sent')).toBeTruthy()
     expect(within(row).getByText('scheduled')).toBeTruthy()
   })
+
+  it('renders plain text (not a link) for quote/job status when no id is present', () => {
+    renderBoard()
+    const row = screen.getByText('Keystone Clean').closest('tr')
+    expect(within(row).getByText('sent').closest('a')).toBeNull()
+    expect(within(row).getByText('scheduled').closest('a')).toBeNull()
+  })
+
+  it('links the quote and job status cells to their records when ids are present', () => {
+    hookState.deals = [lead, { ...deal, quote_id: 42, job_id: 7 }]
+    renderBoard()
+    const row = screen.getByText('Keystone Clean').closest('tr')
+    const quoteLink = within(row).getByText('sent').closest('a')
+    const jobLink = within(row).getByText('scheduled').closest('a')
+    expect(quoteLink.getAttribute('href')).toBe('/quotes/42')
+    expect(jobLink.getAttribute('href')).toBe('/jobs/7')
+  })
 })
