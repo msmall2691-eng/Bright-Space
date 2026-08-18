@@ -498,7 +498,7 @@ export default function MyDay() {
 
   return (
     <div className="min-h-screen bg-bg">
-      <div className="sticky top-0 z-10">
+      <div className="sticky top-0 z-10 safe-top bg-panel">
         <header className="bg-panel border-b border-hairline px-4 py-3 flex items-center justify-between">
           <div>
             <div className="text-sm font-bold text-ink">

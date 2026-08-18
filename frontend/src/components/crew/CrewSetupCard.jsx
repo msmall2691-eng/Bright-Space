@@ -12,7 +12,7 @@
  */
 import { useEffect, useState } from 'react'
 import { Bell, CheckCircle2, Smartphone, X } from 'lucide-react'
-import { pushSupported, getPushState, enablePush, isAppInstalled, mobilePlatform, onAppForeground } from '../../utils/push'
+import { pushSupported, getPushState, enablePush, sendTestPush, isAppInstalled, mobilePlatform, onAppForeground } from '../../utils/push'
 import { useNotificationPrefs } from '../../hooks/useNotificationPrefs'
 
 const DISMISS_KEY = 'bb_crew_setup_dismissed'
@@ -63,6 +63,7 @@ export default function CrewSetupCard({ persistent = false }) {
   const [push, setPush] = useState(null)   // null = still checking
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState(null)
+  const [testResult, setTestResult] = useState(null)   // {sent: bool} | null
 
   const checkPush = () => {
     if (!pushSupported()) { setPush({ supported: false }); return }
@@ -100,6 +101,18 @@ export default function CrewSetupCard({ persistent = false }) {
     setBusy(true); setError(null)
     try { setPush(await enablePush()) }
     catch (e) { setError(e?.message || 'Could not turn on notifications') }
+    finally { setBusy(false) }
+  }
+
+  // Subscribing only proves the browser accepted a subscription — it says
+  // nothing about whether a real push actually arrives (VAPID misconfig,
+  // a dead subscription, OS-level notification settings, etc). This is the
+  // only way a cleaner can find that out for themselves instead of taking
+  // "notifications are on" on faith.
+  const runTest = async () => {
+    setBusy(true); setError(null); setTestResult(null)
+    try { setTestResult(await sendTestPush()) }
+    catch { setError('Could not send a test — try again in a moment') }
     finally { setBusy(false) }
   }
 
@@ -144,9 +157,22 @@ export default function CrewSetupCard({ persistent = false }) {
       {showPush && (
         <div className={showInstall ? 'mt-2.5 border-t border-hairline pt-2.5' : 'mt-1.5'}>
           {pushOn ? (
-            <div className="text-[12px] text-emerald-700 dark:text-emerald-300 flex items-center gap-1.5">
-              <CheckCircle2 className="w-4 h-4 shrink-0" /> Notifications are on for this device.
-            </div>
+            <>
+              <div className="text-[12px] text-emerald-700 dark:text-emerald-300 flex items-center gap-1.5">
+                <CheckCircle2 className="w-4 h-4 shrink-0" /> Notifications are on for this device.
+              </div>
+              <button onClick={runTest} disabled={busy}
+                className="mt-2 w-full min-h-9 text-[12px] font-medium bg-panel border border-hairline-2 text-ink-2 hover:bg-bg-2 disabled:opacity-60 py-2 rounded-lg transition-colors inline-flex items-center justify-center gap-1.5">
+                <Bell className="w-3.5 h-3.5" /> {busy ? 'Sending…' : 'Send me a test notification'}
+              </button>
+              {testResult && (
+                <p className="text-[11px] text-ink-3 mt-1.5">
+                  {testResult.sent
+                    ? 'Sent — if it doesn’t show up in a few seconds, check your phone’s notification settings for this app.'
+                    : 'It didn’t send — try turning notifications off and back on below.'}
+                </p>
+              )}
+            </>
           ) : (
             <>
               <button onClick={turnOn} disabled={busy}

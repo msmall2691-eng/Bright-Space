@@ -121,18 +121,20 @@ def unsubscribe(
 @router.post("/test")
 def send_test(
     user: User = Depends(get_current_user),
-    org_id: int = Depends(current_org_id),
     db: Session = Depends(get_db),
 ):
-    """Fire a test notification to the caller's org so they can confirm the
-    round-trip works after enabling it in Settings."""
-    sent = push_service.notify_staff(
-        db,
+    """Fire a test notification to the CALLER's own device(s) only — was
+    notify_staff (org-wide broadcast) until a cleaner self-test button was
+    added to the crew app; every other cleaner and office user in the org
+    would have felt a stray "Push notifications are on" ping each time
+    anyone tapped their own test button. notify_user scopes it to exactly
+    the person who asked, matching the module docstring's original intent
+    ("send a test push to the caller's devices")."""
+    sent = push_service.notify_user(
+        user.id,
         "BrightBase",
         "Push notifications are on 🎉",
         url="/messages",
-        tag="test",
-        org_id=org_id,
     )
     return {"ok": True, "sent": sent, "enabled": push_service.push_enabled()}
 

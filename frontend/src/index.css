@@ -467,6 +467,15 @@ body.accent-cyan {
   .pb-safe { padding-bottom: max(env(safe-area-inset-bottom), 16px); }
   .mb-safe { margin-bottom: max(env(safe-area-inset-bottom), 16px); }
   .pb-bottomnav { padding-bottom: calc(64px + env(safe-area-inset-bottom, 0px)); }
+  /* The `html`-level inset below covers normal document flow, but every
+     sticky/fixed top-0 header on a full-bleed mobile screen (the crew app,
+     CustomerPortal, full-screen modals) needs its OWN top inset too —
+     sticky/fixed positioning doesn't reliably inherit an ancestor's padding
+     the way flow content does, and on an installed iOS PWA that gap renders
+     as page content sitting behind the status bar. Apply directly to the
+     header element. (ScheduleToolbar.jsx already referenced this class name
+     before it existed here — this makes that reference real.) */
+  .safe-top { padding-top: env(safe-area-inset-top); }
 
   /* Smooth Scrolling */
   .scroll-smooth-mobile {
