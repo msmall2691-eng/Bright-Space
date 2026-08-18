@@ -84,7 +84,7 @@ export default function ScheduleToolbar({
   const dateLabel = (opts) => new Date(currentDate).toLocaleDateString('en-US', opts)
 
   return (
-    <div className="no-print bg-panel border-b border-hairline sticky top-0 z-10 safe-top">
+    <div className="no-print bg-panel border-b border-hairline sticky top-0 z-10">
       <div className="max-w-7xl mx-auto px-3 md:px-4 py-2.5 md:py-3">
 
         {/* ============================ PHONE ============================ */}

@@ -49,7 +49,7 @@ function AskThread({ initialQuestion, onClose }) {
 
   return (
     <div className="fixed inset-0 z-30 bg-bg flex flex-col">
-      <div className="sticky top-0 bg-panel/95 backdrop-blur border-b border-hairline px-4 py-3 flex items-center gap-3">
+      <div className="sticky top-0 safe-top bg-panel/95 backdrop-blur border-b border-hairline px-4 py-3 flex items-center gap-3">
         <button onClick={onClose} aria-label="Back"
           className="grid place-items-center w-9 h-9 rounded-lg bg-bg-2 text-ink-2 active:scale-95 transition-transform">
           <ArrowLeft className="w-5 h-5" />
