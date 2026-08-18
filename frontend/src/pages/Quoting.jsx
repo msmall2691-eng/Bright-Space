@@ -110,6 +110,33 @@ export default function Quoting() {
     })
   }
 
+  // Ensure this client has a Property to attach to the quote, so accepting it
+  // can actually convert straight to a job instead of dead-ending on "no
+  // property to schedule" — the single biggest source of retyping the same
+  // address three times across request -> quote -> job. Reuses an existing
+  // property if the client already has one (dedup, matches the backend's own
+  // _resolve_property_for_intake spirit); creates one from the quote's
+  // address only when there isn't one yet and an address is actually known.
+  const ensurePropertyForClient = async (clientId, address, serviceType) => {
+    if (!address?.trim()) return null
+    try {
+      const existing = await get(`/api/properties?client_id=${clientId}`)
+      if (existing?.length) return existing[0].id
+      const propertyType = serviceType === 'str' ? 'str' : serviceType === 'commercial' ? 'commercial' : 'residential'
+      const created = await post('/api/properties', {
+        client_id: parseInt(clientId), name: address.trim(), address: address.trim(),
+        property_type: propertyType,
+      })
+      return created?.id || null
+    } catch (e) {
+      // Best-effort: a quote without a property still saves fine today (the
+      // office just retypes the address at job-creation, same as before this
+      // fix) — a property hiccup shouldn't block getting the quote out.
+      console.error('[Quoting] could not ensure a property for this client', e)
+      return null
+    }
+  }
+
   // Create a client without leaving the quote form, then select it.
   // Returns the created client on success or throws. The QuoteEditPanel owns
   // the addingClient/clientErr UI state and clears itself after this resolves.
@@ -121,6 +148,11 @@ export default function Quoting() {
         name: newClient.name.trim(),
         phone: newClient.phone.trim() || null,
         email: newClient.email.trim() || null,
+        // Carry the quote's address onto the client (was dropped here before,
+        // even though the office already typed/reviewed it on this same
+        // form) — this is what lets JobCreateModal's own "use their address"
+        // one-tap property fallback work later instead of silently failing.
+        address: form.address?.trim() || null,
         status: 'active',
       })
       setClients(cs => [created, ...cs])
@@ -430,6 +462,9 @@ export default function Quoting() {
             name: newClient.name.trim(),
             phone: newClient.phone.trim() || null,
             email: newClient.email.trim() || null,
+            // See createInlineClient's identical comment — carries the
+            // quote's address onto the client instead of dropping it.
+            address: form.address?.trim() || null,
             status: 'active',
           })
           setClients(cs => [created, ...cs])
@@ -448,6 +483,13 @@ export default function Quoting() {
     setSaving(true)
     try {
       const body = { ...form, client_id: parseInt(clientId), tax_rate: parseFloat(form.tax_rate) || 0 }
+      // New quotes only: attach a real Property so accepting this quote can
+      // actually flow into job creation later instead of leaving property_id
+      // null (which is what made the backend's existing accept-to-job
+      // shortcut, and the job form's property picker, effectively dead).
+      if (!selected && !body.property_id) {
+        body.property_id = await ensurePropertyForClient(clientId, form.address, form.service_type)
+      }
       if (selected) {
         await patch(`/api/quotes/${selected.id}`, body)
         await loadQuotes(); await loadIntakes()
