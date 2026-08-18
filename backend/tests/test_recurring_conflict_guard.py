@@ -1,79 +1,107 @@
-"""Recurring generation must not silently double-book a cleaner.
+"""Cleaner conflict/capacity guard on recurring-series creation
+(modules/recurring/router.py's create_schedule).
 
-Before the fix, generate_jobs inserted each occurrence with the schedule's full
-crew and skipped the conflict / time-off / capacity guards the one-off create
-path runs — so a series could book a cleaner who's already busy that day every
-cycle. The fix drops only the conflicting cleaner from that occurrence (the job
-is still created, just unassigned, so it surfaces for reassignment — never a
-skipped cleaning, per the scheduling-invariants contract R7).
+Before this, POST /api/recurring never checked whether an assigned cleaner
+was already double-booked, on approved time off, or over capacity — that
+logic existed for one-off jobs (scheduling.create_job) but a recurring
+series would just silently drop the conflicting cleaner from whichever
+occurrence collided, days later, at generate_jobs() time, with nothing but
+a server log to explain the gap. This mirrors the one-off job's guard:
+checked against the nearest date the requested cadence would actually land
+on, 409s with the same detail shape, overridable with allow_conflicts=true
+(matching allow_duplicate's existing escape-hatch convention on this same
+endpoint).
 """
-from datetime import time, timedelta
+import uuid
+from datetime import time
+from unittest.mock import patch
 
 import pytest
+from fastapi.testclient import TestClient
 
+from main import app
 from database.db import SessionLocal
-from database.models import Client, Property, Job, RecurringSchedule, Activity
-from modules.recurring.router import generate_jobs
+from database.models import Client, Job, Property, RecurringSchedule
 from utils.dates import business_today
+
+api = TestClient(app)
+
+
+@pytest.fixture(autouse=True)
+def _no_gcal_push():
+    with patch("integrations.google_calendar.create_event", return_value=None):
+        yield
 
 
 @pytest.fixture
-def ids(monkeypatch):
-    # Keep the test offline + fast: neutralize the Google Calendar push that
-    # generate_jobs fires for each new occurrence (function-local import, so we
-    # patch the source module).
-    import integrations.google_calendar as gcal
-    monkeypatch.setattr(gcal, "create_event", lambda *a, **k: None)
-
-    tracked = {"clients": [], "properties": [], "jobs": [], "scheds": []}
-    yield tracked
+def seeded():
     db = SessionLocal()
-    if tracked["scheds"]:
-        db.query(Job).filter(Job.recurring_schedule_id.in_(tracked["scheds"])).delete(synchronize_session=False)
-    db.query(Job).filter(Job.id.in_(tracked["jobs"] or [0])).delete(synchronize_session=False)
-    db.query(RecurringSchedule).filter(RecurringSchedule.id.in_(tracked["scheds"] or [0])).delete(synchronize_session=False)
-    db.query(Activity).filter(Activity.client_id.in_(tracked["clients"] or [0])).delete(synchronize_session=False)
-    db.query(Property).filter(Property.id.in_(tracked["properties"] or [0])).delete(synchronize_session=False)
-    db.query(Client).filter(Client.id.in_(tracked["clients"] or [0])).delete(synchronize_session=False)
+    c = Client(name=f"ConflictGuard {uuid.uuid4().hex[:6]}", status="active")
+    db.add(c); db.commit(); db.refresh(c)
+    p = Property(client_id=c.id, name="Conflict Home", address="22 Birch Ln",
+                 property_type="residential", active=True)
+    db.add(p); db.commit(); db.refresh(p)
+    cleaner_id = f"CT-{uuid.uuid4().hex[:6]}"
+    today = business_today()
+    # Existing booking for this cleaner on the date the test payload below
+    # will compute as its "next likely occurrence" (days_of_week=[today's
+    # weekday] makes that date deterministically today).
+    j = Job(client_id=c.id, property_id=p.id, job_type="residential",
+            title="Existing booking", scheduled_date=today,
+            start_time=time(9, 0), end_time=time(11, 0),
+            cleaner_ids=[cleaner_id], status="scheduled",
+            # _find_cleaner_conflicts scopes strictly by org_id (int) when the
+            # caller resolves one — the TestClient's synthetic admin resolves
+            # to org 1, so this needs to match or the guard can't see the job.
+            org_id=1)
+    db.add(j); db.commit(); db.refresh(j)
+    yield db, c, p, cleaner_id, today
+    db.query(Job).filter(Job.client_id == c.id).delete(synchronize_session=False)
+    db.query(RecurringSchedule).filter(RecurringSchedule.client_id == c.id).delete(synchronize_session=False)
+    db.query(Property).filter(Property.id == p.id).delete(synchronize_session=False)
+    db.query(Client).filter(Client.id == c.id).delete(synchronize_session=False)
     db.commit(); db.close()
 
 
-def test_recurring_drops_conflicting_cleaner_keeps_clear_days(ids):
-    db = SessionLocal()
-    try:
-        c = Client(name="Rec Guard", org_id=1)
-        db.add(c); db.commit(); db.refresh(c); ids["clients"].append(c.id)
-        p = Property(client_id=c.id, name="5 Oak", address="5 Oak", property_type="residential", org_id=1)
-        db.add(p); db.commit(); db.refresh(p); ids["properties"].append(p.id)
+def _payload(client, prop, cleaner_id, today, **overrides):
+    payload = {
+        "client_id": client.id, "job_type": "residential", "title": "New Series",
+        "address": prop.address, "frequency": "weekly", "interval_weeks": 1,
+        "days_of_week": [today.weekday()],
+        "start_time": "10:00", "end_time": "12:00",  # overlaps the 09:00-11:00 booking
+        "cleaner_ids": [cleaner_id], "property_id": prop.id, "generate_weeks_ahead": 4,
+    }
+    payload.update(overrides)
+    return payload
 
-        today = business_today()
-        tomorrow = today + timedelta(days=1)
 
-        # Cleaner "c1" is already booked tomorrow 10:30–11:30, which overlaps the
-        # series' 10:00–12:00 slot.
-        conflict = Job(client_id=c.id, property_id=p.id, job_type="residential", title="Existing",
-                       scheduled_date=tomorrow, start_time=time(10, 30), end_time=time(11, 30),
-                       cleaner_ids=["c1"], status="scheduled", org_id=1)
-        db.add(conflict); db.commit(); db.refresh(conflict); ids["jobs"].append(conflict.id)
+def test_double_booked_cleaner_409s(seeded):
+    db, c, p, cleaner_id, today = seeded
+    r = api.post("/api/recurring", json=_payload(c, p, cleaner_id, today))
+    assert r.status_code == 409, r.text
+    assert "conflict" in r.json()["detail"].lower()
+    assert db.query(RecurringSchedule).filter(RecurringSchedule.client_id == c.id).count() == 0
 
-        sched = RecurringSchedule(
-            client_id=c.id, property_id=p.id, job_type="residential", title="Daily Clean",
-            address="5 Oak", frequency="daily", interval_weeks=1, day_of_week=0, days_of_week=[],
-            day_of_month=None, start_time=time(10, 0), end_time=time(12, 0), cleaner_ids=["c1"],
-            active=True, generate_weeks_ahead=1, anchor_date=today, series_start_date=today, org_id=1)
-        db.add(sched); db.commit(); db.refresh(sched); ids["scheds"].append(sched.id)
 
-        generate_jobs(db, sched)
+def test_allow_conflicts_overrides_the_guard(seeded):
+    db, c, p, cleaner_id, today = seeded
+    r = api.post("/api/recurring", json=_payload(c, p, cleaner_id, today, allow_conflicts=True))
+    assert r.status_code == 201, r.text
+    assert db.query(RecurringSchedule).filter(RecurringSchedule.client_id == c.id).count() == 1
 
-        occ = {j.scheduled_date: j for j in
-               db.query(Job).filter(Job.recurring_schedule_id == sched.id).all()}
-        assert today in occ and tomorrow in occ, "expected occurrences for today and tomorrow"
 
-        # Conflict day: c1 dropped → occurrence created UNASSIGNED (never skipped).
-        assert list(occ[tomorrow].cleaner_ids or []) == [], "the busy cleaner should be dropped"
-        assert occ[tomorrow].status == "scheduled", "the cleaning is still scheduled, just unassigned"
+def test_non_overlapping_time_passes(seeded):
+    """Same day, same cleaner, but the time windows don't actually overlap —
+    no conflict, no override needed."""
+    db, c, p, cleaner_id, today = seeded
+    r = api.post("/api/recurring", json=_payload(
+        c, p, cleaner_id, today, start_time="13:00", end_time="15:00"))
+    assert r.status_code == 201, r.text
 
-        # Clear day: the crew is kept.
-        assert "c1" in [str(x) for x in (occ[today].cleaner_ids or [])], "a clear day keeps the crew"
-    finally:
-        db.close()
+
+def test_unassigned_series_skips_the_guard(seeded):
+    """No cleaner picked yet — nothing to check, and the series must still be
+    creatable exactly as it always was before this guard existed."""
+    db, c, p, cleaner_id, today = seeded
+    r = api.post("/api/recurring", json=_payload(c, p, cleaner_id, today, cleaner_ids=[]))
+    assert r.status_code == 201, r.text

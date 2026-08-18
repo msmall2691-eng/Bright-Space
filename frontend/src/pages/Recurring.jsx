@@ -1471,12 +1471,12 @@ export default function Recurring() {
               <p className="font-semibold text-ink">Recurring auto-generate is off</p>
               <p className="text-[13px] mt-0.5 text-ink-3">
                 Schedules were filled once and won’t roll forward, so upcoming visits will stop
-                appearing over time. Turn on <b>Recurring auto-generate</b> in Settings → Automation
+                appearing over time. Turn on <b>Recurring auto-generate</b> in Settings → General
                 to keep the window topped up automatically.
               </p>
-              <a href="/settings#automation"
+              <a href="/settings#general"
                 className="inline-block mt-1.5 text-[13px] font-semibold underline underline-offset-2 hover:opacity-80">
-                Open Settings → Automation
+                Open Settings → General
               </a>
             </div>
           </div>

@@ -1,10 +1,10 @@
 import { useState, useEffect } from 'react'
-import { Settings2, Mail, Plug, RefreshCw, Users, Settings as SettingsIcon } from 'lucide-react'
+import { Settings2, Mail, Plug, Users, Settings as SettingsIcon } from 'lucide-react'
 import UsersAdmin from '../components/UsersAdmin'
 import PageHeader from '../components/ui/PageHeader'
 import { pushToast } from '../utils/toastBus'
 import { useCustomFieldsTab, CustomFieldsBody, CustomFieldsSidePanel } from '../components/settings/CustomFieldsTab'
-import AutomationTab, { useAutomationSettings } from '../components/settings/AutomationTab'
+import { useAutomationSettings } from '../components/settings/AutomationTab'
 import EmailTab from '../components/settings/EmailTab'
 import DangerZone from '../components/settings/DangerZone'
 import GeneralTab from '../components/settings/GeneralTab'
@@ -12,10 +12,14 @@ import IntegrationsTab from '../components/settings/IntegrationsTab'
 
 export default function Settings() {
   // Honor a `#section` hash so deep links land on the right tab (e.g. the
-  // Recurring page's "auto-generate is off" banner → /settings#automation, and
-  // the Google-view empty state → /settings#integrations). Falls back to
-  // General — where company identity, brand color, terms, and the danger zone
-  // live — which is the natural first stop otherwise.
+  // Google-view empty state → /settings#integrations). Falls back to
+  // General — where company identity, brand color, terms, auto-sync/
+  // automation, and the danger zone all live — which is the natural first
+  // stop otherwise. `automation` is kept as an alias to `general` below so
+  // old bookmarks/links (e.g. Recurring's old banner) still land somewhere
+  // sensible now that Automation isn't its own tab (Aug 2026 nav
+  // simplification — it overlapped with General's "how this workspace
+  // behaves" territory).
   // Users management is admin-only (the backend enforces it; this hides the
   // tab). Custom Fields (/api/fields — see modules/fields/router.py) and
   // Email (GET/POST /api/settings/email — see modules/settings/router.py)
@@ -28,11 +32,12 @@ export default function Settings() {
   })()
   const sectionFromHash = () => {
     const h = (window.location.hash || '').replace(/^#/, '').split('?')[0]
-    const allowed = ['general', 'integrations', 'automation']
+    if (h === 'automation') return 'general'
+    const allowed = ['general', 'integrations']
       .concat(isAdmin ? ['email', 'fields', 'users'] : [])
     return allowed.includes(h) ? h : 'general'
   }
-  const [section, setSection] = useState(sectionFromHash) // 'fields' | 'email' | 'general' | 'integrations' | 'automation' | 'users'
+  const [section, setSection] = useState(sectionFromHash) // 'fields' | 'email' | 'general' | 'integrations' | 'users'
   // Keep the tab in step if the hash changes while Settings is already open.
   useEffect(() => {
     const onHash = () => setSection(sectionFromHash())
@@ -42,9 +47,12 @@ export default function Settings() {
   const toast = (message, type = 'success') => pushToast(message, type)
 
   const customFields = useCustomFieldsTab({ toast, enabled: isAdmin })
+  // Automation now renders inline within General (no standalone tab), so its
+  // data loads whenever Integrations or General is active — Integrations
+  // still reads it for the iCal Turnover card.
   const automation = useAutomationSettings({
     toast,
-    active: section === 'integrations' || section === 'automation' || section === 'general',
+    active: section === 'integrations' || section === 'general',
   })
   const { automationSettings, setAutomationSettings } = automation
 
@@ -70,10 +78,6 @@ export default function Settings() {
               <button onClick={() => setSection('integrations')}
                 className={`shrink-0 whitespace-nowrap flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${section === 'integrations' ? 'bg-indigo-600 text-white' : 'bg-panel text-ink-2 border border-hairline hover:border-hairline-2'}`}>
                 <Plug className="w-3.5 h-3.5" /> Integrations
-              </button>
-              <button onClick={() => setSection('automation')}
-                className={`shrink-0 whitespace-nowrap flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${section === 'automation' ? 'bg-indigo-600 text-white' : 'bg-panel text-ink-2 border border-hairline hover:border-hairline-2'}`}>
-                <RefreshCw className="w-3.5 h-3.5" /> Automation
               </button>
               {isAdmin && (
                 <button onClick={() => setSection('email')}
@@ -107,10 +111,15 @@ export default function Settings() {
         )}
 
         {/* === GENERAL SETTINGS SECTION === */}
+        {/* Automation (auto-sync intervals, recurring auto-generate, customer
+            messaging) renders inline here too — folded in from its old
+            standalone tab (Aug 2026 nav simplification: it's the same "how
+            this workspace behaves" territory General already anchors). */}
         {section === 'general' && (
           <GeneralTab
             toast={toast}
             active={section === 'general'}
+            automation={automation}
             dangerZone={<DangerZone toast={toast} automationSettings={automationSettings} setAutomationSettings={setAutomationSettings} />}
           />
         )}
@@ -122,9 +131,6 @@ export default function Settings() {
             active={section === 'integrations'}
           />
         )}
-
-        {/* === AUTOMATION SECTION === */}
-        {section === 'automation' && <AutomationTab state={automation} toast={toast} active={section === 'automation'} />}
 
         {/* === EMAIL SETTINGS SECTION (admin only) === */}
         {section === 'email' && isAdmin && <EmailTab toast={toast} active={section === 'email'} />}

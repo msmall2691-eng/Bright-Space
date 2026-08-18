@@ -69,7 +69,15 @@ export function useAutomationSettings({ toast, active }) {
   }
 }
 
-export default function AutomationTab({ state, toast, active }) {
+/** The actual settings panel — sync intervals, auto-generate, messaging
+ *  toggles, everything below the section heading. No outer scroll/padding
+ *  wrapper of its own, so a caller can drop it into any page's own scroll
+ *  container (General's, since the standalone "Automation" tab was folded
+ *  into it — Aug 2026 nav simplification: it was the same "how this
+ *  workspace behaves" territory General already anchors, just one more pill
+ *  tab away). `AutomationTab` below still wraps it standalone for anything
+ *  that isn't General. */
+export function AutomationSection({ state, toast, active }) {
   const { automationSettings: s, setAutomationSettings, automationSaving, saveAutomationSettings } = state
 
   // Customer messaging (SMS reminders) toggle used to live on the Integrations
@@ -110,14 +118,13 @@ export default function AutomationTab({ state, toast, active }) {
   }
 
   return (
-    <div className="flex-1 overflow-y-auto px-4 sm:px-8 pb-8 bg-bg">
-      <div className="max-w-2xl pt-5">
-        <div className="mb-5">
-          <h2 className="text-lg font-bold text-ink">Auto-Sync Settings</h2>
-          <p className="text-sm text-ink-2 mt-1">Configure how often your calendar and feeds sync automatically</p>
-        </div>
+    <div>
+      <div className="mb-5">
+        <h2 className="text-lg font-bold text-ink">Auto-Sync &amp; Automation</h2>
+        <p className="text-sm text-ink-2 mt-1">Configure how often your calendar and feeds sync automatically, and the messaging/notification behavior around a booking.</p>
+      </div>
 
-        <div className="bg-panel rounded-xl border border-hairline p-5 space-y-5">
+      <div className="bg-panel rounded-xl border border-hairline p-5 space-y-5">
           <div>
             <div className="flex items-center justify-between mb-4">
               <div>
@@ -414,11 +421,25 @@ export default function AutomationTab({ state, toast, active }) {
           </div>
         </div>
 
-        <button onClick={saveAutomationSettings} disabled={automationSaving}
-          className="mt-6 flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white px-5 py-2.5 rounded-xl text-sm font-semibold transition-colors">
-          {automationSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle className="w-4 h-4" />}
-          Save Changes
-        </button>
+      <button onClick={saveAutomationSettings} disabled={automationSaving}
+        className="mt-6 flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white px-5 py-2.5 rounded-xl text-sm font-semibold transition-colors">
+        {automationSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle className="w-4 h-4" />}
+        Save Changes
+      </button>
+    </div>
+  )
+}
+
+/** Standalone wrapper — same scroll/padding/max-width chrome every other
+ *  Settings tab uses. Kept for anywhere that still wants Automation on its
+ *  own (nothing in-app does after the General merge, but this is cheap
+ *  insurance against a future standalone use, and keeps the diff on
+ *  Settings.jsx / GeneralTab.jsx small). */
+export default function AutomationTab({ state, toast, active }) {
+  return (
+    <div className="flex-1 overflow-y-auto px-4 sm:px-8 pb-8 bg-bg">
+      <div className="max-w-2xl pt-5">
+        <AutomationSection state={state} toast={toast} active={active} />
       </div>
     </div>
   )

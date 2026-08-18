@@ -54,7 +54,7 @@ function AttentionRow({ icon: Icon, tone, title, meta, onClick, badge }) {
 }
 
 export default function ClientOverview({
-  client, navigate, setTab,
+  client, navigate, setTab, goToScheduleSection,
   totalRevenue, outstanding,
   invoices = [], quotes = [], upcomingJobs = [], pastJobs = [],
   schedules = [], properties = [], visitStats, allActivity = [],
@@ -102,14 +102,18 @@ export default function ClientOverview({
           <StatCard label="Balance owed" value={money(outstanding)}
             sub={`${unpaidInvoices.length} unpaid`} icon={AlertCircle}
             accent={outstanding > 0 ? 'text-amber-600' : 'text-ink'} onClick={() => setTab('invoices')} />
+          {/* "Visits done" and "Recurring" both land on the Calendar tab now —
+              their old separate destinations were folded into it as inline
+              disclosure sections (Aug 2026 nav simplification) — and pop
+              that section open rather than just landing on the tab. */}
           <StatCard label="Visits done" value={completedVisits} sub="completed"
-            icon={CheckCircle2} onClick={() => setTab('jobs')} />
+            icon={CheckCircle2} onClick={() => goToScheduleSection?.('client-all-jobs-section')} />
           <StatCard label="Next visit" value={nextVisit ? formatDateShort(nextVisit.scheduled_date) : '—'}
             sub={nextVisit ? (nextVisit.address || 'scheduled') : 'none scheduled'} icon={CalendarCheck}
             accent={nextVisit ? 'text-blue-600' : 'text-ink-3'} onClick={() => setTab('calendar')} />
           <StatCard label="Recurring" value={activeSeries.length}
             sub={activeSeries.length === 1 ? 'active series' : 'active series'} icon={Repeat}
-            onClick={() => setTab('recurring')} />
+            onClick={() => goToScheduleSection?.('client-recurring-section')} />
         </div>
       </Card>
 

@@ -1,13 +1,36 @@
 import { useState, useEffect } from 'react'
 import {
   Calendar, Clock, Plus, RefreshCw, ChevronLeft, ChevronRight,
-  MapPin, Mail, Home,
+  MapPin, Mail, Home, Repeat, ListChecks, ChevronDown,
 } from 'lucide-react'
 import { get, post } from '../../api'
 import {
   MINI_DAYS, MONTH_NAMES, JOB_TYPE_DOT, JOB_TYPE_LABEL, STATUS_PILL,
 } from './constants'
 import { toLocalYMD } from '../../utils/format'
+import { RecurringTab, JobsListTab } from './ClientListTabs'
+
+/** Quiet native disclosure — no extra nav layer, just a fold-out section.
+ *  Used to carry the client's recurring schedules and full job history
+ *  inline on the Calendar tab (Aug 2026 nav simplification folded these in
+ *  from what used to be a separate Schedule SubNav destination each). */
+function Disclosure({ id, icon: Icon, label, count, children }) {
+  return (
+    <details id={id} className="group rounded-lg border border-hairline bg-panel">
+      <summary className="cursor-pointer list-none flex items-center justify-between px-3 py-2.5 text-[12.5px] font-medium text-ink-2">
+        <span className="flex items-center gap-2">
+          <Icon className="w-3.5 h-3.5 text-ink-3" />
+          {label}
+          <span className="text-ink-3 font-normal tabular-nums">{count}</span>
+        </span>
+        <ChevronDown className="w-3.5 h-3.5 text-ink-3 transition-transform group-open:rotate-180" />
+      </summary>
+      <div className="px-3 pb-3 pt-1 border-t border-hairline">
+        {children}
+      </div>
+    </details>
+  )
+}
 
 /** A single Google Calendar event row in the client's linked timeline. */
 function GcalEventRow({ ev }) {
@@ -66,7 +89,7 @@ function GcalEventRow({ ev }) {
   )
 }
 
-export default function ClientCalendarTab({ jobs, upcomingJobs, pastJobs, navigate, clientId, clientEmail, visitStats, gcalReloadKey = 0, onAddAppointment, onEditJob, onChanged, toast }) {
+export default function ClientCalendarTab({ jobs, upcomingJobs, pastJobs, navigate, clientId, clientEmail, visitStats, gcalReloadKey = 0, onAddAppointment, onEditJob, onChanged, toast, schedules = [], properties = [], onLinked }) {
   const now = new Date()
   const [year, setYear]   = useState(now.getFullYear())
   const [month, setMonth] = useState(now.getMonth())
@@ -246,6 +269,18 @@ export default function ClientCalendarTab({ jobs, upcomingJobs, pastJobs, naviga
           </div>
         </div>
       )}
+
+      {/* Recurring schedules + full job history — folded in here (Aug 2026 nav
+          simplification) instead of their old separate Schedule SubNav
+          destinations. Collapsed by default so the calendar stays the
+          headline; the count in the summary tells you if there's anything
+          worth opening. */}
+      <Disclosure id="client-recurring-section" icon={Repeat} label="Recurring schedules" count={schedules.length}>
+        <RecurringTab schedules={schedules} upcomingJobs={upcomingJobs} properties={properties} />
+      </Disclosure>
+      <Disclosure id="client-all-jobs-section" icon={ListChecks} label="All jobs" count={jobs.length}>
+        <JobsListTab jobs={jobs} upcomingJobs={upcomingJobs} pastJobs={pastJobs} clientId={clientId} onLinked={onLinked} />
+      </Disclosure>
 
       {/* Native fallback — only when Google isn't connected, so the profile is
           never blank. Once connected, the linked Google events above are the

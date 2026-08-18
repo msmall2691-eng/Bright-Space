@@ -95,6 +95,12 @@ class ScheduleCreate(BaseModel):
     # is the SAFE value — a create that matches an existing live series 409s
     # with the matches so the operator confirms before a second series exists.
     allow_duplicate: Optional[bool] = False
+    # Override the cleaner conflict/capacity guard below (double-booking,
+    # approved time off, over the daily job cap) — same escape hatch as
+    # scheduling.JobCreate.allow_conflicts, extended here so a recurring
+    # series gets the same "warn, don't just silently drop the cleaner
+    # later" treatment a one-off job already had.
+    allow_conflicts: Optional[bool] = False
 
 
 class ExceptionCreate(BaseModel):
@@ -829,6 +835,35 @@ def get_schedules(client_id: Optional[int] = None, db: Session = Depends(get_db)
     return out
 
 
+def _next_likely_occurrence(payload: dict) -> Optional[date]:
+    """A representative near-term date this NOT-YET-CREATED schedule would
+    land on, for a same-day conflict check at create time. Deliberately NOT
+    generate_dates()/_iter_occurrences() (those expect a persisted, anchored
+    RecurringSchedule and carry exception/phase logic this doesn't need yet)
+    — just "the next date matching the requested cadence," which is exactly
+    what a first-occurrence conflict warning needs. Returns None only if the
+    cadence can't be evaluated (defensive; every real submission has enough
+    fields set by the time this runs)."""
+    today = business_today()
+    freq = payload.get("frequency")
+    if freq == "monthly":
+        dom = payload.get("day_of_month")
+        if not dom:
+            return None
+        candidate = today.replace(day=min(dom, 28))
+        if candidate < today:
+            candidate = (candidate.replace(day=1) + timedelta(days=32)).replace(day=min(dom, 28))
+        return candidate
+    days = payload.get("days_of_week") or []
+    if not days:
+        return today  # daily with no weekday filter — today qualifies
+    for offset in range(8):
+        d = today + timedelta(days=offset)
+        if d.weekday() in days:
+            return d
+    return None  # unreachable — every weekday is covered within 8 days
+
+
 @router.post("", status_code=201, dependencies=[Depends(require_role("admin", "manager"))])
 def create_schedule(data: ScheduleCreate, db: Session = Depends(get_db),
                     org_id: int = Depends(current_org_id)):
@@ -841,8 +876,9 @@ def create_schedule(data: ScheduleCreate, db: Session = Depends(get_db),
         "ends_on": payload.pop("ends_on"),
         "ends_after_count": payload.pop("ends_after_count"),
     }
-    # Request-only guard override (see ScheduleCreate), not a column.
+    # Request-only guard overrides (see ScheduleCreate), not columns.
     allow_duplicate = payload.pop("allow_duplicate", False)
+    allow_conflicts = payload.pop("allow_conflicts", False)
     oid = resolve_org_id(org_id, db)
     # Normalise days_of_week. For a DAILY schedule an empty set means "every
     # day" — generate_dates treats a falsy days_of_week as no weekday filter —
@@ -872,6 +908,43 @@ def create_schedule(data: ScheduleCreate, db: Session = Depends(get_db),
                 status_code=409,
                 detail={"detail": "similar_series_exists", "matches": similar},
             )
+    # Cleaner conflict/time-off/capacity guard — the one-off job path
+    # (scheduling.create_job) has always had this; a recurring series never
+    # did, so a double-booked or over-capacity cleaner only surfaced as a
+    # silently-dropped assignment days later, at generate_jobs() time, with
+    # nothing but a server log to explain the gap. Checked against the
+    # nearest date this cadence would actually land on — good enough for a
+    # heads-up warning; it isn't a guarantee about every future occurrence,
+    # same caveat a one-off job's single-date check already carries.
+    if not allow_conflicts and payload.get("cleaner_ids"):
+        from modules.scheduling.router import (
+            _find_cleaner_conflicts, _conflict_detail,
+            _find_unavailable_cleaners, _unavailable_detail,
+            _find_over_capacity, CAPACITY_PER_CLEANER_PER_DAY,
+        )
+        first_date = _next_likely_occurrence(payload)
+        if first_date is not None:
+            conflicts = _find_cleaner_conflicts(
+                db, cleaner_ids=payload["cleaner_ids"], scheduled_date=first_date,
+                start_time=payload["start_time"], end_time=payload["end_time"], org_id=oid,
+            )
+            if conflicts:
+                raise HTTPException(status_code=409, detail=_conflict_detail(conflicts))
+            unavailable = _find_unavailable_cleaners(
+                db, cleaner_ids=payload["cleaner_ids"], scheduled_date=first_date, org_id=oid,
+            )
+            if unavailable:
+                raise HTTPException(status_code=409, detail=_unavailable_detail(unavailable))
+            over = _find_over_capacity(
+                db, cleaner_ids=payload["cleaner_ids"], scheduled_date=first_date, org_id=oid,
+            )
+            if over:
+                who = ", ".join(f"cleaner {cid} ({n} jobs)" for cid, n in over)
+                raise HTTPException(
+                    status_code=409,
+                    detail=f"Over capacity on {first_date}: {who} would exceed the daily limit "
+                           f"of {CAPACITY_PER_CLEANER_PER_DAY}. Resubmit with allow_conflicts=true to override.",
+                )
     sched = RecurringSchedule(**payload)
     sched.org_id = oid  # MT-2: stamp the caller's workspace
     _apply_ends_fields(sched, ends_fields)

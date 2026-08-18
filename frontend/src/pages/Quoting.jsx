@@ -5,7 +5,6 @@ import SavedViewsBar from '../components/SavedViewsBar'
 import PageHero from '../components/ui/PageHero'
 import InlineSelect from '../components/InlineSelect'
 import JobCreateModal from '../components/JobCreateModal'
-import ConvertToJobModal from '../components/quoting/ConvertToJobModal'
 import { get, post, patch } from "../api"
 import { formatDate, combineAddress } from '../utils/format'
 import { pushToast } from '../utils/toastBus'
@@ -110,6 +109,33 @@ export default function Quoting() {
     })
   }
 
+  // Ensure this client has a Property to attach to the quote, so accepting it
+  // can actually convert straight to a job instead of dead-ending on "no
+  // property to schedule" — the single biggest source of retyping the same
+  // address three times across request -> quote -> job. Reuses an existing
+  // property if the client already has one (dedup, matches the backend's own
+  // _resolve_property_for_intake spirit); creates one from the quote's
+  // address only when there isn't one yet and an address is actually known.
+  const ensurePropertyForClient = async (clientId, address, serviceType) => {
+    if (!address?.trim()) return null
+    try {
+      const existing = await get(`/api/properties?client_id=${clientId}`)
+      if (existing?.length) return existing[0].id
+      const propertyType = serviceType === 'str' ? 'str' : serviceType === 'commercial' ? 'commercial' : 'residential'
+      const created = await post('/api/properties', {
+        client_id: parseInt(clientId), name: address.trim(), address: address.trim(),
+        property_type: propertyType,
+      })
+      return created?.id || null
+    } catch (e) {
+      // Best-effort: a quote without a property still saves fine today (the
+      // office just retypes the address at job-creation, same as before this
+      // fix) — a property hiccup shouldn't block getting the quote out.
+      console.error('[Quoting] could not ensure a property for this client', e)
+      return null
+    }
+  }
+
   // Create a client without leaving the quote form, then select it.
   // Returns the created client on success or throws. The QuoteEditPanel owns
   // the addingClient/clientErr UI state and clears itself after this resolves.
@@ -121,6 +147,11 @@ export default function Quoting() {
         name: newClient.name.trim(),
         phone: newClient.phone.trim() || null,
         email: newClient.email.trim() || null,
+        // Carry the quote's address onto the client (was dropped here before,
+        // even though the office already typed/reviewed it on this same
+        // form) — this is what lets JobCreateModal's own "use their address"
+        // one-tap property fallback work later instead of silently failing.
+        address: form.address?.trim() || null,
         status: 'active',
       })
       setClients(cs => [created, ...cs])
@@ -430,6 +461,9 @@ export default function Quoting() {
             name: newClient.name.trim(),
             phone: newClient.phone.trim() || null,
             email: newClient.email.trim() || null,
+            // See createInlineClient's identical comment — carries the
+            // quote's address onto the client instead of dropping it.
+            address: form.address?.trim() || null,
             status: 'active',
           })
           setClients(cs => [created, ...cs])
@@ -448,6 +482,13 @@ export default function Quoting() {
     setSaving(true)
     try {
       const body = { ...form, client_id: parseInt(clientId), tax_rate: parseFloat(form.tax_rate) || 0 }
+      // New quotes only: attach a real Property so accepting this quote can
+      // actually flow into job creation later instead of leaving property_id
+      // null (which is what made the backend's existing accept-to-job
+      // shortcut, and the job form's property picker, effectively dead).
+      if (!selected && !body.property_id) {
+        body.property_id = await ensurePropertyForClient(clientId, form.address, form.service_type)
+      }
       if (selected) {
         await patch(`/api/quotes/${selected.id}`, body)
         await loadQuotes(); await loadIntakes()
@@ -511,16 +552,6 @@ export default function Quoting() {
     setSending(false)
   }
 
-  // Convert-to-Job opens the ConvertToJobModal so the operator picks a date
-  // + crew at conversion time. Prior behavior (silent create + Scheduling
-  // page hop) hid the fact that no date had been set, so undated jobs sat
-  // stale under a "Scheduled" badge that the Schedule calendar never showed.
-  const [convertingQuote, setConvertingQuote] = useState(null)
-  const openConvertToJob = (quoteId) => {
-    const q = quotes.find(x => x.id === quoteId) || safeQuote({ id: quoteId })
-    setConvertingQuote(q)
-  }
-  const convertToJob = openConvertToJob  // legacy name; row buttons still call this
 
   // Permanent (hard) delete is admin-only and lives in the Archived view.
   const isAdmin = (() => {
@@ -875,22 +906,6 @@ export default function Quoting() {
           defaultRecurring
           onClose={() => setScheduleQuote(null)}
           onCreated={finishOnboard}
-        />
-      )}
-
-      {convertingQuote && (
-        <ConvertToJobModal
-          quote={convertingQuote}
-          onClose={() => setConvertingQuote(null)}
-          onConverted={(job) => {
-            setConvertingQuote(null)
-            showToast(job.scheduled_date
-              ? `Job scheduled for ${job.scheduled_date}`
-              : 'Job created — set the date in Scheduling')
-            loadQuotes()
-            navigate(`/jobs/${job.id}`)
-          }}
-          onError={(msg) => showToast(msg || 'Could not convert to job')}
         />
       )}
 
