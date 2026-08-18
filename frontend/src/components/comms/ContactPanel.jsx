@@ -119,9 +119,8 @@ export function ContactPanel({ detail, context, onRemind, onClose, onDraftQuote,
           <div className="flex-1 min-w-0">
             <h3 className="font-bold text-ink text-[15px] truncate leading-tight">{name}</h3>
             <div className="flex items-center gap-1.5 mt-1 flex-wrap">
-              <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${
-                client?.status === 'active' ? 'bg-emerald-100 text-emerald-700' : 'bg-bg-2 text-ink-3'
-              }`}>
+              <span className="inline-flex items-center gap-1.5 text-[10px] font-semibold text-ink-2">
+                <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${client?.status === 'active' ? 'bg-emerald-500' : 'bg-ink-3'}`} aria-hidden="true" />
                 {(client?.status || 'new').toUpperCase()}
               </span>
               <ChannelBadge channel={detail.channel} />
@@ -290,7 +289,7 @@ export function ContactPanel({ detail, context, onRemind, onClose, onDraftQuote,
               <div className="space-y-3">
                 {timeline.map(item => {
                   const iconConfig = {
-                    note:     { icon: StickyNote, bg: 'bg-amber-100', text: 'text-amber-600' },
+                    note:     { icon: StickyNote, bg: 'bg-amber-500/15', text: 'text-amber-600 dark:text-amber-300' },
                     inbound:  { icon: ArrowLeft,  bg: 'bg-bg-2',  text: 'text-ink-3' },
                     outbound: { icon: Send,       bg: 'bg-indigo-500/15',  text: 'text-indigo-600 dark:text-indigo-300' },
                   }

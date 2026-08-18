@@ -138,7 +138,12 @@ export default function UsersAdmin() {
         pay and crew IDs here or on the <Link to="/crew" className="text-indigo-600 font-medium hover:text-indigo-700">Crew page</Link>.
       </p>
 
-      {error && <div className="text-[13px] text-red-700 bg-red-50 border border-red-200 rounded-lg px-3 py-2 mb-3">{error}</div>}
+      {error && (
+        <div className="flex items-center gap-2 text-[13px] text-ink-2 bg-panel border border-hairline rounded-lg px-3 py-2 mb-3">
+          <span className="w-1.5 h-1.5 rounded-full bg-red-500 shrink-0" aria-hidden="true" />
+          {error}
+        </div>
+      )}
 
       {/* Invite someone */}
       <form onSubmit={sendInvite} className="border border-hairline bg-bg-2/40 rounded-xl p-4 mb-5">

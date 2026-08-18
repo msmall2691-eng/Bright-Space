@@ -112,7 +112,7 @@ export default function AgendaUpcoming({
       <div className="max-w-2xl mx-auto px-3 pb-24 sm:pb-6">
         {/* Header band: what range you're looking at + total. */}
         <div className="sticky top-0 z-[6] -mx-3 px-3 pt-3 pb-2 mb-1 bg-bg border-b border-hairline/50 flex items-center gap-2">
-          <span className="grid place-items-center w-8 h-8 rounded-xl bg-indigo-50 dark:bg-indigo-500/15 text-indigo-600 dark:text-indigo-300 shrink-0">
+          <span className="grid place-items-center w-8 h-8 shrink-0 text-indigo-600 dark:text-indigo-300">
             <CalendarRange className="w-4 h-4" />
           </span>
           <div className="min-w-0">

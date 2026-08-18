@@ -52,9 +52,15 @@ function GcalEventRow({ ev }) {
           </div>
         )}
       </div>
-      <div className="flex flex-col items-end gap-1.5 shrink-0">
-        <span title="On Google Calendar" className="w-3.5 h-3.5 rounded-full bg-indigo-100 flex items-center justify-center text-[8px] text-indigo-500 font-bold">G</span>
-        {invited && <span title="Client is an attendee" className="w-3.5 h-3.5 rounded-full bg-emerald-100 flex items-center justify-center text-[8px] text-emerald-500 font-bold">✓</span>}
+      <div className="flex flex-col items-end gap-1 shrink-0">
+        <span className="inline-flex items-center gap-1 text-[9px] font-medium text-ink-3" title="On Google Calendar">
+          <span className="w-1.5 h-1.5 rounded-full bg-indigo-500 shrink-0" aria-hidden="true" />Google
+        </span>
+        {invited && (
+          <span className="inline-flex items-center gap-1 text-[9px] font-medium text-ink-3" title="Client is an attendee">
+            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" aria-hidden="true" />Invited
+          </span>
+        )}
       </div>
     </a>
   )
@@ -397,10 +403,22 @@ export default function ClientCalendarTab({ jobs, upcomingJobs, pastJobs, naviga
                       <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${statusPill}`} aria-hidden="true" />
                       {j.status?.replace('_', ' ')}
                     </span>
-                    <div className="flex gap-1">
-                      {j.gcal_event_id && <span title="On Google Calendar" className="w-3.5 h-3.5 rounded-full bg-indigo-100 flex items-center justify-center text-[8px] text-indigo-500 font-bold">G</span>}
-                      {j.calendar_invite_sent && <span title="Invite sent" className="w-3.5 h-3.5 rounded-full bg-emerald-100 flex items-center justify-center text-[8px] text-emerald-500 font-bold">✓</span>}
-                      {j.dispatched && <span title="Dispatched" className="w-3.5 h-3.5 rounded-full bg-blue-100 flex items-center justify-center text-[8px] text-blue-500 font-bold">D</span>}
+                    <div className="flex flex-col items-end gap-1">
+                      {j.gcal_event_id && (
+                        <span className="inline-flex items-center gap-1 text-[9px] font-medium text-ink-3" title="On Google Calendar">
+                          <span className="w-1.5 h-1.5 rounded-full bg-indigo-500 shrink-0" aria-hidden="true" />Google
+                        </span>
+                      )}
+                      {j.calendar_invite_sent && (
+                        <span className="inline-flex items-center gap-1 text-[9px] font-medium text-ink-3" title="Invite sent">
+                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" aria-hidden="true" />Invited
+                        </span>
+                      )}
+                      {j.dispatched && (
+                        <span className="inline-flex items-center gap-1 text-[9px] font-medium text-ink-3" title="Dispatched">
+                          <span className="w-1.5 h-1.5 rounded-full bg-blue-500 shrink-0" aria-hidden="true" />Dispatched
+                        </span>
+                      )}
                     </div>
                     {/* Opt-in: email the customer a calendar invite so the event lands on their calendar */}
                     {!isPast && clientEmail && !j.calendar_invite_sent && (

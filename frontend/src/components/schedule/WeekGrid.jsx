@@ -343,12 +343,17 @@ export default function WeekGrid({
             return (
               <div
                 key={d}
-                className={`px-2 py-2 text-center border-r border-hairline last:border-r-0 ${isToday ? 'bg-blue-50' : ''}`}
+                className="px-2 py-2 text-center border-r border-hairline last:border-r-0"
               >
-                <div className={`text-[10px] uppercase font-semibold tracking-wide ${isToday ? 'text-indigo-700' : 'text-ink-3'}`}>
+                <div className={`text-[10px] uppercase font-semibold tracking-wide ${isToday ? 'text-indigo-600' : 'text-ink-3'}`}>
                   {DAY_LABELS[i]}
                 </div>
-                <div className={`text-lg font-bold ${isToday ? 'text-blue-800' : 'text-ink'}`}>
+                {/* Today reads as a filled date badge (same bg-accent token
+                    MonthDayCell uses), not a tinted wash across the whole
+                    header cell / column below. */}
+                <div className={`mx-auto mt-0.5 w-7 h-7 flex items-center justify-center rounded-full text-lg font-bold ${
+                  isToday ? 'bg-accent text-accent-ink bb-today-badge' : 'text-ink'
+                }`}>
                   {dObj.getDate()}
                 </div>
                 {dayCount > 0 && (
@@ -528,11 +533,12 @@ function DayColumn({
     : 0
 
   return (
-    <div className={`border-r border-hairline last:border-r-0 relative ${isToday ? 'bg-blue-50/30' : ''}`}>
-      {/* Untimed strip — jobs with no start_time. Amber to signal
-          "needs_setup"-like state and keep them from vanishing. */}
+    <div className="border-r border-hairline last:border-r-0 relative">
+      {/* Untimed strip — jobs with no start_time. The AlertCircle icon below
+          carries the amber "needs_setup"-like cue; the strip itself stays on
+          the neutral panel token rather than a permanent amber wash. */}
       <div
-        className={`border-b border-hairline bg-amber-50/40 ${untimedVisits.length === 0 ? 'opacity-0' : ''}`}
+        className={`border-b border-hairline bg-bg-2 ${untimedVisits.length === 0 ? 'opacity-0' : ''}`}
         style={{ height: untimedStripPx }}
         title={untimedVisits.length > 0 ? 'Unscheduled time — needs a start time' : undefined}
       >

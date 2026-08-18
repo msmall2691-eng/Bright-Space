@@ -8,8 +8,10 @@
  * the horizontal route ribbon on mobile.
  *
  * Type color drives the block fill (matches PROPERTY_TYPE_CONFIG). Blocks
- * without a crew get a dashed amber border, no fill — same convention as
- * the route ribbon so unassigned reads the same across views.
+ * without a crew get a dashed border in the job's type color and a plain
+ * panel background instead of a filled color — the "Needs crew" line reads
+ * in amber text so the cue doesn't rely on a tinted block, matching the
+ * quiet hairline-card treatment UnassignedQueue uses for the same state.
  *
  * Each block is draggable — drop it on a crew card in CrewUtilization to
  * (re)assign that visit (see DispatchBoard's commitAssign).
@@ -133,7 +135,7 @@ export default function DispatchTimeline({
                 onDragEnd={onDragEndVisit}
                 onClick={() => onOpen?.(v, job, prop)}
                 className={`absolute rounded-lg text-left px-2 py-1.5 overflow-hidden transition-shadow hover:shadow-md ${
-                  unassigned ? 'bg-amber-50 text-amber-900' : 'text-white'
+                  unassigned ? 'bg-panel text-ink' : 'text-white'
                 } ${onDragStartVisit ? 'cursor-grab active:cursor-grabbing' : ''}`}
                 style={{
                   top: `${top}px`,
@@ -155,7 +157,7 @@ export default function DispatchTimeline({
                   {blockLabel}
                 </div>
                 {(crewLabel || unassigned) && (
-                  <div className={`text-[10.5px] mt-0.5 truncate flex items-center gap-1 ${unassigned ? 'font-semibold' : 'opacity-90'}`}>
+                  <div className={`text-[10.5px] mt-0.5 truncate flex items-center gap-1 ${unassigned ? 'font-semibold text-amber-700 dark:text-amber-400' : 'opacity-90'}`}>
                     <span className="truncate">{unassigned ? 'Needs crew' : crewLabel}</span>
                   </div>
                 )}

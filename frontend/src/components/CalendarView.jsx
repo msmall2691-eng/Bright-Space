@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from 'react'
-import { ChevronLeft, ChevronRight, Home, RotateCw, X, ArrowRight, ArrowLeft, Ban, Zap, Users, ExternalLink, Plus } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Home, RotateCw, X, ArrowRight, ArrowLeft, Ban, Users, ExternalLink, Plus } from 'lucide-react'
 import { get, patch } from "../api"
 import { toLocalYMD } from '../utils/format'
 import { PROPERTY_TYPE_CONFIG } from './schedule/constants'
@@ -728,13 +728,14 @@ export default function CalendarView({
       <div className={inline ? 'p-3 space-y-4' : 'flex-1 overflow-y-auto overscroll-contain p-4 scrollbar-thin space-y-4'}>
         {selectedSkips.length > 0 && (
           <div>
-            <p className="text-[10px] text-purple-600 font-medium mb-2 uppercase tracking-wide">Skipped Occurrences</p>
+            <p className="text-[10px] text-ink-3 font-medium mb-2 uppercase tracking-wide">Skipped Occurrences</p>
             <div className="space-y-2">
               {selectedSkips.map(ex => (
-                <div key={`skip-${ex.id}`} className="bg-purple-50/50 border border-purple-200 rounded-lg p-2.5">
+                <div key={`skip-${ex.id}`} className="bg-panel border border-hairline rounded-lg p-2.5">
                   <div className="flex items-center gap-1.5">
-                    <Ban className="w-3 h-3 text-purple-500 shrink-0" />
-                    <span className="text-xs font-medium text-purple-700 line-through">Skipped from recurring schedule</span>
+                    <span className="w-1.5 h-1.5 rounded-full bg-purple-500 shrink-0" aria-hidden="true" />
+                    <Ban className="w-3 h-3 text-ink-3 shrink-0" />
+                    <span className="text-xs font-medium text-ink-2 line-through">Skipped from recurring schedule</span>
                   </div>
                   {ex.reason && <div className="text-[10px] text-ink-3 mt-1">{ex.reason}</div>}
                 </div>
@@ -745,13 +746,14 @@ export default function CalendarView({
 
         {selectedReschedFrom.length > 0 && (
           <div>
-            <p className="text-[10px] text-purple-600 font-medium mb-2 uppercase tracking-wide">Moved Out</p>
+            <p className="text-[10px] text-ink-3 font-medium mb-2 uppercase tracking-wide">Moved Out</p>
             <div className="space-y-2">
               {selectedReschedFrom.map(ex => (
-                <div key={`from-${ex.id}`} className="bg-purple-50/50 border border-purple-200 rounded-lg p-2.5">
+                <div key={`from-${ex.id}`} className="bg-panel border border-hairline rounded-lg p-2.5">
                   <div className="flex items-center gap-1.5">
-                    <ArrowRight className="w-3 h-3 text-purple-500 shrink-0" />
-                    <span className="text-xs font-medium text-purple-700">Rescheduled to {ex.rescheduled_date}</span>
+                    <span className="w-1.5 h-1.5 rounded-full bg-purple-500 shrink-0" aria-hidden="true" />
+                    <ArrowRight className="w-3 h-3 text-ink-3 shrink-0" />
+                    <span className="text-xs font-medium text-ink-2">Rescheduled to {ex.rescheduled_date}</span>
                   </div>
                   {ex.reason && <div className="text-[10px] text-ink-3 mt-1">{ex.reason}</div>}
                 </div>
@@ -762,13 +764,14 @@ export default function CalendarView({
 
         {selectedReschedTo.length > 0 && (
           <div>
-            <p className="text-[10px] text-purple-600 font-medium mb-2 uppercase tracking-wide">Moved In</p>
+            <p className="text-[10px] text-ink-3 font-medium mb-2 uppercase tracking-wide">Moved In</p>
             <div className="space-y-2">
               {selectedReschedTo.map(ex => (
-                <div key={`to-${ex.id}`} className="bg-purple-50/50 border border-purple-200 rounded-lg p-2.5">
+                <div key={`to-${ex.id}`} className="bg-panel border border-hairline rounded-lg p-2.5">
                   <div className="flex items-center gap-1.5">
-                    <ArrowLeft className="w-3 h-3 text-purple-500 shrink-0" />
-                    <span className="text-xs font-medium text-purple-700">Moved from {ex.exception_date}</span>
+                    <span className="w-1.5 h-1.5 rounded-full bg-purple-500 shrink-0" aria-hidden="true" />
+                    <ArrowLeft className="w-3 h-3 text-ink-3 shrink-0" />
+                    <span className="text-xs font-medium text-ink-2">Moved from {ex.exception_date}</span>
                   </div>
                   {ex.reason && <div className="text-[10px] text-ink-3 mt-1">{ex.reason}</div>}
                 </div>
@@ -779,18 +782,19 @@ export default function CalendarView({
 
         {selectedBookings.length > 0 && (
           <div>
-            <p className="text-[10px] text-orange-600 font-medium mb-2 uppercase tracking-wide">Airbnb Bookings</p>
+            <p className="text-[10px] text-ink-3 font-medium mb-2 uppercase tracking-wide">Airbnb Bookings</p>
             <div className="space-y-2">
               {selectedBookings.map(b => (
-                <div key={b.id} className="bg-orange-50 border border-orange-200 rounded-lg p-2.5">
+                <div key={b.id} className="bg-panel border border-hairline rounded-lg p-2.5">
                   <div className="flex items-center gap-1.5 mb-1">
-                    <Home className="w-3 h-3 text-orange-500 shrink-0" />
-                    <span className="text-xs font-medium text-orange-700">{b.property_name}</span>
+                    <span className="w-1.5 h-1.5 rounded-full bg-orange-500 shrink-0" aria-hidden="true" />
+                    <Home className="w-3 h-3 text-ink-3 shrink-0" />
+                    <span className="text-xs font-medium text-ink-2">{b.property_name}</span>
                   </div>
-                  <div className="text-[10px] text-orange-600/70">{b.summary || 'Reserved'}</div>
+                  <div className="text-[10px] text-ink-3">{b.summary || 'Reserved'}</div>
                   <div className="text-[10px] text-ink-3 mt-1">
                     {b.checkin_date} – {b.checkout_date}
-                    {b.checkout_date === selected && <span className="text-orange-600 ml-1 font-medium">checkout today</span>}
+                    {b.checkout_date === selected && <span className="text-ink-2 ml-1 font-medium">checkout today</span>}
                   </div>
                 </div>
               ))}
@@ -816,14 +820,16 @@ export default function CalendarView({
                         <div className="text-sm font-medium text-ink truncate flex items-center gap-1">
                           {j.recurring_schedule_id && <RotateCw className="w-3 h-3 text-purple-500 shrink-0" title="Recurring" />}
                           {j.is_immediate_turnover && (
-                            <span className="inline-flex items-center gap-0.5 text-[9px] font-bold uppercase tracking-wide text-red-700 bg-red-100 border border-red-200 px-1 rounded shrink-0" title="Same-day check-out and check-in — tight cleaning window">
-                              <Zap className="w-2.5 h-2.5" /> immediate
+                            <span className="inline-flex items-center gap-1 text-[9px] font-bold uppercase tracking-wide text-red-700 dark:text-red-300 shrink-0" title="Same-day check-out and check-in — tight cleaning window">
+                              <span className="w-1.5 h-1.5 rounded-full bg-red-500 shrink-0" aria-hidden="true" />
+                              immediate
                             </span>
                           )}
                           {!j.is_immediate_turnover && j.turnover_lead_warning && (
-                            <span className="inline-flex items-center gap-0.5 text-[9px] font-bold uppercase tracking-wide text-amber-700 bg-amber-100 border border-amber-200 px-1 rounded shrink-0"
+                            <span className="inline-flex items-center gap-1 text-[9px] font-bold uppercase tracking-wide text-amber-700 dark:text-amber-300 shrink-0"
                                   title={`Only ~${Math.max(0, Math.round(j.turnover_lead_hours))}h before the next guest checks in`}>
-                              <Zap className="w-2.5 h-2.5" /> tight
+                              <span className="w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0" aria-hidden="true" />
+                              tight
                             </span>
                           )}
                           {j.title}
@@ -927,7 +933,7 @@ export default function CalendarView({
             <button onClick={next} className="p-1.5 hover:bg-bg-2 active:bg-bg-2 rounded-lg text-ink-3 hover:text-ink-2 transition-colors" aria-label="Next month">
               <ChevronRight className="w-5 h-5" />
             </button>
-            <button onClick={goToday} className="text-xs text-blue-600 hover:text-blue-700 active:text-blue-800 px-2 sm:px-3 py-1 sm:py-1.5 bg-blue-50 hover:bg-blue-100 active:bg-blue-200 rounded-lg transition-colors font-medium">
+            <button onClick={goToday} className="text-xs text-ink-2 px-2 sm:px-3 py-1 sm:py-1.5 bg-panel border border-hairline-2 hover:bg-bg-2 rounded-lg transition-colors font-medium">
               Today
             </button>
           </div>
@@ -955,12 +961,15 @@ export default function CalendarView({
         {/* Audit §12: surface the month-fetch error instead of a silently
             blank grid. Retry re-hits the same endpoint. */}
         {monthError && !monthLoading && (
-          <div className="mx-1 mb-1 flex items-center justify-between gap-2 text-[12px] px-3 py-1.5 rounded-md bg-red-50 border border-red-200 text-red-700 dark:bg-red-950 dark:border-red-800 dark:text-red-300">
-            <span className="truncate">Couldn't load this month — <span className="text-red-600/80">{String(monthError).slice(0, 120)}</span></span>
+          <div className="mx-1 mb-1 flex items-center justify-between gap-2 text-[12px] px-3 py-1.5 rounded-md bg-panel border border-hairline text-ink-2">
+            <span className="flex items-center gap-1.5 truncate">
+              <span className="w-1.5 h-1.5 rounded-full bg-red-500 shrink-0" aria-hidden="true" />
+              <span className="truncate">Couldn't load this month — <span className="text-ink-3">{String(monthError).slice(0, 120)}</span></span>
+            </span>
             <button
               type="button"
               onClick={retryMonthFetch}
-              className="shrink-0 text-[12px] font-semibold text-red-700 bg-red-100 hover:bg-red-200 border border-red-300 rounded-md px-2 py-0.5"
+              className="shrink-0 text-[12px] font-semibold text-ink-2 bg-panel hover:bg-bg-2 border border-hairline-2 rounded-md px-2 py-0.5"
             >
               Retry
             </button>

@@ -36,10 +36,11 @@ export default function AiInsight({ type, id, className = '' }) {
   if (failed && !loading) return null
 
   return (
-    <div className={`rounded-xl border border-violet-200/70 dark:border-violet-500/25 bg-violet-50/60 dark:bg-violet-500/10 px-3.5 py-3 ${className}`}>
+    <div className={`rounded-xl border border-hairline bg-panel px-3.5 py-3 ${className}`}>
       <div className="flex items-center gap-1.5 mb-1.5">
-        <Sparkles className="w-3.5 h-3.5 text-violet-600 dark:text-violet-300" />
-        <span className="text-[10px] font-bold uppercase tracking-wide text-violet-600 dark:text-violet-300">
+        <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-violet-500 dark:bg-violet-400" aria-hidden />
+        <Sparkles className="w-3.5 h-3.5 text-ink-3" />
+        <span className="text-[10px] font-bold uppercase tracking-wide text-ink-3">
           AI insight
         </span>
         {data && !data.ai && (
@@ -47,7 +48,7 @@ export default function AiInsight({ type, id, className = '' }) {
         )}
         {!loading && (
           <button onClick={load} title="Regenerate"
-            className="ml-auto text-violet-500 hover:text-violet-700 dark:hover:text-violet-200">
+            className="ml-auto text-ink-3 hover:text-ink-2">
             <RefreshCw className="w-3 h-3" />
           </button>
         )}
@@ -55,22 +56,23 @@ export default function AiInsight({ type, id, className = '' }) {
 
       {loading ? (
         <div className="space-y-1.5">
-          <div className="h-3 rounded bg-violet-200/50 dark:bg-violet-500/20 animate-pulse w-11/12" />
-          <div className="h-3 rounded bg-violet-200/50 dark:bg-violet-500/20 animate-pulse w-2/3" />
+          <div className="h-3 rounded bg-bg-2 animate-pulse w-11/12" />
+          <div className="h-3 rounded bg-bg-2 animate-pulse w-2/3" />
         </div>
       ) : data ? (
         <>
           <p className="text-[12.5px] text-ink leading-snug">{data.summary}</p>
           {data.next_action && (
-            <div className="flex items-center gap-1 mt-1.5 text-[12px] font-semibold text-violet-700 dark:text-violet-300">
+            <div className="flex items-center gap-1 mt-1.5 text-[12px] font-semibold text-ink-2">
               <ArrowRight className="w-3.5 h-3.5 shrink-0" />
               {data.next_action}
             </div>
           )}
           {data.tags?.length > 0 && (
-            <div className="flex flex-wrap gap-1 mt-2">
+            <div className="flex flex-wrap gap-x-3 gap-y-1 mt-2">
               {data.tags.map((t, i) => (
-                <span key={i} className="text-[10px] font-medium px-1.5 py-0.5 rounded-full bg-violet-100 dark:bg-violet-500/20 text-violet-700 dark:text-violet-300">
+                <span key={i} className="inline-flex items-center gap-1.5 text-[11px] font-medium text-ink-2">
+                  <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-violet-500 dark:bg-violet-400" aria-hidden />
                   {t}
                 </span>
               ))}

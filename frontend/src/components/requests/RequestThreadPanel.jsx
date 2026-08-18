@@ -154,7 +154,7 @@ export function RequestThreadPanel({ intake }) {
       </div>
 
       {error && (
-        <div className="mx-4 mb-2 text-[12px] text-red-600 bg-red-50 border border-red-100 rounded-lg px-3 py-2 flex items-center gap-1.5 shrink-0">
+        <div className="mx-4 mb-2 text-[12px] text-red-600 dark:text-red-300 bg-panel border border-hairline rounded-lg px-3 py-2 flex items-center gap-1.5 shrink-0">
           <AlertTriangle className="w-3.5 h-3.5 shrink-0" /> {error}
         </div>
       )}

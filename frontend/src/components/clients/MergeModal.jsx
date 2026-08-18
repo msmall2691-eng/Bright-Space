@@ -35,7 +35,7 @@ export function MergeModal({
         <div className="space-y-2">
           {[mergeModal.a, mergeModal.b].map(c => (
             <label key={c.id}
-              className={`flex items-start gap-3 p-3 rounded-xl border cursor-pointer transition-colors ${mergeWinner === c.id ? 'border-blue-400 bg-blue-50/40' : 'border-hairline hover:bg-bg-2'}`}>
+              className={`flex items-start gap-3 p-3 rounded-xl border cursor-pointer transition-colors ${mergeWinner === c.id ? 'border-hairline-2 bg-bg-2' : 'border-hairline hover:bg-bg-2'}`}>
               <input type="radio" name="merge-winner" checked={mergeWinner === c.id}
                 onChange={() => setMergeWinner(c.id)} className="mt-0.5" />
               <div className="min-w-0">

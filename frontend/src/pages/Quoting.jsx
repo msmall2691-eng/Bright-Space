@@ -655,8 +655,9 @@ export default function Quoting() {
         {tab === 'quotes' && (
           <div className="space-y-2 overflow-y-auto flex-1 scrollbar-thin">
             {isComposing && (
-              <div className="shrink-0 flex items-center justify-between gap-3 bg-violet-500/10 border border-violet-500/30 rounded-xl px-4 py-2.5">
-                <span className="text-sm text-ink">
+              <div className="shrink-0 flex items-center justify-between gap-3 bg-panel border border-hairline rounded-xl px-4 py-2.5">
+                <span className="flex items-center gap-2.5 text-sm text-ink">
+                  <span className="w-1.5 h-1.5 rounded-full bg-violet-500 shrink-0" aria-hidden="true" />
                   Composing a new quote{composeClientName ? <> for <span className="font-semibold">{composeClientName}</span></> : ''}.
                   {composeClientId ? ' Showing their quote history.' : ' Pick a client to see their history.'}
                 </span>
@@ -681,8 +682,11 @@ export default function Quoting() {
               <SavedViewsBar entityType="quote" currentConfig={quoteViewConfig} onApply={applyQuoteView} defaultLabel="All quotes" />
             </div>
             {canEdit && selectedIds.size > 0 && (
-              <div className="sticky top-0 z-10 flex items-center justify-between gap-3 bg-indigo-600/10 border border-indigo-600/30 rounded-xl px-4 py-2.5">
-                <span className="text-sm text-ink font-medium">{selectedIds.size} selected</span>
+              <div className="sticky top-0 z-10 flex items-center justify-between gap-3 bg-panel border border-hairline rounded-xl px-4 py-2.5">
+                <span className="flex items-center gap-2.5 text-sm text-ink font-medium">
+                  <span className="w-1.5 h-1.5 rounded-full bg-indigo-500 shrink-0" aria-hidden="true" />
+                  {selectedIds.size} selected
+                </span>
                 <div className="flex items-center gap-2">
                   <button onClick={bulkArchive}
                     className="inline-flex items-center gap-1.5 text-sm px-3 py-1.5 rounded-lg bg-panel border border-hairline text-ink-2 hover:text-red-500 hover:bg-red-50 transition-colors">
@@ -693,9 +697,10 @@ export default function Quoting() {
               </div>
             )}
             {quotesError && (
-              <div className="flex items-center justify-between gap-3 bg-red-500/10 border border-red-500/30 rounded-xl px-4 py-3">
-                <div className="text-sm text-red-500">
-                  <span className="font-medium">Couldn't load quotes.</span> Check your connection and try again.
+              <div className="flex items-center justify-between gap-3 bg-panel border border-hairline rounded-xl px-4 py-3">
+                <div className="flex items-center gap-2.5 text-sm text-ink-2">
+                  <span className="w-1.5 h-1.5 rounded-full bg-red-500 shrink-0" aria-hidden="true" />
+                  <span><span className="font-medium text-ink">Couldn't load quotes.</span> Check your connection and try again.</span>
                 </div>
                 <button onClick={loadQuotes}
                   className="shrink-0 text-sm px-3 py-1.5 rounded-lg bg-panel border border-hairline text-ink-2 hover:text-ink transition-colors">
@@ -768,8 +773,11 @@ export default function Quoting() {
         {tab === 'archived' && (
           <div className="space-y-2 overflow-y-auto flex-1 scrollbar-thin">
             {isAdmin && selectedIds.size > 0 && (
-              <div className="sticky top-0 z-10 flex items-center justify-between gap-3 bg-red-600/10 border border-red-600/30 rounded-xl px-4 py-2.5">
-                <span className="text-sm text-ink font-medium">{selectedIds.size} selected</span>
+              <div className="sticky top-0 z-10 flex items-center justify-between gap-3 bg-panel border border-hairline rounded-xl px-4 py-2.5">
+                <span className="flex items-center gap-2.5 text-sm text-ink font-medium">
+                  <span className="w-1.5 h-1.5 rounded-full bg-red-500 shrink-0" aria-hidden="true" />
+                  {selectedIds.size} selected
+                </span>
                 <div className="flex items-center gap-2">
                   <button onClick={bulkDeletePermanent}
                     className="inline-flex items-center gap-1.5 text-sm px-3 py-1.5 rounded-lg bg-red-600 text-white hover:bg-red-700 transition-colors">

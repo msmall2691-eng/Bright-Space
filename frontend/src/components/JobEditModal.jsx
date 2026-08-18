@@ -776,14 +776,18 @@ export default function JobEditModal({ job, properties = [], clients = [], onClo
                     const a = availability[String(cleaner.id)]
                     const status = a?.status
                     const rowCls = status === 'conflict' || status === 'off' || status === 'unavailable'
-                      ? 'bg-red-50/40 hover:bg-red-50'
+                      ? 'hover:bg-red-50 dark:hover:bg-red-500/10'
                       : status === 'same_day'
-                        ? 'bg-amber-50/40 hover:bg-amber-50'
-                        : 'hover:bg-blue-50'
+                        ? 'hover:bg-amber-50 dark:hover:bg-amber-500/10'
+                        : 'hover:bg-bg-2'
                     const hintCls = status === 'conflict' || status === 'off' || status === 'unavailable'
                       ? 'text-red-600' : status === 'same_day'
                         ? 'text-amber-700'
                         : status === 'usually_off' ? 'text-ink-3' : 'text-emerald-600'
+                    const dotCls = status === 'conflict' || status === 'off' || status === 'unavailable'
+                      ? 'bg-red-500' : status === 'same_day'
+                        ? 'bg-amber-500'
+                        : status === 'usually_off' ? 'bg-ink-3' : 'bg-emerald-500'
                     /* Known statuses render their detail; anything the server
                        adds later degrades to NO hint, never to green "Free" —
                        an unrecognized "can't work" must not read as available. */
@@ -794,11 +798,14 @@ export default function JobEditModal({ job, properties = [], clients = [], onClo
                       <button
                         key={cleaner.id}
                         onClick={() => handleAddCleaner(cleaner.id)}
-                        className={`w-full text-left px-4 py-3 text-ink text-sm transition-colors first:rounded-t-lg last:rounded-b-lg active:bg-blue-100 flex items-center justify-between gap-2 ${rowCls}`}
+                        className={`w-full text-left px-4 py-3 text-ink text-sm transition-colors first:rounded-t-lg last:rounded-b-lg active:bg-bg-2 flex items-center justify-between gap-2 ${rowCls}`}
                       >
                         <span className="truncate">{cleaner.name}</span>
                         {hintLabel && (
-                          <span className={`text-[11px] font-medium shrink-0 ${hintCls}`}>{hintLabel}</span>
+                          <span className={`inline-flex items-center gap-1.5 text-[11px] font-medium shrink-0 ${hintCls}`}>
+                            <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${dotCls}`} aria-hidden="true" />
+                            {hintLabel}
+                          </span>
                         )}
                       </button>
                     )
@@ -952,8 +959,9 @@ export default function JobEditModal({ job, properties = [], clients = [], onClo
           </>)}
 
           {error && (
-            <div className="bg-red-50 border border-red-200 text-red-700 dark:bg-red-950 dark:border-red-800 dark:text-red-300 px-4 py-3 rounded-lg text-sm">
-              {error}
+            <div className="flex items-start gap-2.5 bg-panel border border-hairline text-ink-2 px-4 py-3 rounded-lg text-sm">
+              <span className="w-1.5 h-1.5 rounded-full bg-red-500 shrink-0 mt-1.5" aria-hidden="true" />
+              <span className="min-w-0">{error}</span>
             </div>
           )}
 

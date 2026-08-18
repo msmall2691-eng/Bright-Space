@@ -169,13 +169,12 @@ export default function PropertySheet({ propertyId, propertyName, onClose }) {
           )}
           <div className="space-y-1.5">
             {(notes || []).map(n => (
-              <div key={n.id} className={`rounded-lg border px-3 py-2 text-[12.5px] ${
-                n.shared ? 'bg-panel border-hairline text-ink-2'
-                  : 'bg-amber-500/5 border-amber-500/20 text-ink-2'}`}>
+              <div key={n.id} className="rounded-lg border border-hairline bg-panel px-3 py-2 text-[12.5px] text-ink-2">
                 {n.body}
                 <div className="text-[10.5px] text-ink-3 mt-0.5 flex items-center gap-1">
                   {n.author_name}{!n.shared && (
-                    <span className="inline-flex items-center gap-0.5 text-amber-700 dark:text-amber-400">
+                    <span className="inline-flex items-center gap-1 text-amber-700 dark:text-amber-400">
+                      <span className="w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0" />
                       <Share2 className="w-3 h-3" /> waiting for the office to share
                     </span>
                   )}

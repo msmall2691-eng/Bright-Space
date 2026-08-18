@@ -49,7 +49,7 @@ export function ChaserModal({ chaser, setChaser, sendChaserItem, updateChaserMsg
                 </div>
                 <button onClick={() => sendChaserItem(item)} disabled={item.sending || item.sent}
                   className={`flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg font-medium shrink-0 transition-colors ${
-                    item.sent ? 'bg-emerald-50 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 cursor-default'
+                    item.sent ? 'bg-panel border border-hairline-2 text-emerald-700 dark:text-emerald-300 cursor-default'
                     : 'bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-50'}`}>
                   {item.sent ? <><CheckCircle className="w-3.5 h-3.5" /> Sent</>
                     : item.sending ? 'Sending…'
