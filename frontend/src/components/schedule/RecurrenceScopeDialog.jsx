@@ -72,12 +72,12 @@ export default function RecurrenceScopeDialog({ mode = 'edit', onChoose, onCance
                 onClick={() => onChoose(s.value)}
                 className={`w-full text-left px-3.5 py-3 rounded-xl border flex items-start gap-3 transition-colors disabled:opacity-50 active:scale-[0.99] ${
                   s.primary
-                    ? 'border-blue-400 bg-blue-50/60 dark:bg-blue-500/10 hover:bg-blue-50 dark:hover:bg-blue-500/15'
-                    : 'border-hairline hover:border-blue-400 hover:bg-blue-50/40 dark:hover:bg-blue-500/10'
+                    ? 'border-indigo-400 bg-panel hover:bg-bg-2'
+                    : 'border-hairline hover:border-indigo-400 hover:bg-bg-2'
                 }`}
               >
-                <span className={`mt-0.5 w-8 h-8 shrink-0 rounded-lg flex items-center justify-center ${
-                  s.primary ? 'bg-blue-500/15 text-blue-600 dark:text-blue-300' : 'bg-bg-2 text-ink-3'
+                <span className={`mt-0.5 w-8 h-8 shrink-0 rounded-lg flex items-center justify-center bg-bg-2 ${
+                  s.primary ? 'text-indigo-600 dark:text-indigo-300' : 'text-ink-3'
                 }`}>
                   <Icon className="w-4 h-4" />
                 </span>
@@ -85,7 +85,10 @@ export default function RecurrenceScopeDialog({ mode = 'edit', onChoose, onCance
                   <span className="flex items-center gap-2">
                     <span className="text-sm font-semibold text-ink">{s.label}</span>
                     {s.primary && mode !== 'delete' && (
-                      <span className="text-[10px] font-bold uppercase tracking-wide text-blue-600 dark:text-blue-300 bg-blue-500/10 px-1.5 py-0.5 rounded-full">Most common</span>
+                      <span className="inline-flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wide text-ink-3">
+                        <span className="w-1.5 h-1.5 rounded-full bg-indigo-500 shrink-0" aria-hidden="true" />
+                        Most common
+                      </span>
                     )}
                   </span>
                   <span className="block text-xs text-ink-3 mt-0.5">{s.detail}</span>

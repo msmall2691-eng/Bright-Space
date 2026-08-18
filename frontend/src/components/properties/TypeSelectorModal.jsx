@@ -24,7 +24,7 @@ export function TypeSelectorModal({ selected, onSelect, onCancel, onConfirm }) {
                 onClick={() => onSelect(key)}
                 className={`w-full p-3 rounded-lg border-2 text-left transition-all ${
                   selected === key
-                    ? 'border-indigo-600 bg-blue-50'
+                    ? 'border-indigo-600 bg-panel'
                     : 'border-hairline hover:border-hairline'
                 }`}
               >

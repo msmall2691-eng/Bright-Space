@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from 'react'
 import { useParams, useNavigate, Link } from 'react-router-dom'
-import { ArrowLeft, RefreshCw, Trash2, CheckCircle, AlertCircle, Link as LinkIcon, X, ChevronDown } from 'lucide-react'
+import { ArrowLeft, RefreshCw, Trash2, AlertCircle, Link as LinkIcon, X, ChevronDown } from 'lucide-react'
 import { get, post, del } from '../api'
 import { toast } from '../utils/toastBus'
 import { confirmDialog } from '../utils/confirmBus'
@@ -237,7 +237,8 @@ export default function PropertyIcalsBulk() {
               {[property.address, property.city, property.state].filter(Boolean).join(', ')}
             </p>
             {!isStr && (
-              <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-md px-2 py-1 mt-2 inline-block">
+              <p className="flex items-center gap-1.5 text-xs text-ink-2 bg-panel border border-hairline rounded-md px-2 py-1 mt-2">
+                <span className="w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0" aria-hidden="true" />
                 Note: this property's type is <strong>{property.property_type}</strong> — iCal feeds only auto-create turnovers on STR properties.
               </p>
             )}
@@ -245,7 +246,7 @@ export default function PropertyIcalsBulk() {
           <button onClick={sync}
             disabled={syncing || (property.icals?.length || 0) === 0}
             data-testid="bulk-sync"
-            className="flex items-center gap-1.5 bg-amber-50 hover:bg-amber-100 disabled:opacity-50 text-amber-700 border border-amber-200 px-3 py-1.5 rounded-lg text-sm transition-colors shrink-0">
+            className="flex items-center gap-1.5 bg-panel hover:bg-bg-2 disabled:opacity-50 text-ink-2 border border-hairline-2 px-3 py-1.5 rounded-lg text-sm transition-colors shrink-0">
             <RefreshCw className={`w-3.5 h-3.5 ${syncing ? 'animate-spin' : ''}`} />
             {syncing ? 'Syncing…' : 'Sync now'}
           </button>
@@ -265,8 +266,8 @@ export default function PropertyIcalsBulk() {
           </button>
         </div>
         {syncResult && (
-          <div className={`mt-3 flex items-start gap-2 rounded-lg p-2.5 text-xs border ${syncResult.ok ? 'bg-emerald-50 border-emerald-200 text-emerald-700' : 'bg-red-50 border-red-200 text-red-700'}`}>
-            {syncResult.ok ? <CheckCircle className="w-3.5 h-3.5 mt-0.5 shrink-0" /> : <AlertCircle className="w-3.5 h-3.5 mt-0.5 shrink-0" />}
+          <div className="mt-3 flex items-start gap-2 rounded-lg p-2.5 text-xs bg-panel border border-hairline text-ink-2">
+            <span className={`w-1.5 h-1.5 mt-1 rounded-full shrink-0 ${syncResult.ok ? 'bg-emerald-500' : 'bg-red-500'}`} aria-hidden="true" />
             <span className="flex-1">{syncResult.message}</span>
             <button onClick={() => setSyncResult(null)} className="opacity-60 hover:opacity-100"><X className="w-3 h-3" /></button>
           </div>
@@ -324,27 +325,30 @@ export default function PropertyIcalsBulk() {
                             Failed / Stale (no clean sync in 24h+) / Synced Xh
                             ago / Never synced — words, never color alone. */}
                         {(ical.last_sync_status === 'failed' || ical.last_sync_status === 'retrying') ? (
-                          <span className="inline-flex items-center gap-1 text-[10px] font-semibold px-1.5 py-0.5 rounded bg-red-50 text-red-700" title={ical.last_sync_error || ''}>
-                            <AlertCircle className="w-2.5 h-2.5" /> Failed {relTimeAgo(ical.last_synced_at) || ''}
+                          <span className="inline-flex items-center gap-1.5 text-[11px] font-medium text-red-600" title={ical.last_sync_error || ''}>
+                            <span className="w-1.5 h-1.5 rounded-full bg-red-500 shrink-0" aria-hidden="true" /> Failed {relTimeAgo(ical.last_synced_at) || ''}
                           </span>
                         ) : ical.last_synced_at ? (
                           isStaleSync(ical.last_synced_at) ? (
-                            <span className="inline-flex items-center gap-1 text-[10px] font-semibold px-1.5 py-0.5 rounded bg-amber-50 text-amber-700"
+                            <span className="inline-flex items-center gap-1.5 text-[11px] font-medium text-amber-700"
                               title="No clean sync in 24h+ — check this feed">
-                              <AlertCircle className="w-2.5 h-2.5" /> Stale · synced {relTimeAgo(ical.last_synced_at)}
+                              <span className="w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0" aria-hidden="true" /> Stale · synced {relTimeAgo(ical.last_synced_at)}
                             </span>
                           ) : (
-                            <span className="inline-flex items-center gap-1 text-[10px] font-semibold px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-700">
-                              <CheckCircle className="w-2.5 h-2.5" /> Synced {relTimeAgo(ical.last_synced_at)}
+                            <span className="inline-flex items-center gap-1.5 text-[11px] font-medium text-ink-3">
+                              <span className="w-1.5 h-1.5 rounded-full bg-ink-3/40 shrink-0" aria-hidden="true" /> Synced {relTimeAgo(ical.last_synced_at)}
                             </span>
                           )
                         ) : (
-                          <span className="text-[10px] font-medium text-ink-3 bg-bg-2 px-1.5 py-0.5 rounded">Never synced</span>
+                          <span className="inline-flex items-center gap-1.5 text-[11px] font-medium text-ink-3">
+                            <span className="w-1.5 h-1.5 rounded-full bg-ink-3/40 shrink-0" aria-hidden="true" /> Never synced
+                          </span>
                         )}
                       </div>
                       <div className="text-[11px] font-mono text-ink-3 break-all">{ical.url}</div>
                       {ical.last_sync_error && (
-                        <div className="mt-1 text-[11px] text-red-700 bg-red-50 rounded p-1.5 font-mono break-all">
+                        <div className="flex items-start gap-1.5 mt-1 text-[11px] text-ink-2 bg-panel border border-hairline rounded p-1.5 font-mono break-all">
+                          <span className="w-1.5 h-1.5 mt-0.5 rounded-full bg-red-500 shrink-0" aria-hidden="true" />
                           {String(ical.last_sync_error).slice(0, 200)}
                         </div>
                       )}
@@ -426,7 +430,9 @@ export default function PropertyIcalsBulk() {
                       <span className="text-[10px] font-semibold text-ink-3 bg-bg-2 px-1.5 py-0.5 rounded">Already on this property</span>
                     )}
                     {!row.valid && (
-                      <span className="text-[10px] font-semibold text-red-700 bg-red-50 border border-red-200 px-1.5 py-0.5 rounded">Not a valid URL</span>
+                      <span className="inline-flex items-center gap-1.5 text-[10px] font-semibold text-red-600">
+                        <span className="w-1.5 h-1.5 rounded-full bg-red-500 shrink-0" aria-hidden="true" /> Not a valid URL
+                      </span>
                     )}
                   </div>
                   <div className="text-[11px] font-mono text-ink-3 break-all">{row.url || row.raw}</div>
@@ -453,8 +459,8 @@ export default function PropertyIcalsBulk() {
           {addResults && (
             <ul className="mt-3 space-y-1.5">
               {addResults.map((r, i) => (
-                <li key={i} className={`flex items-start gap-2 text-xs rounded-md px-2.5 py-1.5 border ${r.ok ? 'bg-emerald-50 border-emerald-200 text-emerald-700' : 'bg-red-50 border-red-200 text-red-700'}`}>
-                  {r.ok ? <CheckCircle className="w-3 h-3 mt-0.5 shrink-0" /> : <AlertCircle className="w-3 h-3 mt-0.5 shrink-0" />}
+                <li key={i} className="flex items-start gap-2 text-xs rounded-md px-2.5 py-1.5 border border-hairline bg-panel text-ink-2">
+                  <span className={`w-1.5 h-1.5 mt-1 rounded-full shrink-0 ${r.ok ? 'bg-emerald-500' : 'bg-red-500'}`} aria-hidden="true" />
                   <span className="font-mono break-all flex-1">{r.url}</span>
                   {!r.ok && <span className="shrink-0">{r.error}</span>}
                 </li>

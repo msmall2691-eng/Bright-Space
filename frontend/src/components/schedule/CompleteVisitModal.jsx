@@ -124,14 +124,10 @@ export default function CompleteVisitModal({ visit, onClose, onComplete }) {
                   key={task}
                   type="button"
                   onClick={() => toggle(task)}
-                  className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-lg border text-left text-sm transition-colors ${
-                    checks[task]
-                      ? 'bg-green-50 border-green-200 text-green-800'
-                      : 'bg-panel border-hairline text-ink hover:bg-bg'
-                  }`}
+                  className="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg border border-hairline bg-panel text-left text-sm text-ink hover:bg-bg transition-colors"
                 >
                   <span className={`w-4 h-4 rounded flex items-center justify-center text-[11px] ${
-                    checks[task] ? 'bg-green-500 text-white' : 'border border-hairline'
+                    checks[task] ? 'bg-emerald-500 text-white' : 'border border-hairline'
                   }`}>{checks[task] ? '✓' : ''}</span>
                   {task}
                 </button>

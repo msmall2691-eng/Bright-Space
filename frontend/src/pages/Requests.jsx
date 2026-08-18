@@ -138,7 +138,7 @@ const RequestCard = ({ intake, onViewDetails, onCreateQuote, onConvertToClient, 
   const [showMenu, setShowMenu] = useState(false)
 
   return (
-    <div className={`bg-panel rounded-lg border px-4 py-2.5 hover:bg-bg-2/60 transition-colors ${selected ? 'border-indigo-400 bg-indigo-50/30' : 'border-hairline'}`}>
+    <div className={`bg-panel rounded-lg border px-4 py-2.5 hover:bg-bg-2/60 transition-colors ${selected ? 'border-indigo-400' : 'border-hairline'}`}>
       <div className="flex items-start justify-between gap-3 mb-3">
         <div className="flex items-start gap-3 flex-1 min-w-0">
           {/* Bulk-select checkbox */}

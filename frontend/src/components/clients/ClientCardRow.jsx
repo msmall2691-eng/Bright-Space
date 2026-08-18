@@ -11,7 +11,7 @@ import { STATUS_COLORS, avatarColor } from './constants'
 export function ClientCardRow({ c, selected, toggleSelect, setJobClient, navigate, openEdit, deleteClient }) {
   return (
     <div onClick={() => navigate(`/clients/${c.id}`)}
-      className={`flex items-center gap-3 sm:gap-4 bg-panel border rounded-xl p-3 sm:p-3.5 cursor-pointer transition-all group ${selected ? 'border-blue-400 bg-blue-50/40' : 'border-hairline hover:border-hairline'}`}>
+      className={`flex items-center gap-3 sm:gap-4 bg-panel border rounded-xl p-3 sm:p-3.5 cursor-pointer transition-all group ${selected ? 'border-hairline-2 bg-bg-2' : 'border-hairline hover:border-hairline'}`}>
       <input
         type="checkbox"
         checked={selected}

@@ -83,16 +83,10 @@ export default function ActivityTimeline({
         return (
         <div key={i} className="flex gap-4">
           <div className="flex flex-col items-center">
-            <div className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 ${
-              item.type === 'job'          ? 'bg-blue-500/10' :
-              item.type === 'gcal_event'   ? 'bg-indigo-50' :
-              item.type === 'quote'        ? 'bg-indigo-600/20' :
-              item.type === 'invoice'      ? 'bg-green-50' :
-              item.type === 'opportunity'  ? 'bg-amber-50' :
-              item.type === 'email'        ? 'bg-cyan-50' :
-              item.type === 'activity_log' ? 'bg-bg-2' :
-                                             'bg-purple-50'
-            }`}>
+            {/* Neutral icon circle — the colored dot on the card below already
+                carries the type/status distinction, so this doesn't need to
+                double as a tinted chip (owner's veto of tinted icon chips). */}
+            <div className="w-8 h-8 rounded-full flex items-center justify-center shrink-0 bg-bg-2">
               {item.type === 'job'          && <Calendar className="w-3.5 h-3.5 text-blue-500" />}
               {item.type === 'gcal_event'   && <Calendar className="w-3.5 h-3.5 text-indigo-500" />}
               {item.type === 'quote'        && <FileText className="w-3.5 h-3.5 text-blue-400" />}

@@ -234,8 +234,8 @@ export default function PageAssistant() {
             <div className="flex flex-wrap gap-1.5">
               {actions.map((a, i) => (
                 <button key={i} onClick={() => runAction(a)}
-                  className="inline-flex items-center gap-1 text-[12px] font-medium px-2.5 py-1.5 rounded-lg border border-blue-200 dark:border-blue-500/30 bg-blue-50 dark:bg-blue-500/15 text-blue-700 dark:text-blue-300 hover:bg-blue-100 dark:hover:bg-blue-500/25 transition-colors">
-                  <Zap className="w-3 h-3" /> {a.label}
+                  className="inline-flex items-center gap-1 text-[12px] font-medium px-2.5 py-1.5 rounded-lg border border-hairline-2 bg-panel text-ink-2 hover:bg-bg-2 transition-colors">
+                  <Zap className="w-3 h-3 text-ink-3" /> {a.label}
                 </button>
               ))}
             </div>

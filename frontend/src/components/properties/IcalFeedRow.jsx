@@ -81,7 +81,8 @@ export function IcalFeedRow({ ical, onRemove }) {
         </div>
       </div>
       {status === 'failed' && ical.last_sync_error && (
-        <div className="text-[11px] text-red-700 dark:text-red-300 bg-red-50 dark:bg-red-500/10 rounded p-1.5 mb-1.5 font-mono break-all">
+        <div className="flex items-start gap-1.5 text-[11px] text-ink-2 bg-panel border border-hairline rounded p-1.5 mb-1.5 font-mono break-all">
+          <span className="w-1.5 h-1.5 mt-0.5 rounded-full bg-red-500 shrink-0" aria-hidden="true" />
           {ical.last_sync_error.slice(0, 200)}
         </div>
       )}

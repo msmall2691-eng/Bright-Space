@@ -146,7 +146,8 @@ export default function SyncHealthPill({ refreshKey = 0, onForced, onOpenSetting
               )}
             </div>
             {forceError && (
-              <p className="mt-2 px-2 py-1.5 rounded-lg bg-red-50 dark:bg-red-500/10 border border-red-200 dark:border-red-500/30 text-[12px] text-red-700 dark:text-red-300" role="alert">
+              <p className="mt-2 px-2 py-1.5 rounded-lg border border-hairline bg-panel text-[12px] text-ink-2 flex items-center gap-1.5" role="alert">
+                <span className="w-1.5 h-1.5 rounded-full bg-red-500 shrink-0" aria-hidden="true" />
                 {forceError}
               </p>
             )}

@@ -7,8 +7,11 @@ description: The BrightBase visual vocabulary — quiet dot+word labels, no SaaS
 
 The owner has repeatedly vetoed "typical SaaS" chrome, in these words: "I hate
 the bubble labels", "hate these big bubbles", "hate all the button badges too".
-Two full de-bubbling sweeps have already shipped. Do not reintroduce the
-patterns below — reviewers grep for them.
+Three full de-bubbling sweeps have already shipped, the third after she was
+shown a colorful competitor screenshot and explicitly chose to extend the
+quiet direction everywhere rather than move toward it — this is a confirmed,
+deliberate standing decision, not a default nobody's revisited. Do not
+reintroduce the patterns below — reviewers grep for them.
 
 ## Never (owner-vetoed)
 
@@ -17,6 +20,16 @@ patterns below — reviewers grep for them.
 - Colored count bubbles on buttons, tabs, or nav items
 - Tinted icon chips on stat tiles; gradient cards
 - Giant full-width colored action bars that cover content
+
+**The distinction that actually matters when grepping for these**: a
+*persistent* filled/tinted background — a banner, badge, or block that's
+tinted in its resting state (`bg-red-50 border-red-200` on an error card,
+`bg-amber-100 rounded-full` wrapping a status word) — is the vetoed pattern.
+A *transient* `hover:bg-red-50`/`active:bg-blue-100` tint on an otherwise
+plain button or row is not — that's normal interactive feedback and is
+already used correctly all over the app (e.g. `Sidebar.jsx`'s "Log out",
+`DangerZone.jsx`'s destructive actions). Don't flatten hover states while
+chasing this rule; only the resting-state fill is the problem.
 
 ## Always
 

@@ -37,9 +37,14 @@ function MonthDayCell({
       onDragLeave={onDragLeaveDay}
       onDrop={e => onDropDay(e, date)}
       className={`group/day relative p-1 sm:p-1.5 min-h-[58px] sm:min-h-[110px] cursor-pointer transition-colors ${
+        // isDropTarget is a transient drag-hover cue (only while a chip is
+        // dragged over this cell) — treated like an interactive hover tint,
+        // not a persistent status fill. isSelected/has-bookings used to wash
+        // the whole cell in blue/orange; now a ring marks selection and the
+        // existing orange booking text (below) carries that cue instead, so
+        // no cell ever sits under a permanent tinted background.
         isDropTarget ? 'bg-blue-50 ring-2 ring-blue-400 ring-inset' :
-        isSelected ? 'bg-blue-50/60' :
-        dayBookings.length > 0 ? 'bg-orange-50/50 hover:bg-orange-50' :
+        isSelected ? 'bg-panel ring-1 ring-inset ring-indigo-400 hover:bg-bg' :
         'bg-panel hover:bg-bg'
       }`}
     >

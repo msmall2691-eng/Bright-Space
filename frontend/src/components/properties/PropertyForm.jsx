@@ -106,7 +106,7 @@ export function PropertyForm({
                 onClick={() => setForm(f => ({ ...f, property_type: type }))}
                 className={`flex-1 px-3 py-2 rounded-lg border-2 text-sm font-medium transition-all ${
                   form.property_type === type
-                    ? 'border-indigo-600 bg-blue-50 text-blue-700'
+                    ? 'border-indigo-600 bg-panel text-indigo-700 dark:text-indigo-300'
                     : 'border-hairline text-ink-2 hover:border-hairline'
                 }`}
               >
@@ -132,17 +132,17 @@ export function PropertyForm({
               {clients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
             </select>
           ) : (
-            <div className="rounded-lg border border-blue-200 bg-blue-50/50 p-2.5 space-y-2">
+            <div className="rounded-lg border border-hairline-2 bg-bg p-2.5 space-y-2">
               <input autoFocus value={newClient.name} onChange={e => setNewClient(n => ({ ...n, name: e.target.value }))}
                 placeholder="Client name *"
-                className="w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-400" />
+                className="w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-indigo-400" />
               <div className="grid grid-cols-2 gap-2">
                 <input value={newClient.phone} onChange={e => setNewClient(n => ({ ...n, phone: e.target.value }))}
                   placeholder="Phone"
-                  className="w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-400" />
+                  className="w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-indigo-400" />
                 <input value={newClient.email} onChange={e => setNewClient(n => ({ ...n, email: e.target.value }))}
                   placeholder="Email"
-                  className="w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-400" />
+                  className="w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-indigo-400" />
               </div>
               {clientErr && <div className="text-xs text-red-600">{clientErr}</div>}
               <button type="button" onClick={createInlineClient} disabled={creatingClient || !newClient.name.trim()}

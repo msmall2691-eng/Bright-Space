@@ -36,20 +36,22 @@ const ACTIVITY_ICONS = {
   opportunity_created: TrendingUp, opportunity_won: CheckCircle, opportunity_lost: AlertCircle,
   status_changed: RefreshCw, note_added: FileText,
 }
+// Icon glyph color only — the chip itself stays a neutral bg-bg-2 circle
+// (owner's veto of tinted icon chips); color lives on the glyph, not a fill.
 const ACTIVITY_COLORS = {
-  email_sent: 'text-blue-600 bg-blue-50', email_received: 'text-blue-600 bg-blue-50',
-  sms_sent: 'text-purple-600 bg-purple-50', sms_received: 'text-purple-600 bg-purple-50',
-  call_logged: 'text-green-600 bg-green-50',
-  job_created: 'text-yellow-600 bg-yellow-50',
-  job_completed: 'text-emerald-600 bg-emerald-50', quote_accepted: 'text-emerald-600 bg-emerald-50',
-  job_customer_confirmed: 'text-emerald-600 bg-emerald-50',
-  job_customer_rescheduled: 'text-blue-600 bg-blue-50',
-  job_reschedule_requested: 'text-amber-600 bg-amber-50',
-  invoice_paid: 'text-emerald-600 bg-emerald-50', job_cancelled: 'text-red-600 bg-red-50',
-  quote_sent: 'text-orange-600 bg-orange-50', invoice_sent: 'text-cyan-600 bg-cyan-50',
-  opportunity_created: 'text-pink-600 bg-pink-50',
-  opportunity_won: 'text-emerald-600 bg-emerald-50', opportunity_lost: 'text-red-600 bg-red-50',
-  note_added: 'text-ink-2 bg-bg',
+  email_sent: 'text-blue-600', email_received: 'text-blue-600',
+  sms_sent: 'text-purple-600', sms_received: 'text-purple-600',
+  call_logged: 'text-green-600',
+  job_created: 'text-yellow-600',
+  job_completed: 'text-emerald-600', quote_accepted: 'text-emerald-600',
+  job_customer_confirmed: 'text-emerald-600',
+  job_customer_rescheduled: 'text-blue-600',
+  job_reschedule_requested: 'text-amber-600',
+  invoice_paid: 'text-emerald-600', job_cancelled: 'text-red-600',
+  quote_sent: 'text-orange-600', invoice_sent: 'text-cyan-600',
+  opportunity_created: 'text-pink-600',
+  opportunity_won: 'text-emerald-600', opportunity_lost: 'text-red-600',
+  note_added: 'text-ink-2',
 }
 // `connecteam` stays only to render HISTORICAL integration-log rows from the
 // retired Connecteam integration — no live Connecteam calls exist anymore.
@@ -60,15 +62,15 @@ function visualFor(item) {
   if (item.kind === 'integration') {
     const Icon = PROVIDER_ICONS[item.icon_key] || RefreshCw
     const ok = (item.status || '').toLowerCase() === 'ok'
-    return { Icon, bg: ok ? 'bg-emerald-50' : 'bg-red-50', fg: ok ? 'text-emerald-600' : 'text-red-600' }
+    return { Icon, bg: 'bg-bg-2', fg: ok ? 'text-emerald-600' : 'text-red-600' }
   }
   if (item.kind === 'message') {
     const Icon = CHANNEL_ICONS[item.icon_key] || MessageSquare
-    return { Icon, bg: 'bg-blue-50', fg: 'text-blue-600' }
+    return { Icon, bg: 'bg-bg-2', fg: 'text-blue-600' }
   }
   const Icon = ACTIVITY_ICONS[item.icon_key] || FileText
-  const [fg, bg] = (ACTIVITY_COLORS[item.icon_key] || 'text-ink-2 bg-bg').split(' ')
-  return { Icon, bg, fg }
+  const fg = ACTIVITY_COLORS[item.icon_key] || 'text-ink-2'
+  return { Icon, bg: 'bg-bg-2', fg }
 }
 
 function TimelineItem({ item, isLast }) {
