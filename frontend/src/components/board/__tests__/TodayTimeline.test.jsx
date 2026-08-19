@@ -62,6 +62,23 @@ describe('TodayTimeline', () => {
     expect(await screen.findByText(/nothing on the schedule today/i)).toBeTruthy()
   })
 
+  it('surfaces a visit with no time instead of silently dropping it', async () => {
+    // DispatchTimeline positions blocks by start/end time and skips anything
+    // it can't place — an untimed job would otherwise be counted in the
+    // header but appear nowhere on the grid.
+    get.mockResolvedValue({
+      ...DAY,
+      visits: [{ ...VISIT, start_time: null, end_time: null }],
+    })
+    render(<TodayTimeline navigate={vi.fn()} />)
+
+    expect(await screen.findByText('Anna Sweet')).toBeTruthy()
+    expect(screen.getByText(/no time set/i)).toBeTruthy()
+    // No hour axis: there's nothing placeable to draw one for.
+    expect(screen.queryByText('06')).toBeNull()
+    expect(screen.queryByText(/nothing on the schedule today/i)).toBeNull()
+  })
+
   it('shows a retryable message when the day fails to load', async () => {
     get.mockRejectedValue(new Error('offline'))
     render(<TodayTimeline navigate={vi.fn()} />)

@@ -63,6 +63,17 @@ export default function TodayTimeline({ navigate }) {
   // Cancelled visits never render (DispatchTimeline filters them too) — this
   // count has to agree with what's actually drawn below it.
   const visits = (data?.visits || []).filter(v => v.status !== 'cancelled')
+  // DispatchTimeline positions blocks by start/end time and silently skips
+  // anything it can't place. A job with no times is legal in this app, so
+  // without calling those out the header would count a visit that appears
+  // nowhere on the grid — and an untimed job would be invisible on Home.
+  const hasSlot = (v) => {
+    const s = String(v.start_time || '').slice(0, 5)
+    const e = String(v.end_time || '').slice(0, 5)
+    return /^\d\d:\d\d$/.test(s) && /^\d\d:\d\d$/.test(e) && e > s
+  }
+  const timed = visits.filter(hasSlot)
+  const untimed = visits.filter(v => !hasSlot(v))
 
   const openVisit = (v, job) => {
     const id = job?.id ?? v?.job_id
@@ -108,10 +119,34 @@ export default function TodayTimeline({ navigate }) {
         </p>
       )}
 
-      {state === 'ready' && visits.length > 0 && (
+      {/* Untimed visits can't be placed on an hour axis, so they get a plain
+          line rather than being dropped on the floor. */}
+      {state === 'ready' && untimed.length > 0 && (
+        <ul className="divide-y divide-hairline border-b border-hairline">
+          {untimed.map(v => {
+            const job = data.jobs[v.job_id]
+            const prop = data.properties[job?.property_id]
+            const client = data.clients[job?.client_id]
+            return (
+              <li key={v.id}>
+                <button onClick={() => openVisit(v, job)}
+                  className="flex w-full items-center gap-2 px-3.5 py-2 text-left transition-colors hover:bg-bg-2">
+                  <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-amber-500" aria-hidden="true" />
+                  <span className="min-w-0 flex-1 truncate text-[12.5px] text-ink">
+                    {client?.name || prop?.name || job?.title || `Visit ${v.id}`}
+                  </span>
+                  <span className="shrink-0 text-[11px] text-ink-3">No time set</span>
+                </button>
+              </li>
+            )
+          })}
+        </ul>
+      )}
+
+      {state === 'ready' && timed.length > 0 && (
         <div className="p-3">
           <DispatchTimeline
-            visits={visits}
+            visits={timed}
             jobs={data.jobs}
             properties={data.properties}
             clients={data.clients}
