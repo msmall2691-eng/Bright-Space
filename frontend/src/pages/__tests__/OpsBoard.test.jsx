@@ -6,7 +6,7 @@
  * clears the card, a `confirm` action needs a second click before it POSTs.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { render, screen, cleanup, fireEvent, waitFor } from '@testing-library/react'
+import { render, screen, cleanup, fireEvent, waitFor, within } from '@testing-library/react'
 import { MemoryRouter, useLocation } from 'react-router-dom'
 
 // `getCached` is used by useEmployees, which the embedded Today timeline
@@ -29,7 +29,7 @@ const PAYLOAD = {
   ],
   filters: { all: 4, urgent: 1, watch: 2, info: 1, good: 0, recurring: 0 },
   sections: [
-    { key: 'needs_today', title: 'Needs You Today', icon: '🔴', items: [
+    { key: 'needs_cleaner', title: 'Needs a cleaner', icon: '🧹', items: [
       { id: 'job:1', severity: 'urgent', title: 'No cleaner assigned', body: 'Denmark Rental', meta: 'today',
         tags: [{ label: 'TURNO', tone: 'blue' }],
         actions: [
@@ -37,9 +37,9 @@ const PAYLOAD = {
           { label: 'Dispatch', kind: 'link', href: '/schedule?view=dispatch' },
         ] },
     ] },
-    { key: 'jobs_on_deck', title: 'Jobs on Deck', icon: '🧹', items: [
-      { id: 'deck-job:2', severity: 'watch', title: 'Wells rental', body: 'Jess Racco', meta: 'Sat',
-        tags: [{ label: 'STR', tone: 'blue' }], actions: [{ label: 'View', kind: 'link', href: '/jobs/2' }] },
+    { key: 'requests', title: 'Requests & quotes', icon: '📋', items: [
+      { id: 'quote:2', severity: 'watch', title: 'Wells rental', body: 'Jess Racco', meta: 'Sat',
+        tags: [{ label: 'QUOTE', tone: 'indigo' }], actions: [{ label: 'View', kind: 'link', href: '/quotes/2' }] },
     ] },
     { key: 'money', title: 'Money', icon: '💵', items: [
       { id: 'money:outstanding', severity: 'info', title: '$250 outstanding', body: 'across 1 invoice', meta: '',
@@ -52,8 +52,8 @@ const PAYLOAD = {
           { label: 'Open', kind: 'link', href: '/billing' },
         ] },
     ] },
-    { key: 'people_waiting', title: 'Real People Waiting', icon: '✉️', items: [] },
-    { key: 'systems', title: 'Systems & Subscriptions', icon: '🧰', items: [] },
+    { key: 'messages', title: 'Messages', icon: '✉️', items: [] },
+    { key: 'systems', title: 'Systems', icon: '🧰', items: [] },
     { key: 'safe_to_ignore', title: 'Safe to Ignore', icon: '🗑️', items: [] },
   ],
 }
@@ -99,7 +99,10 @@ describe('OpsBoard', () => {
   it('clearing a card advances the progress and persists', async () => {
     renderBoard()
     await screen.findByText('No cleaner assigned')
-    fireEvent.click(screen.getAllByLabelText('Clear')[0])
+    // Target this card's own checkbox rather than "the first one on the
+    // page" — section order is a product decision that has changed twice,
+    // and a positional selector silently starts testing a different card.
+    fireEvent.click(within(screen.getByTestId('board-row-job:1')).getByLabelText('Clear'))
     expect(screen.getByText('1 of 4 cleared')).toBeTruthy()
     expect(JSON.parse(localStorage.getItem('brightbase_board_cleared'))).toContain('job:1')
   })
@@ -208,7 +211,7 @@ describe('OpsBoard', () => {
   it('caps a long primary section to a few rows with a "+N more" link', async () => {
     const longSection = {
       ...PAYLOAD,
-      sections: PAYLOAD.sections.map(s => s.key === 'needs_today'
+      sections: PAYLOAD.sections.map(s => s.key === 'needs_cleaner'
         ? { ...s, items: Array.from({ length: 8 }, (_, i) => ({
             id: `job:${i}`, severity: 'urgent', title: `Unassigned job ${i}`, body: '', meta: '',
             tags: [], actions: [],
@@ -229,7 +232,7 @@ describe('OpsBoard', () => {
   it('navigates to the record an api action returns an href for', async () => {
     const withLead = {
       ...PAYLOAD,
-      sections: PAYLOAD.sections.map(s => s.key === 'people_waiting'
+      sections: PAYLOAD.sections.map(s => s.key === 'requests'
         ? { ...s, items: [
             { id: 'lead:5', severity: 'info', title: 'New lead — Dana', body: 'Wants a quote', meta: '2h',
               tags: [{ label: 'RESIDENTIAL', tone: 'indigo' }],

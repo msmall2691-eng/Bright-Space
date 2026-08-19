@@ -33,7 +33,7 @@ from sqlalchemy.orm import Session, joinedload
 
 import config
 from database.models import (
-    Client, Job, Invoice, Quote, LeadIntake, RecurringSchedule,
+    Client, Job, Invoice, Quote, LeadIntake,
     Conversation, Message, IntegrationEvent, AppSetting, UserGoogleAccount,
     InboxTriageItem,
 )
@@ -178,28 +178,6 @@ def _job_meta(job: Job, today: date) -> str:
     return " · ".join(x for x in (day, span) if x)
 
 
-def _turnover_context(job: Job) -> str:
-    """For STR turnover jobs: the checkout→check-in window plus a quick
-    access cue (door code), so a crew scanning the board can see how tight
-    the flip is and how to get in without opening the job detail. Reads off
-    `job.property`, which the deck's query already joinedload()s — no extra
-    query. Returns "" for non-turnover jobs or properties missing the data
-    (residential/commercial jobs, or an STR property that hasn't been filled
-    in yet — never renders a misleading partial line)."""
-    if (job.job_type or "").lower() != "str_turnover":
-        return ""
-    prop = job.property
-    if not prop:
-        return ""
-    parts = []
-    if prop.check_out_time or prop.check_in_time:
-        co = prop.check_out_time or "?"
-        ci = prop.check_in_time or "?"
-        parts.append(f"Out {co} → In {ci}")
-    if prop.house_code:
-        parts.append(f"Code {prop.house_code}")
-    return " · ".join(parts)
-
 
 def _job_type_tag(job: Job) -> dict:
     jt = (job.job_type or "").lower()
@@ -222,18 +200,6 @@ def _client_name(obj) -> str:
     if c and c.name:
         return c.name
     return ""
-
-
-def _cadence_label(sched: RecurringSchedule) -> str:
-    freq = (sched.frequency or "").lower()
-    iw = sched.interval_weeks or 1
-    if freq == "monthly":
-        return "monthly"
-    if freq == "weekly" or iw == 1:
-        return "weekly"
-    if freq == "biweekly" or iw == 2:
-        return "every 2 weeks"
-    return f"every {iw} weeks"
 
 
 # ── Low-level reads ─────────────────────────────────────────────────────────
@@ -389,24 +355,32 @@ def build_board(db: Session, oid: int, can_act: bool = True) -> dict:
         .all()
     )
 
-    # --- Active recurring ----------------------------------------------------
-    recurring = (
-        db.query(RecurringSchedule)
-        .options(joinedload(RecurringSchedule.client))
-        .filter(org(RecurringSchedule), RecurringSchedule.active.is_(True))
-        .order_by(RecurringSchedule.created_at.desc())
-        .limit(_CAP)
-        .all()
-    )
+    # (No recurring-series query here any more — the only section that read it
+    # was "Jobs on Deck", now removed. Leaving it in place would have run a
+    # joined query on every board load for a result nobody reads.)
 
     # ========================================================================
     #  Assemble sections
     # ========================================================================
 
-    # ── 🔴 Needs You Today ──────────────────────────────────────────────────
-    needs = []
+    # ========================================================================
+    #  One concern per box.
+    #
+    #  These sections used to be mixed bags: "Needs You Today" held unassigned
+    #  jobs AND overdue replies AND quote nudges, while "Real People Waiting"
+    #  mixed customer conversations with new leads. The owner's repeated
+    #  complaint — "it's all just chaos", "I would love little boxes with each
+    #  thing" — was that grouping, not the styling. Each section below is now
+    #  a single subject she can name: crew coverage, messages, incoming work,
+    #  money, plumbing.
+    # ========================================================================
+
+    # ── 🧹 Needs a cleaner ──────────────────────────────────────────────────
+    # Only the urgent gap (today or this weekend). Browsing the whole week is
+    # the Home schedule widget's job; this box exists to be acted on.
+    needs_cleaner = []
     for j in unassigned_urgent[:_CAP]:
-        needs.append(_item(
+        needs_cleaner.append(_item(
             f"job:{j.id}", "urgent", "No cleaner assigned",
             f"{_job_place(j)}" + (f" · {_client_name(j)}" if _client_name(j) else ""),
             _job_meta(j, today),
@@ -418,8 +392,13 @@ def build_board(db: Session, oid: int, can_act: bool = True) -> dict:
                 _link("Dispatch", "/schedule?view=dispatch"),
             ],
         ))
+
+    # ── ✉️ Messages ─────────────────────────────────────────────────────────
+    # Every customer conversation awaiting a reply, one box, all channels
+    # (SMS / email / chat). Overdue ones sort to the top via severity.
+    messages = []
     for c in breached[:_CAP]:
-        needs.append(_item(
+        messages.append(_item(
             f"conv:{c.id}", "urgent", f"Reply overdue — {_conv_contact(c)}",
             snippets.get(c.id, "") or (c.subject or f"{(c.channel or 'message').upper()} awaiting reply"),
             _ago(c.last_inbound_at),
@@ -434,42 +413,53 @@ def build_board(db: Session, oid: int, can_act: bool = True) -> dict:
                 _link("Reply", f"/comms?conversation={c.id}"),
             ],
         ))
+    for c in still_waiting[:_CAP]:
+        sev = "watch" if c._sla == "at_risk" else "info"
+        messages.append(_item(
+            f"wait-conv:{c.id}", sev, _conv_contact(c),
+            snippets.get(c.id, "") or (c.subject or f"{(c.channel or 'message').upper()} — awaiting your reply"),
+            _ago(c.last_inbound_at),
+            tags=[{"label": (c.channel or "msg").capitalize(), "tone": "blue"}],
+            actions=[_link("Reply", f"/comms?conversation={c.id}")],  # BB-CODE-03 — see above
+        ))
+
+    # ── 📋 Requests & quotes ────────────────────────────────────────────────
+    # Incoming work: new leads to quote, and quotes already out that the
+    # customer hasn't acted on. Both are "money not landed yet", which is why
+    # they belong together and NOT in with the message inbox.
+    requests = []
+    for ld in leads[:_CAP]:
+        hot = (ld.priority or "normal") in ("high", "urgent")
+        svc = (ld.service_type or "").upper() or "LEAD"
+        requests.append(_item(
+            f"lead:{ld.id}", "watch" if hot else "info", f"New lead — {ld.name or 'inquiry'}",
+            (ld.message or ld.requested_service or ld.address or "Wants a quote").strip()[:120], _ago(ld.created_at),
+            tags=[{"label": svc, "tone": "indigo"}] + ([{"label": "HOT", "tone": "rose"}] if hot else []),
+            # One tap drafts a real quote from this lead (pre-filled from what
+            # they told us, AI-written intro) and lands her on it to review and
+            # SEND HERSELF — nothing goes to the customer from here. "Open"
+            # stays a plain link so a read-only role, whose `api` actions are
+            # stripped below, still has somewhere to go.
+            actions=[
+                _api("Draft quote", f"/api/ai/quote-from-lead/{ld.id}", done="Draft ready"),
+                _link("Open", f"/requests/{ld.id}"),
+            ],
+        ))
     for q in follow_ups:
         stage = "viewed, not accepted" if q.viewed_at else "sent, not opened"
-        needs.append(_item(
+        requests.append(_item(
             f"quote:{q.id}", "info", f"Quote nudge — {_client_name(q) or (q.title or 'Quote')}",
             f"{_fmt_money(q.total)} · {stage}", _ago(q.viewed_at or q.sent_at),
             tags=[{"label": "QUOTE", "tone": "indigo"}],
-            actions=[_link("Open", "/billing?view=quotes")],
+            actions=[_link("Open", f"/quotes/{q.id}")],
         ))
 
-    # ── 🧹 Jobs on Deck ─────────────────────────────────────────────────────
-    deck = []
-    for j in week_jobs[:_CAP]:
-        assigned = not _is_unassigned(j)
-        acts = [_link("View", f"/jobs/{j.id}")]
-        if not assigned:
-            acts.insert(0, _api("Auto-assign", f"/api/jobs/{j.id}/auto-assign", done="Assigned", clears=False))
-        # STR turnovers get a checkout→check-in + door-code line appended to
-        # meta so the flip window and access are visible at a glance, not
-        # just in the job detail drawer.
-        meta = _job_meta(j, today)
-        turno = _turnover_context(j)
-        if turno:
-            meta = f"{meta} · {turno}" if meta else turno
-        deck.append(_item(
-            f"deck-job:{j.id}", "good" if assigned else "watch",
-            _job_place(j) or (j.title or f"Job #{j.id}"), _client_name(j), meta,
-            tags=[_job_type_tag(j)] + ([] if assigned else [{"label": "Needs cleaner", "tone": "amber"}]),
-            actions=acts,
-        ))
-    for s in recurring:
-        deck.append(_item(
-            f"recurring:{s.id}", "recurring", s.title or "Recurring clean",
-            (_client_name(s) or s.address or "") + f" · {_cadence_label(s)}", "",
-            tags=[{"label": "RECURRING", "tone": "emerald"}],
-            actions=[_link("Series", "/recurring")],
-        ))
+    # NOTE: there is deliberately no "Jobs on Deck" section any more. It listed
+    # the week's jobs plus active recurring series — both now covered better
+    # elsewhere: Home's schedule widget (UpcomingWeek) shows every visit in the
+    # next 7 days grouped by day with its own needs-cleaner marking, and series
+    # live on /recurring. Keeping a third text list of the same jobs was the
+    # redundancy the owner kept flagging.
 
     # ── 💵 Money ─────────────────────────────────────────────────────────────
     money = []
@@ -510,35 +500,6 @@ def build_board(db: Session, oid: int, can_act: bool = True) -> dict:
             actions=[_link("Billing", "/billing?view=invoices")],
         ))
 
-    # ── ✉️ Real People Waiting ──────────────────────────────────────────────
-    people = []
-    for c in still_waiting[:_CAP]:
-        sev = "watch" if c._sla == "at_risk" else "info"
-        people.append(_item(
-            f"wait-conv:{c.id}", sev, _conv_contact(c),
-            snippets.get(c.id, "") or (c.subject or f"{(c.channel or 'message').upper()} — awaiting your reply"),
-            _ago(c.last_inbound_at),
-            tags=[{"label": (c.channel or "msg").upper(), "tone": "blue"}],
-            actions=[_link("Reply", f"/comms?conversation={c.id}")],  # BB-CODE-03 — see above
-        ))
-    for ld in leads[:_CAP]:
-        hot = (ld.priority or "normal") in ("high", "urgent")
-        svc = (ld.service_type or "").upper() or "LEAD"
-        people.append(_item(
-            f"lead:{ld.id}", "watch" if hot else "info", f"New lead — {ld.name or 'inquiry'}",
-            (ld.message or ld.requested_service or ld.address or "Wants a quote").strip()[:120], _ago(ld.created_at),
-            tags=[{"label": svc, "tone": "indigo"}] + ([{"label": "HOT", "tone": "rose"}] if hot else []),
-            # One tap drafts a real quote from this lead (pre-filled from what
-            # they told us, AI-written intro) and lands her on it to review and
-            # SEND HERSELF — nothing goes to the customer from here. "Open"
-            # stays a plain link so a read-only role, whose `api` actions are
-            # stripped below, still has somewhere to go.
-            actions=[
-                _api("Draft quote", f"/api/ai/quote-from-lead/{ld.id}", done="Draft ready"),
-                _link("Open", f"/requests/{ld.id}"),
-            ],
-        ))
-
     # ── 🧰 Systems & Subscriptions (integration health) ─────────────────────
     integrations, systems = _integration_health(db, oid, today)
 
@@ -573,11 +534,11 @@ def build_board(db: Session, oid: int, can_act: bool = True) -> dict:
     systems.extend(triage_systems)
 
     sections = [
-        {"key": "needs_today", "title": "Needs You Today", "icon": "🔴", "items": _sort_items(needs)},
-        {"key": "jobs_on_deck", "title": "Jobs on Deck", "icon": "🧹", "items": _sort_items(deck)},
+        {"key": "messages", "title": "Messages", "icon": "✉️", "items": _sort_items(messages)},
+        {"key": "requests", "title": "Requests & quotes", "icon": "📋", "items": _sort_items(requests)},
+        {"key": "needs_cleaner", "title": "Needs a cleaner", "icon": "🧹", "items": _sort_items(needs_cleaner)},
         {"key": "money", "title": "Money", "icon": "💵", "items": _sort_items(money)},
-        {"key": "people_waiting", "title": "Real People Waiting", "icon": "✉️", "items": _sort_items(people)},
-        {"key": "systems", "title": "Systems & Subscriptions", "icon": "🧰", "items": _sort_items(systems)},
+        {"key": "systems", "title": "Systems", "icon": "🧰", "items": _sort_items(systems)},
         {"key": "safe_to_ignore", "title": "Safe to Ignore", "icon": "🗑️", "items": safe},
     ]
 

@@ -78,29 +78,6 @@ def _mk_unassigned_job_today(ids, cid, pid):
     return jid
 
 
-def _mk_str_property(ids, cid):
-    """An STR property with turnover-relevant fields filled in, so the deck
-    card's turnover-context line has something to render."""
-    db = SessionLocal()
-    p = Property(client_id=cid, name="9 Lakeshore Dr", address="9 Lakeshore Dr",
-                 property_type="str", org_id=1,
-                 check_out_time="10:00", check_in_time="16:00", house_code="4521")
-    db.add(p); db.commit(); db.refresh(p)
-    ids["properties"].append(p.id); pid = p.id; db.close()
-    return pid
-
-
-def _mk_turnover_job_this_week(ids, cid, pid):
-    db = SessionLocal()
-    j = Job(client_id=cid, property_id=pid, job_type="str_turnover",
-            title="Turnover", scheduled_date=business_today() + timedelta(days=1),
-            start_time=time(10, 0), end_time=time(13, 0),
-            cleaner_ids=[901], status="scheduled", org_id=1)
-    db.add(j); db.commit(); db.refresh(j)
-    ids["jobs"].append(j.id); jid = j.id; db.close()
-    return jid
-
-
 def _mk_overdue_invoice(ids, cid):
     db = SessionLocal()
     inv = Invoice(client_id=cid, invoice_number=f"INV-{uuid.uuid4().hex[:8]}",
@@ -137,7 +114,7 @@ def test_board_shape_and_stat_deltas(client):
     # Structural contract.
     assert set(before) >= {"company", "refreshed_at", "stats", "integrations", "filters", "sections"}
     sec_keys = [s["key"] for s in before["sections"]]
-    assert sec_keys == ["needs_today", "jobs_on_deck", "money", "people_waiting", "systems", "safe_to_ignore"]
+    assert sec_keys == ["messages", "requests", "needs_cleaner", "money", "systems", "safe_to_ignore"]
     assert set(before["filters"]) == {"all", "urgent", "watch", "info", "good", "recurring"}
     stat_keys = {s["key"] for s in before["stats"]}
     assert stat_keys == {"unassigned", "weekend", "overdue", "waiting", "leads", "collected"}
@@ -185,42 +162,32 @@ def test_reply_action_links_to_the_specific_conversation(client):
     conv_id = _mk_waiting_conv(ids, cid)
 
     board = api.get("/api/dashboard/board").json()
-    waiting = next(s for s in board["sections"] if s["key"] == "people_waiting")
+    waiting = next(s for s in board["sections"] if s["key"] == "messages")
     item = next(it for it in waiting["items"] if it["id"] == f"wait-conv:{conv_id}")
     reply = next(a for a in item["actions"] if a["label"] == "Reply")
     assert reply["href"] == f"/comms?conversation={conv_id}"
 
 
-def test_turnover_card_shows_checkout_checkin_and_code(client):
-    """A Jobs-on-Deck card for an STR turnover surfaces the checkout→check-in
-    window and door code in its `meta` line — visible on the board itself,
-    not just after opening the job detail drawer."""
+def test_leads_and_quotes_share_one_box_apart_from_messages(client):
+    """One subject per box. A new lead is incoming work and belongs with
+    quote follow-ups under "Requests & quotes" — NOT mixed into the message
+    inbox, which is only conversations awaiting a reply. This grouping is
+    the thing the owner asked for ("little boxes with each thing")."""
     api, ids = client
     cid = _mk_client(ids)
-    pid = _mk_str_property(ids, cid)
-    jid = _mk_turnover_job_this_week(ids, cid, pid)
+    _mk_new_lead(ids)
+    conv_id = _mk_waiting_conv(ids, cid)
 
     board = api.get("/api/dashboard/board").json()
-    deck = next(s for s in board["sections"] if s["key"] == "jobs_on_deck")
-    item = next(it for it in deck["items"] if it["id"] == f"deck-job:{jid}")
+    by_key = {s["key"]: s for s in board["sections"]}
 
-    assert "Out 10:00 → In 16:00" in item["meta"]
-    assert "Code 4521" in item["meta"]
+    lead_ids = [it["id"] for it in by_key["requests"]["items"]]
+    msg_ids = [it["id"] for it in by_key["messages"]["items"]]
 
-
-def test_turnover_card_omits_context_when_property_missing_data(client):
-    """A non-STR job (or an STR property with no checkout/check-in/code set)
-    never renders a partial or misleading turnover line."""
-    api, ids = client
-    cid = _mk_client(ids)
-    pid = _mk_property(ids, cid)  # residential, no STR fields
-    jid = _mk_unassigned_job_today(ids, cid, pid)  # job_type=str_turnover, but bare property
-
-    board = api.get("/api/dashboard/board").json()
-    all_items = [it for s in board["sections"] for it in s["items"]]
-    item = next((it for it in all_items if it["id"] == f"deck-job:{jid}"), None)
-    if item is not None:
-        assert "Out" not in item["meta"] and "Code" not in item["meta"]
+    assert any(i.startswith("lead:") for i in lead_ids), "a new lead belongs in Requests & quotes"
+    assert not any(i.startswith("lead:") for i in msg_ids), "leads must not sit in the message box"
+    assert f"wait-conv:{conv_id}" in msg_ids, "a waiting conversation belongs in Messages"
+    assert f"wait-conv:{conv_id}" not in lead_ids
 
 
 def test_viewer_board_strips_one_click_api_actions(client):
@@ -282,5 +249,4 @@ def test_finished_visits_never_count_as_needing_a_cleaner(client):
         "a completed job must not count as an unassigned job"
 
     after_ids = {it["id"] for s in after["sections"] for it in s["items"]}
-    assert f"job:{done_id}" not in after_ids, "completed job must not raise a Needs-You-Today card"
-    assert f"deck-job:{done_id}" not in after_ids, "completed job is not upcoming work on the deck"
+    assert f"job:{done_id}" not in after_ids, "completed job must not raise a Needs-a-cleaner card"
