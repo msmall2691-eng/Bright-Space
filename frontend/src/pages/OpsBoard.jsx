@@ -389,7 +389,8 @@ function FilterChip({ sev, count, active, onClick }) {
 
 function BoardRow({ item, cleared, onToggle, onAction, actioningKey, confirmingKey }) {
   return (
-    <div className={`flex items-start gap-2.5 px-3.5 py-2.5 transition-opacity ${cleared ? 'opacity-40' : ''}`}>
+    <div data-testid={`board-row-${item.id}`}
+      className={`flex items-start gap-2.5 px-3.5 py-2.5 transition-opacity ${cleared ? 'opacity-40' : ''}`}>
       <button
         onClick={() => onToggle(item.id)}
         aria-label={cleared ? 'Restore' : 'Clear'}
@@ -544,12 +545,18 @@ function Section({ section, items, clearedSet, onToggle, onAction, actioningKey,
 // a second text list of the same jobs — the owner asked to "immediately have
 // eyes on the cal schedule", and carrying both was exactly the redundancy she
 // flagged. The backend no longer emits that section either.
-const SECTION_RANK = { people_waiting: 0, needs_today: 1, jobs_on_deck: 2, money: 3, systems: 4, safe_to_ignore: 5 }
-const PRIMARY_SECTIONS = new Set(['people_waiting', 'needs_today', 'jobs_on_deck'])
+// One subject per widget, in the order she named them: who's waiting on a
+// reply, what work is coming in, whether the crew is covered, then money and
+// plumbing. The old mixed sections (Needs You Today = jobs + replies + quote
+// nudges; Real People Waiting = conversations + leads) are gone — that
+// grouping was the "chaos", not the styling.
+const SECTION_RANK = { messages: 0, requests: 1, needs_cleaner: 2, money: 3, systems: 4, safe_to_ignore: 5 }
+const PRIMARY_SECTIONS = new Set(['messages', 'requests', 'needs_cleaner'])
 const SECTION_LINKS = {
-  people_waiting: { label: 'Inbox', to: '/comms' },
-  jobs_on_deck: { label: 'Schedule', to: '/schedule' },
-  needs_today: { label: 'Today', to: '/schedule' },
+  messages: { label: 'Inbox', to: '/comms' },
+  requests: { label: 'Requests', to: '/requests' },
+  needs_cleaner: { label: 'Dispatch', to: '/schedule?view=dispatch' },
+  money: { label: 'Billing', to: '/billing' },
 }
 // Every primary section shows at most this many rows on Home before folding
 // the rest behind its header "View all" link — the owner: "not have to
