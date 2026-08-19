@@ -49,16 +49,28 @@ export function ConvItem({ conv, active, onClick }) {
 
         <div className="flex-1 min-w-0">
           {/* Name + time. Linked client names go to the client record; the
-              stopPropagation keeps the link from also selecting the row. */}
+              stopPropagation keeps the link from also selecting the row.
+              The name sits in its own flex-1 wrapper so the ROW reserves the
+              space for it (keeping the timestamp pinned right), but the
+              <Link> itself is inline-block/max-w-full — its clickable box
+              hugs the rendered (possibly truncated) text instead of
+              stretching across the whole remaining row width. Previously the
+              Link itself carried flex-1, so its tap target covered nearly
+              the entire name/time row — tapping almost anywhere on a
+              conversation row to open it landed on the client profile
+              instead (owner report: "it always brings me to their client
+              profile"). */}
           <div className="flex items-baseline gap-2">
-            {clientId ? (
-              <Link to={`/clients/${clientId}`} onClick={e => e.stopPropagation()}
-                className={`${nameCls} flex-1 hover:underline underline-offset-2`}>
-                {name}
-              </Link>
-            ) : (
-              <span className={`${nameCls} flex-1`}>{name}</span>
-            )}
+            <div className="flex-1 min-w-0">
+              {clientId ? (
+                <Link to={`/clients/${clientId}`} onClick={e => e.stopPropagation()}
+                  className={`${nameCls} inline-block max-w-full align-bottom hover:underline underline-offset-2`}>
+                  {name}
+                </Link>
+              ) : (
+                <span className={nameCls}>{name}</span>
+              )}
+            </div>
             <span className="text-[11px] text-ink-3 shrink-0 tabular-nums">
               {relTime(conv.last_message_at)}
             </span>
