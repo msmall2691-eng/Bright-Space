@@ -6,7 +6,7 @@
  * clears the card, a `confirm` action needs a second click before it POSTs.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { render, screen, cleanup, fireEvent } from '@testing-library/react'
+import { render, screen, cleanup, fireEvent, waitFor } from '@testing-library/react'
 import { MemoryRouter, useLocation } from 'react-router-dom'
 
 // `getCached` is used by useEmployees, which the embedded Today timeline
@@ -247,7 +247,9 @@ describe('OpsBoard', () => {
     fireEvent.click(screen.getByRole('button', { name: /draft quote/i }))
     expect(post).toHaveBeenCalledWith('/api/ai/quote-from-lead/5', {})
     expect(await screen.findByText(/Draft ready — New lead — Dana/i)).toBeTruthy()
-    expect(screen.getByTestId('loc').textContent).toBe('/quotes/42')
+    // React Router's navigate lands in a transition, so poll rather than
+    // reading the probe on the same tick.
+    await waitFor(() => expect(screen.getByTestId('loc').textContent).toBe('/quotes/42'))
   })
 
   it('leaves the board in place for api actions with no href', async () => {
