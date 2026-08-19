@@ -1034,6 +1034,266 @@ def quote_from_conversation(conversation_id: int, db: Session = Depends(get_db),
     }
 
 
+# ── POST /api/ai/quote-from-lead/{intake_id} ────────────────────────────────
+# Home's one-tap "Draft quote" on a new-lead card. Turns the lead into a REAL
+# draft Quote the owner lands on, reviews, and sends herself.
+#
+# NOTHING is sent to the customer here — this path never calls the quote-send
+# endpoints. "Draft" is the whole deliverable (owner's words: "ready to review
+# and send").
+#
+# The write goes through modules.quoting.router.create_quote — the same
+# function the live Requests → "Create Quote" button reaches — so the quote
+# number, the intake "quoted" stamp and the pipeline Opportunity happen in ONE
+# place instead of a second, drifting Quote(...) insert. Client and property
+# resolution reuse intake's _resolve_client_for_intake /
+# _resolve_property_for_intake (linked client → email/phone match → create),
+# which is the same order the Quoting page's openQuoteForm(null, intake) seed
+# and its save() fallback implement in the browser.
+
+# maineclean.co's raw service keys → the scope keys the quote composer uses.
+# Mirrors REQ_TO_SCOPE in frontend/src/pages/Quoting.jsx so a "deep" or
+# "move-in-out" lead opens on the right service instead of the canonical
+# "residential" bucket it was filed under.
+_REQ_TO_SCOPE = {
+    "standard": "residential", "residential": "residential",
+    "deep": "deep", "deep-clean": "deep",
+    "move-in-out": "move_in_out", "move-in": "move_in_out", "move-out": "move_in_out",
+    "vacation-rental": "str", "str": "str", "airbnb": "str",
+    "commercial": "commercial",
+}
+
+_ONE_TIME_FREQUENCIES = ("one-time", "onetime", "once", "")
+
+
+def _round5(n) -> int:
+    """Half-up on the $5 grid. Mirrors the website's instant-quote rounding and
+    the operator's Create-Quote seed (JS ``Math.round(n / 5) * 5``) so the
+    drafted price is the SAME clean number the customer was already shown."""
+    return int(float(n or 0) / 5 + 0.5) * 5
+
+
+def _freq_label(f) -> str:
+    """Friendly cadence word, or '' for one-time/unknown (frontend freqLabel)."""
+    key = (f or "").strip().lower()
+    if key in _ONE_TIME_FREQUENCIES:
+        return ""
+    return {"weekly": "Weekly", "biweekly": "Biweekly", "bi-weekly": "Biweekly",
+            "monthly": "Monthly"}.get(key, key[:1].upper() + key[1:])
+
+
+def _lead_seed_price(intake, service_key: str):
+    """Starting unit price for the drafted line item, in whole dollars.
+
+    The website's own estimate wins when the lead carries one (that number is
+    what the customer already saw). A lead with real size data but no estimate
+    — a phone/email lead keyed in by hand — is priced with the SAME engine the
+    website uses. A lead with neither gets 0: better an obviously-blank price
+    the owner fills in than a fabricated one from default-home assumptions.
+    """
+    lo, hi = intake.estimate_min, intake.estimate_max
+    if lo is not None and hi is not None:
+        return _round5((lo + hi) / 2), True
+    if hi is not None:
+        return _round5(hi), True
+    if lo is not None:
+        return _round5(lo), True
+    if not (intake.square_footage or intake.bathrooms or intake.bedrooms):
+        return 0, False
+    try:
+        from modules.booking.pricing import estimate_price
+        est = estimate_price(
+            service_type=(intake.requested_service or service_key or "standard"),
+            bedrooms=intake.bedrooms, bathrooms=intake.bathrooms,
+            square_footage=intake.square_footage, frequency=intake.frequency,
+            condition=intake.condition, pet_hair=intake.pet_hair,
+            message=intake.message,
+        )
+        # STR / commercial are hand-priced: the engine returns None rather than
+        # inventing a range, and so do we.
+        if est.get("estimate_min") is not None and est.get("estimate_max") is not None:
+            return _round5((est["estimate_min"] + est["estimate_max"]) / 2), True
+    except Exception:
+        logger.exception("instant-quote seed failed for lead %s", intake.id)
+    return 0, False
+
+
+def _lead_size_line(intake) -> str:
+    """The customer's own structured details, for the line-item description."""
+    bits = []
+    if intake.square_footage:
+        bits.append(f"{int(intake.square_footage):,} sqft")
+    if intake.bedrooms:
+        bits.append(f"{int(intake.bedrooms)} bd")
+    if intake.bathrooms:
+        b = float(intake.bathrooms)
+        bits.append(f"{b:g} ba")
+    freq = _freq_label(intake.frequency)
+    if freq:
+        bits.append(freq)
+    return " · ".join(bits)
+
+
+def _fallback_quote_intro(name: str, intake, company: str) -> str:
+    """The non-AI customer-facing intro. This is the DEFAULT, not an error
+    state — no API key, a model hiccup, or an empty completion all land here
+    and the owner still gets a complete, sendable draft."""
+    svc = (intake.service_type or "cleaning").replace("_", " ").strip()
+    where = (intake.city or "").strip()
+    place = f" in {where}" if where else ""
+    freq = _freq_label(intake.frequency)
+    cadence = f" on a {freq.lower()} schedule" if freq else ""
+    return (
+        f"Hi {name},\n\n"
+        f"Thanks for reaching out to {company} — here's the quote for the {svc} "
+        f"cleaning{place} you asked about{cadence}. What's included is listed "
+        f"below.\n\n"
+        f"If you'd like anything added or adjusted, just reply and we'll update "
+        f"it. We'd love to help."
+    )
+
+
+def _draft_quote_intro(intake, company: str, client_ai) -> tuple:
+    """Return ``(customer_message, used_ai)`` for the quote's intro paragraph.
+
+    Degrades to ``_fallback_quote_intro`` on a missing key, a failed call, or
+    an empty completion — the repo convention (see _draft_lead / daily_brief):
+    the AI writes the nice version, it never gates the real feature.
+    """
+    name = (intake.name or "").split()[0] if intake.name else "there"
+    if client_ai is None:
+        return _fallback_quote_intro(name, intake, company), False
+    facts = _lead_facts(intake)
+    # The line items carry the money. Don't hand the model a number it might
+    # restate in prose and contradict once the owner edits the price.
+    facts.pop("website_estimate", None)
+    system = (
+        f"You write the short customer-facing intro paragraph at the top of a "
+        f"quote from {company}, a cleaning business, for someone who just "
+        f"requested one. 2-4 sentences. Open with their first name, acknowledge "
+        f"the specific service, place, size and dates they gave, say what's "
+        f"below covers it, and invite them to reply with questions or to book. "
+        f"Warm and professional, never pushy. Do NOT state, repeat or invent any "
+        f"dollar amount — the line items carry the price. No subject line and no "
+        f"sign-off. Respond with ONLY a JSON object: {{\"message\": string}}."
+    )
+    try:
+        text = _run_tool_loop(client_ai, system, json.dumps(facts, default=str),
+                              max_tokens=400, max_iters=1)
+        msg = (json.loads(_strip_json(text)).get("message") or "").strip()
+        if msg:
+            return msg, True
+    except Exception:
+        logger.exception("ai quote intro failed; using fallback")
+    return _fallback_quote_intro(name, intake, company), False
+
+
+def _lead_quote_result(quote, *, created: bool, used_ai: bool) -> dict:
+    """What the board needs to land the owner on the draft. ``href`` is what
+    OpsBoard's runAction navigates to after a successful api action."""
+    return {
+        "id": quote.id,
+        "quote_number": quote.quote_number,
+        "status": quote.status,
+        "total": quote.total,
+        "created": created,
+        "ai_written": used_ai,
+        "href": f"/quotes/{quote.id}",
+    }
+
+
+@router.post("/quote-from-lead/{intake_id}",
+             dependencies=[Depends(require_role("admin", "manager"))])
+def quote_from_lead(intake_id: int, db: Session = Depends(get_db),
+                    user=Depends(get_current_user),
+                    org_id: int = Depends(current_org_id)):
+    """One-tap: draft a quote from a new lead and hand back where to review it.
+
+    Creates a **draft** quote only — nothing is sent to the customer. Returns
+    ``{id, quote_number, status, total, created, ai_written, href}``.
+    Idempotent: a lead that already has a quote returns that one's href instead
+    of minting a second (the owner may well tap twice).
+    """
+    from database.models import LeadIntake
+    from modules.auth.router import resolve_org_id
+    from modules.intake.router import (_resolve_client_for_intake,
+                                       _resolve_property_for_intake)
+    from modules.quoting.router import create_quote, _service_title
+    from modules.settings.router import service_scopes_list
+    from schemas.quotes import QuoteCreate, QuoteItem
+    from utils.address import combine_address
+
+    oid = resolve_org_id(org_id, db)
+    # MT-3: another workspace's lead is simply not found (no existence leak).
+    intake = (db.query(LeadIntake)
+              .filter(LeadIntake.id == intake_id, _org(LeadIntake, oid)).first())
+    if not intake:
+        raise HTTPException(status_code=404, detail="Request not found")
+
+    # Idempotent. Same guard (and same reasoning) as
+    # /api/intake/{id}/convert-to-quote: a double tap, a stale board, or a
+    # duplicate lead row must not mint a second quote for one request.
+    if intake.converted_quote_id:
+        existing = (db.query(Quote)
+                    .filter(Quote.id == intake.converted_quote_id,
+                            _org(Quote, oid)).first())
+        if existing:
+            return _lead_quote_result(existing, created=False, used_ai=False)
+
+    # Dedup-or-create the customer + service address exactly the way the live
+    # Requests → Quote flow does (linked client → email/phone match → create).
+    client, _created_client = _resolve_client_for_intake(db, intake, oid)
+    prop = _resolve_property_for_intake(db, client, intake)
+
+    raw_service = (intake.requested_service or "").strip().lower()
+    service_key = _REQ_TO_SCOPE.get(raw_service) or (intake.service_type or "residential")
+
+    unit_price, from_estimate = _lead_seed_price(intake, service_key)
+    size = _lead_size_line(intake)
+    label = _service_title(service_key)
+    freq = _freq_label(intake.frequency)
+    line_name = f"{freq} {label}" if freq else label
+    line_desc = " — ".join(x for x in [
+        "From website instant quote" if from_estimate else "", size,
+    ] if x)
+
+    # "Biweekly Residential Cleaning — 24 Pine Street" (frontend titleFromIntake).
+    where = (intake.address or intake.property_name or intake.city or "").split(",")[0].strip()
+    title = f"{line_name} — {where}" if where else line_name
+
+    # The scope the operator maintains in Settings → Service Scopes, so the
+    # draft promises what the website promises.
+    scopes = {s.get("key"): (s.get("scope") or "").strip() for s in service_scopes_list(db)}
+    notes = scopes.get(service_key) or scopes.get(intake.service_type or "residential") or None
+
+    intro, used_ai = _draft_quote_intro(intake, _company_name(db), _anthropic_client())
+
+    payload = QuoteCreate(
+        client_id=client.id,
+        intake_id=intake.id,
+        property_id=getattr(prop, "id", None),
+        title=title,
+        customer_message=intro,
+        # The lead's own words are operator context — they leaked onto a live
+        # public quote page once (June 11). Internal notes, never `notes`.
+        internal_notes=(intake.message or "").strip() or None,
+        service_type=service_key,
+        frequency=intake.frequency,
+        address=combine_address(intake.address, intake.city, intake.state,
+                                intake.zip_code) or None,
+        notes=notes,
+        items=[QuoteItem(name=line_name, description=line_desc,
+                         qty=1, unit_price=float(unit_price))],
+        # No tax baked into the seed: the seeded total must equal the $5-rounded
+        # midpoint and stay inside the range the customer was shown.
+        tax_rate=0, discount=0,
+        status="draft",
+    )
+    # THE canonical write path (quote number, intake stamp, Opportunity).
+    out = create_quote(payload, db=db, current_user=user, org_id=oid)
+    quote = db.query(Quote).filter(Quote.id == out["id"]).first()
+    return _lead_quote_result(quote, created=True, used_ai=used_ai)
+
 def _fallback_lead_reply(name, intake, channel: str, company: str) -> dict:
     svc = (intake.service_type or "cleaning").replace("_", " ")
     if channel == "sms":

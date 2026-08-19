@@ -1,15 +1,19 @@
 /**
  * Ops Board — the iOS-style triage dashboard (the new /dashboard home).
  *
- * Everything that needs the operator's attention, grouped into seven clearable
- * sections (led by a chronological "Today's Schedule") with one merged
- * stat/comms band, integration-status chips, per-severity filter chips, and
- * `/`-to-search. One fetch (`GET /api/dashboard/board`) drives the whole
- * page; the backend ships render-ready strings, so this file is a pure view
- * (see backend/services/board_service.py). Primary sections cap at
+ * Everything that needs the operator's attention, grouped into six clearable
+ * sections with one merged stat/comms band, integration-status chips,
+ * per-severity filter chips, and `/`-to-search. One fetch
+ * (`GET /api/dashboard/board`) drives all of that; the backend ships
+ * render-ready strings, so this file is a pure view (see
+ * backend/services/board_service.py). Primary sections cap at
  * PRIMARY_ROW_CAP rows on-screen, with a "+N more" link into the page that
  * owns the full set — the board is a triage surface, not a scroll-forever
  * list.
+ *
+ * Today's visits are NOT one of those sections: they render as the real
+ * Schedule day timeline (components/board/TodayTimeline.jsx), which fetches
+ * itself from /api/schedule/week.
  *
  * Design: built entirely on the app's semantic tokens (bg / panel / ink /
  * hairline + the indigo accent), so it re-skins with the active theme and
@@ -636,6 +640,11 @@ export default function OpsBoard() {
   // Run a card action. `link` navigates; `api` POSTs to an existing endpoint
   // right from the board — with a confirm step, a spinner, and an optimistic
   // clear on success. auto-assign can report it had no crew history to use.
+  // An api action whose response carries an `href` also navigates there
+  // afterwards, so a one-tap action that PRODUCES a record (Draft quote →
+  // the new draft) lands her on it instead of leaving her on the board
+  // hunting for what it made. Additive: responses without an href behave
+  // exactly as before.
   const runAction = useCallback(async (item, action) => {
     if (action.kind !== 'api') { navigate(action.href); return }
     const key = `${item.id}:${action.label}`
@@ -654,6 +663,9 @@ export default function OpsBoard() {
           setNote(`Cleared from board — ${res.reason}`)
         } else {
           setNote(`${action.done || 'Done'} — ${item.title}`)
+        }
+        if (res && typeof res.href === 'string' && res.href.startsWith('/')) {
+          navigate(res.href)
         }
       }
     } catch {

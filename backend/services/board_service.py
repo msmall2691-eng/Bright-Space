@@ -528,7 +528,15 @@ def build_board(db: Session, oid: int, can_act: bool = True) -> dict:
             f"lead:{ld.id}", "watch" if hot else "info", f"New lead — {ld.name or 'inquiry'}",
             (ld.message or ld.requested_service or ld.address or "Wants a quote").strip()[:120], _ago(ld.created_at),
             tags=[{"label": svc, "tone": "indigo"}] + ([{"label": "HOT", "tone": "rose"}] if hot else []),
-            actions=[_link("Quote", "/requests")],
+            # One tap drafts a real quote from this lead (pre-filled from what
+            # they told us, AI-written intro) and lands her on it to review and
+            # SEND HERSELF — nothing goes to the customer from here. "Open"
+            # stays a plain link so a read-only role, whose `api` actions are
+            # stripped below, still has somewhere to go.
+            actions=[
+                _api("Draft quote", f"/api/ai/quote-from-lead/{ld.id}", done="Draft ready"),
+                _link("Open", f"/requests/{ld.id}"),
+            ],
         ))
 
     # ── 🧰 Systems & Subscriptions (integration health) ─────────────────────
