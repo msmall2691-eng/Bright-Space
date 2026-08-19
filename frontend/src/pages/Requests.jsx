@@ -11,6 +11,7 @@ import { htmlToText, formatDate, formatDateTime } from '../utils/format'
 import Button from '../components/ui/Button'
 import GlassCard from '../components/ui/GlassCard'
 import PageHero from '../components/ui/PageHero'
+import SubNav from '../components/ui/SubNav'
 import SavedViewsBar from '../components/SavedViewsBar'
 import { RequestThreadPanel } from '../components/requests/RequestThreadPanel'
 import PropertyPhoto from '../components/PropertyPhoto'
@@ -722,6 +723,8 @@ export default function Requests() {
             </button>
           }
         >
+          <SubNav className="mb-3" />
+
           {/* Search */}
           <div className="relative mb-4">
             <Search className="w-4 h-4 text-ink-3 absolute left-3 top-1/2 -translate-y-1/2" />

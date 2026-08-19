@@ -11,8 +11,8 @@
  * owns the full set — the board is a triage surface, not a scroll-forever
  * list.
  *
- * Today's visits are NOT one of those sections: they render as the real
- * Schedule day timeline (components/board/TodayTimeline.jsx), which fetches
+ * Upcoming visits are NOT one of those sections: they render as the week's
+ * work grouped by day (components/board/UpcomingWeek.jsx), which fetches
  * itself from /api/schedule/week.
  *
  * Design: built entirely on the app's semantic tokens (bg / panel / ink /
@@ -32,7 +32,8 @@ import { pushToast } from '../utils/toastBus'
 import { ErrorState } from '../components/ui'
 import { TAG_TONE, SEV_DOT, SEV_LABEL, STAT_TONE, INT_DOT, SEV_ORDER } from '../components/board/tokens'
 import BoardAssistant from '../components/board/BoardAssistant'
-import TodayTimeline from '../components/board/TodayTimeline'
+import UpcomingWeek from '../components/board/UpcomingWeek'
+import SubNav from '../components/ui/SubNav'
 import { useUnreadCount } from '../hooks/useUnreadCount'
 import { currentRole } from '../nav/routes'
 
@@ -229,7 +230,7 @@ function ProposalsQueue() {
 
   if (!proposals.length) return null
   return (
-    <section className="mt-5 overflow-hidden rounded-2xl border border-hairline bg-panel">
+    <section className="overflow-hidden rounded-2xl border border-hairline bg-panel">
       <header className="flex items-center gap-2 border-b border-hairline px-3.5 py-2.5">
         <span className="h-1.5 w-1.5 rounded-full bg-indigo-500" />
         <h2 className="text-[11px] font-medium text-ink-3">Waiting for your approval</h2>
@@ -313,8 +314,9 @@ function CrewActivity({ navigate }) {
   const recent = (threads || []).filter(t => t.last_message).slice(0, 4)
   if (recent.length === 0) return null
   return (
-    <section className="mt-4 overflow-hidden rounded-xl border border-hairline bg-panel">
-      <header className="flex items-center gap-2 border-b border-hairline px-3.5 py-2">
+    <section className="overflow-hidden rounded-2xl border border-hairline bg-panel">
+      <header className="flex items-center gap-2 border-b border-hairline px-3.5 py-2.5">
+        <span className="text-[13px] leading-none">👷</span>
         <h2 className="text-[11px] font-medium text-ink-3">Crew</h2>
         <button onClick={() => navigate('/comms?view=crew')}
           className="ml-auto inline-flex items-center gap-0.5 text-[11px] font-semibold text-indigo-600 transition-all hover:gap-1 dark:text-indigo-400">
@@ -473,7 +475,7 @@ function Section({ section, items, clearedSet, onToggle, onAction, actioningKey,
   const clearKey = `clear-section:${section.key}`
   const confirmingClear = confirmingKey === clearKey
   return (
-    <section className="mb-4 break-inside-avoid overflow-hidden rounded-2xl border border-hairline bg-panel">
+    <section className="overflow-hidden rounded-2xl border border-hairline bg-panel">
       <header className="flex items-center gap-2 border-b border-hairline px-3.5 py-2.5">
         <span className="text-[13px] leading-none">{section.icon}</span>
         {collapsible ? (
@@ -538,7 +540,7 @@ function Section({ section, items, clearedSet, onToggle, onAction, actioningKey,
 // of payload order, split around the compact KPI band. Money/systems/noise
 // follow below the fold.
 // `today_schedule` is deliberately absent: today's visits now render as the
-// REAL Schedule day timeline (components/board/TodayTimeline.jsx) rather than
+// week's work grouped by day (components/board/UpcomingWeek.jsx) rather than
 // a second text list of the same jobs — the owner asked to "immediately have
 // eyes on the cal schedule", and carrying both was exactly the redundancy she
 // flagged. The backend no longer emits that section either.
@@ -774,6 +776,12 @@ export default function OpsBoard() {
           </div>
         </header>
 
+        {/* Home · Assistant · Owner. Lives here under the page title, matching
+            where every other section's tab strip sits. */}
+        <div className="mt-3">
+          <SubNav />
+        </div>
+
         <DailyBrief />
 
         {note && (
@@ -797,21 +805,8 @@ export default function OpsBoard() {
             navigate={navigate} />
         )}
 
-        {/* 2 — Today at a glance: the real Schedule day timeline, not a
-            second list of the same jobs. Self-fetching and independent of
-            the board payload, so a slow/failed board never blanks it. */}
-        <div className="mt-4">
-          <TodayTimeline navigate={navigate} />
-        </div>
-
-        {/* 3 — Staff activity: latest crew↔office chatter. */}
-        {!loading && canComms && <CrewActivity navigate={navigate} />}
-
-        {/* Autopilot proposals — actionable, so they stay high. */}
-        <ProposalsQueue />
-
-        {/* 3 — The attention sections (messages waiting, today, on-deck jobs),
-            with the triage machinery folded behind one quiet disclosure. */}
+        {/* The attention header + triage machinery, folded behind one quiet
+            disclosure. Everything below it is one widget grid. */}
         <div className="mt-6 flex items-center gap-2.5">
           <h2 className="text-[11px] font-medium text-ink-3">Needs attention</h2>
           <span className="text-[11px] tabular-nums text-ink-3">{clearedCount} of {total} cleared</span>
@@ -866,17 +861,31 @@ export default function OpsBoard() {
           </div>
         )}
 
-        {loading ? (
-          <div className="mt-3 columns-1 gap-4 lg:columns-2 xl:columns-3">
-            {Array.from({ length: 6 }).map((_, i) => (
-              <div key={i} className="mb-4 h-56 animate-pulse rounded-2xl border border-hairline bg-panel" />
-            ))}
-          </div>
-        ) : anyVisible ? (
-          <>
-            {/* Communication + schedule sections (linear on a phone; ordered
-                masonry on desktop). */}
-            <div className="mt-3 columns-1 gap-4 lg:columns-2 xl:columns-3">
+        {/* ── The widget grid ────────────────────────────────────────────
+            Owner: "I would love more condensed like widgets on a dashboard."
+            One real CSS grid (not the old CSS-columns masonry, which
+            reordered cards unpredictably as content changed). Each concern
+            is its own bounded box; the schedule — the one she called "a big
+            one" — spans two columns from the shell: breakpoint up. Cards are
+            `items-start` so each keeps its natural height instead of
+            stretching to the tallest in its row. */}
+        <div className="mt-3 grid grid-cols-1 items-start gap-4 shell:grid-cols-2 xl:grid-cols-3">
+          {loading ? (
+            Array.from({ length: 6 }).map((_, i) => (
+              <div key={i} className="h-56 animate-pulse rounded-2xl border border-hairline bg-panel" />
+            ))
+          ) : (
+            <>
+              {/* Schedule leads and gets the double-width slot. Rendered
+                  outside the `anyVisible` gate: an empty attention board
+                  must never hide the week's work. */}
+              <div className="shell:col-span-2">
+                <UpcomingWeek navigate={navigate} />
+              </div>
+
+              {canComms && <CrewActivity navigate={navigate} />}
+              <ProposalsQueue />
+
               {primarySections.map(({ section, items }) => (
                 <Section key={section.key} section={section} items={items}
                   clearedSet={cleared} onToggle={toggleCleared}
@@ -886,21 +895,21 @@ export default function OpsBoard() {
                   setConfirmingKey={setConfirmingKey} filtersActive={filtersActive}
                   maxRows={PRIMARY_ROW_CAP} />
               ))}
-            </div>
 
-            {/* Money, systems and the ignore pile below the fold. */}
-            <div className="mt-4 columns-1 gap-4 lg:columns-2 xl:columns-3">
               {secondarySections.map(({ section, items }) => (
                 <Section key={section.key} section={section} items={items}
                   clearedSet={cleared} onToggle={toggleCleared}
                   onAction={runAction} actioningKey={actioningKey} confirmingKey={confirmingKey}
                   headerLink={SECTION_LINKS[section.key]} navigate={navigate}
                   onClearAll={clearAllInSection} clearingSection={clearingSection}
-                  setConfirmingKey={setConfirmingKey} filtersActive={filtersActive} />
+                  setConfirmingKey={setConfirmingKey} filtersActive={filtersActive}
+                  maxRows={PRIMARY_ROW_CAP} />
               ))}
-            </div>
-          </>
-        ) : (
+            </>
+          )}
+        </div>
+
+        {!loading && !anyVisible && (
           <>
             <div className="mt-12 flex flex-col items-center justify-center text-center">
               <div className="grid h-12 w-12 place-items-center rounded-full bg-emerald-500/10">

@@ -32,7 +32,7 @@ import { WeekCapacityTile } from '../components/dashboard/WeekCapacityTile'
 import { CrewHoursTile } from '../components/dashboard/CrewHoursTile'
 import { FeedHealthTile } from '../components/dashboard/FeedHealthTile'
 import { RecurringHealthTile } from '../components/dashboard/RecurringHealthTile'
-import { ErrorState, PageHeader } from '../components/ui'
+import { ErrorState, PageHeader, SubNav } from '../components/ui'
 
 // Human-facing labels for the API's job_type values. The backend returns
 // whatever's on Job.job_type, so unknowns fall through to a Start-Cased
@@ -129,7 +129,9 @@ export default function OwnerDashboard() {
         subtitle={`Close rate, MRR, and revenue for the trailing ${data?.window_days || 90} days${data?.as_of ? ` · as of ${data.as_of}` : ''}`}
         icon={TrendingUp}
         iconColor="emerald"
-      />
+      >
+        <SubNav />
+      </PageHeader>
 
       <div className="px-4 sm:px-6 pb-6 space-y-5">
 

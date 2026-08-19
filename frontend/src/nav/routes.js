@@ -6,13 +6,32 @@ import {
 
 /**
  * The single route manifest — one place that knows every page's label, icon,
- * section, and role gate. Feeds the Sidebar nav, the topbar breadcrumbs, and
- * (eventually) the quick switcher, replacing the old duplicated `nav` array
- * in Sidebar.jsx and the hardcoded PAGE_TITLES map in Header.jsx.
+ * section, and role gate. Feeds the Sidebar nav, the sub-nav tab strips, the
+ * topbar breadcrumbs, and the quick switcher.
  *
- * `roles`: when present, only those roles see the item (matches the backend's
- * gates — e.g. /api/dashboard/owner 403s viewers, so viewers don't get a link
- * that only errors).
+ * SHAPE (Aug 2026 "7 destinations" nav collapse):
+ * The sidebar used to list 17 destinations under 5 group labels, which the
+ * owner called "chaos". It now lists SEVEN, ungrouped — six nav rows plus
+ * Settings in the footer. Nothing was deleted: every page that left the
+ * sidebar became a `tabs` entry on its parent, rendered as a quiet underline
+ * strip under that page's header (`components/ui/SubNav.jsx`). So the
+ * hierarchy is one level deeper, not smaller, and every old URL still
+ * resolves exactly as before.
+ *
+ * Per item:
+ *  - `label`  — what the SIDEBAR row says ("Sales", "Money").
+ *  - `tabs`   — the sub-nav strip for this destination, ALWAYS starting with
+ *               the parent's own page. A tab's `label` is what the STRIP and
+ *               the breadcrumb/switcher say ("Deals", "Billing"), which is why
+ *               a parent can read as "Sales" in the rail and "Deals" on the
+ *               page. Omit `tabs` for a leaf (Messages, Money) — SubNav then
+ *               renders nothing.
+ *  - `pageLabel` — breadcrumb/switcher label for a leaf whose sidebar label is
+ *               a category name (Money → "Billing").
+ *  - `roles`  — when present, only those roles see the item (matches the
+ *               backend's gates — e.g. /api/dashboard/owner 403s viewers, so
+ *               viewers don't get a link that only errors). Role gates live on
+ *               the tab that owns the page, unchanged from the old flat list.
  *
  * Pipeline was merged into Deals (Aug 2026 nav simplification) as its Board
  * view — `/deals?view=board` — instead of a separate page/route, so it has
@@ -21,60 +40,74 @@ import {
  */
 export const NAV_SECTIONS = [
   {
+    // No group labels. With seven rows they were pure noise (and the owner
+    // said so) — "Sales / Customers / Operations / Team" are gone.
     label: null,
     items: [
-      { to: '/dashboard', icon: LayoutDashboard, label: 'Home' },
-      { to: '/workspace', icon: Sparkles,        label: 'Assistant' },
-      { to: '/owner',     icon: TrendingUp,      label: 'Owner', roles: ['admin', 'manager'] },
-    ],
-  },
-  {
-    label: 'Sales',
-    items: [
-      { to: '/deals',    icon: Rows3,   label: 'Deals' },
-      // /api/intake is admin/manager-only — a viewer's Requests page could
-      // only error, so don't offer the link.
-      { to: '/requests', icon: Inbox,   label: 'Requests', roles: ['admin', 'manager'] },
-      // Was "Quotes & Billing" — shortened once Pipeline (which also said
-      // "Quote...") moved out of this section, so it no longer needs to be
-      // disambiguated from "Quote funnel" below.
-      { to: '/billing',  icon: Receipt, label: 'Billing' },
-      { to: '/funnel',   icon: Filter,  label: 'Quote funnel', roles: ['admin', 'manager'] },
-    ],
-  },
-  {
-    label: 'Customers',
-    items: [
+      {
+        to: '/dashboard', icon: LayoutDashboard, label: 'Home',
+        tabs: [
+          { to: '/dashboard', icon: LayoutDashboard, label: 'Home' },
+          { to: '/workspace', icon: Sparkles,       label: 'Assistant', keywords: 'ai chat nova mia scout' },
+          { to: '/owner',     icon: TrendingUp,     label: 'Owner', roles: ['admin', 'manager'], keywords: 'revenue mrr close rate' },
+        ],
+      },
       // All /api/comms endpoints (and the crew-chat office side) are
-      // admin/manager-only.
-      { to: '/comms',      icon: MessageSquare, label: 'Messages', roles: ['admin', 'manager'] },
-      { to: '/clients',    icon: Users,         label: 'Clients' },
-      { to: '/properties', icon: Home,          label: 'Properties' },
-    ],
-  },
-  {
-    label: 'Operations',
-    items: [
-      { to: '/schedule',  icon: Calendar, label: 'Schedule' },
-      // Every /api/recurring endpoint is admin/manager-only.
-      { to: '/recurring', icon: Repeat,   label: 'Recurring', roles: ['admin', 'manager'] },
-      // Renamed from "Sync" — plain enough in context, but "Calendar sync"
-      // reads unambiguously on first glance for a non-technical owner.
-      { to: '/sync',      icon: Radar,    label: 'Calendar sync', roles: ['admin', 'manager', 'viewer'] },
-    ],
-  },
-  {
-    label: 'Team',
-    items: [
-      { to: '/crew',    icon: HardHat,    label: 'Crew', roles: ['admin', 'manager'] },
-      // Payroll reads (/rates, /summary, /mileage) are admin/manager-only.
-      { to: '/payroll', icon: DollarSign, label: 'Payroll', roles: ['admin', 'manager'] },
+      // admin/manager-only. No tabs — Messages is a leaf.
+      { to: '/comms', icon: MessageSquare, label: 'Messages', roles: ['admin', 'manager'], keywords: 'sms email inbox texts crew chat' },
+      {
+        to: '/schedule', icon: Calendar, label: 'Schedule',
+        tabs: [
+          { to: '/schedule',  icon: Calendar, label: 'Schedule', keywords: 'jobs calendar dispatch' },
+          // Every /api/recurring endpoint is admin/manager-only.
+          { to: '/recurring', icon: Repeat,   label: 'Recurring', roles: ['admin', 'manager'], keywords: 'series weekly biweekly' },
+          // Renamed from "Sync" — plain enough in context, but "Calendar sync"
+          // reads unambiguously on first glance for a non-technical owner.
+          { to: '/sync',      icon: Radar,    label: 'Calendar sync', roles: ['admin', 'manager', 'viewer'], keywords: 'google ical feeds turnovers' },
+        ],
+      },
+      {
+        to: '/clients', icon: Users, label: 'Clients',
+        tabs: [
+          { to: '/clients',    icon: Users, label: 'Clients', keywords: 'customers contacts' },
+          { to: '/properties', icon: Home,  label: 'Properties', keywords: 'homes rentals sites str' },
+        ],
+      },
+      {
+        to: '/deals', icon: Rows3, label: 'Sales',
+        tabs: [
+          { to: '/deals',    icon: Rows3,  label: 'Deals', keywords: 'sales pipeline opportunities board' },
+          // /api/intake is admin/manager-only — a viewer's Requests page could
+          // only error, so don't offer the link.
+          { to: '/requests', icon: Inbox,  label: 'Requests', roles: ['admin', 'manager'], keywords: 'sales leads intake website' },
+          { to: '/funnel',   icon: Filter, label: 'Quote funnel', roles: ['admin', 'manager'], keywords: 'sales conversion close rate' },
+        ],
+      },
+      // Billing already owns its own internal `?view=` tabs (quotes /
+      // invoices / payments), so it stays a leaf here — a second strip on top
+      // of those would be two tab rows saying nearly the same thing.
+      { to: '/billing', icon: Receipt, label: 'Money', pageLabel: 'Billing', keywords: 'money quotes invoices payments estimates' },
     ],
   },
 ]
 
-/** Settings lives in the sidebar footer, not a nav section. */
-export const SETTINGS_ITEM = { to: '/settings', icon: Settings, label: 'Settings' }
+/**
+ * Settings lives in the sidebar footer, not a nav section — but it's the
+ * seventh destination and carries the Team pages as tabs (Crew and Payroll
+ * are both "set up the people who work here", which is what Settings is).
+ */
+export const SETTINGS_ITEM = {
+  to: '/settings', icon: Settings, label: 'Settings',
+  tabs: [
+    { to: '/settings', icon: Settings,   label: 'Settings', keywords: 'account integrations users email fields' },
+    { to: '/crew',     icon: HardHat,    label: 'Crew', roles: ['admin', 'manager'], keywords: 'team cleaners rates invite' },
+    // Payroll reads (/rates, /summary, /mileage) are admin/manager-only.
+    { to: '/payroll',  icon: DollarSign, label: 'Payroll', roles: ['admin', 'manager'], keywords: 'team hours pay period square' },
+  ],
+}
+
+/** Every top-level sidebar destination (six rows + Settings in the footer). */
+const TOP_LEVEL = [...NAV_SECTIONS.flatMap(s => s.items), SETTINGS_ITEM]
 
 /**
  * The global create actions — shared by the topbar "+ New" menu and the quick
@@ -90,8 +123,33 @@ export const CREATE_ACTIONS = [
   { label: 'New client',  icon: Users,         to: '/clients?new=1',             keywords: 'create client customer contact person' },
 ]
 
-/** Every nav destination as a flat list (pages the switcher can jump to). */
-export const NAV_ITEMS = [...NAV_SECTIONS.flatMap(s => s.items), SETTINGS_ITEM]
+/**
+ * Every nav destination as a flat list (pages the switcher can jump to) —
+ * all 16, exactly as before the collapse. Tabs are destinations too; the
+ * quick switcher and Favorites must still reach a page that no longer has a
+ * sidebar row of its own. Labels here are the PAGE labels ("Deals", not
+ * "Sales"); `keywords` keeps the sidebar wording ("sales", "money")
+ * searchable.
+ */
+export const NAV_ITEMS = (() => {
+  const seen = new Set()
+  const out = []
+  for (const item of TOP_LEVEL) {
+    const entries = item.tabs || [{
+      to: item.to, icon: item.icon, label: item.pageLabel || item.label,
+      roles: item.roles, keywords: item.keywords,
+    }]
+    for (const e of entries) {
+      if (seen.has(e.to)) continue
+      seen.add(e.to)
+      // A tab is only reachable if its parent is: inherit the parent's gate
+      // when the tab doesn't declare its own (today only Messages/Money gate
+      // at the parent, and both are leaves — this is belt-and-braces).
+      out.push({ ...e, roles: e.roles || item.roles })
+    }
+  }
+  return out
+})()
 
 /** The current user's role, read the same way the rest of the shell does. */
 export function currentRole() {
@@ -99,10 +157,19 @@ export function currentRole() {
   catch { return null }
 }
 
+const visibleTo = (role) => (i) => !i.roles || (role && i.roles.includes(role))
+
 /** Nav destinations visible to a role — same filter the Sidebar applies, for
  *  the quick switcher (a viewer shouldn't be offered pages that only 403). */
 export function navItemsFor(role) {
-  return NAV_ITEMS.filter(i => !i.roles || (role && i.roles.includes(role)))
+  return NAV_ITEMS.filter(visibleTo(role))
+}
+
+/** Sidebar rows visible to a role (top-level only — six + Settings). */
+export function sidebarSectionsFor(role) {
+  return NAV_SECTIONS
+    .map(section => ({ ...section, items: section.items.filter(visibleTo(role)) }))
+    .filter(section => section.items.length > 0)
 }
 
 /** Create actions visible to a role. Every create flow (lead, message, job,
@@ -124,12 +191,32 @@ export function iconFor(pathname) {
   return Star
 }
 
+/**
+ * The sub-nav strip for a pathname: the sibling pages that share its
+ * top-level destination, role-filtered. Returns [] for a leaf (Messages,
+ * Money) or an unknown/detail path, so `<SubNav />` renders nothing there.
+ * Detail pages resolve through their list parent (/properties/12 → the
+ * Clients strip) — harmless today because no detail page mounts SubNav, and
+ * correct if one ever does.
+ */
+export function tabsForPath(pathname, role = currentRole()) {
+  const parent = TOP_LEVEL.find(i =>
+    i.tabs?.some(t => t.to === pathname || pathname.startsWith(`${t.to}/`))
+  )
+  if (!parent) return []
+  return parent.tabs.filter(visibleTo(role))
+}
+
 /** Flat lookup: path -> { label, section } for breadcrumbs. */
 const FLAT = new Map()
-for (const section of NAV_SECTIONS) {
-  for (const item of section.items) FLAT.set(item.to, { label: item.label, section: section.label })
+for (const item of TOP_LEVEL) {
+  // The parent's own page gets no section crumb ("Home", not "Home / Home").
+  FLAT.set(item.to, { label: item.tabs?.[0]?.label || item.pageLabel || item.label, section: null })
+  for (const tab of item.tabs || []) {
+    if (tab.to === item.to) continue
+    FLAT.set(tab.to, { label: tab.label, section: item.label })
+  }
 }
-FLAT.set('/settings', { label: 'Settings', section: null })
 
 /**
  * Detail routes: prefix -> the parent list page + a generic record label.

@@ -6,7 +6,7 @@ import {
   Send, X, Sparkles,
 } from 'lucide-react'
 import { get, put, patch, post } from '../api'
-import { PageHeader } from '../components/ui'
+import { PageHeader, SubNav } from '../components/ui'
 
 // Payroll breakdown.
 // Pulls native time-clock punches for a pay period and splits each crew
@@ -154,6 +154,8 @@ export default function Payroll() {
         icon={DollarSign}
         iconColor="emerald"
       >
+        <SubNav className="mb-3" />
+
         <div className="flex flex-wrap items-end gap-3">
           <div>
             <label className="block text-xs text-ink-3 mb-1">Start Date</label>

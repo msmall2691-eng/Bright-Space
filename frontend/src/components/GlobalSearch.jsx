@@ -106,7 +106,12 @@ export default function GlobalSearch() {
   const navItems = navItemsFor(role)
   const createActions = createActionsFor(role)
   // Pages — fuzzy over the nav manifest (typing only; recents cover "empty").
-  const pages = q ? navItems.filter(p => p.label.toLowerCase().includes(q)) : []
+  // Match the page's own label plus its keywords, so the sidebar's category
+  // wording still finds the page it collapsed ("sales" → Deals/Requests/Quote
+  // funnel, "money" → Billing) now that those words aren't page labels.
+  const pages = q
+    ? navItems.filter(p => `${p.label} ${p.keywords || ''}`.toLowerCase().includes(q))
+    : []
   // Create actions — all when empty, filtered by label/keywords when typing.
   const actions = q
     ? createActions.filter(a => (a.label + ' ' + a.keywords).toLowerCase().includes(q))

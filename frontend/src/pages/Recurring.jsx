@@ -9,6 +9,7 @@ import Button from '../components/ui/Button'
 import GlassCard from '../components/ui/GlassCard'
 import EmptyState from '../components/ui/EmptyState'
 import PageHeader from '../components/ui/PageHeader'
+import SubNav from '../components/ui/SubNav'
 import { toast } from '../utils/toastBus'
 import { confirmDialog } from '../utils/confirmBus'
 import {
@@ -1457,7 +1458,9 @@ export default function Recurring() {
             </Button>
           </>
         }
-      />
+      >
+        <SubNav />
+      </PageHeader>
 
       <div className="max-w-5xl mx-auto px-4 sm:px-6 pb-8">
         {autoGenOff && (

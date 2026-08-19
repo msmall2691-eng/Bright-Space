@@ -17,7 +17,7 @@ import {
 import { get } from '../api'
 import { fmtMoney } from '../components/dashboard/utils'
 import { KpiCard, Tile, TileLoading } from '../components/dashboard/primitives'
-import { ErrorState, PageHeader } from '../components/ui'
+import { ErrorState, PageHeader, SubNav } from '../components/ui'
 
 const RANGES = [
   { days: 7, label: '7d' },
@@ -135,7 +135,9 @@ export default function QuoteFunnel() {
         subtitle={`Where requests turn into booked work — last ${days} days${data?.as_of ? ` · as of ${data.as_of}` : ''}`}
         icon={TrendingUp}
         iconColor="violet"
-      />
+      >
+        <SubNav />
+      </PageHeader>
 
       <div className="px-4 sm:px-6 pb-6 space-y-5">
         {/* Window selector + cohort note */}

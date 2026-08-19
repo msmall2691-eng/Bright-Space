@@ -3,7 +3,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom'
 import { Users } from 'lucide-react'
 import { post } from '../api'
 import JobCreateModal from '../components/JobCreateModal'
-import { EmptyState, PageHero } from '../components/ui'
+import { EmptyState, PageHero, SubNav } from '../components/ui'
 import CRMHealthPanel from "../components/CRMHealthPanel"
 import { toast } from '../utils/toastBus'
 import { confirmDialog } from '../utils/confirmBus'
@@ -349,7 +349,9 @@ export default function Clients() {
               { label: 'Leads', value: statusCounts.lead ?? 0, tone: 'text-indigo-200' },
               { label: 'Inactive', value: statusCounts.inactive ?? 0, tone: 'text-white/70' },
             ]}
-          />
+          >
+            <SubNav />
+          </PageHero>
         </div>
 
         <div className="flex-1 flex flex-col min-h-0 px-4 sm:px-8 pb-4 sm:pb-6 pt-4">

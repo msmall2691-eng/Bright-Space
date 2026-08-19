@@ -28,6 +28,7 @@ import {
 import { del } from '../api'
 import { confirmDialog } from '../utils/confirmBus'
 import PageHero from '../components/ui/PageHero'
+import SubNav from '../components/ui/SubNav'
 import StatusBadge from '../components/ui/StatusBadge'
 import SavedViewsBar from '../components/SavedViewsBar'
 import { useDeals } from '../hooks/useDeals'
@@ -229,6 +230,8 @@ export default function Deals() {
             </button>
           }
         >
+          <SubNav className="mb-3" />
+
           <div className="flex items-center gap-2 flex-wrap">
             <div className="relative">
               <Search className="w-3.5 h-3.5 text-ink-3 absolute left-2.5 top-1/2 -translate-y-1/2" />

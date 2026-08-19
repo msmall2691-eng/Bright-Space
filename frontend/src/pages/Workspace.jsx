@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { Sparkles, Send, ShieldAlert, ShieldCheck, Wrench, X } from 'lucide-react'
 import PageHeader from '../components/ui/PageHeader'
+import SubNav from '../components/ui/SubNav'
 import { EmptyState, Skeleton } from '../components/ui'
 import AgentAvatar from '../components/workspace/AgentAvatar'
 import MarkdownContent from '../components/workspace/MarkdownContent'
@@ -402,7 +403,9 @@ export default function Workspace() {
         subtitle="Chat with your AI team — Nova, Mia, Scout, Finn, Pixel & Deploy"
         icon={Sparkles}
         iconColor="purple"
-      />
+      >
+        <SubNav />
+      </PageHeader>
 
       <div className="flex-1 min-h-0 flex flex-col px-4 sm:px-8 pb-4 w-full max-w-4xl mx-auto">
         {/* Agent picker strip */}

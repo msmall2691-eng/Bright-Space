@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { Home, Search, RefreshCw, ChevronRight, Plus } from 'lucide-react'
-import { EmptyState, PageHero } from '../components/ui'
+import { EmptyState, PageHero, SubNav } from '../components/ui'
 import SavedViewsBar from '../components/SavedViewsBar'
 import { PROPERTY_TYPE_CONFIG } from '../components/properties/constants'
 import { TypeSelectorModal } from '../components/properties/TypeSelectorModal'
@@ -163,6 +163,8 @@ export default function Properties() {
             </>
           }
         >
+          <SubNav className="mb-3" />
+
           <div className="flex items-center gap-2 flex-wrap">
             <div className="relative">
               <Search className="w-3.5 h-3.5 text-ink-3 absolute left-2.5 top-1/2 -translate-y-1/2" />
