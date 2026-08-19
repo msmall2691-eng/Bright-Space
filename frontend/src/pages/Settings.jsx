@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { Settings2, Mail, Plug, Users, Settings as SettingsIcon } from 'lucide-react'
 import UsersAdmin from '../components/UsersAdmin'
 import PageHeader from '../components/ui/PageHeader'
+import SubNav from '../components/ui/SubNav'
 import { pushToast } from '../utils/toastBus'
 import { useCustomFieldsTab, CustomFieldsBody, CustomFieldsSidePanel } from '../components/settings/CustomFieldsTab'
 import { useAutomationSettings } from '../components/settings/AutomationTab'
@@ -70,6 +71,11 @@ export default function Settings() {
             icon={SettingsIcon}
             iconColor="slate"
           >
+            {/* Page-level tabs (Settings / Crew / Payroll) sit above the
+                section switcher below — different level, deliberately quieter
+                treatment so the two rows don't read as one control. */}
+            <SubNav className="mb-3" />
+
             <div className="flex gap-2 overflow-x-auto scrollbar-thin -mx-1 px-1">
               <button onClick={() => setSection('general')}
                 className={`shrink-0 whitespace-nowrap flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${section === 'general' ? 'bg-indigo-600 text-white' : 'bg-panel text-ink-2 border border-hairline hover:border-hairline-2'}`}>

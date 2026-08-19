@@ -19,6 +19,7 @@ import CompleteVisitModal from '../components/schedule/CompleteVisitModal'
 import VisitDetailsDrawer from '../components/schedule/VisitDetailsDrawer'
 import { ComposeModal } from '../components/comms/ComposeModal'
 import ScheduleToolbar from '../components/schedule/ScheduleToolbar'
+import SubNav from '../components/ui/SubNav'
 import GoogleCalendarView from '../components/schedule/GoogleCalendarView'
 import ScheduleSyncSettings from '../components/schedule/ScheduleSyncSettings'
 import { AutoAssignModal, FixTimesModal } from '../components/schedule/PowerToolModals'
@@ -448,12 +449,17 @@ export default function Schedule() {
 
   if (loadError) {
     return (
-      <div className="flex flex-col items-center justify-center h-full bg-bg">
+      <div className="flex flex-col h-full bg-bg">
+        <div className="shrink-0 border-b border-hairline px-4 sm:px-6">
+          <SubNav />
+        </div>
+        <div className="flex flex-1 flex-col items-center justify-center">
         <ErrorState
           title="Couldn't load the schedule"
           description="The server didn't respond. Check your connection and try again."
           onRetry={refresh}
         />
+        </div>
       </div>
     )
   }
@@ -467,6 +473,13 @@ export default function Schedule() {
 
   return (
     <div className="flex flex-col h-full bg-bg">
+      {/* Schedule / Recurring / Calendar sync. This page has no PageHeader
+          (the toolbar below is its header), so the strip is its own slim row
+          above it — kept to ~30px because this page is calendar-first. */}
+      <div className="shrink-0 border-b border-hairline px-4 sm:px-6">
+        <SubNav />
+      </div>
+
       {/* The sticky ScheduleToolbar is the page's top bar — it carries its own
           "Schedule" title, the view switcher, date nav, filters, tools, and
           New Job. We used to stack a separate PageHeader above it, but that was

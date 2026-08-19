@@ -14,7 +14,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { HardHat, RefreshCw, UserPlus, Mail } from 'lucide-react'
 import { get, post, patch } from '../api'
-import { PageHeader, EmptyState, ErrorState, Skeleton } from '../components/ui'
+import { PageHeader, EmptyState, ErrorState, Skeleton, SubNav } from '../components/ui'
 import { pushToast } from '../utils/toastBus'
 import CrewDocsAdmin from '../components/crew/CrewDocsAdmin'
 import { CrewThreadPane } from '../components/comms/CrewThreadPane'
@@ -214,7 +214,9 @@ export default function Crew() {
             <MessageSquare className="w-3.5 h-3.5" /> Crew chat
           </Link>
         }
-      />
+      >
+        <SubNav />
+      </PageHeader>
 
       <div className="px-4 sm:px-8 space-y-5 max-w-4xl">
         {/* Unclaimed crew IDs — the cutover safety net. Only shows when there are

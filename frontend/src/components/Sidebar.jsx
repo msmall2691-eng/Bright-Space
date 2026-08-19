@@ -4,7 +4,7 @@ import {
   Zap, X, LogOut, ChevronDown, PanelLeftClose, Search, Sparkles, Star,
 } from 'lucide-react'
 import { logout } from '../api'
-import { NAV_SECTIONS, SETTINGS_ITEM, iconFor } from '../nav/routes'
+import { sidebarSectionsFor, SETTINGS_ITEM, iconFor } from '../nav/routes'
 import { useFavorites, toggleFavorite, isFavorite } from '../nav/favorites'
 import Kbd from './ui/Kbd'
 
@@ -106,10 +106,9 @@ export default function Sidebar({ open, onClose, collapsed, onCollapse, user, ba
     window.dispatchEvent(new KeyboardEvent('keydown', { key: 'k', metaKey: true, bubbles: true }))
   }
 
-  const visibleSections = NAV_SECTIONS.map(section => ({
-    ...section,
-    items: section.items.filter(item => !item.roles || (user?.role && item.roles.includes(user.role))),
-  })).filter(section => section.items.length > 0)
+  // Seven destinations, no group labels (Aug 2026 collapse) — the pages that
+  // used to have their own row are tabs on their parent now (see SubNav).
+  const visibleSections = sidebarSectionsFor(user?.role)
 
   return (
     <>

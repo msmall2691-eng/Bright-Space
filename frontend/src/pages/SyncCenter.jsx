@@ -5,7 +5,7 @@ import {
   ArrowLeftRight, Crown, AlertTriangle, CheckCircle2, ChevronDown, Zap,
   Clock, ExternalLink, Loader2, WifiOff, PauseCircle, ScrollText,
 } from 'lucide-react'
-import { PageHeader, Button } from '../components/ui'
+import { PageHeader, Button, SubNav } from '../components/ui'
 import { post } from '../api'
 import { toast } from '../utils/toastBus'
 import { useSyncOverview } from '../hooks/useSyncOverview'
@@ -398,7 +398,9 @@ export default function SyncCenter() {
   if (loading && !data) {
     return (
       <div className="max-w-5xl mx-auto">
-        <PageHeader title="Sync Control Center" icon={Radar} iconColor="violet" />
+        <PageHeader title="Sync Control Center" icon={Radar} iconColor="violet">
+          <SubNav />
+        </PageHeader>
         <div className="px-4 sm:px-8 py-16 text-center text-sm text-ink-3">
           <Loader2 className="w-5 h-5 animate-spin mx-auto mb-3" /> Reading your schedule…
         </div>
@@ -409,7 +411,9 @@ export default function SyncCenter() {
   if (error && !data) {
     return (
       <div className="max-w-5xl mx-auto">
-        <PageHeader title="Sync Control Center" icon={Radar} iconColor="violet" />
+        <PageHeader title="Sync Control Center" icon={Radar} iconColor="violet">
+          <SubNav />
+        </PageHeader>
         <div className="px-4 sm:px-8 py-16 text-center">
           <WifiOff className="w-6 h-6 text-ink-3 mx-auto mb-3" />
           <p className="text-sm text-ink-2">{error}</p>
@@ -438,7 +442,9 @@ export default function SyncCenter() {
             </Button>
           )
         }
-      />
+      >
+        <SubNav />
+      </PageHeader>
 
       <div className="px-4 sm:px-8 space-y-4">
         {/* Master banner — the mental model + the one big switch. */}

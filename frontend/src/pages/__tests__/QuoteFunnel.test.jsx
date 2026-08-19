@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { render, screen, waitFor, cleanup } from '@testing-library/react'
+import { render as rtlRender, screen, waitFor, cleanup } from '@testing-library/react'
+import { MemoryRouter } from 'react-router-dom'
 
 // Presentation-only page over one aggregate endpoint — mock the API helper the
 // page imports and drive it with a realistic payload (the funnel math itself is
@@ -32,6 +33,10 @@ const OK = {
     { source: 'booking', requests: 15, quoted: 10, won: 3, won_pct: 20 },
   ],
 }
+
+// The page header now carries the Sales sub-nav strip (Deals / Requests /
+// Quote funnel), which renders <Link>s — so the page needs a Router around it.
+const render = (ui) => rtlRender(<MemoryRouter initialEntries={['/funnel']}>{ui}</MemoryRouter>)
 
 beforeEach(() => { vi.clearAllMocks() })
 afterEach(cleanup)
