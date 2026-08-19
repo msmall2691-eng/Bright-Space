@@ -1,6 +1,6 @@
 /** Google-Calendar-style "Ends" picker for recurring schedules: Never / On
- *  date / After N occurrences. Shared by the create form (ScheduleTabs.jsx's
- *  RecurringCreateModal) and the edit form (Recurring.jsx's EditSeriesModal).
+ *  date / After N occurrences. Shared by the create form (JobCreateModal.jsx)
+ *  and the edit form (Recurring.jsx's EditSeriesModal).
  *
  *  `value` is `{ ends_mode, ends_on, ends_after_count }` — the same shape the
  *  backend's sched_to_dict() returns and create/update endpoints expect.

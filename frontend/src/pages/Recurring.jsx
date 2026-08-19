@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo, useCallback } from 'react'
 import { useSearchParams, Link } from 'react-router-dom'
 import {
   Calendar, Repeat, RefreshCw, Plus, X, ArrowLeft, Pencil,
-  SkipForward, Clock, Undo2, Pause, Play, AlertTriangle, Sparkles,
+  SkipForward, Clock, Undo2, Pause, Play, AlertTriangle,
 } from 'lucide-react'
 import { get, post, put, patch, del } from '../api'
 import Button from '../components/ui/Button'
@@ -17,7 +17,7 @@ import {
 } from '../utils/recurringDuplicates'
 import { useEmployees } from '../hooks/useEmployees'
 import EndsPicker from '../components/schedule/EndsPicker'
-import { RecurringCreateModal } from '../components/schedule/ScheduleTabs'
+import JobCreateModal from '../components/JobCreateModal'
 
 /** Resolve a roster employee to an id+name pair, defensively. Mirrors
  *  JobEditModal's normalizeEmployee — legacy roster rows carry shapes like
@@ -531,8 +531,7 @@ function EditSeriesModal({ schedule, onClose, onDone }) {
   )
 }
 
-// Shared modal chrome. Matches the fixed-overlay pattern used by
-// RecurringCreateModal and JobCreateModal.
+// Shared modal chrome. Matches the fixed-overlay pattern used by JobCreateModal.
 function ModalShell({ title, onClose, wide = false, children }) {
   return (
     <div className="fixed inset-0 bg-black/50 z-50 flex items-end sm:items-center sm:justify-center p-0 sm:p-4">
@@ -1152,7 +1151,7 @@ function SeriesDetail({ id, onBack, onChanged, toast }) {
 // endpoints and asks first; destructive ones get the danger confirm.
 const SEVERITY_DOT = { error: 'bg-red-500', warn: 'bg-amber-500', info: 'bg-gray-400' }
 
-function HealthPanel({ onClose, onChanged, onOpenSeries, onOpenDuplicates }) {
+function HealthPanel({ onClose, onChanged, onOpenSeries, onOpenDuplicates, onCleanupOffPhase, cleaningOffPhase }) {
   const [report, setReport] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -1230,12 +1229,23 @@ function HealthPanel({ onClose, onChanged, onOpenSeries, onOpenDuplicates }) {
         <div className="p-3 bg-red-50 border border-red-200 text-red-700 dark:bg-red-950 dark:border-red-800 dark:text-red-300 rounded text-sm">{error}</div>
       ) : (
         <>
-          <p className="text-[13px] text-ink-2">
-            Scanned <b className="text-ink">{report.scanned}</b> series —{' '}
-            <b className="text-ink">{report.healthy}</b> healthy,{' '}
-            <b className="text-ink">{report.issues.length}</b> need{report.issues.length === 1 ? 's' : ''} attention.
-            Nothing below changes without your confirm.
-          </p>
+          <div className="flex items-start justify-between gap-3 flex-wrap">
+            <p className="text-[13px] text-ink-2 flex-1 min-w-0">
+              Scanned <b className="text-ink">{report.scanned}</b> series —{' '}
+              <b className="text-ink">{report.healthy}</b> healthy,{' '}
+              <b className="text-ink">{report.issues.length}</b> need{report.issues.length === 1 ? 's' : ''} attention.
+              Nothing below changes without your confirm.
+            </p>
+            {onCleanupOffPhase && (
+              <button
+                onClick={onCleanupOffPhase}
+                disabled={cleaningOffPhase}
+                title="Separately check for off-cadence duplicate VISITS left by the old biweekly-drift bug — a different check from the schedule-level duplicates above"
+                className="shrink-0 text-[12px] font-medium text-ink-3 underline underline-offset-2 hover:text-ink-2 disabled:opacity-50">
+                {cleaningOffPhase ? 'Checking off-cadence visits…' : 'Also check off-cadence visits'}
+              </button>
+            )}
+          </div>
           {report.issues.length === 0 && (
             <EmptyState icon={Repeat} title="All series healthy"
               description="No duplicates, ghosts, or broken links found." compact />
@@ -1285,7 +1295,6 @@ export default function Recurring() {
 
   const [schedules, setSchedules] = useState([])
   const [clientsById, setClientsById] = useState({})
-  const [properties, setProperties] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [filterClient, setFilterClient] = useState('')
@@ -1354,19 +1363,10 @@ export default function Recurring() {
     }
   }, [loadList])
 
-  // Properties are only needed by the create-series modal's picker. Fetch them
-  // lazily when it opens, NOT on every list load — /api/properties joinloads
-  // iCal feeds + computes per-STR turnover counts, so eagerly loading it on the
-  // list was slow enough to time the whole page out on a cold backend.
-  const openCreate = useCallback(async () => {
-    setShowCreate(true)
-    if (properties.length === 0) {
-      try {
-        const p = await get('/api/properties')
-        setProperties(Array.isArray(p) ? p : (p.items || []))
-      } catch { /* property is optional in the form — the modal still works */ }
-    }
-  }, [properties.length])
+  // JobCreateModal loads properties itself, scoped to whichever client gets
+  // picked inside it — no page-level preload needed (the old RecurringCreateModal
+  // required properties up front for its own picker; this modal doesn't).
+  const openCreate = useCallback(() => setShowCreate(true), [])
 
   const openSeries = (id) => setParams({ series: String(id) })
   const backToList = () => setParams({})
@@ -1447,10 +1447,6 @@ export default function Recurring() {
           <>
             <Button variant="secondary" size="sm" onClick={loadList}>
               <RefreshCw className="w-4 h-4 mr-1" /> Refresh
-            </Button>
-            <Button variant="secondary" size="sm" onClick={cleanupDuplicates} disabled={cleaning}
-              title="Find and remove off-cadence duplicate visits left by the old biweekly bug">
-              <Sparkles className="w-4 h-4 mr-1" /> {cleaning ? 'Checking…' : 'Clean up duplicates'}
             </Button>
             <Button variant="secondary" size="sm" onClick={() => setHealthOpen(true)}
               title="Scan every series for duplicates, ghosts, missing times, and broken links">
@@ -1566,6 +1562,8 @@ export default function Recurring() {
           onChanged={loadList}
           onOpenSeries={openSeries}
           onOpenDuplicates={() => setReviewOpen(true)}
+          onCleanupOffPhase={cleanupDuplicates}
+          cleaningOffPhase={cleaning}
         />
       )}
       {reviewOpen && (
@@ -1579,11 +1577,10 @@ export default function Recurring() {
         />
       )}
       {showCreate && (
-        <RecurringCreateModal
-          clients={clientOptions}
-          properties={properties}
+        <JobCreateModal
+          defaultRecurring
           onClose={() => setShowCreate(false)}
-          onCreated={loadList}
+          onCreated={() => { setShowCreate(false); loadList() }}
         />
       )}
     </>

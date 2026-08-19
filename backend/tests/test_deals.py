@@ -126,11 +126,24 @@ def test_enriches_quote_status_and_job_state(ctx):
     j = Job(client_id=cid, opportunity_id=opp_id, org_id=1, title="J", property_id=prop.id,
             status="completed", scheduled_date=date(2026, 8, 1))
     db.add(j); db.commit(); db.refresh(j); ids["jobs"].append(j.id)
+    quote_id, job_id = q.id, j.id  # capture before db.close() expires attrs
     db.close()
 
     card = next(c for c in _get(api) if c["id"] == f"deal-{opp_id}")
     assert card["quote_status"] == "converted"
     assert card["job_state"] == "done"
+    assert card["quote_id"] == quote_id
+    assert card["job_id"] == job_id
+
+
+def test_no_quote_or_job_yields_null_ids(ctx):
+    api, ids = ctx
+    cid = _mk_client(ids)
+    opp_id = _mk_opp(ids, cid, stage="new")
+
+    card = next(c for c in _get(api) if c["id"] == f"deal-{opp_id}")
+    assert card["quote_status"] is None and card["quote_id"] is None
+    assert card["job_state"] is None and card["job_id"] is None
 
 
 def test_stage_filter_narrows_to_one_column(ctx):

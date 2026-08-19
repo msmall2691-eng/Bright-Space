@@ -324,14 +324,40 @@ export default function Deals() {
                         <td className="bb-td"><StageDot stage={d.stage} /></td>
                         <td className="bb-td text-right tabular-nums font-semibold text-ink-2">{money(d.amount)}</td>
                         <td className="bb-td">
-                          {d.quote_status
-                            ? <StatusBadge status={QUOTE_STATUS_VARIANT[d.quote_status] || 'neutral'}>{String(d.quote_status).replace(/_/g, ' ')}</StatusBadge>
-                            : <span className="text-ink-3">—</span>}
+                          {d.quote_status ? (
+                            d.quote_id ? (
+                              // Record link (BrightBase convention: quiet body,
+                              // indigo on hover, no underline) wrapping the
+                              // existing status pill — links to the specific
+                              // quote the status was computed from.
+                              <Link to={`/quotes/${d.quote_id}`} className="group/rl inline-block no-underline">
+                                <StatusBadge
+                                  status={QUOTE_STATUS_VARIANT[d.quote_status] || 'neutral'}
+                                  className="transition-colors group-hover/rl:border-indigo-300 group-hover/rl:text-indigo-600"
+                                >
+                                  {String(d.quote_status).replace(/_/g, ' ')}
+                                </StatusBadge>
+                              </Link>
+                            ) : (
+                              <StatusBadge status={QUOTE_STATUS_VARIANT[d.quote_status] || 'neutral'}>{String(d.quote_status).replace(/_/g, ' ')}</StatusBadge>
+                            )
+                          ) : (
+                            <span className="text-ink-3">—</span>
+                          )}
                         </td>
                         <td className="bb-td">
-                          {d.job_state
-                            ? <span className={`text-[12px] font-medium capitalize ${JOB_STATE_TONE[d.job_state] || 'text-ink-2'}`}>{d.job_state}</span>
-                            : <span className="text-ink-3">—</span>}
+                          {d.job_state ? (
+                            d.job_id ? (
+                              <Link to={`/jobs/${d.job_id}`}
+                                className={`text-[12px] font-medium capitalize no-underline hover:text-indigo-600 ${JOB_STATE_TONE[d.job_state] || 'text-ink-2'}`}>
+                                {d.job_state}
+                              </Link>
+                            ) : (
+                              <span className={`text-[12px] font-medium capitalize ${JOB_STATE_TONE[d.job_state] || 'text-ink-2'}`}>{d.job_state}</span>
+                            )
+                          ) : (
+                            <span className="text-ink-3">—</span>
+                          )}
                         </td>
                         <td className="bb-td text-ink-3 tabular-nums">{ageLabel(d.age_days)}</td>
                         <td className="bb-td text-right">

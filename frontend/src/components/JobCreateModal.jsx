@@ -7,6 +7,7 @@ import AddressAutocomplete from './AddressAutocomplete'
 import { toLocalYMD } from '../utils/format'
 import { useEmployees } from '../hooks/useEmployees'
 import { normalizeEmployee } from '../utils/employees'
+import EndsPicker from './schedule/EndsPicker'
 
 // Where an in-progress booking is parked if the session expires mid-submit, so
 // it can be restored after re-login instead of being silently lost.
@@ -25,6 +26,7 @@ const FREQUENCIES = [
   { value: 'biweekly',       label: 'Every 2 weeks',  interval: 2 },
   { value: 'every_3_weeks',  label: 'Every 3 weeks',  interval: 3 },
   { value: 'every_4_weeks',  label: 'Every 4 weeks',  interval: 4 },
+  { value: 'every_8_weeks',  label: 'Every 8 weeks',  interval: 8 },
   { value: 'monthly',        label: 'Monthly',        interval: null },
 ]
 
@@ -174,6 +176,9 @@ export default function JobCreateModal({
     days_of_week: [0],
     day_of_month: 1,
     generate_weeks_ahead: 8,
+    ends_mode: 'never',
+    ends_on: '',
+    ends_after_count: 10,
   })
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState(null)
@@ -537,10 +542,15 @@ export default function JobCreateModal({
           generate_weeks_ahead: parseInt(form.generate_weeks_ahead),
           cleaner_ids: cleanerIds,
           notes: form.notes || null,
+          ends_mode: form.ends_mode || 'never',
+          ends_on: form.ends_mode === 'on_date' ? (form.ends_on || null) : null,
+          ends_after_count: form.ends_mode === 'after_count' ? parseInt(form.ends_after_count) || null : null,
           // Link back to the source quote so it's converted (see one-time path).
           quote_id: initialQuoteId ? parseInt(initialQuoteId) : null,
           // Similar-series guard override — only true from "Create anyway".
           allow_duplicate: allowDuplicate,
+          // Cleaner conflict/capacity guard override — only true from "Book anyway".
+          allow_conflicts: allowConflicts,
         }
         const sched = await post('/api/recurring', body)
         if (!sched) return  // 401 → redirecting to /login; keep the draft to restore
@@ -581,9 +591,10 @@ export default function JobCreateModal({
         return
       }
       const msg = e?.message || `Failed to create ${recurring ? 'schedule' : 'job'}`
-      // Conflict 409s (incl. the Google Free/Busy "already booked" guard) are
-      // overridable — route them to the "Book anyway" prompt, not a hard error.
-      if (!recurring && /conflict|unavailable|over capacity|time off|already booked/i.test(msg)) {
+      // Conflict 409s (incl. the Google Free/Busy "already booked" guard, and
+      // recurring's own cleaner conflict/capacity guard) are overridable —
+      // route them to the "Book anyway" prompt, not a hard error.
+      if (/conflict|unavailable|over capacity|time off|already booked/i.test(msg)) {
         setConflict(msg)
       } else {
         setError(msg)
@@ -1080,6 +1091,13 @@ export default function JobCreateModal({
               className="w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-400"
             />
           </div>
+
+          {recurring && (
+            <EndsPicker
+              value={{ ends_mode: form.ends_mode, ends_on: form.ends_on, ends_after_count: form.ends_after_count }}
+              onChange={(next) => setForm(f => ({ ...f, ...next }))}
+            />
+          )}
 
           {recurring && (
             <div>

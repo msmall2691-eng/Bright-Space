@@ -1,12 +1,14 @@
 /**
- * Pins the July-2026 audit finding #5: Schedule.jsx used to early-return
- * `<RecurringPanel />` / `<AvailabilityPanel />` for ?tab=recurring /
- * ?tab=availability BEFORE ~20 of its hooks were declared — a Rules-of-Hooks
- * violation. React ties each hook's internal state to its call INDEX within
- * the component; skipping hooks on one render and running them on the next
- * (e.g. navigating from ?tab=recurring back to the normal schedule view
- * without unmounting) throws "Rendered more hooks than during the previous
- * render" / corrupts hook state silently, depending on the exact mismatch.
+ * Pins the July-2026 audit finding #5: Schedule.jsx used to early-return a
+ * tab panel for ?tab=recurring / ?tab=availability BEFORE ~20 of its hooks
+ * were declared — a Rules-of-Hooks violation. React ties each hook's internal
+ * state to its call INDEX within the component; skipping hooks on one render
+ * and running them on the next (e.g. navigating from ?tab=recurring back to
+ * the normal schedule view without unmounting) throws "Rendered more hooks
+ * than during the previous render" / corrupts hook state silently, depending
+ * on the exact mismatch. (?tab=recurring itself was later replaced with a
+ * redirect to the dedicated /recurring page — see the test below — but the
+ * early-return-before-hooks hazard the suite guards against is general.)
  *
  * These tests mock every hook/child component Schedule.jsx depends on (it's
  * a large page component) so we can isolate the ONE thing under test: does
@@ -84,7 +86,6 @@ vi.mock('../../components/schedule/ScheduleToolbar', () => ({ default: () => <di
 vi.mock('../../components/schedule/PowerToolModals', () => ({ AutoAssignModal: () => null, FixTimesModal: () => null }))
 vi.mock('../../components/schedule/ScheduleSections', () => ({ ScheduleHealthStrip: () => null, ScheduleBulkBar: () => null }))
 vi.mock('../../components/schedule/ScheduleTabs', () => ({
-  RecurringPanel: () => <div data-testid="recurring-panel" />,
   AvailabilityPanel: () => <div data-testid="availability-panel" />,
 }))
 

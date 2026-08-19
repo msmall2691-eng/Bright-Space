@@ -532,17 +532,27 @@ export default function MyDay() {
         )}
 
         {active && (
-          <div className="bg-emerald-600 text-white px-4 py-2.5 flex items-center justify-between gap-3">
+          /* Persistent on-the-clock state — important and frequently glanced
+             at, but a steady status, not a promotional banner or a transient
+             alert. Quiet hairline-card treatment (dot + word, per the design
+             language) rather than the full-bleed colored bar: the emerald
+             dot + emerald label carry "this is the good, active state" the
+             same way SyncCenter's "In sync" row does, and the Clock out
+             button keeps the same solid-emerald treatment JobCard already
+             uses for the identical action, so the one thing to tap reads at
+             a glance without needing the whole strip filled in. */
+          <div className="border-b border-hairline bg-panel px-4 py-2.5 flex items-center justify-between gap-3">
             <div className="flex items-center gap-2 min-w-0">
-              <Clock className="w-4 h-4 shrink-0" />
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" aria-hidden="true" />
               <div className="min-w-0 leading-tight">
-                <div className="text-[13px] font-semibold truncate">
-                  On the clock{activeJob ? ` · ${activeJob.property_name || activeJob.title}` : ''}
+                <div className="text-[13px] font-semibold text-emerald-600 truncate">
+                  On the clock since {fmtClock(active.clock_in_at)}
+                  {activeJob ? ` · ${activeJob.property_name || activeJob.title}` : ''}
                 </div>
-                <div className="text-[11px] opacity-90 tabular-nums flex items-center gap-1">
+                <div className="text-[11px] text-ink-3 tabular-nums flex items-center gap-1">
                   {fmtDuration(now - new Date(active.clock_in_at))}
                   {active.has_location && (
-                    <span className="inline-flex items-center gap-0.5 opacity-90">
+                    <span className="inline-flex items-center gap-0.5">
                       <span className="opacity-60">·</span><MapPin className="w-3 h-3" /> located
                     </span>
                   )}
@@ -550,7 +560,7 @@ export default function MyDay() {
               </div>
             </div>
             <button onClick={requestClockOut} disabled={actionBusy}
-              className="shrink-0 text-[13px] font-semibold bg-white/15 hover:bg-white/25 disabled:opacity-60 px-3 py-1.5 rounded-lg transition-colors">
+              className="shrink-0 min-h-[44px] inline-flex items-center justify-center text-[13px] font-semibold bg-emerald-600 hover:bg-emerald-700 disabled:opacity-60 text-white px-4 rounded-lg transition-colors">
               Clock out
             </button>
           </div>
