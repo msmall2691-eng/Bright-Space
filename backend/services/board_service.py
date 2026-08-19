@@ -1,13 +1,16 @@
 """
 Ops Board aggregation — the data behind the iOS-style triage dashboard.
 
-The board groups everything that needs the operator's attention into seven
-sections (Today's Schedule, Needs You Today, Jobs on Deck, Money, Real People
-Waiting, Systems & Subscriptions, Safe to Ignore), a row of stat tiles, a
-strip of integration status chips, and per-severity filter counts. This
-module does all of that in one pass so `GET /api/dashboard/board` is a single
-round trip and the frontend stays a pure view (every string here is
-render-ready).
+The board groups everything that needs the operator's attention into six
+sections (Needs You Today, Jobs on Deck, Money, Real People Waiting, Systems
+& Subscriptions, Safe to Ignore), a row of stat tiles, a strip of integration
+status chips, and per-severity filter counts. This module does all of that in
+one pass so `GET /api/dashboard/board` is a single round trip and the
+frontend stays a pure view (every string here is render-ready).
+
+Today's visits are NOT a section here: Home renders them as the real Schedule
+day timeline (frontend components/board/TodayTimeline.jsx, fed by
+/api/schedule/week), so a text list of the same jobs would be redundant.
 
 Each card carries an `actions` list. A `link` action just navigates; an `api`
 action calls an existing endpoint (mark paid, auto-assign, resolve) straight
@@ -274,12 +277,11 @@ def build_board(db: Session, oid: int, can_act: bool = True) -> dict:
     org = lambda model: or_(model.org_id == oid, model.org_id.is_(None))
 
     # --- Jobs (next two weeks) ----------------------------------------------
-    # Includes `completed` so Today's Schedule can show the WHOLE day: a
-    # rundown that silently drops each visit the moment the crew marks it
-    # done is not a schedule. `cancelled` stays excluded everywhere — a
-    # called-off visit is not work. The "needs action" lists below narrow
-    # back to open work via _is_open so no stat starts counting finished
-    # jobs as something to do.
+    # Open work only. Everything this query feeds is a "needs action" list —
+    # unassigned counts, Needs You Today, Jobs on Deck — so a finished or
+    # called-off visit is noise in all of them. Showing the day as it
+    # actually stands (finished visits included) is the job of Home's
+    # Today timeline, which reads /api/schedule/week directly.
     jobs = (
         db.query(Job)
         .options(joinedload(Job.property), joinedload(Job.client))
@@ -287,7 +289,7 @@ def build_board(db: Session, oid: int, can_act: bool = True) -> dict:
             org(Job),
             Job.scheduled_date >= today,
             Job.scheduled_date <= horizon,
-            Job.status.in_(("scheduled", "in_progress", "completed")),
+            Job.status.in_(("scheduled", "in_progress")),
         )
         .order_by(Job.scheduled_date, Job.start_time)
         .all()
@@ -296,19 +298,11 @@ def build_board(db: Session, oid: int, can_act: bool = True) -> dict:
     def _is_unassigned(j):
         return not (j.cleaner_ids or [])
 
-    def _is_open(j):
-        return (j.status or "scheduled") in ("scheduled", "in_progress")
-
     def _is_weekend(d):
         d = coerce_date(d)
         return d is not None and d.weekday() >= 5
 
-    # The day's real rundown — finished visits included.
-    today_jobs = [j for j in jobs if coerce_date(j.scheduled_date) == today]
-    # Everything downstream of here is forward-looking WORK, so it drops
-    # completed jobs (unchanged behavior from before completed was fetched).
-    week_jobs = [j for j in jobs
-                 if _is_open(j) and (coerce_date(j.scheduled_date) or horizon) <= week_end]
+    week_jobs = [j for j in jobs if (coerce_date(j.scheduled_date) or horizon) <= week_end]
     weekend_jobs = [j for j in week_jobs if _is_weekend(j.scheduled_date)]
     unassigned_week = [j for j in week_jobs if _is_unassigned(j)]
     unassigned_urgent = [
@@ -449,30 +443,6 @@ def build_board(db: Session, oid: int, can_act: bool = True) -> dict:
             actions=[_link("Open", "/billing?view=quotes")],
         ))
 
-    # ── 📅 Today's Schedule ──────────────────────────────────────────────────
-    # A chronological rundown of the day's visits — reuses `today_jobs`
-    # (already fetched above for `unassigned_urgent`; no extra query). The
-    # board previously had no "what does today look like" view at all, only
-    # unassigned-jobs triage and a forward-looking "Jobs on Deck" list; the
-    # owner asked for the schedule itself to be glanceable on Home. Kept in
-    # time order (not `_sort_items`'d by severity) — the point is "what's
-    # next", not "what's most broken".
-    todays_schedule = []
-    for j in today_jobs:
-        done = (j.status or "") == "completed"
-        assigned = not _is_unassigned(j)
-        # A finished visit is never "needs a cleaner" — it reads as Done even
-        # if nobody was ever formally assigned to it.
-        status_tag = ({"label": "Done", "tone": "emerald"} if done
-                      else None if assigned
-                      else {"label": "Needs cleaner", "tone": "amber"})
-        todays_schedule.append(_item(
-            f"today-job:{j.id}", "good" if (done or assigned) else "watch",
-            _job_place(j) or (j.title or f"Job #{j.id}"), _client_name(j), _job_meta(j, today),
-            tags=[_job_type_tag(j)] + ([status_tag] if status_tag else []),
-            actions=[_link("View", f"/jobs/{j.id}")],
-        ))
-
     # ── 🧹 Jobs on Deck ─────────────────────────────────────────────────────
     deck = []
     for j in week_jobs[:_CAP]:
@@ -595,7 +565,6 @@ def build_board(db: Session, oid: int, can_act: bool = True) -> dict:
     systems.extend(triage_systems)
 
     sections = [
-        {"key": "today_schedule", "title": "Today's Schedule", "icon": "📅", "items": todays_schedule},
         {"key": "needs_today", "title": "Needs You Today", "icon": "🔴", "items": _sort_items(needs)},
         {"key": "jobs_on_deck", "title": "Jobs on Deck", "icon": "🧹", "items": _sort_items(deck)},
         {"key": "money", "title": "Money", "icon": "💵", "items": _sort_items(money)},

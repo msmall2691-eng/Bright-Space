@@ -28,6 +28,7 @@ import { pushToast } from '../utils/toastBus'
 import { ErrorState } from '../components/ui'
 import { TAG_TONE, SEV_DOT, SEV_LABEL, STAT_TONE, INT_DOT, SEV_ORDER } from '../components/board/tokens'
 import BoardAssistant from '../components/board/BoardAssistant'
+import TodayTimeline from '../components/board/TodayTimeline'
 import { useUnreadCount } from '../hooks/useUnreadCount'
 import { currentRole } from '../nav/routes'
 
@@ -532,10 +533,14 @@ function Section({ section, items, clearedSet, onToggle, onAction, actioningKey,
 // activity, schedule, then KPIs — so sections render in that order regardless
 // of payload order, split around the compact KPI band. Money/systems/noise
 // follow below the fold.
-const SECTION_RANK = { today_schedule: 0, people_waiting: 1, needs_today: 2, jobs_on_deck: 3, money: 4, systems: 5, safe_to_ignore: 6 }
-const PRIMARY_SECTIONS = new Set(['today_schedule', 'people_waiting', 'needs_today', 'jobs_on_deck'])
+// `today_schedule` is deliberately absent: today's visits now render as the
+// REAL Schedule day timeline (components/board/TodayTimeline.jsx) rather than
+// a second text list of the same jobs — the owner asked to "immediately have
+// eyes on the cal schedule", and carrying both was exactly the redundancy she
+// flagged. The backend no longer emits that section either.
+const SECTION_RANK = { people_waiting: 0, needs_today: 1, jobs_on_deck: 2, money: 3, systems: 4, safe_to_ignore: 5 }
+const PRIMARY_SECTIONS = new Set(['people_waiting', 'needs_today', 'jobs_on_deck'])
 const SECTION_LINKS = {
-  today_schedule: { label: 'Schedule', to: '/schedule' },
   people_waiting: { label: 'Inbox', to: '/comms' },
   jobs_on_deck: { label: 'Schedule', to: '/schedule' },
   needs_today: { label: 'Today', to: '/schedule' },
@@ -780,7 +785,14 @@ export default function OpsBoard() {
             navigate={navigate} />
         )}
 
-        {/* 2 — Staff activity: latest crew↔office chatter. */}
+        {/* 2 — Today at a glance: the real Schedule day timeline, not a
+            second list of the same jobs. Self-fetching and independent of
+            the board payload, so a slow/failed board never blanks it. */}
+        <div className="mt-4">
+          <TodayTimeline navigate={navigate} />
+        </div>
+
+        {/* 3 — Staff activity: latest crew↔office chatter. */}
         {!loading && canComms && <CrewActivity navigate={navigate} />}
 
         {/* Autopilot proposals — actionable, so they stay high. */}

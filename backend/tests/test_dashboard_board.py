@@ -137,7 +137,7 @@ def test_board_shape_and_stat_deltas(client):
     # Structural contract.
     assert set(before) >= {"company", "refreshed_at", "stats", "integrations", "filters", "sections"}
     sec_keys = [s["key"] for s in before["sections"]]
-    assert sec_keys == ["today_schedule", "needs_today", "jobs_on_deck", "money", "people_waiting", "systems", "safe_to_ignore"]
+    assert sec_keys == ["needs_today", "jobs_on_deck", "money", "people_waiting", "systems", "safe_to_ignore"]
     assert set(before["filters"]) == {"all", "urgent", "watch", "info", "good", "recurring"}
     stat_keys = {s["key"] for s in before["stats"]}
     assert stat_keys == {"unassigned", "weekend", "overdue", "waiting", "leads", "collected"}
@@ -171,7 +171,6 @@ def test_board_shape_and_stat_deltas(client):
     # Items actually render into sections.
     after_ids = {it["id"] for s in after["sections"] for it in s["items"]}
     assert f"job:{jid}" in after_ids                 # unassigned-today → Needs You Today
-    assert f"today-job:{jid}" in after_ids           # same job → Today's Schedule (chronological glance)
     assert "money:outstanding" in after_ids          # overdue invoice → Money summary card
     assert after["filters"]["all"] > before["filters"]["all"]
 
@@ -262,30 +261,6 @@ def _mk_job_today(ids, cid, pid, status, cleaner_ids=None):
     db.add(j); db.commit(); db.refresh(j)
     ids["jobs"].append(j.id); jid = j.id; db.close()
     return jid
-
-
-def test_todays_schedule_keeps_finished_visits_and_drops_cancelled(client):
-    """Today's Schedule is a rundown of the DAY, so a visit the crew already
-    finished has to stay on it — a schedule that empties itself as the day
-    goes on is useless by mid-afternoon. A cancelled visit is not work and
-    never appears. The finished one is tagged Done, never 'Needs cleaner',
-    even though nobody was formally assigned to it."""
-    api, ids = client
-    cid = _mk_client(ids)
-    pid = _mk_property(ids, cid)
-    done_id = _mk_job_today(ids, cid, pid, "completed")
-    cancelled_id = _mk_job_today(ids, cid, pid, "cancelled")
-
-    board = api.get("/api/dashboard/board").json()
-    sched = next(s for s in board["sections"] if s["key"] == "today_schedule")
-    by_id = {it["id"]: it for it in sched["items"]}
-
-    assert f"today-job:{done_id}" in by_id, "a finished visit stays on today's schedule"
-    assert f"today-job:{cancelled_id}" not in by_id, "a cancelled visit is not on the schedule"
-
-    labels = [t["label"] for t in by_id[f"today-job:{done_id}"]["tags"]]
-    assert "Done" in labels
-    assert "Needs cleaner" not in labels
 
 
 def test_finished_visits_never_count_as_needing_a_cleaner(client):

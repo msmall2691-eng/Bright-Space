@@ -424,26 +424,36 @@ export default function Comms() {
             />
 
             {/* Messages thread */}
-            <div ref={threadRef} className="flex-1 overflow-y-auto px-5 py-4 bg-bg/50">
-              {loadingDetail && (
-                <div className="flex justify-center py-8">
-                  <div className="w-6 h-6 border-2 border-hairline border-t-indigo-600 rounded-full animate-spin" />
-                </div>
-              )}
-              {groupedMessages.map(item => {
-                if (item.type === 'day') {
-                  return <DaySeparator key={item.key} label={item.label} />
-                }
-                return <MessageBubble key={item.key} m={item.data} isFirst={item.isFirst} contactName={contactDisplay(detail)} />
-              })}
-              {(!detail.messages || detail.messages.length === 0) && !loadingDetail && (
-                <div className="flex flex-col items-center justify-center py-16">
-                  <div className="w-12 h-12 rounded-2xl bg-panel border border-hairline flex items-center justify-center mb-3 shadow-sm">
-                    <MessageCircle className="w-6 h-6 text-ink-3" />
+            {/* Padding lives on the inner wrapper, not the scroller, so
+                `min-h-full` resolves to exactly the visible height (border-box)
+                and doesn't force a permanent scrollbar. Messages sit at the
+                BOTTOM and grow upward — `justify-end` on the inner wrapper, not
+                on the scrolling element (that breaks scroll-up in some browsers
+                once content overflows). max-w-3xl keeps the conversation at a
+                readable measure on a wide monitor; it's a max, so phones and
+                the ~940px shell are unaffected. */}
+            <div ref={threadRef} className="flex-1 overflow-y-auto bg-bg/50">
+              <div className="min-h-full flex flex-col justify-end px-5 py-3 mx-auto w-full max-w-3xl">
+                {loadingDetail && (
+                  <div className="flex justify-center py-8">
+                    <div className="w-6 h-6 border-2 border-hairline border-t-indigo-600 rounded-full animate-spin" />
                   </div>
-                  <p className="text-[13px] text-ink-3">No messages yet. Start the conversation below.</p>
-                </div>
-              )}
+                )}
+                {groupedMessages.map(item => {
+                  if (item.type === 'day') {
+                    return <DaySeparator key={item.key} label={item.label} />
+                  }
+                  return <MessageBubble key={item.key} m={item.data} isFirst={item.isFirst} contactName={contactDisplay(detail)} />
+                })}
+                {(!detail.messages || detail.messages.length === 0) && !loadingDetail && (
+                  <div className="flex flex-col items-center justify-center py-8">
+                    <div className="w-12 h-12 rounded-2xl bg-panel border border-hairline flex items-center justify-center mb-3 shadow-sm">
+                      <MessageCircle className="w-6 h-6 text-ink-3" />
+                    </div>
+                    <p className="text-[13px] text-ink-3">No messages yet. Start the conversation below.</p>
+                  </div>
+                )}
+              </div>
             </div>
 
             {showSuggestion && (

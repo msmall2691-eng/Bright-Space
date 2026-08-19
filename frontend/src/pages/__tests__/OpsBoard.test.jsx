@@ -9,9 +9,11 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { render, screen, cleanup, fireEvent } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 
-vi.mock('../../api', () => ({ get: vi.fn(), post: vi.fn() }))
+// `getCached` is used by useEmployees, which the embedded Today timeline
+// pulls in for cleaner-name lookup — without it the whole page throws.
+vi.mock('../../api', () => ({ get: vi.fn(), post: vi.fn(), getCached: vi.fn() }))
 
-import { get, post } from '../../api'
+import { get, post, getCached } from '../../api'
 import OpsBoard from '../OpsBoard'
 
 const PAYLOAD = {
@@ -60,10 +62,20 @@ function renderBoard() {
   return render(<MemoryRouter><OpsBoard /></MemoryRouter>)
 }
 
+// Home makes two independent GETs now: the board payload, and one day of
+// /api/schedule/week for the embedded Today timeline. Route by URL so the
+// timeline gets a real (empty) schedule shape instead of the board payload.
+const EMPTY_DAY = { visits: [], jobs: [], properties: [], clients: [] }
+function mockGet(boardPayload = PAYLOAD) {
+  get.mockImplementation((url) =>
+    Promise.resolve(String(url).startsWith('/api/schedule/week') ? EMPTY_DAY : boardPayload))
+}
+
 beforeEach(() => {
   localStorage.clear()
-  get.mockReset(); post.mockReset()
-  get.mockResolvedValue(PAYLOAD)
+  get.mockReset(); post.mockReset(); getCached.mockReset()
+  getCached.mockResolvedValue([])   // crew roster, via useEmployees
+  mockGet()
   post.mockResolvedValue({})
 })
 afterEach(cleanup)
@@ -138,7 +150,7 @@ describe('OpsBoard', () => {
           ] }
         : s),
     }
-    get.mockResolvedValue(withNoise)
+    mockGet(withNoise)
     post.mockResolvedValue({ deleted: 1, gmail_trashed: 1 })
     renderBoard()
     await screen.findByText('No cleaner assigned')
@@ -161,7 +173,7 @@ describe('OpsBoard', () => {
           ] }
         : s),
     }
-    get.mockResolvedValue(withNoise)
+    mockGet(withNoise)
     renderBoard()
     await screen.findByText('No cleaner assigned')
     expect(screen.getByRole('button', { name: /^clear all$/i })).toBeTruthy()
@@ -197,7 +209,7 @@ describe('OpsBoard', () => {
           })) }
         : s),
     }
-    get.mockResolvedValue(longSection)
+    mockGet(longSection)
     renderBoard()
     await screen.findByText('Unassigned job 0')
     expect(screen.getByText('Unassigned job 4')).toBeTruthy()   // 5th row (cap)
@@ -215,7 +227,7 @@ describe('OpsBoard', () => {
           ] }
         : s),
     }
-    get.mockResolvedValue(withNoise)
+    mockGet(withNoise)
     renderBoard()
     await screen.findByText('No cleaner assigned')
     fireEvent.click(screen.getByText('1 item you can ignore'))

@@ -46,9 +46,9 @@ export function ComposeBar({
   // Only offer appointment shortcuts on SMS threads with a real upcoming visit.
   const showApptChips = !noteMode && detail.channel === 'sms' && nextAppt && onFillReply
   return (
-    <div className="border-t border-hairline bg-panel px-4 pt-4 pb-safe">
+    <div className="border-t border-hairline bg-panel px-4 pt-2.5 pb-safe">
       {/* Mode toggle — wraps on narrow phones so the AI button + flash never clip */}
-      <div className="flex flex-wrap items-center gap-1.5 gap-y-2 mb-3">
+      <div className="flex flex-wrap items-center gap-1.5 gap-y-2 mb-2">
         <button onClick={() => setNoteMode(false)}
           className={`inline-flex items-center gap-1.5 text-[12px] font-semibold px-3 py-1.5 rounded-lg transition-all ${
             !noteMode ? 'bg-indigo-600 text-white shadow-sm' : 'bg-bg-2 text-ink-3 hover:bg-bg-2'
@@ -130,7 +130,7 @@ export function ComposeBar({
             ? 'Write an internal note (not sent to customer)...'
             : `Reply via ${(detail.channel || 'sms').toUpperCase()}...`
           }
-          className={`flex-1 border rounded-xl px-4 py-3 text-base sm:text-[13px] resize-none focus:outline-none focus:ring-2 transition-all leading-relaxed ${
+          className={`flex-1 border rounded-xl px-4 py-2.5 text-base sm:text-[13px] resize-none focus:outline-none focus:ring-2 transition-all leading-relaxed ${
             noteMode
               ? 'border-amber-200 bg-amber-50/50 focus:ring-amber-500/20 placeholder-amber-400'
               : 'border-hairline bg-bg focus:ring-indigo-500/20 focus:bg-panel placeholder-ink-3'
@@ -150,7 +150,7 @@ export function ComposeBar({
       </div>
 
       {/* Keyboard-shortcut hint is desktop-only — hidden where there's no keyboard */}
-      <div className="hidden sm:flex items-center mt-2">
+      <div className="hidden sm:flex items-center mt-1.5">
         <div className="text-[10px] text-ink-3 flex items-center gap-1">
           <Kbd>{navigator.platform?.includes('Mac') ? '⌘' : 'Ctrl'}</Kbd>
           <span>+</span>
