@@ -367,13 +367,15 @@ export default function ClientProfile() {
     setSendingEmail(false)
   }
 
-  // Quick-action "Text"/"Email" both land on the Messages tab, then scroll the
-  // relevant compose box into view (it's already on-screen once the tab
-  // switches, but this keeps it in frame if the feed has pushed it down).
-  const goToCompose = (anchorId) => {
+  // Quick-action "Text"/"Email" both land on the Messages tab filtered to
+  // that channel, then scroll the (single, bottom-anchored) compose bar into
+  // view — it's already on-screen once the tab switches, but this keeps it
+  // in frame if the conversation feed has pushed it down.
+  const goToCompose = (channel) => {
     setTab('messages')
+    setCommsFilter(channel)
     requestAnimationFrame(() => {
-      document.getElementById(anchorId)?.scrollIntoView({ block: 'nearest' })
+      document.getElementById('message-compose')?.scrollIntoView({ block: 'nearest' })
     })
   }
 
@@ -417,31 +419,33 @@ export default function ClientProfile() {
         openQuickContact={openQuickContact} saveQuickContact={saveQuickContact}
       />
 
-      {/* Quick actions */}
+      {/* Quick actions. Labels are always visible now (previously `hidden
+          sm:inline` left bare icon pills on phones — the exact "not
+          cleaned up" look the owner screenshotted). */}
       <div className="grid grid-cols-2 sm:flex sm:flex-wrap sm:items-center gap-2 px-4 sm:px-6 py-3 bg-panel/50 border-b border-hairline shrink-0">
         <button onClick={() => navigate('/billing?view=quotes', { state: { openNew: true, clientId: parseInt(id) } })}
           data-testid="client-action-new-quote"
           className="flex items-center justify-center sm:justify-start gap-1.5 text-xs bg-bg-2 hover:bg-bg-2 border border-hairline px-3 py-2 min-h-[44px] sm:min-h-0 sm:py-1.5 rounded-lg transition-colors">
-          <FileText className="w-3.5 h-3.5 text-blue-400" /> <span className="hidden sm:inline">New Quote</span>
+          <FileText className="w-3.5 h-3.5 text-blue-400 shrink-0" /> <span className="truncate">New Quote</span>
         </button>
         <button onClick={() => setJobModal({})}
           data-testid="client-action-schedule-job"
           className="flex items-center justify-center sm:justify-start gap-1.5 text-xs bg-bg-2 hover:bg-bg-2 border border-hairline px-3 py-2 min-h-[44px] sm:min-h-0 sm:py-1.5 rounded-lg transition-colors">
-          <Calendar className="w-3.5 h-3.5 text-blue-500" /> <span className="hidden sm:inline">Schedule Job</span>
+          <Calendar className="w-3.5 h-3.5 text-blue-500 shrink-0" /> <span className="truncate">Schedule Job</span>
         </button>
         <button onClick={() => navigate(`/billing?view=invoices&new=1&client=${id}`)}
           className="flex items-center justify-center sm:justify-start gap-1.5 text-xs bg-bg-2 hover:bg-bg-2 border border-hairline px-3 py-2 min-h-[44px] sm:min-h-0 sm:py-1.5 rounded-lg transition-colors">
-          <Receipt className="w-3.5 h-3.5 text-green-400" /> <span className="hidden sm:inline">New Invoice</span>
+          <Receipt className="w-3.5 h-3.5 text-green-400 shrink-0" /> <span className="truncate">New Invoice</span>
         </button>
-        <button onClick={() => goToCompose('sms-compose')}
+        <button onClick={() => goToCompose('sms')}
           data-testid="client-action-text"
           className="flex items-center justify-center sm:justify-start gap-1.5 text-xs bg-bg-2 hover:bg-bg-2 border border-hairline px-3 py-2 min-h-[44px] sm:min-h-0 sm:py-1.5 rounded-lg transition-colors">
-          <MessageSquare className="w-3.5 h-3.5 text-purple-400" /> <span className="hidden sm:inline">Text</span>
+          <MessageSquare className="w-3.5 h-3.5 text-purple-400 shrink-0" /> <span className="truncate">Text</span>
         </button>
-        <button onClick={() => goToCompose('email-compose')}
+        <button onClick={() => goToCompose('email')}
           data-testid="client-action-email"
           className="flex items-center justify-center sm:justify-start gap-1.5 text-xs bg-bg-2 hover:bg-bg-2 border border-hairline px-3 py-2 min-h-[44px] sm:min-h-0 sm:py-1.5 rounded-lg transition-colors">
-          <Mail className="w-3.5 h-3.5 text-blue-400" /> <span className="hidden sm:inline">Email</span>
+          <Mail className="w-3.5 h-3.5 text-blue-400 shrink-0" /> <span className="truncate">Email</span>
         </button>
       </div>
 
