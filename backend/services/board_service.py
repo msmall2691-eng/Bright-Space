@@ -274,6 +274,12 @@ def build_board(db: Session, oid: int, can_act: bool = True) -> dict:
     org = lambda model: or_(model.org_id == oid, model.org_id.is_(None))
 
     # --- Jobs (next two weeks) ----------------------------------------------
+    # Includes `completed` so Today's Schedule can show the WHOLE day: a
+    # rundown that silently drops each visit the moment the crew marks it
+    # done is not a schedule. `cancelled` stays excluded everywhere — a
+    # called-off visit is not work. The "needs action" lists below narrow
+    # back to open work via _is_open so no stat starts counting finished
+    # jobs as something to do.
     jobs = (
         db.query(Job)
         .options(joinedload(Job.property), joinedload(Job.client))
@@ -281,7 +287,7 @@ def build_board(db: Session, oid: int, can_act: bool = True) -> dict:
             org(Job),
             Job.scheduled_date >= today,
             Job.scheduled_date <= horizon,
-            Job.status.in_(("scheduled", "in_progress")),
+            Job.status.in_(("scheduled", "in_progress", "completed")),
         )
         .order_by(Job.scheduled_date, Job.start_time)
         .all()
@@ -290,12 +296,19 @@ def build_board(db: Session, oid: int, can_act: bool = True) -> dict:
     def _is_unassigned(j):
         return not (j.cleaner_ids or [])
 
+    def _is_open(j):
+        return (j.status or "scheduled") in ("scheduled", "in_progress")
+
     def _is_weekend(d):
         d = coerce_date(d)
         return d is not None and d.weekday() >= 5
 
+    # The day's real rundown — finished visits included.
     today_jobs = [j for j in jobs if coerce_date(j.scheduled_date) == today]
-    week_jobs = [j for j in jobs if (coerce_date(j.scheduled_date) or horizon) <= week_end]
+    # Everything downstream of here is forward-looking WORK, so it drops
+    # completed jobs (unchanged behavior from before completed was fetched).
+    week_jobs = [j for j in jobs
+                 if _is_open(j) and (coerce_date(j.scheduled_date) or horizon) <= week_end]
     weekend_jobs = [j for j in week_jobs if _is_weekend(j.scheduled_date)]
     unassigned_week = [j for j in week_jobs if _is_unassigned(j)]
     unassigned_urgent = [
@@ -446,11 +459,17 @@ def build_board(db: Session, oid: int, can_act: bool = True) -> dict:
     # next", not "what's most broken".
     todays_schedule = []
     for j in today_jobs:
+        done = (j.status or "") == "completed"
         assigned = not _is_unassigned(j)
+        # A finished visit is never "needs a cleaner" — it reads as Done even
+        # if nobody was ever formally assigned to it.
+        status_tag = ({"label": "Done", "tone": "emerald"} if done
+                      else None if assigned
+                      else {"label": "Needs cleaner", "tone": "amber"})
         todays_schedule.append(_item(
-            f"today-job:{j.id}", "good" if assigned else "watch",
+            f"today-job:{j.id}", "good" if (done or assigned) else "watch",
             _job_place(j) or (j.title or f"Job #{j.id}"), _client_name(j), _job_meta(j, today),
-            tags=[_job_type_tag(j)] + ([] if assigned else [{"label": "Needs cleaner", "tone": "amber"}]),
+            tags=[_job_type_tag(j)] + ([status_tag] if status_tag else []),
             actions=[_link("View", f"/jobs/{j.id}")],
         ))
 

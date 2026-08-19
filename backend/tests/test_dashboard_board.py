@@ -251,3 +251,61 @@ def test_viewer_board_strips_one_click_api_actions(client):
         assert all(a["kind"] != "api" for a in it["actions"]), f"api action leaked to viewer on {it['id']}"
     # Navigation actions are preserved.
     assert any(a["kind"] == "link" for it in viewer_items for a in it["actions"])
+
+
+def _mk_job_today(ids, cid, pid, status, cleaner_ids=None):
+    db = SessionLocal()
+    j = Job(client_id=cid, property_id=pid, job_type="residential",
+            title=f"{status} job", scheduled_date=business_today(),
+            start_time=time(9, 0), end_time=time(11, 0),
+            cleaner_ids=cleaner_ids or [], status=status, org_id=1)
+    db.add(j); db.commit(); db.refresh(j)
+    ids["jobs"].append(j.id); jid = j.id; db.close()
+    return jid
+
+
+def test_todays_schedule_keeps_finished_visits_and_drops_cancelled(client):
+    """Today's Schedule is a rundown of the DAY, so a visit the crew already
+    finished has to stay on it — a schedule that empties itself as the day
+    goes on is useless by mid-afternoon. A cancelled visit is not work and
+    never appears. The finished one is tagged Done, never 'Needs cleaner',
+    even though nobody was formally assigned to it."""
+    api, ids = client
+    cid = _mk_client(ids)
+    pid = _mk_property(ids, cid)
+    done_id = _mk_job_today(ids, cid, pid, "completed")
+    cancelled_id = _mk_job_today(ids, cid, pid, "cancelled")
+
+    board = api.get("/api/dashboard/board").json()
+    sched = next(s for s in board["sections"] if s["key"] == "today_schedule")
+    by_id = {it["id"]: it for it in sched["items"]}
+
+    assert f"today-job:{done_id}" in by_id, "a finished visit stays on today's schedule"
+    assert f"today-job:{cancelled_id}" not in by_id, "a cancelled visit is not on the schedule"
+
+    labels = [t["label"] for t in by_id[f"today-job:{done_id}"]["tags"]]
+    assert "Done" in labels
+    assert "Needs cleaner" not in labels
+
+
+def test_finished_visits_never_count_as_needing_a_cleaner(client):
+    """Widening the board's job query to include `completed` must not leak
+    finished work into the unassigned counts — those drive 'go assign
+    someone', which is nonsense for a job that's already done."""
+    api, ids = client
+    cid = _mk_client(ids)
+    pid = _mk_property(ids, cid)
+
+    before = api.get("/api/dashboard/board").json()
+    unassigned_before = int(next(s["value"] for s in before["stats"] if s["key"] == "unassigned"))
+
+    done_id = _mk_job_today(ids, cid, pid, "completed")   # no cleaner_ids
+
+    after = api.get("/api/dashboard/board").json()
+    unassigned_after = int(next(s["value"] for s in after["stats"] if s["key"] == "unassigned"))
+    assert unassigned_after == unassigned_before, \
+        "a completed job must not count as an unassigned job"
+
+    after_ids = {it["id"] for s in after["sections"] for it in s["items"]}
+    assert f"job:{done_id}" not in after_ids, "completed job must not raise a Needs-You-Today card"
+    assert f"deck-job:{done_id}" not in after_ids, "completed job is not upcoming work on the deck"

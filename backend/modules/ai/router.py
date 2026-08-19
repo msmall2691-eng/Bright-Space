@@ -1634,10 +1634,17 @@ def _compute_followups(db: Session, org_id: int) -> dict:
     if unassigned:
         soon_unassigned = [j for j in unassigned if str(j.scheduled_date) <= soon]
         sev = "high" if soon_unassigned else "medium"
-        when = " (some within 48h)" if soon_unassigned else ""
+        # State the window. This list covers EVERY future date, while the Ops
+        # Board's "Unassigned jobs" tile counts only the next 7 days — two
+        # different, both-correct numbers sitting inches apart on Home. With
+        # the window unstated the brief read as contradicting the tile right
+        # below it (owner: "is that right?").
+        detail = "Across all upcoming dates, jobs with no cleaner assigned."
+        if soon_unassigned:
+            detail += f" {len(soon_unassigned)} of them are within 48 hours."
         items.append({
             "title": f"{len(unassigned)} unassigned job(s)",
-            "detail": f"Upcoming jobs with no cleaner assigned{when}.",
+            "detail": detail,
             "action": "Assign cleaners on the schedule",
             "severity": sev,
             "href": "/schedule?filter=unassigned",
@@ -1800,11 +1807,24 @@ def _org_business_snapshot(db: Session, org_id: int) -> dict:
             Client.status == "active", _org(Client, org_id)).count(),
         "clients_leads": db.query(Client).filter(
             Client.status == "lead", _org(Client, org_id)).count(),
+        # BB-CODE-04: both of these used to miscount, and the brief narrates
+        # them as plain fact ("you've got 9 jobs lined up for today"), so the
+        # owner had no way to tell the number was wrong.
+        #   jobs_today had NO status filter at all — every CANCELLED visit
+        #     still counted as a job scheduled for today, inflating the brief
+        #     above the board's own Today's Schedule section on the same page.
+        #   jobs_this_week counted only status="scheduled", silently dropping
+        #     jobs already in progress.
+        # Both now use the same non-cancelled set the Ops Board uses, so the
+        # prose and the board can't disagree.
         "jobs_today": db.query(Job).filter(
-            Job.scheduled_date == today, _org(Job, org_id)).count(),
+            Job.scheduled_date == today,
+            Job.status.in_(("scheduled", "in_progress", "completed")),
+            _org(Job, org_id)).count(),
         "jobs_this_week": db.query(Job).filter(
             Job.scheduled_date >= today, Job.scheduled_date <= week_end,
-            Job.status == "scheduled", _org(Job, org_id)).count(),
+            Job.status.in_(("scheduled", "in_progress", "completed")),
+            _org(Job, org_id)).count(),
         "active_recurring_schedules": db.query(RecurringSchedule).filter(
             RecurringSchedule.active == True,  # noqa: E712
             _org(RecurringSchedule, org_id)).count(),
