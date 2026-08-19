@@ -140,6 +140,24 @@ export default function Comms() {
   }, [urlParams, setUrlParams])
   const [showContactPanel, setShowContactPanel] = useState(true)
   const [mobileView, setMobileView] = useState('list') // list | thread
+
+  // Deep-link entry: /comms?conversation=123 (from the Home board's "Reply"
+  // action, or any other page) opens that specific thread directly instead
+  // of landing on the bare inbox list — previously the board sent no id at
+  // all, so "Reply" always dropped the owner on the list (BB-CODE-03).
+  // setSelectedId alone is enough: useCommsData's selection effect fetches
+  // the detail for us.
+  useEffect(() => {
+    const convParam = urlParams.get('conversation')
+    if (convParam) {
+      setSelectedId(Number(convParam))
+      setMobileView('thread')
+      const next = new URLSearchParams(urlParams)
+      next.delete('conversation')
+      setUrlParams(next, { replace: true })
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [urlParams])
   const [toast, setToast] = useState(null) // { ok: bool, msg: string }
   const showToast = useCallback((msg, ok = true) => {
     setToast({ ok, msg })

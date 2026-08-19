@@ -125,7 +125,8 @@ def _mk_waiting_conv(ids, cid):
                         priority="normal", last_inbound_at=business_now().replace(tzinfo=None),
                         first_response_at=None, org_id=1)
     db.add(conv); db.commit(); db.refresh(conv)
-    ids["convs"].append(conv.id); db.close()
+    ids["convs"].append(conv.id); conv_id = conv.id; db.close()
+    return conv_id
 
 
 def test_board_shape_and_stat_deltas(client):
@@ -136,7 +137,7 @@ def test_board_shape_and_stat_deltas(client):
     # Structural contract.
     assert set(before) >= {"company", "refreshed_at", "stats", "integrations", "filters", "sections"}
     sec_keys = [s["key"] for s in before["sections"]]
-    assert sec_keys == ["needs_today", "jobs_on_deck", "money", "people_waiting", "systems", "safe_to_ignore"]
+    assert sec_keys == ["today_schedule", "needs_today", "jobs_on_deck", "money", "people_waiting", "systems", "safe_to_ignore"]
     assert set(before["filters"]) == {"all", "urgent", "watch", "info", "good", "recurring"}
     stat_keys = {s["key"] for s in before["stats"]}
     assert stat_keys == {"unassigned", "weekend", "overdue", "waiting", "leads", "collected"}
@@ -170,8 +171,25 @@ def test_board_shape_and_stat_deltas(client):
     # Items actually render into sections.
     after_ids = {it["id"] for s in after["sections"] for it in s["items"]}
     assert f"job:{jid}" in after_ids                 # unassigned-today → Needs You Today
+    assert f"today-job:{jid}" in after_ids           # same job → Today's Schedule (chronological glance)
     assert "money:outstanding" in after_ids          # overdue invoice → Money summary card
     assert after["filters"]["all"] > before["filters"]["all"]
+
+
+def test_reply_action_links_to_the_specific_conversation(client):
+    """BB-CODE-03: the board's "Reply" action used to link bare `/comms` —
+    no conversation id — so it always opened the inbox list instead of the
+    thread the owner was trying to answer. It must carry the conversation's
+    own id so Comms.jsx can open that exact thread."""
+    api, ids = client
+    cid = _mk_client(ids)
+    conv_id = _mk_waiting_conv(ids, cid)
+
+    board = api.get("/api/dashboard/board").json()
+    waiting = next(s for s in board["sections"] if s["key"] == "people_waiting")
+    item = next(it for it in waiting["items"] if it["id"] == f"wait-conv:{conv_id}")
+    reply = next(a for a in item["actions"] if a["label"] == "Reply")
+    assert reply["href"] == f"/comms?conversation={conv_id}"
 
 
 def test_turnover_card_shows_checkout_checkin_and_code(client):

@@ -1,12 +1,13 @@
 """
 Ops Board aggregation — the data behind the iOS-style triage dashboard.
 
-The board groups everything that needs the operator's attention into six
-sections (Needs You Today, Jobs on Deck, Money, Real People Waiting, Systems &
-Subscriptions, Safe to Ignore), a row of stat tiles, a strip of integration
-status chips, and per-severity filter counts. This module does all of that in
-one pass so `GET /api/dashboard/board` is a single round trip and the frontend
-stays a pure view (every string here is render-ready).
+The board groups everything that needs the operator's attention into seven
+sections (Today's Schedule, Needs You Today, Jobs on Deck, Money, Real People
+Waiting, Systems & Subscriptions, Safe to Ignore), a row of stat tiles, a
+strip of integration status chips, and per-severity filter counts. This
+module does all of that in one pass so `GET /api/dashboard/board` is a single
+round trip and the frontend stays a pure view (every string here is
+render-ready).
 
 Each card carries an `actions` list. A `link` action just navigates; an `api`
 action calls an existing endpoint (mark paid, auto-assign, resolve) straight
@@ -418,7 +419,12 @@ def build_board(db: Session, oid: int, can_act: bool = True) -> dict:
             tags=[{"label": (c.channel or "message").capitalize(), "tone": "rose"}],
             actions=[
                 _api("Resolve", f"/api/comms/conversations/{c.id}/status", body={"status": "resolved"}, done="Resolved"),
-                _link("Reply", "/comms"),
+                # BB-CODE-03: this used to link to bare "/comms" — no conversation
+                # id — so "Reply" always landed on the inbox list, not the
+                # specific thread (owner: "it doesn't really direct me to
+                # reply"). Comms.jsx now reads ?conversation= on mount and
+                # opens that thread directly.
+                _link("Reply", f"/comms?conversation={c.id}"),
             ],
         ))
     for q in follow_ups:
@@ -428,6 +434,24 @@ def build_board(db: Session, oid: int, can_act: bool = True) -> dict:
             f"{_fmt_money(q.total)} · {stage}", _ago(q.viewed_at or q.sent_at),
             tags=[{"label": "QUOTE", "tone": "indigo"}],
             actions=[_link("Open", "/billing?view=quotes")],
+        ))
+
+    # ── 📅 Today's Schedule ──────────────────────────────────────────────────
+    # A chronological rundown of the day's visits — reuses `today_jobs`
+    # (already fetched above for `unassigned_urgent`; no extra query). The
+    # board previously had no "what does today look like" view at all, only
+    # unassigned-jobs triage and a forward-looking "Jobs on Deck" list; the
+    # owner asked for the schedule itself to be glanceable on Home. Kept in
+    # time order (not `_sort_items`'d by severity) — the point is "what's
+    # next", not "what's most broken".
+    todays_schedule = []
+    for j in today_jobs:
+        assigned = not _is_unassigned(j)
+        todays_schedule.append(_item(
+            f"today-job:{j.id}", "good" if assigned else "watch",
+            _job_place(j) or (j.title or f"Job #{j.id}"), _client_name(j), _job_meta(j, today),
+            tags=[_job_type_tag(j)] + ([] if assigned else [{"label": "Needs cleaner", "tone": "amber"}]),
+            actions=[_link("View", f"/jobs/{j.id}")],
         ))
 
     # ── 🧹 Jobs on Deck ─────────────────────────────────────────────────────
@@ -506,7 +530,7 @@ def build_board(db: Session, oid: int, can_act: bool = True) -> dict:
             snippets.get(c.id, "") or (c.subject or f"{(c.channel or 'message').upper()} — awaiting your reply"),
             _ago(c.last_inbound_at),
             tags=[{"label": (c.channel or "msg").upper(), "tone": "blue"}],
-            actions=[_link("Reply", "/comms")],
+            actions=[_link("Reply", f"/comms?conversation={c.id}")],  # BB-CODE-03 — see above
         ))
     for ld in leads[:_CAP]:
         hot = (ld.priority or "normal") in ("high", "urgent")
@@ -552,6 +576,7 @@ def build_board(db: Session, oid: int, can_act: bool = True) -> dict:
     systems.extend(triage_systems)
 
     sections = [
+        {"key": "today_schedule", "title": "Today's Schedule", "icon": "📅", "items": todays_schedule},
         {"key": "needs_today", "title": "Needs You Today", "icon": "🔴", "items": _sort_items(needs)},
         {"key": "jobs_on_deck", "title": "Jobs on Deck", "icon": "🧹", "items": _sort_items(deck)},
         {"key": "money", "title": "Money", "icon": "💵", "items": _sort_items(money)},

@@ -172,6 +172,39 @@ describe('OpsBoard', () => {
     expect(screen.queryByRole('button', { name: /^clear all$/i })).toBeNull()
   })
 
+  // Owner: "smaller boxes... it's almost a little redundant" — the old
+  // separate "Communication" strip and stat-tile band merged into one row at
+  // the top, so a stat tile's value is visible without any scrolling and
+  // without a second band lower down repeating it.
+  it('shows stat tiles in one merged band near the top, not a separate lower band', async () => {
+    renderBoard()
+    await screen.findByText('No cleaner assigned')
+    expect(screen.getAllByText('4')).toHaveLength(1)   // "Unassigned jobs" value — appears once, not twice
+    expect(screen.getByText('Unassigned jobs')).toBeTruthy()
+    expect(screen.getByText('Collected today')).toBeTruthy()
+  })
+
+  // Owner: "not have to scroll so much" — a section with more than the row
+  // cap folds the rest behind a "+N more" link instead of rendering every
+  // card inline.
+  it('caps a long primary section to a few rows with a "+N more" link', async () => {
+    const longSection = {
+      ...PAYLOAD,
+      sections: PAYLOAD.sections.map(s => s.key === 'needs_today'
+        ? { ...s, items: Array.from({ length: 8 }, (_, i) => ({
+            id: `job:${i}`, severity: 'urgent', title: `Unassigned job ${i}`, body: '', meta: '',
+            tags: [], actions: [],
+          })) }
+        : s),
+    }
+    get.mockResolvedValue(longSection)
+    renderBoard()
+    await screen.findByText('Unassigned job 0')
+    expect(screen.getByText('Unassigned job 4')).toBeTruthy()   // 5th row (cap)
+    expect(screen.queryByText('Unassigned job 5')).toBeNull()   // 6th row — folded
+    expect(screen.getByText(/\+3 more/)).toBeTruthy()
+  })
+
   it('expands Safe to Ignore on click to review items', async () => {
     const withNoise = {
       ...PAYLOAD,

@@ -1,11 +1,15 @@
 /**
  * Ops Board — the iOS-style triage dashboard (the new /dashboard home).
  *
- * Everything that needs the operator's attention, grouped into six clearable
- * sections with a stat-tile row, integration-status chips, per-severity filter
- * chips, and `/`-to-search. One fetch (`GET /api/dashboard/board`) drives the
- * whole page; the backend ships render-ready strings, so this file is a pure
- * view (see backend/services/board_service.py).
+ * Everything that needs the operator's attention, grouped into seven clearable
+ * sections (led by a chronological "Today's Schedule") with one merged
+ * stat/comms band, integration-status chips, per-severity filter chips, and
+ * `/`-to-search. One fetch (`GET /api/dashboard/board`) drives the whole
+ * page; the backend ships render-ready strings, so this file is a pure view
+ * (see backend/services/board_service.py). Primary sections cap at
+ * PRIMARY_ROW_CAP rows on-screen, with a "+N more" link into the page that
+ * owns the full set — the board is a triage surface, not a scroll-forever
+ * list.
  *
  * Design: built entirely on the app's semantic tokens (bg / panel / ink /
  * hairline + the indigo accent), so it re-skins with the active theme and
@@ -241,40 +245,50 @@ function ProposalsQueue() {
   )
 }
 
-/* ── Communication strip ──────────────────────────────────────────────────── */
-/** The owner's #1 ask for Home: communication first. One quiet row — client
- *  messages, crew chats, threads waiting on a reply, new leads — plain
- *  numbers + 11px labels (no tiles, no bubbles), each a link into the surface
- *  that answers it. Counts reuse the summary poll (useUnreadCount) and the
- *  board's existing stats; no new endpoints. */
-function CommsStrip({ stats, unreadConversations, crewUnreadThreads, navigate }) {
-  const stat = (k) => (stats || []).find(s => s.key === k)
-  const entries = [
-    { n: unreadConversations, label: 'unread messages', to: '/comms' },
-    { n: crewUnreadThreads, label: 'crew chats', to: '/comms?view=crew' },
-    { n: Number(stat('waiting')?.value ?? 0), label: 'waiting on a reply', to: '/comms' },
-    { n: Number(stat('leads')?.value ?? 0), label: 'new leads', to: '/requests' },
-  ]
+/* ── Top stats band ───────────────────────────────────────────────────────── */
+/** ONE compact, quiet KPI row at the very top of Home. Used to be two
+ *  separate bordered boxes — a "Communication" strip up here, and a second
+ *  stat-tile band lower down the page (StatBand) whose "People waiting" and
+ *  "New leads" tiles duplicated numbers the top strip already showed. The
+ *  owner: "smaller boxes... it's almost a little redundant." Now it's one
+ *  band, once, right under the header where it's seen without scrolling —
+ *  client-side comms counts (unread messages, crew chats — from the shared
+ *  summary poll) first since they're the most time-sensitive, then the
+ *  board's own stat tiles. Comms/crew entries are admin+manager only (those
+ *  pages 403 for other roles); the rest of the stats stay visible to
+ *  everyone, matching the old StatBand's role-agnostic behavior. */
+function TopBand({ stats, unreadConversations, crewUnreadThreads, showComms, navigate }) {
+  const commsEntries = showComms ? [
+    { key: 'unread', n: unreadConversations, label: 'unread messages', to: '/comms' },
+    { key: 'crew', n: crewUnreadThreads, label: 'crew chats', to: '/comms?view=crew' },
+  ] : []
+  if (!commsEntries.length && !stats?.length) return null
   return (
-    <section className="mt-4 overflow-hidden rounded-xl border border-hairline bg-panel">
-      <header className="flex items-center gap-2 border-b border-hairline px-3.5 py-2">
-        <h2 className="text-[11px] font-medium text-ink-3">Communication</h2>
-      </header>
-      <div className="flex items-stretch divide-x divide-hairline overflow-x-auto">
-        {entries.map(e => (
-          <button key={e.label} onClick={() => navigate(e.to)}
-            className="flex min-w-0 flex-1 shrink-0 flex-col items-start gap-0.5 px-3.5 py-2.5 text-left transition-colors hover:bg-bg-2">
-            <span className="flex items-center gap-1.5">
-              {e.n > 0 && <span className="h-1.5 w-1.5 rounded-full bg-indigo-500" aria-hidden="true" />}
-              <span className={`text-[15px] font-bold leading-none tabular-nums ${e.n > 0 ? 'text-ink' : 'text-ink-3'}`}>
-                {e.n}
-              </span>
+    <div className="mt-4 flex items-stretch divide-x divide-hairline overflow-x-auto rounded-xl border border-hairline bg-panel">
+      {commsEntries.map(e => (
+        <button key={e.key} onClick={() => navigate(e.to)}
+          className="flex min-w-0 flex-1 shrink-0 flex-col items-start gap-0.5 px-3.5 py-2.5 text-left transition-colors hover:bg-bg-2">
+          <span className="flex items-center gap-1.5">
+            {e.n > 0 && <span className="h-1.5 w-1.5 rounded-full bg-indigo-500" aria-hidden="true" />}
+            <span className={`text-[15px] font-bold leading-none tabular-nums ${e.n > 0 ? 'text-ink' : 'text-ink-3'}`}>
+              {e.n}
             </span>
-            <span className="whitespace-nowrap text-[10.5px] text-ink-3">{e.label}</span>
-          </button>
-        ))}
-      </div>
-    </section>
+          </span>
+          <span className="whitespace-nowrap text-[10.5px] text-ink-3">{e.label}</span>
+        </button>
+      ))}
+      {(stats || []).map(stat => (
+        <button key={stat.key}
+          onClick={() => stat.href && navigate(stat.href)}
+          title={stat.sub || undefined}
+          className="flex min-w-0 flex-1 shrink-0 flex-col items-start gap-0.5 px-3.5 py-2.5 text-left transition-colors hover:bg-bg-2">
+          <span className={`text-[15px] font-bold leading-none tabular-nums ${STAT_TONE[stat.tone] || STAT_TONE.neutral}`}>
+            {stat.value}
+          </span>
+          <span className="whitespace-nowrap text-[10.5px] text-ink-3">{stat.label}</span>
+        </button>
+      ))}
+    </div>
   )
 }
 
@@ -337,29 +351,6 @@ function Tag({ tag }) {
       <span className="h-1 w-1 rounded-full bg-current opacity-70" aria-hidden />
       {tag.label}
     </span>
-  )
-}
-
-/** Compact KPI band — the owner keeps her numbers but as ONE tight row (quiet
- *  data-forward, OpsSummary-style), not a wall of six tiles. Values keep their
- *  semantic tone (red = overdue etc.); labels are 11px muted; the whole band
- *  scrolls sideways on a phone instead of stacking. */
-function StatBand({ stats, navigate }) {
-  if (!stats?.length) return null
-  return (
-    <div className="mt-4 flex items-stretch divide-x divide-hairline overflow-x-auto rounded-xl border border-hairline bg-panel">
-      {stats.map(stat => (
-        <button key={stat.key}
-          onClick={() => stat.href && navigate(stat.href)}
-          title={stat.sub || undefined}
-          className="flex min-w-0 flex-1 shrink-0 flex-col items-start gap-0.5 px-3.5 py-2.5 text-left transition-colors hover:bg-bg-2">
-          <span className={`text-[15px] font-bold leading-none tabular-nums ${STAT_TONE[stat.tone] || STAT_TONE.neutral}`}>
-            {stat.value}
-          </span>
-          <span className="whitespace-nowrap text-[10.5px] text-ink-3">{stat.label}</span>
-        </button>
-      ))}
-    </div>
   )
 }
 
@@ -457,10 +448,17 @@ function BoardRow({ item, cleared, onToggle, onAction, actioningKey, confirmingK
 // individual items is still one tap away, nothing is deleted automatically.
 const COLLAPSED_BY_DEFAULT = new Set(['safe_to_ignore'])
 
-function Section({ section, items, clearedSet, onToggle, onAction, actioningKey, confirmingKey, setConfirmingKey, headerLink, navigate, onClearAll, clearingSection, filtersActive }) {
+function Section({ section, items, clearedSet, onToggle, onAction, actioningKey, confirmingKey, setConfirmingKey, headerLink, navigate, onClearAll, clearingSection, filtersActive, maxRows }) {
   const [open, setOpen] = useState(() => !COLLAPSED_BY_DEFAULT.has(section.key))
   if (!items.length) return null
   const collapsible = COLLAPSED_BY_DEFAULT.has(section.key)
+  // Cap how many rows render before folding the rest behind "View all" — a
+  // section like Needs You Today can genuinely hold a dozen-plus cards, and
+  // showing every one turned Home into a very long scroll (owner: "not have
+  // to scroll so much"). Filtering/search still searches the FULL set
+  // (`items` already reflects the active filter), only the render is capped.
+  const visibleItems = maxRows ? items.slice(0, maxRows) : items
+  const hiddenCount = items.length - visibleItems.length
   // Codex review (PR #720): search/severity/hide-cleared narrow `items` to a
   // subset, but the bulk endpoint clears the WHOLE section server-side — so
   // "Clear all" while filtered would silently delete cards never shown. Only
@@ -511,10 +509,17 @@ function Section({ section, items, clearedSet, onToggle, onAction, actioningKey,
       </header>
       {open && (
         <div className="divide-y divide-hairline">
-          {items.map(it => (
+          {visibleItems.map(it => (
             <BoardRow key={it.id} item={it} cleared={clearedSet.has(it.id)} onToggle={onToggle}
               onAction={onAction} actioningKey={actioningKey} confirmingKey={confirmingKey} />
           ))}
+          {hiddenCount > 0 && (
+            <button
+              onClick={() => headerLink ? navigate(headerLink.to) : setOpen(true)}
+              className="flex w-full items-center justify-center gap-1 px-3.5 py-2 text-[11.5px] font-medium text-ink-3 transition-colors hover:bg-bg-2 hover:text-ink-2">
+              +{hiddenCount} more{headerLink ? ` — ${headerLink.label}` : ''}
+            </button>
+          )}
         </div>
       )}
     </section>
@@ -527,13 +532,19 @@ function Section({ section, items, clearedSet, onToggle, onAction, actioningKey,
 // activity, schedule, then KPIs — so sections render in that order regardless
 // of payload order, split around the compact KPI band. Money/systems/noise
 // follow below the fold.
-const SECTION_RANK = { people_waiting: 0, needs_today: 1, jobs_on_deck: 2, money: 3, systems: 4, safe_to_ignore: 5 }
-const PRIMARY_SECTIONS = new Set(['people_waiting', 'needs_today', 'jobs_on_deck'])
+const SECTION_RANK = { today_schedule: 0, people_waiting: 1, needs_today: 2, jobs_on_deck: 3, money: 4, systems: 5, safe_to_ignore: 6 }
+const PRIMARY_SECTIONS = new Set(['today_schedule', 'people_waiting', 'needs_today', 'jobs_on_deck'])
 const SECTION_LINKS = {
+  today_schedule: { label: 'Schedule', to: '/schedule' },
   people_waiting: { label: 'Inbox', to: '/comms' },
   jobs_on_deck: { label: 'Schedule', to: '/schedule' },
   needs_today: { label: 'Today', to: '/schedule' },
 }
+// Every primary section shows at most this many rows on Home before folding
+// the rest behind its header "View all" link — the owner: "not have to
+// scroll so much... it's almost a little redundant." Secondary sections
+// (money/systems/ignore-pile) are already short and stay uncapped.
+const PRIMARY_ROW_CAP = 5
 
 export default function OpsBoard() {
   const navigate = useNavigate()
@@ -756,13 +767,16 @@ export default function OpsBoard() {
           </div>
         )}
 
-        {/* 1 — Communication first (the owner's order for Home). Hidden for
-            viewers: /comms, /requests and crew chat are admin/manager-only,
-            so the strip could only link them into 403s. */}
-        {!loading && canComms && (
-          <CommsStrip stats={data?.stats}
+        {/* 1 — Every number at a glance, right under the header: the old
+            "Communication" strip and the KPI band merged into one row.
+            Comms/crew counts inside it are hidden for viewers — /comms,
+            /requests and crew chat are admin/manager-only, so they could
+            only link into 403s. */}
+        {!loading && (
+          <TopBand stats={data?.stats}
             unreadConversations={unreadConversations}
             crewUnreadThreads={crewUnreadThreads}
+            showComms={canComms}
             navigate={navigate} />
         )}
 
@@ -845,12 +859,10 @@ export default function OpsBoard() {
                   onAction={runAction} actioningKey={actioningKey} confirmingKey={confirmingKey}
                   headerLink={SECTION_LINKS[section.key]} navigate={navigate}
                   onClearAll={clearAllInSection} clearingSection={clearingSection}
-                  setConfirmingKey={setConfirmingKey} filtersActive={filtersActive} />
+                  setConfirmingKey={setConfirmingKey} filtersActive={filtersActive}
+                  maxRows={PRIMARY_ROW_CAP} />
               ))}
             </div>
-
-            {/* 4 — KPIs: one compact band, not a wall of tiles. */}
-            <StatBand stats={data?.stats} navigate={navigate} />
 
             {/* Money, systems and the ignore pile below the fold. */}
             <div className="mt-4 columns-1 gap-4 lg:columns-2 xl:columns-3">
@@ -881,7 +893,6 @@ export default function OpsBoard() {
                     : 'Nice work. Hit Reset to bring cleared items back.'}
               </p>
             </div>
-            <StatBand stats={data?.stats} navigate={navigate} />
           </>
         )}
 
