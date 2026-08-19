@@ -16,6 +16,7 @@
  * Each block is draggable — drop it on a crew card in CrewUtilization to
  * (re)assign that visit (see DispatchBoard's commitAssign).
  */
+import { useEffect, useRef } from 'react'
 import { Check } from 'lucide-react'
 import { PROPERTY_TYPE_CONFIG } from './constants'
 
@@ -60,23 +61,42 @@ function layoutColumns(visits) {
 
 export default function DispatchTimeline({
   visits, jobs, properties, clients, empName, onOpen, onDragStartVisit, onDragEndVisit,
+  // Embedding hooks (both optional, both no-ops when omitted so the dispatch
+  // board renders exactly as before). `className` is appended to the root so a
+  // host can bound the height — the hour grid already scrolls internally, it
+  // just needs a container that doesn't grow to the full 14-hour axis.
+  // `scrollToHour` jumps that scroller to a given hour on mount, so a short
+  // embedded box opens on the working part of the day instead of at 06:00.
+  className = '', scrollToHour = null, hideHeader = false,
 }) {
   const filtered = (visits || []).filter(v => v.status !== 'cancelled')
   const { total, positioned } = layoutColumns(filtered)
 
   const hourLabels = Array.from({ length: HOURS + 1 }, (_, i) => AXIS_START_HOUR + i)
 
+  const scrollerRef = useRef(null)
+  useEffect(() => {
+    if (scrollToHour == null || !scrollerRef.current) return
+    // One row of lead-in above the target hour so the block isn't flush
+    // against the top edge. Clamped to the axis so an early/late hour can't
+    // scroll past either end.
+    const h = Math.min(AXIS_END_HOUR, Math.max(AXIS_START_HOUR, scrollToHour))
+    scrollerRef.current.scrollTop = Math.max(0, (h - AXIS_START_HOUR - 1) * ROW_PX)
+  }, [scrollToHour])
+
   return (
-    <div className="bg-bg-2 border border-hairline rounded-2xl p-3 flex flex-col min-w-0">
-      <div className="flex items-center justify-between mb-3 px-1">
-        <span className="text-[10px] font-mono tracking-widest uppercase text-ink-3">
-          Today · {String(AXIS_START_HOUR).padStart(2, '0')}:00 – {String(AXIS_END_HOUR).padStart(2, '0')}:00
-        </span>
-        <span className="text-[11px] font-mono tabular-nums px-2 py-0.5 rounded-full border border-hairline bg-panel text-ink">
-          {filtered.length}
-        </span>
-      </div>
-      <div className="grid gap-2 flex-1 overflow-y-auto" style={{ gridTemplateColumns: '44px 1fr' }}>
+    <div className={`bg-bg-2 border border-hairline rounded-2xl p-3 flex flex-col min-w-0 ${className}`}>
+      {!hideHeader && (
+        <div className="flex items-center justify-between mb-3 px-1">
+          <span className="text-[10px] font-mono tracking-widest uppercase text-ink-3">
+            Today · {String(AXIS_START_HOUR).padStart(2, '0')}:00 – {String(AXIS_END_HOUR).padStart(2, '0')}:00
+          </span>
+          <span className="text-[11px] font-mono tabular-nums px-2 py-0.5 rounded-full border border-hairline bg-panel text-ink">
+            {filtered.length}
+          </span>
+        </div>
+      )}
+      <div ref={scrollerRef} className="grid gap-2 flex-1 min-h-0 overflow-y-auto" style={{ gridTemplateColumns: '44px 1fr' }}>
         {/* Hour column */}
         <div className="relative" style={{ height: `${HOURS * ROW_PX}px` }}>
           {hourLabels.map(h => (

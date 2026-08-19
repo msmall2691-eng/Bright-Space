@@ -1,13 +1,16 @@
 """
 Ops Board aggregation — the data behind the iOS-style triage dashboard.
 
-The board groups everything that needs the operator's attention into seven
-sections (Today's Schedule, Needs You Today, Jobs on Deck, Money, Real People
-Waiting, Systems & Subscriptions, Safe to Ignore), a row of stat tiles, a
-strip of integration status chips, and per-severity filter counts. This
-module does all of that in one pass so `GET /api/dashboard/board` is a single
-round trip and the frontend stays a pure view (every string here is
-render-ready).
+The board groups everything that needs the operator's attention into six
+sections (Needs You Today, Jobs on Deck, Money, Real People Waiting, Systems
+& Subscriptions, Safe to Ignore), a row of stat tiles, a strip of integration
+status chips, and per-severity filter counts. This module does all of that in
+one pass so `GET /api/dashboard/board` is a single round trip and the
+frontend stays a pure view (every string here is render-ready).
+
+Today's visits are NOT a section here: Home renders them as the real Schedule
+day timeline (frontend components/board/TodayTimeline.jsx, fed by
+/api/schedule/week), so a text list of the same jobs would be redundant.
 
 Each card carries an `actions` list. A `link` action just navigates; an `api`
 action calls an existing endpoint (mark paid, auto-assign, resolve) straight
@@ -274,6 +277,11 @@ def build_board(db: Session, oid: int, can_act: bool = True) -> dict:
     org = lambda model: or_(model.org_id == oid, model.org_id.is_(None))
 
     # --- Jobs (next two weeks) ----------------------------------------------
+    # Open work only. Everything this query feeds is a "needs action" list —
+    # unassigned counts, Needs You Today, Jobs on Deck — so a finished or
+    # called-off visit is noise in all of them. Showing the day as it
+    # actually stands (finished visits included) is the job of Home's
+    # Today timeline, which reads /api/schedule/week directly.
     jobs = (
         db.query(Job)
         .options(joinedload(Job.property), joinedload(Job.client))
@@ -294,7 +302,6 @@ def build_board(db: Session, oid: int, can_act: bool = True) -> dict:
         d = coerce_date(d)
         return d is not None and d.weekday() >= 5
 
-    today_jobs = [j for j in jobs if coerce_date(j.scheduled_date) == today]
     week_jobs = [j for j in jobs if (coerce_date(j.scheduled_date) or horizon) <= week_end]
     weekend_jobs = [j for j in week_jobs if _is_weekend(j.scheduled_date)]
     unassigned_week = [j for j in week_jobs if _is_unassigned(j)]
@@ -436,24 +443,6 @@ def build_board(db: Session, oid: int, can_act: bool = True) -> dict:
             actions=[_link("Open", "/billing?view=quotes")],
         ))
 
-    # ── 📅 Today's Schedule ──────────────────────────────────────────────────
-    # A chronological rundown of the day's visits — reuses `today_jobs`
-    # (already fetched above for `unassigned_urgent`; no extra query). The
-    # board previously had no "what does today look like" view at all, only
-    # unassigned-jobs triage and a forward-looking "Jobs on Deck" list; the
-    # owner asked for the schedule itself to be glanceable on Home. Kept in
-    # time order (not `_sort_items`'d by severity) — the point is "what's
-    # next", not "what's most broken".
-    todays_schedule = []
-    for j in today_jobs:
-        assigned = not _is_unassigned(j)
-        todays_schedule.append(_item(
-            f"today-job:{j.id}", "good" if assigned else "watch",
-            _job_place(j) or (j.title or f"Job #{j.id}"), _client_name(j), _job_meta(j, today),
-            tags=[_job_type_tag(j)] + ([] if assigned else [{"label": "Needs cleaner", "tone": "amber"}]),
-            actions=[_link("View", f"/jobs/{j.id}")],
-        ))
-
     # ── 🧹 Jobs on Deck ─────────────────────────────────────────────────────
     deck = []
     for j in week_jobs[:_CAP]:
@@ -539,7 +528,15 @@ def build_board(db: Session, oid: int, can_act: bool = True) -> dict:
             f"lead:{ld.id}", "watch" if hot else "info", f"New lead — {ld.name or 'inquiry'}",
             (ld.message or ld.requested_service or ld.address or "Wants a quote").strip()[:120], _ago(ld.created_at),
             tags=[{"label": svc, "tone": "indigo"}] + ([{"label": "HOT", "tone": "rose"}] if hot else []),
-            actions=[_link("Quote", "/requests")],
+            # One tap drafts a real quote from this lead (pre-filled from what
+            # they told us, AI-written intro) and lands her on it to review and
+            # SEND HERSELF — nothing goes to the customer from here. "Open"
+            # stays a plain link so a read-only role, whose `api` actions are
+            # stripped below, still has somewhere to go.
+            actions=[
+                _api("Draft quote", f"/api/ai/quote-from-lead/{ld.id}", done="Draft ready"),
+                _link("Open", f"/requests/{ld.id}"),
+            ],
         ))
 
     # ── 🧰 Systems & Subscriptions (integration health) ─────────────────────
@@ -576,7 +573,6 @@ def build_board(db: Session, oid: int, can_act: bool = True) -> dict:
     systems.extend(triage_systems)
 
     sections = [
-        {"key": "today_schedule", "title": "Today's Schedule", "icon": "📅", "items": todays_schedule},
         {"key": "needs_today", "title": "Needs You Today", "icon": "🔴", "items": _sort_items(needs)},
         {"key": "jobs_on_deck", "title": "Jobs on Deck", "icon": "🧹", "items": _sort_items(deck)},
         {"key": "money", "title": "Money", "icon": "💵", "items": _sort_items(money)},

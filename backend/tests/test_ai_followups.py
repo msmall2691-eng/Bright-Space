@@ -517,3 +517,52 @@ def test_daily_brief_is_org_scoped(api, monkeypatch, _clear_brief_cache):
         db.rollback()
         _cleanup(db, client_ids=[c.id] if c else ())
         db.close()
+
+
+def test_business_snapshot_jobs_today_excludes_cancelled(api):
+    """BB-CODE-04: `jobs_today` had NO status filter, so every CANCELLED
+    visit still counted as a job scheduled for today. The brief narrates this
+    number as fact ("you've got N jobs lined up for today"), and it sat right
+    above an Ops Board section built from a non-cancelled query — so the two
+    disagreed on the same screen with no way to tell which was right.
+
+    A cancelled job must not move the count; a completed one must (it was
+    genuinely on today's schedule, the crew just finished it)."""
+    from utils.dates import business_today
+
+    db = SessionLocal()
+    c = p = None
+    try:
+        c = Client(name="Snapshot Owner", status="active", org_id=1)
+        db.add(c); db.commit(); db.refresh(c)
+        p = Property(client_id=c.id, name="3 Count Ln", address="3 Count Ln",
+                     property_type="residential", org_id=1)
+        db.add(p); db.commit(); db.refresh(p)
+
+        def jobs_today():
+            return ai_router._org_business_snapshot(db, 1)["jobs_today"]
+
+        def add_job(status):
+            db.add(Job(client_id=c.id, property_id=p.id, job_type="residential",
+                       title=f"{status} job", scheduled_date=business_today(),
+                       start_time=time(10, 0), end_time=time(13, 0),
+                       cleaner_ids=[], status=status, org_id=1))
+            db.commit()
+
+        before = jobs_today()
+
+        add_job("cancelled")
+        assert jobs_today() == before, \
+            "a cancelled visit is not a job scheduled for today"
+
+        add_job("completed")
+        assert jobs_today() == before + 1, \
+            "a finished visit was still on today's schedule and must count"
+
+        add_job("scheduled")
+        assert jobs_today() == before + 2
+    finally:
+        db.rollback()
+        _cleanup(db, client_ids=[c.id] if c else (),
+                 property_ids=[p.id] if p else ())
+        db.close()

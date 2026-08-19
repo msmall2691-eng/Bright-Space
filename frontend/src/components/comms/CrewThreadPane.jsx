@@ -54,30 +54,40 @@ export function CrewThreadPane({ userId, firstName, initialDraft = '', onSent, o
 
   return (
     <>
-      <div className="flex-1 overflow-y-auto px-4 py-4 space-y-2">
-        {!msgs && <div className="h-24 rounded-xl bg-bg-2 animate-pulse" />}
-        {msgs?.length === 0 && (
-          <p className="text-[12.5px] text-ink-3 text-center pt-8">
-            No messages yet — anything you send pings their phone.
-          </p>
-        )}
-        {(msgs || []).map(m => (
-          <div key={m.id} className={`max-w-[85%] ${m.sender === 'office' ? 'ml-auto' : ''}`}>
-            <div className={`rounded-2xl px-3.5 py-2 text-[13.5px] whitespace-pre-wrap ${
-              m.sender === 'office'
-                ? 'bg-indigo-600 text-white rounded-br-md'
-                : 'bg-bg-2 border border-hairline text-ink rounded-bl-md'}`}>
-              {m.body}
+      {/* Scroll container stays padding-free so the inner `min-h-full` resolves
+          to exactly the viewport height (border-box), and messages sit at the
+          BOTTOM growing upward like a real chat app instead of hugging the top
+          with dead space above the composer. `justify-end` lives on the inner
+          wrapper, not the scroller — on the scroller it breaks scroll-up once
+          content overflows. */}
+      <div className="flex-1 overflow-y-auto">
+        <div className="min-h-full flex flex-col justify-end gap-1.5 px-4 py-3 mx-auto w-full max-w-3xl">
+          {!msgs && <div className="h-24 rounded-xl bg-bg-2 animate-pulse" />}
+          {msgs?.length === 0 && (
+            <p className="text-[12.5px] text-ink-3 text-center pb-2">
+              No messages yet — anything you send pings their phone.
+            </p>
+          )}
+          {(msgs || []).map(m => (
+            /* w-fit so a two-word message is a two-word bubble; the cap keeps a
+               long one at a readable measure on a wide monitor. */
+            <div key={m.id} className={`w-fit max-w-[min(85%,40rem)] ${m.sender === 'office' ? 'ml-auto' : ''}`}>
+              <div className={`rounded-2xl px-3.5 py-2 text-[13.5px] whitespace-pre-wrap break-words ${
+                m.sender === 'office'
+                  ? 'bg-indigo-600 text-white rounded-br-md'
+                  : 'bg-bg-2 border border-hairline text-ink rounded-bl-md'}`}>
+                {m.body}
+              </div>
+              <div className={`text-[10px] text-ink-3 mt-0.5 ${m.sender === 'office' ? 'text-right' : ''}`}>
+                {m.sender === 'office' && m.sender_name ? `${m.sender_name} · ` : ''}
+                {m.created_at ? new Date(m.created_at).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : ''}
+              </div>
             </div>
-            <div className={`text-[10px] text-ink-3 mt-0.5 ${m.sender === 'office' ? 'text-right' : ''}`}>
-              {m.sender === 'office' && m.sender_name ? `${m.sender_name} · ` : ''}
-              {m.created_at ? new Date(m.created_at).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : ''}
-            </div>
-          </div>
-        ))}
-        <div ref={bottomRef} />
+          ))}
+          <div ref={bottomRef} />
+        </div>
       </div>
-      <div className="border-t border-hairline bg-panel px-3 py-2.5 flex items-end gap-2">
+      <div className="border-t border-hairline bg-panel px-3 py-2 flex items-end gap-2">
         <textarea value={draft} rows={1} maxLength={2000}
           onChange={e => setDraft(e.target.value)}
           onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send() } }}

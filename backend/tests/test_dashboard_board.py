@@ -137,7 +137,7 @@ def test_board_shape_and_stat_deltas(client):
     # Structural contract.
     assert set(before) >= {"company", "refreshed_at", "stats", "integrations", "filters", "sections"}
     sec_keys = [s["key"] for s in before["sections"]]
-    assert sec_keys == ["today_schedule", "needs_today", "jobs_on_deck", "money", "people_waiting", "systems", "safe_to_ignore"]
+    assert sec_keys == ["needs_today", "jobs_on_deck", "money", "people_waiting", "systems", "safe_to_ignore"]
     assert set(before["filters"]) == {"all", "urgent", "watch", "info", "good", "recurring"}
     stat_keys = {s["key"] for s in before["stats"]}
     assert stat_keys == {"unassigned", "weekend", "overdue", "waiting", "leads", "collected"}
@@ -171,7 +171,6 @@ def test_board_shape_and_stat_deltas(client):
     # Items actually render into sections.
     after_ids = {it["id"] for s in after["sections"] for it in s["items"]}
     assert f"job:{jid}" in after_ids                 # unassigned-today → Needs You Today
-    assert f"today-job:{jid}" in after_ids           # same job → Today's Schedule (chronological glance)
     assert "money:outstanding" in after_ids          # overdue invoice → Money summary card
     assert after["filters"]["all"] > before["filters"]["all"]
 
@@ -251,3 +250,37 @@ def test_viewer_board_strips_one_click_api_actions(client):
         assert all(a["kind"] != "api" for a in it["actions"]), f"api action leaked to viewer on {it['id']}"
     # Navigation actions are preserved.
     assert any(a["kind"] == "link" for it in viewer_items for a in it["actions"])
+
+
+def _mk_job_today(ids, cid, pid, status, cleaner_ids=None):
+    db = SessionLocal()
+    j = Job(client_id=cid, property_id=pid, job_type="residential",
+            title=f"{status} job", scheduled_date=business_today(),
+            start_time=time(9, 0), end_time=time(11, 0),
+            cleaner_ids=cleaner_ids or [], status=status, org_id=1)
+    db.add(j); db.commit(); db.refresh(j)
+    ids["jobs"].append(j.id); jid = j.id; db.close()
+    return jid
+
+
+def test_finished_visits_never_count_as_needing_a_cleaner(client):
+    """Widening the board's job query to include `completed` must not leak
+    finished work into the unassigned counts — those drive 'go assign
+    someone', which is nonsense for a job that's already done."""
+    api, ids = client
+    cid = _mk_client(ids)
+    pid = _mk_property(ids, cid)
+
+    before = api.get("/api/dashboard/board").json()
+    unassigned_before = int(next(s["value"] for s in before["stats"] if s["key"] == "unassigned"))
+
+    done_id = _mk_job_today(ids, cid, pid, "completed")   # no cleaner_ids
+
+    after = api.get("/api/dashboard/board").json()
+    unassigned_after = int(next(s["value"] for s in after["stats"] if s["key"] == "unassigned"))
+    assert unassigned_after == unassigned_before, \
+        "a completed job must not count as an unassigned job"
+
+    after_ids = {it["id"] for s in after["sections"] for it in s["items"]}
+    assert f"job:{done_id}" not in after_ids, "completed job must not raise a Needs-You-Today card"
+    assert f"deck-job:{done_id}" not in after_ids, "completed job is not upcoming work on the deck"

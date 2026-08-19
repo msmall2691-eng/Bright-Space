@@ -6,12 +6,14 @@
  * clears the card, a `confirm` action needs a second click before it POSTs.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { render, screen, cleanup, fireEvent } from '@testing-library/react'
-import { MemoryRouter } from 'react-router-dom'
+import { render, screen, cleanup, fireEvent, waitFor } from '@testing-library/react'
+import { MemoryRouter, useLocation } from 'react-router-dom'
 
-vi.mock('../../api', () => ({ get: vi.fn(), post: vi.fn() }))
+// `getCached` is used by useEmployees, which the embedded Today timeline
+// pulls in for cleaner-name lookup — without it the whole page throws.
+vi.mock('../../api', () => ({ get: vi.fn(), post: vi.fn(), getCached: vi.fn() }))
 
-import { get, post } from '../../api'
+import { get, post, getCached } from '../../api'
 import OpsBoard from '../OpsBoard'
 
 const PAYLOAD = {
@@ -56,14 +58,30 @@ const PAYLOAD = {
   ],
 }
 
+// Shows where the router currently is, so an action that navigates can be
+// asserted without mocking react-router.
+function LocationProbe() {
+  return <div data-testid="loc">{useLocation().pathname}</div>
+}
+
 function renderBoard() {
-  return render(<MemoryRouter><OpsBoard /></MemoryRouter>)
+  return render(<MemoryRouter><OpsBoard /><LocationProbe /></MemoryRouter>)
+}
+
+// Home makes two independent GETs now: the board payload, and one day of
+// /api/schedule/week for the embedded Today timeline. Route by URL so the
+// timeline gets a real (empty) schedule shape instead of the board payload.
+const EMPTY_DAY = { visits: [], jobs: [], properties: [], clients: [] }
+function mockGet(boardPayload = PAYLOAD) {
+  get.mockImplementation((url) =>
+    Promise.resolve(String(url).startsWith('/api/schedule/week') ? EMPTY_DAY : boardPayload))
 }
 
 beforeEach(() => {
   localStorage.clear()
-  get.mockReset(); post.mockReset()
-  get.mockResolvedValue(PAYLOAD)
+  get.mockReset(); post.mockReset(); getCached.mockReset()
+  getCached.mockResolvedValue([])   // crew roster, via useEmployees
+  mockGet()
   post.mockResolvedValue({})
 })
 afterEach(cleanup)
@@ -138,7 +156,7 @@ describe('OpsBoard', () => {
           ] }
         : s),
     }
-    get.mockResolvedValue(withNoise)
+    mockGet(withNoise)
     post.mockResolvedValue({ deleted: 1, gmail_trashed: 1 })
     renderBoard()
     await screen.findByText('No cleaner assigned')
@@ -161,7 +179,7 @@ describe('OpsBoard', () => {
           ] }
         : s),
     }
-    get.mockResolvedValue(withNoise)
+    mockGet(withNoise)
     renderBoard()
     await screen.findByText('No cleaner assigned')
     expect(screen.getByRole('button', { name: /^clear all$/i })).toBeTruthy()
@@ -197,12 +215,49 @@ describe('OpsBoard', () => {
           })) }
         : s),
     }
-    get.mockResolvedValue(longSection)
+    mockGet(longSection)
     renderBoard()
     await screen.findByText('Unassigned job 0')
     expect(screen.getByText('Unassigned job 4')).toBeTruthy()   // 5th row (cap)
     expect(screen.queryByText('Unassigned job 5')).toBeNull()   // 6th row — folded
     expect(screen.getByText(/\+3 more/)).toBeTruthy()
+  })
+
+  // Home's "Draft quote" on a new-lead card creates the draft and then has to
+  // land her ON it — an api action whose response carries an href navigates
+  // there after the toast. Every other api action (no href) must stay put.
+  it('navigates to the record an api action returns an href for', async () => {
+    const withLead = {
+      ...PAYLOAD,
+      sections: PAYLOAD.sections.map(s => s.key === 'people_waiting'
+        ? { ...s, items: [
+            { id: 'lead:5', severity: 'info', title: 'New lead — Dana', body: 'Wants a quote', meta: '2h',
+              tags: [{ label: 'RESIDENTIAL', tone: 'indigo' }],
+              actions: [
+                { label: 'Draft quote', kind: 'api', method: 'POST', endpoint: '/api/ai/quote-from-lead/5', done: 'Draft ready', clears: true },
+                { label: 'Open', kind: 'link', href: '/requests/5' },
+              ] },
+          ] }
+        : s),
+    }
+    mockGet(withLead)
+    post.mockResolvedValue({ id: 42, status: 'draft', created: true, href: '/quotes/42' })
+    renderBoard()
+    await screen.findByText('New lead — Dana')
+    fireEvent.click(screen.getByRole('button', { name: /draft quote/i }))
+    expect(post).toHaveBeenCalledWith('/api/ai/quote-from-lead/5', {})
+    expect(await screen.findByText(/Draft ready — New lead — Dana/i)).toBeTruthy()
+    // React Router's navigate lands in a transition, so poll rather than
+    // reading the probe on the same tick.
+    await waitFor(() => expect(screen.getByTestId('loc').textContent).toBe('/quotes/42'))
+  })
+
+  it('leaves the board in place for api actions with no href', async () => {
+    renderBoard()
+    await screen.findByText('No cleaner assigned')
+    fireEvent.click(screen.getByRole('button', { name: /auto-assign/i }))
+    expect(await screen.findByText(/Assigned — No cleaner assigned/i)).toBeTruthy()
+    expect(screen.getByTestId('loc').textContent).toBe('/')
   })
 
   it('expands Safe to Ignore on click to review items', async () => {
@@ -215,7 +270,7 @@ describe('OpsBoard', () => {
           ] }
         : s),
     }
-    get.mockResolvedValue(withNoise)
+    mockGet(withNoise)
     renderBoard()
     await screen.findByText('No cleaner assigned')
     fireEvent.click(screen.getByText('1 item you can ignore'))

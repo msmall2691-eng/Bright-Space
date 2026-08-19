@@ -30,7 +30,7 @@ export function MessageBubble({ m, isFirst, showTime, contactName }) {
   if (m.is_internal_note) {
     return (
       <div className="flex justify-center my-3">
-        <div className="max-w-[85%] bg-bg-2 border border-hairline text-ink text-[13px] px-4 py-2.5 rounded-2xl">
+        <div className="max-w-[min(85%,40rem)] bg-bg-2 border border-hairline text-ink text-[13px] px-4 py-2.5 rounded-2xl">
           <div className="flex items-center gap-1.5 text-[10px] font-semibold text-amber-600 dark:text-amber-400 mb-1">
             <span className="w-1.5 h-1.5 rounded-full shrink-0 bg-amber-500" aria-hidden="true" />
             <StickyNote className="w-3 h-3" />
@@ -60,7 +60,7 @@ export function MessageBubble({ m, isFirst, showTime, contactName }) {
 
   return (
     <div className={`flex ${outbound ? 'justify-end' : 'justify-start'} ${isFirst ? 'mt-3' : 'mt-1'}`}>
-      <div className="max-w-[80%] sm:max-w-[72%] min-w-0">
+      <div className="max-w-[min(80%,40rem)] sm:max-w-[min(72%,40rem)] min-w-0">
         {/* Sender label on first message in group */}
         {isFirst && (
           <div className={`text-[10px] font-semibold mb-1 px-1 ${outbound ? 'text-right text-ink-3' : 'text-ink-3'}`}>

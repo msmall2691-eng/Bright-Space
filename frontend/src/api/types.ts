@@ -1499,8 +1499,13 @@ export interface paths {
         put?: never;
         /**
          * Sync From Gcal
-         * @description Full two-way sync with Google Calendar.
-         *     Matches events to clients by: extendedProperties → attendee email → address.
+         * @description Manual "sync now": poll Google Calendar, create/link Jobs for new events
+         *     (matched by extendedProperties → attendee email → address), and detect
+         *     cancellations. This endpoint calls sync_calendar() unconditionally —
+         *     it does NOT check calendar_source_of_truth itself. Actual two-way pull
+         *     (Google edits overwriting an existing linked Job) only ever happens when
+         *     that setting is "google", and that mode is hard-blocked inside
+         *     sync_calendar() regardless of who calls it — see GoogleWritebackDisabled.
          */
         post: operations["sync_from_gcal_api_jobs_sync_gcal_post"];
         delete?: never;
@@ -4901,6 +4906,31 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/ai/quote-from-lead/{intake_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Quote From Lead
+         * @description One-tap: draft a quote from a new lead and hand back where to review it.
+         *
+         *     Creates a **draft** quote only — nothing is sent to the customer. Returns
+         *     ``{id, quote_number, status, total, created, ai_written, href}``.
+         *     Idempotent: a lead that already has a quote returns that one's href instead
+         *     of minting a second (the owner may well tap twice).
+         */
+        post: operations["quote_from_lead_api_ai_quote_from_lead__intake_id__post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/ai/draft-quote-followup/{quote_id}": {
         parameters: {
             query?: never;
@@ -6599,8 +6629,13 @@ export interface paths {
         put?: never;
         /**
          * Send Test
-         * @description Fire a test notification to the caller's org so they can confirm the
-         *     round-trip works after enabling it in Settings.
+         * @description Fire a test notification to the CALLER's own device(s) only — was
+         *     notify_staff (org-wide broadcast) until a cleaner self-test button was
+         *     added to the crew app; every other cleaner and office user in the org
+         *     would have felt a stray "Push notifications are on" ping each time
+         *     anyone tapped their own test button. notify_user scopes it to exactly
+         *     the person who asked, matching the module docstring's original intent
+         *     ("send a test push to the caller's devices").
          */
         post: operations["send_test_api_push_test_post"];
         delete?: never;
@@ -7755,6 +7790,10 @@ export interface components {
              * @default false
              */
             allow_conflicts: boolean | null;
+            /** Gcal Event Id */
+            gcal_event_id?: string | null;
+            /** Gcal Ical Uid */
+            gcal_ical_uid?: string | null;
         };
         /** JobUpdate */
         JobUpdate: {
@@ -8667,6 +8706,11 @@ export interface components {
              * @default false
              */
             allow_duplicate: boolean | null;
+            /**
+             * Allow Conflicts
+             * @default false
+             */
+            allow_conflicts: boolean | null;
         };
         /**
          * ScheduleSplit
@@ -10191,6 +10235,7 @@ export interface operations {
         parameters: {
             query?: {
                 client_id?: number | null;
+                property_id?: number | null;
                 status?: string | null;
                 limit?: number;
                 offset?: number;
@@ -16733,6 +16778,37 @@ export interface operations {
             header?: never;
             path: {
                 conversation_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    quote_from_lead_api_ai_quote_from_lead__intake_id__post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                intake_id: number;
             };
             cookie?: never;
         };
