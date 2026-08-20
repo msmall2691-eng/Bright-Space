@@ -33,6 +33,7 @@ import { ErrorState } from '../components/ui'
 import { TAG_TONE, SEV_DOT, SEV_LABEL, STAT_TONE, INT_DOT, SEV_ORDER } from '../components/board/tokens'
 import BoardAssistant from '../components/board/BoardAssistant'
 import ScheduleCalendar from '../components/board/ScheduleCalendar'
+import AgentHelp from '../components/board/AgentHelp'
 import SubNav from '../components/ui/SubNav'
 import { useUnreadCount } from '../hooks/useUnreadCount'
 import { currentRole } from '../nav/routes'
@@ -889,6 +890,12 @@ export default function OpsBoard() {
               <div className="shell:col-span-2">
                 <ScheduleCalendar navigate={navigate} />
               </div>
+
+              {/* Agents helping ON Home, not hidden behind the header's
+                  "Ask" button. Answers inline in the card; it asks through
+                  the same askBoard() path BoardAssistant uses, so the two
+                  surfaces can't drift to different answers. */}
+              <AgentHelp navigate={navigate} />
 
               {canComms && <CrewActivity navigate={navigate} />}
               <ProposalsQueue />
