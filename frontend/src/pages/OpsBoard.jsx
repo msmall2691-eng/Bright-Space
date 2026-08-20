@@ -12,7 +12,7 @@
  * list.
  *
  * Upcoming visits are NOT one of those sections: they render as the week's
- * work grouped by day (components/board/UpcomingWeek.jsx), which fetches
+ * a Week/Month calendar grid (components/board/ScheduleCalendar.jsx), which fetches
  * itself from /api/schedule/week.
  *
  * Design: built entirely on the app's semantic tokens (bg / panel / ink /
@@ -32,7 +32,7 @@ import { pushToast } from '../utils/toastBus'
 import { ErrorState } from '../components/ui'
 import { TAG_TONE, SEV_DOT, SEV_LABEL, STAT_TONE, INT_DOT, SEV_ORDER } from '../components/board/tokens'
 import BoardAssistant from '../components/board/BoardAssistant'
-import UpcomingWeek from '../components/board/UpcomingWeek'
+import ScheduleCalendar from '../components/board/ScheduleCalendar'
 import SubNav from '../components/ui/SubNav'
 import { useUnreadCount } from '../hooks/useUnreadCount'
 import { currentRole } from '../nav/routes'
@@ -541,7 +541,7 @@ function Section({ section, items, clearedSet, onToggle, onAction, actioningKey,
 // of payload order, split around the compact KPI band. Money/systems/noise
 // follow below the fold.
 // `today_schedule` is deliberately absent: today's visits now render as the
-// week's work grouped by day (components/board/UpcomingWeek.jsx) rather than
+// Week/Month calendar grid (components/board/ScheduleCalendar.jsx) rather than
 // a second text list of the same jobs — the owner asked to "immediately have
 // eyes on the cal schedule", and carrying both was exactly the redundancy she
 // flagged. The backend no longer emits that section either.
@@ -887,7 +887,7 @@ export default function OpsBoard() {
                   outside the `anyVisible` gate: an empty attention board
                   must never hide the week's work. */}
               <div className="shell:col-span-2">
-                <UpcomingWeek navigate={navigate} />
+                <ScheduleCalendar navigate={navigate} />
               </div>
 
               {canComms && <CrewActivity navigate={navigate} />}
