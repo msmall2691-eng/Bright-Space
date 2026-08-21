@@ -58,6 +58,31 @@ const PAYLOAD = {
   ],
 }
 
+const WITH_SNAPSHOT = {
+  ...PAYLOAD,
+  snapshot: {
+    money_today: {
+      collected: 480, collected_label: '$480', invoiced: 1250, invoiced_label: '$1,250',
+      hours: 12.5, hours_label: '12.5h', on_clock: 1, visits_done: 3, visits_total: 5,
+    },
+    crew: {
+      working: [{ cleaner_id: 'a', name: 'Dana', jobs: 3, done: 1 }], working_total: 1,
+      off: [], off_total: 0, pending_requests: 0, unassigned_today: 2,
+    },
+    feeds: {
+      total: 3, ok: 2, problem_total: 1, stale_hours: 6,
+      problems: [{ id: 1, property_id: 11, property_name: '9 Lakeshore Dr',
+        source: 'Airbnb', state: 'failing', detail: '403 Forbidden' }],
+    },
+    recurring: {
+      scanned: 9, healthy: 8, other_issues: 0, stalled_total: 1,
+      stalled: [{ schedule_id: 7, title: 'Weekly kitchen + baths', client_id: 4,
+        client_name: 'Anna Sweet', cadence: 'Weekly on Wed',
+        code: 'active_no_upcoming', message: 'Marked active but has no upcoming visits generated.' }],
+    },
+  },
+}
+
 // Shows where the router currently is, so an action that navigates can be
 // asserted without mocking react-router.
 function LocationProbe() {
@@ -278,5 +303,54 @@ describe('OpsBoard', () => {
     await screen.findByText('No cleaner assigned')
     fireEvent.click(screen.getByText('1 item you can ignore'))
     expect(await screen.findByText('Jotform')).toBeTruthy()
+  })
+})
+
+/**
+ * The snapshot row. The owner asked for "a full snapshot of all important
+ * aspects" with the schedule "across the top" — these pin both halves of that
+ * request, and the fact that all four boxes come out of the board fetch that
+ * already happened rather than four new ones.
+ */
+describe('OpsBoard — snapshot boxes', () => {
+  it('spans the calendar across the whole grid, not one cell of it', async () => {
+    renderBoard()
+    const slot = await screen.findByTestId('home-calendar-slot')
+    expect(slot.className).toContain('col-span-full')
+  })
+
+  it('renders all four boxes from the board payload, with no extra requests', async () => {
+    mockGet(WITH_SNAPSHOT)
+    renderBoard()
+
+    expect(await screen.findByText('$480')).toBeTruthy()        // money today
+    expect(screen.getByText('Dana')).toBeTruthy()               // crew today
+    expect(screen.getByText('9 Lakeshore Dr')).toBeTruthy()     // feed health
+    expect(screen.getByText('Weekly kitchen + baths')).toBeTruthy()  // recurring
+
+    // The boxes cost nothing: one board fetch, and none of the endpoints
+    // these four would otherwise each have to call for themselves.
+    const urls = get.mock.calls.map(c => String(c[0]))
+    expect(urls.filter(u => u === '/api/dashboard/board')).toHaveLength(1)
+    for (const owned of ['/api/recurring/cleanup/health', '/api/jobs/time-off',
+                         '/api/properties', '/api/jobs/sync-overview']) {
+      expect(urls.some(u => u.startsWith(owned))).toBe(false)
+    }
+  })
+
+  it('keeps the board usable when a snapshot box fails to build server-side', async () => {
+    mockGet({ ...WITH_SNAPSHOT, snapshot: { ...WITH_SNAPSHOT.snapshot, feeds: null } })
+    renderBoard()
+
+    expect(await screen.findByText('No cleaner assigned')).toBeTruthy()
+    expect(screen.getByText('$480')).toBeTruthy()
+    expect(screen.queryByText('9 Lakeshore Dr')).toBeNull()
+  })
+
+  it('shows no snapshot boxes at all on an older payload without them', async () => {
+    renderBoard()   // PAYLOAD has no `snapshot` key
+    await screen.findByText('No cleaner assigned')
+    expect(screen.queryByText('Crew today')).toBeNull()
+    expect(screen.queryByText('Turnover feeds')).toBeNull()
   })
 })

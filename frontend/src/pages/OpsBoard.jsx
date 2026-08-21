@@ -11,9 +11,14 @@
  * owns the full set — the board is a triage surface, not a scroll-forever
  * list.
  *
- * Upcoming visits are NOT one of those sections: they render as the week's
- * a Week/Month calendar grid (components/board/ScheduleCalendar.jsx), which fetches
- * itself from /api/schedule/week.
+ * Upcoming visits are NOT one of those sections: they render as a Week/Month
+ * calendar grid across the top (components/board/ScheduleCalendar.jsx), which
+ * fetches itself from /api/schedule/week.
+ *
+ * The four snapshot boxes below it (components/board/SnapshotBoxes.jsx) read
+ * `data.snapshot` out of the SAME board response — money/hours today, crew
+ * today, turnover-feed health, stalled recurring series — so the whole
+ * dashboard is still one request plus the calendar's own range fetch.
  *
  * Design: built entirely on the app's semantic tokens (bg / panel / ink /
  * hairline + the indigo accent), so it re-skins with the active theme and
@@ -34,6 +39,7 @@ import { TAG_TONE, SEV_DOT, SEV_LABEL, STAT_TONE, INT_DOT, SEV_ORDER } from '../
 import BoardAssistant from '../components/board/BoardAssistant'
 import ScheduleCalendar from '../components/board/ScheduleCalendar'
 import AgentHelp from '../components/board/AgentHelp'
+import { MoneyToday, CrewToday, FeedHealth, RecurringHealth } from '../components/board/SnapshotBoxes'
 import SubNav from '../components/ui/SubNav'
 import { useUnreadCount } from '../hooks/useUnreadCount'
 import { currentRole } from '../nav/routes'
@@ -703,6 +709,9 @@ export default function OpsBoard() {
   }, [load])
 
   const sections = data?.sections || []
+  // Never undefined: each box guards its own slice, and a box whose slice
+  // failed server-side simply doesn't render (see build_snapshot).
+  const snapshot = data?.snapshot || {}
   const allItems = useMemo(() => sections.flatMap(s => s.items), [sections])
 
   const counts = useMemo(() => {
@@ -884,12 +893,26 @@ export default function OpsBoard() {
             ))
           ) : (
             <>
-              {/* Schedule leads and gets the double-width slot. Rendered
-                  outside the `anyVisible` gate: an empty attention board
-                  must never hide the week's work. */}
-              <div className="shell:col-span-2">
+              {/* Schedule leads and spans the FULL width of the grid — the
+                  owner asked for the calendar across the top rather than
+                  sharing a row, and a month grid squeezed into two of three
+                  columns loses the thing that makes it useful (seeing the
+                  shape of the week/month at a glance). Rendered outside the
+                  `anyVisible` gate: an empty attention board must never hide
+                  the week's work. */}
+              <div data-testid="home-calendar-slot" className="col-span-full">
                 <ScheduleCalendar navigate={navigate} />
               </div>
+
+              {/* The snapshot row: how today is going, who's on it, and the
+                  two silent failures that look like "a quiet week" from
+                  every other screen — a dead turnover feed and a recurring
+                  series that stopped generating. All four read from the
+                  board payload already fetched above; no extra requests. */}
+              <MoneyToday snap={snapshot.money_today} />
+              <CrewToday snap={snapshot.crew} />
+              <FeedHealth snap={snapshot.feeds} />
+              <RecurringHealth snap={snapshot.recurring} />
 
               {/* Agents helping ON Home, not hidden behind the header's
                   "Ask" button. Answers inline in the card; it asks through

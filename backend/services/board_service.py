@@ -8,9 +8,14 @@ status chips, and per-severity filter counts. This module does all of that in
 one pass so `GET /api/dashboard/board` is a single round trip and the
 frontend stays a pure view (every string here is render-ready).
 
-Today's visits are NOT a section here: Home renders them as the real Schedule
-day timeline (frontend components/board/TodayTimeline.jsx, fed by
+Today's visits are NOT a section here: Home renders them as a real Week/Month
+calendar grid (frontend components/board/ScheduleCalendar.jsx, fed by
 /api/schedule/week), so a text list of the same jobs would be redundant.
+
+`snapshot` is a separate sub-payload (services/board_snapshot.py) carrying
+Home's four at-a-glance boxes — money/hours today, crew today, turnover feed
+health, stalled recurring series. It rides this response instead of adding
+four endpoints.
 
 Each card carries an `actions` list. A `link` action just navigates; an `api`
 action calls an existing endpoint (mark paid, auto-assign, resolve) straight
@@ -41,6 +46,7 @@ from utils.dates import (
     business_today, business_tz, add_business_minutes, coerce_date, coerce_time,
 )
 from integrations.google_accounts import gmail_accounts, calendar_account
+from services.board_snapshot import build_snapshot
 
 # Per-section item caps — the board is a triage surface, not a full list. Each
 # card deep-links into the page that owns the full set.
@@ -588,6 +594,11 @@ def build_board(db: Session, oid: int, can_act: bool = True) -> dict:
         "integrations": integrations,
         "filters": filters,
         "sections": sections,
+        # Home's four snapshot boxes (money/hours today, crew today, turnover
+        # feed health, stalled recurring series). They ride this payload
+        # rather than adding four endpoints — Home already makes this call
+        # (brightbase-economy: one fetch per screen per need).
+        "snapshot": build_snapshot(db, oid, today=today, collected_today=collected_today),
     }
 
 
