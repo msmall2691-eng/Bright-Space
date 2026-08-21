@@ -12,6 +12,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { X, Send, Loader2, Sparkles, ChevronRight, Zap, Trash2 } from 'lucide-react'
 import { get, post } from '../../api'
 import MarkdownContent from '../workspace/MarkdownContent'
+import { askBoard } from './askBoard'
 import { SEV_DOT } from './tokens'
 
 const SUGGESTIONS = [
@@ -57,12 +58,10 @@ export default function BoardAssistant({ open, onClose, sections, navigate, onAc
     const q = (typeof text === 'string' ? text : query).trim()
     if (!q || asking) return
     setQuery(q); setAsking(true); setAnswer(null)
-    try {
-      const res = await post('/api/ai/quick', { question: q, page_context: 'dashboard' })
-      setAnswer(res?.answer || 'No answer.')
-    } catch {
-      setAnswer('Sorry — I couldn’t answer that right now.')
-    }
+    // One shared path to the assistant (askBoard.js) — AgentHelp on Home asks
+    // the same way, so the two surfaces can't drift into different answers.
+    const res = await askBoard(q)
+    setAnswer(res.answer || 'Sorry — I couldn’t answer that right now.')
     setAsking(false)
   }
 
