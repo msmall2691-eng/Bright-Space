@@ -5,16 +5,18 @@
  *     property to its record, and blanks $/hr when no crew hours exist.
  *   • WeekCapacityTile: utilization headline + honest "assumed 8h/day" caption.
  *   • CrewHoursTile: hours per cleaner, amber-dot + footer for unclassified.
- *   • FeedHealthTile: fresh/stale/failed feed classification and record links.
- *   • RecurringHealthTile: severity split of the Recurring Doctor audit.
+ *
+ * FeedHealthTile and RecurringHealthTile used to live here too. They were
+ * read-only copies of what /sync and /recurring own, and Home now carries the
+ * triage view of both — their coverage moved to
+ * components/board/__tests__/SnapshotBoxes.test.jsx and
+ * backend/tests/test_board_snapshot.py.
  */
 import { describe, it, expect, vi, afterEach } from 'vitest'
 import { render, screen, fireEvent, cleanup } from '@testing-library/react'
 import { PropertyEconomicsTile } from '../PropertyEconomicsTile'
 import { WeekCapacityTile } from '../WeekCapacityTile'
 import { CrewHoursTile } from '../CrewHoursTile'
-import { FeedHealthTile, feedTone } from '../FeedHealthTile'
-import { RecurringHealthTile, splitBySeverity } from '../RecurringHealthTile'
 
 afterEach(cleanup)
 
@@ -107,72 +109,5 @@ describe('CrewHoursTile', () => {
     render(<CrewHoursTile loading={false} data={data} navigate={navigate} />)
     fireEvent.click(screen.getByText('Open payroll'))
     expect(navigate).toHaveBeenCalledWith('/payroll')
-  })
-})
-
-describe('FeedHealthTile', () => {
-  it('classifies feed freshness like the Sync Center', () => {
-    const now = new Date().toISOString()
-    const old = new Date(Date.now() - 30 * 60 * 60 * 1000).toISOString()
-    expect(feedTone({ status: 'failed', last_synced_at: now })).toBe('failing')
-    expect(feedTone({ status: 'retrying', last_synced_at: now })).toBe('failing')
-    expect(feedTone({ status: 'ok', last_synced_at: null })).toBe('never')
-    expect(feedTone({ status: 'ok', last_synced_at: old })).toBe('stale')
-    expect(feedTone({ status: 'ok', last_synced_at: now })).toBe('fresh')
-  })
-
-  it('renders each feed with a property link and event count', () => {
-    const data = {
-      channels: [{
-        key: 'airbnb',
-        feeds: [{
-          id: 1, property_id: 7, property: '4 Red Barn Circle', source: 'airbnb',
-          last_synced_at: new Date().toISOString(), last_events_seen: 31, status: 'ok',
-        }],
-      }],
-    }
-    render(<FeedHealthTile loading={false} data={data} navigate={() => {}} />)
-    const link = screen.getByText('4 Red Barn Circle')
-    expect(link.getAttribute('href')).toBe('/properties/7')
-    expect(screen.getByText(/31 events/)).toBeTruthy()
-  })
-
-  it('shows the empty state with no feeds', () => {
-    render(<FeedHealthTile loading={false} data={{ channels: [] }} navigate={() => {}} />)
-    expect(screen.getByText('No rental feeds connected.')).toBeTruthy()
-  })
-})
-
-describe('RecurringHealthTile', () => {
-  it('splits issues by their worst problem severity', () => {
-    const issues = [
-      { problems: [{ severity: 'warn' }, { severity: 'error' }] },  // worst: error
-      { problems: [{ severity: 'warn' }] },
-      { problems: [{ severity: 'info' }] },
-    ]
-    expect(splitBySeverity(issues)).toEqual({ error: 1, warn: 1, info: 1 })
-  })
-
-  it('renders the severity split with a link to /recurring', () => {
-    const navigate = vi.fn()
-    const data = {
-      scanned: 10, healthy: 7,
-      issues: [
-        { problems: [{ severity: 'error' }] },
-        { problems: [{ severity: 'warn' }] },
-        { problems: [{ severity: 'warn' }] },
-      ],
-    }
-    render(<RecurringHealthTile loading={false} data={data} navigate={navigate} />)
-    expect(screen.getByText('1 error')).toBeTruthy()
-    expect(screen.getByText('2 need attention')).toBeTruthy()
-    fireEvent.click(screen.getByText('2 need attention'))
-    expect(navigate).toHaveBeenCalledWith('/recurring')
-  })
-
-  it('shows the all-healthy line when the audit is clean', () => {
-    render(<RecurringHealthTile loading={false}
-      data={{ scanned: 8, healthy: 8, issues: [] }} navigate={() => {}} />)
-    expect(screen.getByText(/All 8 series healthy/)).toBeTruthy()
   })
 })
