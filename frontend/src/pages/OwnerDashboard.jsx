@@ -10,8 +10,12 @@
  *   /api/dashboard/property-economics "am I making money on this house"
  *   /api/dashboard/week-capacity      booked vs available crew hours
  *   /api/payroll/summary (Mon–Sun)    crew hours this week (native clock)
- *   /api/jobs/sync-overview           per-feed turnover feed health
- *   /api/recurring/cleanup/health     Recurring Doctor rollup
+ *
+ * Turnover-feed health and stalled recurring series used to sit here too,
+ * as read-only copies of what /sync and /recurring already own. Home now
+ * carries the triage view of both (components/board/SnapshotBoxes.jsx, off
+ * the board payload it already fetches), so this page went back to being
+ * about money and capacity — and shed two fetches doing it.
  *
  * Not linked from the main Dashboard on purpose — this is an owner tool,
  * not a daily-operations tile. Sidebar entry gates on admin/manager via
@@ -30,8 +34,6 @@ import { KpiCard, Tile, TileLoading, BarTip } from '../components/dashboard/prim
 import { PropertyEconomicsTile } from '../components/dashboard/PropertyEconomicsTile'
 import { WeekCapacityTile } from '../components/dashboard/WeekCapacityTile'
 import { CrewHoursTile } from '../components/dashboard/CrewHoursTile'
-import { FeedHealthTile } from '../components/dashboard/FeedHealthTile'
-import { RecurringHealthTile } from '../components/dashboard/RecurringHealthTile'
 import { ErrorState, PageHeader, SubNav } from '../components/ui'
 
 // Human-facing labels for the API's job_type values. The backend returns
@@ -95,8 +97,6 @@ export default function OwnerDashboard() {
   const economics = useGet('/api/dashboard/property-economics')
   const capacity = useGet('/api/dashboard/week-capacity')
   const crewHours = useGet(`/api/payroll/summary?start_date=${week.start}&end_date=${week.end}`)
-  const syncOverview = useGet('/api/jobs/sync-overview')
-  const recurringHealth = useGet('/api/recurring/cleanup/health')
 
   if (owner.error) {
     return (
@@ -249,10 +249,6 @@ export default function OwnerDashboard() {
             </div>
           )}
         </Tile>
-
-        {/* System health: turnover feeds + recurring series */}
-        <FeedHealthTile {...syncOverview} navigate={navigate} />
-        <RecurringHealthTile {...recurringHealth} navigate={navigate} />
       </div>
 
       {/* Top clients */}
