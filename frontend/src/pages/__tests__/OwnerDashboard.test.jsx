@@ -32,8 +32,6 @@ const WIDGET_DEFAULTS = {
     booked_hours: 0, available_hours: 0, utilization_pct: null,
     crew_count: 0, crew_without_pattern: 0, days: [],
   },
-  '/api/jobs/sync-overview': { channels: [] },
-  '/api/recurring/cleanup/health': { scanned: 0, healthy: 0, issues: [] },
 }
 
 /** get() mock: `owner` (a value to resolve, or an Error to reject) for
@@ -151,5 +149,19 @@ describe('OwnerDashboard', () => {
     render(<OwnerDashboard />)
     await waitFor(() => expect(screen.getByText('n/a')).toBeTruthy())
     expect(screen.getByText('0 of 0 sent')).toBeTruthy()
+  })
+
+  it('no longer fetches feed health or the recurring audit', async () => {
+    // Both were read-only copies of what /sync and /recurring already own,
+    // and Home now carries the triage view of each off the board payload it
+    // already fetches. This page is about money and capacity — two fewer
+    // requests every time it opens.
+    mockGet(OK)
+    render(<OwnerDashboard />)
+    await waitFor(() => expect(screen.getByText('40%')).toBeTruthy())
+
+    const urls = get.mock.calls.map(c => String(c[0]))
+    expect(urls.some(u => u.startsWith('/api/jobs/sync-overview'))).toBe(false)
+    expect(urls.some(u => u.startsWith('/api/recurring/cleanup/health'))).toBe(false)
   })
 })
