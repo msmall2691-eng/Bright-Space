@@ -32,7 +32,7 @@ from sqlalchemy.orm import Session, joinedload
 from database.models import (
     CleanerTimeOff, Invoice, Job, PropertyIcal, TimeEntry, User,
 )
-from utils.dates import business_tz, coerce_date
+from utils.dates import business_tz, coerce_date, week_monday
 
 # A feed is "stale" when it hasn't synced in this long. This MUST match
 # modules.properties.router._ICAL_STALE_AFTER (and the frontend's
@@ -45,6 +45,14 @@ _STALE_FEED_HOURS = 24
 # Rows shown per box. These are glance boxes on Home; each deep-links into
 # the page that owns the full list.
 _CAP = 5
+
+# How far back the money chart looks. Twelve weeks is a quarter — long enough
+# to show a trend, short enough that a slow January doesn't hide a bad March.
+_TREND_WEEKS = 12
+
+# The lead-drop-off chart's window, matching /api/dashboard/funnel's default so
+# Home and that page describe the same cohort.
+_FUNNEL_DAYS = 30
 
 
 # ── tiny local formatters ────────────────────────────────────────────────────
@@ -97,6 +105,17 @@ def _name_map(db: Session, cleaner_ids) -> dict:
     rows = db.query(User.cleaner_id, User.full_name, User.email).filter(
         User.cleaner_id.in_(ids)).all()
     return {r[0]: (r[1] or r[2] or r[0]) for r in rows}
+
+
+def _local_date(dt):
+    """Business-local calendar date for a stored timestamp.
+
+    Maine is UTC-4/-5, so bucketing a payment by its UTC date puts anything
+    after 7-8pm into tomorrow — enough to move money across a week boundary and
+    make one week look better than it was.
+    """
+    dt = _aware(dt)
+    return dt.astimezone(business_tz()).date() if dt else None
 
 
 # ── 1. Money & hours today ───────────────────────────────────────────────────
@@ -317,9 +336,101 @@ def _recurring_health(db: Session, oid: int) -> dict:
     return {
         "scanned": int(audit.get("scanned", 0)),
         "healthy": int(audit.get("healthy", 0)),
-        "stalled": stalled[:_CAP],
+        # Three, not five: the rows are near-identical sentences, and five of
+        # them crowded everything below off the screen.
+        "stalled": stalled[:3],
         "stalled_total": len(stalled),
         "other_issues": max(0, len(audit.get("issues", [])) - len(stalled)),
+    }
+
+
+# ── 5. Money over time ───────────────────────────────────────────────────────
+
+def _money_trend(db: Session, oid: int, today: date) -> dict:
+    """Collected and billed per week for the last _TREND_WEEKS weeks.
+
+    Two series, one unit (dollars) — so one axis, never two. `collected` is
+    cash actually in (Invoice.paid_at); `invoiced` is what was asked for
+    (Invoice.created_at, drafts excluded — a draft has been sent to nobody).
+    They are deliberately NOT the same invoices in the same week: work billed
+    in March is often paid in April, and seeing that lag is the point.
+    """
+    org = lambda m: or_(m.org_id == oid, m.org_id.is_(None))  # noqa: E731
+
+    first_monday = week_monday(today) - timedelta(weeks=_TREND_WEEKS - 1)
+    start = _day_start_utc(first_monday)
+
+    weeks = [first_monday + timedelta(weeks=i) for i in range(_TREND_WEEKS)]
+    index = {w: i for i, w in enumerate(weeks)}
+    collected = [0.0] * _TREND_WEEKS
+    invoiced = [0.0] * _TREND_WEEKS
+
+    def bucket(series, when, amount):
+        d = _local_date(when)
+        if d is None:
+            return
+        i = index.get(week_monday(d))
+        if i is not None:
+            series[i] += float(amount or 0.0)
+
+    for paid_at, total in db.query(Invoice.paid_at, Invoice.total).filter(
+            org(Invoice), Invoice.status == "paid",
+            Invoice.paid_at.isnot(None), Invoice.paid_at >= start).all():
+        bucket(collected, paid_at, total)
+
+    for created_at, total in db.query(Invoice.created_at, Invoice.total).filter(
+            org(Invoice), Invoice.status.in_(("sent", "overdue", "paid")),
+            Invoice.created_at >= start).all():
+        bucket(invoiced, created_at, total)
+
+    points = [
+        {"week": w.isoformat(),
+         "label": f"{w.strftime('%b')} {w.day}",
+         "collected": round(collected[i], 2),
+         "invoiced": round(invoiced[i], 2)}
+        for i, w in enumerate(weeks)
+    ]
+    return {
+        "weeks": _TREND_WEEKS,
+        "points": points,
+        "collected_total": round(sum(collected), 2),
+        "invoiced_total": round(sum(invoiced), 2),
+        # A chart of twelve zeroes is furniture; the widget hides itself.
+        "has_data": any(p["collected"] or p["invoiced"] for p in points),
+    }
+
+
+# ── 6. Where leads come from, and where they stop ────────────────────────────
+
+def _lead_funnel(db: Session, oid: int) -> dict:
+    """Requests → quoted → accepted → won for the last _FUNNEL_DAYS days.
+
+    Calls modules.dashboard.analytics.lead_funnel — the SAME function behind
+    /api/dashboard/funnel — rather than re-deriving the stages here. Those
+    rules carry real subtleties (an archived quote must not count as
+    \"quoted\"; stage is read from timestamps OR status so it stays monotonic),
+    and a second copy would drift until Home and the funnel page disagreed
+    about how the business is doing.
+    """
+    from modules.dashboard.analytics import lead_funnel
+
+    full = lead_funnel(db, oid, days=_FUNNEL_DAYS)
+    stages = {s["key"]: s for s in full.get("funnel", [])}
+    keep = ("requests", "quoted", "accepted", "won")
+    steps = [
+        {"key": k, "label": stages[k]["label"], "count": int(stages[k]["count"] or 0)}
+        for k in keep if k in stages
+    ]
+    top = int(steps[0]["count"]) if steps else 0
+
+    return {
+        "window_days": _FUNNEL_DAYS,
+        "steps": steps,
+        # Share of the first stage, so the bars are comparable at a glance.
+        "widths": [round((s["count"] / top) * 100) if top else 0 for s in steps],
+        "overall_pct": full.get("conversion", {}).get("overall_pct"),
+        "by_source": full.get("by_source", [])[:4],
+        "has_data": top > 0,
     }
 
 
@@ -343,6 +454,8 @@ def build_snapshot(db: Session, oid: int, *, today: date, collected_today: float
         ("crew", lambda: _crew_today(db, oid, today)),
         ("feeds", lambda: _feed_health(db, oid, now)),
         ("recurring", lambda: _recurring_health(db, oid)),
+        ("money_trend", lambda: _money_trend(db, oid, today)),
+        ("lead_funnel", lambda: _lead_funnel(db, oid)),
     )
     for key, fn in builders:
         try:

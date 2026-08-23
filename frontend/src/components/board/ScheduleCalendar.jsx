@@ -132,6 +132,13 @@ export default function ScheduleCalendar({ navigate }) {
   }, [visits])
 
   const days = useMemo(() => eachDay(rangeStart, rangeEnd), [rangeStart, rangeEnd])
+
+  // Busiest day on screen — the scale for the density bars below each count.
+  // Derived from the visits already fetched for this range, so "how busy is
+  // each day" costs nothing extra (brightbase-economy rule 3): no second
+  // request, no wider range, no new endpoint.
+  const peakDay = useMemo(
+    () => Math.max(1, ...[...byDay.values()].map(b => b.total)), [byDay])
   const todayYmd = toLocalYMD(new Date())
   const step = (dir) => {
     setOpenDay(null)
@@ -234,6 +241,17 @@ export default function ScheduleCalendar({ navigate }) {
                   ) : (
                     <span className="text-[11px] leading-none text-ink-3">·</span>
                   )}
+                  {/* Density: one hue, scaled against the busiest day on
+                      screen, so the crunch days and the empty ones are visible
+                      as a shape before you read a single number. Baseline-
+                      anchored and thin — it sits under the count, it doesn't
+                      compete with it. */}
+                  <span className="mt-auto flex h-1 w-full items-end px-1" aria-hidden="true">
+                    {bucket && (
+                      <span className="h-1 rounded-sm bg-indigo-500/60 dark:bg-indigo-400/60"
+                        style={{ width: `${Math.max(12, (bucket.total / peakDay) * 100)}%` }} />
+                    )}
+                  </span>
                 </button>
               )
             })}

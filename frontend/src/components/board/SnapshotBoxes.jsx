@@ -82,6 +82,20 @@ export function MoneyToday({ snap }) {
   const { collected, collected_label, invoiced_label, hours_label,
           on_clock, visits_done, visits_total } = snap
 
+  // Before the first job of the day there is no money, no hours and no
+  // finished visits — a 2x2 grid of zeroes taking a full card to say
+  // "nothing yet". One quiet line says the same thing.
+  const quiet = !collected && !snap.invoiced && !snap.hours && !visits_total
+  if (quiet) {
+    return (
+      <Box dot="bg-ink-3" title="Today">
+        <p className="px-3.5 py-2.5 text-[12px] text-ink-3">
+          Nothing booked and nothing collected yet today.
+        </p>
+      </Box>
+    )
+  }
+
   return (
     <Box dot="bg-emerald-500" title="Today">
       {/* 2×2 so the four numbers read as one glance, not a list to scan.
@@ -173,9 +187,10 @@ export function FeedHealth({ snap }) {
       title="Turnover feeds"
       right={`${ok}/${total} feeding`}>
       {problem_total === 0 ? (
-        <p className="px-3.5 py-3 text-[12px] text-ink-3">
-          Every Airbnb/VRBO calendar synced in the last few hours.
-        </p>
+        /* Nothing wrong = nothing to say. The header already reads
+           "6/6 feeding"; a paragraph repeating that in words was a whole
+           card of reassurance nobody needs to read twice. */
+        null
       ) : (
         <div className="divide-y divide-hairline">
           {problems.map(p => (
@@ -215,9 +230,7 @@ export function RecurringHealth({ snap }) {
       title="Recurring series"
       right={`${scanned} total`}>
       {stalled_total === 0 ? (
-        <p className="px-3.5 py-3 text-[12px] text-ink-3">
-          Every active series has visits on the calendar.
-        </p>
+        null
       ) : (
         <div className="divide-y divide-hairline">
           {stalled.map(s => (

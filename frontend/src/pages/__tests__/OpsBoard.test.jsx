@@ -80,6 +80,24 @@ const WITH_SNAPSHOT = {
         client_name: 'Anna Sweet', cadence: 'Weekly on Wed',
         code: 'active_no_upcoming', message: 'Marked active but has no upcoming visits generated.' }],
     },
+    money_trend: {
+      weeks: 12, collected_total: 4200, invoiced_total: 3900, has_data: true,
+      points: Array.from({ length: 12 }, (_, n) => ({
+        week: `2026-03-${String(2 + n).padStart(2, '0')}`, label: `Mar ${2 + n}`,
+        collected: 100 * (n + 1), invoiced: 90 * (n + 1),
+      })),
+    },
+    lead_funnel: {
+      window_days: 30, overall_pct: 25.0, has_data: true,
+      steps: [
+        { key: 'requests', label: 'Requests', count: 8 },
+        { key: 'quoted', label: 'Quoted', count: 5 },
+        { key: 'accepted', label: 'Accepted', count: 3 },
+        { key: 'won', label: 'Won', count: 2 },
+      ],
+      widths: [100, 63, 38, 25],
+      by_source: [{ source: 'website', requests: 8, won: 2 }],
+    },
   },
 }
 
@@ -313,10 +331,25 @@ describe('OpsBoard', () => {
  * already happened rather than four new ones.
  */
 describe('OpsBoard — snapshot boxes', () => {
-  it('spans the calendar across the whole grid, not one cell of it', async () => {
+  it('puts the calendar above the columns, at full width', async () => {
     renderBoard()
     const slot = await screen.findByTestId('home-calendar-slot')
-    expect(slot.className).toContain('col-span-full')
+    // It's a direct child of the page's own vertical stack, not a cell inside
+    // the two-column widget block — so nothing shares its row.
+    expect(slot.parentElement.className).toContain('flex-col')
+    expect(slot.className).not.toContain('grid-cols')
+  })
+
+  it('stacks widgets in columns that pack, not a row-locked grid', async () => {
+    renderBoard()
+    await screen.findByText('No cleaner assigned')
+
+    // A CSS grid ties every card in a row to the tallest one, which left a
+    // card's worth of dead space under the short ones. Each column is its own
+    // flex stack now, so a tall card only pushes down its own column.
+    const cols = document.querySelectorAll('.grid.grid-cols-1 > .flex.flex-col')
+    expect(cols.length).toBe(2)
+    for (const col of cols) expect(col.className).toContain('gap-4')
   })
 
   it('renders all four boxes from the board payload, with no extra requests', async () => {
@@ -327,6 +360,8 @@ describe('OpsBoard — snapshot boxes', () => {
     expect(screen.getByText('Dana')).toBeTruthy()               // crew today
     expect(screen.getByText('9 Lakeshore Dr')).toBeTruthy()     // feed health
     expect(screen.getByText('Weekly kitchen + baths')).toBeTruthy()  // recurring
+    expect(screen.getByText('Money, last 12 weeks')).toBeTruthy()    // trend chart
+    expect(screen.getByText('Requests, last 30 days')).toBeTruthy()  // lead funnel
 
     // The boxes cost nothing: one board fetch, and none of the endpoints
     // these four would otherwise each have to call for themselves.

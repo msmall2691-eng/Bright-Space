@@ -40,6 +40,7 @@ import BoardAssistant from '../components/board/BoardAssistant'
 import ScheduleCalendar from '../components/board/ScheduleCalendar'
 import AgentHelp from '../components/board/AgentHelp'
 import { MoneyToday, CrewToday, FeedHealth, RecurringHealth } from '../components/board/SnapshotBoxes'
+import { MoneyTrend, LeadFunnel } from '../components/board/Charts'
 import SubNav from '../components/ui/SubNav'
 import { useUnreadCount } from '../hooks/useUnreadCount'
 import { currentRole } from '../nav/routes'
@@ -886,7 +887,7 @@ export default function OpsBoard() {
             one" — spans two columns from the shell: breakpoint up. Cards are
             `items-start` so each keeps its natural height instead of
             stretching to the tallest in its row. */}
-        <div className="mt-3 grid grid-cols-1 items-start gap-4 shell:grid-cols-2 xl:grid-cols-3">
+        <div className="mt-3 flex flex-col gap-4">
           {loading ? (
             Array.from({ length: 6 }).map((_, i) => (
               <div key={i} className="h-56 animate-pulse rounded-2xl border border-hairline bg-panel" />
@@ -900,48 +901,56 @@ export default function OpsBoard() {
                   shape of the week/month at a glance). Rendered outside the
                   `anyVisible` gate: an empty attention board must never hide
                   the week's work. */}
-              <div data-testid="home-calendar-slot" className="col-span-full">
+              <div data-testid="home-calendar-slot">
                 <ScheduleCalendar navigate={navigate} />
               </div>
 
-              {/* The snapshot row: how today is going, who's on it, and the
-                  two silent failures that look like "a quiet week" from
-                  every other screen — a dead turnover feed and a recurring
-                  series that stopped generating. All four read from the
-                  board payload already fetched above; no extra requests. */}
-              <MoneyToday snap={snapshot.money_today} />
-              <CrewToday snap={snapshot.crew} />
-              <FeedHealth snap={snapshot.feeds} />
-              <RecurringHealth snap={snapshot.recurring} />
+              {/* TWO COLUMNS THAT PACK, not a grid.
+                  Home used a CSS grid, which ties every card in a row to the
+                  height of the tallest one — a four-number "Today" box beside
+                  a five-row "Recurring" box left a card's worth of dead space
+                  under the short one (owner: "too much empty spaces lol").
+                  Each column is its own flex stack, so cards sit directly on
+                  top of each other and a tall card only pushes down its OWN
+                  column.
 
-              {/* Agents helping ON Home, not hidden behind the header's
-                  "Ask" button. Answers inline in the card; it asks through
-                  the same askBoard() path BoardAssistant uses, so the two
-                  surfaces can't drift to different answers. */}
-              <AgentHelp navigate={navigate} />
+                  Columns are assigned by subject, not round-robin: money with
+                  money, work with work. Round-robin looks tidy until a box
+                  hides itself and everything after it hops columns. */}
+              <div className="grid grid-cols-1 gap-4 shell:grid-cols-2">
+                <div className="flex flex-col gap-4">
+                  <MoneyToday snap={snapshot.money_today} />
+                  <MoneyTrend snap={snapshot.money_trend} />
+                  <LeadFunnel snap={snapshot.lead_funnel} />
+                  <AgentHelp navigate={navigate} />
+                  {secondarySections.map(({ section, items }) => (
+                    <Section key={section.key} section={section} items={items}
+                      clearedSet={cleared} onToggle={toggleCleared}
+                      onAction={runAction} actioningKey={actioningKey} confirmingKey={confirmingKey}
+                      headerLink={SECTION_LINKS[section.key]} navigate={navigate}
+                      onClearAll={clearAllInSection} clearingSection={clearingSection}
+                      setConfirmingKey={setConfirmingKey} filtersActive={filtersActive}
+                      maxRows={PRIMARY_ROW_CAP} />
+                  ))}
+                </div>
 
-              {canComms && <CrewActivity navigate={navigate} />}
-              <ProposalsQueue />
-
-              {primarySections.map(({ section, items }) => (
-                <Section key={section.key} section={section} items={items}
-                  clearedSet={cleared} onToggle={toggleCleared}
-                  onAction={runAction} actioningKey={actioningKey} confirmingKey={confirmingKey}
-                  headerLink={SECTION_LINKS[section.key]} navigate={navigate}
-                  onClearAll={clearAllInSection} clearingSection={clearingSection}
-                  setConfirmingKey={setConfirmingKey} filtersActive={filtersActive}
-                  maxRows={PRIMARY_ROW_CAP} />
-              ))}
-
-              {secondarySections.map(({ section, items }) => (
-                <Section key={section.key} section={section} items={items}
-                  clearedSet={cleared} onToggle={toggleCleared}
-                  onAction={runAction} actioningKey={actioningKey} confirmingKey={confirmingKey}
-                  headerLink={SECTION_LINKS[section.key]} navigate={navigate}
-                  onClearAll={clearAllInSection} clearingSection={clearingSection}
-                  setConfirmingKey={setConfirmingKey} filtersActive={filtersActive}
-                  maxRows={PRIMARY_ROW_CAP} />
-              ))}
+                <div className="flex flex-col gap-4">
+                  <CrewToday snap={snapshot.crew} />
+                  {canComms && <CrewActivity navigate={navigate} />}
+                  <ProposalsQueue />
+                  {primarySections.map(({ section, items }) => (
+                    <Section key={section.key} section={section} items={items}
+                      clearedSet={cleared} onToggle={toggleCleared}
+                      onAction={runAction} actioningKey={actioningKey} confirmingKey={confirmingKey}
+                      headerLink={SECTION_LINKS[section.key]} navigate={navigate}
+                      onClearAll={clearAllInSection} clearingSection={clearingSection}
+                      setConfirmingKey={setConfirmingKey} filtersActive={filtersActive}
+                      maxRows={PRIMARY_ROW_CAP} />
+                  ))}
+                  <FeedHealth snap={snapshot.feeds} />
+                  <RecurringHealth snap={snapshot.recurring} />
+                </div>
+              </div>
             </>
           )}
         </div>
