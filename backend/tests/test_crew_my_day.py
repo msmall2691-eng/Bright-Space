@@ -106,6 +106,53 @@ def test_my_day_returns_only_this_cleaners_jobs(ids):
         app.dependency_overrides.pop(current_org_id, None)
 
 
+def test_upcoming_rows_travel_light(ids):
+    """The 13-day upcoming preview skips the heavy per-house fields
+    (checklist_template, house_notes) — they're served on tap by the per-job
+    detail endpoint and the house sheet. Today's rows keep both: that's the
+    payload the offline cache holds for on-site reading."""
+    from database.models import PropertyCrewNote
+
+    cid = _mk_client(ids)
+    pid = _mk_str_property(ids, cid)
+    _mk_job(ids, cid, pid, ["CT-301"], offset_days=0)
+    _mk_job(ids, cid, pid, ["CT-301"], offset_days=3)
+
+    db = SessionLocal()
+    prop = db.get(Property, pid)
+    prop.checklist_template = [{"area": "Kitchen", "tasks": ["Wipe counters"]}]
+    note = PropertyCrewNote(property_id=pid, org_id=1, body="Drain clogs upstairs",
+                            author_name="Sam", shared=True)
+    db.add(note); db.commit(); db.close()
+
+    app.dependency_overrides[get_current_user] = lambda: _Cleaner(9005, "CT-301")
+    app.dependency_overrides[current_org_id] = lambda: 1
+    api = TestClient(app)
+    try:
+        body = api.get("/api/crew/my-day?days=14").json()
+        today_row = body["today"][0]
+        assert today_row["checklist_template"] == [{"area": "Kitchen", "tasks": ["Wipe counters"]}]
+        assert [n["body"] for n in today_row["house_notes"]] == ["Drain clogs upstairs"]
+
+        up_row = body["upcoming"][0]
+        assert up_row["checklist_template"] is None
+        assert up_row["house_notes"] == []
+        # The light row still carries the get-in tier — that never thins out.
+        assert up_row["house_code"] == "4521"
+
+        # And the per-job detail endpoint serves the full row for that same
+        # upcoming job — the tap-through the light preview relies on.
+        detail = api.get(f"/api/crew/jobs/{up_row['id']}").json()
+        assert detail["checklist_template"] == [{"area": "Kitchen", "tasks": ["Wipe counters"]}]
+        assert [n["body"] for n in detail["house_notes"]] == ["Drain clogs upstairs"]
+    finally:
+        app.dependency_overrides.pop(get_current_user, None)
+        app.dependency_overrides.pop(current_org_id, None)
+        db = SessionLocal()
+        db.query(PropertyCrewNote).filter(PropertyCrewNote.property_id == pid).delete(synchronize_session=False)
+        db.commit(); db.close()
+
+
 def test_my_day_requires_a_linked_crew_id():
     app.dependency_overrides[get_current_user] = lambda: _Cleaner(9002, None)
     app.dependency_overrides[current_org_id] = lambda: 1

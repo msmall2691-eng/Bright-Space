@@ -304,7 +304,10 @@ def my_day(
     # upcoming preview they'd be noise.
     upcoming_jobs = [j for j in mine if j.scheduled_date != today and j.status != "completed"]
     names = _names_by_cleaner_id(db, mine)
-    house_notes = _shared_notes_by_property(db, mine)
+    # Shared house notes ride only TODAY's rows (they're read on site, and
+    # today's payload is what the offline cache keeps). Upcoming rows travel
+    # light — see the "upcoming" comment below.
+    house_notes = _shared_notes_by_property(db, today_jobs)
     # The caller's own accept/decline answers for the window, one query.
     my_responses = {
         r.job_id: r
@@ -371,8 +374,13 @@ def my_day(
         "today": [_job_row(j, names, current_user.cleaner_id, my_responses.get(j.id),
                            house_notes=house_notes.get(j.property_id))
                   for j in today_jobs],
-        "upcoming": [_job_row(j, names, current_user.cleaner_id, my_responses.get(j.id),
-                              house_notes=house_notes.get(j.property_id))
+        # Upcoming rows are a 13-day preview and the bulk of the payload, so
+        # the heavy per-house fields stay off them (rural cell data): no
+        # checklist_template, no house_notes. Both are served on tap — the
+        # crew job detail (GET /api/crew/jobs/{id}) and the house sheet
+        # (GET /api/crew/properties/{id}/notes) return the full row.
+        "upcoming": [{**_job_row(j, names, current_user.cleaner_id, my_responses.get(j.id)),
+                      "checklist_template": None}
                      for j in upcoming_jobs],
         "open_jobs": open_jobs,
         # Unread office messages, so the crew app's Chat tab can badge without

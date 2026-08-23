@@ -9,6 +9,8 @@
 import { useEffect, useMemo, useState } from 'react'
 import { ChevronLeft, ChevronRight, Users } from 'lucide-react'
 import { get } from '../../api'
+import { Skeleton } from '../ui'
+import { ErrorNote, SectionLabel } from './primitives'
 // The tap-through opens the SAME full job card My Day renders (address → maps
 // link, code, WiFi, house notes, working checklist) instead of the old cut-down
 // summary — which also rendered the structured checklist_template (an array of
@@ -80,8 +82,8 @@ export default function CrewMonth() {
         </button>
       </div>
 
-      {error && <div className="text-xs text-red-700 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{error}</div>}
-      {!data && !error && <div className="h-64 rounded-xl bg-bg-2 animate-pulse" />}
+      <ErrorNote>{error}</ErrorNote>
+      {!data && !error && <Skeleton className="h-64 w-full rounded-xl" />}
 
       {data && (
         <>
@@ -102,7 +104,7 @@ export default function CrewMonth() {
                   <button key={i} onClick={() => setSelected(k)}
                     className={`relative h-10 rounded-lg text-[12px] transition-colors ${
                       selected === k ? 'bg-blue-600 text-white font-bold'
-                        : k === todayStr ? 'bg-blue-500/10 text-ink font-semibold'
+                        : k === todayStr ? 'ring-1 ring-inset ring-blue-400/60 text-ink font-semibold'
                         : inMonth ? 'text-ink-2 hover:bg-bg-2' : 'text-ink-3/40'}`}>
                     {d.getDate()}
                     {(mineCount > 0 || otherCount > 0) && (
@@ -118,9 +120,9 @@ export default function CrewMonth() {
           </div>
 
           <div className="space-y-2">
-            <div className="text-[11px] font-semibold uppercase tracking-wide text-ink-3">
+            <SectionLabel>
               {new Date(`${selected}T12:00`).toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}
-            </div>
+            </SectionLabel>
             {dayJobs.length === 0 && (
               <p className="text-[12.5px] text-ink-3">Nothing scheduled.</p>
             )}

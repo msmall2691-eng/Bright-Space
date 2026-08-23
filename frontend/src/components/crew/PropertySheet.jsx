@@ -8,11 +8,12 @@
  * office shares them with everyone.
  */
 import { useCallback, useEffect, useState } from 'react'
-import { ArrowLeft, Camera, Plus, Share2 } from 'lucide-react'
+import { Camera, Plus, Share2 } from 'lucide-react'
 import { get, post, del, upload } from '../../api'
-import { AuthImage } from '../ui'
+import { AuthImage, Skeleton } from '../ui'
 import { prepareForUpload } from '../../utils/imageDownscale'
 import { onCellular, enqueuePhoto } from './photoQueue'
+import { ErrorNote, FullScreenSheet, SectionLabel } from './primitives'
 
 export default function PropertySheet({ propertyId, propertyName, onClose }) {
   const [notes, setNotes] = useState(null)
@@ -82,20 +83,10 @@ export default function PropertySheet({ propertyId, propertyName, onClose }) {
   }
 
   return (
-    <div className="fixed inset-0 z-30 bg-bg overflow-y-auto">
-      <div className="sticky top-0 safe-top z-10 bg-panel/95 backdrop-blur border-b border-hairline px-4 py-3 flex items-center gap-3">
-        <button onClick={onClose} aria-label="Back"
-          className="grid place-items-center w-9 h-9 rounded-lg bg-bg-2 text-ink-2 active:scale-95 transition-transform">
-          <ArrowLeft className="w-5 h-5" />
-        </button>
-        <div className="min-w-0">
-          <div className="text-[15px] font-bold text-ink truncate">{propertyName || 'This house'}</div>
-          <div className="text-[11px] text-ink-3">Photos & notes for everyone who cleans here</div>
-        </div>
-      </div>
-
+    <FullScreenSheet title={propertyName || 'This house'}
+      subtitle="Photos & notes for everyone who cleans here" onClose={onClose}>
       <div className="max-w-lg mx-auto px-4 py-4 pb-16 space-y-5">
-        {error && <div className="text-xs text-red-700 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{error}</div>}
+        <ErrorNote>{error}</ErrorNote>
         {notice && (
           <p className="text-[12px] text-ink-2 flex items-start gap-1.5">
             <span className="w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0 mt-[5px]" /> {notice}
@@ -105,16 +96,14 @@ export default function PropertySheet({ propertyId, propertyName, onClose }) {
         {/* Photos */}
         <section>
           <div className="flex items-center justify-between mb-2">
-            <h2 className="text-[11px] font-semibold uppercase tracking-wide text-ink-3">
-              How it should look
-            </h2>
+            <SectionLabel>How it should look</SectionLabel>
             <label className="text-[12px] font-semibold text-blue-600 dark:text-blue-400 inline-flex items-center gap-1 cursor-pointer">
               <Camera className="w-3.5 h-3.5" /> Add photo
               <input type="file" accept="image/*" multiple className="hidden" disabled={busy}
                 onChange={e => { uploadPhotos([...e.target.files]); e.target.value = '' }} />
             </label>
           </div>
-          {!photos && <div className="h-24 rounded-xl bg-bg-2 animate-pulse" />}
+          {!photos && <Skeleton className="h-24 w-full rounded-xl" />}
           {photos?.length === 0 && (
             <p className="text-[12px] text-ink-3">
               No reference photos yet — snap the staged rooms after a clean
@@ -134,7 +123,7 @@ export default function PropertySheet({ propertyId, propertyName, onClose }) {
         {/* Notes */}
         <section>
           <div className="flex items-center justify-between mb-2">
-            <h2 className="text-[11px] font-semibold uppercase tracking-wide text-ink-3">House notes</h2>
+            <SectionLabel>House notes</SectionLabel>
             {!addingNote && (
               <button onClick={() => setAddingNote(true)}
                 className="text-[12px] font-semibold text-blue-600 dark:text-blue-400 inline-flex items-center gap-0.5">
@@ -163,7 +152,7 @@ export default function PropertySheet({ propertyId, propertyName, onClose }) {
               </div>
             </div>
           )}
-          {!notes && <div className="h-16 rounded-xl bg-bg-2 animate-pulse" />}
+          {!notes && <Skeleton className="h-16 w-full rounded-xl" />}
           {notes?.length === 0 && !addingNote && (
             <p className="text-[12px] text-ink-3">Nothing yet — know a quirk of this house? Add it.</p>
           )}
@@ -173,7 +162,7 @@ export default function PropertySheet({ propertyId, propertyName, onClose }) {
                 {n.body}
                 <div className="text-[10.5px] text-ink-3 mt-0.5 flex items-center gap-1">
                   {n.author_name}{!n.shared && (
-                    <span className="inline-flex items-center gap-1 text-amber-700 dark:text-amber-400">
+                    <span className="inline-flex items-center gap-1">
                       <span className="w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0" />
                       <Share2 className="w-3 h-3" /> waiting for the office to share
                     </span>
@@ -202,6 +191,6 @@ export default function PropertySheet({ propertyId, propertyName, onClose }) {
           </div>
         </div>
       )}
-    </div>
+    </FullScreenSheet>
   )
 }

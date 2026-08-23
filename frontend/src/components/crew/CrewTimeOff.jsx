@@ -9,11 +9,12 @@ import { useCallback, useEffect, useState } from 'react'
 import { CalendarOff, X } from 'lucide-react'
 import { get, post, del } from '../../api'
 import StatusBadge from '../ui/StatusBadge'
+import { ErrorNote } from './primitives'
 
 const STATUS = { requested: 'warning', approved: 'success', denied: 'neutral' }
 const LABEL = { requested: 'Pending', approved: 'Approved', denied: 'Not approved' }
 
-export default function CrewTimeOff() {
+export default function CrewTimeOff({ bare = false }) {
   const [rows, setRows] = useState(null)
   const [form, setForm] = useState({ start_date: '', end_date: '', reason: '' })
   const [open, setOpen] = useState(false)
@@ -54,13 +55,15 @@ export default function CrewTimeOff() {
   const fmt = (d) => new Date(`${d}T12:00`).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
 
   return (
-    <div className="bg-panel rounded-xl border border-hairline shadow-glass-sm p-4 space-y-3">
+    <div className={bare ? 'space-y-3' : 'bg-panel rounded-xl border border-hairline shadow-glass-sm p-4 space-y-3'}>
       <div className="flex items-start justify-between gap-2">
         <div>
-          <div className="text-sm font-bold text-ink flex items-center gap-1.5">
-            <CalendarOff className="w-4 h-4 text-ink-3" /> Time off
-          </div>
-          <p className="text-[11px] text-ink-3 mt-0.5">
+          {!bare && (
+            <div className="text-sm font-bold text-ink flex items-center gap-1.5">
+              <CalendarOff className="w-4 h-4 text-ink-3" /> Time off
+            </div>
+          )}
+          <p className={`text-[11px] text-ink-3 ${bare ? '' : 'mt-0.5'}`}>
             Ask ahead — the office approves. Same-day emergencies are still a call.
           </p>
         </div>
@@ -105,9 +108,7 @@ export default function CrewTimeOff() {
         </div>
       )}
 
-      {error && (
-        <div className="text-xs text-red-700 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{error}</div>
-      )}
+      <ErrorNote>{error}</ErrorNote>
 
       {rows && rows.length > 0 && (
         <div className="space-y-1.5">

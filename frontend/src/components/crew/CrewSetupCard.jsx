@@ -11,9 +11,10 @@
  * all when there's nothing left to set up.
  */
 import { useEffect, useState } from 'react'
-import { Bell, CheckCircle2, Smartphone, X } from 'lucide-react'
+import { Bell, Smartphone, X } from 'lucide-react'
 import { pushSupported, getPushState, enablePush, sendTestPush, isAppInstalled, mobilePlatform, onAppForeground } from '../../utils/push'
 import { useNotificationPrefs } from '../../hooks/useNotificationPrefs'
+import { ErrorNote } from './primitives'
 
 const DISMISS_KEY = 'bb_crew_setup_dismissed'
 
@@ -56,7 +57,7 @@ function CrewNotificationCategoryList() {
   )
 }
 
-export default function CrewSetupCard({ persistent = false }) {
+export default function CrewSetupCard({ persistent = false, bare = false }) {
   const [dismissed, setDismissed] = useState(() => {
     try { return localStorage.getItem(DISMISS_KEY) === '1' } catch { return false }
   })
@@ -117,18 +118,20 @@ export default function CrewSetupCard({ persistent = false }) {
   }
 
   return (
-    <div className="bg-panel rounded-xl border border-hairline shadow-glass-sm p-4">
-      <div className="flex items-start justify-between gap-2">
-        <div className="text-[13px] font-bold text-ink flex items-center gap-1.5">
-          <Smartphone className="w-4 h-4 text-ink-3" /> Get set up on your phone
+    <div className={bare ? '' : 'bg-panel rounded-xl border border-hairline shadow-glass-sm p-4'}>
+      {!bare && (
+        <div className="flex items-start justify-between gap-2">
+          <div className="text-[13px] font-bold text-ink flex items-center gap-1.5">
+            <Smartphone className="w-4 h-4 text-ink-3" /> Get set up on your phone
+          </div>
+          {!persistent && (
+            <button onClick={dismiss} aria-label="Dismiss"
+              className="shrink-0 grid place-items-center w-8 h-8 -mt-1.5 -mr-1.5 rounded-lg text-ink-3 hover:text-ink hover:bg-bg-2">
+              <X className="w-4 h-4" />
+            </button>
+          )}
         </div>
-        {!persistent && (
-          <button onClick={dismiss} aria-label="Dismiss"
-            className="shrink-0 grid place-items-center w-8 h-8 -mt-1.5 -mr-1.5 rounded-lg text-ink-3 hover:text-ink hover:bg-bg-2">
-            <X className="w-4 h-4" />
-          </button>
-        )}
-      </div>
+      )}
 
       {showInstall && (
         <p className="text-[12px] text-ink-2 mt-1.5 leading-relaxed">
@@ -158,8 +161,9 @@ export default function CrewSetupCard({ persistent = false }) {
         <div className={showInstall ? 'mt-2.5 border-t border-hairline pt-2.5' : 'mt-1.5'}>
           {pushOn ? (
             <>
-              <div className="text-[12px] text-emerald-700 dark:text-emerald-300 flex items-center gap-1.5">
-                <CheckCircle2 className="w-4 h-4 shrink-0" /> Notifications are on for this device.
+              <div className="text-[12px] text-ink-2 flex items-center gap-1.5">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" aria-hidden="true" />
+                Notifications are on for this device.
               </div>
               <button onClick={runTest} disabled={busy}
                 className="mt-2 w-full min-h-9 text-[12px] font-medium bg-panel border border-hairline-2 text-ink-2 hover:bg-bg-2 disabled:opacity-60 py-2 rounded-lg transition-colors inline-flex items-center justify-center gap-1.5">
@@ -184,11 +188,7 @@ export default function CrewSetupCard({ persistent = false }) {
               </p>
             </>
           )}
-          {error && (
-            <div className="mt-2 text-xs text-red-700 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
-              {error}
-            </div>
-          )}
+          <ErrorNote className="mt-2">{error}</ErrorNote>
         </div>
       )}
 

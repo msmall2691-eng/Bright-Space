@@ -6,6 +6,12 @@
  * sheet (CrewJobSheet). Handlers are all optional — pass none and the card
  * is a read-only detail view (address → maps deep-link still works).
  *
+ * Reading order is the job's order of operations, standing at the door:
+ * when → answer the ask → how do I get in (code, WiFi, what the office
+ * flagged) → who's here → then the reference tiers (house details,
+ * checklist) behind inline expanders. Nothing here fetches; expanding a
+ * row just reveals payload the card already has.
+ *
  * Data comes exclusively from /api/crew/* payloads (assigned-cleaner-only;
  * the office job endpoints never feed this card).
  */
@@ -16,9 +22,9 @@ import {
   QrCode,
 } from 'lucide-react'
 import { wifiQrPayload, qrMatrix, qrSvgPath } from './wifiQr'
+import { copyToClipboard } from '../../utils/clipboard'
 import StatusBadge from '../ui/StatusBadge'
-
-export const SOFT = 'bg-panel rounded-xl border border-hairline shadow-glass-sm'
+import { SOFT, SectionLabel, DisclosureRow } from './primitives'
 
 export function fmtTimeRange(start, end) {
   if (!start && !end) return ''
@@ -56,65 +62,27 @@ function houseSpecsLine(job) {
 /** Read-only view of the property's cleaning checklist, collapsed behind a
  *  task count. Working the checklist stays part of completion, not this list. */
 function ChecklistBlock({ template }) {
-  const [open, setOpen] = useState(false)
   const areas = Array.isArray(template) ? template : []
   const total = areas.reduce((n, a) => n + (a.tasks?.length || 0), 0)
   if (!total) return null
   return (
-    <div className="mt-3 border-t border-hairline pt-3">
-      <button onClick={() => setOpen(o => !o)}
-        className="w-full flex items-center justify-between text-[13px] text-ink-2">
-        <span className="flex items-center gap-1.5">
-          <ClipboardList className="w-3.5 h-3.5 text-ink-3" /> Checklist
-          <span className="text-ink-3">· {total} tasks</span>
-        </span>
-        <ChevronDown className={`w-4 h-4 text-ink-3 transition-transform ${open ? 'rotate-180' : ''}`} />
-      </button>
-      {open && (
-        <div className="mt-2 space-y-2">
-          {areas.map((a, i) => (
-            <div key={i}>
-              <div className="text-[11px] font-bold uppercase tracking-wide text-ink-3">{a.area}</div>
-              <ul className="mt-0.5 space-y-0.5">
-                {(a.tasks || []).map((t, j) => (
-                  <li key={j} className="text-[13px] text-ink-2 flex items-start gap-1.5">
-                    <span className="mt-[7px] w-1 h-1 rounded-full bg-ink-3 shrink-0" /> {t}
-                  </li>
-                ))}
-              </ul>
-            </div>
-          ))}
-        </div>
-      )}
-    </div>
+    <DisclosureRow icon={ClipboardList} label="Checklist" count={`${total} tasks`}>
+      <div className="space-y-2">
+        {areas.map((a, i) => (
+          <div key={i}>
+            <SectionLabel>{a.area}</SectionLabel>
+            <ul className="mt-0.5 space-y-0.5">
+              {(a.tasks || []).map((t, j) => (
+                <li key={j} className="text-[13px] text-ink-2 flex items-start gap-1.5">
+                  <span className="mt-[7px] w-1 h-1 rounded-full bg-ink-3 shrink-0" /> {t}
+                </li>
+              ))}
+            </ul>
+          </div>
+        ))}
+      </div>
+    </DisclosureRow>
   )
-}
-
-/** Copy `text` to the clipboard: navigator.clipboard where available (needs a
- *  secure context), else the old textarea/execCommand fallback. Resolves true
- *  on success. Credentials never leave the device — no logging, no URL. */
-function copyToClipboard(text) {
-  const legacy = () => {
-    try {
-      const ta = document.createElement('textarea')
-      ta.value = text
-      ta.setAttribute('readonly', '')
-      ta.style.position = 'fixed'
-      ta.style.opacity = '0'
-      document.body.appendChild(ta)
-      ta.focus()
-      ta.select()
-      const ok = document.execCommand('copy')
-      ta.remove()
-      return ok
-    } catch {
-      return false
-    }
-  }
-  if (navigator.clipboard?.writeText) {
-    return navigator.clipboard.writeText(text).then(() => true).catch(() => legacy())
-  }
-  return Promise.resolve(legacy())
 }
 
 /** One tappable WiFi credential row — the WHOLE row copies (gloved thumbs),
@@ -168,9 +136,9 @@ function WifiBlock({ ssid, password }) {
   }, [showQr, ssid, password])
   return (
     <div className="mt-3 border-t border-hairline pt-3">
-      <div className="text-[10px] font-bold uppercase tracking-wide text-ink-3 flex items-center gap-1.5">
+      <SectionLabel className="flex items-center gap-1.5">
         <Wifi className="w-3.5 h-3.5" /> House WiFi
-      </div>
+      </SectionLabel>
       <p className="text-[11px] text-ink-3 mt-0.5">
         Join the house WiFi before photos — it saves your data.
       </p>
@@ -210,7 +178,7 @@ function RespondRow({ job, onRespond, onDecline, busy }) {
   const r = job.my_response
   if (!r || changing) {
     return (
-      <div className="mt-3 rounded-xl border border-blue-300/60 bg-blue-500/5 p-2.5">
+      <div className="mt-3 rounded-xl border border-hairline bg-bg p-2.5">
         <div className="text-[11px] font-semibold text-ink-2 mb-1.5">Can you make this job?</div>
         <div className="grid grid-cols-2 gap-2">
           <button onClick={() => { setChanging(false); onRespond('accepted') }} disabled={busy}
@@ -227,16 +195,19 @@ function RespondRow({ job, onRespond, onDecline, busy }) {
   }
   const accepted = r.response === 'accepted'
   return (
-    <div className={`mt-3 rounded-lg border px-3 py-2 text-[12px] flex items-center justify-between gap-2 ${
-      accepted
-        ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-700 dark:text-emerald-300'
-        : 'bg-amber-500/10 border-amber-500/20 text-amber-800 dark:text-amber-300'}`}>
-      <span className="min-w-0">
-        {accepted ? '✓ You accepted' : 'You declined — the office knows'}
-        {!accepted && r.reason && <span className="italic"> · “{r.reason}”</span>}
+    <div className="mt-3 flex items-center justify-between gap-2 text-[12px]">
+      <span className="min-w-0 flex items-center gap-1.5">
+        <StatusBadge status={accepted ? 'success' : 'warning'} className="shrink-0">
+          {accepted ? 'You accepted' : 'You declined'}
+        </StatusBadge>
+        {!accepted && (
+          <span className="text-ink-3 truncate">
+            the office knows{r.reason ? ` · “${r.reason}”` : ''}
+          </span>
+        )}
       </span>
       <button onClick={() => setChanging(true)} disabled={busy}
-        className="shrink-0 font-semibold underline underline-offset-2 opacity-80 hover:opacity-100">
+        className="shrink-0 font-semibold text-ink-2 underline underline-offset-2 hover:text-ink">
         Change
       </button>
     </div>
@@ -249,6 +220,8 @@ export default function JobCard({ job, clockable = false, activeEntry = null, on
   const houseLine = houseSpecsLine(job)
   const isActiveJob = clockable && activeEntry && activeEntry.job_id === job.id
   const someoneElseActive = clockable && activeEntry && activeEntry.job_id !== job.id
+  const houseNoteCount = job.house_notes?.length || 0
+  const hasHouseSection = !!(houseLine || houseNoteCount > 0 || (!job.open && job.property_id && onHouseInfo))
   return (
     <div className={`${SOFT} p-4 ${isActiveJob ? 'ring-2 ring-emerald-500/60' : ''}`}>
       <div className="flex items-start justify-between gap-3">
@@ -277,55 +250,24 @@ export default function JobCard({ job, clockable = false, activeEntry = null, on
         )}
       </div>
 
+      {done && job.completion_note && (
+        <div className="mt-2 text-[12px] text-ink-3">Your note: “{job.completion_note}”</div>
+      )}
+
       {/* The unanswered ask lives at the TOP of the card, not buried under
           notes/checklist blocks (owner: "I don't see it to accept"). Once
-          answered it collapses to the small chip, still up here. */}
+          answered it collapses to the small status chip, still up here. */}
       {!done && onRespond && (
         <RespondRow job={job} onRespond={onRespond} onDecline={onDecline} busy={busy} />
       )}
 
-      {(job.client_name || (job.teammates && job.teammates.length > 0)) && (
-        <div className="mt-2 space-y-1">
-          {job.client_name && (
-            <div className="text-[13px] text-ink-2 flex items-center gap-1.5 flex-wrap">
-              <span className="text-ink-3">For</span> {job.client_name}
-              {job.can_text_client && !done && onTextClient && (
-                /* No raw numbers on crew phones (owner's updated call):
-                   texts go out structured, from the business line, logged
-                   where the office reads them. */
-                <button onClick={onTextClient}
-                  className="inline-flex items-center gap-1 text-[12px] font-medium text-ink-2 bg-panel border border-hairline-2 rounded-md px-2 py-0.5 hover:bg-bg-2 active:opacity-60 transition-colors">
-                  <Phone className="w-3 h-3" /> Text client
-                </button>
-              )}
-            </div>
-          )}
-          {job.teammates && job.teammates.length > 0 && (
-            <div className="text-[13px] text-ink-2 flex items-center gap-1.5">
-              <Users className="w-3.5 h-3.5 text-ink-3 shrink-0" />
-              With {job.teammates.join(', ')}
-            </div>
-          )}
-        </div>
-      )}
+      {/* ── The get-in cluster, directly under the address: turnover window,
+          door code, parking, WiFi, and what the office flagged. This is what
+          a cleaner needs standing at the door — it never hides. ── */}
 
       {job.turnover_line && (
         <div className="mt-3 rounded-lg bg-bg border border-hairline px-3 py-2 text-[13px] text-ink-2">
           {job.turnover_line}
-        </div>
-      )}
-
-      {houseLine && (
-        /* The house preview: type + structured specs, only what's on file.
-           Heads the house cluster — access details, house notes, and the
-           photos & notes sheet follow right below. Codes stay exactly where
-           they were (visible on the card, the page's access convention). */
-        <div className="mt-3">
-          <div className="text-[10px] font-bold uppercase tracking-wide text-ink-3">The house</div>
-          <div className="mt-0.5 text-[13px] text-ink-2 flex items-start gap-1.5">
-            <Home className="w-3.5 h-3.5 mt-0.5 shrink-0 text-ink-3" />
-            <span>{houseLine}</span>
-          </div>
         </div>
       )}
 
@@ -365,41 +307,77 @@ export default function JobCard({ job, clockable = false, activeEntry = null, on
         <WifiBlock ssid={job.wifi_ssid} password={job.wifi_password} />
       )}
 
-      {job.house_notes?.length > 0 && (
-        /* Crew-sourced, office-shared house knowledge — "upstairs drain
-           clogs". Rides the payload (and offline cache), newest first. */
-        <div className="mt-3 rounded-lg bg-amber-500/5 border border-amber-500/20 px-3 py-2 space-y-1">
-          <div className="text-[10px] font-bold uppercase tracking-wide text-amber-700 dark:text-amber-400">House notes</div>
-          {job.house_notes.map((n, i) => (
-            <div key={i} className="text-[12px] text-ink-2">
-              {n.body}{n.author_name && <span className="text-ink-3"> — {n.author_name}</span>}
-            </div>
-          ))}
-        </div>
-      )}
-
-      {!job.open && job.property_id && !done && onHouseInfo && (
-        <button onClick={onHouseInfo}
-          className="mt-2 text-[12px] font-semibold text-blue-600 dark:text-blue-400 inline-flex items-center gap-1 active:opacity-60">
-          <Home className="w-3.5 h-3.5" /> House photos &amp; notes ›
-        </button>
-      )}
-
       {job.notes && (
         /* What the office wrote on the job — the "dog in the yard" tier.
-           Was silently missing from crew cards until Aug 2026. */
-        <div className="mt-3 rounded-lg bg-blue-500/5 border border-blue-500/15 px-3 py-2 text-[12px] text-ink-2 whitespace-pre-wrap">
-          <span className="font-semibold text-ink">From the office: </span>{job.notes}
+           Rides with the get-in cluster (it's need-to-know before the door,
+           not house trivia). Quiet card + dot, not a colored banner. */
+        <div className="mt-3 rounded-lg border border-hairline bg-bg px-3 py-2">
+          <div className="text-[11px] font-semibold text-ink flex items-center gap-1.5">
+            <span className="w-1.5 h-1.5 rounded-full bg-blue-500 shrink-0" aria-hidden="true" />
+            From the office
+          </div>
+          <div className="mt-0.5 text-[12px] text-ink-2 whitespace-pre-wrap">{job.notes}</div>
         </div>
+      )}
+
+      {(job.client_name || (job.teammates && job.teammates.length > 0)) && (
+        <div className="mt-3 space-y-1">
+          {job.client_name && (
+            <div className="text-[13px] text-ink-2 flex items-center gap-1.5 flex-wrap">
+              <span className="text-ink-3">For</span> {job.client_name}
+              {job.can_text_client && !done && onTextClient && (
+                /* No raw numbers on crew phones (owner's updated call):
+                   texts go out structured, from the business line, logged
+                   where the office reads them. */
+                <button onClick={onTextClient}
+                  className="inline-flex items-center gap-1 text-[12px] font-medium text-ink-2 bg-panel border border-hairline-2 rounded-md px-2 py-0.5 hover:bg-bg-2 active:opacity-60 transition-colors">
+                  <Phone className="w-3 h-3" /> Text client
+                </button>
+              )}
+            </div>
+          )}
+          {job.teammates && job.teammates.length > 0 && (
+            <div className="text-[13px] text-ink-2 flex items-center gap-1.5">
+              <Users className="w-3.5 h-3.5 text-ink-3 shrink-0" />
+              With {job.teammates.join(', ')}
+            </div>
+          )}
+        </div>
+      )}
+
+      {hasHouseSection && (
+        /* Reference tier — specs, shared house notes, the photo gallery —
+           behind one inline expander so the get-in cluster stays above the
+           fold. Everything but the gallery is already in the payload. */
+        <DisclosureRow icon={Home} label="About this house"
+          count={houseNoteCount > 0 ? `${houseNoteCount} note${houseNoteCount > 1 ? 's' : ''}` : null}>
+          <div className="space-y-3">
+            {houseLine && (
+              <div className="text-[13px] text-ink-2">{houseLine}</div>
+            )}
+            {houseNoteCount > 0 && (
+              /* Crew-sourced, office-shared house knowledge — "upstairs drain
+                 clogs". Rides the payload (and offline cache), newest first. */
+              <div className="space-y-1">
+                <SectionLabel>House notes</SectionLabel>
+                {job.house_notes.map((n, i) => (
+                  <div key={i} className="text-[12px] text-ink-2">
+                    {n.body}{n.author_name && <span className="text-ink-3"> — {n.author_name}</span>}
+                  </div>
+                ))}
+              </div>
+            )}
+            {!job.open && job.property_id && onHouseInfo && (
+              <button onClick={onHouseInfo}
+                className="text-[12px] font-semibold text-blue-600 dark:text-blue-400 inline-flex items-center gap-1 active:opacity-60">
+                <Camera className="w-3.5 h-3.5" /> House photos &amp; all notes ›
+              </button>
+            )}
+          </div>
+        </DisclosureRow>
       )}
 
       <ChecklistBlock template={job.checklist_template} />
-
-      {done && job.completion_note && (
-        <div className="mt-3 rounded-lg bg-emerald-500/10 border border-emerald-500/20 px-3 py-2 text-[12px] text-ink-2">
-          Your note: “{job.completion_note}”
-        </div>
-      )}
 
       {onClaim && (
         /* Open-jobs board (Phase 3): first tap wins server-side; access

@@ -13,9 +13,10 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Camera, Images, X } from 'lucide-react'
 import { del, get, upload } from '../../api'
-import { AuthImage } from '../ui'
+import { AuthImage, Skeleton } from '../ui'
 import { prepareForUpload } from '../../utils/imageDownscale'
 import { onCellular, enqueuePhoto, flushPhotoQueue, subscribeQueue } from './photoQueue'
+import { ErrorNote, Sheet } from './primitives'
 
 const KIND_LABEL = { before: 'Before', after: 'After' }
 
@@ -97,12 +98,7 @@ export default function JobPhotoSheet({ job, onClose }) {
   }, [job.id])
 
   return (
-    <div
-      className="fixed inset-0 z-30 flex items-end sm:items-center justify-center bg-black/40 px-4 pb-4 sm:pb-0"
-      onClick={() => { if (!busy) onClose() }}>
-      <div
-        className="w-full max-w-sm bg-panel rounded-2xl border border-hairline shadow-glass p-5 space-y-4 max-h-[85dvh] overflow-y-auto"
-        onClick={e => e.stopPropagation()}>
+    <Sheet onClose={onClose} busy={busy}>
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
             <div className="text-base font-bold text-ink">Photos</div>
@@ -173,15 +169,11 @@ export default function JobPhotoSheet({ job, onClose }) {
             Saving {Math.min(progress.done + 1, progress.total)} of {progress.total}…
           </div>
         )}
-        {error && (
-          <div className="text-xs text-red-700 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
-            {error}
-          </div>
-        )}
+        <ErrorNote>{error}</ErrorNote>
 
         {photos === null ? (
           <div className="grid grid-cols-3 gap-2">
-            {[0, 1, 2].map(i => <div key={i} className="aspect-square rounded-lg bg-bg-2 animate-pulse" />)}
+            {[0, 1, 2].map(i => <Skeleton key={i} className="aspect-square rounded-lg" />)}
           </div>
         ) : photos.length === 0 ? (
           <p className="text-[12px] text-ink-3 text-center py-2">
@@ -209,7 +201,6 @@ export default function JobPhotoSheet({ job, onClose }) {
             ))}
           </div>
         )}
-      </div>
-    </div>
+    </Sheet>
   )
 }

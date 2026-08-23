@@ -9,8 +9,10 @@
 import { useState } from 'react'
 import { CalendarPlus, Check, Copy, RotateCcw } from 'lucide-react'
 import { get, post } from '../../api'
+import { copyToClipboard } from '../../utils/clipboard'
+import { ErrorNote } from './primitives'
 
-export default function CrewCalendarSync() {
+export default function CrewCalendarSync({ bare = false }) {
   const [url, setUrl] = useState(null)
   const [busy, setBusy] = useState(false)
   const [copied, setCopied] = useState(false)
@@ -31,22 +33,26 @@ export default function CrewCalendarSync() {
   }
 
   const copy = async () => {
-    try {
-      await navigator.clipboard.writeText(url)
-      setCopied(true)
-      setTimeout(() => setCopied(false), 2500)
-    } catch {
+    // Shared clipboard helper: falls back to execCommand outside a secure
+    // context, so Copy works on http/LAN installs too.
+    const ok = await copyToClipboard(url)
+    if (!ok) {
       setError('Could not copy — long-press the link to copy it manually.')
+      return
     }
+    setCopied(true)
+    setTimeout(() => setCopied(false), 2500)
   }
 
   return (
-    <div className="bg-panel rounded-xl border border-hairline shadow-glass-sm p-4 space-y-3">
+    <div className={bare ? 'space-y-3' : 'bg-panel rounded-xl border border-hairline shadow-glass-sm p-4 space-y-3'}>
       <div>
-        <div className="text-sm font-bold text-ink flex items-center gap-1.5">
-          <CalendarPlus className="w-4 h-4 text-ink-3" /> See your work in your calendar
-        </div>
-        <p className="text-[11px] text-ink-3 mt-0.5">
+        {!bare && (
+          <div className="text-sm font-bold text-ink flex items-center gap-1.5">
+            <CalendarPlus className="w-4 h-4 text-ink-3" /> See your work in your calendar
+          </div>
+        )}
+        <p className={`text-[11px] text-ink-3 ${bare ? '' : 'mt-0.5'}`}>
           Your jobs, live in Google or Apple Calendar. Times and addresses only —
           door codes stay in this app.
         </p>
@@ -86,9 +92,7 @@ export default function CrewCalendarSync() {
         </div>
       )}
 
-      {error && (
-        <div className="text-xs text-red-700 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{error}</div>
-      )}
+      <ErrorNote>{error}</ErrorNote>
     </div>
   )
 }

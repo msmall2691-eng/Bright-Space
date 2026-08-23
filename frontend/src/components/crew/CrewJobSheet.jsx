@@ -10,7 +10,9 @@
 import { useEffect, useState } from 'react'
 import { X } from 'lucide-react'
 import { get } from '../../api'
+import { Skeleton } from '../ui'
 import JobCard from './JobCard'
+import { ErrorNote } from './primitives'
 
 function dayLine(job) {
   if (!job?.scheduled_date) return ''
@@ -46,10 +48,8 @@ export default function CrewJobSheet({ jobId, onClose }) {
             <X className="w-4 h-4" />
           </button>
         </div>
-        {error && (
-          <div className="text-xs text-red-700 bg-red-50 border border-red-200 rounded-xl px-3 py-2">{error}</div>
-        )}
-        {!job && !error && <div className="h-40 rounded-xl bg-bg-2 animate-pulse" />}
+        <ErrorNote>{error}</ErrorNote>
+        {!job && !error && <Skeleton className="h-40 w-full rounded-xl" />}
         {job && <JobCard job={job} />}
       </div>
     </div>

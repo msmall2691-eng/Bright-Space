@@ -6,10 +6,15 @@
  * visible "Save" that appears only when something changed is the honest
  * contract. Email and crew ID are shown but not editable (the office owns
  * those from Settings → Users / Crew).
+ *
+ * `bare` renders just the form (no card shell/title) for the Me tab's
+ * accordion row; the fetch only happens once the row is opened.
  */
 import { useEffect, useState } from 'react'
 import { BadgeCheck, IdCard, Mail } from 'lucide-react'
 import { get, patch } from '../../api'
+import { Skeleton } from '../ui'
+import { ErrorNote } from './primitives'
 
 const FIELDS = [
   { key: 'full_name', label: 'Your name', type: 'text', autoComplete: 'name' },
@@ -18,7 +23,7 @@ const FIELDS = [
   { key: 'emergency_contact_phone', label: 'Emergency contact phone', type: 'tel' },
 ]
 
-export default function CrewProfile() {
+export default function CrewProfile({ bare = false }) {
   const [me, setMe] = useState(null)          // server truth
   const [form, setForm] = useState(null)      // edited copy
   const [saving, setSaving] = useState(false)
@@ -55,25 +60,17 @@ export default function CrewProfile() {
     }
   }
 
-  if (error && !me) {
-    return <div className="text-xs text-red-700 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{error}</div>
-  }
-  if (!form) {
-    return <div className="h-48 rounded-xl bg-bg-2 animate-pulse" />
-  }
+  if (error && !me) return <ErrorNote>{error}</ErrorNote>
+  if (!form) return <Skeleton className="h-48 w-full rounded-xl" />
 
   return (
-    <div className="bg-panel rounded-xl border border-hairline shadow-glass-sm p-4 space-y-4">
+    <div className={bare ? 'space-y-4' : 'bg-panel rounded-xl border border-hairline shadow-glass-sm p-4 space-y-4'}>
       <div>
-        <div className="text-sm font-bold text-ink">Your info</div>
-        <div className="mt-1.5 flex flex-wrap gap-1.5 text-[11px] text-ink-3">
-          <span className="inline-flex items-center gap-1 bg-bg border border-hairline rounded-full px-2 py-0.5">
-            <Mail className="w-3 h-3" /> {form.email}
-          </span>
+        {!bare && <div className="text-sm font-bold text-ink">Your info</div>}
+        <div className={`space-y-0.5 text-[11px] text-ink-3 ${bare ? '' : 'mt-1.5'}`}>
+          <div className="flex items-center gap-1.5"><Mail className="w-3 h-3 shrink-0" /> {form.email}</div>
           {form.cleaner_id && (
-            <span className="inline-flex items-center gap-1 bg-bg border border-hairline rounded-full px-2 py-0.5">
-              <IdCard className="w-3 h-3" /> Crew ID {form.cleaner_id}
-            </span>
+            <div className="flex items-center gap-1.5"><IdCard className="w-3 h-3 shrink-0" /> Crew ID {form.cleaner_id}</div>
           )}
         </div>
       </div>
@@ -91,17 +88,16 @@ export default function CrewProfile() {
         ))}
       </div>
 
-      {error && (
-        <div className="text-xs text-red-700 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{error}</div>
-      )}
+      <ErrorNote>{error}</ErrorNote>
 
       {(dirty || savedFlash) && (
         <button onClick={save} disabled={saving || !dirty}
           className={`w-full text-[13px] font-semibold py-2.5 rounded-lg transition-colors inline-flex items-center justify-center gap-1.5 ${
             savedFlash && !dirty
-              ? 'bg-emerald-500/10 text-emerald-600 border border-emerald-500/30'
+              ? 'bg-panel border border-hairline text-ink-2'
               : 'bg-blue-600 hover:bg-blue-700 text-white disabled:opacity-60'}`}>
-          {savedFlash && !dirty ? (<><BadgeCheck className="w-4 h-4" /> Saved</>)
+          {savedFlash && !dirty
+            ? (<><BadgeCheck className="w-4 h-4 text-emerald-600 dark:text-emerald-400" /> Saved</>)
             : saving ? 'Saving…' : 'Save changes'}
         </button>
       )}
