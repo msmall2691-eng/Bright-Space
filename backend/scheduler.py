@@ -379,11 +379,29 @@ def str_turnover_autoassign_tick() -> dict:
 
 
 def schedule_audit_tick() -> dict:
-    """Frequent, read-only audit of the schedule for duplicate jobs. Logs a
-    warning when anything's found so problems surface on their own instead of
-    piling up. Never mutates the schedule — the operator fixes what it flags."""
+    """Frequent audit of the schedule for things nobody has got to yet. Logs a
+    warning on duplicates so they surface on their own instead of piling up;
+    the audit itself never mutates the schedule — the operator fixes what it
+    flags.
+
+    The "offer a job to the crew when nobody's on it" standing rule rides this
+    tick (R1: no new ticks — this is a task on an existing one). It is fully
+    self-gated on `crew_escalation_mode`, defaults to parking a proposal for
+    approval rather than acting, and its failure can't take the duplicate audit
+    down with it."""
     db = SessionLocal()
     try:
+        try:
+            from services.standing_rules import (crew_escalation_hours,
+                                                 crew_escalation_mode)
+            mode = crew_escalation_mode(db)
+            if mode in ("propose", "auto"):
+                from services.crew_escalation import escalate_uncovered_jobs
+                escalate_uncovered_jobs(db, mode=mode,
+                                        hours=crew_escalation_hours(db))
+        except Exception:
+            log.exception("[crew-escalation] pass failed (schedule audit continues)")
+
         from modules.scheduling.router import find_schedule_issues
         issues = find_schedule_issues(db)
         c = issues.get("counts", {})

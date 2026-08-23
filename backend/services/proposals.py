@@ -36,7 +36,8 @@ PROPOSAL_STATUSES = ("pending", "approved", "dismissed", "executed", "failed")
 
 # The full set of kinds automation may propose. Executing anything else is
 # refused at create time, so a bad payload can't smuggle in a new verb.
-ALLOWED_KINDS = ("assign_cleaner", "send_sms", "create_job_from_gcal")
+ALLOWED_KINDS = ("assign_cleaner", "send_sms", "create_job_from_gcal",
+                 "open_to_crew")
 
 
 def _utcnow():
@@ -59,6 +60,11 @@ def _validate_payload(kind: str, payload: dict) -> None:
             raise ValueError("send_sms payload requires body")
         if not payload.get("conversation_id") and not payload.get("client_id"):
             raise ValueError("send_sms payload requires conversation_id or client_id")
+    elif kind == "open_to_crew":
+        # Additive and reversible: it puts the job on the crew's open-jobs
+        # board. Nothing else is needed — who claims it is the crew's move.
+        if not payload.get("job_id"):
+            raise ValueError("open_to_crew payload requires job_id")
     elif kind == "create_job_from_gcal":
         # Everything _execute_create_job_from_gcal needs to build a JobCreate
         # and call scheduling's create_job — there's no separate staging row
@@ -164,6 +170,8 @@ def execute_proposal(db: Session, proposal: ProposedAction,
         elif proposal.kind == "send_sms":
             result = _execute_send_sms(db, proposal.org_id, payload,
                                        author=proposal.agent_id)
+        elif proposal.kind == "open_to_crew":
+            result = _execute_open_to_crew(db, proposal.org_id, payload)
         elif proposal.kind == "create_job_from_gcal":
             result = _execute_create_job_from_gcal(db, proposal.org_id, payload)
         else:  # pragma: no cover — create_proposal enforces the allowlist
@@ -212,6 +220,28 @@ def _execute_assign_cleaner(db: Session, org_id: int, payload: dict) -> dict:
         "cleaner_ids": (job_dict or {}).get("cleaner_ids") or [cleaner_id],
         "assigned": cleaner_id,
     }
+
+
+def _execute_open_to_crew(db: Session, org_id: int, payload: dict) -> dict:
+    """Put the job on the crew's open-jobs board via the EXISTING write path:
+    scheduling's update_job, the same function behind the office's one-click
+    "Open to crew". `open_for_claims` is a real field on JobUpdate, so this is
+    the identical write a human makes — no raw column poke.
+
+    Opening does NOT assign anyone: a cleaner still has to claim it, and the
+    claim path is what closes the offer and reveals the access details
+    (BB-SEC-11/12). That's why this is safe to run on a standing rule at all."""
+    from modules.scheduling import router as scheduling_router
+
+    job_id = int(payload["job_id"])
+    job_dict = scheduling_router.update_job(
+        job_id,
+        scheduling_router.JobUpdate(open_for_claims=True),
+        db=db,
+        org_id=org_id,
+    )
+    return {"job_id": job_id,
+            "open_for_claims": bool((job_dict or {}).get("open_for_claims", True))}
 
 
 def _execute_send_sms(db: Session, org_id: int, payload: dict,
