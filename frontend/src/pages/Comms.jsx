@@ -354,7 +354,6 @@ export default function Comms() {
       <PageHeader
         title="Messages"
         icon={MessageSquare}
-        iconColor="blue"
         className="hidden lg:block pt-4 pb-3 sm:pt-4 sm:pb-3 shrink-0"
         actions={
           <div className="flex items-center gap-2">
@@ -407,7 +406,7 @@ export default function Comms() {
                 Choose from the list to read and reply, or start a new conversation.
               </p>
               <button onClick={() => setShowCompose(true)}
-                className="text-[13px] font-semibold text-indigo-600 bg-indigo-500/10 hover:bg-indigo-500/15 px-5 py-2.5 rounded-xl transition-colors inline-flex items-center gap-1.5">
+                className="text-[13px] font-semibold text-white bg-indigo-600 hover:bg-indigo-700 px-5 py-2.5 rounded-xl transition-colors inline-flex items-center gap-1.5">
                 <PenLine className="w-4 h-4" /> Compose
               </button>
             </div>

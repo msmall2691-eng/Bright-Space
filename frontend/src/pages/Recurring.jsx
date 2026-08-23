@@ -9,6 +9,7 @@ import Button from '../components/ui/Button'
 import GlassCard from '../components/ui/GlassCard'
 import EmptyState from '../components/ui/EmptyState'
 import PageHeader from '../components/ui/PageHeader'
+import ErrorNote from '../components/ui/ErrorNote'
 import SubNav from '../components/ui/SubNav'
 import { toast } from '../utils/toastBus'
 import { confirmDialog } from '../utils/confirmBus'
@@ -238,7 +239,7 @@ function SkipModal({ schedule, date, onClose, onDone }) {
           className="w-full px-3 py-2 border border-hairline rounded-lg text-sm"
         />
       </div>
-      {error && <div className="p-2.5 bg-red-50 border border-red-200 text-red-700 dark:bg-red-950 dark:border-red-800 dark:text-red-300 rounded text-sm">{error}</div>}
+      <ErrorNote>{error}</ErrorNote>
       <div className="flex justify-end gap-2 pt-2">
         <Button variant="secondary" onClick={onClose}>Cancel</Button>
         <Button variant="primary" onClick={submit} disabled={saving}>
@@ -303,7 +304,7 @@ function RescheduleModal({ schedule, date, defaultStart, defaultEnd, onClose, on
           placeholder="Client requested afternoon slot this week"
           className="w-full px-3 py-2 border border-hairline rounded-lg text-sm" />
       </div>
-      {error && <div className="p-2.5 bg-red-50 border border-red-200 text-red-700 dark:bg-red-950 dark:border-red-800 dark:text-red-300 rounded text-sm">{error}</div>}
+      <ErrorNote>{error}</ErrorNote>
       <div className="flex justify-end gap-2 pt-2">
         <Button variant="secondary" onClick={onClose}>Cancel</Button>
         <Button variant="primary" onClick={submit} disabled={saving}>
@@ -521,7 +522,7 @@ function EditSeriesModal({ schedule, onClose, onDone }) {
           onChange={e => setForm(f => ({ ...f, notes: e.target.value }))}
           className="w-full px-3 py-2 border border-hairline rounded-lg text-sm" />
       </div>
-      {error && <div className="p-2.5 bg-red-50 border border-red-200 text-red-700 dark:bg-red-950 dark:border-red-800 dark:text-red-300 rounded text-sm">{error}</div>}
+      <ErrorNote>{error}</ErrorNote>
       <div className="flex justify-end gap-2 pt-2">
         <Button variant="secondary" onClick={onClose}>Cancel</Button>
         <Button variant="primary" onClick={submit} disabled={saving}>
@@ -938,14 +939,14 @@ function SeriesDetail({ id, onBack, onChanged, toast }) {
   if (loading) return <div className="p-6 text-sm text-ink-3">Loading…</div>
   if (error) return (
     <div className="p-6">
-      <div className="p-3 bg-red-50 border border-red-200 text-red-700 dark:bg-red-950 dark:border-red-800 dark:text-red-300 rounded">{error}</div>
+      <ErrorNote>{error}</ErrorNote>
       <Button variant="secondary" onClick={onBack} className="mt-4">Back to list</Button>
     </div>
   )
   if (!schedule) return null
 
   return (
-    <div className="max-w-4xl mx-auto px-4 sm:px-6 py-4">
+    <div className="max-w-4xl mx-auto px-4 sm:px-8 py-4">
       <button
         onClick={onBack}
         className="inline-flex items-center gap-1.5 text-sm text-ink-3 hover:text-ink mb-4"
@@ -1227,7 +1228,7 @@ function HealthPanel({ onClose, onChanged, onOpenSeries, onOpenDuplicates, onCle
       {loading ? (
         <div className="text-center text-ink-3 py-10 text-sm">Scanning every series…</div>
       ) : error ? (
-        <div className="p-3 bg-red-50 border border-red-200 text-red-700 dark:bg-red-950 dark:border-red-800 dark:text-red-300 rounded text-sm">{error}</div>
+        <ErrorNote>{error}</ErrorNote>
       ) : (
         <>
           <div className="flex items-start justify-between gap-3 flex-wrap">
@@ -1462,7 +1463,7 @@ export default function Recurring() {
         <SubNav />
       </PageHeader>
 
-      <div className="max-w-5xl mx-auto px-4 sm:px-6 pb-8">
+      <div className="max-w-5xl mx-auto px-4 sm:px-8 pb-8">
         {autoGenOff && (
           <div className="mt-4 mb-4 flex items-start gap-2.5 rounded-lg bg-panel border border-hairline px-3.5 py-3 text-sm text-ink-2">
             <span className="w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0 mt-1.5" aria-hidden="true" />
@@ -1528,7 +1529,7 @@ export default function Recurring() {
           </div>
         )}
 
-        {error && <div className="mb-3 p-3 bg-red-50 border border-red-200 text-red-700 dark:bg-red-950 dark:border-red-800 dark:text-red-300 rounded">{error}</div>}
+        <ErrorNote className="mb-3">{error}</ErrorNote>
 
         {loading ? (
           <div className="text-center text-ink-3 py-12 text-sm">Loading…</div>

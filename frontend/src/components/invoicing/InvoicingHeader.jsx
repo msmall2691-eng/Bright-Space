@@ -1,4 +1,4 @@
-import { Receipt, Plus, Search, Sparkles } from 'lucide-react'
+import { Receipt, Plus, Search } from 'lucide-react'
 import { PageHero } from '../ui'
 import { STATUS_FILTERS } from './constants'
 
@@ -31,7 +31,7 @@ export function InvoicingHeader({
   return (
     <>
       {/* Cockpit hero — title + the four money pods, matching Home. */}
-      <div className="px-4 sm:px-6 pt-4 mb-4">
+      <div className="px-4 sm:px-8 pt-4 mb-4">
         <PageHero
           icon={Receipt}
           title="Invoices"
@@ -40,9 +40,10 @@ export function InvoicingHeader({
             <>
               {overdueCount > 0 && (
                 <button onClick={openChaser}
-                  className="flex items-center gap-2 bg-amber-500 text-white hover:bg-amber-600 px-3.5 py-2 rounded-xl text-xs font-semibold transition-colors"
+                  className="flex items-center gap-1.5 bg-panel border border-hairline-2 text-ink-2 hover:bg-bg-2 px-3 py-1.5 rounded-md text-xs font-medium transition-colors"
                   title="AI-draft payment reminders for all overdue invoices">
-                  <Sparkles className="w-3.5 h-3.5" /> Chase overdue ({overdueCount})
+                  <span className="w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0" aria-hidden="true" />
+                  Chase overdue ({overdueCount})
                 </button>
               )}
               <button onClick={openNew}

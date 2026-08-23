@@ -139,7 +139,7 @@ export default function QuoteFunnel() {
         <SubNav />
       </PageHeader>
 
-      <div className="px-4 sm:px-6 pb-6 space-y-5">
+      <div className="px-4 sm:px-8 pb-6 space-y-5">
         {/* Window selector + cohort note */}
         <div className="flex items-center justify-between flex-wrap gap-2">
           <p className="text-[11px] text-ink-3 max-w-md">
