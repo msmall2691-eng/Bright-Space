@@ -9,6 +9,7 @@ import { toast } from '../utils/toastBus'
 import { confirmDialog } from '../utils/confirmBus'
 import { Card, StatusBadge, Button, EmptyState } from '../components/ui'
 import RecordShell from '../components/ui/RecordShell'
+import CustomerActions from '../components/comms/CustomerActions'
 
 // Map a lead status to a StatusBadge variant (matches the Requests list vocab).
 const STATUS_VARIANT = {
@@ -213,6 +214,16 @@ export default function RequestDetail() {
           <Field label="Name" value={lead.name} />
           <Field label="Email" value={lead.email} icon={Mail} />
           <Field label="Phone" value={lead.phone} icon={Phone} />
+          {/* Answer a new lead from the lead itself. No client record exists
+              yet, so this messages the number/address on the request; the SMS
+              endpoint threads it onto a matching client if one turns up. */}
+          {(lead.phone || lead.email) && (
+            <div className="px-4 pb-3">
+              <CustomerActions clientId={lead.linked?.client?.id || null}
+                clientName={lead.name || ''}
+                phone={lead.phone || null} email={lead.email || null} />
+            </div>
+          )}
           <Field label="Location" value={location} icon={MapPin} />
         </div>
       </Card>

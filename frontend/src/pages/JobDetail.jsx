@@ -10,6 +10,7 @@ import { confirmDialog } from '../utils/confirmBus'
 import { formatDateShort as fmtDate } from '../utils/format'
 import { canEdit } from '../utils/perms'
 import InlineSelect from '../components/InlineSelect'
+import CustomerActions from '../components/comms/CustomerActions'
 
 /** Door code + access notes for the job's property, editable in place.
  *  Exists because empty codes were invisible: crew cards correctly show
@@ -574,6 +575,12 @@ export default function JobDetail() {
                   <Building2 className="w-3.5 h-3.5 shrink-0" /> {job.client_name || `Client #${job.client_id}`}
                 </Link>
               ) : <span className="text-[12px] text-ink-3 italic">No client linked</span>}
+              {/* Reach the customer without leaving the job you're looking at. */}
+              {job.client_id && (
+                <CustomerActions className="mt-2" clientId={job.client_id}
+                  clientName={job.client_name} propertyId={job.property_id}
+                  onBooked={load} />
+              )}
             </div>
 
             {canEdit() && (
