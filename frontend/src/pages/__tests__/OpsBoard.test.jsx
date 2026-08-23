@@ -80,6 +80,24 @@ const WITH_SNAPSHOT = {
         client_name: 'Anna Sweet', cadence: 'Weekly on Wed',
         code: 'active_no_upcoming', message: 'Marked active but has no upcoming visits generated.' }],
     },
+    money_trend: {
+      weeks: 12, collected_total: 4200, invoiced_total: 3900, has_data: true,
+      points: Array.from({ length: 12 }, (_, n) => ({
+        week: `2026-03-${String(2 + n).padStart(2, '0')}`, label: `Mar ${2 + n}`,
+        collected: 100 * (n + 1), invoiced: 90 * (n + 1),
+      })),
+    },
+    lead_funnel: {
+      window_days: 30, overall_pct: 25.0, has_data: true,
+      steps: [
+        { key: 'requests', label: 'Requests', count: 8 },
+        { key: 'quoted', label: 'Quoted', count: 5 },
+        { key: 'accepted', label: 'Accepted', count: 3 },
+        { key: 'won', label: 'Won', count: 2 },
+      ],
+      widths: [100, 63, 38, 25],
+      by_source: [{ source: 'website', requests: 8, won: 2 }],
+    },
   },
 }
 
@@ -327,6 +345,8 @@ describe('OpsBoard — snapshot boxes', () => {
     expect(screen.getByText('Dana')).toBeTruthy()               // crew today
     expect(screen.getByText('9 Lakeshore Dr')).toBeTruthy()     // feed health
     expect(screen.getByText('Weekly kitchen + baths')).toBeTruthy()  // recurring
+    expect(screen.getByText('Money, last 12 weeks')).toBeTruthy()    // trend chart
+    expect(screen.getByText('Requests, last 30 days')).toBeTruthy()  // lead funnel
 
     // The boxes cost nothing: one board fetch, and none of the endpoints
     // these four would otherwise each have to call for themselves.

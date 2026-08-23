@@ -40,6 +40,7 @@ import BoardAssistant from '../components/board/BoardAssistant'
 import ScheduleCalendar from '../components/board/ScheduleCalendar'
 import AgentHelp from '../components/board/AgentHelp'
 import { MoneyToday, CrewToday, FeedHealth, RecurringHealth } from '../components/board/SnapshotBoxes'
+import { MoneyTrend, LeadFunnel } from '../components/board/Charts'
 import SubNav from '../components/ui/SubNav'
 import { useUnreadCount } from '../hooks/useUnreadCount'
 import { currentRole } from '../nav/routes'
@@ -911,6 +912,13 @@ export default function OpsBoard() {
                   board payload already fetched above; no extra requests. */}
               <MoneyToday snap={snapshot.money_today} />
               <CrewToday snap={snapshot.crew} />
+
+              {/* Trends sit next to the numbers they explain: "collected
+                  today" is a dot on a line, and the line is what tells you
+                  whether the dot is good news. Both ride the same payload. */}
+              <MoneyTrend snap={snapshot.money_trend} />
+              <LeadFunnel snap={snapshot.lead_funnel} />
+
               <FeedHealth snap={snapshot.feeds} />
               <RecurringHealth snap={snapshot.recurring} />
 

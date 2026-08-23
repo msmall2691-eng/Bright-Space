@@ -18,7 +18,9 @@ from main import app
 from database.db import SessionLocal
 from database.models import Client, Quote, LeadIntake
 from modules.auth.router import get_current_user, current_org_id
-from modules.dashboard.router import _quote_stage, _median, _as_naive_utc
+# The funnel's cohort rules moved to modules.dashboard.analytics so Home's
+# lead-drop-off chart and /api/dashboard/funnel share one definition.
+from modules.dashboard.analytics import _quote_stage, _median, _as_naive_utc
 
 
 # ── Pure helpers ────────────────────────────────────────────────────────────
