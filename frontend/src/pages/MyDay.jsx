@@ -5,12 +5,13 @@
  * crew ID (GET /api/crew/my-day), nothing else in the CRM. No navigation chrome
  * beyond logout — meant to be opened on a phone at the start of a shift.
  *
- * Phase 1: read-only job list. Phase 2a (this file): a native time clock —
- * Clock in / Clock out per job, a live "on the clock" bar, and hours today.
- * The clock is what Payroll reads — the crew works fully native now.
+ * Tabs: Today (jobs + clock), Schedule (2 weeks / month), Chat, Learn, Me.
+ * The Me tab is a sectioned accordion (Work / Phone) — each row expands in
+ * place and only fetches once opened, so opening Me costs one request (the
+ * week-pay summary), not four.
  */
 import { useCallback, useEffect, useState } from 'react'
-import { MapPin, LogOut, RefreshCw, CalendarDays, Clock, Car, DollarSign, ChevronDown, CheckCircle2, CalendarRange, CircleUserRound, Sun, Sparkles, BookOpen, MessageSquare } from 'lucide-react'
+import { MapPin, LogOut, RefreshCw, CalendarDays, Clock, Car, DollarSign, CheckCircle2, CalendarRange, CircleUserRound, Sparkles, BookOpen, MessageSquare, Sun, CalendarClock, CalendarOff, Smartphone, CalendarPlus } from 'lucide-react'
 import { get, post, patch, logout } from '../api'
 import { EmptyState, ErrorState, Skeleton } from '../components/ui'
 import JobPhotoSheet from '../components/crew/JobPhotoSheet'
@@ -22,11 +23,12 @@ import CrewCalendarSync from '../components/crew/CrewCalendarSync'
 import CrewTimeOff from '../components/crew/CrewTimeOff'
 import { CrewThread } from '../components/crew/CrewMessages'
 import PropertySheet from '../components/crew/PropertySheet'
-// The job card lives in its own file now so every crew surface (Today list,
+// The job card lives in its own file so every crew surface (Today list,
 // schedule list, month tap-through sheet) renders the SAME details.
-import JobCard, { SOFT, fmtTimeRange } from '../components/crew/JobCard'
+import JobCard, { fmtTimeRange } from '../components/crew/JobCard'
 import CrewJobSheet from '../components/crew/CrewJobSheet'
 import CrewSetupCard from '../components/crew/CrewSetupCard'
+import { SOFT, CrewCard, SectionLabel, ErrorNote, SettingRow, Sheet, SheetActions } from '../components/crew/primitives'
 // Photos captured on cellular wait on-device and send on WiFi — My Day owns
 // flushing the queue (app open + connectivity changes) and the visible
 // "waiting" line with the cleaner's Send-now override.
@@ -92,75 +94,53 @@ function PunchRecap({ entry, onSaveMiles, busy = false }) {
 
 const fmtMoney = (n) => `$${Number(n || 0).toFixed(2)}`
 
-/** "This week" pay card: earned so far (from punches, same math as the office's
- *  Payroll page) + a prediction for the rest of the week from the jobs still
- *  assigned. Collapsed to the two headline numbers; expands to the per-job
- *  breakdown so a cleaner can see where the prediction comes from. */
-function WeekPayCard({ week, onOpenJob }) {
-  const [open, setOpen] = useState(false)
-  if (!week) return null
+/** "This week" pay breakdown — the body of the Me tab's This-week row.
+ *  Earned so far (from punches, same math as the office's Payroll page) +
+ *  a prediction for the rest of the week from the jobs still assigned. */
+function WeekPayBreakdown({ week, onOpenJob }) {
+  if (!week) return <Skeleton className="h-16 w-full rounded-lg" />
   const upcoming = week.upcoming || []
   return (
-    <section>
-      <div className="bg-panel border border-hairline rounded-xl overflow-hidden">
-        <button onClick={() => setOpen(o => !o)} className="w-full px-4 py-3 flex items-center justify-between gap-3">
-          <div className="flex items-center gap-2 min-w-0">
-            <span className="grid place-items-center w-8 h-8 rounded-lg bg-emerald-50 text-emerald-600 shrink-0">
-              <DollarSign className="w-4 h-4" />
-            </span>
-            <div className="text-left leading-tight min-w-0">
-              <div className="text-[13px] font-bold text-ink">This week</div>
-              <div className="text-[11px] text-ink-3">
-                Earned {fmtMoney(week.earned?.gross_pay)} · on track for {fmtMoney(week.predicted_week_total)}
-              </div>
-            </div>
-          </div>
-          <ChevronDown className={`w-4 h-4 text-ink-3 shrink-0 transition-transform ${open ? 'rotate-180' : ''}`} />
-        </button>
-        {open && (
-          <div className="px-4 pb-3 border-t border-hairline">
-            <div className="flex items-center justify-between text-[12px] py-2 text-ink-2">
-              <span>Earned so far ({week.earned?.hours || 0}h worked
-                {week.earned?.miles ? `, ${week.earned.miles} mi` : ''})</span>
-              <span className="font-semibold tabular-nums">{fmtMoney(week.earned?.gross_pay)}</span>
-            </div>
-            {upcoming.length > 0 && (
-              <div className="divide-y divide-hairline border-t border-hairline">
-                {upcoming.map(j => (
-                  /* Every job row anywhere in the crew UI opens its details —
-                     this one included (the crew-only detail sheet). */
-                  <button key={j.id} onClick={() => onOpenJob?.(j.id)}
-                    className="w-full flex items-center justify-between gap-2 py-2 text-[12px] text-left active:opacity-60">
-                    <div className="min-w-0">
-                      <div className="text-ink-2 truncate">{j.property_name || j.title}</div>
-                      <div className="text-[11px] text-ink-3">
-                        {new Date(`${j.date}T12:00:00`).toLocaleDateString(undefined, { weekday: 'short' })}
-                        {' · '}
-                        {j.piece
-                          ? (j.unpriced ? 'piece rate — not set yet' : 'piece rate')
-                          : `${j.hours}h${j.bump ? ` · +$${j.bump}/hr` : ''}`}
-                      </div>
-                    </div>
-                    <span className="font-semibold tabular-nums text-ink shrink-0">
-                      {j.unpriced ? '—' : fmtMoney(j.predicted_pay)}
-                      <span className="text-blue-500 ml-1">›</span>
-                    </span>
-                  </button>
-                ))}
-              </div>
-            )}
-            <div className="flex items-center justify-between text-[12px] py-2 border-t border-hairline font-bold text-ink">
-              <span>Week total (predicted)</span>
-              <span className="tabular-nums">{fmtMoney(week.predicted_week_total)}</span>
-            </div>
-            <p className="text-[10px] text-ink-3 pb-1">
-              Predictions use each job's scheduled length and your pay rates; the final number
-              comes from your actual clocked hours.
-            </p>
-          </div>
-        )}
+    <div>
+      <div className="flex items-center justify-between text-[12px] py-2 text-ink-2">
+        <span>Earned so far ({week.earned?.hours || 0}h worked
+          {week.earned?.miles ? `, ${week.earned.miles} mi` : ''})</span>
+        <span className="font-semibold tabular-nums">{fmtMoney(week.earned?.gross_pay)}</span>
       </div>
-    </section>
+      {upcoming.length > 0 && (
+        <div className="divide-y divide-hairline border-t border-hairline">
+          {upcoming.map(j => (
+            /* Every job row anywhere in the crew UI opens its details —
+               this one included (the crew-only detail sheet). */
+            <button key={j.id} onClick={() => onOpenJob?.(j.id)}
+              className="w-full flex items-center justify-between gap-2 py-2 text-[12px] text-left active:opacity-60">
+              <div className="min-w-0">
+                <div className="text-ink-2 truncate">{j.property_name || j.title}</div>
+                <div className="text-[11px] text-ink-3">
+                  {new Date(`${j.date}T12:00:00`).toLocaleDateString(undefined, { weekday: 'short' })}
+                  {' · '}
+                  {j.piece
+                    ? (j.unpriced ? 'piece rate — not set yet' : 'piece rate')
+                    : `${j.hours}h${j.bump ? ` · +$${j.bump}/hr` : ''}`}
+                </div>
+              </div>
+              <span className="font-semibold tabular-nums text-ink shrink-0">
+                {j.unpriced ? '—' : fmtMoney(j.predicted_pay)}
+                <span className="text-blue-500 ml-1">›</span>
+              </span>
+            </button>
+          ))}
+        </div>
+      )}
+      <div className="flex items-center justify-between text-[12px] py-2 border-t border-hairline font-bold text-ink">
+        <span>Week total (predicted)</span>
+        <span className="tabular-nums">{fmtMoney(week.predicted_week_total)}</span>
+      </div>
+      <p className="text-[10px] text-ink-3 pb-1">
+        Predictions use each job's scheduled length and your pay rates; the final number
+        comes from your actual clocked hours.
+      </p>
+    </div>
   )
 }
 
@@ -330,9 +310,6 @@ export default function MyDay() {
 
   const fetchDay = useCallback((silent = false) => {
     if (!silent) { setLoading(true); setError(null) }
-    // Week pay rides along on every refresh (clocking out changes "earned so
-    // far") but is best-effort — the day view never blocks on it.
-    get('/api/crew/my-week').then(setWeekPay).catch(() => {})
     // days=14 (the endpoint's max) so the Schedule tab shows two weeks out.
     return get('/api/crew/my-day?days=14')
       .then(d => {
@@ -361,6 +338,16 @@ export default function MyDay() {
   }, [])
 
   useEffect(() => { fetchDay() }, [fetchDay])
+
+  // Week pay loads when (and only when) the Me tab opens — it used to ride
+  // every my-day refresh for a card nobody was looking at. Re-opening the
+  // tab refreshes it, so it's current after a clock-out.
+  useEffect(() => {
+    if (tab !== 'me') return undefined
+    let cancelled = false
+    get('/api/crew/my-week').then(d => { if (!cancelled) setWeekPay(d) }).catch(() => {})
+    return () => { cancelled = true }
+  }, [tab])
 
   const clock = data?.clock
   const active = clock?.active || null
@@ -532,15 +519,9 @@ export default function MyDay() {
         )}
 
         {active && (
-          /* Persistent on-the-clock state — important and frequently glanced
-             at, but a steady status, not a promotional banner or a transient
-             alert. Quiet hairline-card treatment (dot + word, per the design
-             language) rather than the full-bleed colored bar: the emerald
-             dot + emerald label carry "this is the good, active state" the
-             same way SyncCenter's "In sync" row does, and the Clock out
-             button keeps the same solid-emerald treatment JobCard already
-             uses for the identical action, so the one thing to tap reads at
-             a glance without needing the whole strip filled in. */
+          /* Persistent on-the-clock state — quiet hairline treatment (dot +
+             word); the Clock out button keeps the same solid-emerald action
+             treatment JobCard uses for the identical action. */
           <div className="border-b border-hairline bg-panel px-4 py-2.5 flex items-center justify-between gap-3">
             <div className="flex items-center gap-2 min-w-0">
               <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" aria-hidden="true" />
@@ -568,11 +549,7 @@ export default function MyDay() {
       </div>
 
       <div className="px-4 py-4 max-w-lg mx-auto space-y-5 pb-24">
-        {actionError && (
-          <div className="text-xs text-red-700 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
-            {actionError}
-          </div>
-        )}
+        <ErrorNote>{actionError}</ErrorNote>
 
         {queuedPhotos > 0 && (
           /* Photos captured on cellular, waiting for WiFi. Quiet hairline
@@ -629,7 +606,7 @@ export default function MyDay() {
 
             <section>
               <div className="flex items-center justify-between mb-2">
-                <h2 className="text-xs font-semibold uppercase tracking-wide text-ink-3">Today</h2>
+                <SectionLabel>Today</SectionLabel>
                 {hoursToday > 0 && (
                   <span className="text-[11px] text-ink-3 tabular-nums">{hoursToday}h logged today</span>
                 )}
@@ -661,9 +638,9 @@ export default function MyDay() {
 
             {(data.open_jobs || []).filter(j => j.scheduled_date === data.as_of).length > 0 && (
               <section>
-                <h2 className="text-xs font-semibold uppercase tracking-wide text-ink-3 mb-2 flex items-center gap-1.5">
-                  <Sparkles className="w-3.5 h-3.5 text-amber-500" /> Up for grabs today
-                </h2>
+                <SectionLabel className="mb-2 flex items-center gap-1.5">
+                  <Sparkles className="w-3.5 h-3.5" /> Up for grabs today
+                </SectionLabel>
                 <div className="space-y-3">
                   {(data.open_jobs || []).filter(j => j.scheduled_date === data.as_of).map(j => (
                     <JobCard key={j.id} job={j} onClaim={() => { setActionError(null); setClaimJob(j) }} busy={actionBusy} />
@@ -674,7 +651,7 @@ export default function MyDay() {
 
             {closedToday.length > 0 && (
               <section>
-                <h2 className="text-xs font-semibold uppercase tracking-wide text-ink-3 mb-2">Today's punches</h2>
+                <SectionLabel className="mb-2">Today's punches</SectionLabel>
                 <div className={`${SOFT} px-4`}>
                   <div className="divide-y divide-hairline">
                     {closedToday.map(e => (
@@ -692,12 +669,13 @@ export default function MyDay() {
         )}
 
         {tab === 'schedule' && (
-          <div className="flex gap-1.5 mb-1">
+          /* Segmented control (hairline frame, solid active) — same pattern
+             as the photo sheet's Before/After toggle. */
+          <div className="grid grid-cols-2 rounded-lg border border-hairline overflow-hidden text-[12px] font-semibold mb-1">
             {[['list', 'Next 2 weeks'], ['month', 'Month']].map(([v, l]) => (
               <button key={v} onClick={() => setSchedView(v)} aria-pressed={schedView === v}
-                className={`text-[12px] font-semibold px-3 py-1.5 rounded-full border transition-colors ${
-                  schedView === v ? 'bg-blue-600 border-blue-600 text-white'
-                    : 'bg-panel border-hairline text-ink-2'}`}>
+                className={`py-1.5 transition-colors ${
+                  schedView === v ? 'bg-blue-600 text-white' : 'bg-panel text-ink-2 hover:bg-bg-2'}`}>
                 {l}
               </button>
             ))}
@@ -708,9 +686,9 @@ export default function MyDay() {
 
         {tab === 'schedule' && schedView === 'list' && !loading && !error && data && (data.open_jobs || []).length > 0 && (
           <section>
-            <h2 className="text-xs font-semibold uppercase tracking-wide text-ink-3 mb-2 flex items-center gap-1.5">
-              <Sparkles className="w-3.5 h-3.5 text-amber-500" /> Up for grabs
-            </h2>
+            <SectionLabel className="mb-2 flex items-center gap-1.5">
+              <Sparkles className="w-3.5 h-3.5" /> Up for grabs
+            </SectionLabel>
             <div className="space-y-3">
               {(data.open_jobs || []).map(j => (
                 <JobCard key={j.id} job={j} onClaim={() => { setActionError(null); setClaimJob(j) }} busy={actionBusy} />
@@ -727,9 +705,7 @@ export default function MyDay() {
           ) : (
             groupByDate(data.upcoming).map(g => (
               <section key={g.date}>
-                <h2 className="text-xs font-semibold uppercase tracking-wide text-ink-3 mb-2">
-                  {dayLabel(g.date)}
-                </h2>
+                <SectionLabel className="mb-2">{dayLabel(g.date)}</SectionLabel>
                 <div className="space-y-3">
                   {g.jobs.map(j => (
                     <JobCard key={j.id} job={j}
@@ -754,15 +730,50 @@ export default function MyDay() {
         {tab === 'learn' && <CrewLearn />}
 
         {tab === 'me' && (
+          /* One sectioned accordion instead of six stacked cards: every row
+             expands in place, and rows that fetch only do it once opened. */
           <>
-            <CrewProfile />
-            {/* persistent: ignores the Today-card dismissal so install steps
-                + the notifications switch stay reachable. */}
-            <CrewSetupCard persistent />
-            <CrewTimeOff />
-            <CrewAvailability />
-            <CrewCalendarSync />
-            <WeekPayCard week={weekPay} onOpenJob={setSheetJobId} />
+            <CrewCard className="px-4">
+              <SettingRow icon={CircleUserRound} label="Your info"
+                summary="Name, phone, emergency contact">
+                <CrewProfile bare />
+              </SettingRow>
+            </CrewCard>
+
+            <section>
+              <SectionLabel className="mb-2">Work</SectionLabel>
+              <CrewCard className="px-4 divide-y divide-hairline">
+                <SettingRow icon={CalendarClock} label="My availability"
+                  summary="Set the weeks ahead — each week locks when it starts">
+                  <CrewAvailability bare />
+                </SettingRow>
+                <SettingRow icon={CalendarOff} label="Time off"
+                  summary="Request days off — the office approves">
+                  <CrewTimeOff bare />
+                </SettingRow>
+                <SettingRow icon={DollarSign} label="This week"
+                  summary={weekPay
+                    ? `Earned ${fmtMoney(weekPay.earned?.gross_pay)} · on track for ${fmtMoney(weekPay.predicted_week_total)}`
+                    : 'Your pay, live from your punches'}>
+                  <WeekPayBreakdown week={weekPay} onOpenJob={setSheetJobId} />
+                </SettingRow>
+              </CrewCard>
+            </section>
+
+            <section>
+              <SectionLabel className="mb-2">Phone</SectionLabel>
+              <CrewCard className="px-4 divide-y divide-hairline">
+                <SettingRow icon={Smartphone} label="Get set up"
+                  summary="Save the app to your phone + notifications">
+                  <CrewSetupCard persistent bare />
+                </SettingRow>
+                <SettingRow icon={CalendarPlus} label="Calendar link"
+                  summary="See your jobs in Google or Apple Calendar">
+                  <CrewCalendarSync bare />
+                </SettingRow>
+              </CrewCard>
+            </section>
+
             <button onClick={logout}
               className="w-full text-[13px] font-semibold bg-panel border border-hairline text-red-600 dark:text-red-400 py-2.5 rounded-lg hover:bg-bg-2 transition-colors inline-flex items-center justify-center gap-1.5">
               <LogOut className="w-4 h-4" /> Log out
@@ -778,54 +789,36 @@ export default function MyDay() {
       )}
 
       {clockOutOpen && (
-        <div
-          className="fixed inset-0 z-30 flex items-end sm:items-center justify-center bg-black/40 px-4 pb-4 sm:pb-0"
-          onClick={() => { if (!actionBusy) setClockOutOpen(false) }}>
-          <div
-            className="w-full max-w-sm bg-panel rounded-2xl border border-hairline shadow-glass p-5 space-y-4 max-h-[85dvh] overflow-y-auto overscroll-contain"
-            onClick={e => e.stopPropagation()}>
-            <div>
-              <div className="text-base font-bold text-ink">Clock out</div>
-              {activeJob && (
-                <div className="text-[13px] text-ink-3 mt-0.5 truncate">
-                  {activeJob.property_name || activeJob.title}
-                </div>
-              )}
-            </div>
-            <label className="block">
-              <span className="text-[13px] font-medium text-ink-2 flex items-center gap-1.5">
-                <Car className="w-4 h-4 text-ink-3" /> Miles driven for this job
-              </span>
-              <div className="mt-1.5 flex items-center gap-2">
-                <input
-                  type="number" inputMode="decimal" step="0.1" min="0" value={milesInput} autoFocus
-                  onChange={e => setMilesInput(e.target.value)}
-                  placeholder="0"
-                  className="flex-1 rounded-lg border border-hairline bg-bg px-3 py-2.5 text-ink tabular-nums text-right"
-                />
-                <span className="text-sm text-ink-3">miles</span>
-              </div>
-              <span className="text-[11px] text-ink-3 mt-1.5 block">
-                Leave blank if you didn't drive for this job.
-              </span>
-            </label>
-            {actionError && (
-              <div className="text-xs text-red-700 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
-                {actionError}
+        <Sheet onClose={() => setClockOutOpen(false)} busy={actionBusy}>
+          <div>
+            <div className="text-base font-bold text-ink">Clock out</div>
+            {activeJob && (
+              <div className="text-[13px] text-ink-3 mt-0.5 truncate">
+                {activeJob.property_name || activeJob.title}
               </div>
             )}
-            <div className="flex gap-2">
-              <button onClick={() => setClockOutOpen(false)} disabled={actionBusy}
-                className="flex-1 text-[13px] font-semibold bg-panel border border-hairline text-ink-2 py-2.5 rounded-lg hover:bg-bg-2 disabled:opacity-60 transition-colors">
-                Cancel
-              </button>
-              <button onClick={confirmClockOut} disabled={actionBusy}
-                className="flex-1 text-[13px] font-semibold bg-emerald-600 hover:bg-emerald-700 text-white py-2.5 rounded-lg disabled:opacity-60 transition-colors">
-                {actionBusy ? 'Clocking out…' : 'Clock out'}
-              </button>
-            </div>
           </div>
-        </div>
+          <label className="block">
+            <span className="text-[13px] font-medium text-ink-2 flex items-center gap-1.5">
+              <Car className="w-4 h-4 text-ink-3" /> Miles driven for this job
+            </span>
+            <div className="mt-1.5 flex items-center gap-2">
+              <input
+                type="number" inputMode="decimal" step="0.1" min="0" value={milesInput} autoFocus
+                onChange={e => setMilesInput(e.target.value)}
+                placeholder="0"
+                className="flex-1 rounded-lg border border-hairline bg-bg px-3 py-2.5 text-ink tabular-nums text-right"
+              />
+              <span className="text-sm text-ink-3">miles</span>
+            </div>
+            <span className="text-[11px] text-ink-3 mt-1.5 block">
+              Leave blank if you didn't drive for this job.
+            </span>
+          </label>
+          <ErrorNote>{actionError}</ErrorNote>
+          <SheetActions onCancel={() => setClockOutOpen(false)} onConfirm={confirmClockOut}
+            busy={actionBusy} confirmLabel="Clock out" busyLabel="Clocking out…" tone="emerald" />
+        </Sheet>
       )}
 
       {photoJob && (
@@ -846,204 +839,144 @@ export default function MyDay() {
         const canOnTheWay = textJob.scheduled_date === data?.as_of
         const canTomorrow = textJob.scheduled_date === tomorrow
         return (
-          <div className="fixed inset-0 z-30 flex items-end sm:items-center justify-center bg-black/40 px-4 pb-4 sm:pb-0"
-            onClick={() => { if (!actionBusy) setTextJob(null) }}>
-            <div className="w-full max-w-sm bg-panel rounded-2xl border border-hairline shadow-glass p-5 space-y-3 max-h-[85dvh] overflow-y-auto overscroll-contain"
-              onClick={e => e.stopPropagation()}>
-              <div>
-                <div className="text-base font-bold text-ink">Text {textJob.client_name || 'the client'}</div>
-                <div className="text-[11px] text-ink-3 mt-0.5">
-                  Sent from the company number and logged for the office — their
-                  number stays private.
-                </div>
+          <Sheet onClose={() => setTextJob(null)} busy={actionBusy}>
+            <div>
+              <div className="text-base font-bold text-ink">Text {textJob.client_name || 'the client'}</div>
+              <div className="text-[11px] text-ink-3 mt-0.5">
+                Sent from the company number and logged for the office — their
+                number stays private.
               </div>
-              {textSent ? (
-                <>
-                  <div className="text-[12.5px] text-ink-2 bg-emerald-500/10 border border-emerald-500/20 rounded-lg px-3 py-2">
-                    Sent ✓ &nbsp;“{textSent}”
-                  </div>
-                  <button onClick={() => setTextJob(null)}
-                    className="w-full text-[13px] font-semibold bg-panel border border-hairline text-ink-2 py-2.5 rounded-lg hover:bg-bg-2 transition-colors">
-                    Done
-                  </button>
-                </>
-              ) : (
-                <>
-                  {!canOnTheWay && !canTomorrow ? (
-                    <p className="text-[12.5px] text-ink-3">
-                      Texts unlock the day before ("see you tomorrow") and the
-                      day of ("on the way").
-                    </p>
-                  ) : (
-                    <>
-                      <label className="block">
-                        <span className="text-[12px] font-medium text-ink-2">Add a personal line (optional)</span>
-                        <input value={textNote} maxLength={160}
-                          onChange={e => setTextNote(e.target.value)}
-                          placeholder="e.g. It's Sarah and Meg today!"
-                          className="mt-1 w-full rounded-lg border border-hairline bg-bg px-3 py-2 text-[13px] text-ink focus:outline-none focus:border-blue-400" />
-                      </label>
-                      <div className="space-y-2">
-                        {canOnTheWay && (
-                          <button onClick={() => sendClientText(textJob, 'on_the_way', textNote.trim() || undefined)}
-                            disabled={actionBusy}
-                            className="w-full text-[13px] font-semibold bg-blue-600 hover:bg-blue-700 text-white py-2.5 rounded-lg disabled:opacity-60 transition-colors">
-                            {actionBusy ? 'Sending…' : "🚗 We're on the way"}
-                          </button>
-                        )}
-                        {canTomorrow && (
-                          <button onClick={() => sendClientText(textJob, 'tomorrow', textNote.trim() || undefined)}
-                            disabled={actionBusy}
-                            className="w-full text-[13px] font-semibold bg-blue-600 hover:bg-blue-700 text-white py-2.5 rounded-lg disabled:opacity-60 transition-colors">
-                            {actionBusy ? 'Sending…' : '👋 Looking forward to tomorrow'}
-                          </button>
-                        )}
-                      </div>
-                    </>
-                  )}
-                  {actionError && (
-                    <div className="text-xs text-red-700 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
-                      {actionError}
-                    </div>
-                  )}
-                </>
-              )}
             </div>
-          </div>
+            {textSent ? (
+              <>
+                <div className="text-[12.5px] text-ink-2 flex items-start gap-1.5">
+                  <span className="mt-[5px] w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" aria-hidden="true" />
+                  <span>Sent — “{textSent}”</span>
+                </div>
+                <button onClick={() => setTextJob(null)}
+                  className="w-full text-[13px] font-semibold bg-panel border border-hairline text-ink-2 py-2.5 rounded-lg hover:bg-bg-2 transition-colors">
+                  Done
+                </button>
+              </>
+            ) : (
+              <>
+                {!canOnTheWay && !canTomorrow ? (
+                  <p className="text-[12.5px] text-ink-3">
+                    Texts unlock the day before ("see you tomorrow") and the
+                    day of ("on the way").
+                  </p>
+                ) : (
+                  <>
+                    <label className="block">
+                      <span className="text-[12px] font-medium text-ink-2">Add a personal line (optional)</span>
+                      <input value={textNote} maxLength={160}
+                        onChange={e => setTextNote(e.target.value)}
+                        placeholder="e.g. It's Sarah and Meg today!"
+                        className="mt-1 w-full rounded-lg border border-hairline bg-bg px-3 py-2 text-[13px] text-ink focus:outline-none focus:border-blue-400" />
+                    </label>
+                    <div className="space-y-2">
+                      {canOnTheWay && (
+                        <button onClick={() => sendClientText(textJob, 'on_the_way', textNote.trim() || undefined)}
+                          disabled={actionBusy}
+                          className="w-full text-[13px] font-semibold bg-blue-600 hover:bg-blue-700 text-white py-2.5 rounded-lg disabled:opacity-60 transition-colors">
+                          {actionBusy ? 'Sending…' : "🚗 We're on the way"}
+                        </button>
+                      )}
+                      {canTomorrow && (
+                        <button onClick={() => sendClientText(textJob, 'tomorrow', textNote.trim() || undefined)}
+                          disabled={actionBusy}
+                          className="w-full text-[13px] font-semibold bg-blue-600 hover:bg-blue-700 text-white py-2.5 rounded-lg disabled:opacity-60 transition-colors">
+                          {actionBusy ? 'Sending…' : '👋 Looking forward to tomorrow'}
+                        </button>
+                      )}
+                    </div>
+                  </>
+                )}
+                <ErrorNote>{actionError}</ErrorNote>
+              </>
+            )}
+          </Sheet>
         )
       })()}
 
       {claimJob && (
-        <div
-          className="fixed inset-0 z-30 flex items-end sm:items-center justify-center bg-black/40 px-4 pb-4 sm:pb-0"
-          onClick={() => { if (!actionBusy) setClaimJob(null) }}>
-          <div
-            className="w-full max-w-sm bg-panel rounded-2xl border border-hairline shadow-glass p-5 space-y-4 max-h-[85dvh] overflow-y-auto overscroll-contain"
-            onClick={e => e.stopPropagation()}>
-            <div>
-              <div className="text-base font-bold text-ink">Claim this job?</div>
-              <div className="text-[13px] text-ink-3 mt-0.5 truncate">
-                {claimJob.property_name || claimJob.title}
-                {claimJob.scheduled_date ? ` · ${claimJob.scheduled_date === data?.as_of ? 'Today' : dayLabel(claimJob.scheduled_date)}` : ''}
-                {claimJob.start_time ? ` · ${fmtTimeRange(claimJob.start_time, claimJob.end_time)}` : ''}
-              </div>
-            </div>
-            <p className="text-[12px] text-ink-3">
-              First come, first served — it's yours the moment you tap Claim, and the
-              office gets notified. Address details unlock once it's on your list.
-            </p>
-            {actionError && (
-              <div className="text-xs text-red-700 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
-                {actionError}
-              </div>
-            )}
-            <div className="flex gap-2">
-              <button onClick={() => setClaimJob(null)} disabled={actionBusy}
-                className="flex-1 text-[13px] font-semibold bg-panel border border-hairline text-ink-2 py-2.5 rounded-lg hover:bg-bg-2 disabled:opacity-60 transition-colors">
-                Never mind
-              </button>
-              <button onClick={confirmClaim} disabled={actionBusy}
-                className="flex-1 text-[13px] font-semibold bg-blue-600 hover:bg-blue-700 text-white py-2.5 rounded-lg disabled:opacity-60 transition-colors inline-flex items-center justify-center gap-1.5">
-                <Sparkles className="w-4 h-4" />
-                {actionBusy ? 'Claiming…' : 'Claim it'}
-              </button>
+        <Sheet onClose={() => setClaimJob(null)} busy={actionBusy}>
+          <div>
+            <div className="text-base font-bold text-ink">Claim this job?</div>
+            <div className="text-[13px] text-ink-3 mt-0.5 truncate">
+              {claimJob.property_name || claimJob.title}
+              {claimJob.scheduled_date ? ` · ${claimJob.scheduled_date === data?.as_of ? 'Today' : dayLabel(claimJob.scheduled_date)}` : ''}
+              {claimJob.start_time ? ` · ${fmtTimeRange(claimJob.start_time, claimJob.end_time)}` : ''}
             </div>
           </div>
-        </div>
+          <p className="text-[12px] text-ink-3">
+            First come, first served — it's yours the moment you tap Claim, and the
+            office gets notified. Address details unlock once it's on your list.
+          </p>
+          <ErrorNote>{actionError}</ErrorNote>
+          <SheetActions onCancel={() => setClaimJob(null)} onConfirm={confirmClaim}
+            busy={actionBusy} confirmLabel="Claim it" busyLabel="Claiming…"
+            confirmIcon={<Sparkles className="w-4 h-4" />} />
+        </Sheet>
       )}
 
       {declineJob && (
-        <div
-          className="fixed inset-0 z-30 flex items-end sm:items-center justify-center bg-black/40 px-4 pb-4 sm:pb-0"
-          onClick={() => { if (!actionBusy) setDeclineJob(null) }}>
-          <div
-            className="w-full max-w-sm bg-panel rounded-2xl border border-hairline shadow-glass p-5 space-y-4 max-h-[85dvh] overflow-y-auto overscroll-contain"
-            onClick={e => e.stopPropagation()}>
-            <div>
-              <div className="text-base font-bold text-ink">Can't make it</div>
-              <div className="text-[13px] text-ink-3 mt-0.5 truncate">
-                {declineJob.property_name || declineJob.title}
-                {declineJob.scheduled_date ? ` · ${dayLabel(declineJob.scheduled_date)}` : ''}
-              </div>
-            </div>
-            <p className="text-[12px] text-ink-3">
-              You'll stay on the job until the office reassigns it — they get
-              notified right away.
-            </p>
-            <label className="block">
-              <span className="text-[13px] font-medium text-ink-2">Why not? (optional)</span>
-              <textarea
-                value={declineReason} onChange={e => setDeclineReason(e.target.value)}
-                rows={2} maxLength={2000} autoFocus
-                placeholder="e.g. doctor's appointment, car trouble…"
-                className="mt-1.5 w-full rounded-lg border border-hairline bg-bg px-3 py-2.5 text-[13px] text-ink placeholder-ink-3 focus:outline-none focus:border-blue-400 resize-none"
-              />
-            </label>
-            {actionError && (
-              <div className="text-xs text-red-700 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
-                {actionError}
-              </div>
-            )}
-            <div className="flex gap-2">
-              <button onClick={() => setDeclineJob(null)} disabled={actionBusy}
-                className="flex-1 text-[13px] font-semibold bg-panel border border-hairline text-ink-2 py-2.5 rounded-lg hover:bg-bg-2 disabled:opacity-60 transition-colors">
-                Never mind
-              </button>
-              <button onClick={() => respond(declineJob, 'declined', declineReason.trim() || undefined)}
-                disabled={actionBusy}
-                className="flex-1 text-[13px] font-semibold bg-amber-600 hover:bg-amber-700 text-white py-2.5 rounded-lg disabled:opacity-60 transition-colors">
-                {actionBusy ? 'Sending…' : 'Send'}
-              </button>
+        <Sheet onClose={() => setDeclineJob(null)} busy={actionBusy}>
+          <div>
+            <div className="text-base font-bold text-ink">Can't make it</div>
+            <div className="text-[13px] text-ink-3 mt-0.5 truncate">
+              {declineJob.property_name || declineJob.title}
+              {declineJob.scheduled_date ? ` · ${dayLabel(declineJob.scheduled_date)}` : ''}
             </div>
           </div>
-        </div>
+          <p className="text-[12px] text-ink-3">
+            You'll stay on the job until the office reassigns it — they get
+            notified right away.
+          </p>
+          <label className="block">
+            <span className="text-[13px] font-medium text-ink-2">Why not? (optional)</span>
+            <textarea
+              value={declineReason} onChange={e => setDeclineReason(e.target.value)}
+              rows={2} maxLength={2000} autoFocus
+              placeholder="e.g. doctor's appointment, car trouble…"
+              className="mt-1.5 w-full rounded-lg border border-hairline bg-bg px-3 py-2.5 text-[13px] text-ink placeholder-ink-3 focus:outline-none focus:border-blue-400 resize-none"
+            />
+          </label>
+          <ErrorNote>{actionError}</ErrorNote>
+          <SheetActions onCancel={() => setDeclineJob(null)}
+            onConfirm={() => respond(declineJob, 'declined', declineReason.trim() || undefined)}
+            busy={actionBusy} confirmLabel="Send" busyLabel="Sending…" tone="amber" />
+        </Sheet>
       )}
 
       {markDoneJob && (
-        <div
-          className="fixed inset-0 z-30 flex items-end sm:items-center justify-center bg-black/40 px-4 pb-4 sm:pb-0"
-          onClick={() => { if (!actionBusy) setMarkDoneJob(null) }}>
-          <div
-            className="w-full max-w-sm bg-panel rounded-2xl border border-hairline shadow-glass p-5 space-y-4 max-h-[85dvh] overflow-y-auto overscroll-contain"
-            onClick={e => e.stopPropagation()}>
-            <div>
-              <div className="text-base font-bold text-ink">Mark done</div>
-              <div className="text-[13px] text-ink-3 mt-0.5 truncate">
-                {markDoneJob.property_name || markDoneJob.title}
-              </div>
-            </div>
-            {active && active.job_id === markDoneJob.id && (
-              <div className="text-[12px] text-amber-800 dark:text-amber-300 bg-amber-500/10 border border-amber-500/20 rounded-lg px-3 py-2">
-                You're still on the clock — remember to clock out when you leave.
-              </div>
-            )}
-            <label className="block">
-              <span className="text-[13px] font-medium text-ink-2">Anything for the office?</span>
-              <textarea
-                value={doneNote} onChange={e => setDoneNote(e.target.value)}
-                rows={3} maxLength={2000} autoFocus
-                placeholder="Optional — e.g. lockbox was empty, we're low on towels…"
-                className="mt-1.5 w-full rounded-lg border border-hairline bg-bg px-3 py-2.5 text-[13px] text-ink placeholder-ink-3 focus:outline-none focus:border-blue-400 resize-none"
-              />
-            </label>
-            {actionError && (
-              <div className="text-xs text-red-700 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
-                {actionError}
-              </div>
-            )}
-            <div className="flex gap-2">
-              <button onClick={() => setMarkDoneJob(null)} disabled={actionBusy}
-                className="flex-1 text-[13px] font-semibold bg-panel border border-hairline text-ink-2 py-2.5 rounded-lg hover:bg-bg-2 disabled:opacity-60 transition-colors">
-                Cancel
-              </button>
-              <button onClick={confirmMarkDone} disabled={actionBusy}
-                className="flex-1 text-[13px] font-semibold bg-emerald-600 hover:bg-emerald-700 text-white py-2.5 rounded-lg disabled:opacity-60 transition-colors inline-flex items-center justify-center gap-1.5">
-                <CheckCircle2 className="w-4 h-4" />
-                {actionBusy ? 'Saving…' : 'Mark done'}
-              </button>
+        <Sheet onClose={() => setMarkDoneJob(null)} busy={actionBusy}>
+          <div>
+            <div className="text-base font-bold text-ink">Mark done</div>
+            <div className="text-[13px] text-ink-3 mt-0.5 truncate">
+              {markDoneJob.property_name || markDoneJob.title}
             </div>
           </div>
-        </div>
+          {active && active.job_id === markDoneJob.id && (
+            <div className="flex items-start gap-1.5 rounded-lg border border-hairline bg-bg px-3 py-2 text-[12px] text-ink-2">
+              <span className="mt-[5px] w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0" aria-hidden="true" />
+              You're still on the clock — remember to clock out when you leave.
+            </div>
+          )}
+          <label className="block">
+            <span className="text-[13px] font-medium text-ink-2">Anything for the office?</span>
+            <textarea
+              value={doneNote} onChange={e => setDoneNote(e.target.value)}
+              rows={3} maxLength={2000} autoFocus
+              placeholder="Optional — e.g. lockbox was empty, we're low on towels…"
+              className="mt-1.5 w-full rounded-lg border border-hairline bg-bg px-3 py-2.5 text-[13px] text-ink placeholder-ink-3 focus:outline-none focus:border-blue-400 resize-none"
+            />
+          </label>
+          <ErrorNote>{actionError}</ErrorNote>
+          <SheetActions onCancel={() => setMarkDoneJob(null)} onConfirm={confirmMarkDone}
+            busy={actionBusy} confirmLabel="Mark done" busyLabel="Saving…" tone="emerald"
+            confirmIcon={<CheckCircle2 className="w-4 h-4" />} />
+        </Sheet>
       )}
     </div>
   )

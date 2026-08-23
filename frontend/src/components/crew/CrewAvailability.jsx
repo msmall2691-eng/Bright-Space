@@ -23,6 +23,8 @@
 import { useCallback, useEffect, useState } from 'react'
 import { BadgeCheck, CalendarClock, ChevronDown, ChevronLeft, ChevronRight, Lock, Undo2 } from 'lucide-react'
 import { get, put, del } from '../../api'
+import { Skeleton } from '../ui'
+import { ErrorNote } from './primitives'
 
 const DAYS = [
   ['mon', 'Mon'], ['tue', 'Tue'], ['wed', 'Wed'], ['thu', 'Thu'],
@@ -57,7 +59,7 @@ function WeekGridEditor({ week, onToggle, disabled }) {
                   aria-pressed={on}
                   className={`py-1.5 rounded-lg text-[12px] font-semibold border transition-colors disabled:opacity-50 ${
                     on
-                      ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-700 dark:text-emerald-300'
+                      ? 'bg-blue-600 border-blue-600 text-white'
                       : 'bg-bg border-hairline text-ink-3'}`}>
                   {slot === 'am' ? 'Morning' : 'Afternoon'}
                 </button>
@@ -102,7 +104,7 @@ function LockedWeekSummary({ entry, template }) {
   )
 }
 
-export default function CrewAvailability() {
+export default function CrewAvailability({ bare = false }) {
   const [data, setData] = useState(null)         // full GET payload
   const [idx, setIdx] = useState(0)              // strip position (0 = current week)
   const [draft, setDraft] = useState(null)       // edited copy for the shown week
@@ -148,10 +150,8 @@ export default function CrewAvailability() {
     setDraft(prefill ? clone(prefill) : null)
   }, [data, idx])  // eslint-disable-line react-hooks/exhaustive-deps
 
-  if (error && !data) {
-    return <div className="text-xs text-red-700 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{error}</div>
-  }
-  if (!data || !entry) return <div className="h-56 rounded-xl bg-bg-2 animate-pulse" />
+  if (error && !data) return <ErrorNote>{error}</ErrorNote>
+  if (!data || !entry) return <Skeleton className="h-56 w-full rounded-xl" />
 
   const dirty = draft && !same(draft, prefill)
   const isSet = entry.source === 'set'
@@ -213,12 +213,14 @@ export default function CrewAvailability() {
   }
 
   return (
-    <div className="bg-panel rounded-xl border border-hairline shadow-glass-sm p-4 space-y-3">
+    <div className={bare ? 'space-y-3' : 'bg-panel rounded-xl border border-hairline shadow-glass-sm p-4 space-y-3'}>
       <div>
-        <div className="text-sm font-bold text-ink flex items-center gap-1.5">
-          <CalendarClock className="w-4 h-4 text-ink-3" /> My availability
-        </div>
-        <p className="text-[11px] text-ink-3 mt-0.5">
+        {!bare && (
+          <div className="text-sm font-bold text-ink flex items-center gap-1.5">
+            <CalendarClock className="w-4 h-4 text-ink-3" /> My availability
+          </div>
+        )}
+        <p className={`text-[11px] text-ink-3 ${bare ? '' : 'mt-0.5'}`}>
           Set the weeks ahead — the office sees this when assigning. Each week
           locks when it starts.
         </p>
@@ -267,13 +269,12 @@ export default function CrewAvailability() {
       )}
 
       {flash && (
-        <div className="text-[12px] text-emerald-700 dark:text-emerald-300 bg-emerald-500/10 border border-emerald-500/20 rounded-lg px-3 py-2 flex items-start gap-1.5">
-          <BadgeCheck className="w-4 h-4 shrink-0 mt-[1px]" /> <span>{flash}</span>
+        <div className="text-[12px] text-ink-2 flex items-start gap-1.5">
+          <BadgeCheck className="w-4 h-4 shrink-0 mt-[1px] text-emerald-600 dark:text-emerald-400" />
+          <span>{flash}</span>
         </div>
       )}
-      {error && (
-        <div className="text-xs text-red-700 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{error}</div>
-      )}
+      <ErrorNote>{error}</ErrorNote>
 
       {/* The recurring template lives behind its own tap-through so a
           one-week change and a permanent change can't be typed into the
