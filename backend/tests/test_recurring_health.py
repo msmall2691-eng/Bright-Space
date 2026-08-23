@@ -145,3 +145,4 @@ def test_missing_property_link_is_flagged_info(made):
     prob = next(p_ for p_ in issue["problems"] if p_["code"] == "no_property")
     assert prob["severity"] == "info" and prob["destructive"] is False
     db.close()
+

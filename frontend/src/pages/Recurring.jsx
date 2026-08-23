@@ -15,7 +15,7 @@ import SubNav from '../components/ui/SubNav'
 import { toast } from '../utils/toastBus'
 import { confirmDialog } from '../utils/confirmBus'
 import {
-  groupDuplicateSeries, isLiveSeries, suggestKeeper,
+  groupDuplicateSeries, isLiveSeries, suggestKeeper, seriesState, SERIES_STATE_LABEL,
   loadReviewedDupKeys, saveReviewedDupKeys,
 } from '../utils/recurringDuplicates'
 import { useEmployees } from '../hooks/useEmployees'
@@ -576,7 +576,7 @@ function SeriesRow({ s, clientName, onOpen, isDuplicate }) {
               <h3 className="text-base font-semibold text-ink">{s.title || 'Untitled'}</h3>
               <span className="inline-flex h-5 items-center gap-1.5 rounded-sm border border-hairline-2 bg-panel px-2 text-[11px] font-medium text-ink-2">
                 <span className={`h-1.5 w-1.5 rounded-full ${live ? 'bg-emerald-500' : 'bg-gray-500'}`} />
-                {live ? 'Active' : s.active ? 'Ended' : 'Paused'}
+                {SERIES_STATE_LABEL[seriesState(s)]}
               </span>
               {isDuplicate && (
                 <span className="inline-flex h-5 items-center gap-1.5 rounded-sm border border-hairline-2 bg-panel px-2 text-[11px] font-medium text-ink-2"
@@ -751,7 +751,7 @@ function DuplicateReviewPanel({ schedules, clientsById, reviewedKeys, onToggleRe
             <div className="mt-2.5 grid gap-2.5 sm:grid-cols-2">
               {members.map(s => {
                 const state = actioned[s.id]
-                  || (isLiveSeries(s) ? 'active' : s.active ? 'ended' : 'paused')
+                  || seriesState(s)
                 const isKeeper = state === 'active' && s.id === keeperId
                 const suggested = g.suggestion?.id === s.id
                 const next = state === 'active' ? computeUpcoming(s, [], 1)[0]?.date : null
@@ -777,7 +777,7 @@ function DuplicateReviewPanel({ schedules, clientsById, reviewedKeys, onToggleRe
                           : state === 'cancelled' ? 'bg-red-500' : 'bg-gray-500'}`} />
                         {state === 'active' ? 'Active'
                           : state === 'cancelled' ? 'Cancelled'
-                          : state === 'ended' ? 'Ended' : 'Paused'}
+                          : SERIES_STATE_LABEL[state] || 'Paused'}
                       </span>
                     </div>
                     <div className="mt-2 space-y-0.5 text-[12px] text-ink-3">
@@ -825,7 +825,9 @@ function DuplicateReviewPanel({ schedules, clientsById, reviewedKeys, onToggleRe
                           ? 'Cancelled — no new visits will be generated.'
                           : state === 'ended'
                             ? 'Ended — this series reached its end date; no new visits are generated.'
-                            : 'Paused — no new visits while paused; resume anytime from Manage.'}
+                            : state === 'cancelled'
+                              ? 'Cancelled — no new visits. Visits already on the calendar stay until you remove them.'
+                              : 'Paused — no new visits while paused; resume anytime from Manage.'}
                       </div>
                     )}
                   </div>
@@ -961,7 +963,7 @@ function SeriesDetail({ id, onBack, onChanged, toast }) {
             <h1 className="text-xl sm:text-2xl font-bold text-ink">{schedule.title || 'Untitled'}</h1>
             <span className="inline-flex h-5 items-center gap-1.5 rounded-sm border border-hairline-2 bg-panel px-2 text-[11px] font-medium text-ink-2">
               <span className={`h-1.5 w-1.5 rounded-full ${isLiveSeries(schedule) ? 'bg-emerald-500' : 'bg-gray-500'}`} />
-              {isLiveSeries(schedule) ? 'Active' : schedule.active ? 'Ended' : 'Paused'}
+              {SERIES_STATE_LABEL[seriesState(schedule)]}
             </span>
           </div>
           <p className="text-sm text-ink-2">
@@ -1350,7 +1352,10 @@ export default function Recurring() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [filterClient, setFilterClient] = useState('')
-  const [filterStatus, setFilterStatus] = useState('all')
+  // Opens on the live book of business. It used to open on 'all', so a series
+  // you cancelled stayed on the screen you landed on — which is most of why
+  // cancelling read as "it didn't work". Retired series are one chip away.
+  const [filterStatus, setFilterStatus] = useState('active')
   const [showCreate, setShowCreate] = useState(false)
 
   // Surface the one setting that makes recurring "run dry": if auto-generate is
@@ -1429,9 +1434,9 @@ export default function Recurring() {
       // whose series_end_date has passed — how split retires a predecessor —
       // is "Ended", its own quiet state, so retired series stop reading as
       // live. The `active` column itself is untouched (display-only).
-      if (filterStatus === 'active' && !isLiveSeries(s)) return false
-      if (filterStatus === 'paused' && s.active) return false
-      if (filterStatus === 'ended' && !(s.active && !isLiveSeries(s))) return false
+      // One shared verdict per series (seriesState) rather than three hand-
+      // rolled predicates that could disagree with the chip the row displays.
+      if (filterStatus !== 'all' && seriesState(s) !== filterStatus) return false
       if (filterClient && String(s.client_id) !== String(filterClient)) return false
       return true
     })
@@ -1545,10 +1550,11 @@ export default function Recurring() {
           </select>
           <div className="flex items-center gap-1 bg-panel border border-hairline rounded-lg p-0.5">
             {[
-              { v: 'all', label: 'All' },
               { v: 'active', label: 'Active' },
               { v: 'paused', label: 'Paused' },
+              { v: 'cancelled', label: 'Cancelled' },
               { v: 'ended', label: 'Ended' },
+              { v: 'all', label: 'All' },
             ].map(o => (
               <button key={o.v}
                 onClick={() => setFilterStatus(o.v)}

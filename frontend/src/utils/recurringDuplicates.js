@@ -18,6 +18,30 @@ function todayYMD() {
  *  finished — split retires predecessors exactly this way (active stays true,
  *  only series_end_date is set), and those must read as "Ended", not as live
  *  duplicates. */
+/**
+ * What to call a series in the UI: 'active' | 'ended' | 'cancelled' | 'paused'.
+ *
+ * `active=false` used to mean both "paused" and "cancelled" — the two write
+ * identical rows and only the button copy differed, so a series the owner
+ * cancelled came back reading "Paused" and looked like the button had done
+ * nothing ("when I try to cancel or delete them they dont go away").
+ * `cancelled_at` (migration 096) is what tells them apart; NULL is paused,
+ * which is how every row written before that migration reads.
+ *
+ * Shared by the list, the detail header and the duplicate review panel so
+ * one series can't be called two different things on two screens.
+ */
+export function seriesState(s) {
+  if (isLiveSeries(s)) return 'active'
+  if (s?.cancelled_at) return 'cancelled'
+  // Active but past its end date — how a split retires its predecessor.
+  return s?.active ? 'ended' : 'paused'
+}
+
+export const SERIES_STATE_LABEL = {
+  active: 'Active', ended: 'Ended', cancelled: 'Cancelled', paused: 'Paused',
+}
+
 export function isLiveSeries(s) {
   if (!s || !s.active) return false
   if (!s.series_end_date) return true

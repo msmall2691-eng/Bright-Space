@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
 from pydantic import BaseModel
 from typing import Optional, List
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta, timezone
 
 logger = logging.getLogger(__name__)
 
@@ -257,6 +257,9 @@ def sched_to_dict(s: RecurringSchedule) -> dict:
         "cleaner_ids": s.cleaner_ids or [],
         "quote_id": s.quote_id,
         "active": s.active,
+        # Cancelled vs paused: identical in `active`, different to a human.
+        # NULL means paused (or never stopped) — see migration 096.
+        "cancelled_at": s.cancelled_at.isoformat() if s.cancelled_at else None,
         "generate_weeks_ahead": s.generate_weeks_ahead,
         "series_end_date": s.series_end_date.isoformat() if s.series_end_date else None,
         "series_start_date": s.series_start_date.isoformat() if s.series_start_date else None,
@@ -1129,6 +1132,10 @@ def update_schedule(schedule_id: int, data: ScheduleUpdate, db: Session = Depend
         )
     for field, value in updates.items():
         setattr(sched, field, value)
+    # Resuming un-cancels: a series generating visits again is not a cancelled
+    # one, and leaving the stamp would have it read "Cancelled" while it works.
+    if updates.get("active") is True:
+        sched.cancelled_at = None
     # Keep day_of_week in sync with first element of days_of_week
     if "days_of_week" in updates and updates["days_of_week"]:
         sched.day_of_week = updates["days_of_week"][0]
@@ -1388,7 +1395,14 @@ def split_schedule(schedule_id: int, data: ScheduleSplit, db: Session = Depends(
 def delete_schedule(schedule_id: int, db: Session = Depends(get_db),
                     org_id: int = Depends(current_org_id)):
     sched = _get_schedule_or_404(db, schedule_id, resolve_org_id(org_id, db))
+    # Soft: the row and its history stay, and already-scheduled visits are
+    # never touched (scheduling-invariants R7). `active=False` is what stops
+    # generation — `cancelled_at` only records that this was a CANCEL rather
+    # than a pause, because the two were previously indistinguishable and a
+    # cancelled series came back reading "Paused" and looked like the button
+    # had done nothing.
     sched.active = False
+    sched.cancelled_at = datetime.now(timezone.utc)
     db.commit()
 
 
