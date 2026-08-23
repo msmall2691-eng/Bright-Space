@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { CheckCircle, Loader2 } from 'lucide-react'
 import { get, post } from '../../api'
+import RulesPanel from './RulesPanel'
 import { inp, lbl } from './constants'
 
 /** Automation settings — the sync intervals + auto-generate toggles. State
@@ -25,12 +26,6 @@ export function useAutomationSettings({ toast, active }) {
     gmail_live_sync_available: false,
     customer_self_reschedule: true,
     turnover_lead_buffer_hours: 3,
-    // Autopilot dial for the STR turnover auto-assign tick:
-    // 'off' | 'propose' (queue proposals for approval) | 'auto' (assign directly)
-    str_auto_assign_mode: 'off',
-    // Autopilot level 2: a persona drafts the day's follow-ups into the Home
-    // approval queue. Drafts only — nothing sends without a tap.
-    autopilot_drafts_enabled: true,
   })
   const [automationSaving, setAutomationSaving] = useState(false)
 
@@ -72,8 +67,12 @@ export function useAutomationSettings({ toast, active }) {
   }
 }
 
-/** The actual settings panel — sync intervals, auto-generate, messaging
- *  toggles, everything below the section heading. No outer scroll/padding
+/** The actual settings panel — sync intervals, auto-generate, calendar
+ *  behaviour, everything below the section heading. The standing rules
+ *  (customer texts, invoice chasing, turnover cover, crew escalation,
+ *  follow-up drafts) moved into RulesPanel, which renders them from the
+ *  backend catalogue — they're what the business DOES on its own, as opposed
+ *  to the sync plumbing that stayed here. No outer scroll/padding
  *  wrapper of its own, so a caller can drop it into any page's own scroll
  *  container (General's, since the standalone "Automation" tab was folded
  *  into it — Aug 2026 nav simplification: it was the same "how this
@@ -83,48 +82,11 @@ export function useAutomationSettings({ toast, active }) {
 export function AutomationSection({ state, toast, active }) {
   const { automationSettings: s, setAutomationSettings, automationSaving, saveAutomationSettings } = state
 
-  // Customer messaging (SMS reminders) toggle used to live on the Integrations
-  // tab as a big amber banner — but it's an automation switch, not an
-  // integration. Owns its own state here; reads GET messaging-status and
-  // POSTs messaging.
-  const [msgStatus, setMsgStatus] = useState({ loading: true })
-  const [msgSaving, setMsgSaving] = useState(false)
-  useEffect(() => {
-    if (!active) return
-    get('/api/settings/messaging-status')
-      .then(r => setMsgStatus({ loading: false, ...r }))
-      .catch(() => setMsgStatus({ loading: false, error: true }))
-  }, [active])
-  const setMessaging = async (on) => {
-    setMsgSaving(true)
-    try {
-      const r = await post('/api/settings/messaging', { customer_sms_reminders: on })
-      setMsgStatus({ loading: false, ...r })
-      toast(on ? 'Automatic SMS reminders enabled' : 'Automatic customer messaging turned OFF')
-    } catch (e) {
-      toast(e?.message || 'Could not update messaging', 'error')
-    } finally {
-      setMsgSaving(false)
-    }
-  }
-  const setDunning = async (on) => {
-    setMsgSaving(true)
-    try {
-      const r = await post('/api/settings/messaging', { invoice_dunning: on })
-      setMsgStatus({ loading: false, ...r })
-      toast(on ? 'Automatic overdue-invoice reminders enabled' : 'Automatic overdue-invoice reminders turned OFF')
-    } catch (e) {
-      toast(e?.message || 'Could not update dunning', 'error')
-    } finally {
-      setMsgSaving(false)
-    }
-  }
-
   return (
     <div>
       <div className="mb-5">
         <h2 className="text-lg font-bold text-ink">Auto-Sync &amp; Automation</h2>
-        <p className="text-sm text-ink-2 mt-1">Configure how often your calendar and feeds sync automatically, and the messaging/notification behavior around a booking.</p>
+        <p className="text-sm text-ink-2 mt-1">The rules this business runs on, and how often your calendar and feeds sync.</p>
       </div>
 
       <div className="bg-panel rounded-xl border border-hairline p-5 space-y-5">
@@ -260,113 +222,7 @@ export function AutomationSection({ state, toast, active }) {
             </div>
           </div>
 
-          <div className="border-t border-hairline pt-5">
-            <h3 className="font-semibold text-ink">STR turnover auto-assign</h3>
-            <p className="text-xs text-ink-3 mt-1">
-              How the background tick handles upcoming Airbnb/VRBO turnovers
-              that have no cleaner assigned.
-            </p>
-            <div className="mt-3 flex items-center gap-0.5 bg-bg-2 rounded-lg p-0.5 w-fit">
-              {[['off', 'Off'], ['propose', 'Propose'], ['auto', 'Auto']].map(([value, label]) => (
-                <button key={value} type="button"
-                  onClick={() => setAutomationSettings(x => ({ ...x, str_auto_assign_mode: value }))}
-                  aria-pressed={s.str_auto_assign_mode === value}
-                  className={`px-2.5 py-1 rounded-md text-xs font-medium transition-colors ${
-                    s.str_auto_assign_mode === value ? 'bg-panel text-ink shadow-sm' : 'text-ink-3 hover:text-ink-2'}`}>
-                  {label}
-                </button>
-              ))}
-            </div>
-            <p className="text-xs text-ink-3 mt-2">
-              Propose queues assignments for your approval on the Home board; Auto assigns directly.
-            </p>
-          </div>
-
-          <div className="border-t border-hairline pt-5">
-            <div className="flex items-center justify-between">
-              <div>
-                <h3 className="font-semibold text-ink">Draft my follow-ups</h3>
-                <p className="text-xs text-ink-3 mt-1">
-                  When you open Home, Scout writes the replies you owe — customers
-                  who texted and haven’t heard back, and quotes that have gone
-                  quiet — and leaves them on the board for you to edit and send.
-                </p>
-              </div>
-              <label className="flex items-center gap-2 cursor-pointer">
-                <input type="checkbox" checked={s.autopilot_drafts_enabled}
-                  onChange={e => setAutomationSettings(x => ({ ...x, autopilot_drafts_enabled: e.target.checked }))}
-                  className="w-4 h-4 rounded" />
-              </label>
-            </div>
-            <p className="text-xs text-ink-3 mt-1">
-              {s.autopilot_drafts_enabled
-                ? 'Nothing is sent without your tap. Runs at most once a day, and only on a day you open the app.'
-                : 'Off — the approval queue only fills from scheduling proposals.'}
-            </p>
-          </div>
-
-          {/* Customer messaging status — was a red/amber banner on Integrations.
-              Same POST target as before (/api/settings/messaging), just
-              relocated to where operators actually look for automation
-              toggles. */}
-          {!msgStatus.loading && !msgStatus.error && (
-            <div className="border-t border-hairline pt-5">
-              <div className="flex items-center justify-between mb-4">
-                <div>
-                  <h3 className="font-semibold text-ink">Automatic customer SMS reminders</h3>
-                  <p className="text-xs text-ink-3 mt-1">
-                    {msgStatus.customer_sms_reminders
-                      ? 'Currently ON — customers receive automatic SMS reminders before their cleanings.'
-                      : 'Currently OFF — no automatic reminder texts are sent to customers. Manual sends are unaffected.'}
-                  </p>
-                  {/* env_disabled means the deployment set
-                      JOB_SMS_REMINDERS_ENABLED=0 as a hard kill. The DB toggle
-                      won't take effect until an operator lifts that. Surface
-                      the reason so Meg doesn't wonder why flipping the switch
-                      doesn't do anything. */}
-                  {msgStatus.env_disabled && (
-                    <p className="flex items-start gap-1.5 text-xs text-ink-2 mt-1.5 bg-panel border border-hairline rounded-md px-2 py-1.5">
-                      <span className="h-1.5 w-1.5 rounded-full bg-amber-500 shrink-0 mt-1" aria-hidden="true" />
-                      <span>Deployment kill-switch is active
-                      (<code className="text-[10px]">JOB_SMS_REMINDERS_ENABLED=0</code>). Ask
-                      your ops contact to lift it before this toggle takes effect.</span>
-                    </p>
-                  )}
-                </div>
-                <label className="flex items-center gap-2 cursor-pointer">
-                  <input type="checkbox" checked={!!msgStatus.customer_sms_reminders}
-                    disabled={msgSaving || msgStatus.env_disabled}
-                    onChange={e => setMessaging(e.target.checked)}
-                    className="w-4 h-4 rounded" />
-                </label>
-              </div>
-              {/* Invoice dunning — same shape as SMS reminders. T-03. */}
-              <div className="flex items-center justify-between mt-6 pt-5 border-t border-hairline">
-                <div>
-                  <h3 className="font-semibold text-ink">Automatic overdue-invoice reminders</h3>
-                  <p className="text-xs text-ink-3 mt-1">
-                    {msgStatus.invoice_dunning
-                      ? 'Currently ON — customers with past-due invoices are automatically emailed at 1, 7, and 14 days overdue.'
-                      : 'Currently OFF — overdue invoices are not chased automatically.'}
-                  </p>
-                  {msgStatus.invoice_dunning_env_disabled && (
-                    <p className="flex items-start gap-1.5 text-xs text-ink-2 mt-1.5 bg-panel border border-hairline rounded-md px-2 py-1.5">
-                      <span className="h-1.5 w-1.5 rounded-full bg-amber-500 shrink-0 mt-1" aria-hidden="true" />
-                      <span>Deployment kill-switch is active
-                      (<code className="text-[10px]">JOB_DUNNING_ENABLED=0</code>). Ask your ops
-                      contact to lift it before this toggle takes effect.</span>
-                    </p>
-                  )}
-                </div>
-                <label className="flex items-center gap-2 cursor-pointer">
-                  <input type="checkbox" checked={!!msgStatus.invoice_dunning}
-                    disabled={msgSaving || msgStatus.invoice_dunning_env_disabled}
-                    onChange={e => setDunning(e.target.checked)}
-                    className="w-4 h-4 rounded" />
-                </label>
-              </div>
-            </div>
-          )}
+          <RulesPanel active={active} toast={toast} />
 
           <div className="border-t border-hairline pt-5">
             <div className="flex items-center justify-between mb-4">

@@ -4508,6 +4508,31 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/settings/rules": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Standing Rules
+         * @description Every standing rule the business runs on, with its current settings.
+         */
+        get: operations["get_standing_rules_api_settings_rules_get"];
+        put?: never;
+        /**
+         * Save Standing Rules
+         * @description Change one or more rule settings. Returns the full refreshed catalogue,
+         *     so the UI renders what is actually in force rather than what it just sent.
+         */
+        post: operations["save_standing_rules_api_settings_rules_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/settings/automation": {
         parameters: {
             query?: never;
@@ -8627,6 +8652,16 @@ export interface components {
             message: string;
             /** Current Agent Id */
             current_agent_id?: string | null;
+        };
+        /** RulesPatch */
+        RulesPatch: {
+            /**
+             * Settings
+             * @default {}
+             */
+            settings: {
+                [key: string]: unknown;
+            };
         };
         /**
          * SMSPersistenceError
@@ -16163,6 +16198,59 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["MessagingConfig"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_standing_rules_api_settings_rules_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    save_standing_rules_api_settings_rules_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RulesPatch"];
             };
         };
         responses: {

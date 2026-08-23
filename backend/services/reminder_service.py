@@ -33,7 +33,19 @@ from config import app_base_url
 logger = logging.getLogger(__name__)
 
 
-def _lead_hours() -> int:
+def _lead_hours(db: Session | None = None) -> int:
+    """How far ahead the reminder goes out.
+
+    Now a standing rule the owner can set in the app (Settings → Rules); the
+    `JOB_SMS_REMINDER_LEAD_HOURS` env var stays as the fallback so an existing
+    deployment keeps its configured value until she picks one. `db` is optional
+    only so the pure-env behaviour is still reachable in isolation."""
+    if db is not None:
+        try:
+            from services.standing_rules import reminder_lead_hours
+            return reminder_lead_hours(db)
+        except Exception:
+            logger.exception("lead-hours setting unreadable; falling back to env")
     try:
         return int(os.getenv("JOB_SMS_REMINDER_LEAD_HOURS", "24"))
     except (ValueError, TypeError):
@@ -123,7 +135,7 @@ def send_due_reminders(db: Session, *, lead_hours: int | None = None, now: datet
 
     Returns a summary dict: {sent, skipped_no_phone, failed, candidates}.
     """
-    lead = lead_hours if lead_hours is not None else _lead_hours()
+    lead = lead_hours if lead_hours is not None else _lead_hours(db)
     now = now or datetime.now(timezone.utc)
     today = now.date()
     window_end = (now + timedelta(hours=lead)).date()

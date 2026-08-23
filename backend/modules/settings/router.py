@@ -970,6 +970,35 @@ def set_messaging(config: MessagingConfig, db: Session = Depends(get_db)):
     return messaging_status(db)
 
 
+# ── Standing rules: /api/settings/rules ─────────────────────────────────────
+#
+# Autopilot level 3. The catalogue (what each rule is called, what it does, and
+# which app_setting steers it) lives in services/standing_rules.py; this is
+# routing only. Values are the SAME app_setting keys the ticks already read, so
+# a rule moving into the catalogue changes how it's presented, never how it
+# runs.
+
+class RulesPatch(BaseModel):
+    # Validated per-field server-side against the catalogue — an unknown key is
+    # a 422, not a silent drop.
+    settings: dict = {}
+
+
+@router.get("/rules", dependencies=[Depends(require_role("admin", "manager"))])
+def get_standing_rules(db: Session = Depends(get_db)):
+    """Every standing rule the business runs on, with its current settings."""
+    from services.standing_rules import list_rules
+    return list_rules(db)
+
+
+@router.post("/rules", dependencies=[Depends(require_role("admin"))])
+def save_standing_rules(body: RulesPatch, db: Session = Depends(get_db)):
+    """Change one or more rule settings. Returns the full refreshed catalogue,
+    so the UI renders what is actually in force rather than what it just sent."""
+    from services.standing_rules import save_rules
+    return save_rules(db, body.settings)
+
+
 @router.get("/automation")
 def get_automation_settings(db: Session = Depends(get_db)):
     """Read iCal / GCal auto-sync flags from app_settings, with env fallbacks."""
