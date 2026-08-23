@@ -14,13 +14,14 @@ import {
 } from 'lucide-react'
 import { get, post } from '../api'
 import { ErrorState } from '../components/ui'
+import PageTitle from '../components/ui/PageTitle'
 
 const CARD = 'rounded-2xl border border-hairline bg-panel'
 
-function Stat({ icon: Icon, tint, n, label }) {
+function Stat({ icon: Icon, n, label }) {
   return (
     <div className={`${CARD} flex items-center gap-3 px-4 py-3`}>
-      <span className={`grid h-9 w-9 place-items-center rounded-xl ${tint}`}><Icon className="h-4 w-4" /></span>
+      <Icon className="h-4 w-4 shrink-0 text-ink-3" />
       <div>
         <div className="text-xl font-bold leading-none tabular-nums text-ink">{n}</div>
         <div className="text-[11px] text-ink-3">{label}</div>
@@ -39,8 +40,8 @@ function ClientRow({ c, isPrimary, onPick }) {
         <div className="flex items-center gap-2">
           <span className="truncate text-[13px] font-semibold text-ink">{c.name}</span>
           {isPrimary
-            ? <span className="rounded-full bg-indigo-500/10 px-1.5 py-0.5 text-[9.5px] font-bold uppercase tracking-wide text-indigo-600 dark:text-indigo-300">Keep</span>
-            : <span className="rounded-full bg-rose-500/10 px-1.5 py-0.5 text-[9.5px] font-bold uppercase tracking-wide text-rose-600 dark:text-rose-300">Merge in</span>}
+            ? <span className="inline-flex items-center gap-1 text-[9.5px] font-bold uppercase tracking-wide text-ink-2"><span className="h-1.5 w-1.5 rounded-full bg-indigo-500" aria-hidden="true" />Keep</span>
+            : <span className="inline-flex items-center gap-1 text-[9.5px] font-bold uppercase tracking-wide text-ink-3"><span className="h-1.5 w-1.5 rounded-full bg-rose-500" aria-hidden="true" />Merge in</span>}
         </div>
         <div className="mt-1 flex flex-wrap gap-x-3 gap-y-0.5 text-[11px] text-ink-3">
           {c.email && <span className="inline-flex items-center gap-1"><Mail className="h-3 w-3" />{c.email}</span>}
@@ -125,26 +126,21 @@ export default function Cleanup() {
 
   return (
     <div className="mx-auto max-w-[1100px] px-4 pb-16 pt-5 sm:px-6">
-      <header className="flex flex-wrap items-end justify-between gap-3">
-        <div>
-          <div className="flex items-center gap-2">
-            <Sparkles className="h-5 w-5 text-violet-500" />
-            <h1 className="text-xl font-bold tracking-tight text-ink sm:text-2xl">Tidy Up</h1>
-          </div>
-          <p className="mt-0.5 text-[13px] text-ink-3">
-            Find duplicate clients &amp; properties and clean up messy records.
-            {data && <> Scanned {data.scanned.clients} clients · {data.scanned.properties} properties.</>}
-          </p>
-        </div>
-        <button onClick={load} disabled={loading}
-          className="inline-flex items-center gap-1.5 rounded-lg border border-hairline bg-panel px-3 py-2 text-[12px] font-semibold text-ink-2 hover:text-ink disabled:opacity-50">
-          {loading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RotateCcw className="h-3.5 w-3.5" />} Rescan
-        </button>
-      </header>
+      <PageTitle
+        icon={Sparkles}
+        title="Tidy Up"
+        subtitle={`Find duplicate clients & properties and clean up messy records.${data ? ` Scanned ${data.scanned.clients} clients · ${data.scanned.properties} properties.` : ''}`}
+        actions={
+          <button onClick={load} disabled={loading}
+            className="inline-flex items-center gap-1.5 rounded-lg border border-hairline bg-panel px-3 py-2 text-[12px] font-semibold text-ink-2 hover:text-ink disabled:opacity-50">
+            {loading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RotateCcw className="h-3.5 w-3.5" />} Rescan
+          </button>
+        }
+      />
 
       {note && (
-        <div className="mt-4 flex items-center gap-2 rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-[12px] font-medium text-emerald-700 dark:text-emerald-300">
-          <Check className="h-4 w-4" /> {note}
+        <div className="mt-4 flex items-center gap-2 rounded-xl border border-hairline bg-panel px-3 py-2 text-[12px] font-medium text-ink-2">
+          <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 shrink-0" aria-hidden="true" /> {note}
         </div>
       )}
 
@@ -155,9 +151,9 @@ export default function Cleanup() {
       ) : (
         <>
           <div className="mt-5 grid grid-cols-1 gap-3 sm:grid-cols-3">
-            <Stat icon={Users} tint="bg-rose-500/10 text-rose-600 dark:text-rose-300" n={s.duplicate_client_groups || 0} label="duplicate client groups" />
-            <Stat icon={Home} tint="bg-amber-500/10 text-amber-600 dark:text-amber-300" n={s.duplicate_property_groups || 0} label="duplicate property groups" />
-            <Stat icon={AlertTriangle} tint="bg-blue-500/10 text-blue-600 dark:text-blue-300" n={s.quality_flags || 0} label="data-quality flags" />
+            <Stat icon={Users} n={s.duplicate_client_groups || 0} label="duplicate client groups" />
+            <Stat icon={Home} n={s.duplicate_property_groups || 0} label="duplicate property groups" />
+            <Stat icon={AlertTriangle} n={s.quality_flags || 0} label="data-quality flags" />
           </div>
 
           {/* Duplicate clients */}
@@ -179,7 +175,7 @@ export default function Cleanup() {
                   return (
                     <div key={g.key} className={`${CARD} p-3.5`}>
                       <div className="mb-2 flex items-center gap-2">
-                        <span className="rounded-full bg-violet-500/10 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-violet-600 dark:text-violet-300">
+                        <span className="text-[10px] font-bold uppercase tracking-wide text-ink-3">
                           matched on {g.reason}
                         </span>
                         <span className="text-[11px] text-ink-3">{g.clients.length} records</span>
@@ -266,7 +262,7 @@ export default function Cleanup() {
                     <div className="mt-2 flex flex-wrap gap-1.5">
                       {x.q.samples.map(c => (
                         <button key={c.id} onClick={() => navigate(`/clients/${c.id}`)}
-                          className="rounded-full border border-hairline px-2 py-0.5 text-[11px] text-ink-2 hover:text-ink">
+                          className="rounded-md border border-hairline px-2 py-0.5 text-[11px] text-ink-2 hover:text-ink hover:bg-bg-2">
                           {c.name}
                         </button>
                       ))}

@@ -72,37 +72,28 @@ export default function Settings() {
             iconColor="slate"
           >
             {/* Page-level tabs (Settings / Crew / Payroll) sit above the
-                section switcher below — different level, deliberately quieter
-                treatment so the two rows don't read as one control. */}
-            <SubNav className="mb-3" />
+                section switcher below. Both rows speak SubNav's underline
+                vocabulary — the sections are just smaller. (The old solid
+                indigo pills were the last filled tab bar in the office.) */}
+            <SubNav className="mb-1.5" />
 
-            <div className="flex gap-2 overflow-x-auto scrollbar-thin -mx-1 px-1">
-              <button onClick={() => setSection('general')}
-                className={`shrink-0 whitespace-nowrap flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${section === 'general' ? 'bg-indigo-600 text-white' : 'bg-panel text-ink-2 border border-hairline hover:border-hairline-2'}`}>
-                <Settings2 className="w-3.5 h-3.5" /> General
-              </button>
-              <button onClick={() => setSection('integrations')}
-                className={`shrink-0 whitespace-nowrap flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${section === 'integrations' ? 'bg-indigo-600 text-white' : 'bg-panel text-ink-2 border border-hairline hover:border-hairline-2'}`}>
-                <Plug className="w-3.5 h-3.5" /> Integrations
-              </button>
-              {isAdmin && (
-                <button onClick={() => setSection('email')}
-                  className={`shrink-0 whitespace-nowrap flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${section === 'email' ? 'bg-indigo-600 text-white' : 'bg-panel text-ink-2 border border-hairline hover:border-hairline-2'}`}>
-                  <Mail className="w-3.5 h-3.5" /> Email
+            <div className="flex items-center gap-4 overflow-x-auto scrollbar-thin">
+              {[
+                ['general', 'General', Settings2, true],
+                ['integrations', 'Integrations', Plug, true],
+                ['email', 'Email', Mail, isAdmin],
+                ['fields', 'Custom Fields', Settings2, isAdmin],
+                ['users', 'Users', Users, isAdmin],
+              ].filter(([, , , show]) => show).map(([key, label, Icon]) => (
+                <button key={key} onClick={() => setSection(key)}
+                  aria-current={section === key ? 'true' : undefined}
+                  className={`shrink-0 whitespace-nowrap flex items-center gap-1.5 border-b-2 px-0.5 py-1.5 text-xs font-medium transition-colors ${
+                    section === key
+                      ? 'border-ink text-ink'
+                      : 'border-transparent text-ink-3 hover:text-ink-2'}`}>
+                  <Icon className="w-3.5 h-3.5" /> {label}
                 </button>
-              )}
-              {isAdmin && (
-                <button onClick={() => setSection('fields')}
-                  className={`shrink-0 whitespace-nowrap flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${section === 'fields' ? 'bg-indigo-600 text-white' : 'bg-panel text-ink-2 border border-hairline hover:border-hairline-2'}`}>
-                  <Settings2 className="w-3.5 h-3.5" /> Custom Fields
-                </button>
-              )}
-              {isAdmin && (
-                <button onClick={() => setSection('users')}
-                  className={`shrink-0 whitespace-nowrap flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${section === 'users' ? 'bg-indigo-600 text-white' : 'bg-panel text-ink-2 border border-hairline hover:border-hairline-2'}`}>
-                  <Users className="w-3.5 h-3.5" /> Users
-                </button>
-              )}
+              ))}
             </div>
           </PageHeader>
         </div>

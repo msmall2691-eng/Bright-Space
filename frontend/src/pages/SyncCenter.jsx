@@ -321,11 +321,11 @@ function ScheduleLogPanel({ log }) {
           : 'The append-only record of every job change. Not capturing yet — it turns on with the deploy.'}
       </p>
       {live && types.length > 0 && (
-        <div className="flex flex-wrap gap-1.5 mt-3">
+        <div className="flex flex-wrap gap-x-3 gap-y-1 mt-3">
           {types.map(([t, n]) => (
-            <span key={t} className="inline-flex items-center gap-1 text-[11px] px-2 py-0.5 rounded-full bg-bg-2 text-ink-2">
+            <span key={t} className="inline-flex items-baseline gap-1 text-[11px] text-ink-3">
               <span className="capitalize">{t}</span>
-              <span className="text-ink-3">{n}</span>
+              <span className="font-semibold text-ink-2 tabular-nums">{n}</span>
             </span>
           ))}
         </div>

@@ -41,9 +41,9 @@ export default function Billing() {
             <button
               key={t.key}
               onClick={() => setView(t.key)}
-              className={`flex items-center gap-1.5 px-4 py-3 text-sm font-semibold border-b-2 -mb-px transition-colors ${
+              className={`flex items-center gap-1.5 px-1 mx-3 first:ml-0 py-3 text-sm font-medium border-b-2 -mb-px transition-colors ${
                 active
-                  ? 'border-indigo-600 text-indigo-600'
+                  ? 'border-ink text-ink'
                   : 'border-transparent text-ink-3 hover:text-ink-2'
               }`}
             >

@@ -6,7 +6,7 @@ import {
   Send, X, Sparkles,
 } from 'lucide-react'
 import { get, put, patch, post } from '../api'
-import { PageHeader, SubNav } from '../components/ui'
+import { PageHeader, StatCard, SubNav } from '../components/ui'
 
 // Payroll breakdown.
 // Pulls native time-clock punches for a pay period and splits each crew
@@ -188,9 +188,7 @@ export default function Payroll() {
         </div>
       </PageHeader>
 
-      <div className="px-4 sm:px-6 pb-6 space-y-5">
-        <RatesPanel />
-
+      <div className="px-4 sm:px-8 pb-6 space-y-5">
         {error && (
           <div className="flex items-start gap-2 text-sm text-ink-2 bg-panel border border-hairline rounded-xl p-4">
             <span className="h-1.5 w-1.5 rounded-full bg-red-500 shrink-0 mt-1.5" aria-hidden="true" />
@@ -214,15 +212,19 @@ export default function Payroll() {
             {square && <SquarePanel square={square} onClose={() => setSquare(null)}
               onConfirm={() => sendSquare(false)} />}
 
-            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
-              <Stat label="Total Hours" value={hrs(t.total_hours)} icon={Clock} />
-              <Stat label="Residential" value={hrs(t.residential_hours)} icon={Home} />
-              <Stat label="Rental (wkday)" value={hrs(t.rental_weekday_hours)} icon={KeyRound} />
-              <Stat label="Weekend Turnovers" value={t.weekend_turnovers} icon={Sun} />
-              <Stat label="Mileage" value={money(t.mileage_reimbursement)} icon={Car} sub={`${t.miles} mi`} />
-              <Stat label="Gross Pay" value={money(adjTotalGross)} icon={DollarSign} color="text-emerald-400"
-                sub={Math.abs(adjTotalGross - t.gross_pay) > 0.005 ? `auto ${money(t.gross_pay)}` : null} />
-            </div>
+            <section>
+              <h2 className="text-[11px] font-semibold uppercase tracking-wide text-ink-3 mb-2">This period</h2>
+              <div className="bg-panel border border-hairline rounded-xl grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6">
+                <StatCard label="Total hours" value={hrs(t.total_hours)} icon={Clock} />
+                <StatCard label="Residential" value={hrs(t.residential_hours)} icon={Home} />
+                <StatCard label="Rental (wkday)" value={hrs(t.rental_weekday_hours)} icon={KeyRound} />
+                <StatCard label="Weekend turnovers" value={t.weekend_turnovers} icon={Sun} />
+                <StatCard label="Mileage" value={money(t.mileage_reimbursement)} icon={Car} sub={`${t.miles} mi`} />
+                <StatCard label="Gross pay" value={money(adjTotalGross)} icon={DollarSign}
+                  accent="text-emerald-600 dark:text-emerald-300"
+                  sub={Math.abs(adjTotalGross - t.gross_pay) > 0.005 ? `auto ${money(t.gross_pay)}` : null} />
+              </div>
+            </section>
 
             <div className="text-xs text-ink-3 space-y-0.5">
               <div>
@@ -231,7 +233,7 @@ export default function Payroll() {
                 Mileage {money(rates.mileage_rate)}/mi · Weekend rentals paid per-property piece rate
               </div>
               <div>
-                <span className="text-blue-400">Hours and mileage from the BrightBase time clock (crew enter miles at clock-out).</span>
+                <span>Hours and mileage from the BrightBase time clock (crew enter miles at clock-out).</span>
                 {t.unallocated_hours > 0.05 && <span> · {t.unallocated_hours}h not yet split into a job bucket.</span>}
               </div>
             </div>
@@ -251,7 +253,7 @@ export default function Payroll() {
                         </div>
                         <div className="flex items-center gap-2">
                           {a.changed && <span className="text-xs text-ink-3 line-through">{money(emp.gross_pay)}</span>}
-                          <span className="font-bold text-emerald-400">{money(a.gross)}</span>
+                          <span className="font-bold text-emerald-600 dark:text-emerald-300">{money(a.gross)}</span>
                           <ChevronDown className={`w-4 h-4 text-ink-3 transition-transform ${expanded[emp.employee_id] ? 'rotate-180' : ''}`} />
                         </div>
                       </div>
@@ -268,7 +270,7 @@ export default function Payroll() {
                         <Bucket icon={Car} label="Mileage" primary={`${emp.miles} mi`} secondary={money(emp.mileage_reimbursement)} />
                       </div>
                       {emp.unclassified_hours > 0 && (
-                        <div className="mt-2 text-xs text-amber-400 flex items-center gap-1">
+                        <div className="mt-2 text-xs text-amber-600 dark:text-amber-300 flex items-center gap-1">
                           <AlertTriangle className="w-3.5 h-3.5" />{hrs(emp.unclassified_hours)} unclassified (not in pay)
                         </div>
                       )}
@@ -300,6 +302,13 @@ export default function Payroll() {
             <MileagePanel startDate={startDate} endDate={endDate} />
           </>
         )}
+
+        {/* Setup lives BELOW the pay-run results: rates change a few times a
+            year; the numbers are what this page is opened for. */}
+        <section>
+          <h2 className="text-[11px] font-semibold uppercase tracking-wide text-ink-3 mb-2">Setup</h2>
+          <RatesPanel />
+        </section>
       </div>
     </div>
   )
@@ -328,7 +337,7 @@ function ShiftRow({ shift, rates, ov, onChange }) {
           ) : (
             <span className="text-ink-3 text-sm truncate">{label}</span>
           )}
-          {shift.weekend && <span className="text-[11px] text-amber-400">wknd</span>}
+          {shift.weekend && <span className="text-[11px] text-amber-600 dark:text-amber-300">wknd</span>}
           {shift.rate_pay && (
             <span className="inline-flex items-center gap-1 text-[11px] text-ink-3">
               <span className="h-1.5 w-1.5 rounded-full bg-purple-400 shrink-0" aria-hidden="true" />Rate Pay
@@ -381,20 +390,8 @@ function Bucket({ icon: Icon, label, primary, secondary, warn }) {
         <Icon className="w-3 h-3" />{label}
       </div>
       <div className="font-semibold text-ink">{primary}</div>
-      <div className="text-xs text-emerald-400">{secondary}</div>
-      {warn && <div className="text-xs text-amber-400">{warn}</div>}
-    </div>
-  )
-}
-
-function Stat({ label, value, color = 'text-ink', icon: Icon, sub }) {
-  return (
-    <div className="bg-panel border border-hairline rounded-xl p-3">
-      <div className="flex items-center gap-1 text-xs text-ink-3 mb-1">
-        {Icon && <Icon className="w-3.5 h-3.5 shrink-0" />}{label}
-      </div>
-      <div className={`text-lg font-bold ${color}`}>{value}</div>
-      {sub && <div className="text-xs text-ink-3">{sub}</div>}
+      <div className="text-xs text-emerald-600 dark:text-emerald-300">{secondary}</div>
+      {warn && <div className="text-xs text-amber-600 dark:text-amber-300">{warn}</div>}
     </div>
   )
 }
@@ -413,7 +410,7 @@ function SquarePanel({ square, onClose, onConfirm }) {
         <button onClick={onClose} className="text-ink-3 hover:text-ink"><X className="w-4 h-4" /></button>
       </div>
 
-      {square.error && <div className="text-sm text-red-400 mb-2">{square.error}</div>}
+      {square.error && <div className="text-sm text-red-600 dark:text-red-300 mb-2">{square.error}</div>}
 
       {d && !sent && (
         <>
@@ -426,7 +423,7 @@ function SquarePanel({ square, onClose, onConfirm }) {
             <div className="text-[11px] text-ink-3 mb-3">
               Tagged as Square jobs: residential → <b>{d.jobs.residential}</b>, rental → <b>{d.jobs.rental}</b>.
               {' '}Rates: {d.square_rates_used
-                ? <span className="text-emerald-400">using your Square-configured wage rates.</span>
+                ? <span className="text-emerald-600 dark:text-emerald-300">using your Square-configured wage rates.</span>
                 : <span>using the rates set on this page (no matching Square wage found — check the job titles in Settings).</span>}
             </div>
           )}
@@ -441,17 +438,17 @@ function SquarePanel({ square, onClose, onConfirm }) {
             {d.employees.map(e => (
               <div key={e.employee_id} className="flex items-center justify-between gap-2 text-sm border-b border-hairline/50 last:border-0 py-1">
                 <div className="flex items-center gap-1.5 min-w-0">
-                  {e.matched ? <Check className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
-                    : <AlertTriangle className="w-3.5 h-3.5 text-amber-400 shrink-0" />}
+                  {e.matched ? <Check className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-300 shrink-0" />
+                    : <AlertTriangle className="w-3.5 h-3.5 text-amber-600 dark:text-amber-300 shrink-0" />}
                   <span className="text-ink truncate">{e.name}</span>
                   {e.matched && e.square_name && e.square_name !== e.name &&
                     <span className="text-xs text-ink-3">→ {e.square_name}</span>}
                 </div>
                 <div className="flex items-center gap-3 shrink-0 text-xs tabular-nums">
                   <span className="text-ink-2">{e.timecard_count} timecard{e.timecard_count === 1 ? '' : 's'}</span>
-                  {e.piece_count > 0 && <span className="text-purple-400">+{money(e.piece_total)} piece ({e.piece_count})</span>}
+                  {e.piece_count > 0 && <span className="text-purple-600 dark:text-purple-300">+{money(e.piece_total)} piece ({e.piece_count})</span>}
                   {e.mileage_reimbursement > 0 && <span className="text-ink-3">+{money(e.mileage_reimbursement)} mi</span>}
-                  {e.unpriced > 0 && <span className="text-amber-400">{e.unpriced} unpriced</span>}
+                  {e.unpriced > 0 && <span className="text-amber-600 dark:text-amber-300">{e.unpriced} unpriced</span>}
                 </div>
               </div>
             ))}
@@ -468,7 +465,7 @@ function SquarePanel({ square, onClose, onConfirm }) {
 
       {d && sent && (
         <div className="text-sm text-ink-2 space-y-1">
-          <div className="flex items-center gap-1.5 text-emerald-400 font-medium">
+          <div className="flex items-center gap-1.5 text-emerald-600 dark:text-emerald-300 font-medium">
             <Check className="w-4 h-4" />Created {d.created} timecard{d.created === 1 ? '' : 's'} in Square.
           </div>
           <div className="text-ink-3">Import them from the Square Payroll dashboard, then add the piece-rate + mileage adjustments.</div>
@@ -524,7 +521,7 @@ function MileagePanel({ startDate, endDate }) {
 
       {open && (
         <div className="border-t border-hairline p-4 space-y-3">
-          {err && <div className="text-sm text-red-400">{err}</div>}
+          {err && <div className="text-sm text-red-600 dark:text-red-300">{err}</div>}
           {loading && <div className="text-sm text-ink-3">Calculating…</div>}
           {!loading && rep && rep.cleaners.length === 0 && (
             <div className="text-sm text-ink-3">No scheduled jobs with assigned crew in this period.</div>
@@ -661,7 +658,7 @@ function RatesPanel() {
 
       {open && (
         <div className="border-t border-hairline p-4 space-y-5">
-          {err && <div className="text-sm text-red-400">{err}</div>}
+          {err && <div className="text-sm text-red-600 dark:text-red-300">{err}</div>}
           {!rates ? <div className="text-sm text-ink-3">Loading…</div> : (
             <>
               <div className="flex flex-wrap items-end gap-4">
@@ -741,7 +738,7 @@ function TurnoverRow({ property }) {
           className="block text-sm text-ink truncate no-underline hover:text-indigo-600">
           {property.name}
         </Link>
-        {err && <div className="text-xs text-red-400">{err}</div>}
+        {err && <div className="text-xs text-red-600 dark:text-red-300">{err}</div>}
       </div>
       <div className="flex items-center bg-panel border border-hairline rounded-lg px-2">
         <span className="text-ink-3 text-sm">$</span>

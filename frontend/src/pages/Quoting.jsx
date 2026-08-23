@@ -659,11 +659,11 @@ export default function Quoting() {
               rounded container at ~375px. */}
           <div className="flex items-center gap-1 bg-bg-2 rounded-lg p-1 overflow-x-auto scrollbar-thin">
             <button onClick={() => switchTab('quotes')}
-              className={`shrink-0 px-3 sm:px-4 py-1.5 rounded-md text-sm font-medium transition-colors ${tab === 'quotes' ? 'bg-bg-2 text-ink' : 'text-ink-3 hover:text-ink-3'}`}>
+              className={`shrink-0 px-3 sm:px-4 py-1.5 rounded-md text-sm font-medium transition-colors ${tab === 'quotes' ? 'bg-panel border border-hairline text-ink' : 'text-ink-3 hover:text-ink-2'}`}>
               Quotes
             </button>
             <button onClick={() => switchTab('follow-ups')}
-              className={`shrink-0 px-3 sm:px-4 py-1.5 rounded-md text-sm font-medium transition-colors flex items-center gap-1.5 ${tab === 'follow-ups' ? 'bg-bg-2 text-ink' : 'text-ink-3 hover:text-ink-3'}`}>
+              className={`shrink-0 px-3 sm:px-4 py-1.5 rounded-md text-sm font-medium transition-colors flex items-center gap-1.5 ${tab === 'follow-ups' ? 'bg-panel border border-hairline text-ink' : 'text-ink-3 hover:text-ink-2'}`}>
               Follow-ups
               {followUps.length > 0 && (
                 <span className="flex items-center gap-1 text-ink-3">
@@ -673,7 +673,7 @@ export default function Quoting() {
               )}
             </button>
             <button onClick={() => switchTab('archived')}
-              className={`shrink-0 px-3 sm:px-4 py-1.5 rounded-md text-sm font-medium transition-colors ${tab === 'archived' ? 'bg-bg-2 text-ink' : 'text-ink-3 hover:text-ink-3'}`}>
+              className={`shrink-0 px-3 sm:px-4 py-1.5 rounded-md text-sm font-medium transition-colors ${tab === 'archived' ? 'bg-panel border border-hairline text-ink' : 'text-ink-3 hover:text-ink-2'}`}>
               Archived
             </button>
           </div>

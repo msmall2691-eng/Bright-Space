@@ -92,7 +92,7 @@ function CalendarFeedsCard({ property, navigate }) {
                 </div>
                 <div className="text-xs text-ink-3 truncate font-mono mt-0.5" title={ical.url}>{ical.url}</div>
                 {failed && ical.last_sync_error && (
-                  <div className="mt-1 text-[11px] text-red-700 dark:text-red-300 bg-red-50 dark:bg-red-500/10 rounded p-1.5 font-mono break-all">
+                  <div className="mt-1 text-[11px] text-ink-2 bg-bg-2 border border-hairline rounded p-1.5 font-mono break-all">
                     {String(ical.last_sync_error).slice(0, 200)}
                   </div>
                 )}
@@ -146,11 +146,7 @@ function RecurringSeriesCard({ schedules, jobs }) {
                   className="text-[13px] font-medium text-ink hover:text-indigo-600 no-underline truncate">
                   {s.title}
                 </Link>
-                <span className={`inline-flex items-center gap-1.5 text-[10px] px-2 py-0.5 rounded-full border ${
-                  s.active
-                    ? 'text-emerald-700 bg-emerald-500/10 border-emerald-500/20'
-                    : 'text-ink-3 bg-bg-2 border-hairline'
-                }`}>
+                <span className="inline-flex items-center gap-1.5 text-[10px] text-ink-3">
                   <span className={`w-1.5 h-1.5 rounded-full ${s.active ? 'bg-emerald-500' : 'bg-ink-3'}`} />
                   {s.active ? 'Active' : 'Paused'}
                 </span>
@@ -548,9 +544,9 @@ export default function PropertyDetail() {
                   </span>
                 )}
                 {property.property_type === 'str' && property.ical_health === 'no_feed' && (
-                  <span className="flex items-center gap-1 px-2 py-1 rounded text-xs font-medium text-red-600 bg-red-500/10"
+                  <span className="flex items-center gap-1.5 px-2 py-1 text-xs font-medium text-ink-2"
                     title="No active calendar feed configured">
-                    <AlertCircle className="w-3.5 h-3.5" />No feed
+                    <span className="w-1.5 h-1.5 rounded-full bg-red-500 shrink-0" aria-hidden="true" />No feed
                   </span>
                 )}
                 {/* One click from "broken" to the fix — feed management page. */}

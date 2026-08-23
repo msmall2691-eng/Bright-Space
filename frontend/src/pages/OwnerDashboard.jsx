@@ -23,7 +23,7 @@
  * financial widgets).
  */
 import { useEffect, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import {
   TrendingUp, DollarSign, Repeat, AlertTriangle, PieChart, Users, Building2,
 } from 'lucide-react'
@@ -133,7 +133,7 @@ export default function OwnerDashboard() {
         <SubNav />
       </PageHeader>
 
-      <div className="px-4 sm:px-6 pb-6 space-y-5">
+      <div className="px-4 sm:px-8 pb-6 space-y-5">
 
       {/* KPI row */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
@@ -260,9 +260,9 @@ export default function OwnerDashboard() {
         ) : (
           <div className="divide-y divide-hairline">
             {topClients.map((c, i) => (
-              <a key={c.client_id} href={`/clients/${c.client_id}`}
-                 className="flex items-center gap-3 px-5 py-3 hover:bg-bg-2/60 transition-colors">
-                <span className="grid place-items-center w-6 h-6 rounded-full bg-bg-2 text-[11px] font-semibold text-ink-3 tabular-nums shrink-0">
+              <Link key={c.client_id} to={`/clients/${c.client_id}`}
+                 className="flex items-center gap-3 px-5 py-3 hover:bg-bg-2/60 transition-colors no-underline">
+                <span className="w-5 text-right text-[11px] font-semibold text-ink-3 tabular-nums shrink-0">
                   {i + 1}
                 </span>
                 <div className="min-w-0 flex-1">
@@ -275,7 +275,7 @@ export default function OwnerDashboard() {
                   </div>
                 </div>
                 <div className="text-sm font-semibold text-ink tabular-nums">{fmtMoney(c.total)}</div>
-              </a>
+              </Link>
             ))}
           </div>
         )}

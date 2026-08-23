@@ -28,6 +28,7 @@ import {
 import { del } from '../api'
 import { confirmDialog } from '../utils/confirmBus'
 import PageHero from '../components/ui/PageHero'
+import ErrorNote from '../components/ui/ErrorNote'
 import SubNav from '../components/ui/SubNav'
 import StatusBadge from '../components/ui/StatusBadge'
 import SavedViewsBar from '../components/SavedViewsBar'
@@ -292,9 +293,7 @@ export default function Deals() {
           </div>
         </div>
 
-        {error && (
-          <div className="mb-3 text-sm text-red-600 dark:text-red-300 bg-red-50 dark:bg-red-500/10 border border-red-200 dark:border-red-500/25 rounded-lg px-3 py-2">{error}</div>
-        )}
+        <ErrorNote className="mb-3">{error}</ErrorNote>
 
         {view === 'table' ? (
           <div className="rounded-xl border border-hairline bg-panel overflow-hidden">

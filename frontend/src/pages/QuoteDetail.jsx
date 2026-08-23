@@ -458,11 +458,12 @@ export default function QuoteDetail() {
                       <div className="min-w-0 flex-1">
                         <div className="flex items-center gap-1.5">
                           <span className="text-ink-2 truncate">{d.recipient}</span>
-                          <span className={`shrink-0 text-[10px] font-medium px-1.5 py-0.5 rounded-full ${
-                            d.status === 'sent' || d.status === 'delivered' ? 'bg-emerald-500/15 text-emerald-500'
-                            : d.status === 'failed' || d.status === 'bounced' || d.status === 'undelivered' ? 'bg-red-500/15 text-red-500'
-                            : 'bg-amber-500/15 text-amber-500'
-                          }`}>{d.status}</span>
+                          <span className="shrink-0 inline-flex items-center gap-1 text-[10px] font-medium text-ink-3">
+                            <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${
+                              d.status === 'sent' || d.status === 'delivered' ? 'bg-emerald-500'
+                              : d.status === 'failed' || d.status === 'bounced' || d.status === 'undelivered' ? 'bg-red-500'
+                              : 'bg-amber-500'
+                            }`} aria-hidden="true" />{d.status}</span>
                         </div>
                         <div className="text-[11px] text-ink-3">{d.sent_at ? new Date(d.sent_at).toLocaleString() : ''}</div>
                         {d.error && <div className="text-[11px] text-red-500 mt-0.5">{d.error}</div>}
