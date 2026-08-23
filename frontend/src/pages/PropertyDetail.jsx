@@ -8,6 +8,7 @@ import { get, patch, post } from '../api'
 import { todayYMD, formatDateShort } from '../utils/format'
 import Button from '../components/ui/Button'
 import RecordLink from '../components/RecordLink'
+import CustomerActions from '../components/comms/CustomerActions'
 import AiInsight from '../components/AiInsight'
 import GlassCard from '../components/ui/GlassCard'
 import { ICAL_SOURCES } from '../components/properties/constants'
@@ -406,6 +407,9 @@ export default function PropertyDetail() {
   // The checklist template is a setup tool; collapse it so opening a property
   // lands on its jobs, not the editor.
   const [showChecklist, setShowChecklist] = useState(false)
+  // Bumped after a visit is booked from this page so the job list below
+  // refetches — the loader lives inside the effect, so a key is the handle.
+  const [reloadKey, setReloadKey] = useState(0)
 
   // Load property, jobs, and visits
   useEffect(() => {
@@ -450,7 +454,7 @@ export default function PropertyDetail() {
     }
 
     if (propertyId) loadData()
-  }, [propertyId])
+  }, [propertyId, reloadKey])
 
   if (loading) {
     return (
@@ -581,12 +585,17 @@ export default function PropertyDetail() {
             </div>
           </div>
 
-          {/* Action Buttons */}
-          <div className="flex gap-2">
-            <Button variant="primary" size="sm" onClick={() => navigate(`/schedule?newJob=1&property_id=${propertyId}`)}>
-              <Plus className="w-4 h-4 mr-2" />
-              New Job
-            </Button>
+          {/* Action Buttons.
+              "New Job" used to navigate to /schedule?newJob=1&property_id=… —
+              but Schedule only reads `new=1`, so the button landed you on an
+              empty calendar with the property context dropped. It books here
+              now, preset to this house, and the customer is one tap away. */}
+          <div className="flex flex-wrap items-center gap-2">
+            {property.client_id && (
+              <CustomerActions clientId={property.client_id}
+                propertyId={parseInt(propertyId)}
+                onBooked={() => setReloadKey(k => k + 1)} />
+            )}
             <Button variant="secondary" size="sm" onClick={() => navigate(`/properties?edit=${propertyId}`)}>
               <Edit2 className="w-4 h-4 mr-2" />
               Edit Property
@@ -648,11 +657,14 @@ export default function PropertyDetail() {
               <div className="text-center py-12">
                 <Calendar className="w-12 h-12 text-ink-3 mx-auto mb-3" />
                 <p className="text-ink-2">No jobs scheduled for this property</p>
-                <Button variant="primary" size="sm" className="mt-4"
-                  onClick={() => navigate(`/schedule?newJob=1&property_id=${propertyId}`)}>
-                  <Plus className="w-4 h-4 mr-2" />
-                  Create First Job
-                </Button>
+                {/* Same dead deep-link as the header button had; books here now. */}
+                {property.client_id && (
+                  <div className="mt-4 flex justify-center">
+                    <CustomerActions clientId={property.client_id}
+                      propertyId={parseInt(propertyId)}
+                      onBooked={() => setReloadKey(k => k + 1)} />
+                  </div>
+                )}
               </div>
             </GlassCard>
           ) : (

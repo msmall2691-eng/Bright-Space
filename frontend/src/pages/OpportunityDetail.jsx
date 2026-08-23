@@ -8,6 +8,7 @@ import { toast } from '../utils/toastBus'
 import { formatDateShort as fmtDate } from '../utils/format'
 import { canEdit } from '../utils/perms'
 import InlineSelect from '../components/InlineSelect'
+import CustomerActions from '../components/comms/CustomerActions'
 import InlineEditField from '../components/InlineEditField'
 import Timeline, { activitiesSource } from '../components/Timeline'
 import RecordSkeleton from '../components/record/RecordSkeleton'
@@ -167,6 +168,10 @@ export default function OpportunityDetail() {
                   <Building2 className="w-3.5 h-3.5 shrink-0" /> {opp.client_name || `Client #${opp.client_id}`}
                 </Link>
               ) : <span className="text-[12px] text-ink-3 italic">No client linked</span>}
+              {opp.client_id && (
+                <CustomerActions className="mt-2" clientId={opp.client_id}
+                  clientName={opp.client_name} onBooked={load} />
+              )}
             </div>
 
             {canEdit() && opp.client_id && (
