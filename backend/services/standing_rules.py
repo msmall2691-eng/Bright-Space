@@ -83,10 +83,11 @@ RULES: list[dict[str, Any]] = [
         "fields": [
             {"key": "job_sms_reminders_enabled", "type": "bool", "default": False,
              "label": "Send the reminder"},
-            {"key": "job_sms_reminder_lead_hours", "type": "number", "default": 24,
+            {"key": "job_sms_reminder_lead_hours", "type": "number", "default": 12,
              "label": "How far ahead", "unit": "hours", "min": 1, "max": 168,
-             "help": "24 is the night before. The check runs hourly, so the text "
-                     "lands within an hour of this mark."},
+             "help": "12 means a morning cleaning is confirmed the evening "
+                     "before. The check runs hourly, so the text lands within "
+                     "an hour of this mark."},
         ],
     },
     {
