@@ -5135,6 +5135,53 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/ai/proposals/{proposal_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Edit Proposal
+         * @description Edit a pending proposal before approving it — the drafted message, in
+         *     practice. Non-pending → 409; a field the kind doesn't allow → 422.
+         */
+        patch: operations["edit_proposal_api_ai_proposals__proposal_id__patch"];
+        trace?: never;
+    };
+    "/api/ai/autopilot/draft-followups": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Autopilot Draft Followups
+         * @description Draft replies to customers left waiting and nudges for quiet quotes,
+         *     parking each as a pending proposal. Sends nothing.
+         *
+         *     Returns {enabled, proposed[], skipped{}, checked}. When the owner has
+         *     turned drafting off in Settings → Automation this is a no-op that says so,
+         *     rather than a 403 — the caller is Home's once-a-day fire, and an error
+         *     there would surface as a broken board for a setting working as intended.
+         */
+        post: operations["autopilot_draft_followups_api_ai_autopilot_draft_followups_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/dashboard/board": {
         parameters: {
             query?: never;
@@ -5269,12 +5316,9 @@ export interface paths {
         /**
          * Funnel Dashboard
          * @description Intake→quote conversion funnel over the last ``days`` days.
-         *
-         *     Cohort = requests (LeadIntake) created in the window, excluding archived.
-         *     Each request is followed to its linked quote's furthest stage, giving
-         *     cumulative stage counts, step-by-step conversion rates, the current-status
-         *     outcome mix, median time-to-quote / time-to-accept, dollar value at each
-         *     money stage, and a per-source breakdown. Admin/manager only (revenue).
+         *     Admin/manager only (revenue). The rules live in
+         *     modules.dashboard.analytics.lead_funnel so Home's chart and this page can
+         *     never disagree about what "quoted" or "won" means.
          */
         get: operations["funnel_dashboard_api_dashboard_funnel_get"];
         put?: never;
@@ -6860,6 +6904,8 @@ export interface components {
             str_auto_assign_mode?: string | null;
             /** Turnover Lead Buffer Hours */
             turnover_lead_buffer_hours?: number | null;
+            /** Autopilot Drafts Enabled */
+            autopilot_drafts_enabled?: boolean | null;
         };
         /** AvailabilityBody */
         AvailabilityBody: {
@@ -8241,6 +8287,16 @@ export interface components {
             custom_fields?: {
                 [key: string]: unknown;
             } | null;
+        };
+        /** ProposalEdit */
+        ProposalEdit: {
+            /**
+             * Payload
+             * @default {}
+             */
+            payload: {
+                [key: string]: unknown;
+            };
         };
         /** PublicAcceptRequest */
         PublicAcceptRequest: {
@@ -17100,6 +17156,61 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    edit_proposal_api_ai_proposals__proposal_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                proposal_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ProposalEdit"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    autopilot_draft_followups_api_ai_autopilot_draft_followups_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
                 };
             };
         };

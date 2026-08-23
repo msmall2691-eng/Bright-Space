@@ -28,6 +28,9 @@ export function useAutomationSettings({ toast, active }) {
     // Autopilot dial for the STR turnover auto-assign tick:
     // 'off' | 'propose' (queue proposals for approval) | 'auto' (assign directly)
     str_auto_assign_mode: 'off',
+    // Autopilot level 2: a persona drafts the day's follow-ups into the Home
+    // approval queue. Drafts only — nothing sends without a tap.
+    autopilot_drafts_enabled: true,
   })
   const [automationSaving, setAutomationSaving] = useState(false)
 
@@ -276,6 +279,29 @@ export function AutomationSection({ state, toast, active }) {
             </div>
             <p className="text-xs text-ink-3 mt-2">
               Propose queues assignments for your approval on the Home board; Auto assigns directly.
+            </p>
+          </div>
+
+          <div className="border-t border-hairline pt-5">
+            <div className="flex items-center justify-between">
+              <div>
+                <h3 className="font-semibold text-ink">Draft my follow-ups</h3>
+                <p className="text-xs text-ink-3 mt-1">
+                  When you open Home, Scout writes the replies you owe — customers
+                  who texted and haven’t heard back, and quotes that have gone
+                  quiet — and leaves them on the board for you to edit and send.
+                </p>
+              </div>
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input type="checkbox" checked={s.autopilot_drafts_enabled}
+                  onChange={e => setAutomationSettings(x => ({ ...x, autopilot_drafts_enabled: e.target.checked }))}
+                  className="w-4 h-4 rounded" />
+              </label>
+            </div>
+            <p className="text-xs text-ink-3 mt-1">
+              {s.autopilot_drafts_enabled
+                ? 'Nothing is sent without your tap. Runs at most once a day, and only on a day you open the app.'
+                : 'Off — the approval queue only fills from scheduling proposals.'}
             </p>
           </div>
 
