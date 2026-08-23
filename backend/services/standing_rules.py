@@ -123,9 +123,12 @@ RULES: list[dict[str, Any]] = [
              "label": "When a job is close with no cleaner", "choices": MODE_CHOICES,
              "help": "“Ask me first” puts it on the Home board so you decide "
                      "whether to open it up."},
-            {"key": "crew_escalation_hours", "type": "number", "default": 48,
+            {"key": "crew_escalation_hours", "type": "number", "default": 24,
              "label": "How close", "unit": "hours", "min": 2, "max": 336,
-             "help": "Measured to the start of the job."},
+             "help": "Measured to the start of the job. The check runs every "
+                     "six hours, so an offer goes out within six hours of this "
+                     "mark — set it a little wider than the notice you actually "
+                     "want the crew to have."},
         ],
     },
     {

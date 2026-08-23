@@ -468,3 +468,18 @@ def test_the_tick_runs_the_rule_and_survives_its_failure(monkeypatch):
         assert "error" not in out, "the duplicate audit must still have run"
     finally:
         _cleanup(db, setting_keys=["crew_escalation_mode", "crew_escalation_hours"])
+
+
+def test_the_escalation_window_default_is_a_day():
+    """Owner's call (Aug 2026): 24 hours, not the 48 it shipped with.
+
+    Pinned rather than left implicit because the default is what actually runs
+    until someone opens Settings — and every other test in this file passes
+    `hours=` explicitly, so a changed default would otherwise slip through
+    green."""
+    db = SessionLocal()
+    try:
+        assert sr.crew_escalation_hours(db) == 24
+        assert sr._FIELDS["crew_escalation_hours"]["min"] <= 24
+    finally:
+        db.close()
