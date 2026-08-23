@@ -45,6 +45,17 @@ describe('MoneyToday', () => {
     expect(screen.queryByText(/on the clock/)).toBeNull()
   })
 
+  it('collapses to one line before the day has started', () => {
+    // $0 in, $0 billed, 0h and no visits is four zeroes in a 2x2 grid saying
+    // "nothing yet" four times.
+    draw(<MoneyToday snap={{
+      collected: 0, collected_label: '$0', invoiced: 0, invoiced_label: '$0',
+      hours: 0, hours_label: '0h', on_clock: 0, visits_done: 0, visits_total: 0,
+    }} />)
+    expect(screen.getByText(/nothing booked and nothing collected/i)).toBeTruthy()
+    expect(screen.queryByText('Crew hours')).toBeNull()
+  })
+
   it('renders nothing when the box failed to build server-side', () => {
     const { container } = draw(<MoneyToday snap={null} />)
     expect(container.textContent).toBe('')
@@ -125,9 +136,13 @@ describe('FeedHealth', () => {
     expect(screen.getByText('Denmark Rental').getAttribute('href')).toBe('/properties/12/icals')
   })
 
-  it('says so plainly when every feed is healthy', () => {
+  it('shrinks to its header when every feed is healthy', () => {
+    // A problem list with no problems has nothing to say. It used to spend a
+    // full card on a reassuring sentence that repeated the header's own
+    // count — a card of dead space on a good day.
     draw(<FeedHealth snap={{ total: 3, ok: 3, problems: [], problem_total: 0 }} />)
-    expect(screen.getByText(/every airbnb\/vrbo calendar synced/i)).toBeTruthy()
+    expect(screen.getByText('3/3 feeding')).toBeTruthy()
+    expect(screen.queryByText(/calendar synced/i)).toBeNull()
   })
 })
 
@@ -148,9 +163,10 @@ describe('RecurringHealth', () => {
     expect(screen.getByText(/no upcoming visits generated/i)).toBeTruthy()
   })
 
-  it('confirms the healthy case instead of showing an empty list', () => {
+  it('shrinks to its header when nothing has stalled', () => {
     draw(<RecurringHealth snap={{ scanned: 9, healthy: 9, stalled: [], stalled_total: 0 }} />)
-    expect(screen.getByText(/every active series has visits/i)).toBeTruthy()
+    expect(screen.getByText('9 total')).toBeTruthy()
+    expect(screen.queryByText(/has visits/i)).toBeNull()
   })
 
   it('is absent for a business with no recurring work at all', () => {

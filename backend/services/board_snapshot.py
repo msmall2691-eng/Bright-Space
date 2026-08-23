@@ -336,7 +336,9 @@ def _recurring_health(db: Session, oid: int) -> dict:
     return {
         "scanned": int(audit.get("scanned", 0)),
         "healthy": int(audit.get("healthy", 0)),
-        "stalled": stalled[:_CAP],
+        # Three, not five: the rows are near-identical sentences, and five of
+        # them crowded everything below off the screen.
+        "stalled": stalled[:3],
         "stalled_total": len(stalled),
         "other_issues": max(0, len(audit.get("issues", [])) - len(stalled)),
     }

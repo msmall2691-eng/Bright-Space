@@ -331,10 +331,25 @@ describe('OpsBoard', () => {
  * already happened rather than four new ones.
  */
 describe('OpsBoard — snapshot boxes', () => {
-  it('spans the calendar across the whole grid, not one cell of it', async () => {
+  it('puts the calendar above the columns, at full width', async () => {
     renderBoard()
     const slot = await screen.findByTestId('home-calendar-slot')
-    expect(slot.className).toContain('col-span-full')
+    // It's a direct child of the page's own vertical stack, not a cell inside
+    // the two-column widget block — so nothing shares its row.
+    expect(slot.parentElement.className).toContain('flex-col')
+    expect(slot.className).not.toContain('grid-cols')
+  })
+
+  it('stacks widgets in columns that pack, not a row-locked grid', async () => {
+    renderBoard()
+    await screen.findByText('No cleaner assigned')
+
+    // A CSS grid ties every card in a row to the tallest one, which left a
+    // card's worth of dead space under the short ones. Each column is its own
+    // flex stack now, so a tall card only pushes down its own column.
+    const cols = document.querySelectorAll('.grid.grid-cols-1 > .flex.flex-col')
+    expect(cols.length).toBe(2)
+    for (const col of cols) expect(col.className).toContain('gap-4')
   })
 
   it('renders all four boxes from the board payload, with no extra requests', async () => {
