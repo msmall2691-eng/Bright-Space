@@ -14,6 +14,7 @@ import { MemoryRouter, useLocation } from 'react-router-dom'
 vi.mock('../../api', () => ({ get: vi.fn(), post: vi.fn(), getCached: vi.fn() }))
 
 import { get, post, getCached } from '../../api'
+import { claimDailyDraftRun } from '../../components/board/ProposalsQueue'
 import OpsBoard from '../OpsBoard'
 
 const PAYLOAD = {
@@ -122,6 +123,10 @@ function mockGet(boardPayload = PAYLOAD) {
 
 beforeEach(() => {
   localStorage.clear()
+  // Spend the approval queue's once-a-day drafting run up front. It fires a
+  // POST on mount, which is ProposalsQueue's behaviour and has its own tests —
+  // here it would just be noise in every "did this click POST?" assertion.
+  claimDailyDraftRun()
   get.mockReset(); post.mockReset(); getCached.mockReset()
   getCached.mockResolvedValue([])   // crew roster, via useEmployees
   mockGet()

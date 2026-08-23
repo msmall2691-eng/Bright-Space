@@ -15,6 +15,10 @@
  * calendar grid across the top (components/board/ScheduleCalendar.jsx), which
  * fetches itself from /api/schedule/week.
  *
+ * The approval queue (components/board/ProposalsQueue.jsx) also fetches
+ * itself: it lists pending ProposedActions, and on the first Home visit of a
+ * business day asks Autopilot to draft the follow-ups the owner owes.
+ *
  * The four snapshot boxes below it (components/board/SnapshotBoxes.jsx) read
  * `data.snapshot` out of the SAME board response — money/hours today, crew
  * today, turnover-feed health, stalled recurring series — so the whole
@@ -38,6 +42,7 @@ import { ErrorState } from '../components/ui'
 import { TAG_TONE, SEV_DOT, SEV_LABEL, STAT_TONE, INT_DOT, SEV_ORDER } from '../components/board/tokens'
 import BoardAssistant from '../components/board/BoardAssistant'
 import ScheduleCalendar from '../components/board/ScheduleCalendar'
+import ProposalsQueue, { relTime } from '../components/board/ProposalsQueue'
 import AgentHelp from '../components/board/AgentHelp'
 import { MoneyToday, CrewToday, FeedHealth, RecurringHealth } from '../components/board/SnapshotBoxes'
 import { MoneyTrend, LeadFunnel } from '../components/board/Charts'
@@ -122,140 +127,6 @@ function DailyBrief() {
         </>
       )}
     </div>
-  )
-}
-
-/* ── Autopilot approval queue ─────────────────────────────────────────────── */
-
-/** "2m ago" / "3h ago" for a proposal's created_at. The backend stamps naive
- *  UTC (isoformat without a zone), so assume UTC when no offset is present. */
-function relTime(iso) {
-  if (!iso) return ''
-  try {
-    const d = new Date(/Z$|[+-]\d\d:?\d\d$/.test(iso) ? iso : `${iso}Z`)
-    const s = Math.max(0, Math.floor((Date.now() - d.getTime()) / 1000))
-    if (s < 60) return 'just now'
-    const m = Math.floor(s / 60)
-    if (m < 60) return `${m}m ago`
-    const h = Math.floor(m / 60)
-    if (h < 24) return `${h}h ago`
-    return `${Math.floor(h / 24)}d ago`
-  } catch { return '' }
-}
-
-function ProposalRow({ p, busy, error, onApprove, onDismiss }) {
-  const agent = p.agent_id ? p.agent_id.charAt(0).toUpperCase() + p.agent_id.slice(1) : 'Autopilot'
-  return (
-    <div className="flex flex-wrap items-start gap-x-3 gap-y-2 px-3.5 py-3">
-      <div className="min-w-0 flex-1 basis-full sm:basis-0">
-        <p className="text-[11px] text-ink-3">
-          {agent} proposes{p.created_at && <span className="tabular-nums"> · {relTime(p.created_at)}</span>}
-        </p>
-        <p className="mt-0.5 text-[13px] font-semibold leading-snug text-ink">{p.title}</p>
-        {p.detail && <p className="mt-0.5 text-[13px] leading-snug text-ink-2">{p.detail}</p>}
-        {error && (
-          <p className="mt-1 text-[12px] font-medium text-rose-600 dark:text-rose-400">Failed: {error}</p>
-        )}
-      </div>
-      <div className="ml-auto flex shrink-0 items-center gap-1.5 pt-0.5">
-        {error ? (
-          /* Execution failed — the human should read the error, not retry
-             blindly. The row stays; the primary is replaced by a dead label. */
-          <span className="inline-flex h-8 items-center rounded-md px-2.5 text-xs font-medium text-rose-600 opacity-60 dark:text-rose-400">
-            Failed
-          </span>
-        ) : (
-          <>
-            <button onClick={() => onDismiss(p)} disabled={!!busy}
-              className="inline-flex h-8 items-center rounded-md border border-hairline-2 bg-panel px-2.5 text-xs font-medium text-ink-2 transition-colors hover:bg-bg-2 disabled:opacity-50">
-              Dismiss
-            </button>
-            <button onClick={() => onApprove(p)} disabled={!!busy}
-              className="inline-flex h-8 items-center gap-1.5 rounded-md bg-indigo-600 px-3 text-xs font-semibold text-white transition-colors hover:bg-indigo-700 disabled:opacity-60">
-              {busy === 'approve' && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
-              Approve
-            </button>
-          </>
-        )}
-      </div>
-    </div>
-  )
-}
-
-/** "Waiting for your approval" — pending ProposedActions from the Autopilot
- *  approval gate (Mia's propose-mode picks). Self-contained like DailyBrief:
- *  its own fetch, and on any failure or unexpected shape it renders nothing —
- *  the board's real data must never sit behind, or visually blame, this. */
-function ProposalsQueue() {
-  const [proposals, setProposals] = useState([])
-  const [busy, setBusy] = useState(null)        // { id, action: 'approve'|'dismiss' }
-  const [failures, setFailures] = useState({})  // id -> result.error from a failed execution
-
-  const load = useCallback(async () => {
-    try {
-      const res = await get('/api/ai/proposals?status=pending')
-      if (Array.isArray(res)) setProposals(res)
-    } catch { /* quiet — render nothing rather than an error state */ }
-  }, [])
-
-  useEffect(() => { load() }, [load])
-
-  const approve = useCallback(async (p) => {
-    setBusy({ id: p.id, action: 'approve' })
-    try {
-      const res = await post(`/api/ai/proposals/${p.id}/approve`)
-      if (res?.status === 'executed') {
-        pushToast(`Approved — ${p.title}`, 'success')
-        setProposals(prev => prev.filter(x => x.id !== p.id))
-        load()
-      } else {
-        // status 'failed': keep the row visible with the error. No refetch —
-        // the proposal is no longer pending server-side and would vanish.
-        setFailures(prev => ({ ...prev, [p.id]: res?.result?.error || 'The action could not be completed.' }))
-      }
-    } catch (e) {
-      if (e?.status === 409) { pushToast('Already decided', 'info'); load() }
-      else pushToast(e?.message || 'Approve failed — nothing was changed.', 'error')
-    } finally {
-      setBusy(null)
-    }
-  }, [load])
-
-  const dismiss = useCallback(async (p) => {
-    setBusy({ id: p.id, action: 'dismiss' })
-    try {
-      await post(`/api/ai/proposals/${p.id}/dismiss`)
-      pushToast('Proposal dismissed', 'info')
-      setProposals(prev => prev.filter(x => x.id !== p.id))
-      load()
-    } catch (e) {
-      if (e?.status === 409) { pushToast('Already decided', 'info'); load() }
-      else pushToast(e?.message || 'Dismiss failed — nothing was changed.', 'error')
-    } finally {
-      setBusy(null)
-    }
-  }, [load])
-
-  if (!proposals.length) return null
-  return (
-    <section className="overflow-hidden rounded-2xl border border-hairline bg-panel">
-      <header className="flex items-center gap-2 border-b border-hairline px-3.5 py-2.5">
-        <span className="h-1.5 w-1.5 rounded-full bg-indigo-500" />
-        <h2 className="text-[11px] font-medium text-ink-3">Waiting for your approval</h2>
-        {/* Plain number, not a count bubble (owner veto). */}
-        <span className="ml-auto text-[11px] font-semibold tabular-nums text-ink-3">
-          {proposals.length}
-        </span>
-      </header>
-      <div className="divide-y divide-hairline">
-        {proposals.map(p => (
-          <ProposalRow key={p.id} p={p}
-            busy={busy?.id === p.id ? busy.action : null}
-            error={failures[p.id]}
-            onApprove={approve} onDismiss={dismiss} />
-        ))}
-      </div>
-    </section>
   )
 }
 

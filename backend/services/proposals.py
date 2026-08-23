@@ -330,3 +330,60 @@ def propose_turnover_assignments(db: Session, picks: list[dict],
         after = db.query(ProposedAction.id).count()
         (created if after > before else existing).append(row.id)
     return {"proposed": created, "already_pending": existing}
+
+
+# The only parts of a pending proposal a human may change before approving it,
+# by kind. Approving a drafted message you cannot touch is not a decision —
+# it's take-it-or-leave-it, and the leave-it branch means writing the whole
+# thing yourself, which is worse than no draft at all. So a drafted `send_sms`
+# body is editable; nothing structural is, because everything else in a
+# payload (which job, which cleaner, which conversation) IS the proposal, and
+# changing it would make the title and detail on screen describe something
+# that is no longer what will happen.
+EDITABLE_FIELDS = {
+    "send_sms": ("body",),
+}
+
+
+def update_proposal_payload(db: Session, proposal: ProposedAction,
+                            patch: dict) -> ProposedAction:
+    """Edit a PENDING proposal's payload in place, restricted to the fields
+    EDITABLE_FIELDS allows for its kind.
+
+    Pending-only (409 otherwise) for the same reason approve and dismiss are:
+    once it's decided, the payload is the record of what was actually run.
+    Unknown keys are refused rather than dropped — silently ignoring an edit
+    the caller believed it made is how a customer gets sent the wrong text."""
+    if proposal.status != "pending":
+        raise HTTPException(status_code=409,
+                            detail=f"Proposal is not pending (status: {proposal.status})")
+
+    allowed = EDITABLE_FIELDS.get(proposal.kind, ())
+    if not allowed:
+        raise HTTPException(
+            status_code=422,
+            detail=f"A '{proposal.kind}' proposal can't be edited — approve or dismiss it.")
+
+    patch = dict(patch or {})
+    unknown = [k for k in patch if k not in allowed]
+    if unknown:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Can't edit {', '.join(sorted(unknown))} on a "
+                   f"'{proposal.kind}' proposal (editable: {', '.join(allowed)})")
+    if not patch:
+        return proposal
+
+    merged = dict(proposal.payload or {})
+    merged.update({k: v for k, v in patch.items()})
+    try:
+        _validate_payload(proposal.kind, merged)
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+
+    # Reassign rather than mutate: a JSON column tracks changes by identity,
+    # so an in-place update of the existing dict would not be flushed.
+    proposal.payload = merged
+    db.commit()
+    db.refresh(proposal)
+    return proposal

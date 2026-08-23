@@ -767,6 +767,11 @@ class AutomationConfig(BaseModel):
     # STR turnover lead-time guardrail (Tier 3 roadmap): warn when a turnover
     # ends less than this many hours before the next guest's check-in.
     turnover_lead_buffer_hours: Optional[float] = None
+    # Autopilot level 2: whether a persona drafts the day's follow-ups (replies
+    # to customers left waiting, nudges on quiet quotes) into the approval
+    # queue when the owner opens Home. Drafts only — nothing is ever sent
+    # without a tap. Off means Home never fires the run, so it costs nothing.
+    autopilot_drafts_enabled: Optional[bool] = None
 
 
 def customer_invites_enabled(db: Session) -> bool:
@@ -775,6 +780,18 @@ def customer_invites_enabled(db: Session) -> bool:
     Defaults on — it's the headline "customers see their cleanings" behavior —
     and is the in-app kill switch (Settings → Automation)."""
     return _coerce_bool(get_setting(db, "invite_customers"), True)
+
+
+def autopilot_drafts_enabled(db: Session) -> bool:
+    """Whether Autopilot drafts the day's follow-ups into the approval queue.
+
+    Defaults ON: unlike the auto-assign dial, nothing here acts on the
+    business — it writes drafts into a queue that still needs a human tap —
+    and the whole point is that the work is already waiting when she opens
+    Home. The cost is bounded by design (a handful of cheap completions, only
+    on a day she actually opens the app, capped per run), and Settings →
+    Automation turns it off."""
+    return _coerce_bool(get_setting(db, "autopilot_drafts_enabled"), True)
 
 
 def customer_notify_enabled(db: Session) -> bool:
@@ -994,6 +1011,7 @@ def get_automation_settings(db: Session = Depends(get_db)):
         "gmail_live_sync": _coerce_bool(get_setting(db, "gmail_live_sync"), False),
         "gmail_live_sync_available": bool((os.getenv("GMAIL_PUBSUB_TOPIC") or "").strip()),
         "customer_self_reschedule": customer_self_reschedule_enabled(db),
+        "autopilot_drafts_enabled": autopilot_drafts_enabled(db),
         "turnover_lead_buffer_hours": turnover_lead_buffer_hours(db),
         # Mirrors scheduler._str_autoassign_mode's legacy fallback exactly, so
         # the Settings dial shows the mode the tick will actually run with.

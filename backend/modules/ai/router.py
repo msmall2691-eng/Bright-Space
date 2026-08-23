@@ -32,7 +32,7 @@ from database.models import (Client, Job, RecurringSchedule, Property, Invoice,
 from modules.auth.router import get_current_user, current_org_id, require_role
 from ratelimit import rate_limit
 from services.proposals import (PROPOSAL_STATUSES, dismiss_proposal,
-                                execute_proposal)
+                                execute_proposal, update_proposal_payload)
 # The 24h staleness verdict must be THE one the Properties page shows — a
 # duplicated cutoff here would eventually drift and the alert list would
 # disagree with the page it links to.
@@ -2252,3 +2252,49 @@ def dismiss_proposal_endpoint(proposal_id: int, db: Session = Depends(get_db),
     """Dismiss a pending proposal (no action taken). Non-pending → 409."""
     proposal = _get_proposal_or_404(db, proposal_id, org_id)
     return _proposal_dict(dismiss_proposal(db, proposal, user))
+
+
+class ProposalEdit(BaseModel):
+    # Whitelisted server-side per kind (services.proposals.EDITABLE_FIELDS) —
+    # today that is a drafted SMS body and nothing else.
+    payload: dict = {}
+
+
+@router.patch("/proposals/{proposal_id}",
+              dependencies=[Depends(require_role("admin", "manager"))])
+def edit_proposal(proposal_id: int, body: ProposalEdit,
+                  db: Session = Depends(get_db),
+                  org_id: int = Depends(current_org_id)):
+    """Edit a pending proposal before approving it — the drafted message, in
+    practice. Non-pending → 409; a field the kind doesn't allow → 422."""
+    proposal = _get_proposal_or_404(db, proposal_id, org_id)
+    return _proposal_dict(update_proposal_payload(db, proposal, body.payload))
+
+
+# ── POST /api/ai/autopilot/draft-followups ──────────────────────────────────
+#
+# Autopilot level 2: fill the approval queue with drafted follow-ups instead
+# of waiting for the owner to find each one and write it herself. The finding
+# and the drafting live in services/autopilot_drafts.py; this is routing plus
+# the two gates that keep it from being expensive — the role check and a rate
+# limit well under any plausible honest use (Home fires it at most once a
+# business day, and the manual button is a button).
+
+@router.post("/autopilot/draft-followups",
+             dependencies=[Depends(require_role("admin", "manager")),
+                           Depends(rate_limit(12, 3600, "ai_autopilot_drafts"))])
+def autopilot_draft_followups(db: Session = Depends(get_db),
+                              org_id: int = Depends(current_org_id)):
+    """Draft replies to customers left waiting and nudges for quiet quotes,
+    parking each as a pending proposal. Sends nothing.
+
+    Returns {enabled, proposed[], skipped{}, checked}. When the owner has
+    turned drafting off in Settings → Automation this is a no-op that says so,
+    rather than a 403 — the caller is Home's once-a-day fire, and an error
+    there would surface as a broken board for a setting working as intended."""
+    from modules.settings.router import autopilot_drafts_enabled
+    from services.autopilot_drafts import draft_followups
+
+    if not autopilot_drafts_enabled(db):
+        return {"enabled": False, "proposed": [], "skipped": {}, "checked": 0}
+    return {"enabled": True, **draft_followups(db, org_id)}
