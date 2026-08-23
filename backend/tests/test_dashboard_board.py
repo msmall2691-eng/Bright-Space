@@ -15,7 +15,7 @@ from fastapi.testclient import TestClient
 from main import app
 from database.db import SessionLocal
 from database.models import (
-    Client, Property, Job, Invoice, LeadIntake, Conversation,
+    Client, Property, Job, Invoice, LeadIntake, Conversation, Quote,
 )
 from modules.auth.router import get_current_user, current_org_id
 from utils.dates import business_today, business_now
@@ -36,11 +36,13 @@ def client():
     app.dependency_overrides[get_current_user] = lambda: _Admin()
     app.dependency_overrides[current_org_id] = lambda: 1
     api = TestClient(app)
-    ids = {"clients": [], "properties": [], "jobs": [], "invoices": [], "leads": [], "convs": []}
+    ids = {"clients": [], "properties": [], "jobs": [], "invoices": [], "leads": [],
+           "convs": [], "quotes": []}
     yield api, ids
     app.dependency_overrides.pop(get_current_user, None)
     app.dependency_overrides.pop(current_org_id, None)
     db = SessionLocal()
+    db.query(Quote).filter(Quote.id.in_(ids["quotes"] or [0])).delete(synchronize_session=False)
     db.query(Job).filter(Job.id.in_(ids["jobs"] or [0])).delete(synchronize_session=False)
     db.query(Invoice).filter(Invoice.id.in_(ids["invoices"] or [0])).delete(synchronize_session=False)
     db.query(LeadIntake).filter(LeadIntake.id.in_(ids["leads"] or [0])).delete(synchronize_session=False)
@@ -250,3 +252,80 @@ def test_finished_visits_never_count_as_needing_a_cleaner(client):
 
     after_ids = {it["id"] for s in after["sections"] for it in s["items"]}
     assert f"job:{done_id}" not in after_ids, "completed job must not raise a Needs-a-cleaner card"
+
+
+def _mk_quote(ids, cid, status, *, property_id=None, total=400.0):
+    db = SessionLocal()
+    q = Quote(client_id=cid, quote_number=f"Q-{uuid.uuid4().hex[:8]}",
+              status=status, total=total, property_id=property_id, org_id=1)
+    if status == "accepted":
+        q.accepted_at = business_now().replace(tzinfo=None)
+    db.add(q); db.commit(); db.refresh(q)
+    ids["quotes"].append(q.id); qid = q.id; db.close()
+    return qid
+
+
+def test_an_accepted_quote_that_never_became_a_visit_is_surfaced(client):
+    """The seam nothing else watched. Accepting auto-creates the job ONLY when
+    a property is linked; with no property it marks the deal won and moves on,
+    and the only notice is a line in an email. The board's other quote query
+    looks at sent/viewed, so this quote was invisible on every screen — the
+    customer said yes, the funnel counts it won, and nobody is scheduled."""
+    api, ids = client
+    cid = _mk_client(ids)
+    qid = _mk_quote(ids, cid, "accepted", property_id=None)
+
+    board = api.get("/api/dashboard/board").json()
+    requests_box = next(s for s in board["sections"] if s["key"] == "requests")
+    item = next(it for it in requests_box["items"] if it["id"] == f"quote-stranded:{qid}")
+
+    # Agreed work with no visit booked is urgent, not an FYI.
+    assert item["severity"] == "urgent"
+    assert "no property on the quote" in item["body"]
+    book = next(a for a in item["actions"] if a["label"] == "Book it")
+    # Straight into the booking modal — the trip is wasted otherwise.
+    assert book["href"] == f"/quotes/{qid}?book=1"
+
+
+def test_an_accepted_quote_with_a_property_still_says_it_is_unbooked(client):
+    """Auto-convert can also just fail (the accept path swallows the error and
+    logs a warning). Same card, different reason."""
+    api, ids = client
+    cid = _mk_client(ids)
+    pid = _mk_property(ids, cid)
+    qid = _mk_quote(ids, cid, "accepted", property_id=pid)
+
+    board = api.get("/api/dashboard/board").json()
+    requests_box = next(s for s in board["sections"] if s["key"] == "requests")
+    item = next(it for it in requests_box["items"] if it["id"] == f"quote-stranded:{qid}")
+    assert "accepted but never booked" in item["body"]
+
+
+def test_a_converted_quote_is_not_nagged_about(client):
+    """Once it becomes a job the quote's status moves to `converted`. Leaving
+    it on the board would be a card you can never clear."""
+    api, ids = client
+    cid = _mk_client(ids)
+    qid = _mk_quote(ids, cid, "converted")
+
+    board = api.get("/api/dashboard/board").json()
+    ids_on_board = {it["id"] for s in board["sections"] for it in s["items"]}
+    assert f"quote-stranded:{qid}" not in ids_on_board
+
+
+def test_sent_and_accepted_quotes_are_different_cards(client):
+    """A quote awaiting an answer and a quote awaiting a calendar slot are
+    different problems with different fixes — chase one, book the other."""
+    api, ids = client
+    cid = _mk_client(ids)
+    sent_id = _mk_quote(ids, cid, "sent")
+    accepted_id = _mk_quote(ids, cid, "accepted")
+
+    board = api.get("/api/dashboard/board").json()
+    requests_box = next(s for s in board["sections"] if s["key"] == "requests")
+    by_id = {it["id"]: it for it in requests_box["items"]}
+
+    assert by_id[f"quote:{sent_id}"]["severity"] == "info"
+    assert by_id[f"quote-stranded:{accepted_id}"]["severity"] == "urgent"
+    assert f"quote-stranded:{sent_id}" not in by_id
+    assert f"quote:{accepted_id}" not in by_id
