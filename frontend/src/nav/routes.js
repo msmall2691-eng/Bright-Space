@@ -2,6 +2,7 @@ import {
   LayoutDashboard, Sparkles, Users, Calendar, Receipt,
   DollarSign, MessageSquare, Home, Repeat, Settings, Inbox,
   TrendingUp, Radar, Rows3, Filter, HardHat, CalendarDays, FileText, Star,
+  GitMerge,
 } from 'lucide-react'
 
 /**
@@ -71,6 +72,12 @@ export const NAV_SECTIONS = [
         tabs: [
           { to: '/clients',    icon: Users, label: 'Clients', keywords: 'customers contacts' },
           { to: '/properties', icon: Home,  label: 'Properties', keywords: 'homes rentals sites str' },
+          // Tidy Up was orphaned: a working duplicate-client / duplicate-
+          // property merge tool reachable only from one buried link in
+          // Settings → General. It cleans up clients and properties, so it
+          // belongs beside them — /api/cleanup is admin/manager-only.
+          { to: '/cleanup', icon: GitMerge, label: 'Tidy Up', roles: ['admin', 'manager'],
+            keywords: 'duplicates merge cleanup tidy dedupe' },
         ],
       },
       {
@@ -251,7 +258,6 @@ export function recordFromPath(pathname) {
 
 /** Routes reachable outside the nav (redirect targets, internal pages). */
 const EXTRA_ROUTES = {
-  '/cleanup':           { label: 'Tidy Up', section: null },
   '/design-system':     { label: 'Design system', section: null },
 }
 
