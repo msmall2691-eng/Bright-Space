@@ -352,6 +352,23 @@ def build_board(db: Session, oid: int, can_act: bool = True) -> dict:
         .all()
     )
 
+    # --- Accepted, but never turned into work --------------------------------
+    # The seam nothing else watches. Accepting a quote auto-creates the job
+    # ONLY when a property is linked (modules/quoting/router.py); with no
+    # property it marks the deal won and moves on, and the sole notice is a
+    # line in an email. The board's follow-up query above looks at sent/viewed
+    # quotes, so an ACCEPTED one that never became a visit was invisible on
+    # every screen: the customer said yes, the funnel counts it won, and
+    # nobody is scheduled to clean anything.
+    stranded = (
+        db.query(Quote)
+        .options(joinedload(Quote.client))
+        .filter(org(Quote), Quote.status == "accepted")
+        .order_by(Quote.accepted_at.asc().nullslast())
+        .limit(_CAP)
+        .all()
+    )
+
     # --- Leads needing action ------------------------------------------------
     leads = (
         db.query(LeadIntake)
@@ -450,6 +467,19 @@ def build_board(db: Session, oid: int, can_act: bool = True) -> dict:
                 _api("Draft quote", f"/api/ai/quote-from-lead/{ld.id}", done="Draft ready"),
                 _link("Open", f"/requests/{ld.id}"),
             ],
+        ))
+    for q in stranded:
+        # Urgent, not "info": this is agreed work with no visit on the
+        # calendar, and every day it sits there is a day the customer thinks
+        # you're coming.
+        why = ("no property on the quote, so it couldn't book itself"
+               if not q.property_id else "accepted but never booked")
+        requests.append(_item(
+            f"quote-stranded:{q.id}", "urgent",
+            f"Accepted, not booked — {_client_name(q) or (q.title or 'Quote')}",
+            f"{_fmt_money(q.total)} · {why}", _ago(q.accepted_at),
+            tags=[{"label": "Accepted", "tone": "emerald"}],
+            actions=[_link("Book it", f"/quotes/{q.id}?book=1")],
         ))
     for q in follow_ups:
         stage = "viewed, not accepted" if q.viewed_at else "sent, not opened"

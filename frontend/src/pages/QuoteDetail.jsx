@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
-import { useParams, useNavigate, Link } from 'react-router-dom'
+import { useParams, useNavigate, useSearchParams, Link } from 'react-router-dom'
 import {
   ArrowLeft, Building2, MapPin, TrendingUp, Calendar, FileText, Inbox,
   Mail, MessageSquare, ChevronRight, Send, Eye, Download, Link2, Check, Sparkles, Archive,
@@ -218,6 +218,21 @@ export default function QuoteDetail() {
   // on the backend — returns the existing job if already converted).
   const [convertModalOpen, setConvertModalOpen] = useState(false)
   const openConvertModal = () => setConvertModalOpen(true)
+
+  // /quotes/:id?book=1 opens the booking modal straight away. Home's
+  // "Accepted, not booked" card links here, and the whole point of that card
+  // is that the visit was never scheduled — landing on the quote and making
+  // the operator hunt for the button would waste the trip. The param is
+  // stripped after use so a refresh doesn't reopen it.
+  const [searchParams, setSearchParams] = useSearchParams()
+  useEffect(() => {
+    if (searchParams.get('book') === '1') {
+      setConvertModalOpen(true)
+      const next = new URLSearchParams(searchParams)
+      next.delete('book')
+      setSearchParams(next, { replace: true })
+    }
+  }, [searchParams, setSearchParams])
 
   if (loading) return <RecordSkeleton />
   if (notFound || !quote) {
