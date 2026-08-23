@@ -791,6 +791,47 @@ export default function JobCreateModal({
                 className="w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-400" />
             </div>
           )}
+          {/* Repeat — ALWAYS VISIBLE, directly under Date, because it decides
+              what Date even means: switch it on and the single date above is
+              replaced by frequency/day-of-week below.
+
+              Owner report (Aug 2026): "when I add a job I can make it
+              repeating because it auto defaults to one time and I cant edit
+              it". The toggle worked — it was the third control inside the
+              collapsed "More options" disclosure, under Property and Title, so
+              from the outside the modal looked like it only made one-time
+              jobs. A control nobody can find is the same as a control that
+              isn't there. Switching it on also opens that disclosure, because
+              the frequency and end-date fields still live inside it. */}
+          <div className="flex items-center justify-between bg-bg border border-hairline rounded-lg px-3 py-2.5">
+            <label className="flex items-center gap-2 text-sm text-ink-2 font-medium cursor-pointer">
+              <RepeatIcon className="w-4 h-4 text-ink-3" />
+              Repeat
+              <span className="text-xs text-ink-3 font-normal">
+                {recurring ? '— recurring schedule' : '— one-time job'}
+              </span>
+            </label>
+            <button
+              type="button"
+              role="switch"
+              aria-checked={recurring}
+              onClick={() => setRecurring(r => {
+                const next = !r
+                if (next) setShowMore(true)
+                return next
+              })}
+              data-testid="job-create-repeat-toggle"
+              className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${
+                recurring ? 'bg-indigo-600' : 'bg-bg-2'
+              }`}
+            >
+              <span
+                className={`inline-block h-4 w-4 transform rounded-full bg-panel transition-transform ${
+                  recurring ? 'translate-x-4' : 'translate-x-0.5'
+                }`}
+              />
+            </button>
+          </div>
           <div className="flex gap-3">
             <div className="flex-1">
               <label className="block text-xs text-ink-2 font-medium mb-1"><Clock className="w-3 h-3 inline mr-1" /> Start *</label>
@@ -856,7 +897,8 @@ export default function JobCreateModal({
               address override, right below the compact form on the same page. */}
           <button type="button" onClick={() => setShowMore(v => !v)}
             className="w-full flex items-center justify-center gap-1.5 text-center text-xs text-ink-3 hover:text-ink-2 pt-1 border-t border-hairline mt-1">
-            More options (property, recurring, address)
+            {recurring ? 'More options (property, repeat details, address)'
+              : 'More options (property, address)'}
             <span className={`transition-transform inline-block ${showMore ? 'rotate-180' : ''}`}>▾</span>
           </button>
 
@@ -943,34 +985,6 @@ export default function JobCreateModal({
               placeholder={recurring ? 'e.g. Biweekly Home Clean' : 'e.g. Smith Residence — Deep Clean'}
               className="w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-400"
             />
-          </div>
-
-          {/* Repeat toggle — drives whether the compact Date field above is
-              replaced by frequency/day-of-week options below. */}
-          <div className="flex items-center justify-between bg-bg border border-hairline rounded-lg px-3 py-2.5">
-            <label className="flex items-center gap-2 text-sm text-ink-2 font-medium cursor-pointer">
-              <RepeatIcon className="w-4 h-4 text-ink-3" />
-              Repeat
-              <span className="text-xs text-ink-3 font-normal">
-                {recurring ? '— recurring schedule' : '— one-time job'}
-              </span>
-            </label>
-            <button
-              type="button"
-              role="switch"
-              aria-checked={recurring}
-              onClick={() => setRecurring(r => !r)}
-              data-testid="job-create-repeat-toggle"
-              className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${
-                recurring ? 'bg-indigo-600' : 'bg-bg-2'
-              }`}
-            >
-              <span
-                className={`inline-block h-4 w-4 transform rounded-full bg-panel transition-transform ${
-                  recurring ? 'translate-x-4' : 'translate-x-0.5'
-                }`}
-              />
-            </button>
           </div>
 
           {/* Airbnb/VRBO calendar — only makes sense once there's a real

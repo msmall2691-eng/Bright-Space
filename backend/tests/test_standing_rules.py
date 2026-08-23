@@ -166,7 +166,7 @@ def test_a_value_outside_the_rules_bounds_is_refused_not_clamped():
         res = client.post("/api/settings/rules",
                           json={"settings": {"job_sms_reminder_lead_hours": 100000}})
         assert res.status_code == 422
-        assert sr.reminder_lead_hours(db) == 24, "nothing should have been written"
+        assert sr.reminder_lead_hours(db) == 12, "nothing should have been written"
     finally:
         db.close()
 
@@ -218,7 +218,7 @@ def test_a_nonsense_env_value_falls_back_to_the_default(monkeypatch):
     monkeypatch.setenv("JOB_SMS_REMINDER_LEAD_HOURS", "soon")
     db = SessionLocal()
     try:
-        assert sr.reminder_lead_hours(db) == 24
+        assert sr.reminder_lead_hours(db) == 12
     finally:
         db.close()
 
@@ -481,5 +481,19 @@ def test_the_escalation_window_default_is_a_day():
     try:
         assert sr.crew_escalation_hours(db) == 24
         assert sr._FIELDS["crew_escalation_hours"]["min"] <= 24
+    finally:
+        db.close()
+
+
+def test_the_reminder_lead_time_default_is_twelve_hours():
+    """Owner's call (Aug 2026): 12 hours, not the 24 it shipped with — a
+    morning cleaning gets confirmed the evening before rather than a full day
+    out. Pinned for the same reason as the escalation window: the default is
+    what runs until someone opens Settings."""
+    db = SessionLocal()
+    try:
+        assert sr.reminder_lead_hours(db) == 12
+        from services.reminder_service import _lead_hours
+        assert _lead_hours(db) == 12, "the service that sends must agree"
     finally:
         db.close()
