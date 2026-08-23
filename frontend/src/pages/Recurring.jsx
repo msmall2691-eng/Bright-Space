@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo, useCallback } from 'react'
+import { groupBulkable, describeBatch, applyBatch } from '../utils/recurringBulk'
 import { useSearchParams, Link } from 'react-router-dom'
 import {
   Calendar, Repeat, RefreshCw, Plus, X, ArrowLeft, Pencil,
@@ -1162,9 +1163,12 @@ function HealthPanel({ onClose, onChanged, onOpenSeries, onOpenDuplicates, onCle
   const scan = useCallback(async () => {
     setLoading(true); setError('')
     try {
-      setReport(await get('/api/recurring/cleanup/health'))
+      const next = await get('/api/recurring/cleanup/health')
+      setReport(next)
+      return next
     } catch (e) {
       setError(e.message || 'Health scan failed')
+      return null
     } finally {
       setLoading(false)
     }
@@ -1223,6 +1227,36 @@ function HealthPanel({ onClose, onChanged, onOpenSeries, onOpenDuplicates, onCle
     }
   }
 
+  // ── Fix-all, for the codes where the fix is identical and reversible ──────
+  // Which codes qualify, and why the dangerous ones don't, lives in
+  // utils/recurringBulk.js — that decision is about writing to a live book of
+  // business, so it's tested on its own rather than buried in this screen.
+  const [bulkBusy, setBulkBusy] = useState(null)
+  const groups = groupBulkable(report?.issues)
+
+  const runBulk = async ({ code, cfg, list }) => {
+    const ok = await confirmDialog(describeBatch(cfg, list), {
+      title: `${cfg.verb}?`, confirmLabel: `${cfg.verb} (${list.length})`,
+    })
+    if (!ok) return
+
+    setBulkBusy(code)
+    const before = report.issues.length
+    const { done, failed } = await applyBatch(list, (issue) =>
+      patch(`/api/recurring/${issue.schedule_id}`, cfg.body(issue)))
+    setBulkBusy(null)
+
+    onChanged?.()
+    const after = await scan()
+    if (failed.length) {
+      toast.error(`Fixed ${done} of ${list.length} — ${failed.length} failed: ${failed.slice(0, 3).join(', ')}`)
+    } else {
+      // Before/after: "12 fixed" means nothing without the remainder.
+      toast.success(
+        `Fixed ${done} · ${before} series needed attention, ${after?.issues?.length ?? '?'} still do`)
+    }
+  }
+
   return (
     <ModalShell title="Recurring health check" onClose={onClose} wide>
       {loading ? (
@@ -1248,6 +1282,22 @@ function HealthPanel({ onClose, onChanged, onOpenSeries, onOpenDuplicates, onCle
               </button>
             )}
           </div>
+          {groups.length > 0 && (
+            <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-2 rounded-md border border-hairline bg-bg-2/40 px-3 py-2">
+              <span className="text-[12px] text-ink-3">Same fix, several series:</span>
+              {groups.map(g => (
+                <button key={g.code} onClick={() => runBulk(g)}
+                  disabled={!!bulkBusy}
+                  data-testid={`bulk-${g.code}`}
+                  className="text-[12px] font-medium text-ink-2 underline underline-offset-2 hover:text-ink disabled:opacity-50">
+                  {bulkBusy === g.code
+                    ? `Fixing ${g.list.length}…`
+                    : `${g.cfg.verb} (${g.list.length} ${g.cfg.label})`}
+                </button>
+              ))}
+            </div>
+          )}
+
           {report.issues.length === 0 && (
             <EmptyState icon={Repeat} title="All series healthy"
               description="No duplicates, ghosts, or broken links found." compact />
