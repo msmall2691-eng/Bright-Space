@@ -7,6 +7,8 @@ import {
   suggestKeeper,
   loadReviewedDupKeys,
   saveReviewedDupKeys,
+  seriesState,
+  SERIES_STATE_LABEL,
 } from '../recurringDuplicates'
 
 // Local YYYY-MM-DD offsets for isLiveSeries boundaries.
@@ -198,5 +200,56 @@ describe('reviewed-group persistence', () => {
     expect(loadReviewedDupKeys().size).toBe(0)
     localStorage.setItem('bb_recurring_dup_reviewed', '{not json')
     expect(loadReviewedDupKeys().size).toBe(0)
+  })
+})
+
+/**
+ * What a series is CALLED.
+ *
+ * Cancel and pause write identical rows — both clear `active`, and only the
+ * button copy differed — so a series the owner cancelled came back reading
+ * "Paused" and stayed in the list. Her words: "when I try to cancel or delete
+ * them they dont go away". `cancelled_at` is what tells them apart, and this
+ * pins that one series can't be called two things on two screens.
+ */
+describe('seriesState', () => {
+  const live = { active: true }
+  const paused = { active: false }
+  const cancelled = { active: false, cancelled_at: '2026-08-23T12:00:00' }
+  const ended = { active: true, series_end_date: '2020-01-01' }
+
+  it('separates cancelled from paused', () => {
+    expect(seriesState(paused)).toBe('paused')
+    expect(seriesState(cancelled)).toBe('cancelled')
+  })
+
+  it('still calls a running series active and a retired one ended', () => {
+    expect(seriesState(live)).toBe('active')
+    // How a split retires its predecessor: active stays true, end date passes.
+    expect(seriesState(ended)).toBe('ended')
+  })
+
+  it('reads a row written before the column existed as paused, not cancelled', () => {
+    // Every pre-migration row has cancelled_at NULL. If those flipped to
+    // "Cancelled" on deploy day, half the list would relabel itself overnight.
+    expect(seriesState({ active: false, cancelled_at: null })).toBe('paused')
+    expect(seriesState({ active: false })).toBe('paused')
+  })
+
+  it('prefers active over cancelled if a row somehow has both', () => {
+    // Belt and braces: resuming clears the stamp server-side, but a row that
+    // is generating visits must never be labelled Cancelled.
+    expect(seriesState({ active: true, cancelled_at: '2026-08-23T12:00:00' }))
+      .toBe('active')
+  })
+
+  it('has a label for every state it can return', () => {
+    for (const s of [live, paused, cancelled, ended]) {
+      expect(SERIES_STATE_LABEL[seriesState(s)]).toBeTruthy()
+    }
+  })
+
+  it('survives a missing series without throwing', () => {
+    expect(seriesState(undefined)).toBe('paused')
   })
 })

@@ -501,6 +501,12 @@ class RecurringSchedule(Base):
     # RecurringSchedule picks up from the split date with the edited rule.
     # NULL (the common case) means open-ended.
     series_end_date = Column(Date, nullable=True)
+    # When the owner CANCELLED the series, as opposed to pausing it. Both set
+    # `active=False` — that stays the single authority on whether visits are
+    # generated — so this column only ever changes what the UI calls the row.
+    # NULL = never cancelled, which is how every pre-migration row reads.
+    # Cleared on resume: a series generating visits again isn't cancelled.
+    cancelled_at = Column(DateTime, nullable=True)
     # Inclusive lower bound — set on the NEW schedule a split creates, so a
     # changed day-of-week can't generate occurrences before the split point
     # (generate_dates always expands from today forward with no floor
