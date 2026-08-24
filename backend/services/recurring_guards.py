@@ -318,7 +318,18 @@ def audit_series(db: Session, org_id: Optional[int]) -> dict:
                 "message": "Not linked to a property (visits inherit only the free-text address).",
                 "suggestion": "Link it to the client's property so visits, photos and access details connect.",
             })
-        if not s.active and upcoming == 0:
+        # "Leftover" means nobody ever decided this series was over — it just
+        # stopped. A series that was CANCELLED, or that reached a recorded end
+        # date, has its answer already and is not a to-do.
+        #
+        # Without those exclusions the fix could never clear the finding:
+        # cancelling sets active=False (already false) and leaves `upcoming` at
+        # zero, so the series still matched this rule and the scan reported the
+        # same count forever. The suggestion below promised it "removes it from
+        # the list" — a promise the code didn't keep, and the same shape as the
+        # bug the owner reported about cancel not appearing to do anything.
+        decided = bool(getattr(s, "cancelled_at", None)) or (end is not None and end <= today)
+        if not s.active and upcoming == 0 and not decided:
             problems.append({
                 "code": "stale_paused", "severity": "info", "destructive": True,
                 "message": "Paused with nothing upcoming — likely a leftover.",

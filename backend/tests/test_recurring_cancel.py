@@ -137,3 +137,72 @@ def test_generate_all_skips_a_cancelled_series():
         assert db.query(Job).filter(Job.recurring_schedule_id == sched.id).count() == 0
     finally:
         _cleanup(db, c, p, sched)
+
+
+# ── a decided series is not a to-do ─────────────────────────────────────────
+
+def _paused_no_upcoming(db, sched, **kw):
+    """Put a series in the exact state stale_paused looks for."""
+    sched.active = False
+    for k, v in kw.items():
+        setattr(sched, k, v)
+    db.commit(); db.refresh(sched)
+
+
+def _codes(schedule_id):
+    from services.recurring_guards import audit_series
+    from database.db import SessionLocal as _SL
+    db = _SL()
+    try:
+        row = next((i for i in audit_series(db, 1)["issues"]
+                    if i["schedule_id"] == schedule_id), None)
+        return [p["code"] for p in (row or {}).get("problems", [])]
+    finally:
+        db.close()
+
+
+def test_a_cancelled_series_stops_being_reported_as_a_leftover():
+    """The fix has to be able to clear the finding.
+
+    Cancelling sets active=False (already false) and leaves `upcoming` at zero,
+    so before this the series still matched `stale_paused` and the scan
+    reported the same count no matter how many times the owner cancelled —
+    while the suggestion text promised cancelling "removes it from the list".
+    """
+    db = SessionLocal()
+    c, p, sched = _seed_series(db)
+    try:
+        _paused_no_upcoming(db, sched)
+        assert "stale_paused" in _codes(sched.id), "seed must actually be a leftover"
+
+        client.delete(f"/api/recurring/{sched.id}")
+        assert "stale_paused" not in _codes(sched.id)
+    finally:
+        _cleanup(db, c, p, sched)
+
+
+def test_a_series_that_reached_its_end_date_is_not_a_leftover_either():
+    # It didn't just stop — it finished. Marking a batch as ended used to move
+    # them from "ended but active" straight into "leftover", so the count never
+    # moved there either.
+    from datetime import date, timedelta
+    db = SessionLocal()
+    c, p, sched = _seed_series(db)
+    try:
+        _paused_no_upcoming(db, sched,
+                            series_end_date=date.today() - timedelta(days=30))
+        assert "stale_paused" not in _codes(sched.id)
+    finally:
+        _cleanup(db, c, p, sched)
+
+
+def test_a_series_that_merely_stopped_is_still_a_leftover():
+    # The finding still has to fire for the case it exists for: paused, nothing
+    # upcoming, and no recorded reason why.
+    db = SessionLocal()
+    c, p, sched = _seed_series(db)
+    try:
+        _paused_no_upcoming(db, sched)
+        assert "stale_paused" in _codes(sched.id)
+    finally:
+        _cleanup(db, c, p, sched)
