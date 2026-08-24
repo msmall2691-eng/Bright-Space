@@ -9,6 +9,7 @@
 import { describe, it, expect, vi } from 'vitest'
 import {
   BULK_FIXES, betterTitle, groupBulkable, applyBatch, describeBatch,
+  guardLastScheduleForClient,
 } from '../recurringBulk'
 
 const issue = (id, code, extra = {}) => ({
@@ -21,18 +22,24 @@ const issue = (id, code, extra = {}) => ({
 })
 
 describe('which fixes may be applied in bulk', () => {
-  it('batches only the reversible, identical ones', () => {
-    expect(Object.keys(BULK_FIXES).sort()).toEqual(['ended_but_active', 'junk_title'])
+  it('batches the identical ones, plus the guarded cancel', () => {
+    expect(Object.keys(BULK_FIXES).sort())
+      .toEqual(['ended_but_active', 'junk_title', 'stale_paused'])
+  })
+
+  it('marks cancelling as the destructive one', () => {
+    // It is the only fix that ends something, so the confirm must read as a
+    // warning rather than as another tidy-up.
+    expect(BULK_FIXES.stale_paused.danger).toBe(true)
+    expect(BULK_FIXES.stale_paused.method).toBe('delete')
+    expect(BULK_FIXES.ended_but_active.danger).toBeFalsy()
+    expect(BULK_FIXES.junk_title.danger).toBeFalsy()
   })
 
   it('never batches the fix that creates visits', () => {
     // "Generate visits" puts real work on the calendar and on crew phones, and
     // undoing it means deleting jobs — which must never happen automatically.
     expect(BULK_FIXES.active_no_upcoming).toBeUndefined()
-  })
-
-  it('never batches the destructive one', () => {
-    expect(BULK_FIXES.stale_paused).toBeUndefined()
   })
 
   it('never batches the ones with no single right answer', () => {
@@ -63,6 +70,10 @@ describe('groupBulkable', () => {
   })
 
   it('ignores problems that are not bulk-able', () => {
+    // active_no_upcoming is not in the list at all (its fix creates visits).
+    // stale_paused IS bulk-able, but with no schedules passed its guard can't
+    // tell a spare leftover from a client's last schedule, so it holds
+    // everything back — the safe read, and the reason this comes back empty.
     expect(groupBulkable([
       issue(1, 'active_no_upcoming'),
       issue(2, 'active_no_upcoming'),
@@ -166,5 +177,100 @@ describe('applyBatch', () => {
     const apply = async () => { throw new Error('nope') }
     const { failed } = await applyBatch([{ schedule_id: 7, title: '' }], apply)
     expect(failed).toEqual(['#7'])
+  })
+})
+
+
+/**
+ * The guard on bulk cancel.
+ *
+ * Every leftover looks the same to the scan: inactive, nothing upcoming. But a
+ * leftover whose client still has a live series is genuinely spare, while one
+ * whose client has nothing live IS that customer's whole arrangement — the
+ * owner's Bre Lynch, paused with nothing upcoming and no other schedule
+ * anywhere. Sweeping that one up would quietly end a real customer's cleans.
+ */
+describe('bulk cancel never ends a client’s only schedule', () => {
+  const leftover = (id, clientId) => ({
+    schedule_id: id, client_id: clientId, title: `Series ${id}`,
+    client_name: `Client ${clientId}`, cadence: 'Biweekly Thu',
+    problems: [{ code: 'stale_paused', severity: 'info' }],
+  })
+  // Client 1 has a live series; client 9 has nothing live at all.
+  const schedules = [
+    { id: 100, client_id: 1, active: true },
+    { id: 101, client_id: 9, active: false },
+  ]
+
+  it('sweeps the spare ones and holds back the last one', () => {
+    const { list, held, heldReason } = guardLastScheduleForClient(
+      [leftover(1, 1), leftover(2, 1), leftover(3, 9)], { schedules })
+
+    expect(list.map(i => i.schedule_id)).toEqual([1, 2])
+    expect(held.map(i => i.schedule_id)).toEqual([3])
+    expect(heldReason).toMatch(/only schedule/i)
+  })
+
+  it('counts an ended series as not live, so its leftovers are held too', () => {
+    // active:true but past its end date is how a split retires a predecessor —
+    // that client has nothing running either.
+    const ended = [{ id: 102, client_id: 7, active: true, series_end_date: '2020-01-01' }]
+    const { list, held } = guardLastScheduleForClient(
+      [leftover(4, 7)], { schedules: ended })
+    expect(list).toEqual([])
+    expect(held.map(i => i.schedule_id)).toEqual([4])
+  })
+
+  it('holds everything back rather than guessing when the list is missing', () => {
+    // No schedules means no way to tell spare from only — the safe read is
+    // "don't cancel anything", not "cancel everything".
+    const { list, held } = guardLastScheduleForClient([leftover(5, 1)], {})
+    expect(list).toEqual([])
+    expect(held).toHaveLength(1)
+  })
+
+  it('offers no bulk button when the guard leaves fewer than two', () => {
+    const groups = groupBulkable(
+      [leftover(1, 9), leftover(2, 9)], { schedules })
+    expect(groups.find(g => g.code === 'stale_paused')).toBeUndefined()
+  })
+
+  it('carries the held-back ones through grouping so the confirm can name them', () => {
+    const groups = groupBulkable(
+      [leftover(1, 1), leftover(2, 1), leftover(3, 9)], { schedules })
+    const g = groups.find(x => x.code === 'stale_paused')
+    expect(g.list).toHaveLength(2)
+    expect(g.held.map(i => i.schedule_id)).toEqual([3])
+  })
+})
+
+describe('the cancel confirm', () => {
+  const item = (id, name) => ({
+    schedule_id: id, client_id: 1, title: `Series ${id}`,
+    client_name: name, cadence: 'Every 4 weeks Tue',
+  })
+
+  it('names every series being cancelled, with its client and cadence', () => {
+    const text = describeBatch(BULK_FIXES.stale_paused,
+      [item(1, 'Anna Sweet'), item(2, 'Casey Allison')])
+    expect(text).toContain('Series 1 · Anna Sweet · Every 4 weeks Tue')
+    expect(text).toContain('Series 2 · Casey Allison · Every 4 weeks Tue')
+    expect(text).toContain('(2 series)')
+  })
+
+  it('says what it is deliberately NOT touching, and why', () => {
+    // A sweep that silently skipped rows would send her hunting for them.
+    const text = describeBatch(BULK_FIXES.stale_paused,
+      [item(1, 'Anna Sweet')], 8, [item(9, 'Bre Lynch')],
+      'it is the only schedule that client has left')
+    expect(text).toContain('Leaving 1 alone')
+    expect(text).toContain('only schedule that client has left')
+    expect(text).toContain('Series 9 · Bre Lynch')
+  })
+
+  it('tells the truth about what cancelling keeps', () => {
+    const text = describeBatch(BULK_FIXES.stale_paused, [item(1, 'Anna Sweet')])
+    expect(text).toContain('Past and completed visits are untouched')
+    expect(text).toContain('resumed later from Manage')
   })
 })

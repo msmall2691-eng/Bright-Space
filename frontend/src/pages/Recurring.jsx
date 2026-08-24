@@ -1156,7 +1156,7 @@ function SeriesDetail({ id, onBack, onChanged, toast }) {
 // endpoints and asks first; destructive ones get the danger confirm.
 const SEVERITY_DOT = { error: 'bg-red-500', warn: 'bg-amber-500', info: 'bg-gray-400' }
 
-function HealthPanel({ onClose, onChanged, onOpenSeries, onOpenDuplicates, onCleanupOffPhase, cleaningOffPhase }) {
+function HealthPanel({ onClose, onChanged, onOpenSeries, onOpenDuplicates, onCleanupOffPhase, cleaningOffPhase, schedules }) {
   const [report, setReport] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -1234,18 +1234,23 @@ function HealthPanel({ onClose, onChanged, onOpenSeries, onOpenDuplicates, onCle
   // utils/recurringBulk.js — that decision is about writing to a live book of
   // business, so it's tested on its own rather than buried in this screen.
   const [bulkBusy, setBulkBusy] = useState(null)
-  const groups = groupBulkable(report?.issues)
+  const groups = groupBulkable(report?.issues, { schedules })
 
-  const runBulk = async ({ code, cfg, list }) => {
-    const ok = await confirmDialog(describeBatch(cfg, list), {
+  const runBulk = async ({ code, cfg, list, held, heldReason }) => {
+    const ok = await confirmDialog(describeBatch(cfg, list, 8, held, heldReason), {
       title: `${cfg.verb}?`, confirmLabel: `${cfg.verb} (${list.length})`,
+      cancelLabel: 'Never mind', danger: !!cfg.danger,
     })
     if (!ok) return
 
     setBulkBusy(code)
     const before = report.issues.length
+    // DELETE is the soft-cancel path (services: sets active=false and stamps
+    // cancelled_at); everything else edits fields, so PATCH is the default.
     const { done, failed } = await applyBatch(list, (issue) =>
-      patch(`/api/recurring/${issue.schedule_id}`, cfg.body(issue)))
+      cfg.method === 'delete'
+        ? del(`/api/recurring/${issue.schedule_id}`)
+        : patch(`/api/recurring/${issue.schedule_id}`, cfg.body(issue)))
     setBulkBusy(null)
 
     onChanged?.()
@@ -1620,6 +1625,7 @@ export default function Recurring() {
         <HealthPanel
           onClose={() => setHealthOpen(false)}
           onChanged={loadList}
+          schedules={schedules}
           onOpenSeries={openSeries}
           onOpenDuplicates={() => setReviewOpen(true)}
           onCleanupOffPhase={cleanupDuplicates}
