@@ -14,6 +14,8 @@
  * mounting a 1,500-line screen.
  */
 
+import { isLiveSeries } from './recurringDuplicates'
+
 /**
  * The bulk-able codes.
  *
@@ -23,7 +25,7 @@
  *     series in one click puts a lot of real work on the calendar and on
  *     crew phones, and undoing it means deleting jobs (scheduling-invariants
  *     R7 forbids doing that automatically).
- *   stale_paused — cancelling is destructive; each one deserves its own look.
+ *   duplicate — which twin survives differs per pair.
  *   duplicate / property_missing / no_property — the right answer differs per
  *     series (which twin survives, which property to relink to). There is no
  *     single fix to repeat.
@@ -48,6 +50,57 @@ export const BULK_FIXES = {
     body: (issue) => ({ title: betterTitle(issue) }),
     preview: (issue) => `“${issue.title || '(blank)'}” → “${betterTitle(issue)}”`,
   },
+  // Cancelling is the one DESTRUCTIVE fix here, so it carries a guard the
+  // others don't (see guardLastScheduleForClient) and is flagged danger.
+  //
+  // It earns its place because of what a real book looks like after a year:
+  // every "this and all future visits" edit retires the old series and creates
+  // a new one, so nearly every live client ends up with one working series and
+  // a train of dead predecessors behind it. The owner's had 19. Clicking
+  // Cancel nineteen times is the chore this exists to remove.
+  stale_paused: {
+    label: 'leftovers',
+    verb: 'Cancel all',
+    danger: true,
+    method: 'delete',            // soft-cancel; PATCH is the default elsewhere
+    body: () => null,
+    preview: (issue) =>
+      `${issue.title || 'Untitled'} · ${issue.client_name || 'unknown client'}`
+      + (issue.cadence ? ` · ${issue.cadence}` : ''),
+    tail: 'Past and completed visits are untouched, and each one can be resumed '
+        + 'later from Manage.',
+    guard: guardLastScheduleForClient,
+  },
+}
+
+/**
+ * Never bulk-cancel a client's ONLY schedule.
+ *
+ * A leftover whose client still has a live series is exactly that — a
+ * leftover. One whose client has NOTHING live is that client's entire
+ * recurring arrangement, and to the scan the two look identical: inactive,
+ * nothing upcoming. Cancelling the second kind in a sweep would quietly end a
+ * customer's cleans.
+ *
+ * That's a business decision, not tidying, so those are held back and named in
+ * the confirm instead. The per-row Cancel link still handles them one at a
+ * time, once the owner has decided.
+ */
+export function guardLastScheduleForClient(list, { schedules } = {}) {
+  const clientsWithLiveSeries = new Set(
+    (schedules || []).filter(isLiveSeries).map(s => String(s.client_id)))
+  const safe = []
+  const held = []
+  for (const issue of list) {
+    if (clientsWithLiveSeries.has(String(issue.client_id))) safe.push(issue)
+    else held.push(issue)
+  }
+  return {
+    list: safe,
+    held,
+    heldReason: 'it is the only schedule that client has left, so ending it is '
+              + 'a decision about them, not tidying up',
+  }
 }
 
 /** "Client — Cadence", the same name the per-row rename produces. */
@@ -62,13 +115,16 @@ export function betterTitle(issue) {
  * "fix all (1)" next to a per-row link for the same series is just two buttons
  * that do the same thing.
  */
-export function groupBulkable(issues) {
+export function groupBulkable(issues, ctx = {}) {
   return Object.entries(BULK_FIXES)
-    .map(([code, cfg]) => ({
-      code,
-      cfg,
-      list: (issues || []).filter(i => (i.problems || []).some(p => p.code === code)),
-    }))
+    .map(([code, cfg]) => {
+      const matched = (issues || []).filter(
+        i => (i.problems || []).some(p => p.code === code))
+      // A guard can hold rows back. Held rows are CARRIED, not dropped, so the
+      // confirm can say what it is deliberately not doing.
+      const guarded = cfg.guard ? cfg.guard(matched, ctx) : { list: matched, held: [] }
+      return { code, cfg, ...guarded }
+    })
     .filter(g => g.list.length > 1)
 }
 
@@ -101,10 +157,17 @@ export async function applyBatch(list, apply) {
  * list and waits — a count alone ("fix 12 series?") isn't a decision anyone
  * can actually make.
  */
-export function describeBatch(cfg, list, shownMax = 8) {
+export function describeBatch(cfg, list, shownMax = 8, held = [], heldReason = '') {
   const shown = list.slice(0, shownMax).map(cfg.preview)
   const rest = list.length - shown.length
   return `${cfg.verb} (${list.length} series):\n\n${shown.join('\n')}` +
     (rest > 0 ? `\n…and ${rest} more` : '') +
-    '\n\nHistory and completed visits are kept, and this can be undone one series at a time.'
+    // What is being SKIPPED matters as much as what isn't: a sweep that
+    // silently left rows behind would send her hunting for them afterwards.
+    (held.length
+      ? `\n\nLeaving ${held.length} alone — ${heldReason}:\n`
+        + held.slice(0, shownMax).map(cfg.preview).join('\n')
+        + (held.length > shownMax ? `\n…and ${held.length - shownMax} more` : '')
+      : '') +
+    `\n\n${cfg.tail || 'History and completed visits are kept, and this can be undone one series at a time.'}`
 }
