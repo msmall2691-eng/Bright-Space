@@ -21,6 +21,32 @@ const STATUS_OPTIONS = [
   { value: 'cancelled',   label: 'cancelled',   dot: 'bg-ink-3' },
 ]
 
+// Which fields actually live on the RecurringSchedule row, and so are the only
+// ones a "this / this and future / all visits" choice can mean anything for.
+// (Cross-checked against ScheduleUpdate + ScheduleSplit in
+// backend/modules/recurring/router.py — scheduled_date is here because a day
+// move is expressed to the series as days_of_week/day_of_month.)
+//
+// Everything NOT in this set — status, pay_mode, pay_rate_bump, job_type —
+// exists only on the Job row. The series has no column to write them to, so
+// asking "does this apply to all future visits?" for a status flip was a
+// question with no answer: picking "this and all future" ran a SPLIT (a new
+// RecurringSchedule, the old one retired, every future visit cancelled and
+// regenerated) and then dropped the field on the floor anyway. Those now take
+// the plain single-job PATCH path instead.
+const SERIES_FIELDS = new Set([
+  'scheduled_date', 'start_time', 'end_time', 'cleaner_ids',
+  'title', 'address', 'notes', 'property_id',
+])
+
+// What to call each field in the scope dialog, so the operator can see what
+// they're about to apply to a whole series before they pick.
+const FIELD_LABELS = {
+  scheduled_date: 'Date', start_time: 'Start time', end_time: 'End time',
+  cleaner_ids: 'Crew', title: 'Title', address: 'Address', notes: 'Notes',
+  property_id: 'Property',
+}
+
 // Shape shared by `formData` (the live draft) and `saved` (the last value
 // actually persisted to the server). Keeping both initialized from the same
 // function guarantees they can be compared field-by-field without a shape
@@ -50,11 +76,20 @@ export default function JobEditModal({ job, properties = [], clients = [], onClo
   // baseline isFieldChanged compares against so a field that's blurred
   // without being edited doesn't fire a needless PATCH (or, worse, pop the
   // recurring scope dialog for a no-op "change"). Only saveField() advances
-  // this; a recurring job's fields never update it mid-session (see
-  // commitField's header comment) so the comparison stays pinned to what was
+  // this, so a recurring job's SERIES fields never update it mid-session (see
+  // commitField's header comment) and the comparison stays pinned to what was
   // on the job when the modal opened, which is exactly the right baseline
-  // for "did the user actually change anything since then."
+  // for "did the user actually change anything since then." A recurring job's
+  // per-visit-only fields do go through saveField and do advance it — they're
+  // written immediately, so the server value really has moved.
   const [saved, setSaved] = useState(() => initialFieldValues(job))
+  // Which series fields the operator has actually edited this session, for a
+  // recurring job. performRecurringSave builds its payload from ONLY these.
+  // Before this, every scope save shipped title + address + notes + both times
+  // + cleaner_ids straight off formData, so editing one field rewrote the
+  // series with whatever the modal happened to be holding for the other five —
+  // and a "this and all future" on a note tweak split the series in two.
+  const [dirtySeriesFields, setDirtySeriesFields] = useState(() => new Set())
   // The exact single-field PATCH body that most recently hit a 409, so
   // "Save anyway" can resubmit precisely that with allow_conflicts — never a
   // stale or unrelated payload.
@@ -190,19 +225,30 @@ export default function JobEditModal({ job, properties = [], clients = [], onClo
   //  - New job: no id exists to PATCH yet. formData already holds the draft;
   //    the Create Job button (handleSave/performDirectSave) batches
   //    everything in one POST, unchanged from before this conversion.
-  //  - Recurring job: which occurrences a change applies to is ambiguous
-  //    (this / this-and-future / all), and applying it needs the
-  //    reschedule/split/resync machinery, not a bare PATCH — so this shows
-  //    the SAME scope dialog the old global Save button used to show on
-  //    ANY field change, and the write waits for performRecurringSave once
-  //    the operator resolves it. formData keeps accumulating edits across
-  //    dialog cancellations, so nothing is lost if they "Never mind" and
-  //    keep editing before finally choosing a scope.
+  //  - Recurring job, SERIES field (see SERIES_FIELDS): which occurrences the
+  //    change applies to is ambiguous (this / this-and-future / all), and
+  //    applying it needs the reschedule/split/resync machinery, not a bare
+  //    PATCH — so this records the field as dirty and shows the scope dialog;
+  //    the write waits for performRecurringSave once the operator resolves it.
+  //    formData keeps accumulating edits across dialog cancellations, so
+  //    nothing is lost if they "Never mind" and keep editing before finally
+  //    choosing a scope.
+  //  - Recurring job, per-visit-only field (status, pay_mode, pay_rate_bump,
+  //    job_type): falls through to the plain PATCH below. The series has no
+  //    such column, so there is nothing for a scope to mean — and the old
+  //    behavior of prompting anyway is how a status change ended up splitting
+  //    a series in half. See SERIES_FIELDS.
   //  - Otherwise (existing, non-recurring job): PATCH just this field,
   //    immediately — the JobDetail-style auto-save this conversion adds.
   const commitField = (body) => {
     if (isNew) return
-    if (isRecurring) {
+    const keys = Object.keys(body)
+    if (isRecurring && keys.some(k => SERIES_FIELDS.has(k))) {
+      setDirtySeriesFields(prev => {
+        const next = new Set(prev)
+        for (const k of keys) if (SERIES_FIELDS.has(k)) next.add(k)
+        return next
+      })
       setScopeDialog('edit')
       return
     }
@@ -424,30 +470,72 @@ export default function JobEditModal({ job, properties = [], clients = [], onClo
       const originalStart = (job.start_time || '').slice(0, 5)
       const originalEnd = (job.end_time || '').slice(0, 5)
       const newDate = formData.scheduled_date || originalDate
-      const dateChanged = newDate !== originalDate
-      const timeChanged = formData.start_time !== originalStart || formData.end_time !== originalEnd
+      // Only fields the operator actually touched are in play. `dirty` gates
+      // every payload below so a scope save can't carry an untouched field's
+      // current value onto the series (see dirtySeriesFields).
+      const dirty = (k) => dirtySeriesFields.has(k)
+      const dateChanged = dirty('scheduled_date') && newDate !== originalDate
+      const timeChanged = (dirty('start_time') && formData.start_time !== originalStart)
+        || (dirty('end_time') && formData.end_time !== originalEnd)
+
+      // Note there is no Job-only payload to assemble here: status, pay_mode,
+      // pay_rate_bump and job_type never reach this function any more — they
+      // auto-save through saveField() the moment they're changed, because they
+      // have no series meaning to scope (see SERIES_FIELDS). Everything below
+      // is series work.
+
+      // Series fields the operator changed, in the shape both /split and
+      // PATCH /recurring/{id} accept.
+      const seriesPayload = {}
+      if (dirty('title')) seriesPayload.title = formData.title
+      if (dirty('address')) seriesPayload.address = formData.address
+      if (dirty('notes')) seriesPayload.notes = formData.notes
+      if (dirty('cleaner_ids')) seriesPayload.cleaner_ids = formData.cleaner_ids
+      if (dirty('property_id')) seriesPayload.property_id = parseInt(formData.property_id) || null
+      if (dirty('start_time') && formData.start_time) seriesPayload.start_time = formData.start_time
+      if (dirty('end_time') && formData.end_time) seriesPayload.end_time = formData.end_time
+
+      // Nothing series-shaped was touched, so there is nothing for a scope to
+      // apply. Can't normally happen (only a SERIES_FIELDS edit opens the
+      // dialog) but a split/resync on an empty payload is destructive enough
+      // to be worth refusing outright rather than trusting that invariant.
+      if (!Object.keys(seriesPayload).length && !dateChanged && !timeChanged) {
+        setDirtySeriesFields(new Set())
+        onClose()
+        return
+      }
 
       if (scope === 'this') {
         if (dateChanged || timeChanged) {
           const res = await post(`/api/recurring/${schedId}/reschedule`, {
             exception_date: originalDate,
             rescheduled_date: newDate,
+            // Sent whether or not they were edited: an exception row IS the
+            // per-occurrence copy of these, and omitting one makes
+            // _reschedule_occurrence fall back to the SERIES value — which
+            // would quietly discard an override this occurrence already had.
+            // formData holds the job's own values when untouched, so this is
+            // "keep what this visit has" in the unedited case.
             rescheduled_start_time: formData.start_time || null,
             rescheduled_end_time: formData.end_time || null,
             cleaner_ids: formData.cleaner_ids,
             reason: 'Edited from the calendar (this visit only)',
             notify_customer: notifyCustomer,
           })
-          // The exception model has no title/notes/address/job_type/status
-          // columns \u2014 those land on the materialized Job via a follow-up PATCH.
+          // The exception model has no title/notes/address/property/job_type/
+          // status columns \u2014 those land on the materialized Job via a
+          // follow-up PATCH.
           const extra = {}
-          if (formData.title) extra.title = formData.title
-          if (formData.address) extra.address = formData.address
-          extra.notes = formData.notes
-          if (formData.job_type) extra.job_type = formData.job_type
-          if (formData.pay_mode) extra.pay_mode = formData.pay_mode
-          if (formData.pay_rate_bump !== '' && formData.pay_rate_bump != null)
-            extra.pay_rate_bump = Number(formData.pay_rate_bump) || 0
+          if (dirty('title')) extra.title = formData.title
+          if (dirty('address')) extra.address = formData.address
+          if (dirty('notes')) extra.notes = formData.notes
+          if (dirty('property_id')) extra.property_id = parseInt(formData.property_id) || null
+          // Status is the one per-visit field that can be lost here: it
+          // auto-saved onto the occurrence the reschedule above just
+          // cancelled, and the replacement Job is born 'scheduled'. Re-apply
+          // it so "mark it done, then move it" doesn't quietly revert.
+          // (`job` is the prop, still the pre-edit row, so this compares
+          // against what the visit had when the modal opened.)
           if (formData.status && formData.status !== job.status) extra.status = formData.status
           if (res?.job_id && Object.keys(extra).length) {
             await patch(`/api/jobs/${res.job_id}`, extra)
@@ -455,17 +543,13 @@ export default function JobEditModal({ job, properties = [], clients = [], onClo
         } else {
           // No date/time change \u2014 a normal PATCH can't create the
           // duplicate-occurrence footgun, so skip the exception machinery.
-          await patch(`/api/jobs/${job.id}`, {
-            title: formData.title || undefined,
-            job_type: formData.job_type || undefined,
-            pay_mode: formData.pay_mode || undefined,
-            pay_rate_bump: formData.pay_rate_bump === '' || formData.pay_rate_bump == null
-              ? null : Number(formData.pay_rate_bump) || 0,
-            status: formData.status || undefined,
-            address: formData.address || undefined,
-            cleaner_ids: formData.cleaner_ids,
-            notes: formData.notes,
-          })
+          const body = {}
+          if (dirty('title')) body.title = formData.title
+          if (dirty('address')) body.address = formData.address
+          if (dirty('notes')) body.notes = formData.notes
+          if (dirty('cleaner_ids')) body.cleaner_ids = formData.cleaner_ids
+          if (dirty('property_id')) body.property_id = parseInt(formData.property_id) || null
+          if (Object.keys(body).length) await patch(`/api/jobs/${job.id}`, body)
         }
         notify?.('Updated this visit only \u2014 the rest of the series is unchanged')
       } else if (scope === 'future') {
@@ -478,12 +562,7 @@ export default function JobEditModal({ job, properties = [], clients = [], onClo
         // earlier so both the old occurrence's cleanup and the new
         // occurrence's generation land on the correct side of the boundary.
         const splitDate = dateChanged && newDate < originalDate ? newDate : originalDate
-        const payload = { cleaner_ids: formData.cleaner_ids, split_date: splitDate }
-        if (formData.title) payload.title = formData.title
-        if (formData.address) payload.address = formData.address
-        payload.notes = formData.notes
-        if (formData.start_time) payload.start_time = formData.start_time
-        if (formData.end_time) payload.end_time = formData.end_time
+        const payload = { ...seriesPayload, split_date: splitDate }
         // Only override the day pattern when the occurrence actually moved
         // to a different day \u2014 a pure time/crew edit shouldn't touch a
         // monthly schedule's day-of-month (or a weekly one's day-of-week) by
@@ -500,12 +579,7 @@ export default function JobEditModal({ job, properties = [], clients = [], onClo
         await post(`/api/recurring/${schedId}/split`, payload)
         notify?.('Updated this visit and every future one in the series')
       } else if (scope === 'all') {
-        const payload = { cleaner_ids: formData.cleaner_ids, resync: true }
-        if (formData.title) payload.title = formData.title
-        if (formData.address) payload.address = formData.address
-        payload.notes = formData.notes
-        if (formData.start_time) payload.start_time = formData.start_time
-        if (formData.end_time) payload.end_time = formData.end_time
+        const payload = { ...seriesPayload, resync: true }
         if (dateChanged) {
           const dow = isoDateToBackendDow(newDate)
           payload.days_of_week = [dow]
@@ -515,6 +589,7 @@ export default function JobEditModal({ job, properties = [], clients = [], onClo
         const res = await patch(`/api/recurring/${schedId}`, payload)
         notify?.(`Updated the whole series (${res?.resynced_jobs || 0} upcoming visit(s) re-synced)`)
       }
+      setDirtySeriesFields(new Set())
       onSave?.() // series-level change (possibly many jobs) \u2014 let the parent refetch
       onClose()
     } catch (err) {
@@ -1037,6 +1112,7 @@ export default function JobEditModal({ job, properties = [], clients = [], onClo
         <RecurrenceScopeDialog
           mode={scopeDialog}
           busy={saving || removing}
+          fields={[...dirtySeriesFields].map(k => FIELD_LABELS[k]).filter(Boolean)}
           onChoose={handleScopeChoice}
           onCancel={() => setScopeDialog(null)}
         />

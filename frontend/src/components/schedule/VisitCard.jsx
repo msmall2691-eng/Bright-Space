@@ -20,7 +20,8 @@ export default function VisitCard({ v, jobs, properties, clients, onSelect, empN
   const client = clients[job?.client_id]
   const propertyType = property?.property_type || 'residential'
   const typeCfg = PROPERTY_TYPE_CONFIG[propertyType] || PROPERTY_TYPE_CONFIG.residential
-  // Include the linked job so property/crew absence flips scheduled→needs_setup.
+  // Include the linked job so a missing property flips scheduled→needs_setup,
+  // and a missing crew flips it to the quieter 'unassigned' (see constants.js).
   const displayStatus = computeDisplayStatus({
     ...v,
     property_id: job?.property_id,

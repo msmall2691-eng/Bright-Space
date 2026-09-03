@@ -11,7 +11,12 @@
  *
  * Presentation: a bottom sheet on phones (thumb-reachable, one-tap targets)
  * and a centered card on desktop. "This visit only" leads as the primary,
- * most-common choice. API (mode / onChoose / onCancel / busy) is unchanged.
+ * most-common choice.
+ *
+ * `fields` names what's about to be applied ("Crew, Notes"). Without it the
+ * prompt asked operators to choose a blast radius without telling them what
+ * was in the blast — and the two non-default choices rewrite or split a whole
+ * series, so "what am I even changing?" needs an answer on this screen.
  */
 import { Repeat, Calendar, CalendarRange, CalendarDays, BellOff } from 'lucide-react'
 import Button from '../ui/Button'
@@ -38,7 +43,9 @@ const SCOPES = [
   },
 ]
 
-export default function RecurrenceScopeDialog({ mode = 'edit', onChoose, onCancel, busy = false }) {
+export default function RecurrenceScopeDialog({
+  mode = 'edit', onChoose, onCancel, busy = false, fields = [],
+}) {
   const title = mode === 'delete' ? 'Cancel this repeating visit?' : 'This is a repeating visit'
   const intro = mode === 'delete'
     ? 'Choose what this cancellation applies to.'
@@ -59,7 +66,16 @@ export default function RecurrenceScopeDialog({ mode = 'edit', onChoose, onCance
           <Repeat className="w-4 h-4 text-blue-500" />
           <h3 className="text-base font-bold text-ink">{title}</h3>
         </div>
-        <p className="text-sm text-ink-2 mb-4">{intro}</p>
+        <p className="text-sm text-ink-2 mb-3">{intro}</p>
+
+        {/* Quiet dot+word line, not a tinted banner — same vocabulary the rest
+            of the app uses for state. */}
+        {mode !== 'delete' && fields.length > 0 && (
+          <p className="flex items-start gap-2 mb-4 text-xs text-ink-3">
+            <span className="w-1.5 h-1.5 rounded-full bg-indigo-500 shrink-0 mt-1.5" aria-hidden="true" />
+            <span>Changing <span className="font-semibold text-ink-2">{fields.join(', ')}</span></span>
+          </p>
+        )}
 
         <div className="space-y-2 mb-4">
           {scopes.map(s => {

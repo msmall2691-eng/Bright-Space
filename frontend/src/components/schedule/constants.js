@@ -55,14 +55,25 @@ export const PROPERTY_TYPE_CONFIG = {
 PROPERTY_TYPE_CONFIG.str_turnover = PROPERTY_TYPE_CONFIG.str
 
 export const VISIT_STATUS_CONFIG = {
-  // Computed pseudo-status for a job whose DB status is 'scheduled' but which
-  // is missing a real schedule (no date, no property, or no crew). Shown as
-  // amber so operators don't mistake a half-set-up job for one they can walk
-  // away from. See computeDisplayStatus() below.
+  // Two computed pseudo-statuses for a job whose DB status is 'scheduled'.
+  //
+  // `needs_setup` (amber) means the visit isn't really on the calendar at all
+  // — no date, or no property. Something is genuinely missing and nobody can
+  // work it as it stands.
+  //
+  // `unassigned` (quiet) means it IS on the calendar, at a real place and
+  // time, and only the crew hasn't been picked yet. That's an ordinary
+  // mid-week state — most recurring visits sit there until dispatch — so it
+  // gets a neutral dot, not an alarm. Lumping it in with `needs_setup` made
+  // nearly every recurring visit read amber "Needs setup" forever, which
+  // taught operators to ignore the one label that was supposed to mean
+  // "this one is broken". See computeDisplayStatus() below.
+  //
   // `badge` is the StatusBadge tone; `dot` is for inline dot+word renders.
   // (The tinted `pillMobile` capsule classes were removed with the owner's
   // bubble veto — status renders as dot + word everywhere now.)
   needs_setup: { label: 'Needs setup',  dot: 'bg-amber-500',  badge: 'warning' },
+  unassigned:  { label: 'Unassigned',   dot: 'bg-ink-3',      badge: 'neutral' },
   scheduled:   { label: 'Scheduled',   dot: 'bg-blue-500',   badge: 'info' },
   dispatched:  { label: 'Dispatched',  dot: 'bg-green-500',  badge: 'success' },
   en_route:    { label: 'En Route',    dot: 'bg-cyan-500',   badge: 'info' },
@@ -74,10 +85,16 @@ export const VISIT_STATUS_CONFIG = {
 
 /** Turn a job/visit's DB status into the status the UI should show.
  *
- *  A quote converted to a job with no date, or a job created with no property
- *  or no crew, previously read as "Scheduled" — misleading, because it wasn't
- *  actually on the calendar and operators could easily walk away from it. This
- *  returns "needs_setup" for those, and passes through everything else.
+ *  A quote converted to a job with no date, or a job created with no property,
+ *  previously read as "Scheduled" — misleading, because it wasn't actually on
+ *  the calendar and operators could easily walk away from it. Those return
+ *  "needs_setup".
+ *
+ *  A missing CREW is different and no longer counted as needs_setup: a
+ *  recurring series can be created with no cleaners (ScheduleCreate defaults
+ *  cleaner_ids to []) and every visit it generates inherits that, so "crew not
+ *  picked yet" is the normal state of most of the calendar, not a fault. Those
+ *  return "unassigned" instead — visible, but quiet.
  *
  *  Only overrides when the raw status is 'scheduled' — a completed / cancelled
  *  job with a missing field is a data quirk, not something we want to relabel.
@@ -92,9 +109,9 @@ export function computeDisplayStatus(entity) {
   // property_id absence only counts as incomplete when the field is on the
   // record we were given (jobs have it; raw visits do not — the caller resolves).
   const missingProperty = ('property_id' in entity) && !entity.property_id
+  if (!hasDate || missingProperty) return 'needs_setup'
   const cleanerIds = entity.cleaner_ids
-  const missingCrew = Array.isArray(cleanerIds) && cleanerIds.length === 0
-  if (!hasDate || missingProperty || missingCrew) return 'needs_setup'
+  if (Array.isArray(cleanerIds) && cleanerIds.length === 0) return 'unassigned'
   return raw
 }
 
