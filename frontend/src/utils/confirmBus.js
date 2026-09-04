@@ -32,7 +32,15 @@ function _advance() {
 }
 
 /** Ask the user to confirm. Resolves true/false, mirroring window.confirm().
- *  opts: { title, confirmLabel, cancelLabel, danger } */
+ *  opts: { title, confirmLabel, cancelLabel, danger, altLabel }
+ *
+ *  `altLabel` adds a THIRD answer and resolves the string 'alt'. It exists for
+ *  the case where "no" and "not like that" are different answers — cancelling
+ *  a recurring series can mean "and clear its booked visits" or "but leave
+ *  them on the calendar", and forcing that into yes/no is what made the old
+ *  cancel feel like it did nothing. Callers that don't pass it are unchanged;
+ *  note that 'alt' is truthy, so only a caller that asked for the third
+ *  button ever needs to distinguish it. */
 export function confirmDialog(message, opts = {}) {
   return new Promise((resolve) => {
     _queue.push({ id: ++_id, message: String(message), ...opts, resolve })
