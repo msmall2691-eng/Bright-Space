@@ -131,7 +131,7 @@ function PropertyAccessCard({ property, canEdit: editable }) {
 }
 import InlineEditField from '../components/InlineEditField'
 import { AlertCircle, CheckCircle, CalendarClock } from 'lucide-react'
-import { computeDisplayStatus } from '../components/schedule/constants'
+import { computeDisplayStatus, FIELD_LABELS } from '../components/schedule/constants'
 import Timeline, { jobTimelineSource } from '../components/Timeline'
 import RecordSkeleton from '../components/record/RecordSkeleton'
 import JobPhotosCard from '../components/schedule/JobPhotosCard'
@@ -479,26 +479,39 @@ export default function JobDetail() {
                 <InlineSelect value={job.status} options={STATUS_OPTIONS} onSelect={setStatus} />
               </div>
               {/* Warn when the DB status is 'scheduled' but the job is missing a
-                  date, a property, or a crew — so a convert-to-job quote with no
-                  time never silently reads as ready-to-run. Lists exactly what's
-                  missing so staff know what to fill. */}
+                  date or a property — so a convert-to-job quote with no time
+                  never silently reads as ready-to-run. Lists exactly what's
+                  missing so staff know what to fill.
+                  A crew-only gap is NOT this banner: it's the ordinary
+                  "not dispatched yet" state and gets the quieter note below
+                  (see computeDisplayStatus). */}
               {computeDisplayStatus(job) === 'needs_setup' && (() => {
                 const missing = []
                 if (!job.scheduled_date) missing.push('a date')
                 if (!job.property_id) missing.push('a property')
-                if (!(job.cleaner_ids && job.cleaner_ids.length)) missing.push('a crew')
                 return (
                   <div className="mb-3 flex items-start gap-2 rounded-lg border border-hairline bg-panel px-3 py-2 text-[12px] text-ink-2">
                     <span className="w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0 mt-1.5" aria-hidden="true" />
                     <div>
                       <p className="font-semibold text-ink">Needs setup</p>
                       <p className="text-ink-3">
-                        This job isn't fully scheduled yet — add {missing.join(' + ')} to make it live.
+                        This job isn't on the calendar yet — add {missing.join(' + ')} to make it live.
                       </p>
                     </div>
                   </div>
                 )
               })()}
+              {computeDisplayStatus(job) === 'unassigned' && (
+                <div className="mb-3 flex items-start gap-2 rounded-lg border border-hairline bg-panel px-3 py-2 text-[12px] text-ink-2">
+                  <span className="w-1.5 h-1.5 rounded-full bg-ink-3 shrink-0 mt-1.5" aria-hidden="true" />
+                  <div>
+                    <p className="font-semibold text-ink">Unassigned</p>
+                    <p className="text-ink-3">
+                      Date and place are set — nobody's on it yet. Pick a crew when you're ready.
+                    </p>
+                  </div>
+                </div>
+              )}
               {/* Customer-link state from the confirm/reschedule page — makes a
                   customer's confirm or reschedule visible in-app, not just in
                   the owner's inbox. A pending reschedule request wins (it needs
@@ -746,6 +759,9 @@ export default function JobDetail() {
       {reviewDraft && <ReviewDraftModal draft={reviewDraft} onClose={() => setReviewDraft(null)} />}
       {timingEdit && (
         <RecurrenceScopeDialog
+          /* Name what's about to be applied, the same as the edit drawer does —
+             picking a blast radius shouldn't mean guessing what's in the blast. */
+          fields={Object.keys(timingEdit).map(k => FIELD_LABELS[k]).filter(Boolean)}
           busy={scopeBusy}
           onChoose={applyTimingScope}
           onCancel={() => setTimingEdit(null)}
