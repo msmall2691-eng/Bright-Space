@@ -37,6 +37,10 @@ export function shiftSeriesWeekday(existingDays, origDow, newDow) {
  */
 export async function rescheduleRecurringVisit(scope, {
   schedId, originalDate, newDate, newStart, newEnd, cleanerIds, allowConflicts = false,
+  // Stamped onto the RecurrenceException so the series' Overrides history says
+  // where the change came from. Defaulted to the drag wording this helper was
+  // written for; the job page passes its own.
+  reason = 'Rescheduled by drag on the calendar',
 }) {
   const dateChanged = newDate !== originalDate
 
@@ -49,7 +53,7 @@ export async function rescheduleRecurringVisit(scope, {
       cleaner_ids: cleanerIds,
       // Override the double-booking / time-off guard on an explicit retry.
       allow_conflicts: !!allowConflicts,
-      reason: 'Rescheduled by drag on the calendar',
+      reason,
     })
     return { message: 'Moved this visit only — the rest of the series is unchanged', jobId: res?.job_id }
   }

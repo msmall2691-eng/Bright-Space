@@ -5,6 +5,8 @@ import {
   Sparkles, Copy, Check, X, Trash2,
 } from 'lucide-react'
 import { get, patch, post, del, download } from '../api'
+import RecurrenceScopeDialog from '../components/schedule/RecurrenceScopeDialog'
+import { rescheduleRecurringVisit } from '../utils/recurringReschedule'
 import { toast } from '../utils/toastBus'
 import { confirmDialog } from '../utils/confirmBus'
 import { formatDateShort as fmtDate } from '../utils/format'
@@ -257,6 +259,53 @@ export default function JobDetail() {
       .then(updated => { setJob(j => ({ ...j, ...updated })); return updated })
       .catch(() => { toast.error('Could not save change'); load() })
 
+  // ── Editing a visit that belongs to a repeating series ───────────────────
+  //
+  // This page used to PATCH /api/jobs/{id} for EVERY field, including the
+  // date — with no scope question and no sign anywhere that the job was part
+  // of a series. That is the exact bare-PATCH the recurrence machinery exists
+  // to prevent: it orphans the rule's own copy of that date, and the next
+  // generation tick puts a duplicate back on the calendar. The Schedule
+  // page's drawer and drag-to-reschedule both went through the scope flow;
+  // this page, reachable from every visit card, quietly did not.
+  //
+  // WHICH FIELDS: only date/start/end. Title, address, notes and status
+  // describe THIS visit and are safe to patch directly — routing them through
+  // a series-wide prompt would be its own kind of wrong.
+  const isRecurring = Boolean(job?.recurring_schedule_id)
+  const [timingEdit, setTimingEdit] = useState(null)   // pending {date,start,end}
+  const [scopeBusy, setScopeBusy] = useState(false)
+
+  const saveTiming = (body) => {
+    if (!isRecurring) return saveField(body)
+    // Hold the edit and ask what it applies to. Nothing is written until she
+    // answers, and cancelling writes nothing at all.
+    setTimingEdit(body)
+    return Promise.resolve()
+  }
+
+  const applyTimingScope = async (scope) => {
+    setScopeBusy(true)
+    try {
+      const { message } = await rescheduleRecurringVisit(scope, {
+        schedId: job.recurring_schedule_id,
+        originalDate: job.scheduled_date,
+        newDate: timingEdit.scheduled_date ?? job.scheduled_date,
+        newStart: timingEdit.start_time ?? job.start_time,
+        newEnd: timingEdit.end_time ?? job.end_time,
+        cleanerIds: job.cleaner_ids || [],
+        reason: 'Rescheduled from the job page',
+      })
+      toast.success(message)
+      setTimingEdit(null)
+      load()
+    } catch (e) {
+      toast.error(e?.message || 'Could not move this visit — nothing was changed.')
+    } finally {
+      setScopeBusy(false)
+    }
+  }
+
   const resolveReschedule = (action) =>
     post(`/api/jobs/${id}/${action}-reschedule`, {})
       .then(() => { toast.success(action === 'approve' ? 'Reschedule approved' : 'Request dismissed'); load() })
@@ -504,13 +553,28 @@ export default function JobDetail() {
             </div>
 
             <div className="border-t border-hairline pt-3 space-y-3">
+              {isRecurring && (
+                /* Say it BEFORE she edits, not after: this visit is one of a
+                   series, and a date change here is a series decision. */
+                <p className="flex items-start gap-1.5 text-[12px] text-ink-2">
+                  <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-violet-500" aria-hidden="true" />
+                  <span>
+                    This visit repeats.{' '}
+                    <Link to={`/recurring?series=${job.recurring_schedule_id}`}
+                      className="text-ink hover:text-indigo-600 no-underline font-medium">
+                      See the series
+                    </Link>
+                    {' '}— changing the date or time will ask what it applies to.
+                  </span>
+                </p>
+              )}
               <InlineEditField label="Scheduled date" type="date" value={job.scheduled_date} placeholder="Add date"
-                format={fmtDate} onSave={(v) => saveField({ scheduled_date: v })} />
+                format={fmtDate} onSave={(v) => saveTiming({ scheduled_date: v })} />
               <div className="grid grid-cols-2 gap-2">
                 <InlineEditField label="Start" type="time" value={job.start_time} placeholder="--"
-                  onSave={(v) => saveField({ start_time: v })} />
+                  onSave={(v) => saveTiming({ start_time: v })} />
                 <InlineEditField label="End" type="time" value={job.end_time} placeholder="--"
-                  onSave={(v) => saveField({ end_time: v })} />
+                  onSave={(v) => saveTiming({ end_time: v })} />
               </div>
               <InlineEditField label="Address" value={job.address} placeholder="Add address"
                 onSave={(v) => saveField({ address: v })} />
@@ -680,6 +744,13 @@ export default function JobDetail() {
         </div>
       </div>
       {reviewDraft && <ReviewDraftModal draft={reviewDraft} onClose={() => setReviewDraft(null)} />}
+      {timingEdit && (
+        <RecurrenceScopeDialog
+          busy={scopeBusy}
+          onChoose={applyTimingScope}
+          onCancel={() => setTimingEdit(null)}
+        />
+      )}
     </div>
   )
 }

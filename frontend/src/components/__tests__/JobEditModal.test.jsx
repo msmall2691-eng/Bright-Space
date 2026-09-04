@@ -238,3 +238,102 @@ describe('JobEditModal — creating a new job still batches', () => {
     expect(body.scheduled_date).toBe('2026-07-01')
   })
 })
+
+/**
+ * The Anna Sweet bug: a Mon/Thu series, edited from its Thursday visit with
+ * "this and all future", lost every future Monday.
+ *
+ * Both series-level branches used to send `days_of_week: [newDow]` — the whole
+ * pattern replaced by the one day you happened to be looking at. The
+ * drag-to-reschedule path never did that; it shifts the edited day and leaves
+ * the others alone, and it carries a comment saying why. So dragging a block
+ * was safe and opening the same block and changing its date was not, with
+ * nothing on screen to tell them apart.
+ */
+describe('JobEditModal — a series-level date change keeps the series’ other days', () => {
+  // Thursday 2026-06-18, in a series that also runs Mondays. Backend dow is
+  // 0=Mon..6=Sun, so Mon/Thu is [0, 3].
+  const THURSDAY_JOB = {
+    ...JOB, id: 6, recurring_schedule_id: 42, scheduled_date: '2026-06-18',
+  }
+  const SERIES = { id: 42, days_of_week: [0, 3], frequency: 'weekly' }
+
+  // GET /api/recurring/42 and the POST/PATCH to the same path both match the
+  // stub by substring, so every handler here is pinned to its method.
+  const moveTo = async (isoDate, scopeLabel, handlers) => {
+    mockFetch(handlers)
+    const onSave = vi.fn()
+    render(<JobEditModal job={THURSDAY_JOB} properties={PROPERTIES} onClose={() => {}} onSave={onSave} />)
+    fireEvent.change(screen.getByDisplayValue('2026-06-18'), { target: { value: isoDate } })
+    fireEvent.click(await screen.findByRole('button', { name: new RegExp(scopeLabel) }))
+    await waitFor(() => expect(onSave).toHaveBeenCalled())
+    return onSave
+  }
+
+  it('shifts only the edited day when splitting into a new series', async () => {
+    await moveTo('2026-06-23', 'This and all future visits', [   // Thu → Tue
+      ['/api/recurring/42', 'GET', { status: 200, body: SERIES }],
+      ['/api/recurring/42/split', 'POST', { status: 200, body: { id: 43 } }],
+    ])
+    const body = JSON.parse(fetchCalls.find(c => c.method === 'POST'
+      && c.url.includes('/api/recurring/42/split')).opts.body)
+    // Monday survives. [1] alone would have deleted every future Monday.
+    expect(body.days_of_week).toEqual([0, 1])
+    // The single-day fields still describe the visit that moved — the backend
+    // reads whichever one matches the series' own frequency.
+    expect(body.day_of_week).toBe(1)
+    expect(body.day_of_month).toBe(23)
+  })
+
+  it('shifts only the edited day when updating the whole series', async () => {
+    await moveTo('2026-06-23', 'All visits in the series', [
+      ['/api/recurring/42', 'GET', { status: 200, body: SERIES }],
+      ['/api/recurring/42', 'PATCH', { status: 200, body: { resynced_jobs: 4 } }],
+    ])
+    const body = JSON.parse(fetchCalls.find(c => c.method === 'PATCH'
+      && c.url.includes('/api/recurring/42')).opts.body)
+    expect(body.days_of_week).toEqual([0, 1])
+  })
+
+  it('leaves a single-day series on exactly the day it moved to', async () => {
+    await moveTo('2026-06-23', 'This and all future visits', [
+      ['/api/recurring/42', 'GET', { status: 200, body: { id: 42, days_of_week: [3] } }],
+      ['/api/recurring/42/split', 'POST', { status: 200, body: { id: 43 } }],
+    ])
+    const body = JSON.parse(fetchCalls.find(c => c.method === 'POST'
+      && c.url.includes('/api/recurring/42/split')).opts.body)
+    expect(body.days_of_week).toEqual([1])
+  })
+
+  it('saves anyway, on the single day, if the series can’t be read', async () => {
+    // Best-effort by design and identical to the drag path: a failed lookup
+    // falls back to the old behaviour rather than blocking her save. Losing
+    // the save is worse than losing the other weekday, which she can re-add.
+    await moveTo('2026-06-23', 'This and all future visits', [
+      ['/api/recurring/42', 'GET', { status: 500, body: { detail: 'boom' } }],
+      ['/api/recurring/42/split', 'POST', { status: 200, body: { id: 43 } }],
+    ])
+    const body = JSON.parse(fetchCalls.find(c => c.method === 'POST'
+      && c.url.includes('/api/recurring/42/split')).opts.body)
+    expect(body.days_of_week).toEqual([1])
+  })
+
+  it('does not touch the day pattern when only the time changed', async () => {
+    // A monthly series' day_of_month must not move because someone nudged the
+    // start time by fifteen minutes.
+    mockFetch([['/api/recurring/42', 'PATCH', { status: 200, body: { resynced_jobs: 2 } }]])
+    const onSave = vi.fn()
+    const { container } = render(
+      <JobEditModal job={THURSDAY_JOB} properties={PROPERTIES} onClose={() => {}} onSave={onSave} />)
+    fireEvent.change(container.querySelector('input[type="time"]'), { target: { value: '10:30' } })
+    fireEvent.click(await screen.findByRole('button', { name: /All visits in the series/ }))
+    await waitFor(() => expect(onSave).toHaveBeenCalled())
+
+    const body = JSON.parse(fetchCalls.find(c => c.method === 'PATCH').opts.body)
+    expect(body).not.toHaveProperty('days_of_week')
+    expect(body).not.toHaveProperty('day_of_month')
+    expect(body.start_time).toBe('10:30')
+    // And it didn't go asking for the series it wasn't going to change.
+    expect(fetchCalls.some(c => c.method === 'GET' && c.url.includes('/api/recurring/42'))).toBe(false)
+  })
+})

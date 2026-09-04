@@ -5,7 +5,7 @@ import Button from './ui/Button'
 import InlineSelect from './InlineSelect'
 import { useEmployees } from '../hooks/useEmployees'
 import RecurrenceScopeDialog from './schedule/RecurrenceScopeDialog'
-import { isoDateToBackendDow } from '../utils/recurringReschedule'
+import { isoDateToBackendDow, shiftSeriesWeekday } from '../utils/recurringReschedule'
 import { confirmDialog } from '../utils/confirmBus'
 import { normalizeEmployee } from '../utils/employees'
 
@@ -413,6 +413,35 @@ export default function JobEditModal({ job, properties = [], clients = [], onClo
   // Routes a recurring job's edit to the mechanism that keeps the series
   // consistent for the chosen scope \u2014 see RecurrenceScopeDialog's header
   // comment for why a bare PATCH is unsafe here.
+  /**
+   * Day-pattern fields for a series-level save, PRESERVING the series' other
+   * weekdays.
+   *
+   * Both branches below used to send `days_of_week: [newDow]` outright. On a
+   * multi-day series that COLLAPSES it: edit the Thursday visit of a Mon/Thu
+   * series, pick "this and all future", and every future Monday is deleted.
+   * The drag-to-reschedule path already got this right and left a comment
+   * saying why (utils/recurringReschedule.js) — the drawer did the forbidden
+   * thing anyway, so dragging a block was safe and editing the same block was
+   * not, with nothing on screen to tell them apart.
+   *
+   * Best-effort by design: if the series can't be fetched we fall back to the
+   * single-day behaviour rather than blocking the save, matching the drag
+   * path exactly.
+   */
+  const dayPatternFields = async (schedId, newDate, originalDate) => {
+    const newDow = isoDateToBackendDow(newDate)
+    let existingDays = null
+    try {
+      existingDays = (await get(`/api/recurring/${schedId}`))?.days_of_week ?? null
+    } catch { existingDays = null }
+    return {
+      days_of_week: shiftSeriesWeekday(existingDays, isoDateToBackendDow(originalDate), newDow),
+      day_of_week: newDow,
+      day_of_month: new Date(`${newDate}T00:00:00`).getDate(),
+    }
+  }
+
   const performRecurringSave = async (scope) => {
     setScopeDialog(null)
     setSaving(true)
@@ -492,10 +521,7 @@ export default function JobEditModal({ job, properties = [], clients = [], onClo
         // the other, so this is correct regardless of frequency without
         // needing to know it here.
         if (dateChanged) {
-          const dow = isoDateToBackendDow(newDate)
-          payload.days_of_week = [dow]
-          payload.day_of_week = dow
-          payload.day_of_month = new Date(`${newDate}T00:00:00`).getDate()
+          Object.assign(payload, await dayPatternFields(schedId, newDate, originalDate))
         }
         await post(`/api/recurring/${schedId}/split`, payload)
         notify?.('Updated this visit and every future one in the series')
@@ -507,10 +533,7 @@ export default function JobEditModal({ job, properties = [], clients = [], onClo
         if (formData.start_time) payload.start_time = formData.start_time
         if (formData.end_time) payload.end_time = formData.end_time
         if (dateChanged) {
-          const dow = isoDateToBackendDow(newDate)
-          payload.days_of_week = [dow]
-          payload.day_of_week = dow
-          payload.day_of_month = new Date(`${newDate}T00:00:00`).getDate()
+          Object.assign(payload, await dayPatternFields(schedId, newDate, originalDate))
         }
         const res = await patch(`/api/recurring/${schedId}`, payload)
         notify?.(`Updated the whole series (${res?.resynced_jobs || 0} upcoming visit(s) re-synced)`)
