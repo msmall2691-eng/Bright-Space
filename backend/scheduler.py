@@ -786,17 +786,49 @@ def start_scheduler():
         "activation gated on the in-app Settings toggle."
     )
 
-    # Recurring residential/commercial job generation (runs daily)
+    # Recurring residential/commercial job generation (runs daily, and once
+    # shortly after every boot).
+    #
+    # THE STARTUP RUN IS THE POINT, not a nicety. An IntervalTrigger schedules
+    # its FIRST fire one whole interval after registration — for a 24-hour
+    # interval that is tomorrow, and every deploy restarts the container and
+    # resets the clock. So on any day this app was deployed, visit generation
+    # never ran. Three deploys in a day meant three days of no generation.
+    #
+    # That failure is silent and it drains the calendar rather than breaking
+    # it: series stay active, their already-generated visits slide into the
+    # past, and one by one they become "active but no upcoming visits" on the
+    # Recurring health scan. The owner's report was the scan getting WORSE with
+    # nothing touched — 9 healthy down to 6 — which is exactly this shape.
+    #
+    # Every other tick here uses a minutes-long interval and self-heals within
+    # the hour; this one is the only interval long enough for a deploy to
+    # starve it. (The 12-hour Google/Gmail watch renewals below are the same
+    # latent shape — left alone here deliberately rather than widening this
+    # change, but they want the same treatment.)
+    #
+    # A small delay rather than 0: let the app finish booting and pass its
+    # Railway healthcheck before a generation sweep competes for the DB. Only
+    # one worker ever runs the scheduler (see _claim_scheduler_singleton_lock),
+    # so this is one run per deploy, not one per worker, and generate_jobs is
+    # idempotent anyway — it skips dates that already have a Job.
     if env_flag("RECURRING_AUTO_GENERATE_ENABLED", True):
+        from datetime import datetime, timedelta, timezone
+
         recurring_interval_hours = env_int("RECURRING_AUTO_GENERATE_INTERVAL_HOURS", 24)
+        recurring_first_run_delay = env_int("RECURRING_AUTO_GENERATE_STARTUP_DELAY_SECONDS", 120)
         _scheduler.add_job(
             recurring_jobs_tick,
             IntervalTrigger(hours=recurring_interval_hours),
             id="recurring_jobs",
             name="Recurring jobs auto-generate",
             replace_existing=True,
+            next_run_time=datetime.now(timezone.utc) + timedelta(seconds=recurring_first_run_delay),
         )
-        log.info(f"Recurring auto-generate enabled (interval: {recurring_interval_hours} hr)")
+        log.info(
+            f"Recurring auto-generate enabled (interval: {recurring_interval_hours} hr; "
+            f"first run {recurring_first_run_delay}s after start)"
+        )
     else:
         log.info("Recurring auto-generate disabled via RECURRING_AUTO_GENERATE_ENABLED=0")
 
