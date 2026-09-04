@@ -1391,6 +1391,71 @@ def split_schedule(schedule_id: int, data: ScheduleSplit, db: Session = Depends(
     return result
 
 
+def _upcoming_series_jobs(db: Session, sched_id: int) -> list:
+    """The visits this series still has ahead of it: today or later, not
+    already done, not already cancelled.
+
+    "Today or later" uses business_today, the same boundary the rest of the
+    scheduling code calls today — a visit happening this afternoon is still
+    ahead of you, and cancelling the series should take it off the board.
+    Completed visits are never in scope: they happened, and the invoice and
+    payroll rows hanging off them are real."""
+    return (
+        db.query(Job)
+        .filter(
+            Job.recurring_schedule_id == sched_id,
+            Job.scheduled_date >= business_today(),
+            Job.status.notin_(["completed", "cancelled"]),
+        )
+        .order_by(Job.scheduled_date)
+        .all()
+    )
+
+
+@router.post("/{schedule_id}/cancel-upcoming", dependencies=[Depends(require_role("admin", "manager"))])
+def cancel_upcoming_visits(schedule_id: int, db: Session = Depends(get_db),
+                           org_id: int = Depends(current_org_id)):
+    """Take this series' remaining visits off the calendar.
+
+    WHY THIS EXISTS: cancelling a series only stops GENERATION. Every visit
+    already materialized stays on the schedule — and generation runs eight
+    weeks ahead by default, so cancelling a weekly series left roughly eight
+    cleanings sitting there. The app said so in the confirm text, but "its 8
+    already-scheduled visits stay on the calendar until you remove them
+    individually" describes a chore, not a cancellation, and the owner
+    reported the obvious reading of it: "I deleted it and it's still there."
+
+    Soft-cancel, matching every other recurring-cancellation path: the rows
+    stay, status becomes 'cancelled', and the linked Google Calendar event is
+    released so the visit doesn't outlive the app on her phone. Past and
+    completed visits are never touched.
+
+    Deliberately SEPARATE from DELETE /{id} rather than folded into it: this
+    is the destructive half, it is the caller's explicit second act, and
+    scheduling-invariants R7 exists precisely so a Job never disappears as a
+    side effect of an operation aimed at something else. The link to the
+    schedule is kept (unlike the skip path, which must detach to free the
+    date) — generation is off for a cancelled series, so nothing will
+    recreate these, and keeping it preserves "these belonged to that series"
+    for history.
+    """
+    sched = _get_schedule_or_404(db, schedule_id, resolve_org_id(org_id, db))
+    jobs = _upcoming_series_jobs(db, sched.id)
+    cancelled = []
+    for j in jobs:
+        j.status = "cancelled"
+        j.notes = (j.notes or "") + "\n[Series cancelled — visit removed from the calendar]"
+        _release_sync_links(db, j)
+        cancelled.append({
+            "job_id": j.id,
+            "scheduled_date": _as_date(j.scheduled_date).isoformat() if j.scheduled_date else None,
+        })
+    if cancelled:
+        db.commit()
+    return {"schedule_id": sched.id, "cancelled_count": len(cancelled),
+            "cancelled": cancelled}
+
+
 @router.delete("/{schedule_id}", status_code=204, dependencies=[Depends(require_role("admin", "manager"))])
 def delete_schedule(schedule_id: int, db: Session = Depends(get_db),
                     org_id: int = Depends(current_org_id)):

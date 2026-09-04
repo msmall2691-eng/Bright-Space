@@ -206,3 +206,152 @@ def test_a_series_that_merely_stopped_is_still_a_leftover():
         assert "stale_paused" in _codes(sched.id)
     finally:
         _cleanup(db, c, p, sched)
+
+
+# ── taking the visits off the calendar ──────────────────────────────────────
+#
+# "reoccuring bookings are not caceling or deleting ... and some still showing
+# up on schedule even tho i deleted" — the owner, again, after the rename above
+# shipped. The label was only ever half of it. Cancelling stops GENERATION;
+# every visit already materialized stays on the schedule, and generation runs
+# eight weeks ahead, so cancelling a weekly series left ~8 cleanings sitting
+# there. The confirm text admitted it ("stays on the calendar until you remove
+# them individually"), which describes a chore, not a cancellation.
+#
+# POST /{id}/cancel-upcoming is the second, explicit act — separate from
+# DELETE so a Job never disappears as a side effect of an operation aimed at
+# something else (scheduling-invariants R7).
+
+def _dates(db, sched_id, status=None):
+    q = db.query(Job).filter(Job.recurring_schedule_id == sched_id)
+    if status:
+        q = q.filter(Job.status == status)
+    return sorted(j.scheduled_date for j in q.all())
+
+
+def test_cancelling_the_upcoming_visits_clears_them_off_the_schedule():
+    db = SessionLocal()
+    c, p, sched = _seed_series(db)
+    try:
+        client.post(f"/api/recurring/{sched.id}/generate")
+        db.expire_all()
+        live = _dates(db, sched.id, "scheduled")
+        assert len(live) > 1, "a weekly series generating 8 weeks out should have several"
+
+        client.delete(f"/api/recurring/{sched.id}")
+        res = client.post(f"/api/recurring/{sched.id}/cancel-upcoming")
+        assert res.status_code == 200
+        body = res.json()
+        assert body["cancelled_count"] == len(live)
+        # It reports what it did, per visit — this is what the confirm turns
+        # into a sentence, and what makes the count checkable afterwards.
+        assert sorted(v["scheduled_date"] for v in body["cancelled"]) == \
+            [d.isoformat() for d in live]
+
+        db.expire_all()
+        assert _dates(db, sched.id, "scheduled") == [], "nothing may still be live"
+    finally:
+        _cleanup(db, c, p, sched)
+
+
+def test_it_cancels_rather_than_deletes():
+    # R7: the rows stay. An invoice, a payroll line or an activity entry can
+    # point at any of them, and a vanished row takes those with it.
+    db = SessionLocal()
+    c, p, sched = _seed_series(db)
+    try:
+        client.post(f"/api/recurring/{sched.id}/generate")
+        db.expire_all()
+        before = db.query(Job).filter(Job.recurring_schedule_id == sched.id).count()
+
+        client.post(f"/api/recurring/{sched.id}/cancel-upcoming")
+        db.expire_all()
+        after = db.query(Job).filter(Job.recurring_schedule_id == sched.id).count()
+        assert after == before, "soft cancel: same rows, different status"
+        assert all(j.status == "cancelled" for j in
+                   db.query(Job).filter(Job.recurring_schedule_id == sched.id).all())
+    finally:
+        _cleanup(db, c, p, sched)
+
+
+def test_a_completed_visit_is_never_touched():
+    # It happened. The invoice and the payroll hours hanging off it are real,
+    # and "cancel the rest of this series" is not a claim about last Tuesday.
+    db = SessionLocal()
+    c, p, sched = _seed_series(db)
+    try:
+        client.post(f"/api/recurring/{sched.id}/generate")
+        db.expire_all()
+        done = db.query(Job).filter(Job.recurring_schedule_id == sched.id) \
+            .order_by(Job.scheduled_date).first()
+        done.status = "completed"
+        db.commit()
+        done_id = done.id
+
+        client.post(f"/api/recurring/{sched.id}/cancel-upcoming")
+        db.expire_all()
+        assert db.query(Job).get(done_id).status == "completed"
+    finally:
+        _cleanup(db, c, p, sched)
+
+
+def test_a_visit_already_in_the_past_is_left_alone():
+    # Cancelling a series says nothing about a cleaning that already happened,
+    # whatever status it was left in.
+    from datetime import timedelta
+    from utils.dates import business_today
+    db = SessionLocal()
+    c, p, sched = _seed_series(db)
+    try:
+        past = Job(client_id=c.id, property_id=p.id, title="Last week",
+                   scheduled_date=business_today() - timedelta(days=7),
+                   start_time=time(9, 0), end_time=time(12, 0),
+                   status="scheduled", recurring_schedule_id=sched.id, org_id=1)
+        db.add(past); db.commit(); db.refresh(past)
+        past_id = past.id
+
+        client.post(f"/api/recurring/{sched.id}/cancel-upcoming")
+        db.expire_all()
+        assert db.query(Job).get(past_id).status == "scheduled"
+    finally:
+        _cleanup(db, c, p, sched)
+
+
+def test_it_keeps_the_link_to_the_series():
+    # Unlike the skip path, which detaches to free the date for a re-add.
+    # Nothing regenerates for a cancelled series, and the link is what lets
+    # history still say which series these visits belonged to.
+    db = SessionLocal()
+    c, p, sched = _seed_series(db)
+    try:
+        client.post(f"/api/recurring/{sched.id}/generate")
+        client.post(f"/api/recurring/{sched.id}/cancel-upcoming")
+        db.expire_all()
+        assert db.query(Job).filter(Job.recurring_schedule_id == sched.id).count() > 0
+    finally:
+        _cleanup(db, c, p, sched)
+
+
+def test_running_it_twice_changes_nothing_the_second_time():
+    # The owner will press it again when she isn't sure it worked.
+    db = SessionLocal()
+    c, p, sched = _seed_series(db)
+    try:
+        client.post(f"/api/recurring/{sched.id}/generate")
+        first = client.post(f"/api/recurring/{sched.id}/cancel-upcoming").json()
+        second = client.post(f"/api/recurring/{sched.id}/cancel-upcoming").json()
+        assert first["cancelled_count"] > 0
+        assert second["cancelled_count"] == 0
+    finally:
+        _cleanup(db, c, p, sched)
+
+
+def test_another_orgs_series_is_not_reachable():
+    # MT-3: the id is guessable, so the scope check is the only thing between
+    # another tenant and a wiped calendar.
+    db = SessionLocal()
+    c, p, sched = _seed_series(db, org_id=99999)
+    try:
+        assert client.post(f"/api/recurring/{sched.id}/cancel-upcoming").status_code == 404
+    finally:
+        _cleanup(db, c, p, sched)

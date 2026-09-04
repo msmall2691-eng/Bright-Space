@@ -666,20 +666,33 @@ function DuplicateReviewPanel({ schedules, clientsById, reviewedKeys, onToggleRe
 
   const doCancel = async (s) => {
     const n = s.upcoming_job_count || 0
-    const ok = await confirmDialog(
+    // Same choice as the detail page's cancel: the losing duplicate's booked
+    // visits are exactly the ones cluttering the calendar, so offering to
+    // leave them there was never the helpful default it looked like.
+    const answer = await confirmDialog(
       `Cancel “${s.title || 'Untitled'}”?\n\nNo new visits will be generated for this series.`
-      + (n > 0
-        ? ` Its ${n} already-scheduled visit${n === 1 ? ' stays' : 's stay'} on the calendar until you remove them individually.`
-        : '')
+      + (n > 0 ? ` It still has ${n} visit${n === 1 ? '' : 's'} booked.` : '')
       + ` Past and completed visits are untouched.`,
-      { title: 'Cancel series', confirmLabel: 'Cancel series', cancelLabel: 'Never mind', danger: true },
+      {
+        title: 'Cancel series',
+        confirmLabel: n > 0 ? `Cancel series and its ${n} visit${n === 1 ? '' : 's'}` : 'Cancel series',
+        altLabel: n > 0 ? 'Keep the booked visits' : undefined,
+        cancelLabel: 'Never mind',
+        danger: true,
+      },
     )
-    if (!ok) return
+    if (!answer) return
     setBusyId(s.id)
     try {
       await del(`/api/recurring/${s.id}`)
+      let removed = 0
+      if (answer !== 'alt') {
+        removed = (await post(`/api/recurring/${s.id}/cancel-upcoming`, {}))?.cancelled_count || 0
+      }
       setActioned(a => ({ ...a, [s.id]: 'cancelled' }))
-      toast.success('Series cancelled')
+      toast.success(removed > 0
+        ? `Series cancelled — ${removed} booked visit${removed === 1 ? '' : 's'} taken off the schedule`
+        : 'Series cancelled')
       onChanged?.()
     } catch (e) {
       toast.error(e.message || 'Failed to cancel series')
@@ -916,11 +929,50 @@ function SeriesDetail({ id, onBack, onChanged, toast }) {
     } finally { setBusy('') }
   }
   const cancelSeries = async () => {
-    if (!(await confirmDialog('Cancel this recurring series? Existing scheduled jobs stay on the calendar; no new ones will be generated.', { confirmLabel: 'Cancel series', cancelLabel: 'Never mind', danger: true }))) return
+    // Visits already on the calendar for this series, from today on. Counted
+    // from generatedDates (fetched with the page) rather than a fresh request:
+    // these are real Job rows, and the answer only has to be right enough to
+    // put a number in the question — the server reports what it actually
+    // cancelled afterwards.
+    const todayIso = new Date().toISOString().slice(0, 10)
+    const booked = [...generatedDates].filter(d => d >= todayIso).length
+
+    // Cancelling used to stop generation and leave every booked visit sitting
+    // on the schedule — up to eight weeks of them — with the confirm text
+    // explaining that she could go remove them one at a time. That reads as
+    // "the button didn't work", and it's what she reported, twice.
+    const answer = await confirmDialog(
+      booked > 0
+        ? `Cancel this recurring series?\n\nNo new visits will be generated.`
+          + ` It still has ${booked} visit${booked === 1 ? '' : 's'} booked from today on.`
+        : 'Cancel this recurring series?\n\nNo new visits will be generated.',
+      {
+        title: 'Cancel series',
+        confirmLabel: booked > 0
+          ? `Cancel series and its ${booked} visit${booked === 1 ? '' : 's'}`
+          : 'Cancel series',
+        // Only offered when there's something to keep. Someone does want this:
+        // "stop the contract, but Thursday is still coming."
+        altLabel: booked > 0 ? 'Keep the booked visits' : undefined,
+        cancelLabel: 'Never mind',
+        danger: true,
+      },
+    )
+    if (!answer) return
     setBusy('delete')
     try {
       await del(`/api/recurring/${id}`)
-      toast.success('Series cancelled')
+      // Cancelling the visits is a SECOND call on purpose: the series is
+      // already cancelled by the time this runs, so a failure here leaves her
+      // with the thing she asked for plus an honest error, not a half-written
+      // state she can't see.
+      let removed = 0
+      if (answer !== 'alt') {
+        removed = (await post(`/api/recurring/${id}/cancel-upcoming`, {}))?.cancelled_count || 0
+      }
+      toast.success(removed > 0
+        ? `Series cancelled — ${removed} booked visit${removed === 1 ? '' : 's'} taken off the schedule`
+        : 'Series cancelled')
       onBack()
       onChanged?.()
     } catch (e) {

@@ -3379,6 +3379,48 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/recurring/{schedule_id}/cancel-upcoming": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Cancel Upcoming Visits
+         * @description Take this series' remaining visits off the calendar.
+         *
+         *     WHY THIS EXISTS: cancelling a series only stops GENERATION. Every visit
+         *     already materialized stays on the schedule — and generation runs eight
+         *     weeks ahead by default, so cancelling a weekly series left roughly eight
+         *     cleanings sitting there. The app said so in the confirm text, but "its 8
+         *     already-scheduled visits stay on the calendar until you remove them
+         *     individually" describes a chore, not a cancellation, and the owner
+         *     reported the obvious reading of it: "I deleted it and it's still there."
+         *
+         *     Soft-cancel, matching every other recurring-cancellation path: the rows
+         *     stay, status becomes 'cancelled', and the linked Google Calendar event is
+         *     released so the visit doesn't outlive the app on her phone. Past and
+         *     completed visits are never touched.
+         *
+         *     Deliberately SEPARATE from DELETE /{id} rather than folded into it: this
+         *     is the destructive half, it is the caller's explicit second act, and
+         *     scheduling-invariants R7 exists precisely so a Job never disappears as a
+         *     side effect of an operation aimed at something else. The link to the
+         *     schedule is kept (unlike the skip path, which must detach to free the
+         *     date) — generation is off for a cancelled series, so nothing will
+         *     recreate these, and keeping it preserves "these belonged to that series"
+         *     for history.
+         */
+        post: operations["cancel_upcoming_visits_api_recurring__schedule_id__cancel_upcoming_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/recurring/{schedule_id}/skip": {
         parameters: {
             query?: never;
@@ -14398,6 +14440,37 @@ export interface operations {
         responses: {
             /** @description Successful Response */
             201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    cancel_upcoming_visits_api_recurring__schedule_id__cancel_upcoming_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                schedule_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
                 headers: {
                     [name: string]: unknown;
                 };
