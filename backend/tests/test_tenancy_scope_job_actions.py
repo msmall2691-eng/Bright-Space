@@ -10,7 +10,7 @@ the master-API-key test caller resolves to the default org, so a row planted
 in OTHER_ORG must 404 (not 200/403 — a 403 would confirm the id exists).
 """
 import uuid
-from datetime import date, time
+from datetime import date, time, timedelta
 from fastapi.testclient import TestClient
 
 from main import app
@@ -19,6 +19,14 @@ from database.models import Client, Job, Property, CleanerTimeOff
 
 client = TestClient(app)
 OTHER_ORG = 99999
+
+# POST /api/jobs refuses a date in the past (400) BEFORE it checks who owns the
+# client/property (404). A hardcoded date here is therefore a time bomb: it
+# tests tenancy until the calendar passes it, then tests the past-date guard
+# instead — same assertion, silently different subject. "2026-09-01" reached
+# that day and turned this file red, and the sibling test below survived only
+# because its foreign client_id happens to 404 first.
+FUTURE_DATE = (date.today() + timedelta(days=30)).isoformat()
 
 
 def _seed(db, org_id):
@@ -117,7 +125,7 @@ def test_cross_org_create_job_with_foreign_client_id_returns_404():
         r = client.post("/api/jobs", json={
             "client_id": c.id,
             "title": "Should not be creatable",
-            "scheduled_date": "2026-09-01",
+            "scheduled_date": FUTURE_DATE,
             "start_time": "09:00",
             "end_time": "12:00",
         })
@@ -139,7 +147,7 @@ def test_cross_org_create_job_with_foreign_property_id_returns_404():
             "client_id": own_c.id,
             "property_id": other_p.id,
             "title": "Should not be creatable",
-            "scheduled_date": "2026-09-01",
+            "scheduled_date": FUTURE_DATE,
             "start_time": "09:00",
             "end_time": "12:00",
         })
