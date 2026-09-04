@@ -35,8 +35,8 @@ from sqlalchemy.orm import Session, joinedload
 from database.db import get_db
 from database.models import (
     CleanerAvailability, CleanerTimeOff, CleanerWeekAvailability, CrewDoc,
-    CrewMessage, Job, JobPhoto, JobResponse, PropertyCrewNote, PropertyPhoto,
-    User, TimeEntry,
+    CrewMessage, Job, JobClaimRequest, JobPhoto, JobResponse, PropertyCrewNote,
+    PropertyPhoto, User, TimeEntry,
 )
 from modules.auth.router import (
     get_current_user, require_role, current_org_id, resolve_org_id, send_staff_invite,
@@ -71,7 +71,8 @@ def _turnover_line(job: Job) -> str:
 
 def _job_row(job: Job, names_by_cid: dict | None = None, self_cid: str | None = None,
              my_response: "JobResponse | None" = None,
-             house_notes: "list | None" = None) -> dict:
+             house_notes: "list | None" = None,
+             my_claim_request: "JobClaimRequest | None" = None) -> dict:
     prop = job.property
     client = job.client
     return {
@@ -134,6 +135,19 @@ def _job_row(job: Job, names_by_cid: dict | None = None, self_cid: str | None = 
         # note the cleaner left, instead of the job silently vanishing.
         "completed_at": _iso_utc(job.completed_at),
         "completion_note": job.completion_note,
+        # Marketplace pivot (migration 097): posted_rate is the office's
+        # asking price on an open offer; agreed_rate is the final rate once
+        # a request is approved (may differ — the winner may have
+        # countered). my_claim_request is the CALLER's own pending/decided
+        # request on this specific job, so the app can show "You asked for
+        # $85 — waiting to hear back" instead of letting them request twice.
+        "posted_rate": job.posted_rate,
+        "agreed_rate": job.agreed_rate,
+        "my_claim_request": (
+            {"status": my_claim_request.status, "requested_rate": my_claim_request.requested_rate,
+             "message": my_claim_request.message}
+            if my_claim_request else None
+        ),
     }
 
 
@@ -347,17 +361,29 @@ def my_day(
     hours_today = round(sum((_entry_hours(e) or 0.0) for e in entries_today), 2)
 
     # Jobs the office put "up for grabs" (crew app Phase 3) — visible to every
-    # cleaner in the org, claim is first-come-first-served. Access details and
-    # the customer's phone stay hidden until the job is actually theirs: an
-    # open listing is an offer, not a work order, and gate codes don't belong
-    # on every phone in the crew.
+    # cleaner in the org. Marketplace pivot (migration 097): a sub REQUESTS
+    # an open job (optionally countering posted_rate) rather than instantly
+    # claiming it — the office picks who gets it. Access details and the
+    # customer's phone stay hidden until the job is actually theirs: an open
+    # listing is an offer, not a work order, and gate codes don't belong on
+    # every phone in the crew.
     open_jobs = []
+    open_job_ids = [j.id for j in jobs if getattr(j, "open_for_claims", False)
+                    and j.status == "scheduled"]
+    my_requests_by_job = {
+        r.job_id: r
+        for r in db.query(JobClaimRequest).filter(
+            JobClaimRequest.job_id.in_(open_job_ids or [0]),
+            JobClaimRequest.cleaner_id == current_user.cleaner_id,
+        ).all()
+    }
     for j in jobs:
         if not getattr(j, "open_for_claims", False) or j.status != "scheduled":
             continue
         if current_user.cleaner_id in (j.cleaner_ids or []):
             continue
-        row = _job_row(j, names, current_user.cleaner_id)
+        row = _job_row(j, names, current_user.cleaner_id,
+                       my_claim_request=my_requests_by_job.get(j.id))
         row.update({"open": True, "house_code": None, "access_notes": None,
                     "parking_notes": None, "can_text_client": False,
                     "checklist_template": None, "turnover_line": "",
@@ -757,49 +783,62 @@ def mark_job_done(
     return _job_row(job, _names_by_cleaner_id(db, [job]), current_user.cleaner_id)
 
 
-# ── Open jobs: claim (crew app Phase 3) ──────────────────────────────────────
+# ── Open jobs: request to claim (marketplace pivot, migration 097) ──────────
+
+class ClaimRequestBody(BaseModel):
+    # NULL/omitted = "I'll take your posted rate." Set = a counter-offer.
+    requested_rate: Optional[float] = None
+    message: Optional[str] = None
+
 
 @router.post("/jobs/{job_id}/claim")
 def claim_job(
     job_id: int,
+    body: ClaimRequestBody = None,
     db: Session = Depends(get_db),
     org_id: int = Depends(current_org_id),
     current_user: User = Depends(require_role("cleaner")),
 ):
-    """First-come-first-served claim of a job the office marked open.
+    """Request an open job — marketplace pivot (migration 097).
 
-    This is the one place the crew app writes schedule state, and it's
-    narrowly gated (scheduling-invariants reviewed): the job must carry the
-    office-set open_for_claims flag (owner decision #2 — being unassigned is
-    NOT enough), the write is this endpoint's atomic add-claimer +
-    close-the-offer, it's activity-logged and pushes a staff notification.
-    BrightBase stays the canonical schedule owner throughout — no projection
-    or external system is involved.
+    This used to be an instant first-come-first-served claim. It's now a
+    REQUEST: the sub optionally counters the office's posted_rate and/or
+    leaves a message, and the office picks who gets it (see
+    modules.scheduling.router's approve/decline-claim-request endpoints).
+    Nothing here writes Job.cleaner_ids or closes the offer — a job can
+    carry several pending requests at once, exactly the point of "the
+    office picks."
 
-    Concurrency (R5): the row is locked (SELECT ... FOR UPDATE on Postgres;
-    SQLite serializes writers) and the open flag is re-checked under the
-    lock, so two cleaners racing on the same offer get exactly one winner —
-    the loser sees 409 "already claimed".
+    Still narrowly gated the same way Phase 3 was (scheduling-invariants
+    reviewed): the job must carry open_for_claims (being unassigned is NOT
+    enough), BrightBase stays the sole schedule-state owner, and a second
+    tap from the same sub UPDATES their pending request (a changed-my-mind
+    counter-offer) rather than creating a duplicate.
+
+    No row lock here, unlike the claim it replaces: filing a request writes
+    nothing anyone else races for. The lock moved to the approval endpoint,
+    which is now the step that actually assigns the job and fixes the rate.
     """
     _require_crew_id(current_user)
+    body = body or ClaimRequestBody()
     oid = resolve_org_id(org_id, db)
     org_scope = or_(Job.org_id == oid, Job.org_id.is_(None))
 
     job = (db.query(Job)
            .options(joinedload(Job.property), joinedload(Job.client))
            .filter(org_scope, Job.id == job_id)
-           .with_for_update()
            .first())
     if not job:
         raise HTTPException(status_code=404, detail="Job not found.")
     if current_user.cleaner_id in (job.cleaner_ids or []):
         raise HTTPException(status_code=400, detail="You're already on this job.")
     if not getattr(job, "open_for_claims", False) or job.status != "scheduled":
-        raise HTTPException(status_code=409,
-                            detail="Somebody beat you to it — this job was already claimed.")
+        raise HTTPException(status_code=409, detail="This job isn't open anymore.")
 
-    # Don't let a claim double-book the claimer: same conflict engine the
-    # office's assign flow uses (one implementation, no drift).
+    # A request can't be approved into a double-booking, so refuse it here
+    # too (not just at approve time) — no point letting the office review a
+    # request that could never be honored. Checked again at approval since
+    # the sub's schedule may have changed in between.
     from modules.scheduling.router import _find_cleaner_conflicts, _conflict_detail
     conflicts = _find_cleaner_conflicts(
         db, cleaner_ids=[current_user.cleaner_id], scheduled_date=job.scheduled_date,
@@ -809,52 +848,70 @@ def claim_job(
     if conflicts:
         raise HTTPException(status_code=409, detail=_conflict_detail(conflicts))
 
-    job.cleaner_ids = [*(job.cleaner_ids or []), current_user.cleaner_id]
-    job.open_for_claims = False   # one claim closes the offer; office can re-open
-    # Claiming IS accepting — seed the Phase 2 response so the office sees a
-    # green check, not "no answer yet", on a job they chose themselves.
-    existing = (db.query(JobResponse)
-                .filter(JobResponse.job_id == job.id,
-                        JobResponse.cleaner_id == current_user.cleaner_id)
+    rate = body.requested_rate
+    if rate is not None and rate <= 0:
+        raise HTTPException(status_code=422, detail="requested_rate must be positive.")
+    # A job posted with no asking price can only be worked for a price if the
+    # sub names one. Catching it here means they find out while they're still
+    # looking at the offer, rather than having the office's approval bounce
+    # later for a reason neither of them can see. Approval enforces it too.
+    if rate is None and job.posted_rate is None:
+        raise HTTPException(
+            status_code=422,
+            detail="This job has no posted rate — name your price to request it.")
+    msg = _sanitize_note(body.message) if body.message else None
+
+    existing = (db.query(JobClaimRequest)
+                .filter(JobClaimRequest.job_id == job.id,
+                        JobClaimRequest.cleaner_id == current_user.cleaner_id)
                 .first())
-    if existing:
-        existing.response, existing.reason = "accepted", None
-        existing.updated_at = _now_naive_utc()
+    now = _now_naive_utc()
+    if existing and existing.status == "pending":
+        existing.requested_rate, existing.message, existing.updated_at = rate, msg, now
+        request = existing
+    elif existing:
+        # A previously declined/withdrawn request from this sub — reopen it
+        # rather than accumulating rows for the same (job, cleaner) pair.
+        existing.status, existing.requested_rate, existing.message = "pending", rate, msg
+        existing.updated_at, existing.decided_at, existing.decided_by = now, None, None
+        request = existing
     else:
-        db.add(JobResponse(org_id=oid, job_id=job.id,
-                           cleaner_id=current_user.cleaner_id,
-                           user_id=current_user.id, response="accepted",
-                           created_at=_now_naive_utc(), updated_at=_now_naive_utc()))
+        request = JobClaimRequest(
+            org_id=oid, job_id=job.id, cleaner_id=current_user.cleaner_id,
+            user_id=current_user.id, requested_rate=rate, message=msg,
+            status="pending", created_at=now, updated_at=now,
+        )
+        db.add(request)
 
     who = getattr(current_user, "full_name", None) or current_user.email
     when = job.scheduled_date.isoformat() if job.scheduled_date else "unscheduled"
+    rate_note = f" at ${rate:,.2f}" if rate is not None else ""
     try:
         from utils.activity_logger import log_activity
         log_activity(
-            db, "crew_claim", job_id=job.id, client_id=job.client_id, actor=who,
-            summary=f"{who} claimed {job.title} ({when})",
-            extra_data={"cleaner_id": current_user.cleaner_id},
+            db, "crew_claim_request", job_id=job.id, client_id=job.client_id, actor=who,
+            summary=f"{who} requested {job.title} ({when}){rate_note}",
+            extra_data={"cleaner_id": current_user.cleaner_id, "requested_rate": rate},
         )
     except Exception:
         log.exception("activity log failed on claim_job")
     db.commit()
-    db.refresh(job)
+    db.refresh(request)
 
     try:
         from services.push_service import notify_staff
         notify_staff(
-            db, "Open job claimed",
-            f"{who} claimed {job.title} on {when}.",
+            db, "Job request",
+            f"{who} wants {job.title} on {when}{rate_note}"
+            + (f' — "{msg}"' if msg else "") + ". Review it in Schedule.",
             url=f"/jobs/{job.id}", tag=f"job-claim-{job.id}", org_id=oid,
             category="crew",
         )
     except Exception:
         log.exception("push notify failed on claim_job")
 
-    return _job_row(job, _names_by_cleaner_id(db, [job]), current_user.cleaner_id,
-                    my_response=db.query(JobResponse).filter(
-                        JobResponse.job_id == job.id,
-                        JobResponse.cleaner_id == current_user.cleaner_id).first())
+    return {"job_id": job.id, "status": request.status, "requested_rate": request.requested_rate,
+            "message": request.message}
 
 
 # ── Accept / decline (crew app Phase 2) ──────────────────────────────────────

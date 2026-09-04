@@ -125,6 +125,12 @@ def _blank_emp(uid, name) -> dict:
         "weekend_turnovers": 0,
         "weekend_pay": 0.0,
         "weekend_unpriced_turnovers": 0,
+        # Marketplace jobs (migration 097): a flat rate agreed with a
+        # subcontractor, paid once per job regardless of hours. Its own bucket
+        # so it never mixes into the hourly/piece employee numbers.
+        "marketplace_jobs": 0,
+        "marketplace_pay": 0.0,
+        "marketplace_hours": 0.0,
         "unclassified_hours": 0.0,
         "miles": 0.0,
         "mileage_reimbursement": 0.0,
@@ -133,6 +139,7 @@ def _blank_emp(uid, name) -> dict:
         # internal: (property_id or name) → set of local dates, to count a
         # crew member's distinct weekend turnovers per property
         "_weekend_seen": {},
+        "_marketplace_seen": set(),
         "_weekend_rate": {},
     }
 
@@ -281,6 +288,30 @@ def _native_summary(db: Session, start_date: str, end_date: str, rates: dict, oi
             emp["shifts"].append(detail)
             continue
 
+        # ── Marketplace job: the agreed rate IS the pay ──────────────────
+        # A job whose claim request was approved carries agreed_rate — a flat
+        # price a subcontractor negotiated for the whole job. Paying it hourly
+        # off pay_rate_residential (or as a turnover piece rate) would ignore
+        # the number both sides actually shook on: the office would post $95,
+        # approve $95, and pay something else entirely. The hourly/piece ladder
+        # below is the EMPLOYEE model and doesn't apply to a sub.
+        #
+        # Once per (job, cleaner): several punches on one job are one flat
+        # payment, not one each. Hours still accrue for the timesheet — a sub's
+        # time is worth seeing even when it doesn't set the price.
+        agreed = float(getattr(job, "agreed_rate", None) or 0.0)
+        if agreed > 0 and cid in (job.cleaner_ids or []):
+            emp["marketplace_hours"] += hours
+            detail["kind"] = "marketplace"
+            detail["rate_pay"] = False
+            if job.id not in emp["_marketplace_seen"]:
+                emp["_marketplace_seen"].add(job.id)
+                emp["marketplace_jobs"] += 1
+                emp["marketplace_pay"] += agreed
+                detail["pay"] = round(agreed, 2)
+            emp["shifts"].append(detail)
+            continue
+
         if use_piece:
             # Piece rate per distinct (property, date) — the turnover model.
             # Reached for a weekend rental (auto) or any job the office set to
@@ -330,7 +361,7 @@ def _native_summary(db: Session, start_date: str, end_date: str, rates: dict, oi
         emp["hours_source"] = "native"
         emp["connecteam_hours"] = None
         accounted = (emp["residential_hours"] + emp["deep_clean_hours"]
-                     + emp["rental_weekday_hours"]
+                     + emp["rental_weekday_hours"] + emp["marketplace_hours"]
                      + emp["weekend_rental_hours"] + emp["unclassified_hours"])
         emp["unallocated_hours"] = round(emp["total_hours"] - accounted, 2)
         # Native mileage: crew-entered miles per punch × the Settings mileage
@@ -339,15 +370,17 @@ def _native_summary(db: Session, start_date: str, end_date: str, rates: dict, oi
         emp["mileage_reimbursement"] = round(emp["miles"] * rates["mileage_rate"], 2)
         emp["gross_pay"] = round(
             emp["residential_pay"] + emp["deep_clean_pay"] + emp["rental_weekday_pay"]
-            + emp["weekend_pay"] + emp["mileage_reimbursement"], 2
+            + emp["weekend_pay"] + emp["marketplace_pay"] + emp["mileage_reimbursement"], 2
         )
         for k in ("total_hours", "residential_hours", "residential_pay",
                   "deep_clean_hours", "deep_clean_pay",
                   "rental_weekday_hours", "rental_weekday_pay",
                   "weekend_rental_hours", "weekend_pay",
+                  "marketplace_hours", "marketplace_pay",
                   "unclassified_hours", "miles"):
             emp[k] = round(emp[k], 2)
         emp.pop("_weekend_seen", None)
+        emp.pop("_marketplace_seen", None)
         emp.pop("_weekend_rate", None)
         out_emps.append(emp)
 
@@ -363,6 +396,9 @@ def _native_summary(db: Session, start_date: str, end_date: str, rates: dict, oi
         "rental_weekday_hours": round(sum(e["rental_weekday_hours"] for e in out_emps), 2),
         "weekend_rental_hours": round(sum(e["weekend_rental_hours"] for e in out_emps), 2),
         "weekend_turnovers": sum(e["weekend_turnovers"] for e in out_emps),
+        "marketplace_jobs": sum(e["marketplace_jobs"] for e in out_emps),
+        "marketplace_pay": round(sum(e["marketplace_pay"] for e in out_emps), 2),
+        "marketplace_hours": round(sum(e["marketplace_hours"] for e in out_emps), 2),
         "unclassified_hours": round(sum(e["unclassified_hours"] for e in out_emps), 2),
         "miles": round(sum(e["miles"] for e in out_emps), 2),
         "mileage_reimbursement": round(sum(e["mileage_reimbursement"] for e in out_emps), 2),
