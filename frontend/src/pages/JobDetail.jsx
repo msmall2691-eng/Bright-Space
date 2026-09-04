@@ -131,7 +131,7 @@ function PropertyAccessCard({ property, canEdit: editable }) {
 }
 import InlineEditField from '../components/InlineEditField'
 import { AlertCircle, CheckCircle, CalendarClock } from 'lucide-react'
-import { computeDisplayStatus } from '../components/schedule/constants'
+import { computeDisplayStatus, FIELD_LABELS } from '../components/schedule/constants'
 import Timeline, { jobTimelineSource } from '../components/Timeline'
 import RecordSkeleton from '../components/record/RecordSkeleton'
 import JobPhotosCard from '../components/schedule/JobPhotosCard'
@@ -759,6 +759,9 @@ export default function JobDetail() {
       {reviewDraft && <ReviewDraftModal draft={reviewDraft} onClose={() => setReviewDraft(null)} />}
       {timingEdit && (
         <RecurrenceScopeDialog
+          /* Name what's about to be applied, the same as the edit drawer does —
+             picking a blast radius shouldn't mean guessing what's in the blast. */
+          fields={Object.keys(timingEdit).map(k => FIELD_LABELS[k]).filter(Boolean)}
           busy={scopeBusy}
           onChoose={applyTimingScope}
           onCancel={() => setTimingEdit(null)}

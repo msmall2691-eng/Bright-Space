@@ -6,6 +6,7 @@ import InlineSelect from './InlineSelect'
 import { useEmployees } from '../hooks/useEmployees'
 import RecurrenceScopeDialog from './schedule/RecurrenceScopeDialog'
 import { isoDateToBackendDow, shiftSeriesWeekday } from '../utils/recurringReschedule'
+import { FIELD_LABELS } from './schedule/constants'
 import { confirmDialog } from '../utils/confirmBus'
 import { normalizeEmployee } from '../utils/employees'
 
@@ -41,12 +42,6 @@ const SERIES_FIELDS = new Set([
 
 // What to call each field in the scope dialog, so the operator can see what
 // they're about to apply to a whole series before they pick.
-const FIELD_LABELS = {
-  scheduled_date: 'Date', start_time: 'Start time', end_time: 'End time',
-  cleaner_ids: 'Crew', title: 'Title', address: 'Address', notes: 'Notes',
-  property_id: 'Property',
-}
-
 // Shape shared by `formData` (the live draft) and `saved` (the last value
 // actually persisted to the server). Keeping both initialized from the same
 // function guarantees they can be compared field-by-field without a shape

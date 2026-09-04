@@ -115,6 +115,16 @@ export function computeDisplayStatus(entity) {
   return raw
 }
 
+/** Field key → the word the operator sees for it. Lives here, not in the edit
+ *  modal, because the scope dialog names the fields it is about to apply and
+ *  more than one screen opens that dialog — two copies of this map is how one
+ *  of them ends up calling `cleaner_ids` something the other doesn't. */
+export const FIELD_LABELS = {
+  scheduled_date: 'Date', start_time: 'Start time', end_time: 'End time',
+  cleaner_ids: 'Crew', title: 'Title', address: 'Address', notes: 'Notes',
+  property_id: 'Property',
+}
+
 export const VISIT_ACCENT = {
   str: 'border-l-amber-400',
   str_turnover: 'border-l-amber-400',

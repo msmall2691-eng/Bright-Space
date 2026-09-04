@@ -118,6 +118,16 @@ describe('JobDetail — a visit that belongs to a series', () => {
     expect(patch).not.toHaveBeenCalledWith('/api/jobs/6', expect.anything())
   })
 
+  it('names the field it is about to apply, like the edit drawer does', async () => {
+    // Picking a blast radius shouldn't mean guessing what's in the blast. The
+    // label comes from the shared FIELD_LABELS map, so the two screens that
+    // open this dialog can't drift into calling the same field two things.
+    mount(JOB)
+    await screen.findByText(/This visit repeats/)
+    await editField('Scheduled date', '2026-06-25')
+    expect(await screen.findByText('Date')).toBeTruthy()
+  })
+
   it('writes nothing at all when she backs out', async () => {
     mount(JOB)
     await screen.findByText(/This visit repeats/)
