@@ -1958,6 +1958,84 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/jobs/{job_id}/claim-requests": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Claim Requests
+         * @description All requests (pending and decided) for one posted job, newest first —
+         *     the office's review list. Cleaner IDs are resolved to display names in
+         *     one query rather than N (same pattern board_service uses elsewhere).
+         */
+        get: operations["list_claim_requests_api_jobs__job_id__claim_requests_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/jobs/{job_id}/claim-requests/{request_id}/approve": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Approve Claim Request
+         * @description Approve one request: assigns the sub, sets the FINAL agreed_rate
+         *     (their counter if they made one, else the posted rate), closes the
+         *     offer, and auto-declines every other pending request on this job — a
+         *     job can only go to one winner. Runs the same conflict/availability
+         *     checks the office's normal assign flow uses (one implementation, no
+         *     drift) since this is the first point the sub is actually scheduled.
+         *
+         *     CONCURRENCY (scheduling-invariants R5): the Job row is locked and
+         *     open_for_claims re-read under that lock. This is the step the old
+         *     first-come-first-served claim used to lock, and it needs it more: two
+         *     approvals racing (two office logins, or one impatient double-tap on a
+         *     slow phone) would otherwise both pass the open check, put BOTH subs on
+         *     the job, leave agreed_rate at whichever write landed last, and send two
+         *     people a "You got the job!" push. On Postgres this is SELECT ... FOR
+         *     UPDATE; SQLite serializes writers.
+         */
+        post: operations["approve_claim_request_api_jobs__job_id__claim_requests__request_id__approve_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/jobs/{job_id}/claim-requests/{request_id}/decline": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Decline Claim Request
+         * @description Decline a single request without approving anyone — the job stays
+         *     open for other pending requests (or new ones) unless the office also
+         *     turns off "Open to crew" separately.
+         */
+        post: operations["decline_claim_request_api_jobs__job_id__claim_requests__request_id__decline_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/jobs/{job_id}": {
         parameters: {
             query?: never;
@@ -5874,20 +5952,25 @@ export interface paths {
         put?: never;
         /**
          * Claim Job
-         * @description First-come-first-served claim of a job the office marked open.
+         * @description Request an open job — marketplace pivot (migration 097).
          *
-         *     This is the one place the crew app writes schedule state, and it's
-         *     narrowly gated (scheduling-invariants reviewed): the job must carry the
-         *     office-set open_for_claims flag (owner decision #2 — being unassigned is
-         *     NOT enough), the write is this endpoint's atomic add-claimer +
-         *     close-the-offer, it's activity-logged and pushes a staff notification.
-         *     BrightBase stays the canonical schedule owner throughout — no projection
-         *     or external system is involved.
+         *     This used to be an instant first-come-first-served claim. It's now a
+         *     REQUEST: the sub optionally counters the office's posted_rate and/or
+         *     leaves a message, and the office picks who gets it (see
+         *     modules.scheduling.router's approve/decline-claim-request endpoints).
+         *     Nothing here writes Job.cleaner_ids or closes the offer — a job can
+         *     carry several pending requests at once, exactly the point of "the
+         *     office picks."
          *
-         *     Concurrency (R5): the row is locked (SELECT ... FOR UPDATE on Postgres;
-         *     SQLite serializes writers) and the open flag is re-checked under the
-         *     lock, so two cleaners racing on the same offer get exactly one winner —
-         *     the loser sees 409 "already claimed".
+         *     Still narrowly gated the same way Phase 3 was (scheduling-invariants
+         *     reviewed): the job must carry open_for_claims (being unassigned is NOT
+         *     enough), BrightBase stays the sole schedule-state owner, and a second
+         *     tap from the same sub UPDATES their pending request (a changed-my-mind
+         *     counter-offer) rather than creating a duplicate.
+         *
+         *     No row lock here, unlike the claim it replaces: filing a request writes
+         *     nothing anyone else races for. The lock moved to the approval endpoint,
+         *     which is now the step that actually assigns the job and fixes the rate.
          */
         post: operations["claim_job_api_crew_jobs__job_id__claim_post"];
         delete?: never;
@@ -7173,6 +7256,13 @@ export interface components {
              */
             status: "lead" | "active" | "inactive";
         };
+        /** ClaimRequestBody */
+        ClaimRequestBody: {
+            /** Requested Rate */
+            requested_rate?: number | null;
+            /** Message */
+            message?: string | null;
+        };
         /** ClientCreate */
         ClientCreate: {
             /** Name */
@@ -7947,6 +8037,8 @@ export interface components {
             notify_customer?: boolean | null;
             /** Open For Claims */
             open_for_claims?: boolean | null;
+            /** Posted Rate */
+            posted_rate?: number | null;
         };
         /**
          * LinkClientRequest
@@ -12089,6 +12181,101 @@ export interface operations {
             header?: never;
             path: {
                 job_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_claim_requests_api_jobs__job_id__claim_requests_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                job_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    approve_claim_request_api_jobs__job_id__claim_requests__request_id__approve_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                job_id: number;
+                request_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    decline_claim_request_api_jobs__job_id__claim_requests__request_id__decline_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                job_id: number;
+                request_id: number;
             };
             cookie?: never;
         };
@@ -18133,7 +18320,11 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["ClaimRequestBody"];
+            };
+        };
         responses: {
             /** @description Successful Response */
             200: {

@@ -11,7 +11,8 @@ from zoneinfo import ZoneInfo
 
 from database.db import get_db
 from database.models import (
-    Job, Client, ICalEvent, CleanerTimeOff, Property, RecurrenceException, AppSetting,
+    Job, Client, ICalEvent, CleanerTimeOff, JobClaimRequest, Property,
+    RecurrenceException, AppSetting, User,
 )
 from modules.auth.router import get_current_user, require_role, current_org_id, resolve_org_id
 from utils.activity_logger import (
@@ -82,6 +83,10 @@ class JobUpdate(BaseModel):
     # Crew app Phase 3: put the job "up for grabs" on every cleaner's phone
     # (claiming flips it back off atomically, crew router's /claim).
     open_for_claims: Optional[bool] = None
+    # Marketplace pivot (migration 097): the asking rate shown to subs when
+    # open_for_claims is on. NULL is fine (a re-opened job may not need a new
+    # rate) — the crew app just won't show a number until one's set.
+    posted_rate: Optional[float] = None
 
 JOB_TYPES = {"residential", "deep_clean", "commercial", "str_turnover", "one_time"}
 JOB_STATUSES = {"unscheduled", "scheduled", "in_progress", "completed", "cancelled"}
@@ -574,6 +579,11 @@ def job_to_dict(j: Job, client: Client = None, effective_date=None,
         # Crew app Phase 3: "up for grabs" flag the office toggles; claiming
         # flips it back off (crew router's /claim).
         "open_for_claims": bool(getattr(j, "open_for_claims", False)),
+        # Marketplace pivot (migration 097): asking rate (posted) vs. the
+        # final rate once a claim request is approved (agreed) — payroll
+        # reads agreed_rate, never posted_rate.
+        "posted_rate": j.posted_rate,
+        "agreed_rate": j.agreed_rate,
         "gcal_event_id": j.gcal_event_id,
         "created_at": j.created_at.isoformat() if j.created_at else None,
         "updated_at": j.updated_at.isoformat() if j.updated_at else None,
@@ -2689,6 +2699,173 @@ def decline_reschedule(job_id: int, db: Session = Depends(get_db), org_id: int =
     return {"status": "declined", "job_id": job.id}
 
 
+# ── Marketplace claim requests (migration 097) ───────────────────────────────
+# The office posts a job open (open_for_claims + posted_rate); subs REQUEST it
+# via crew router's POST /jobs/{id}/claim, optionally countering the rate.
+# These three endpoints are where the office reviews and decides — the one
+# place a claim request actually becomes a schedule assignment.
+
+def _claim_request_row(r: JobClaimRequest, names_by_cid: dict) -> dict:
+    return {
+        "id": r.id,
+        "job_id": r.job_id,
+        "cleaner_id": r.cleaner_id,
+        "cleaner_name": names_by_cid.get(r.cleaner_id, r.cleaner_id),
+        "requested_rate": r.requested_rate,
+        "message": r.message,
+        "status": r.status,
+        "created_at": r.created_at.isoformat() if r.created_at else None,
+        "decided_at": r.decided_at.isoformat() if r.decided_at else None,
+    }
+
+
+@router.get("/{job_id}/claim-requests", dependencies=[Depends(require_role("admin", "manager"))])
+def list_claim_requests(job_id: int, db: Session = Depends(get_db), org_id: int = Depends(current_org_id)):
+    """All requests (pending and decided) for one posted job, newest first —
+    the office's review list. Cleaner IDs are resolved to display names in
+    one query rather than N (same pattern board_service uses elsewhere)."""
+    job = _get_owned_job(job_id, db, org_id)
+    rows = (db.query(JobClaimRequest)
+            .filter(JobClaimRequest.job_id == job.id)
+            .order_by(JobClaimRequest.created_at.desc())
+            .all())
+    cleaner_ids = {r.cleaner_id for r in rows}
+    names = {}
+    if cleaner_ids:
+        for u in db.query(User).filter(User.cleaner_id.in_(cleaner_ids)).all():
+            names[u.cleaner_id] = u.full_name or u.email
+    return {
+        "job_id": job.id,
+        "posted_rate": job.posted_rate,
+        "requests": [_claim_request_row(r, names) for r in rows],
+    }
+
+
+@router.post("/{job_id}/claim-requests/{request_id}/approve",
+             dependencies=[Depends(require_role("admin", "manager"))])
+def approve_claim_request(job_id: int, request_id: int, db: Session = Depends(get_db),
+                          org_id: int = Depends(current_org_id),
+                          current_user: User = Depends(require_role("admin", "manager"))):
+    """Approve one request: assigns the sub, sets the FINAL agreed_rate
+    (their counter if they made one, else the posted rate), closes the
+    offer, and auto-declines every other pending request on this job — a
+    job can only go to one winner. Runs the same conflict/availability
+    checks the office's normal assign flow uses (one implementation, no
+    drift) since this is the first point the sub is actually scheduled.
+
+    CONCURRENCY (scheduling-invariants R5): the Job row is locked and
+    open_for_claims re-read under that lock. This is the step the old
+    first-come-first-served claim used to lock, and it needs it more: two
+    approvals racing (two office logins, or one impatient double-tap on a
+    slow phone) would otherwise both pass the open check, put BOTH subs on
+    the job, leave agreed_rate at whichever write landed last, and send two
+    people a "You got the job!" push. On Postgres this is SELECT ... FOR
+    UPDATE; SQLite serializes writers.
+    """
+    org_id = resolve_org_id(org_id, db)
+    job = _get_owned_job(job_id, db, org_id)
+    job = (db.query(Job).filter(Job.id == job.id).with_for_update().first())
+    req = db.query(JobClaimRequest).filter(
+        JobClaimRequest.id == request_id, JobClaimRequest.job_id == job.id,
+    ).with_for_update().first()
+    if not req:
+        raise HTTPException(status_code=404, detail="Request not found")
+    if req.status != "pending":
+        raise HTTPException(status_code=409, detail=f"This request is already {req.status}.")
+    if not job.open_for_claims:
+        raise HTTPException(status_code=409, detail="This job isn't open anymore.")
+
+    # No rate on either side means nobody has agreed what this job pays, and
+    # approving would schedule someone to work for an unstated amount. The
+    # crew app refuses to file such a request, so reaching here means the
+    # office cleared posted_rate after the request came in.
+    agreed = req.requested_rate if req.requested_rate is not None else job.posted_rate
+    if agreed is None:
+        raise HTTPException(
+            status_code=409,
+            detail="No rate agreed: this job has no posted rate and the request "
+                   "didn't name one. Set a posted rate before approving.")
+
+    conflicts = _find_cleaner_conflicts(
+        db, cleaner_ids=[req.cleaner_id], scheduled_date=job.scheduled_date,
+        start_time=job.start_time, end_time=job.end_time, exclude_job_id=job.id,
+        org_id=org_id,
+    )
+    if conflicts:
+        raise HTTPException(status_code=409, detail=_conflict_detail(conflicts))
+
+    now = datetime.now(timezone.utc)
+    job.cleaner_ids = [*(c for c in (job.cleaner_ids or []) if c != req.cleaner_id), req.cleaner_id]
+    job.agreed_rate = agreed
+    job.open_for_claims = False
+    req.status, req.decided_at, req.decided_by = "approved", now, current_user.id
+
+    others = (db.query(JobClaimRequest)
+              .filter(JobClaimRequest.job_id == job.id, JobClaimRequest.status == "pending",
+                      JobClaimRequest.id != req.id)
+              .all())
+    for other in others:
+        other.status, other.decided_at, other.decided_by = "declined", now, current_user.id
+
+    log_activity(
+        db, "job_claim_approved", job_id=job.id, client_id=job.client_id, actor="staff",
+        summary=f"Approved {req.cleaner_id}'s request at ${job.agreed_rate:,.2f}",
+        extra_data={"cleaner_id": req.cleaner_id, "agreed_rate": job.agreed_rate,
+                    "auto_declined": [o.id for o in others]},
+        commit=False,
+    )
+    db.commit()
+
+    try:
+        from services.push_service import notify_user
+        if req.user_id:
+            notify_user(req.user_id, "You got the job!",
+                        f"{job.title} on {job.scheduled_date} is yours "
+                        f"at ${job.agreed_rate:,.2f}.",
+                        url=f"/crew/jobs/{job.id}", category="crew")
+        for other in others:
+            if other.user_id:
+                notify_user(other.user_id, "Job request declined",
+                            f"Someone else got {job.title} on {job.scheduled_date}.",
+                            url="/crew", category="crew")
+    except Exception:
+        pass
+    return {"status": "approved", "job_id": job.id, "cleaner_id": req.cleaner_id,
+            "agreed_rate": job.agreed_rate}
+
+
+@router.post("/{job_id}/claim-requests/{request_id}/decline",
+             dependencies=[Depends(require_role("admin", "manager"))])
+def decline_claim_request(job_id: int, request_id: int, db: Session = Depends(get_db),
+                          org_id: int = Depends(current_org_id),
+                          current_user: User = Depends(require_role("admin", "manager"))):
+    """Decline a single request without approving anyone — the job stays
+    open for other pending requests (or new ones) unless the office also
+    turns off "Open to crew" separately."""
+    org_id = resolve_org_id(org_id, db)
+    job = _get_owned_job(job_id, db, org_id)
+    req = db.query(JobClaimRequest).filter(
+        JobClaimRequest.id == request_id, JobClaimRequest.job_id == job.id,
+    ).with_for_update().first()
+    if not req:
+        raise HTTPException(status_code=404, detail="Request not found")
+    if req.status != "pending":
+        raise HTTPException(status_code=409, detail=f"This request is already {req.status}.")
+    req.status = "declined"
+    req.decided_at = datetime.now(timezone.utc)
+    req.decided_by = current_user.id
+    db.commit()
+    try:
+        from services.push_service import notify_user
+        if req.user_id:
+            notify_user(req.user_id, "Job request declined",
+                        f"Your request for {job.title} on {job.scheduled_date} was declined.",
+                        url="/crew", category="crew")
+    except Exception:
+        pass
+    return {"status": "declined", "job_id": job.id, "request_id": req.id}
+
+
 @router.get("/{job_id}", dependencies=[Depends(require_role("admin", "manager", "viewer", "cleaner"))])
 def get_job(job_id: int, db: Session = Depends(get_db), org_id: int = Depends(current_org_id)):
     org_id = resolve_org_id(org_id, db)
@@ -2989,6 +3166,8 @@ def update_job(job_id: int, data: JobUpdate, db: Session = Depends(get_db), org_
         raise HTTPException(status_code=400, detail=f"Unknown pay_mode '{updates['pay_mode']}'")
     if updates.get("pay_rate_bump") is not None and updates["pay_rate_bump"] < 0:
         raise HTTPException(status_code=400, detail="pay_rate_bump cannot be negative")
+    if updates.get("posted_rate") is not None and updates["posted_rate"] <= 0:
+        raise HTTPException(status_code=400, detail="posted_rate must be positive")
     if "status" in updates and updates["status"] not in JOB_STATUSES \
             and updates["status"] != job.status:
         raise HTTPException(status_code=400, detail=f"Unknown status '{updates['status']}'")

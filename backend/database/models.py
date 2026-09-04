@@ -657,6 +657,13 @@ class Job(Base):
     # are claimable — an unassigned job is not automatically open). The first
     # successful claim adds the claimer to cleaner_ids and flips this back off.
     open_for_claims = Column(Boolean, default=False, nullable=False)
+    # Marketplace pivot (migration 097): the office's asking rate when a job
+    # is posted open, and the FINAL agreed rate once a request is approved
+    # (may differ from posted_rate — the winning sub may have countered).
+    # NULL posted_rate = not currently posted. Payroll/invoicing for a
+    # marketplace job should read agreed_rate, never posted_rate.
+    posted_rate = Column(Float, nullable=True)
+    agreed_rate = Column(Float, nullable=True)
     # (connecteam_shift_ids / connecteam_synced_schedule were dropped by
     # migration 079 with the Connecteam removal.)
 
@@ -864,6 +871,36 @@ class JobResponse(Base):
     __table_args__ = (
         UniqueConstraint("job_id", "cleaner_id", name="uq_job_response_job_cleaner"),
     )
+
+
+class JobClaimRequest(Base):
+    """A subcontractor's request to take an open (open_for_claims) job, with
+    an optional counter-offer on the office's posted_rate. Marketplace pivot
+    (migration 097) — replaces the old first-come-first-served instant claim.
+
+    Multiple pending rows can exist for the same job (several subs asking);
+    approving one auto-declines the rest (application logic — see
+    modules/scheduling/router.py's approve/decline-claim-request endpoints,
+    not a DB trigger, so the notification/activity-log side effects stay in
+    one place). One row per (job, cleaner) — a second request from the same
+    sub updates their existing pending row rather than duplicating it.
+    """
+    __tablename__ = "job_claim_requests"
+    org_id = Column(Integer, ForeignKey("orgs.id"), nullable=True, index=True)  # tenant scope (MT-1)
+
+    id = Column(Integer, primary_key=True, index=True)
+    job_id = Column(Integer, ForeignKey("jobs.id", ondelete="CASCADE"), nullable=False, index=True)
+    cleaner_id = Column(String, nullable=False, index=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    requested_rate = Column(Float, nullable=True)  # NULL = accepting posted_rate
+    message = Column(Text, nullable=True)
+    status = Column(String(16), nullable=False, default="pending")  # pending|approved|declined|withdrawn
+    created_at = Column(DateTime, default=_utcnow)
+    updated_at = Column(DateTime, default=_utcnow, onupdate=_utcnow)
+    decided_at = Column(DateTime, nullable=True)
+    decided_by = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+
+    job = relationship("Job")
 
 
 class CrewDoc(Base):

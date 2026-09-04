@@ -52,6 +52,11 @@ TENANT_TABLES = [
     # router.py) — see 095's docstring for why `users` itself is deliberately
     # NOT in this list yet.
     "user_google_accounts", "push_subscriptions",
+    # Marketplace claim requests (migration 097): who asked for which job and
+    # at what price. Org-scoped from creation. Added here at the same time as
+    # the table rather than in a later audit — 095 exists precisely because two
+    # tables carried org_id for months with no RLS backstop behind them.
+    "job_claim_requests",
     # `users` is DELIBERATELY excluded — re-audited 2026-08-16, still not safe.
     # Re-read this whole comment before adding it; don't re-derive from scratch.
     #

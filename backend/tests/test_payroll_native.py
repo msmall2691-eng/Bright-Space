@@ -57,7 +57,8 @@ def _mk_cleaner(ids, cleaner_id, res_rate=None, rental_rate=None, deep_rate=None
     return uid
 
 
-def _mk_job(ids, job_type="residential", turnover_rate=None, pay_mode=None):
+def _mk_job(ids, job_type="residential", turnover_rate=None, pay_mode=None,
+            agreed_rate=None, cleaner_ids=None):
     db = SessionLocal()
     c = Client(name=f"Pay {uuid.uuid4().hex[:6]}", status="active", org_id=1)
     db.add(c); db.commit(); db.refresh(c); ids["clients"].append(c.id)
@@ -66,8 +67,9 @@ def _mk_job(ids, job_type="residential", turnover_rate=None, pay_mode=None):
                  org_id=1, turnover_rate=turnover_rate)
     db.add(p); db.commit(); db.refresh(p); ids["properties"].append(p.id)
     j = Job(client_id=c.id, property_id=p.id, job_type=job_type, title="Job",
-            scheduled_date=date(2026, 1, 5), status="scheduled", cleaner_ids=[], org_id=1,
-            pay_mode=pay_mode)
+            scheduled_date=date(2026, 1, 5), status="scheduled",
+            cleaner_ids=cleaner_ids or [], org_id=1,
+            pay_mode=pay_mode, agreed_rate=agreed_rate)
     db.add(j); db.commit(); db.refresh(j); ids["jobs"].append(j.id)
     jid = j.id; db.close()
     return jid
@@ -596,5 +598,96 @@ def test_native_shift_detail_carries_job_and_property_ids(ids):
         unlinked = by_id[f"native:{e_unlinked}"]
         assert unlinked["job_id"] is None
         assert unlinked["property_id"] is None
+    finally:
+        _clear()
+
+
+# ── Marketplace jobs: the agreed rate is the pay ────────────────────────────
+#
+# A job whose claim request was approved carries agreed_rate — the flat price
+# a subcontractor negotiated for the whole job (migration 097). Before this,
+# payroll never read the column: the office would post $95, approve $95, and
+# the sub's cheque would come out of pay_rate_residential × hours. The number
+# both sides shook on reached the database and stopped there.
+#
+# The hourly/piece ladder is the EMPLOYEE model and doesn't apply to a sub, so
+# a marketplace job short-circuits it entirely and gets its own bucket rather
+# than inflating the residential/rental numbers.
+
+def test_marketplace_job_pays_the_agreed_rate_not_the_hourly_rate(ids):
+    cid = f"CT-{uuid.uuid4().hex[:6]}"
+    _mk_cleaner(ids, cid, res_rate=25.0, name="Sub Contractor")
+    jid = _mk_job(ids, "residential", agreed_rate=95.0, cleaner_ids=[cid])
+    _mk_entry(ids, cid, _dt(2026, 1, 5, 9), _dt(2026, 1, 5, 12), job_id=jid)   # 3h
+    api = _admin_api()
+    try:
+        emp = _emp(_summary(api, "2026-01-05", "2026-01-05"), cid)
+        assert emp["marketplace_jobs"] == 1
+        assert emp["marketplace_pay"] == 95.0     # the agreed price...
+        assert emp["marketplace_hours"] == 3.0    # ...hours still tracked for the timesheet
+        # NOT 3h × $25 — and it never touches the employee buckets.
+        assert emp["residential_hours"] == 0.0
+        assert emp["residential_pay"] == 0.0
+        assert emp["gross_pay"] == 95.0
+    finally:
+        _clear()
+
+
+def test_two_punches_on_one_marketplace_job_are_one_flat_payment(ids):
+    # A sub who clocks out for lunch and back in has worked one job for one
+    # agreed price, not two.
+    cid = f"CT-{uuid.uuid4().hex[:6]}"
+    _mk_cleaner(ids, cid)
+    jid = _mk_job(ids, "residential", agreed_rate=120.0, cleaner_ids=[cid])
+    _mk_entry(ids, cid, _dt(2026, 1, 5, 9), _dt(2026, 1, 5, 11), job_id=jid)
+    _mk_entry(ids, cid, _dt(2026, 1, 5, 12), _dt(2026, 1, 5, 14), job_id=jid)
+    api = _admin_api()
+    try:
+        emp = _emp(_summary(api, "2026-01-05", "2026-01-05"), cid)
+        assert emp["marketplace_jobs"] == 1
+        assert emp["marketplace_pay"] == 120.0    # once, not twice
+        assert emp["marketplace_hours"] == 4.0
+        assert emp["gross_pay"] == 120.0
+    finally:
+        _clear()
+
+
+def test_an_agreed_rate_only_pays_the_cleaner_it_was_agreed_with(ids):
+    # agreed_rate is one sub's negotiated price for the job. A second cleaner
+    # who worked the same job but isn't on it gets the ordinary hourly
+    # treatment — the flat price is not a per-head bounty.
+    sub = f"CT-{uuid.uuid4().hex[:6]}"
+    helper = f"CT-{uuid.uuid4().hex[:6]}"
+    _mk_cleaner(ids, sub, name="The Sub")
+    _mk_cleaner(ids, helper, res_rate=30.0, name="Not The Sub")
+    jid = _mk_job(ids, "residential", agreed_rate=100.0, cleaner_ids=[sub])
+    _mk_entry(ids, sub, _dt(2026, 1, 5, 9), _dt(2026, 1, 5, 11), job_id=jid)
+    _mk_entry(ids, helper, _dt(2026, 1, 5, 9), _dt(2026, 1, 5, 11), job_id=jid)
+    api = _admin_api()
+    try:
+        body = _summary(api, "2026-01-05", "2026-01-05")
+        assert _emp(body, sub)["marketplace_pay"] == 100.0
+        other = _emp(body, helper)
+        assert other["marketplace_pay"] == 0.0
+        assert other["residential_pay"] == 60.0     # 2h × $30, the employee path
+    finally:
+        _clear()
+
+
+def test_an_ordinary_job_is_untouched_by_the_marketplace_branch(ids):
+    # agreed_rate is NULL on every job that never went through the
+    # marketplace, which is most of them — the employee model must be
+    # exactly as it was.
+    cid = f"CT-{uuid.uuid4().hex[:6]}"
+    _mk_cleaner(ids, cid, res_rate=20.0)
+    jid = _mk_job(ids, "residential", cleaner_ids=[cid])   # no agreed_rate
+    _mk_entry(ids, cid, _dt(2026, 1, 5, 9), _dt(2026, 1, 5, 12), job_id=jid)
+    api = _admin_api()
+    try:
+        emp = _emp(_summary(api, "2026-01-05", "2026-01-05"), cid)
+        assert emp["marketplace_jobs"] == 0 and emp["marketplace_pay"] == 0.0
+        assert emp["residential_hours"] == 3.0
+        assert emp["residential_pay"] == 60.0
+        assert emp["gross_pay"] == 60.0
     finally:
         _clear()
