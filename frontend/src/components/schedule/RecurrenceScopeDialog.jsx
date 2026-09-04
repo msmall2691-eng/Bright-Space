@@ -27,13 +27,23 @@ const SCOPES = [
   {
     value: 'future',
     label: 'This and all future visits',
-    detail: 'This visit and every one after it switch to the new day, time, and crew.',
+    // Says "starts over" because that is literally what the backend does:
+    // split_schedule retires this series by end-date and creates a new one,
+    // then cancels and regenerates every future visit with new ids. Skips and
+    // reschedules recorded on the old series do NOT come across. Calling that
+    // "switch to the new day and time" undersold it to the point of being a
+    // different operation than the one described.
+    detail: 'The series starts over from this visit — every later visit is rebuilt, '
+          + 'and any skips or reschedules you set on individual visits are not carried over.',
     icon: CalendarRange,
   },
   {
     value: 'all',
     label: 'All visits in the series',
-    detail: 'Every visit already on the calendar, past and future, updates to match.',
+    // WAS "past and future". That was false: _resync_future_jobs filters
+    // scheduled_date >= today, so a past visit is never touched. Saying
+    // otherwise invited the owner to expect history to move.
+    detail: 'Every upcoming visit updates to match. Visits already done stay as they were.',
     icon: CalendarDays,
   },
 ]
