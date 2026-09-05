@@ -17,7 +17,7 @@ from fastapi.testclient import TestClient
 
 from main import app
 from database.db import SessionLocal
-from database.models import Client, Property, Job, JobClaimRequest
+from database.models import Client, Property, Job, JobClaimRequest, JobResponse
 from modules.auth.router import get_current_user, current_org_id
 from utils.dates import business_today
 
@@ -61,6 +61,7 @@ def ids():
     yield ids
     db = SessionLocal()
     db.query(JobClaimRequest).filter(JobClaimRequest.job_id.in_(ids["jobs"] or [0])).delete(synchronize_session=False)
+    db.query(JobResponse).filter(JobResponse.job_id.in_(ids["jobs"] or [0])).delete(synchronize_session=False)
     db.query(Job).filter(Job.id.in_(ids["jobs"] or [0])).delete(synchronize_session=False)
     db.query(Property).filter(Property.id.in_(ids["properties"] or [0])).delete(synchronize_session=False)
     db.query(Client).filter(Client.id.in_(ids["clients"] or [0])).delete(synchronize_session=False)
@@ -303,3 +304,78 @@ def test_job_claim_requests_is_covered_by_row_level_security():
     org-scoped-but-unprotected for months; this asserts 097 didn't repeat it."""
     from database.rls import TENANT_TABLES
     assert "job_claim_requests" in TENANT_TABLES
+
+
+# ── the winner is not "no answer yet" ───────────────────────────────────────
+#
+# Asking for a job IS accepting it. The old first-come claim seeded an accepted
+# JobResponse for exactly that reason; the marketplace pivot dropped it, so the
+# office's job detail — which reads these rows — showed the approved sub as
+# having gone quiet on work they went and asked for.
+
+def _responses(jid):
+    db = SessionLocal()
+    out = {r.cleaner_id: r.response for r in
+           db.query(JobResponse).filter(JobResponse.job_id == jid).all()}
+    db.close()
+    return out
+
+
+def test_approving_marks_the_winner_as_accepted(ids):
+    jid = _mk_open_job(ids, posted_rate=80.0)
+    try:
+        api = _as(_Cleaner(9930, "CT-930")); api.post(f"/api/crew/jobs/{jid}/claim")
+        _clear()
+        office = _as(_Admin())
+        req_id = office.get(f"/api/jobs/{jid}/claim-requests").json()["requests"][0]["id"]
+        assert office.post(f"/api/jobs/{jid}/claim-requests/{req_id}/approve").status_code == 200
+
+        assert _responses(jid) == {"CT-930": "accepted"}
+    finally:
+        _clear()
+
+
+def test_only_the_winner_is_marked_accepted(ids):
+    # The auto-declined others must not read as having accepted anything.
+    jid = _mk_open_job(ids, posted_rate=80.0)
+    try:
+        a = _as(_Cleaner(9931, "CT-931")); a.post(f"/api/crew/jobs/{jid}/claim")
+        _clear()
+        b = _as(_Cleaner(9932, "CT-932")); b.post(f"/api/crew/jobs/{jid}/claim")
+        _clear()
+
+        office = _as(_Admin())
+        reqs = {r["cleaner_id"]: r["id"]
+                for r in office.get(f"/api/jobs/{jid}/claim-requests").json()["requests"]}
+        office.post(f"/api/jobs/{jid}/claim-requests/{reqs['CT-931']}/approve")
+
+        assert _responses(jid) == {"CT-931": "accepted"}
+    finally:
+        _clear()
+
+
+def test_an_old_decline_does_not_outlive_winning_the_job(ids):
+    # A sub who declined this job earlier, then asked for it and won, is on it.
+    # Leaving the stale decline would show the office a red flag on the person
+    # they just picked.
+    jid = _mk_open_job(ids, posted_rate=80.0)
+    try:
+        db = SessionLocal()
+        db.add(JobResponse(org_id=1, job_id=jid, cleaner_id="CT-933",
+                           response="declined", reason="was busy"))
+        db.commit(); db.close()
+
+        api = _as(_Cleaner(9933, "CT-933")); api.post(f"/api/crew/jobs/{jid}/claim")
+        _clear()
+        office = _as(_Admin())
+        req_id = office.get(f"/api/jobs/{jid}/claim-requests").json()["requests"][0]["id"]
+        office.post(f"/api/jobs/{jid}/claim-requests/{req_id}/approve")
+
+        assert _responses(jid) == {"CT-933": "accepted"}
+        db = SessionLocal()
+        row = db.query(JobResponse).filter(JobResponse.job_id == jid,
+                                           JobResponse.cleaner_id == "CT-933").first()
+        assert row.reason is None, "the old reason must not survive the acceptance"
+        db.close()
+    finally:
+        _clear()

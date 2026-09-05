@@ -11,6 +11,7 @@ import { formatDateShort as fmtDate } from '../utils/format'
 import { canEdit } from '../utils/perms'
 import InlineSelect from '../components/InlineSelect'
 import InlineEditField from '../components/InlineEditField'
+import QuoteLineEditor from '../components/quoting/QuoteLineEditor'
 import RecordSkeleton from '../components/record/RecordSkeleton'
 import { EmptyState } from '../components/ui'
 import JobCreateModal from '../components/JobCreateModal'
@@ -382,43 +383,14 @@ export default function QuoteDetail() {
 
           {/* ── Center: line items + notes ────────────────────────── */}
           <div className="min-w-0 space-y-4">
-            <div className="bg-panel border border-hairline rounded-xl overflow-hidden">
-              <table className="w-full text-[13px]">
-                <thead>
-                  <tr className="text-[10px] uppercase tracking-wide text-ink-3 border-b border-hairline">
-                    <th className="text-left font-medium px-3 py-2">Item</th>
-                    <th className="text-right font-medium px-3 py-2 w-14">Qty</th>
-                    <th className="text-right font-medium px-3 py-2 w-24">Unit</th>
-                    <th className="text-right font-medium px-3 py-2 w-24">Amount</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {items.length === 0 ? (
-                    <tr><td colSpan={4} className="text-center text-ink-3 italic py-6">No line items</td></tr>
-                  ) : items.map((it, i) => {
-                    const qty = Number(it.qty ?? it.quantity ?? 1)
-                    const unit = Number(it.unit_price ?? it.price ?? 0)
-                    return (
-                      <tr key={i} className="border-b border-hairline/60 last:border-0">
-                        <td className="px-3 py-2 text-ink">
-                          <div>{it.name || it.description || 'Item'}</div>
-                          {it.name && it.description && <div className="text-[11px] text-ink-3">{it.description}</div>}
-                        </td>
-                        <td className="px-3 py-2 text-right text-ink-2">{qty}</td>
-                        <td className="px-3 py-2 text-right text-ink-2">{money(unit)}</td>
-                        <td className="px-3 py-2 text-right text-ink">{money(qty * unit)}</td>
-                      </tr>
-                    )
-                  })}
-                </tbody>
-              </table>
-              <div className="border-t border-hairline px-3 py-2 space-y-1 text-[13px]">
-                <div className="flex justify-between text-ink-2"><span>Subtotal</span><span>{money(quote.subtotal)}</span></div>
-                {quote.discount ? <div className="flex justify-between text-ink-2"><span>Discount</span><span>-{money(quote.discount)}</span></div> : null}
-                <div className="flex justify-between text-ink-2"><span>Tax{quote.tax_rate ? ` (${quote.tax_rate}%)` : ''}</span><span>{money(quote.tax)}</span></div>
-                <div className="flex justify-between font-semibold text-ink pt-1 border-t border-hairline"><span>Total</span><span>{money(quote.total)}</span></div>
-              </div>
-            </div>
+            {/* Editable in place: the quote page is where a quote is read, so
+                it has to be where a price is changed. The old read-only table
+                meant the only editor lived on another page, reachable by
+                knowing to click a row there — "I'm not able to edit the quotes
+                easily." The server recomputes every total; nothing here stores
+                its own arithmetic. */}
+            <QuoteLineEditor quote={quote} editable={editable}
+              onSaved={(updated) => setQuote(q => ({ ...q, ...updated }))} />
 
             <div className="bg-panel border border-hairline rounded-xl p-4 space-y-4">
               <div>

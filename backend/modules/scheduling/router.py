@@ -14,6 +14,13 @@ from database.models import (
     Job, Client, ICalEvent, CleanerTimeOff, JobClaimRequest, Property,
     RecurrenceException, AppSetting, User,
 )
+# Aliased, and it must stay aliased: this module defines its own Pydantic
+# `JobResponse` schema below, which would shadow a plain import of the ORM
+# model of the same name — the class statement wins, and the claim-approval
+# path would try to write a request schema to the database. The existing
+# `_JobResponse` local imports elsewhere in this file exist for the same
+# reason.
+from database.models import JobResponse as JobResponseRow
 from modules.auth.router import get_current_user, require_role, current_org_id, resolve_org_id
 from utils.activity_logger import (
     log_job_created, log_job_status_change, log_calendar_event, log_activity
@@ -2799,6 +2806,30 @@ def approve_claim_request(job_id: int, request_id: int, db: Session = Depends(ge
     job.agreed_rate = agreed
     job.open_for_claims = False
     req.status, req.decided_at, req.decided_by = "approved", now, current_user.id
+
+    # Asking for a job IS accepting it, so the office board must not show the
+    # winner as "no answer yet" on work they went and asked for. The old
+    # first-come claim seeded this response for exactly that reason and the
+    # marketplace pivot dropped it; job detail reads these rows (see the crew
+    # responses block) and looked like the sub had gone quiet.
+    #
+    # Naive UTC to match every other write to this table — job_responses stores
+    # naive datetimes, and an aware value here is naive on SQLite and aware on
+    # Postgres, which is the timestamp hazard that bites arithmetic later.
+    resp_now = now.replace(tzinfo=None)
+    existing_resp = (db.query(JobResponseRow)
+                     .filter(JobResponseRow.job_id == job.id,
+                             JobResponseRow.cleaner_id == req.cleaner_id)
+                     .first())
+    if existing_resp:
+        # A stale decline from a previous round on this job must not outlive
+        # the sub asking for it again and winning.
+        existing_resp.response, existing_resp.reason = "accepted", None
+        existing_resp.updated_at = resp_now
+    else:
+        db.add(JobResponseRow(org_id=org_id, job_id=job.id, cleaner_id=req.cleaner_id,
+                              user_id=req.user_id, response="accepted",
+                              created_at=resp_now, updated_at=resp_now))
 
     others = (db.query(JobClaimRequest)
               .filter(JobClaimRequest.job_id == job.id, JobClaimRequest.status == "pending",
