@@ -2793,92 +2793,18 @@ def approve_claim_request(job_id: int, request_id: int, db: Session = Depends(ge
     ).with_for_update().first()
     if not req:
         raise HTTPException(status_code=404, detail="Request not found")
-    if req.status != "pending":
-        raise HTTPException(status_code=409, detail=f"This request is already {req.status}.")
-    if not job.open_for_claims:
-        raise HTTPException(status_code=409, detail="This job isn't open anymore.")
 
-    # No rate on either side means nobody has agreed what this job pays, and
-    # approving would schedule someone to work for an unstated amount. The
-    # crew app refuses to file such a request, so reaching here means the
-    # office cleared posted_rate after the request came in.
-    agreed = req.requested_rate if req.requested_rate is not None else job.posted_rate
-    if agreed is None:
-        raise HTTPException(
-            status_code=409,
-            detail="No rate agreed: this job has no posted rate and the request "
-                   "didn't name one. Set a posted rate before approving.")
-
-    conflicts = _find_cleaner_conflicts(
-        db, cleaner_ids=[req.cleaner_id], scheduled_date=job.scheduled_date,
-        start_time=job.start_time, end_time=job.end_time, exclude_job_id=job.id,
-        org_id=org_id,
-    )
-    if conflicts:
-        raise HTTPException(status_code=409, detail=_conflict_detail(conflicts))
-
-    now = datetime.now(timezone.utc)
-    job.cleaner_ids = [*(c for c in (job.cleaner_ids or []) if c != req.cleaner_id), req.cleaner_id]
-    job.agreed_rate = agreed
-    job.open_for_claims = False
-    req.status, req.decided_at, req.decided_by = "approved", now, current_user.id
-
-    # Asking for a job IS accepting it, so the office board must not show the
-    # winner as "no answer yet" on work they went and asked for. The old
-    # first-come claim seeded this response for exactly that reason and the
-    # marketplace pivot dropped it; job detail reads these rows (see the crew
-    # responses block) and looked like the sub had gone quiet.
-    #
-    # Naive UTC to match every other write to this table — job_responses stores
-    # naive datetimes, and an aware value here is naive on SQLite and aware on
-    # Postgres, which is the timestamp hazard that bites arithmetic later.
-    resp_now = now.replace(tzinfo=None)
-    existing_resp = (db.query(JobResponseRow)
-                     .filter(JobResponseRow.job_id == job.id,
-                             JobResponseRow.cleaner_id == req.cleaner_id)
-                     .first())
-    if existing_resp:
-        # A stale decline from a previous round on this job must not outlive
-        # the sub asking for it again and winning.
-        existing_resp.response, existing_resp.reason = "accepted", None
-        existing_resp.updated_at = resp_now
-    else:
-        db.add(JobResponseRow(org_id=org_id, job_id=job.id, cleaner_id=req.cleaner_id,
-                              user_id=req.user_id, response="accepted",
-                              created_at=resp_now, updated_at=resp_now))
-
-    others = (db.query(JobClaimRequest)
-              .filter(JobClaimRequest.job_id == job.id, JobClaimRequest.status == "pending",
-                      JobClaimRequest.id != req.id)
-              .all())
-    for other in others:
-        other.status, other.decided_at, other.decided_by = "declined", now, current_user.id
-
-    log_activity(
-        db, "job_claim_approved", job_id=job.id, client_id=job.client_id, actor="staff",
-        summary=f"Approved {req.cleaner_id}'s request at ${job.agreed_rate:,.2f}",
-        extra_data={"cleaner_id": req.cleaner_id, "agreed_rate": job.agreed_rate,
-                    "auto_declined": [o.id for o in others]},
-        commit=False,
-    )
-    db.commit()
-
+    # The approval itself lives in services/claim_approval.py (R6, and so the
+    # auto-approver calls the SAME code rather than a second copy of it). The
+    # locks above stay here: they belong to the transaction this handler owns.
+    from services.claim_approval import ClaimApprovalError, approve
     try:
-        from services.push_service import notify_user
-        if req.user_id:
-            notify_user(req.user_id, "You got the job!",
-                        f"{job.title} on {job.scheduled_date} is yours "
-                        f"at ${job.agreed_rate:,.2f}.",
-                        url=f"/crew/jobs/{job.id}", category="crew")
-        for other in others:
-            if other.user_id:
-                notify_user(other.user_id, "Job request declined",
-                            f"Someone else got {job.title} on {job.scheduled_date}.",
-                            url="/crew", category="crew")
-    except Exception:
-        pass
-    return {"status": "approved", "job_id": job.id, "cleaner_id": req.cleaner_id,
-            "agreed_rate": job.agreed_rate}
+        return approve(db, job, req, org_id=org_id, actor_user_id=current_user.id,
+                       find_conflicts=_find_cleaner_conflicts,
+                       conflict_detail=_conflict_detail,
+                       log_activity=log_activity)
+    except ClaimApprovalError as e:
+        raise HTTPException(status_code=e.status, detail=e.message)
 
 
 @router.post("/{job_id}/claim-requests/{request_id}/decline",

@@ -13,6 +13,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { MapPin, LogOut, RefreshCw, CalendarDays, Clock, Car, DollarSign, CheckCircle2, CalendarRange, CircleUserRound, Sparkles, BookOpen, MessageSquare, Sun, CalendarClock, CalendarOff, Smartphone, CalendarPlus, ShieldCheck } from 'lucide-react'
 import { get, post, patch, logout } from '../api'
+import { toast } from '../utils/toastBus'
 import { EmptyState, ErrorState, Skeleton } from '../components/ui'
 import JobPhotoSheet from '../components/crew/JobPhotoSheet'
 import CrewProfile from '../components/crew/CrewProfile'
@@ -462,13 +463,20 @@ export default function MyDay() {
     setActionBusy(true); setActionError(null)
     const raw = String(claimRate).trim()
     try {
-      await post(`/api/crew/jobs/${claimJob.id}/claim`, {
+      const res = await post(`/api/crew/jobs/${claimJob.id}/claim`, {
         // Empty means "your price is fine" — send null, not 0, or the server
         // reads it as an offer to work for nothing.
         requested_rate: raw === '' ? null : Number(raw),
         message: claimMessage.trim() || null,
       })
       setClaimJob(null); setClaimRate(''); setClaimMessage('')
+      // When the office has auto-approval on and nothing needed deciding, the
+      // job is already theirs by the time this returns. Saying "we'll let you
+      // know" then would be false, and the version of false that makes someone
+      // ring the office to ask.
+      toast.success(res?.auto_approved
+        ? 'It’s yours — it’s on your schedule now.'
+        : 'Request sent. The office will get back to you.')
       await fetchDay(true)
     }
     catch (e) {

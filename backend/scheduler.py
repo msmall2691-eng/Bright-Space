@@ -423,6 +423,20 @@ def schedule_audit_tick() -> dict:
         except Exception:
             log.exception("[sub-vetting] expiry pass failed (schedule audit continues)")
 
+        # The weekly bench digest rides this tick too (R1). It is its own
+        # once-a-week gate — day-of-week plus a date marker, so a redeploy
+        # mid-morning can't send a second copy — and it stays silent in a week
+        # with nothing to decide, because a message that always arrives is a
+        # message nobody opens.
+        try:
+            from services.bench_digest import due_today, send
+            if due_today(db):
+                outcome = send(db, org_id=1)
+                if outcome.get("sent"):
+                    log.info("[bench-digest] sent: %s", " · ".join(outcome["lines"]))
+        except Exception:
+            log.exception("[bench-digest] pass failed (schedule audit continues)")
+
         from modules.scheduling.router import find_schedule_issues
         issues = find_schedule_issues(db)
         c = issues.get("counts", {})

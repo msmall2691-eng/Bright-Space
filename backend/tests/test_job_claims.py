@@ -144,8 +144,13 @@ def test_open_listing_hides_access_and_request_stays_open_for_others(ids):
         r = api.post(f"/api/crew/jobs/{jid}/claim", json={"requested_rate": 90.0,
                                                          "message": "I can do this one"})
         assert r.status_code == 200, r.text
+        # `auto_approved` is new in Phase 6 and deliberately part of this shape:
+        # it's the only way the crew app can say "it's yours" instead of "we'll
+        # let you know" on the one path where that's true. False here because
+        # the auto-approval rule is off by default, which is itself the point.
         assert r.json() == {"job_id": jid, "status": "pending",
-                            "requested_rate": 90.0, "message": "I can do this one"}
+                            "requested_rate": 90.0, "message": "I can do this one",
+                            "auto_approved": False}
 
         # Not assigned yet — still just a request. Office decides.
         state = _job(jid)

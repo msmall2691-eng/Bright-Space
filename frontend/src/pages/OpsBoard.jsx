@@ -46,6 +46,7 @@ import ProposalsQueue, { relTime } from '../components/board/ProposalsQueue'
 import AgentHelp from '../components/board/AgentHelp'
 import { MoneyToday, CrewToday, FeedHealth, RecurringHealth } from '../components/board/SnapshotBoxes'
 import { MoneyTrend, LeadFunnel } from '../components/board/Charts'
+import BenchDigest from '../components/BenchDigest'
 import SubNav from '../components/ui/SubNav'
 import { useUnreadCount } from '../hooks/useUnreadCount'
 import { currentRole } from '../nav/routes'
@@ -672,6 +673,14 @@ export default function OpsBoard() {
         </div>
 
         <DailyBrief />
+
+        {/* The bench, once a week's worth of decisions have accumulated. Draws
+            nothing at all in a quiet week — an owner scanning this page should
+            only stop where there's something to do, and a permanent all-clear
+            box trains people to skip the spot the real thing will appear in. */}
+        <div className="mt-3">
+          <BenchDigest />
+        </div>
 
         {note && (
           /* Quiet hairline card + emerald check — not a tinted banner. */

@@ -5922,6 +5922,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/dashboard/bench": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Bench Digest
+         * @description This week on the bench, on demand.
+         *
+         *     The same thing the Wednesday round-up sends, readable whenever somebody
+         *     wants it. One function builds both (R6) — a digest that disagreed with the
+         *     screen it links to would be worse than no digest.
+         */
+        get: operations["bench_digest_api_dashboard_bench_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/cleanup/scan": {
         parameters: {
             query?: never;
@@ -19125,6 +19149,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    bench_digest_api_dashboard_bench_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
                 };
             };
         };

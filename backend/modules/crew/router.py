@@ -936,20 +936,45 @@ def claim_job(
     db.commit()
     db.refresh(request)
 
+    # Auto-approval (Phase 6), OFF by default. Runs here rather than on a tick
+    # so the answer is instant — a sub who asks for a posted job at the posted
+    # price on a bench they're cleared for gets told it's theirs while they're
+    # still looking at the offer, instead of waiting for the office to click a
+    # button that was never going to say anything else.
+    #
+    # It refuses far more than it acts (see services/claim_autoapprove.py) and
+    # a refusal is not visible to the sub: their request simply stays pending,
+    # exactly as before, and the office looks at it.
+    auto = {"auto_approved": False}
     try:
-        from services.push_service import notify_staff
-        notify_staff(
-            db, "Job request",
-            f"{who} wants {job.title} on {when}{rate_note}"
-            + (f' — "{msg}"' if msg else "") + ". Review it in Schedule.",
-            url=f"/jobs/{job.id}", tag=f"job-claim-{job.id}", org_id=oid,
-            category="crew",
-        )
+        from services.claim_autoapprove import consider
+        auto = consider(db, job, request, org_id=oid)
     except Exception:
-        log.exception("push notify failed on claim_job")
+        log.exception("auto-approve failed on claim_job")
+    if auto.get("auto_approved"):
+        db.refresh(request)
+
+    if not auto.get("auto_approved"):
+        # No "review it" push for something already decided — the office being
+        # told to go and approve a job that is already assigned is how an
+        # automation stops being trusted.
+        try:
+            from services.push_service import notify_staff
+            notify_staff(
+                db, "Job request",
+                f"{who} wants {job.title} on {when}{rate_note}"
+                + (f' — "{msg}"' if msg else "") + ". Review it in Schedule.",
+                url=f"/jobs/{job.id}", tag=f"job-claim-{job.id}", org_id=oid,
+                category="crew",
+            )
+        except Exception:
+            log.exception("push notify failed on claim_job")
 
     return {"job_id": job.id, "status": request.status, "requested_rate": request.requested_rate,
-            "message": request.message}
+            "message": request.message,
+            # So the crew app can say "it's yours" instead of "we'll let you
+            # know" on the one path where that's true.
+            "auto_approved": bool(auto.get("auto_approved"))}
 
 
 # ── My file: the vetting documents (migration 098) ──────────────────────────
