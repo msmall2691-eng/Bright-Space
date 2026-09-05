@@ -663,6 +663,33 @@ def generate_jobs(db: Session, sched: RecurringSchedule) -> int:
     if timeless:
         db.flush()
 
+    # Routes (migration 100): resolved once per call, not per occurrence — a
+    # schedule's route membership can't change midway through generating its
+    # own dates. `route_share` stays None for the overwhelming majority of
+    # schedules, which is what keeps this a no-op for everything that isn't on
+    # a route.
+    route_share, route_owner = None, None
+    try:
+        from database.models import Route, RouteMember
+        from services.routes import shares_by_schedule
+
+        _rt = (db.query(Route)
+               .join(RouteMember, RouteMember.route_id == Route.id)
+               .filter(RouteMember.recurring_schedule_id == sched.id,
+                       Route.status == "active")
+               .first())
+        if _rt is not None and _rt.owner_cleaner_id:
+            _share = shares_by_schedule(db, _rt).get(sched.id)
+            # A zero share would pay nothing at all (payroll's flat-rate branch
+            # is gated on agreed_rate > 0), so treat it as "not priced" and let
+            # the schedule's own crew stand rather than silently assigning
+            # someone to unpaid work.
+            if _share and _share > 0:
+                route_share, route_owner = _share, _rt.owner_cleaner_id
+    except Exception:
+        # A broken route must never stop the calendar being generated.
+        logger.exception("[recurring] route lookup failed for schedule %s", sched.id)
+
     # Availability guards — mirror the one-off create path (create_job) so a
     # recurring occurrence never SILENTLY double-books a cleaner, books someone
     # on approved time off, or blows past the daily cap. Reuses the scheduling
@@ -728,6 +755,15 @@ def generate_jobs(db: Session, sched: RecurringSchedule) -> int:
             notes=sched.notes,
             org_id=sched.org_id,  # MT-2: inherit the schedule's tenant
         )
+        # Routes (migration 100): a house inside an ACTIVE route belongs to that
+        # route's owner at that route's price, so the occurrence is assigned and
+        # priced here rather than being offered to anyone. The arithmetic lives
+        # in services/routes.py — routers route (R6), and a second copy of the
+        # calculation that decides what somebody is paid is not a thing to have.
+        if route_share is not None:
+            job.cleaner_ids = [route_owner]
+            job.agreed_rate = route_share      # the flat-rate path payroll pays
+            job.open_for_claims = False        # a route job never goes on the board
         # Race-safe: if a concurrent /generate-all already inserted this row,
         # the partial unique index added in migration 004 raises IntegrityError;
         # roll back the savepoint and treat as already-exists.

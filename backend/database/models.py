@@ -998,6 +998,70 @@ class SubPayout(Base):
     updated_at = Column(DateTime, default=_utcnow, onupdate=_utcnow)
 
 
+class Route(Base):
+    """A standing block of recurring work owned by one subcontractor
+    (migration 100).
+
+    The marketplace (097) fits one-off work: post, request, approve, done.
+    Recurring work is most of the book and re-bidding the same Tuesday house
+    every week serves nobody — so a route is offered ONCE, accepted once, and
+    then simply happens.
+
+    `rate` is per occurrence of the whole block. Generation splits it across
+    that occurrence's jobs into Job.agreed_rate, which is the flat-rate path
+    payroll already pays — see services/routes.py for the split, and note the
+    deliberate consequence that a route job is indistinguishable from an
+    approved marketplace job by the time it reaches money.
+
+    Offered, never assigned: a route a sub can decline is work they chose,
+    which is the same control point the marketplace claim provides and is
+    load-bearing for contractor classification.
+    """
+    __tablename__ = "routes"
+    org_id = Column(Integer, ForeignKey("orgs.id"), nullable=True, index=True)  # tenant scope (MT-1)
+
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String, nullable=False)
+    day_of_week = Column(Integer, nullable=False)      # 0=Mon … 6=Sun, display/grouping
+    owner_cleaner_id = Column(String, nullable=True, index=True)
+    backup_cleaner_id = Column(String, nullable=True)
+    rate = Column(Float, nullable=True)                # per occurrence, whole block
+    status = Column(String(16), nullable=False, default="draft")  # draft|offered|active|ended
+    offered_at = Column(DateTime, nullable=True)
+    accepted_at = Column(DateTime, nullable=True)
+    ended_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, default=_utcnow)
+    updated_at = Column(DateTime, default=_utcnow, onupdate=_utcnow)
+
+    members = relationship("RouteMember", back_populates="route",
+                           cascade="all, delete-orphan",
+                           order_by="RouteMember.position")
+
+
+class RouteMember(Base):
+    """One recurring schedule's place in a route, in drive order.
+
+    UNIQUE on recurring_schedule_id: a schedule in two routes means two people
+    are paid for one house.
+    """
+    __tablename__ = "route_members"
+    __table_args__ = (
+        UniqueConstraint("recurring_schedule_id", name="uq_route_members_schedule"),
+    )
+    org_id = Column(Integer, ForeignKey("orgs.id"), nullable=True, index=True)  # tenant scope (MT-1)
+
+    id = Column(Integer, primary_key=True, index=True)
+    route_id = Column(Integer, ForeignKey("routes.id", ondelete="CASCADE"),
+                      nullable=False, index=True)
+    recurring_schedule_id = Column(Integer,
+                                   ForeignKey("recurring_schedules.id", ondelete="CASCADE"),
+                                   nullable=False, index=True)
+    position = Column(Integer, nullable=False, default=0)
+    created_at = Column(DateTime, default=_utcnow)
+
+    route = relationship("Route", back_populates="members")
+    schedule = relationship("RecurringSchedule")
+
 class CrewDoc(Base):
     """One training / reference document for the crew (crew app Phase 5):
     cleaning standards, chemical guides, onboarding steps, policies. The

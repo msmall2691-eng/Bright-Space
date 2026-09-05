@@ -63,6 +63,9 @@ TENANT_TABLES = [
     # Subcontractor payouts (migration 099): the ledger of what is owed to
     # whom. Org-scoped from creation.
     "sub_payouts",
+    # Routes (migration 100): a standing block of recurring work, who owns it,
+    # and what it pays. Added with the tables, not in a later audit.
+    "routes", "route_members",
     # `users` is DELIBERATELY excluded — re-audited 2026-08-16, still not safe.
     # Re-read this whole comment before adding it; don't re-derive from scratch.
     #
