@@ -7313,6 +7313,34 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/crew/files": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Crew Files
+         * @description Who owes you a document, and what's sitting waiting for you to accept it.
+         *
+         *     The office's real question isn't "is this one person cleared" — it's "who
+         *     still owes me something". Before this you could only ask it one person at a
+         *     time, by opening a disclosure on each row of the staff list, which is how a
+         *     document gets uploaded on Tuesday and noticed in March.
+         *
+         *     One request for the whole roster (brightbase-economy). The counts at the
+         *     top are what tells you whether to open it at all.
+         */
+        get: operations["crew_files_api_crew_files_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/crew/unclaimed-ids": {
         parameters: {
             query?: never;
@@ -21464,6 +21492,26 @@ export interface operations {
         };
     };
     crew_roster_api_crew_roster_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    crew_files_api_crew_files_get: {
         parameters: {
             query?: never;
             header?: never;
