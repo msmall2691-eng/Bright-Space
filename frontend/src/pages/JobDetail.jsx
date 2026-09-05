@@ -6,6 +6,7 @@ import {
 } from 'lucide-react'
 import { get, patch, post, del, download } from '../api'
 import RecurrenceScopeDialog from '../components/schedule/RecurrenceScopeDialog'
+import JobClaimRequests from '../components/schedule/JobClaimRequests'
 import { rescheduleRecurringVisit } from '../utils/recurringReschedule'
 import { toast } from '../utils/toastBus'
 import { confirmDialog } from '../utils/confirmBus'
@@ -597,9 +598,12 @@ export default function JobDetail() {
                   onSelect={(v) => saveField({ job_type: v })} />
               </div>
               {canEdit() && job.status === 'scheduled' && (
-                /* Open-jobs board (crew app Phase 3): flip to show this job on
-                   every cleaner's phone with a Claim button. First claim adds
-                   them to the crew and turns this back off automatically. */
+                /* Open-jobs board: flip to show this job on every cleaner's
+                   phone. Since the marketplace pivot (migration 097) they
+                   REQUEST it rather than claiming instantly — the copy says
+                   "ask for it" because that's what the button on their phone
+                   now does, and promising a claim it can't deliver is how the
+                   two screens end up describing different products. */
                 <button
                   onClick={() => saveField({ open_for_claims: !job.open_for_claims })}
                   className={`w-full flex items-center justify-between gap-2 rounded-lg border px-3 py-2 text-[12px] font-medium transition-colors ${
@@ -608,14 +612,49 @@ export default function JobDetail() {
                       : 'border-hairline bg-panel text-ink-2 hover:bg-bg-2'}`}>
                   <span className="inline-flex items-center gap-1.5">
                     <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${job.open_for_claims ? 'bg-violet-500' : 'bg-ink-3/40'}`} aria-hidden="true" />
-                    {job.open_for_claims ? 'Open to crew — they can claim it' : 'Open to crew'}
+                    {job.open_for_claims ? 'Open to crew — they can ask for it' : 'Open to crew'}
                   </span>
                   <span className="text-[10px] uppercase tracking-wide opacity-70">
                     {job.open_for_claims ? 'On · tap to close' : 'Off'}
                   </span>
                 </button>
               )}
+              {canEdit() && job.open_for_claims && (
+                /* The asking price. Sits under the toggle because it only
+                   means anything while the job is posted, and a posted job
+                   with no number on it is one nobody can price their answer
+                   against — the crew app refuses a request against it. */
+                <div className="mt-2">
+                  <InlineEditField label="Asking rate" type="number" value={job.posted_rate}
+                    placeholder="Set what it pays"
+                    format={(v) => money(v)}
+                    onSave={(v) => saveField({ posted_rate: v == null ? null : Number(v) })} />
+                  {job.posted_rate == null && (
+                    <p className="mt-1 flex items-start gap-1.5 text-[11px] text-ink-2">
+                      <span className="mt-1 h-1.5 w-1.5 shrink-0 rounded-full bg-amber-500" aria-hidden="true" />
+                      <span>Nobody can ask for this until it has a price, or names their own.</span>
+                    </p>
+                  )}
+                </div>
+              )}
+              {canEdit() && job.agreed_rate != null && (
+                /* What the job actually pays, once someone was approved. Kept
+                   separate from the asking rate on purpose: they differ
+                   whenever the winner countered, and payroll pays THIS one. */
+                <p className="mt-2 flex items-start gap-1.5 text-[12px] text-ink-2">
+                  <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-emerald-500" aria-hidden="true" />
+                  <span>Agreed at <span className="font-medium text-ink">{money(job.agreed_rate)}</span> — this is what payroll pays for it.</span>
+                </p>
+              )}
             </div>
+
+            {canEdit() && (job.open_for_claims || job.agreed_rate != null) && (
+              /* Only fetched for a job that has actually been posted — an
+                 ordinary job never pays for the request (brightbase-economy).
+                 agreed_rate keeps the decided history readable after the
+                 offer closes. */
+              <JobClaimRequests jobId={job.id} postedRate={job.posted_rate} onDecided={load} />
+            )}
 
             {(job.crew_responses || []).length > 0 && (
               /* Accept/decline state per assigned cleaner (crew app Phase 2).

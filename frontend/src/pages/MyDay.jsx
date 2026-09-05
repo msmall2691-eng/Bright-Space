@@ -266,6 +266,11 @@ export default function MyDay() {
   const [declineReason, setDeclineReason] = useState('')
   // Claim confirm sheet: the open job being claimed (null = closed).
   const [claimJob, setClaimJob] = useState(null)
+  // Marketplace pivot (migration 097): an open job is asked for, not taken.
+  // Blank counter = "I'll take your posted rate" — the common case, so it
+  // starts empty rather than pre-filled with a number to delete.
+  const [claimRate, setClaimRate] = useState('')
+  const [claimMessage, setClaimMessage] = useState('')
   // Non-null = showing the offline cached copy saved at this timestamp.
   const [staleAt, setStaleAt] = useState(null)
   // Schedule tab layout: the 2-week list or the month grid.
@@ -446,23 +451,30 @@ export default function MyDay() {
     }
   }, [])
 
-  // Claim an open job — the confirm sheet's Claim button. First tap wins is
-  // enforced server-side; a 409 here means somebody else got it, so refresh
-  // the board rather than leaving a stale offer on screen.
+  // Ask for an open job (marketplace pivot, migration 097). This files a
+  // REQUEST — it doesn't assign anything, so there's no race to lose. A 409
+  // means the job stopped being open (someone was picked, or the office
+  // pulled it), so refresh rather than leaving a dead offer on screen.
   const confirmClaim = useCallback(async () => {
     if (!claimJob) return
     setActionBusy(true); setActionError(null)
+    const raw = String(claimRate).trim()
     try {
-      await post(`/api/crew/jobs/${claimJob.id}/claim`)
-      setClaimJob(null)
+      await post(`/api/crew/jobs/${claimJob.id}/claim`, {
+        // Empty means "your price is fine" — send null, not 0, or the server
+        // reads it as an offer to work for nothing.
+        requested_rate: raw === '' ? null : Number(raw),
+        message: claimMessage.trim() || null,
+      })
+      setClaimJob(null); setClaimRate(''); setClaimMessage('')
       await fetchDay(true)
     }
     catch (e) {
-      setActionError(e.detail || e.message || 'Could not claim the job')
+      setActionError(e.detail || e.message || 'Could not send your request')
       if (e.status === 409) { setClaimJob(null); await fetchDay(true) }
     }
     finally { setActionBusy(false) }
-  }, [claimJob, fetchDay])
+  }, [claimJob, claimRate, claimMessage, fetchDay])
 
   // Correct the miles on an already-closed punch (from the Today's punches list).
   const saveMiles = useCallback(async (entryId, miles) => {
@@ -643,7 +655,7 @@ export default function MyDay() {
                 </SectionLabel>
                 <div className="space-y-3">
                   {(data.open_jobs || []).filter(j => j.scheduled_date === data.as_of).map(j => (
-                    <JobCard key={j.id} job={j} onClaim={() => { setActionError(null); setClaimJob(j) }} busy={actionBusy} />
+                    <JobCard key={j.id} job={j} onClaim={() => { setActionError(null); setClaimRate(j.my_claim_request?.requested_rate ?? ''); setClaimMessage(j.my_claim_request?.message || ''); setClaimJob(j) }} busy={actionBusy} />
                   ))}
                 </div>
               </section>
@@ -691,7 +703,7 @@ export default function MyDay() {
             </SectionLabel>
             <div className="space-y-3">
               {(data.open_jobs || []).map(j => (
-                <JobCard key={j.id} job={j} onClaim={() => { setActionError(null); setClaimJob(j) }} busy={actionBusy} />
+                <JobCard key={j.id} job={j} onClaim={() => { setActionError(null); setClaimRate(j.my_claim_request?.requested_rate ?? ''); setClaimMessage(j.my_claim_request?.message || ''); setClaimJob(j) }} busy={actionBusy} />
               ))}
             </div>
           </section>
@@ -902,20 +914,60 @@ export default function MyDay() {
       {claimJob && (
         <Sheet onClose={() => setClaimJob(null)} busy={actionBusy}>
           <div>
-            <div className="text-base font-bold text-ink">Claim this job?</div>
+            <div className="text-base font-bold text-ink">Ask for this job?</div>
             <div className="text-[13px] text-ink-3 mt-0.5 truncate">
               {claimJob.property_name || claimJob.title}
               {claimJob.scheduled_date ? ` · ${claimJob.scheduled_date === data?.as_of ? 'Today' : dayLabel(claimJob.scheduled_date)}` : ''}
               {claimJob.start_time ? ` · ${fmtTimeRange(claimJob.start_time, claimJob.end_time)}` : ''}
             </div>
           </div>
+          {claimJob.posted_rate != null ? (
+            <p className="text-[13px] text-ink-2">
+              The office is offering{' '}
+              <span className="font-semibold text-ink">
+                ${Number(claimJob.posted_rate).toLocaleString(undefined, { maximumFractionDigits: 2 })}
+              </span>. Leave the box empty to take it.
+            </p>
+          ) : (
+            /* No asking price: the server refuses a request with no number on
+               either side, so say what's needed instead of letting them tap
+               into a rejection. */
+            <p className="flex items-start gap-1.5 text-[13px] text-ink-2">
+              <span className="mt-1.5 w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0" aria-hidden="true" />
+              <span>No price on this one — say what you'd do it for.</span>
+            </p>
+          )}
+          <label className="block">
+            <span className="text-[13px] font-medium text-ink-2">
+              {claimJob.posted_rate != null ? 'Want a different rate? (optional)' : 'Your rate'}
+            </span>
+            <input
+              type="number" inputMode="decimal" min="1" step="1"
+              value={claimRate} onChange={e => setClaimRate(e.target.value)}
+              autoFocus={claimJob.posted_rate == null}
+              placeholder={claimJob.posted_rate != null
+                ? `${Number(claimJob.posted_rate)}` : 'e.g. 120'}
+              className="mt-1.5 w-full rounded-lg border border-hairline bg-bg px-3 py-2.5 text-base text-ink placeholder-ink-3 focus:outline-none focus:border-blue-400"
+            />
+          </label>
+          <label className="block">
+            <span className="text-[13px] font-medium text-ink-2">Anything to add? (optional)</span>
+            <textarea
+              value={claimMessage} onChange={e => setClaimMessage(e.target.value)}
+              rows={2} maxLength={2000}
+              placeholder="e.g. I'm five minutes away, I bring my own supplies…"
+              className="mt-1.5 w-full rounded-lg border border-hairline bg-bg px-3 py-2.5 text-[13px] text-ink placeholder-ink-3 focus:outline-none focus:border-blue-400 resize-none"
+            />
+          </label>
           <p className="text-[12px] text-ink-3">
-            First come, first served — it's yours the moment you tap Claim, and the
-            office gets notified. Address details unlock once it's on your list.
+            Others can ask for this too — the office picks. Address details unlock
+            if it's yours.
           </p>
           <ErrorNote>{actionError}</ErrorNote>
           <SheetActions onCancel={() => setClaimJob(null)} onConfirm={confirmClaim}
-            busy={actionBusy} confirmLabel="Claim it" busyLabel="Claiming…"
+            busy={actionBusy}
+            confirmLabel={claimJob.my_claim_request?.status === 'pending' ? 'Update my ask' : 'Send my ask'}
+            busyLabel="Sending…"
             confirmIcon={<Sparkles className="w-4 h-4" />} />
         </Sheet>
       )}

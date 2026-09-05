@@ -379,19 +379,48 @@ export default function JobCard({ job, clockable = false, activeEntry = null, on
 
       <ChecklistBlock template={job.checklist_template} />
 
-      {onClaim && (
-        /* Open-jobs board (Phase 3): first tap wins server-side; access
-           details and the customer's number unlock once it's theirs. */
-        <div className="mt-3 border-t border-hairline pt-3">
-          <button onClick={onClaim} disabled={busy}
-            className="w-full text-[13px] font-semibold bg-blue-600 hover:bg-blue-700 disabled:opacity-60 text-white py-2.5 rounded-lg transition-colors inline-flex items-center justify-center gap-1.5">
-            <Sparkles className="w-4 h-4" /> Claim this job
-          </button>
-          <p className="text-[10px] text-ink-3 mt-1.5 text-center">
-            First come, first served{job.teammates?.length ? ` · you'd join ${job.teammates.join(', ')}` : ''}
-          </p>
-        </div>
-      )}
+      {onClaim && (() => {
+        /* Open-jobs board. Since the marketplace pivot (migration 097) this
+           is an ASK, not a claim: several people can want the same job and
+           the office picks, so the button can't promise "it's yours". A sub
+           who already asked sees their own standing request instead of a
+           button that looks like it never worked. Access details and the
+           customer's number still unlock only once it's actually theirs. */
+        const mine = job.my_claim_request
+        const rate = job.posted_rate
+        const asked = mine?.requested_rate
+        return (
+          <div className="mt-3 border-t border-hairline pt-3">
+            {rate != null && (
+              <p className="text-[13px] text-ink-2 mb-2 text-center">
+                Pays <span className="font-semibold text-ink">${Number(rate).toLocaleString(undefined, { maximumFractionDigits: 2 })}</span>
+              </p>
+            )}
+            {mine?.status === 'pending' ? (
+              <>
+                <p className="flex items-center justify-center gap-1.5 text-[13px] text-ink-2">
+                  <span className="w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0" aria-hidden="true" />
+                  You asked{asked != null ? ` for $${Number(asked).toLocaleString(undefined, { maximumFractionDigits: 2 })}` : ''} — waiting to hear back
+                </p>
+                <button onClick={onClaim} disabled={busy}
+                  className="mt-2 w-full text-[13px] font-medium bg-panel border border-hairline-2 text-ink-2 hover:bg-bg-2 disabled:opacity-60 py-2.5 rounded-lg transition-colors">
+                  Change what I asked for
+                </button>
+              </>
+            ) : (
+              <>
+                <button onClick={onClaim} disabled={busy}
+                  className="w-full text-[13px] font-semibold bg-blue-600 hover:bg-blue-700 disabled:opacity-60 text-white py-2.5 rounded-lg transition-colors inline-flex items-center justify-center gap-1.5">
+                  <Sparkles className="w-4 h-4" /> Ask for this job
+                </button>
+                <p className="text-[10px] text-ink-3 mt-1.5 text-center">
+                  The office picks who gets it{job.teammates?.length ? ` · you'd join ${job.teammates.join(', ')}` : ''}
+                </p>
+              </>
+            )}
+          </div>
+        )
+      })()}
 
       {clockable && !done && (
         <div className="mt-3 border-t border-hairline pt-3 grid grid-cols-2 gap-2">
