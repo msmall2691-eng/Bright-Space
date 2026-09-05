@@ -391,9 +391,18 @@ export default function JobCard({ job, clockable = false, activeEntry = null, on
         const asked = mine?.requested_rate
         return (
           <div className="mt-3 border-t border-hairline pt-3">
-            {rate != null && (
+            {rate != null ? (
               <p className="text-[13px] text-ink-2 mb-2 text-center">
                 Pays <span className="font-semibold text-ink">${Number(rate).toLocaleString(undefined, { maximumFractionDigits: 2 })}</span>
+              </p>
+            ) : (
+              /* The server refuses a request where neither side named a number,
+                 so without this the sub taps Ask, fills nothing in, and gets a
+                 422 for a rule they were never told. Say it on the card, where
+                 they decide whether to bother. */
+              <p className="flex items-start justify-center gap-1.5 text-[13px] text-ink-2 mb-2 text-center">
+                <span className="mt-1.5 w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0" aria-hidden="true" />
+                <span>No price set — name yours when you ask.</span>
               </p>
             )}
             {mine?.status === 'pending' ? (

@@ -60,10 +60,12 @@ it('a declined ask can be made again', () => {
   expect(screen.getByRole('button', { name: /Ask for this job/ })).toBeTruthy()
 })
 
-it('still offers to ask when the office set no price', () => {
-  // The sheet is where they name their own number; the card must not hide
-  // the way in just because there's nothing to show.
+it('explains a rate-less job on the card instead of letting them tap into a 422', () => {
+  // The server refuses a request where neither side named a number. Without
+  // this the sub taps Ask, fills nothing in, and is refused for a rule nobody
+  // told them — so the card says it where they decide whether to bother.
   show({ ...OPEN_JOB, posted_rate: null })
+  expect(screen.getByText(/No price set — name yours when you ask/)).toBeTruthy()
   expect(screen.getByRole('button', { name: /Ask for this job/ })).toBeTruthy()
   expect(screen.queryByText(/Pays/)).toBeNull()
 })
