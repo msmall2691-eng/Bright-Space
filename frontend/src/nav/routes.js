@@ -2,7 +2,7 @@ import {
   LayoutDashboard, Sparkles, Users, Calendar, Receipt,
   DollarSign, MessageSquare, Home, Repeat, Settings, Inbox,
   TrendingUp, Radar, Rows3, Filter, HardHat, CalendarDays, FileText, Star,
-  GitMerge,
+  GitMerge, Route,
 } from 'lucide-react'
 
 /**
@@ -62,6 +62,10 @@ export const NAV_SECTIONS = [
           { to: '/schedule',  icon: Calendar, label: 'Schedule', keywords: 'jobs calendar dispatch' },
           // Every /api/recurring endpoint is admin/manager-only.
           { to: '/recurring', icon: Repeat,   label: 'Recurring', roles: ['admin', 'manager'], keywords: 'series weekly biweekly' },
+          // Routes group recurring houses into one sub's standing day. Office-only:
+          // every /api/routes endpoint is admin/manager (the crew side lives in
+          // the crew app, on /api/crew/my-routes).
+          { to: '/routes',    icon: Route,    label: 'Routes', roles: ['admin', 'manager'], keywords: 'block standing subcontractor owner day' },
           // Renamed from "Sync" — plain enough in context, but "Calendar sync"
           // reads unambiguously on first glance for a non-technical owner.
           { to: '/sync',      icon: Radar,    label: 'Calendar sync', roles: ['admin', 'manager', 'viewer'], keywords: 'google ical feeds turnovers' },

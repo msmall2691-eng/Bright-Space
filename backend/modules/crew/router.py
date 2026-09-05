@@ -279,6 +279,25 @@ class ClockOutBody(BaseModel):
     miles: Optional[float] = None
 
 
+def _my_routes_summary(db: Session, current_user: User, oid: int) -> list:
+    """One row per route this sub has been offered or owns. No members.
+
+    A summary, not a detail: the point is that a standing offer can't sit
+    unseen because it lives behind a tab nobody opened.
+    """
+    from database.models import Route
+
+    rows = (db.query(Route)
+            .filter(Route.owner_cleaner_id == current_user.cleaner_id,
+                    Route.status.in_(["offered", "active"]),
+                    or_(Route.org_id == oid, Route.org_id.is_(None)))
+            .order_by(Route.day_of_week)
+            .all())
+    return [{"id": r.id, "name": r.name, "day_of_week": r.day_of_week,
+             "rate": round(float(r.rate), 2) if r.rate is not None else None,
+             "status": r.status} for r in rows]
+
+
 @router.get("/my-day")
 def my_day(
     days: int = 7,
@@ -409,6 +428,13 @@ def my_day(
                       "checklist_template": None}
                      for j in upcoming_jobs],
         "open_jobs": open_jobs,
+        # Routes (migration 100), deliberately LIGHT: enough to say "you've been
+        # offered a standing block" and to label an owned route, and nothing
+        # more. The houses and their shares arrive only if the sub taps through
+        # to /api/crew/my-routes — riding this payload rather than adding a
+        # second call on a rural connection (brightbase-economy), without
+        # making every my-day refresh carry a route detail nobody opened.
+        "routes": _my_routes_summary(db, current_user, oid),
         # Unread office messages, so the crew app's Chat tab can badge without
         # a second request. Reading the thread (GET /messages) marks them read.
         "unread_messages": (
@@ -3036,3 +3062,149 @@ def add_crew(body: CrewCreate, db: Session = Depends(get_db),
 # The invite email itself lives in modules/auth/router.py (send_staff_invite) —
 # one sender for both the crew add and the generic Users-screen invite, so the
 # wording and 7-day TTL can never drift apart.
+
+
+# ── Routes: the sub's side (marketplace pivot Phase 4, migration 100) ────────
+#
+# A route is a standing block of recurring work. The office offers it; the sub
+# accepts or declines. Nothing here lets the office skip the acceptance, and
+# nothing here lets a sub take on standing work while their file is incomplete.
+
+@router.get("/my-routes")
+def my_routes(
+    db: Session = Depends(get_db),
+    org_id: int = Depends(current_org_id),
+    current_user: User = Depends(require_role("cleaner")),
+):
+    """Routes offered to me, and routes I already own.
+
+    ONE request, and a light one — this rides a phone on rural cell data
+    (brightbase-economy). Offered routes carry their houses so a sub can see
+    what they're agreeing to before agreeing to it; active ones are the
+    standing commitment and its rate, which is a shorter answer.
+    """
+    from database.models import Route
+    from services import routes as routes_service
+
+    _require_crew_id(current_user)
+    oid = resolve_org_id(org_id, db)
+    rows = (db.query(Route)
+            .filter(Route.owner_cleaner_id == current_user.cleaner_id,
+                    Route.status.in_(["offered", "active"]),
+                    or_(Route.org_id == oid, Route.org_id.is_(None)))
+            .order_by(Route.day_of_week)
+            .all())
+    offered = [routes_service.route_dict(db, r, with_members=True)
+               for r in rows if r.status == "offered"]
+    active = [routes_service.route_dict(db, r, with_members=True)
+              for r in rows if r.status == "active"]
+    return {"offered": offered, "active": active}
+
+
+@router.post("/routes/{route_id}/accept")
+def accept_route(
+    route_id: int,
+    db: Session = Depends(get_db),
+    org_id: int = Depends(current_org_id),
+    current_user: User = Depends(require_role("cleaner")),
+):
+    """Take the route. This is the step that fixes the owner and the rate.
+
+    LOCKED (R5). Accept is not idempotent in the way a read is — it stamps
+    accepted_at and turns generation on for this block — so the row is taken
+    FOR UPDATE and its status re-read underneath the lock. Two taps on a slow
+    phone must produce one accept.
+
+    RE-CHECKED, both the route and the person. The office can change a route
+    between offering it and this tap, and a certificate of insurance can lapse
+    in that window — that gap is the entire reason `is_expired` reads the date
+    rather than the stored status. The sub should not be the one who discovers
+    either problem, but they must not slip through it either.
+    """
+    from database.models import Route
+    from services import routes as routes_service
+    from services.sub_vetting import missing_requirements
+
+    _require_crew_id(current_user)
+    oid = resolve_org_id(org_id, db)
+
+    route = (db.query(Route)
+             .filter(Route.id == route_id,
+                     or_(Route.org_id == oid, Route.org_id.is_(None)))
+             .with_for_update()
+             .first())
+    if route is None:
+        raise HTTPException(status_code=404, detail="That route isn't available.")
+    if route.owner_cleaner_id != current_user.cleaner_id:
+        # Deliberately the same answer as "doesn't exist": whose route this is
+        # isn't information for someone it wasn't offered to.
+        raise HTTPException(status_code=404, detail="That route isn't available.")
+    if route.status == "active":
+        raise HTTPException(status_code=409, detail="You've already got this one.")
+    if route.status != "offered":
+        raise HTTPException(status_code=409, detail="That route isn't on offer any more.")
+
+    missing = missing_requirements(db, current_user.id)
+    if missing:
+        raise HTTPException(status_code=403, detail={
+            "message": "Finish your file before you take on a standing route.",
+            "missing": missing,
+        })
+
+    blocker = routes_service.validate_offerable(db, route)
+    if blocker:
+        # Not the sub's problem to fix, so it says so plainly rather than
+        # reading like something they did wrong.
+        raise HTTPException(
+            status_code=409,
+            detail=f"The office needs to sort something first — {blocker}")
+
+    route.status = "active"
+    route.accepted_at = _now_naive_utc()
+    route.updated_at = _now_naive_utc()
+    db.commit(); db.refresh(route)
+    return routes_service.route_dict(db, route, with_members=True)
+
+
+@router.post("/routes/{route_id}/decline")
+def decline_route(
+    route_id: int,
+    db: Session = Depends(get_db),
+    org_id: int = Depends(current_org_id),
+    current_user: User = Depends(require_role("cleaner")),
+):
+    """Turn the route down. It goes back to the office as a draft.
+
+    Back to DRAFT and not to some `declined` state: the office's next move is
+    to offer it to somebody else, and a route sitting in a terminal-sounding
+    status is a route that gets rebuilt from scratch instead. The owner is
+    cleared, because a declined route has no owner.
+
+    Declining a single OCCURRENCE is a different thing entirely — that's an
+    ordinary JobResponse on that day's job, which the crew app already renders.
+    This is giving the whole block back.
+    """
+    from database.models import Route
+    from services import routes as routes_service
+
+    _require_crew_id(current_user)
+    oid = resolve_org_id(org_id, db)
+
+    route = (db.query(Route)
+             .filter(Route.id == route_id,
+                     or_(Route.org_id == oid, Route.org_id.is_(None)))
+             .with_for_update()
+             .first())
+    if route is None or route.owner_cleaner_id != current_user.cleaner_id:
+        raise HTTPException(status_code=404, detail="That route isn't available.")
+    if route.status != "offered":
+        raise HTTPException(
+            status_code=409,
+            detail="You've already accepted this one — talk to the office to hand it back.")
+
+    route.status = "draft"
+    route.owner_cleaner_id = None
+    route.offered_at = None
+    route.updated_at = _now_naive_utc()
+    db.commit(); db.refresh(route)
+    return routes_service.route_dict(db, route)

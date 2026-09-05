@@ -3763,6 +3763,149 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/routes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Routes
+         * @description Every route, with its owner's name and how many houses it holds.
+         *
+         *     One request draws the list (brightbase-economy): names are resolved in a
+         *     single lookup rather than one per row.
+         */
+        get: operations["list_routes_api_routes_get"];
+        put?: never;
+        /**
+         * Create Route
+         * @description Start a route as a DRAFT. Generation ignores drafts entirely, so a
+         *     half-built route can sit here without touching anybody's calendar.
+         */
+        post: operations["create_route_api_routes_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/routes/{route_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Route
+         * @description The route and its houses, each with the share of the block rate it
+         *     carries — a route priced without its parts visible is a number somebody
+         *     has to trust.
+         */
+        get: operations["get_route_api_routes__route_id__get"];
+        put?: never;
+        post?: never;
+        /**
+         * Delete Route
+         * @description Drafts only. A route that was ever offered is a record of something
+         *     somebody was asked to do — that gets ended, not erased.
+         */
+        delete: operations["delete_route_api_routes__route_id__delete"];
+        options?: never;
+        head?: never;
+        /**
+         * Update Route
+         * @description Edit a route's name, day, rate, backup or houses.
+         *
+         *     An ACTIVE route can be repriced, and the new rate applies to visits
+         *     generated from here on — jobs already generated keep the `agreed_rate`
+         *     they were created with. Never retroactively reprice work somebody has
+         *     already been told they're doing.
+         */
+        patch: operations["update_route_api_routes__route_id__patch"];
+        trace?: never;
+    };
+    "/api/routes/{route_id}/offer-check": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Offer Check
+         * @description What would happen if this route were offered to this person.
+         *
+         *     Read-only, so the office sees the conflicts and the file problems BEFORE
+         *     sending rather than by having the offer bounce. One request, because the
+         *     answer is one decision.
+         */
+        get: operations["offer_check_api_routes__route_id__offer_check_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/routes/{route_id}/offer": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Offer Route
+         * @description Offer the route to one subcontractor. It is not theirs until they accept.
+         *
+         *     Three gates, in the order that gives the most useful refusal:
+         *       1. the route itself has to be offerable (a rate, houses, times);
+         *       2. the person has to exist as a crew login;
+         *       3. their file has to be complete — an uninsured person is not offered
+         *          standing work, and finding that out at acceptance time is finding out
+         *          too late.
+         *     Conflicts are surfaced but do NOT block: a double-book on one occurrence
+         *     is a coverage question for one date, not a reason to refuse a standing
+         *     arrangement. `offer-check` shows them first.
+         */
+        post: operations["offer_route_api_routes__route_id__offer_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/routes/{route_id}/end": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * End Route
+         * @description Stop a route generating. It stays for history.
+         *
+         *     Visits already generated keep their owner and their agreed_rate — ending a
+         *     route is a statement about the future, and no automated path here deletes
+         *     or reprices a Job (R7). If a date needs to come off the calendar, that is a
+         *     schedule edit somebody makes on purpose.
+         */
+        post: operations["end_route_api_routes__route_id__end_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/reminders/jobs/{job_id}/invite.ics": {
         parameters: {
             query?: never;
@@ -6922,6 +7065,91 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/crew/my-routes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * My Routes
+         * @description Routes offered to me, and routes I already own.
+         *
+         *     ONE request, and a light one — this rides a phone on rural cell data
+         *     (brightbase-economy). Offered routes carry their houses so a sub can see
+         *     what they're agreeing to before agreeing to it; active ones are the
+         *     standing commitment and its rate, which is a shorter answer.
+         */
+        get: operations["my_routes_api_crew_my_routes_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/crew/routes/{route_id}/accept": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Accept Route
+         * @description Take the route. This is the step that fixes the owner and the rate.
+         *
+         *     LOCKED (R5). Accept is not idempotent in the way a read is — it stamps
+         *     accepted_at and turns generation on for this block — so the row is taken
+         *     FOR UPDATE and its status re-read underneath the lock. Two taps on a slow
+         *     phone must produce one accept.
+         *
+         *     RE-CHECKED, both the route and the person. The office can change a route
+         *     between offering it and this tap, and a certificate of insurance can lapse
+         *     in that window — that gap is the entire reason `is_expired` reads the date
+         *     rather than the stored status. The sub should not be the one who discovers
+         *     either problem, but they must not slip through it either.
+         */
+        post: operations["accept_route_api_crew_routes__route_id__accept_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/crew/routes/{route_id}/decline": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Decline Route
+         * @description Turn the route down. It goes back to the office as a draft.
+         *
+         *     Back to DRAFT and not to some `declined` state: the office's next move is
+         *     to offer it to somebody else, and a route sitting in a terminal-sounding
+         *     status is a route that gets rebuilt from scratch instead. The owner is
+         *     cleared, because a declined route has no owner.
+         *
+         *     Declining a single OCCURRENCE is a different thing entirely — that's an
+         *     ordinary JobResponse on that day's job, which the crew app already renders.
+         *     This is giving the whole block back.
+         */
+        post: operations["decline_route_api_crew_routes__route_id__decline_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/crew-cal/{token}.ics": {
         parameters: {
             query?: never;
@@ -7836,6 +8064,11 @@ export interface components {
             /** Client Id */
             client_id?: number | null;
         };
+        /** EndBody */
+        EndBody: {
+            /** Reason */
+            reason?: string | null;
+        };
         /** EntryMilesBody */
         EntryMilesBody: {
             /** Miles */
@@ -8480,6 +8713,11 @@ export interface components {
             /** Job Ids */
             job_ids?: number[] | null;
         };
+        /** OfferBody */
+        OfferBody: {
+            /** Cleaner Id */
+            cleaner_id: string;
+        };
         /** OpportunityCreate */
         OpportunityCreate: {
             /** Client Id */
@@ -9047,6 +9285,19 @@ export interface components {
             response: string;
             /** Reason */
             reason?: string | null;
+        };
+        /** RouteBody */
+        RouteBody: {
+            /** Name */
+            name?: string | null;
+            /** Day Of Week */
+            day_of_week?: number | null;
+            /** Rate */
+            rate?: number | null;
+            /** Backup Cleaner Id */
+            backup_cleaner_id?: string | null;
+            /** Schedule Ids */
+            schedule_ids?: number[] | null;
         };
         /** RouteRequest */
         RouteRequest: {
@@ -15321,6 +15572,259 @@ export interface operations {
             };
         };
     };
+    list_routes_api_routes_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    create_route_api_routes_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RouteBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_route_api_routes__route_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                route_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_route_api_routes__route_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                route_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_route_api_routes__route_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                route_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RouteBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    offer_check_api_routes__route_id__offer_check_get: {
+        parameters: {
+            query: {
+                cleaner_id: string;
+            };
+            header?: never;
+            path: {
+                route_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    offer_route_api_routes__route_id__offer_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                route_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["OfferBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    end_route_api_routes__route_id__end_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                route_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["EndBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     download_ics_api_reminders_jobs__job_id__invite_ics_get: {
         parameters: {
             query?: never;
@@ -20205,6 +20709,88 @@ export interface operations {
                 "application/json": components["schemas"]["CrewCreate"];
             };
         };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    my_routes_api_crew_my_routes_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    accept_route_api_crew_routes__route_id__accept_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                route_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    decline_route_api_crew_routes__route_id__decline_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                route_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
         responses: {
             /** @description Successful Response */
             200: {

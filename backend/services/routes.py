@@ -135,3 +135,201 @@ def validate_offerable(db: Session, route: Route) -> Optional[str]:
                 f"{'…' if len(timeless) > 3 else ''}. Set their times first "
                 "(the Recurring health check lists them).")
     return None
+
+
+# ── Lifecycle ───────────────────────────────────────────────────────────────
+#
+# draft ──offer──▶ offered ──accept──▶ active ──end──▶ ended
+#                     │                   │
+#                     └──decline──────────┘
+#
+# OFFERED, NEVER ASSIGNED. This is the same control point as the marketplace
+# claim and it is load-bearing for worker classification: a route a sub can
+# decline is work they chose. There is deliberately no office path that puts a
+# sub on a route without their acceptance — see `offer`, which sets an
+# intended owner and a status, and nothing else.
+
+
+def route_dict(db: Session, route: Route, *, with_members: bool = False) -> dict:
+    """Wire shape. Plain dict, never the ORM object."""
+    out = {
+        "id": route.id,
+        "name": route.name,
+        "day_of_week": route.day_of_week,
+        "owner_cleaner_id": route.owner_cleaner_id,
+        "backup_cleaner_id": route.backup_cleaner_id,
+        "rate": round(float(route.rate), 2) if route.rate is not None else None,
+        "status": route.status,
+        "offered_at": route.offered_at.isoformat() if route.offered_at else None,
+        "accepted_at": route.accepted_at.isoformat() if route.accepted_at else None,
+        "ended_at": route.ended_at.isoformat() if route.ended_at else None,
+    }
+    scheds = member_schedules(db, route)
+    out["member_count"] = len(scheds)
+    if with_members:
+        shares = shares_by_schedule(db, route)
+        out["members"] = [{
+            "recurring_schedule_id": s.id,
+            "title": s.title or f"#{s.id}",
+            "address": getattr(s, "address", None),
+            "start_time": s.start_time.isoformat() if s.start_time else None,
+            "end_time": s.end_time.isoformat() if s.end_time else None,
+            "minutes": schedule_minutes(s),
+            "active": bool(s.active),
+            # What this house pays the owner per occurrence. Shown next to the
+            # block rate so a route is priced with its parts visible rather
+            # than as one number somebody has to trust.
+            "share": shares.get(s.id),
+        } for s in scheds]
+        out["blocker"] = validate_offerable(db, route)
+    return out
+
+
+def set_members(db: Session, route: Route, schedule_ids: list, org_id: int) -> None:
+    """Replace a route's houses, in the given order.
+
+    Replace rather than merge: the order IS the drive order, and a merge would
+    make reordering a separate operation nobody would remember to do. Refuses a
+    schedule that already belongs to another route — the unique constraint
+    would refuse it anyway, but a 409 naming the other route is a better answer
+    than an IntegrityError.
+    """
+    wanted = [int(i) for i in (schedule_ids or [])]
+    if len(set(wanted)) != len(wanted):
+        raise ValueError("The same house is listed twice on this route.")
+
+    if wanted:
+        found = (db.query(RecurringSchedule)
+                 .filter(RecurringSchedule.id.in_(wanted),
+                         _org_scope(RecurringSchedule, org_id))
+                 .all())
+        if len(found) != len(wanted):
+            raise ValueError("One of those recurring series doesn't exist here.")
+        taken = (db.query(RouteMember)
+                 .filter(RouteMember.recurring_schedule_id.in_(wanted),
+                         RouteMember.route_id != route.id)
+                 .first())
+        if taken is not None:
+            other = db.query(Route).filter(Route.id == taken.route_id).first()
+            raise ValueError(
+                f"One of those houses is already on “{other.name if other else 'another route'}”. "
+                "A house on two routes means two people are paid for it.")
+
+    db.query(RouteMember).filter(RouteMember.route_id == route.id).delete(
+        synchronize_session=False)
+    for position, sched_id in enumerate(wanted):
+        db.add(RouteMember(org_id=org_id, route_id=route.id,
+                           recurring_schedule_id=sched_id, position=position))
+    db.flush()
+
+
+def recent_billing(db: Session, route: Route, org_id: int, *, occurrences: int = 4) -> dict:
+    """What this route's houses actually BILLED, against what it pays.
+
+    The margin, from real invoices rather than a list price — recurring
+    schedules carry no price of their own, so the only honest source is what
+    was charged for the visits these houses generated.
+
+    Averaged over the last few occurrences and reported per occurrence, so it
+    compares like with like against `routes.rate` (which is priced per
+    occurrence of the whole block). Returns `billed: None` rather than zero
+    when nothing has been invoiced yet: "no data" and "billed nothing" are
+    different answers, and showing 100% margin for a route nobody has invoiced
+    would be worse than showing nothing.
+    """
+    from database.models import Invoice, Job
+    from utils.dates import business_today
+
+    scheds = member_schedules(db, route)
+    if not scheds:
+        return {"billed": None, "occurrences": 0, "margin": None, "margin_pct": None}
+
+    today = business_today()
+    jobs = (db.query(Job)
+            .filter(Job.recurring_schedule_id.in_([s.id for s in scheds]),
+                    Job.scheduled_date < today,
+                    Job.status == "completed",
+                    _org_scope(Job, org_id))
+            .order_by(Job.scheduled_date.desc())
+            .all())
+    # Group by date: one occurrence of the block is one day's worth of houses.
+    dates, by_date = [], {}
+    for j in jobs:
+        d = j.scheduled_date
+        if d not in by_date:
+            if len(dates) >= occurrences:
+                continue
+            dates.append(d); by_date[d] = []
+        by_date[d].append(j.id)
+    job_ids = [jid for d in dates for jid in by_date[d]]
+    if not job_ids:
+        return {"billed": None, "occurrences": 0, "margin": None, "margin_pct": None}
+
+    rows = (db.query(Invoice)
+            .filter(Invoice.job_id.in_(job_ids),
+                    Invoice.status != "draft",       # a draft isn't money
+                    _org_scope(Invoice, org_id))
+            .all())
+    if not rows:
+        return {"billed": None, "occurrences": len(dates), "margin": None, "margin_pct": None}
+
+    total = sum(float(i.total or 0.0) for i in rows)
+    per_occurrence = round(total / len(dates), 2)
+    rate = float(route.rate or 0.0)
+    margin = round(per_occurrence - rate, 2)
+    return {
+        "billed": per_occurrence,
+        "occurrences": len(dates),
+        "margin": margin,
+        "margin_pct": round(margin / per_occurrence * 100, 1) if per_occurrence else None,
+    }
+
+
+def upcoming_conflicts(db: Session, route: Route, cleaner_id: str, org_id: int,
+                       *, horizon_days: int = 28) -> list:
+    """Where this cleaner is already booked against the route's own visits.
+
+    Checked against jobs ALREADY GENERATED from the route's schedules rather
+    than against dates predicted here — a second implementation of "when does
+    this series happen" is the kind of thing that drifts from the first one and
+    then quietly disagrees with the calendar.
+
+    Reuses the scheduling module's conflict finder for the same reason: one
+    answer to "is this person double-booked", not two.
+    """
+    from datetime import timedelta
+
+    from database.models import Job
+    from modules.scheduling.router import _find_cleaner_conflicts
+    from utils.dates import business_today
+
+    scheds = member_schedules(db, route)
+    if not scheds or not cleaner_id:
+        return []
+    today = business_today()
+    jobs = (db.query(Job)
+            .filter(Job.recurring_schedule_id.in_([s.id for s in scheds]),
+                    Job.scheduled_date >= today,
+                    Job.scheduled_date <= today + timedelta(days=horizon_days),
+                    Job.status.notin_(["cancelled"]),
+                    _org_scope(Job, org_id))
+            .order_by(Job.scheduled_date)
+            .all())
+    out = []
+    for j in jobs:
+        for _cid, other in _find_cleaner_conflicts(
+                db, cleaner_ids=[cleaner_id], scheduled_date=j.scheduled_date,
+                start_time=j.start_time, end_time=j.end_time,
+                exclude_job_id=j.id, org_id=org_id):
+            out.append({
+                "date": j.scheduled_date.isoformat() if j.scheduled_date else None,
+                "route_job_id": j.id,
+                "conflicting_job_id": other.id,
+                "conflicting_job": (other.title or f"Job #{other.id}"),
+            })
+    return out
+
+
+def _org_scope(model, org_id: int):
+    from sqlalchemy import or_
+    return or_(model.org_id == org_id, model.org_id.is_(None))
