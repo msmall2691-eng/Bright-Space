@@ -133,6 +133,22 @@ def get_window(window_id: int, db: Session = Depends(get_db),
     return windows_service.window_state(db, _get(db, window_id, resolve_org_id(org_id, db)))
 
 
+@router.get("/{window_id}/margin", dependencies=[Depends(require_role("admin", "manager"))])
+def window_margin(window_id: int, db: Session = Depends(get_db),
+                  org_id: int = Depends(current_org_id)):
+    """What the ladder does to the margin — now, and at the top of it.
+
+    The ceiling is the number worth looking at. A ladder set once in March
+    quietly becomes the thing that eats a July Saturday, and without this the
+    office finds out from the payroll run rather than from the box they typed
+    it into.
+    """
+    from services.job_margin import window_margin as compute
+
+    oid = resolve_org_id(org_id, db)
+    return compute(db, _get(db, window_id, oid), oid)
+
+
 @router.patch("/{window_id}", dependencies=[Depends(require_role("admin", "manager"))])
 def update_window(window_id: int, body: WindowBody, db: Session = Depends(get_db),
                   org_id: int = Depends(current_org_id)):

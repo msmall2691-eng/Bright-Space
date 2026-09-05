@@ -2082,6 +2082,35 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/jobs/{job_id}/margin": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Job Margin
+         * @description What this job bills, what it would pay, and what's left.
+         *
+         *     `pay` is a what-if: the office asks "what's the margin if I post this at
+         *     $120" WITHOUT writing $120 down first. That is the whole point — the number
+         *     is only useful before the price is set, and a margin you can only see after
+         *     committing to a rate is a margin you find out about in the payroll run.
+         *
+         *     Always says where the billed figure came from. A margin computed from a
+         *     guess, shown as confidently as one computed from an invoice, is a number
+         *     somebody will price the next ten jobs against.
+         */
+        get: operations["job_margin_api_jobs__job_id__margin_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/jobs/{job_id}/claim-requests/{request_id}/decline": {
         parameters: {
             query?: never;
@@ -3971,6 +4000,31 @@ export interface paths {
          *     already is simply stops it climbing further.
          */
         patch: operations["update_window_api_turnover_windows__window_id__patch"];
+        trace?: never;
+    };
+    "/api/turnover-windows/{window_id}/margin": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Window Margin
+         * @description What the ladder does to the margin — now, and at the top of it.
+         *
+         *     The ceiling is the number worth looking at. A ladder set once in March
+         *     quietly becomes the thing that eats a July Saturday, and without this the
+         *     office finds out from the payroll run rather than from the box they typed
+         *     it into.
+         */
+        get: operations["window_margin_api_turnover_windows__window_id__margin_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
         trace?: never;
     };
     "/api/turnover-windows/{window_id}/open": {
@@ -13076,6 +13130,39 @@ export interface operations {
             };
         };
     };
+    job_margin_api_jobs__job_id__margin_get: {
+        parameters: {
+            query?: {
+                pay?: number | null;
+            };
+            header?: never;
+            path: {
+                job_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     decline_claim_request_api_jobs__job_id__claim_requests__request_id__decline_post: {
         parameters: {
             query?: never;
@@ -16140,6 +16227,37 @@ export interface operations {
                 "application/json": components["schemas"]["WindowBody"];
             };
         };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    window_margin_api_turnover_windows__window_id__margin_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                window_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
         responses: {
             /** @description Successful Response */
             200: {

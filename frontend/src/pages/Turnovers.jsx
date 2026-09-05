@@ -278,6 +278,18 @@ function Ladder({ w, onRun }) {
   const [base, setBase] = useState(w.base_rate ?? '')
   const [pct, setPct] = useState(w.step_pct ?? 10)
   const [cap, setCap] = useState(w.max_steps ?? 3)
+  const [margin, setMargin] = useState(null)
+
+  // What the ladder does to the margin — including at the top of it. A ladder
+  // set once in March is what quietly eats a July Saturday, and without this
+  // the office finds out from the payroll run instead of from this box.
+  useEffect(() => {
+    let alive = true
+    get(`/api/turnover-windows/${w.id}/margin`)
+      .then(d => { if (alive) setMargin(d) })
+      .catch(() => { if (alive) setMargin(null) })
+    return () => { alive = false }
+  }, [w.id, w.steps_taken, w.base_rate, w.step_pct, w.max_steps, w.covered])
 
   const commit = () => {
     const body = {}
@@ -326,6 +338,8 @@ function Ladder({ w, onRun }) {
           </>
         )}
       </p>
+      <CeilingLine margin={margin} />
+
       <p className="text-[12px] text-ink-3">
         {w.covered > 0 && <>{money(w.committed)} agreed so far. </>}
         {w.uncovered > 0 && <>{money(w.exposure)} more if the rest go at today’s price. </>}
@@ -333,5 +347,42 @@ function Ladder({ w, onRun }) {
         won’t move a price already on the board — it takes effect at the next step.
       </p>
     </div>
+  )
+}
+
+
+/**
+ * What the day bills against what the ladder would pay for it — at the top.
+ *
+ * Says nothing when any open turnover's billing is unknown. Half a margin is
+ * not a margin: the total would be an undercount, and an undercount looks like
+ * good news, which is the worst way for this number to be wrong.
+ */
+function CeilingLine({ margin }) {
+  if (!margin || margin.margin_now == null) {
+    if (margin && margin.open_jobs > 0) {
+      return (
+        <p className="text-[12px] text-ink-3">
+          Can’t price the margin yet — {margin.open_jobs - margin.billed_known_for} of{' '}
+          {margin.open_jobs} open turnovers have no invoice, quote or billing history
+          to measure against.
+        </p>
+      )
+    }
+    return null
+  }
+  const bad = margin.ceiling_fits === false
+  return (
+    <p className="flex items-start gap-1.5 text-[12px] text-ink-2">
+      <span className={`mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full ${
+        bad ? 'bg-red-500' : 'bg-emerald-500'}`} aria-hidden="true" />
+      <span>
+        The {margin.open_jobs} still open bill {money(margin.billed)} and pay{' '}
+        {money(margin.pay_now)} — {money(margin.margin_now)} left. At the top of the
+        ladder they’d pay {money(margin.pay_at_ceiling)}, leaving{' '}
+        <span className="font-medium text-ink">{money(margin.margin_at_ceiling)}</span>
+        {bad && ' — the ceiling costs more than the day brings in'}.
+      </span>
+    </p>
   )
 }

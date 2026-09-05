@@ -2807,6 +2807,27 @@ def approve_claim_request(job_id: int, request_id: int, db: Session = Depends(ge
         raise HTTPException(status_code=e.status, detail=e.message)
 
 
+@router.get("/{job_id}/margin", dependencies=[Depends(require_role("admin", "manager"))])
+def job_margin(job_id: int, pay: Optional[float] = None, db: Session = Depends(get_db),
+               org_id: int = Depends(current_org_id)):
+    """What this job bills, what it would pay, and what's left.
+
+    `pay` is a what-if: the office asks "what's the margin if I post this at
+    $120" WITHOUT writing $120 down first. That is the whole point — the number
+    is only useful before the price is set, and a margin you can only see after
+    committing to a rate is a margin you find out about in the payroll run.
+
+    Always says where the billed figure came from. A margin computed from a
+    guess, shown as confidently as one computed from an invoice, is a number
+    somebody will price the next ten jobs against.
+    """
+    from services.job_margin import margin
+
+    oid = resolve_org_id(org_id, db)
+    job = _get_owned_job(job_id, db, oid)
+    return margin(db, job, oid, pay=pay)
+
+
 @router.post("/{job_id}/claim-requests/{request_id}/decline",
              dependencies=[Depends(require_role("admin", "manager"))])
 def decline_claim_request(job_id: int, request_id: int, db: Session = Depends(get_db),
