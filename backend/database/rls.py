@@ -57,6 +57,9 @@ TENANT_TABLES = [
     # the table rather than in a later audit — 095 exists precisely because two
     # tables carried org_id for months with no RLS backstop behind them.
     "job_claim_requests",
+    # The vetting file (migration 098): what a subcontractor has on record.
+    # Insurance certificates and signed agreements, org-scoped from creation.
+    "sub_documents", "sub_agreements",
     # `users` is DELIBERATELY excluded — re-audited 2026-08-16, still not safe.
     # Re-read this whole comment before adding it; don't re-derive from scratch.
     #

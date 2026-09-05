@@ -958,6 +958,104 @@ class InviteUser(BaseModel):
     role: str = "member"
 
 
+# ── The vetting file, office side (migration 098) ───────────────────────────
+#
+# Same service as the crew's "My file", so the two screens can't drift into
+# disagreeing about whether somebody is cleared to work.
+
+
+@router.get("/users/{user_id}/file", dependencies=[Depends(require_role("admin", "manager"))])
+def get_sub_file(user_id: int, db: Session = Depends(get_db)):
+    """One subcontractor's file: every document, its state, and what's missing."""
+    from services.sub_vetting import vetting_status
+    return vetting_status(db, user_id)
+
+
+@router.get("/users/{user_id}/file/{kind}/download",
+            dependencies=[Depends(require_role("admin", "manager"))])
+def download_sub_document(user_id: int, kind: str, db: Session = Depends(get_db)):
+    """The document itself, to actually read before accepting it.
+
+    Inline rather than an attachment: the point is to look at the certificate
+    and check the dates, not to collect a downloads folder. Sent with
+    nosniff + a no-store cache header — these are insurance certificates and
+    tax forms, not something to leave in a shared browser cache.
+    """
+    from fastapi import Response as _Response
+    from database.models import SubDocument as _Doc
+
+    doc = (db.query(_Doc)
+           .filter(_Doc.user_id == user_id, _Doc.kind == (kind or "").lower())
+           .first())
+    if doc is None or not doc.data:
+        raise HTTPException(status_code=404, detail="No document on file")
+    return _Response(
+        content=doc.data,
+        media_type=doc.content_type or "application/octet-stream",
+        headers={
+            "Content-Disposition": f'inline; filename="{doc.filename or kind}"',
+            "X-Content-Type-Options": "nosniff",
+            "Cache-Control": "no-store",
+        },
+    )
+
+
+class SubDocumentReview(BaseModel):
+    # accepted | pending | missing — "expired" is never set by hand, it's
+    # derived from the date so it can't be wrong the morning it lapses.
+    status: str
+    notes: Optional[str] = None
+    expires_at: Optional[str] = None
+
+
+@router.post("/users/{user_id}/file/{kind}/review",
+             dependencies=[Depends(require_role("admin", "manager"))])
+def review_sub_document(user_id: int, kind: str, body: SubDocumentReview,
+                        db: Session = Depends(get_db),
+                        current_user: User = Depends(get_current_user)):
+    """Accept or reject one document, optionally correcting its expiry.
+
+    The office can fix an expiry the sub typed wrong — the date on the
+    certificate is what matters, and it is the office that reads it.
+    """
+    from datetime import datetime as _dt, timezone as _tz
+    from database.models import SubDocument as _Doc
+    from services.sub_vetting import vetting_status
+    from utils.dates import coerce_date as _coerce_date
+
+    allowed = {"accepted", "pending", "missing"}
+    if body.status not in allowed:
+        raise HTTPException(status_code=422,
+                            detail=f"status must be one of {', '.join(sorted(allowed))}")
+    doc = (db.query(_Doc)
+           .filter(_Doc.user_id == user_id, _Doc.kind == (kind or "").lower())
+           .first())
+    if doc is None:
+        raise HTTPException(status_code=404, detail="No document on file")
+
+    doc.status = body.status
+    doc.notes = (body.notes or "").strip() or None
+    if body.expires_at is not None:
+        doc.expires_at = _coerce_date(body.expires_at) if body.expires_at else None
+    doc.reviewed_by = current_user.id
+    doc.reviewed_at = _dt.now(_tz.utc).replace(tzinfo=None)
+    db.commit()
+
+    try:
+        from services.push_service import notify_user
+        if body.status == "accepted":
+            notify_user(user_id, "Document accepted",
+                        f"Your {kind.upper()} is on file.", url="/crew", category="crew")
+        elif body.notes:
+            # Only when there's a reason — a bare "rejected" push tells them
+            # nothing they can act on.
+            notify_user(user_id, "Document needs another look", body.notes,
+                        url="/crew", category="crew")
+    except Exception:
+        pass
+    return vetting_status(db, user_id)
+
+
 @router.post("/users/invite")
 def invite_user(data: InviteUser, db: Session = Depends(get_db),
                 current_user: User = Depends(require_role("admin")),

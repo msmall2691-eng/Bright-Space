@@ -903,6 +903,63 @@ class JobClaimRequest(Base):
     job = relationship("Job")
 
 
+class SubDocument(Base):
+    """One vetting document on a subcontractor's file (migration 098).
+
+    Bytes live in the database, the same deliberate choice JobPhoto makes:
+    Railway's container disk is ephemeral, so a file written to it is a file
+    lost on the next deploy.
+
+    UNIQUE on (user_id, kind) — re-uploading a COI replaces the one on file
+    rather than leaving three rows and the office guessing which is live.
+
+    NO SSN/TIN FIELD, deliberately. A sole-proprietor W-9 carries one; the
+    document is stored as bytes and never parsed, and `ein` is the only
+    identifier with a column because it identifies a business, not a person.
+    """
+    __tablename__ = "sub_documents"
+    __table_args__ = (
+        UniqueConstraint("user_id", "kind", name="uq_sub_documents_user_kind"),
+    )
+    org_id = Column(Integer, ForeignKey("orgs.id"), nullable=True, index=True)  # tenant scope (MT-1)
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"),
+                     nullable=False, index=True)
+    kind = Column(String(16), nullable=False, index=True)   # w9|coi|license|agreement|id
+    status = Column(String(16), nullable=False, default="pending")  # missing|pending|accepted|expired
+    expires_at = Column(Date, nullable=True)
+    filename = Column(String(255), nullable=True)
+    content_type = Column(String(64), nullable=True)
+    size_bytes = Column(Integer, nullable=True)
+    data = Column(LargeBinary, nullable=True)
+    notes = Column(Text, nullable=True)
+    uploaded_at = Column(DateTime, nullable=True)
+    reviewed_by = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    reviewed_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, default=_utcnow)
+    updated_at = Column(DateTime, default=_utcnow, onupdate=_utcnow)
+
+
+class SubAgreement(Base):
+    """One acceptance of the subcontractor agreement, versioned (migration 098).
+
+    Append-only: a new acceptance is a new row, never an update to the last
+    one. The whole value of this table is being able to say which text a
+    person agreed to and when — an updated row destroys exactly that.
+    """
+    __tablename__ = "sub_agreements"
+    org_id = Column(Integer, ForeignKey("orgs.id"), nullable=True, index=True)  # tenant scope (MT-1)
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"),
+                     nullable=False, index=True)
+    version = Column(String(32), nullable=False)
+    accepted_at = Column(DateTime, nullable=False, default=_utcnow)
+    accepted_ip = Column(String(64), nullable=True)
+    created_at = Column(DateTime, default=_utcnow)
+
+
 class CrewDoc(Base):
     """One training / reference document for the crew (crew app Phase 5):
     cleaning standards, chemical guides, onboarding steps, policies. The

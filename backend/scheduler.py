@@ -402,6 +402,27 @@ def schedule_audit_tick() -> dict:
         except Exception:
             log.exception("[crew-escalation] pass failed (schedule audit continues)")
 
+        # Lapsing insurance rides this tick too (R1: no new ticks). An expired
+        # COI is worse than a missing one — nobody goes looking for it, because
+        # the office believes it has one. Warned here so it reaches the log the
+        # office already reads, and self-gated so a failure can't take the
+        # duplicate audit down with it.
+        try:
+            from services.sub_vetting import expiring_documents
+            lapsing = expiring_documents(db, org_id=1)
+            if lapsing:
+                gone = [r for r in lapsing if r["expired"]]
+                if gone:
+                    log.warning(
+                        "[sub-vetting] %s document(s) EXPIRED — those subs can no "
+                        "longer take jobs: %s", len(gone), gone[:10])
+                soon = [r for r in lapsing if not r["expired"]]
+                if soon:
+                    log.warning("[sub-vetting] %s document(s) expiring within 30 "
+                                "days: %s", len(soon), soon[:10])
+        except Exception:
+            log.exception("[sub-vetting] expiry pass failed (schedule audit continues)")
+
         from modules.scheduling.router import find_schedule_issues
         issues = find_schedule_issues(db)
         c = issues.get("counts", {})

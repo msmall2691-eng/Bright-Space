@@ -315,6 +315,74 @@ export interface paths {
         patch: operations["update_workspace_user_api_auth_users__user_id__patch"];
         trace?: never;
     };
+    "/api/auth/users/{user_id}/file": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Sub File
+         * @description One subcontractor's file: every document, its state, and what's missing.
+         */
+        get: operations["get_sub_file_api_auth_users__user_id__file_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/auth/users/{user_id}/file/{kind}/download": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Download Sub Document
+         * @description The document itself, to actually read before accepting it.
+         *
+         *     Inline rather than an attachment: the point is to look at the certificate
+         *     and check the dates, not to collect a downloads folder. Sent with
+         *     nosniff + a no-store cache header — these are insurance certificates and
+         *     tax forms, not something to leave in a shared browser cache.
+         */
+        get: operations["download_sub_document_api_auth_users__user_id__file__kind__download_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/auth/users/{user_id}/file/{kind}/review": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Review Sub Document
+         * @description Accept or reject one document, optionally correcting its expiry.
+         *
+         *     The office can fix an expiry the sub typed wrong — the date on the
+         *     certificate is what matters, and it is the office that reads it.
+         */
+        post: operations["review_sub_document_api_auth_users__user_id__file__kind__review_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/auth/users/invite": {
         parameters: {
             query?: never;
@@ -5979,6 +6047,75 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/crew/my-file": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * My File
+         * @description Everything on my file, and anything still standing in my way.
+         */
+        get: operations["my_file_api_crew_my_file_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/crew/my-file/agreement": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Accept Agreement
+         * @description Accept the current subcontractor agreement.
+         *
+         *     Append-only: a second acceptance of the same version is a no-op rather than
+         *     an update, because the value of this table is being able to say what
+         *     somebody agreed to and when. Overwriting destroys exactly that.
+         */
+        post: operations["accept_agreement_api_crew_my_file_agreement_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/crew/my-file/{kind}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Upload My Document
+         * @description Upload or replace one document on my file.
+         *
+         *     Replaces rather than accumulates (UNIQUE on user_id+kind): three COIs and
+         *     no way to tell which is live is worse than one that might be stale.
+         *     Re-uploading always returns the document to `pending` — a new file has not
+         *     been reviewed, whatever the old one's status was.
+         */
+        post: operations["upload_my_document_api_crew_my_file__kind__post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/crew/jobs/{job_id}/respond": {
         parameters: {
             query?: never;
@@ -7097,6 +7234,16 @@ export interface components {
             file: string;
             /** Kind */
             kind?: string;
+        };
+        /** Body_upload_my_document_api_crew_my_file__kind__post */
+        Body_upload_my_document_api_crew_my_file__kind__post: {
+            /**
+             * File
+             * Format: binary
+             */
+            file: string;
+            /** Expires At */
+            expires_at?: string;
         };
         /** Body_upload_property_photo_api_crew_properties__property_id__photos_post */
         Body_upload_property_photo_api_crew_properties__property_id__photos_post: {
@@ -9089,6 +9236,15 @@ export interface components {
             /** Snoozed Until */
             snoozed_until?: string | null;
         };
+        /** SubDocumentReview */
+        SubDocumentReview: {
+            /** Status */
+            status: string;
+            /** Notes */
+            notes?: string | null;
+            /** Expires At */
+            expires_at?: string | null;
+        };
         /** SubscribeBody */
         SubscribeBody: {
             /** Endpoint */
@@ -9629,6 +9785,105 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["AdminUserUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_sub_file_api_auth_users__user_id__file_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                user_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    download_sub_document_api_auth_users__user_id__file__kind__download_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                user_id: number;
+                kind: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    review_sub_document_api_auth_users__user_id__file__kind__review_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                user_id: number;
+                kind: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SubDocumentReview"];
             };
         };
         responses: {
@@ -18323,6 +18578,81 @@ export interface operations {
         requestBody?: {
             content: {
                 "application/json": components["schemas"]["ClaimRequestBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    my_file_api_crew_my_file_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    accept_agreement_api_crew_my_file_agreement_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    upload_my_document_api_crew_my_file__kind__post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                kind: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": components["schemas"]["Body_upload_my_document_api_crew_my_file__kind__post"];
             };
         };
         responses: {

@@ -11,11 +11,12 @@
  * week-pay summary), not four.
  */
 import { useCallback, useEffect, useState } from 'react'
-import { MapPin, LogOut, RefreshCw, CalendarDays, Clock, Car, DollarSign, CheckCircle2, CalendarRange, CircleUserRound, Sparkles, BookOpen, MessageSquare, Sun, CalendarClock, CalendarOff, Smartphone, CalendarPlus } from 'lucide-react'
+import { MapPin, LogOut, RefreshCw, CalendarDays, Clock, Car, DollarSign, CheckCircle2, CalendarRange, CircleUserRound, Sparkles, BookOpen, MessageSquare, Sun, CalendarClock, CalendarOff, Smartphone, CalendarPlus, ShieldCheck } from 'lucide-react'
 import { get, post, patch, logout } from '../api'
 import { EmptyState, ErrorState, Skeleton } from '../components/ui'
 import JobPhotoSheet from '../components/crew/JobPhotoSheet'
 import CrewProfile from '../components/crew/CrewProfile'
+import CrewMyFile from '../components/crew/CrewMyFile'
 import CrewAvailability from '../components/crew/CrewAvailability'
 import CrewLearn from '../components/crew/CrewLearn'
 import CrewMonth from '../components/crew/CrewMonth'
@@ -762,6 +763,13 @@ export default function MyDay() {
                 <SettingRow icon={CalendarOff} label="Time off"
                   summary="Request days off — the office approves">
                   <CrewTimeOff bare />
+                </SettingRow>
+                {/* Sits under Work, above pay: it's the thing that decides
+                    whether there IS any work, and a sub blocked by it needs to
+                    find it without being told where to look. */}
+                <SettingRow icon={ShieldCheck} label="My file"
+                  summary="Agreement, W-9 and insurance — needed to ask for jobs">
+                  <CrewMyFile bare />
                 </SettingRow>
                 <SettingRow icon={DollarSign} label="This week"
                   summary={weekPay
