@@ -2654,8 +2654,111 @@ export interface paths {
          *     sent (nothing is written to Square) so the operator can verify before
          *     committing. Set dry_run=false to actually create the timecards. Hours come
          *     from the native BrightBase clock.
+         *
+         *     Subcontractor work is deliberately absent: punches on a job carrying
+         *     `agreed_rate` are excluded and counted in `marketplace_excluded`. Square
+         *     Payroll is the employee rail; subs are paid from the payout ledger
+         *     (`/api/payroll/subcontractors/payouts`).
          */
         post: operations["send_to_square_api_payroll_send_to_square_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/payroll/subcontractors": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Subcontractor Summary
+         * @description Everything the Subcontractors view needs, in ONE request
+         *     (brightbase-economy): what the period earned, what's already on the ledger,
+         *     year-to-date per person, and which rail pays them.
+         *
+         *     `earned` is what the period's completed marketplace jobs come to;
+         *     `unrecorded` is the part of that with no payout row yet — the number the
+         *     Generate button acts on. They differ only until Generate is pressed, and
+         *     showing both is what makes pressing it safe.
+         */
+        get: operations["subcontractor_summary_api_payroll_subcontractors_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/payroll/subcontractors/payouts/generate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Generate Payouts
+         * @description Record what the period's completed marketplace work owes.
+         *
+         *     Creates `due` rows only — no money moves here. Idempotent: running it twice
+         *     on the same period creates nothing the second time.
+         */
+        post: operations["generate_payouts_api_payroll_subcontractors_payouts_generate_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/payroll/subcontractors/payouts/mark": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Mark Payouts
+         * @description Move payouts along: due → sent → paid, or void.
+         *
+         *     Marking `paid` is a human asserting money left. Nothing else in the system
+         *     sets it, because nothing else knows.
+         */
+        post: operations["mark_payouts_api_payroll_subcontractors_payouts_mark_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/payroll/subcontractors/payouts/send": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Send Payouts
+         * @description Hand the selected payouts to the configured rail.
+         *
+         *     The manual rail returns a CSV and marks them `sent` — it cannot know
+         *     whether a cheque was written, so `paid` stays a separate human act. Only
+         *     `due` payouts are sendable; re-sending something already out is how one
+         *     person gets paid twice.
+         */
+        post: operations["send_payouts_api_payroll_subcontractors_payouts_send_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -7840,6 +7943,13 @@ export interface components {
             /** Service Scope Str */
             service_scope_str?: string | null;
         };
+        /** GeneratePayoutsBody */
+        GeneratePayoutsBody: {
+            /** Start Date */
+            start_date: string;
+            /** End Date */
+            end_date: string;
+        };
         /** GoogleAccountUpdate */
         GoogleAccountUpdate: {
             /** Gmail Sync Enabled */
@@ -8266,6 +8376,17 @@ export interface components {
         MarkDoneBody: {
             /** Note */
             note?: string | null;
+        };
+        /** MarkPayoutsBody */
+        MarkPayoutsBody: {
+            /** Payout Ids */
+            payout_ids: unknown[];
+            /** Status */
+            status: string;
+            /** Method */
+            method?: string | null;
+            /** External Ref */
+            external_ref?: string | null;
         };
         /** MeUpdate */
         MeUpdate: {
@@ -9180,6 +9301,11 @@ export interface components {
             phone?: string | null;
             /** Custom Message */
             custom_message?: string | null;
+        };
+        /** SendPayoutsBody */
+        SendPayoutsBody: {
+            /** Payout Ids */
+            payout_ids: unknown[];
         };
         /** SendReplyRequest */
         SendReplyRequest: {
@@ -13465,6 +13591,139 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["SendToSquareBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    subcontractor_summary_api_payroll_subcontractors_get: {
+        parameters: {
+            query: {
+                /** @description YYYY-MM-DD */
+                start_date: string;
+                /** @description YYYY-MM-DD */
+                end_date: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    generate_payouts_api_payroll_subcontractors_payouts_generate_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["GeneratePayoutsBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    mark_payouts_api_payroll_subcontractors_payouts_mark_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MarkPayoutsBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    send_payouts_api_payroll_subcontractors_payouts_send_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SendPayoutsBody"];
             };
         };
         responses: {

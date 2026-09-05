@@ -60,6 +60,9 @@ TENANT_TABLES = [
     # The vetting file (migration 098): what a subcontractor has on record.
     # Insurance certificates and signed agreements, org-scoped from creation.
     "sub_documents", "sub_agreements",
+    # Subcontractor payouts (migration 099): the ledger of what is owed to
+    # whom. Org-scoped from creation.
+    "sub_payouts",
     # `users` is DELIBERATELY excluded — re-audited 2026-08-16, still not safe.
     # Re-read this whole comment before adding it; don't re-derive from scratch.
     #

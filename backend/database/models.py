@@ -960,6 +960,44 @@ class SubAgreement(Base):
     created_at = Column(DateTime, default=_utcnow)
 
 
+class SubPayout(Base):
+    """One amount owed to a subcontractor, and whether it went out
+    (migration 099).
+
+    Subs are VENDORS, not payroll: Square's Labor timecard path carries hours
+    at an hourly rate, which is the exact shape a subcontractor's pay must not
+    have. This is the ledger that survives whatever payment rail is chosen
+    later — the rail changes, the record of what was owed does not.
+
+    UNIQUE (user_id, job_id): re-running a period must never pay the same
+    cleaning twice. Adjustments carry a NULL job_id and are exempt for free,
+    since NULLs compare distinct in a unique constraint.
+    """
+    __tablename__ = "sub_payouts"
+    __table_args__ = (
+        UniqueConstraint("user_id", "job_id", name="uq_sub_payouts_user_job"),
+    )
+    org_id = Column(Integer, ForeignKey("orgs.id"), nullable=True, index=True)  # tenant scope (MT-1)
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"),
+                     nullable=False, index=True)
+    cleaner_id = Column(String, nullable=True, index=True)
+    job_id = Column(Integer, ForeignKey("jobs.id", ondelete="SET NULL"),
+                    nullable=True, index=True)
+    amount = Column(Float, nullable=False)
+    status = Column(String(16), nullable=False, default="due")  # due|sent|paid|void
+    method = Column(String(32), nullable=True)
+    external_ref = Column(String(128), nullable=True)
+    memo = Column(Text, nullable=True)
+    # The work date this pays for. A January payout for December work belongs
+    # to December, so a year-to-date total groups by this and not created_at.
+    earned_on = Column(Date, nullable=True, index=True)
+    paid_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, default=_utcnow)
+    updated_at = Column(DateTime, default=_utcnow, onupdate=_utcnow)
+
+
 class CrewDoc(Base):
     """One training / reference document for the crew (crew app Phase 5):
     cleaning standards, chemical guides, onboarding steps, policies. The
