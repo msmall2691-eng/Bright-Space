@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { Settings2, Mail, Plug, Users, Settings as SettingsIcon } from 'lucide-react'
 import UsersAdmin from '../components/UsersAdmin'
+import SubApplications from '../components/SubApplications'
 import PageHeader from '../components/ui/PageHeader'
 import SubNav from '../components/ui/SubNav'
 import { pushToast } from '../utils/toastBus'
@@ -103,6 +104,10 @@ export default function Settings() {
           <div className="flex-1 overflow-y-auto px-4 sm:px-8 pb-8 bg-bg">
             <div className="max-w-2xl pt-6">
               <UsersAdmin />
+              {/* Draws nothing until somebody has actually applied — a
+                  permanent empty panel here is one people learn to scroll
+                  past, and this is where a real applicant would sit. */}
+              <SubApplications />
             </div>
           </div>
         )}

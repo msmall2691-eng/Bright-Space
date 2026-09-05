@@ -6,6 +6,7 @@ import BottomNav from './components/BottomNav'
 import PageAssistant from './components/PageAssistant'
 import GlobalSearch from './components/GlobalSearch'
 import Login from './pages/Login'
+import Apply from './pages/Apply'
 import PendingApproval from './pages/PendingApproval'
 import OpsBoard from './pages/OpsBoard'
 import MyDay from './pages/MyDay'
@@ -249,6 +250,9 @@ export default function App() {
   const isPublicRoute = location.pathname.startsWith('/quote/') || location.pathname.startsWith('/pay/')
     || location.pathname.startsWith('/job/') || location.pathname.startsWith('/portal')
     || location.pathname.startsWith('/accept-invite')
+    // Applying to join the bench. No token in the path — this one is meant to
+    // be shared as a plain link, on a card or in a job ad.
+    || location.pathname === '/apply'
   const isLoginRoute = location.pathname === '/login'
   const isAuthenticated = !!user && !!localStorage.getItem('brightbase_jwt')
 
@@ -261,6 +265,7 @@ export default function App() {
         <Route path="/portal/verify" element={<PortalVerify />} />
         <Route path="/portal" element={<CustomerPortal />} />
         <Route path="/accept-invite" element={<AcceptInvite />} />
+        <Route path="/apply" element={<Apply />} />
         <Route path="*" element={<Navigate to="/dashboard" replace />} />
       </Routes>
     )
