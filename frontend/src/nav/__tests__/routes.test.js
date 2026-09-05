@@ -55,6 +55,11 @@ function reachable() {
 const NOT_IN_NAV = new Set([
   '/', '/login', '/design-system',
   '/quote', '/pay', '/job', '/portal', '/portal/verify', '/accept-invite',
+  // The public apply form. Deliberately outside the nav and deliberately
+  // outside auth: it's meant to be handed out as a plain link — on a card, in
+  // a job ad — to people who have no login and never will unless the office
+  // approves them. The office side of it lives in Settings → Users.
+  '/apply',
 ])
 
 describe('every page has a way in', () => {

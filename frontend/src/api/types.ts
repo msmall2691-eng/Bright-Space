@@ -4094,6 +4094,110 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/apply": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Apply
+         * @description Public. Records an application; creates nothing else.
+         *
+         *     Always answers the same way. It will not say whether this email already
+         *     applied, already works here, or was declined last spring — an endpoint that
+         *     distinguishes those is an account-enumeration oracle wearing a form.
+         */
+        post: operations["apply_api_apply_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/sub-applications": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Applications
+         * @description Everyone who's asked, newest first, with the counts the tab needs.
+         *
+         *     One request draws the screen (brightbase-economy) — the counts come from
+         *     the same rows rather than a second query per status.
+         */
+        get: operations["list_applications_api_sub_applications_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/sub-applications/{app_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Review Application
+         * @description Move an application along, or write a note on it.
+         *
+         *     `approved` is NOT settable here — that status is a side effect of the
+         *     approve endpoint, which also creates the account. Letting it be set
+         *     directly would produce applications marked approved with nobody to show
+         *     for it.
+         */
+        patch: operations["review_application_api_sub_applications__app_id__patch"];
+        trace?: never;
+    };
+    "/api/sub-applications/{app_id}/approve": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Approve Application
+         * @description Turn an application into a crew account and email the invite.
+         *
+         *     This is the only path from "somebody filled in a form" to "somebody can
+         *     sign in", and it is admin-only and manual by design.
+         *
+         *     Approving does NOT clear them to work. It gives them a login, and the login
+         *     lands them on My File with a W-9, a certificate of insurance and an
+         *     agreement to provide (098). `can_take_jobs` stays false until those are on
+         *     record and accepted — so an approved application is an invitation to get
+         *     vetted, not a shortcut past it.
+         *
+         *     The invite email is the SAME sender the crew-add screen uses
+         *     (`send_staff_invite`), so wording and the 7-day expiry can't drift apart.
+         */
+        post: operations["approve_application_api_sub_applications__app_id__approve_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/reminders/jobs/{job_id}/invite.ics": {
         parameters: {
             query?: never;
@@ -7686,6 +7790,35 @@ export interface components {
             /** Home Address */
             home_address?: string | null;
         };
+        /** ApplyBody */
+        ApplyBody: {
+            /** Name */
+            name?: string | null;
+            /** Email */
+            email?: string | null;
+            /** Phone */
+            phone?: string | null;
+            /** Business Name */
+            business_name?: string | null;
+            /** Ein */
+            ein?: string | null;
+            /** Towns */
+            towns?: string | null;
+            /** Experience */
+            experience?: string | null;
+            /** Message */
+            message?: string | null;
+            /** Has Insurance */
+            has_insurance?: boolean | null;
+            /** Has Transport */
+            has_transport?: boolean | null;
+            /** Weekends */
+            weekends?: boolean | null;
+            /** Source */
+            source?: string | null;
+            /** Website */
+            website?: string | null;
+        };
         /** AskBody */
         AskBody: {
             /** Question */
@@ -9497,6 +9630,13 @@ export interface components {
             response: string;
             /** Reason */
             reason?: string | null;
+        };
+        /** ReviewBody */
+        ReviewBody: {
+            /** Status */
+            status?: string | null;
+            /** Notes */
+            notes?: string | null;
         };
         /** RouteBody */
         RouteBody: {
@@ -16347,6 +16487,136 @@ export interface operations {
             header?: never;
             path: {
                 window_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    apply_api_apply_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ApplyBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_applications_api_sub_applications_get: {
+        parameters: {
+            query?: {
+                status?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    review_application_api_sub_applications__app_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                app_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ReviewBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    approve_application_api_sub_applications__app_id__approve_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                app_id: number;
             };
             cookie?: never;
         };

@@ -998,6 +998,50 @@ class SubPayout(Base):
     updated_at = Column(DateTime, default=_utcnow, onupdate=_utcnow)
 
 
+class SubApplication(Base):
+    """Somebody asking to join the bench (migration 102).
+
+    An application is NOT a user, and this is not `users`. Anyone on the
+    internet can create a row here; nobody can create a login. Approval is the
+    step that mints a crew account, and it is a person clicking a button.
+
+    NO SSN OR TIN COLUMN, deliberately. A sub's tax identifier arrives later
+    inside the W-9 held in `sub_documents` — bytes, never parsed. `ein`
+    identifies a BUSINESS rather than a person, which is why it is the only
+    identifier here, and it is optional.
+
+    `user_id` records the account approval created, so an application can be
+    traced to the person it became and approving twice can't mint two logins.
+    """
+    __tablename__ = "sub_applications"
+    org_id = Column(Integer, ForeignKey("orgs.id"), nullable=True, index=True)  # tenant scope (MT-1)
+
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String(200), nullable=False)
+    email = Column(String(255), nullable=False, index=True)
+    phone = Column(String(32), nullable=True)
+    business_name = Column(String(200), nullable=True)
+    ein = Column(String(32), nullable=True)
+    towns = Column(Text, nullable=True)
+    experience = Column(Text, nullable=True)
+    message = Column(Text, nullable=True)
+    # Self-reported and treated as such — the real answers come from the
+    # documents on file once they're accepted. These only decide who is worth
+    # a phone call.
+    has_insurance = Column(Boolean, nullable=True)
+    has_transport = Column(Boolean, nullable=True)
+    weekends = Column(Boolean, nullable=True)
+    source = Column(String(64), nullable=True)
+    status = Column(String(16), nullable=False, default="new")  # new|reviewing|approved|declined
+    notes = Column(Text, nullable=True)                          # office-only
+    decided_at = Column(DateTime, nullable=True)
+    decided_by = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"),
+                     nullable=True, index=True)
+    created_at = Column(DateTime, default=_utcnow)
+    updated_at = Column(DateTime, default=_utcnow, onupdate=_utcnow)
+
+
 class TurnoverWindow(Base):
     """One week's turnovers, staffed as a batch (migration 101).
 
