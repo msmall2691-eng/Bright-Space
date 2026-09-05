@@ -45,6 +45,8 @@ class _Viewer:
 
 
 def _as(user):
+    if getattr(user, "role", None) == "cleaner":
+        _vet(user.id)          # a sub has to be cleared to work before claiming
     app.dependency_overrides[get_current_user] = lambda: user
     app.dependency_overrides[current_org_id] = lambda: 1
     return TestClient(app)
@@ -53,6 +55,31 @@ def _as(user):
 def _clear():
     app.dependency_overrides.pop(get_current_user, None)
     app.dependency_overrides.pop(current_org_id, None)
+
+
+def _vet(uid, org_id=1):
+    """Give a stub cleaner a complete vetting file (migration 098).
+
+    The claim endpoint refuses anyone whose file is incomplete — that is the
+    whole point of Phase 2 — so a test about claiming has to be about a sub who
+    is cleared to work, or it only ever exercises the gate. Called from _as()
+    so no individual test has to remember; the gate itself is tested in
+    tests/test_sub_vetting.py, where an unvetted sub is the subject.
+    """
+    from datetime import timedelta
+    from database.models import SubAgreement, SubDocument
+    from services.sub_vetting import CURRENT_AGREEMENT_VERSION
+    from utils.dates import business_today
+
+    db = SessionLocal()
+    db.query(SubDocument).filter(SubDocument.user_id == uid).delete(synchronize_session=False)
+    db.query(SubAgreement).filter(SubAgreement.user_id == uid).delete(synchronize_session=False)
+    db.add(SubAgreement(org_id=org_id, user_id=uid, version=CURRENT_AGREEMENT_VERSION,
+                        accepted_at=business_today()))
+    db.add(SubDocument(org_id=org_id, user_id=uid, kind="w9", status="accepted", data=b"x"))
+    db.add(SubDocument(org_id=org_id, user_id=uid, kind="coi", status="accepted", data=b"x",
+                       expires_at=business_today() + timedelta(days=365)))
+    db.commit(); db.close()
 
 
 @pytest.fixture

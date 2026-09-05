@@ -437,3 +437,16 @@ def funnel_dashboard(
     from modules.dashboard.analytics import lead_funnel
     return lead_funnel(db, resolve_org_id(org_id, db), days=days)
 
+
+
+@router.get("/bench", dependencies=[Depends(require_role("admin", "manager"))])
+def bench_digest(db: Session = Depends(get_db),
+                 org_id: int = Depends(current_org_id)):
+    """This week on the bench, on demand.
+
+    The same thing the Wednesday round-up sends, readable whenever somebody
+    wants it. One function builds both (R6) — a digest that disagreed with the
+    screen it links to would be worse than no digest.
+    """
+    from services.bench_digest import build
+    return build(db, resolve_org_id(org_id, db))

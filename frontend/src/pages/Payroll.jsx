@@ -7,6 +7,7 @@ import {
 } from 'lucide-react'
 import { get, put, patch, post } from '../api'
 import { PageHeader, StatCard, SubNav } from '../components/ui'
+import SubcontractorPayroll from '../components/payroll/SubcontractorPayroll'
 
 // Payroll breakdown.
 // Pulls native time-clock punches for a pay period and splits each crew
@@ -69,6 +70,12 @@ export default function Payroll() {
   const [expanded, setExpanded] = useState({})
   const [overrides, setOverrides] = useState({})
   const [square, setSquare] = useState(null)   // { mode:'preview'|'sent', data, busy, error }
+  // Employees and subcontractors are paid by different rules and must not
+  // share a table: an employee is hours x rate and exports to Square, a sub is
+  // a flat agreed price paid from the payout ledger. A screen that showed a
+  // sub an hourly total would be arguing they're an employee, which is the one
+  // thing this pivot cannot afford to do casually.
+  const [view, setView] = useState('employees')
 
   // Persist manual overrides per pay period so they survive a refresh.
   const ovKey = `payroll_overrides_${startDate}_${endDate}`
@@ -156,6 +163,20 @@ export default function Payroll() {
       >
         <SubNav className="mb-3" />
 
+        {/* Quiet underline tabs — same vocabulary as SubNav and the Messages
+            filter strip. No pills, no counts. */}
+        <div className="mb-3 flex items-center gap-4 border-b border-hairline">
+          {[['employees', 'Employees'], ['subcontractors', 'Subcontractors']].map(([key, label]) => (
+            <button key={key} type="button" onClick={() => setView(key)}
+              aria-current={view === key ? 'page' : undefined}
+              className={`-mb-px shrink-0 whitespace-nowrap border-b-2 px-0.5 py-1.5 text-[13px] font-medium transition-colors ${
+                view === key ? 'border-ink text-ink' : 'border-transparent text-ink-3 hover:text-ink-2'
+              }`}>
+              {label}
+            </button>
+          ))}
+        </div>
+
         <div className="flex flex-wrap items-end gap-3">
           <div>
             <label className="block text-xs text-ink-3 mb-1">Start Date</label>
@@ -167,11 +188,15 @@ export default function Payroll() {
             <input type="date" value={endDate} onChange={e => setEndDate(e.target.value)}
               className="bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-none" />
           </div>
-          <button onClick={pull} disabled={loading}
-            className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white disabled:bg-bg-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors">
-            <Search className="w-4 h-4" />{loading ? 'Loading...' : 'Pull Data'}
-          </button>
-          {data && (
+          {/* The subcontractor view pulls itself from the same dates — its
+              payload is one request and there is nothing to configure first. */}
+          {view === 'employees' && (
+            <button onClick={pull} disabled={loading}
+              className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white disabled:bg-bg-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors">
+              <Search className="w-4 h-4" />{loading ? 'Loading...' : 'Pull Data'}
+            </button>
+          )}
+          {view === 'employees' && data && (
             <>
               <button onClick={exportCsv}
                 className="flex items-center gap-2 bg-panel hover:bg-bg-2 border border-hairline px-4 py-2 rounded-lg text-sm font-medium transition-colors">
@@ -189,14 +214,18 @@ export default function Payroll() {
       </PageHeader>
 
       <div className="px-4 sm:px-8 pb-6 space-y-5">
-        {error && (
+        {view === 'subcontractors' && (
+          <SubcontractorPayroll startDate={startDate} endDate={endDate} isAdmin={isAdmin} />
+        )}
+
+        {view === 'employees' && error && (
           <div className="flex items-start gap-2 text-sm text-ink-2 bg-panel border border-hairline rounded-xl p-4">
             <span className="h-1.5 w-1.5 rounded-full bg-red-500 shrink-0 mt-1.5" aria-hidden="true" />
             {error}
           </div>
         )}
 
-        {data && (
+        {view === 'employees' && data && (
           <>
             {data.warnings?.length > 0 && (
               <div className="text-sm bg-panel border border-hairline rounded-xl p-4">
@@ -304,8 +333,9 @@ export default function Payroll() {
         )}
 
         {/* Setup lives BELOW the pay-run results: rates change a few times a
-            year; the numbers are what this page is opened for. */}
-        <section>
+            year; the numbers are what this page is opened for. Employee rates
+            only — a subcontractor's price is agreed per job, never set here. */}
+        <section hidden={view !== 'employees'}>
           <h2 className="text-[11px] font-semibold uppercase tracking-wide text-ink-3 mb-2">Setup</h2>
           <RatesPanel />
         </section>

@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { Users, Check, X, ShieldCheck, RefreshCw, UserPlus, Mail, Clock, Ban, CheckCircle2 } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { get, post, patch } from '../api'
+import SubFileReview from './SubFileReview'
 import { pushToast } from '../utils/toastBus'
 
 const ROLES = ['admin', 'manager', 'member', 'viewer', 'cleaner']
@@ -284,6 +285,12 @@ export default function UsersAdmin() {
                     </>
                   )}
                 </div>
+
+                {/* The vetting file (migration 098). Cleaners only, and it
+                    fetches nothing until opened — the list renders every user
+                    at once, so a panel that loaded on mount would fire one
+                    request per cleaner just to draw the page. */}
+                {u.role === 'cleaner' && <SubFileReview userId={u.id} />}
 
                 {/* Actions */}
                 <div className="flex flex-wrap items-center gap-2 mt-3">

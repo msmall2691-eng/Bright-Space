@@ -7,6 +7,7 @@ import {
 import { get, patch, post, del, download } from '../api'
 import RecurrenceScopeDialog from '../components/schedule/RecurrenceScopeDialog'
 import JobClaimRequests from '../components/schedule/JobClaimRequests'
+import JobMargin from '../components/schedule/JobMargin'
 import { rescheduleRecurringVisit } from '../utils/recurringReschedule'
 import { toast } from '../utils/toastBus'
 import { confirmDialog } from '../utils/confirmBus'
@@ -635,6 +636,9 @@ export default function JobDetail() {
                       <span>Nobody can ask for this until it has a price, or names their own.</span>
                     </p>
                   )}
+                  {/* The margin, right beside the box the price goes in. Post a
+                      job without seeing this and the margin is what you lose. */}
+                  <JobMargin jobId={job.id} pay={job.posted_rate} />
                 </div>
               )}
               {canEdit() && job.agreed_rate != null && (

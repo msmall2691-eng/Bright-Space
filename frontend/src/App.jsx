@@ -177,6 +177,8 @@ const Properties = lazy(() => import('./pages/Properties'))
 const PropertyDetail = lazy(() => import('./pages/PropertyDetail'))
 const PropertyIcalsBulk = lazy(() => import('./pages/PropertyIcalsBulk'))
 const Recurring = lazy(() => import('./pages/Recurring'))
+const RoutesPage = lazy(() => import('./pages/Routes'))
+const Turnovers = lazy(() => import('./pages/Turnovers'))
 const SyncCenter = lazy(() => import('./pages/SyncCenter'))
 const OwnerDashboard = lazy(() => import('./pages/OwnerDashboard'))
 const Cleanup = lazy(() => import('./pages/Cleanup'))
@@ -373,6 +375,13 @@ export default function App() {
                   and rule edits (future visits only). The old
                   /schedule?tab=recurring summary tab now redirects here. */}
               <Route path="/recurring" element={<Recurring />} />
+              {/* Standing blocks of recurring work owned by one sub
+                  (marketplace pivot Phase 4). A tab on Schedule, not a
+                  new sidebar destination — that went 17 -> 7 on purpose. */}
+              <Route path="/routes" element={<RoutesPage />} />
+              {/* Guest changeover days posted to the bench as a batch,
+                  with a price ladder on whatever nobody takes. */}
+              <Route path="/turnovers" element={<Turnovers />} />
               <Route path="/owner" element={<OwnerDashboard />} />
               {/* Tidy Up — retroactive duplicate detection + merge, and data-
                   quality flags. Reached from the board's "Tidy Up" nudge. */}

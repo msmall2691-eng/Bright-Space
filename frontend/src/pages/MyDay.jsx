@@ -11,11 +11,14 @@
  * week-pay summary), not four.
  */
 import { useCallback, useEffect, useState } from 'react'
-import { MapPin, LogOut, RefreshCw, CalendarDays, Clock, Car, DollarSign, CheckCircle2, CalendarRange, CircleUserRound, Sparkles, BookOpen, MessageSquare, Sun, CalendarClock, CalendarOff, Smartphone, CalendarPlus } from 'lucide-react'
+import { MapPin, LogOut, RefreshCw, CalendarDays, Clock, Car, DollarSign, CheckCircle2, CalendarRange, CircleUserRound, Sparkles, BookOpen, MessageSquare, Sun, CalendarClock, CalendarOff, Smartphone, CalendarPlus, ShieldCheck } from 'lucide-react'
 import { get, post, patch, logout } from '../api'
+import { toast } from '../utils/toastBus'
 import { EmptyState, ErrorState, Skeleton } from '../components/ui'
 import JobPhotoSheet from '../components/crew/JobPhotoSheet'
 import CrewProfile from '../components/crew/CrewProfile'
+import CrewMyFile from '../components/crew/CrewMyFile'
+import CrewMyRoutes from '../components/crew/CrewMyRoutes'
 import CrewAvailability from '../components/crew/CrewAvailability'
 import CrewLearn from '../components/crew/CrewLearn'
 import CrewMonth from '../components/crew/CrewMonth'
@@ -460,13 +463,20 @@ export default function MyDay() {
     setActionBusy(true); setActionError(null)
     const raw = String(claimRate).trim()
     try {
-      await post(`/api/crew/jobs/${claimJob.id}/claim`, {
+      const res = await post(`/api/crew/jobs/${claimJob.id}/claim`, {
         // Empty means "your price is fine" — send null, not 0, or the server
         // reads it as an offer to work for nothing.
         requested_rate: raw === '' ? null : Number(raw),
         message: claimMessage.trim() || null,
       })
       setClaimJob(null); setClaimRate(''); setClaimMessage('')
+      // When the office has auto-approval on and nothing needed deciding, the
+      // job is already theirs by the time this returns. Saying "we'll let you
+      // know" then would be false, and the version of false that makes someone
+      // ring the office to ask.
+      toast.success(res?.auto_approved
+        ? 'It’s yours — it’s on your schedule now.'
+        : 'Request sent. The office will get back to you.')
       await fetchDay(true)
     }
     catch (e) {
@@ -600,6 +610,23 @@ export default function MyDay() {
           <>
             <GreetingHero firstName={data.first_name} jobCount={(data.today || []).length} />
 
+            {(data.routes || []).some(r => r.status === 'offered') && (
+              /* A standing offer is worth more than a shift and expires by
+                 being ignored, so it leads rather than waiting behind a tab.
+                 Dot + sentence, not a banner. */
+              <button type="button"
+                onClick={() => { setTab('schedule'); setSchedView('routes') }}
+                className="w-full rounded-xl border border-hairline bg-panel px-4 py-3 text-left transition-colors hover:bg-bg-2">
+                <span className="flex items-center gap-1.5 text-[12px] text-ink-2">
+                  <span className="h-1.5 w-1.5 rounded-full bg-amber-500" aria-hidden="true" />
+                  You've been offered a route
+                </span>
+                <span className="mt-0.5 block text-[14px] font-medium text-ink">
+                  {(data.routes || []).find(r => r.status === 'offered')?.name} — have a look
+                </span>
+              </button>
+            )}
+
             {!active && (
               /* Clock in ANYTIME — not just on a job (owner ask). Same endpoint
                  as the per-card button with no job_id; the punch shows up in
@@ -683,8 +710,11 @@ export default function MyDay() {
         {tab === 'schedule' && (
           /* Segmented control (hairline frame, solid active) — same pattern
              as the photo sheet's Before/After toggle. */
-          <div className="grid grid-cols-2 rounded-lg border border-hairline overflow-hidden text-[12px] font-semibold mb-1">
-            {[['list', 'Next 2 weeks'], ['month', 'Month']].map(([v, l]) => (
+          /* Three segments only when this sub actually has a route — a
+             permanent tab for a thing most of the crew doesn't have is chrome. */
+          <div className={`grid ${(data?.routes || []).length ? 'grid-cols-3' : 'grid-cols-2'} rounded-lg border border-hairline overflow-hidden text-[12px] font-semibold mb-1`}>
+            {[['list', 'Next 2 weeks'], ['month', 'Month'],
+              ...((data?.routes || []).length ? [['routes', 'Routes']] : [])].map(([v, l]) => (
               <button key={v} onClick={() => setSchedView(v)} aria-pressed={schedView === v}
                 className={`py-1.5 transition-colors ${
                   schedView === v ? 'bg-blue-600 text-white' : 'bg-panel text-ink-2 hover:bg-bg-2'}`}>
@@ -695,6 +725,10 @@ export default function MyDay() {
         )}
 
         {tab === 'schedule' && schedView === 'month' && <CrewMonth />}
+
+        {/* The full route detail — its houses and their shares — is fetched
+            here and not in my-day, so an unopened tab costs nothing. */}
+        {tab === 'schedule' && schedView === 'routes' && <CrewMyRoutes />}
 
         {tab === 'schedule' && schedView === 'list' && !loading && !error && data && (data.open_jobs || []).length > 0 && (
           <section>
@@ -762,6 +796,13 @@ export default function MyDay() {
                 <SettingRow icon={CalendarOff} label="Time off"
                   summary="Request days off — the office approves">
                   <CrewTimeOff bare />
+                </SettingRow>
+                {/* Sits under Work, above pay: it's the thing that decides
+                    whether there IS any work, and a sub blocked by it needs to
+                    find it without being told where to look. */}
+                <SettingRow icon={ShieldCheck} label="My file"
+                  summary="Agreement, W-9 and insurance — needed to ask for jobs">
+                  <CrewMyFile bare />
                 </SettingRow>
                 <SettingRow icon={DollarSign} label="This week"
                   summary={weekPay

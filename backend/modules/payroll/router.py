@@ -748,8 +748,37 @@ async def _native_send_to_square(body: SendToSquareBody, db: Session, oid: int) 
                    "unpriced": 0, "excluded": 0,
                    "square_team_member_id": sqm["id"] if sqm else None,
                    "square_name": sqm["name"] if sqm else None,
-                   "matched": bool(sqm)}
+                   "matched": bool(sqm),
+                   "marketplace_excluded": 0}
             emps[cid] = emp
+
+        # ── Subcontractor work never reaches Square Payroll ──────────────
+        # A job carrying agreed_rate was claimed by a subcontractor at a flat
+        # price for the whole job (see the same guard in _native_summary).
+        # Square Payroll is the EMPLOYEE rail: a timecard there states an
+        # hourly wage and an employment relationship, and pushing a sub's punch
+        # into it would both pay them the wrong number and record them as an
+        # hourly employee of TMCC. Subs are paid from the payout ledger
+        # (services.sub_payouts) instead.
+        #
+        # This exclusion is EXPLICIT and it is load-bearing. Before this line
+        # the export had no idea agreed_rate existed, so a sub who clocked into
+        # a job they'd claimed would have been exported at
+        # pay_rate_residential. Do not "simplify" it away by noticing that the
+        # summary already handles marketplace pay — the summary and this
+        # function walk the same punches independently.
+        #
+        # Mileage is skipped with the punch, not kept: a mileage reimbursement
+        # is an employee benefit. A sub's driving is their own cost of doing
+        # business, already priced into the rate they named.
+        _job = e.job
+        if float(getattr(_job, "agreed_rate", None) or 0.0) > 0 and cid in (
+                getattr(_job, "cleaner_ids", None) or []):
+            # Counted, not silently dropped — the office should be able to see
+            # that the export left work out on purpose.
+            emp["marketplace_excluded"] += 1
+            continue
+
         emp["miles"] += e.miles or 0.0
 
         hours = _native_entry_hours(e)
@@ -843,6 +872,9 @@ async def _native_send_to_square(body: SendToSquareBody, db: Session, oid: int) 
         "matched": sum(1 for e in out_emps if e["matched"]),
         "unmatched": [e["name"] for e in out_emps if not e["matched"]],
         "timecards_total": total_timecards,
+        # Punches deliberately withheld because they belong to subcontractor
+        # work. Reported so a short export reads as a decision, not a gap.
+        "marketplace_excluded": sum(e.get("marketplace_excluded", 0) for e in out_emps),
         "employees": out_emps,
     }
     if body.dry_run:
@@ -886,7 +918,157 @@ async def send_to_square(body: SendToSquareBody, db: Session = Depends(get_db),
     Defaults to a DRY RUN — it matches people and shows exactly what WOULD be
     sent (nothing is written to Square) so the operator can verify before
     committing. Set dry_run=false to actually create the timecards. Hours come
-    from the native BrightBase clock."""
+    from the native BrightBase clock.
+
+    Subcontractor work is deliberately absent: punches on a job carrying
+    `agreed_rate` are excluded and counted in `marketplace_excluded`. Square
+    Payroll is the employee rail; subs are paid from the payout ledger
+    (`/api/payroll/subcontractors/payouts`)."""
     return await _native_send_to_square(body, db, resolve_org_id(org_id, db))
 
 
+
+
+# ── Subcontractors ──────────────────────────────────────────────────────────
+#
+# The Payroll page has two audiences that must not share a screen: employees,
+# who are paid hours × rate and exported to Square, and subcontractors, who are
+# paid a flat agreed price per job and paid from the ledger below. Mixing them
+# is not a layout problem — a screen that shows a sub an hourly total is a
+# screen that argues they are an employee.
+#
+# Business logic lives in `services.sub_payouts` (R6). These handlers parse,
+# scope, and shape.
+
+def _parse_period(start_date: str, end_date: str):
+    try:
+        d0 = datetime.strptime(start_date, "%Y-%m-%d").date()
+        d1 = datetime.strptime(end_date, "%Y-%m-%d").date()
+    except ValueError:
+        raise HTTPException(status_code=422, detail="Dates must be YYYY-MM-DD")
+    if d1 < d0:
+        raise HTTPException(status_code=422, detail="End date is before start date")
+    if (d1 - d0).days > 92:
+        raise HTTPException(status_code=422, detail="Pay periods are capped at 92 days")
+    return d0, d1
+
+
+@router.get("/subcontractors", dependencies=[Depends(require_role("admin", "manager"))])
+def subcontractor_summary(
+    start_date: str = Query(..., description="YYYY-MM-DD"),
+    end_date: str = Query(..., description="YYYY-MM-DD"),
+    db: Session = Depends(get_db),
+    org_id: int = Depends(current_org_id),
+):
+    """Everything the Subcontractors view needs, in ONE request
+    (brightbase-economy): what the period earned, what's already on the ledger,
+    year-to-date per person, and which rail pays them.
+
+    `earned` is what the period's completed marketplace jobs come to;
+    `unrecorded` is the part of that with no payout row yet — the number the
+    Generate button acts on. They differ only until Generate is pressed, and
+    showing both is what makes pressing it safe."""
+    from services import sub_payouts
+
+    d0, d1 = _parse_period(start_date, end_date)
+    oid = resolve_org_id(org_id, db)
+
+    plan = sub_payouts.preview(db, oid, d0, d1)
+    ledger = sub_payouts.list_payouts(db, oid, start=d0, end=d1)
+    ytd = sub_payouts.year_to_date(db, oid)
+    rail = sub_payouts.get_rail(get_setting(db, "sub_payout_rail"))
+
+    live = [p for p in ledger if p["status"] in sub_payouts.LIVE_STATUSES]
+    return {
+        "period": f"{start_date} to {end_date}",
+        "start_date": start_date,
+        "end_date": end_date,
+        "earned_total": round(plan["new_total"]
+                              + sum(r["amount"] for r in plan["existing"]), 2),
+        "unrecorded": plan["new"],
+        "unrecorded_total": plan["new_total"],
+        # A crew ID on a marketplace job with no login behind it. Surfaced
+        # rather than dropped: it is the one case where work was done and
+        # nothing here can say who to pay.
+        "unmatched": plan["unmatched"],
+        "payouts": ledger,
+        "due_total": round(sum(p["amount"] for p in live if p["status"] == "due"), 2),
+        "outstanding_total": round(sum(p["amount"] for p in live
+                                       if p["status"] != "paid"), 2),
+        "paid_total": round(sum(p["amount"] for p in live
+                                if p["status"] == "paid"), 2),
+        "ytd": ytd,
+        "rail": {"name": rail.name, "settles": rail.settles},
+    }
+
+
+class GeneratePayoutsBody(BaseModel):
+    start_date: str
+    end_date: str
+
+
+@router.post("/subcontractors/payouts/generate",
+             dependencies=[Depends(require_role("admin"))])
+def generate_payouts(body: GeneratePayoutsBody, db: Session = Depends(get_db),
+                     org_id: int = Depends(current_org_id)):
+    """Record what the period's completed marketplace work owes.
+
+    Creates `due` rows only — no money moves here. Idempotent: running it twice
+    on the same period creates nothing the second time."""
+    from services import sub_payouts
+
+    d0, d1 = _parse_period(body.start_date, body.end_date)
+    return sub_payouts.generate(db, resolve_org_id(org_id, db), d0, d1)
+
+
+class MarkPayoutsBody(BaseModel):
+    payout_ids: list
+    status: str
+    method: Optional[str] = None
+    external_ref: Optional[str] = None
+
+
+@router.post("/subcontractors/payouts/mark",
+             dependencies=[Depends(require_role("admin"))])
+def mark_payouts(body: MarkPayoutsBody, db: Session = Depends(get_db),
+                 org_id: int = Depends(current_org_id)):
+    """Move payouts along: due → sent → paid, or void.
+
+    Marking `paid` is a human asserting money left. Nothing else in the system
+    sets it, because nothing else knows."""
+    from services import sub_payouts
+
+    if not body.payout_ids:
+        raise HTTPException(status_code=422, detail="Nothing selected")
+    try:
+        return sub_payouts.mark(db, resolve_org_id(org_id, db), body.payout_ids,
+                                body.status, method=body.method,
+                                external_ref=body.external_ref)
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+
+
+class SendPayoutsBody(BaseModel):
+    payout_ids: list
+
+
+@router.post("/subcontractors/payouts/send",
+             dependencies=[Depends(require_role("admin"))])
+def send_payouts(body: SendPayoutsBody, db: Session = Depends(get_db),
+                 org_id: int = Depends(current_org_id)):
+    """Hand the selected payouts to the configured rail.
+
+    The manual rail returns a CSV and marks them `sent` — it cannot know
+    whether a cheque was written, so `paid` stays a separate human act. Only
+    `due` payouts are sendable; re-sending something already out is how one
+    person gets paid twice."""
+    from services import sub_payouts
+
+    oid = resolve_org_id(org_id, db)
+    rows = [p for p in sub_payouts.list_payouts(db, oid, status="due")
+            if p["id"] in set(body.payout_ids or [])]
+    if not rows:
+        raise HTTPException(status_code=422,
+                            detail="Nothing to send — those payouts aren't due.")
+    rail = sub_payouts.get_rail(get_setting(db, "sub_payout_rail"))
+    return rail.send(db, oid, rows)

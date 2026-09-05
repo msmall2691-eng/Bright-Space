@@ -691,3 +691,56 @@ def test_an_ordinary_job_is_untouched_by_the_marketplace_branch(ids):
         assert emp["gross_pay"] == 60.0
     finally:
         _clear()
+
+
+def test_send_to_square_excludes_subcontractor_punches(ids, monkeypatch):
+    """A punch on an agreed_rate job never becomes a Square timecard.
+
+    This is the guarantee that keeps a subcontractor out of Square Payroll. A
+    timecard there states an hourly wage and an employment relationship; before
+    the guard in _native_send_to_square the export didn't know agreed_rate
+    existed, so a sub who clocked into a job they'd claimed would have been
+    pushed at pay_rate_residential — wrong money AND wrong classification.
+
+    The same cleaner's ORDINARY employee punch in the same period must still
+    export, so the exclusion is proven to be per-job and not per-person.
+    """
+    from integrations import square as sq
+
+    cid = f"CT-{uuid.uuid4().hex[:6]}"
+    uid = _mk_cleaner(ids, cid, res_rate=25.0, name="Sub And Staff")
+    db = SessionLocal()
+    match_email = db.query(User).filter(User.id == uid).first().email
+    db.close()
+
+    # Claimed at a flat $140 — three hours of punch that must not be exported.
+    sub_job = _mk_job(ids, "residential", agreed_rate=140.0, cleaner_ids=[cid])
+    _mk_entry(ids, cid, _dt(2026, 1, 5, 8), _dt(2026, 1, 5, 11), job_id=sub_job, miles=25.0)
+    # An ordinary employee job the same day — 2h, must still export.
+    emp_job = _mk_job(ids, "residential", cleaner_ids=[cid])
+    e_emp = _mk_entry(ids, cid, _dt(2026, 1, 5, 13), _dt(2026, 1, 5, 15), job_id=emp_job, miles=4.0)
+
+    monkeypatch.setattr(sq, "is_configured", lambda: True)
+    monkeypatch.setattr(sq, "_get_location", lambda: "LOC-1")
+
+    async def fake_members(location_id=None):
+        return [{"id": "TM-9", "name": "Sub And Staff", "email": match_email}]
+    monkeypatch.setattr(sq, "list_team_members", fake_members)
+
+    api = _admin_api()
+    try:
+        r = api.post("/api/payroll/send-to-square",
+                     json={"start_date": "2026-01-05", "end_date": "2026-01-05", "dry_run": True})
+        assert r.status_code == 200, r.text
+        body = r.json()
+        person = next(e for e in body["employees"] if e["employee_id"] == cid)
+
+        shifts = [tc["shift_id"] for tc in person["timecards"]]
+        assert shifts == [f"native:{e_emp}"], shifts
+        assert person["marketplace_excluded"] == 1
+        assert body["marketplace_excluded"] == 1
+        # The withheld punch's mileage goes with it: reimbursement is an
+        # employee benefit, and a sub's driving is priced into their rate.
+        assert person["miles"] == 4.0
+    finally:
+        _clear()

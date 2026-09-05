@@ -1276,6 +1276,24 @@ function HealthPanel({ onClose, onChanged, onOpenSeries, onOpenDuplicates, onCle
         } }
       case 'duplicate':
         return { short: 'Review duplicates', run: () => { onClose(); onOpenDuplicates() } }
+      case 'duplicate_paused':
+        // Per-row it's the same act as cancelling a leftover — the difference
+        // is only that the scan can now tell you it isn't a lone one. The
+        // batch version ("Cancel the extra copies") keeps one per group.
+        return { short: 'Cancel this copy', danger: true, run: async () => {
+          const n = prob.partners?.length ?? 0
+          const context = prob.has_live_copy
+            ? 'A running series already covers this house and time — that one carries on.'
+            : `There ${n === 1 ? 'is 1 other paused copy' : `are ${n} other paused copies`} of it.`
+          const ok = await confirmDialog(
+            `Cancel this copy of “${issue.title || 'Untitled'}” for `
+            + `${issue.client_name || 'this client'}? ${context} `
+            + 'History is kept and this cannot be resumed.',
+            { title: 'Cancel this copy?', confirmLabel: 'Cancel copy', danger: true },
+          )
+          if (!ok) return
+          act(issue, () => del(`/api/recurring/${id}`), 'Copy cancelled')
+        } }
       default:
         return { short: 'Open series', run: () => { onClose(); onOpenSeries(id) } }
     }

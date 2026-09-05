@@ -26,7 +26,7 @@ from collections import defaultdict
 from datetime import date, datetime, timedelta, timezone, time as dtime
 from typing import List, Optional
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, Response, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, Response, UploadFile
 from pydantic import BaseModel
 from sqlalchemy import or_, func
 from sqlalchemy.exc import IntegrityError
@@ -36,14 +36,14 @@ from database.db import get_db
 from database.models import (
     CleanerAvailability, CleanerTimeOff, CleanerWeekAvailability, CrewDoc,
     CrewMessage, Job, JobClaimRequest, JobPhoto, JobResponse, PropertyCrewNote,
-    PropertyPhoto, User, TimeEntry,
+    PropertyPhoto, SubAgreement, SubDocument, User, TimeEntry,
 )
 from modules.auth.router import (
     get_current_user, require_role, current_org_id, resolve_org_id, send_staff_invite,
 )
 from modules.scheduling.completion import auto_create_draft_invoice
 from utils.activity_logger import log_job_status_change
-from utils.dates import business_today, business_tz, week_monday
+from utils.dates import business_today, business_tz, coerce_date, week_monday
 
 router = APIRouter()
 
@@ -279,6 +279,25 @@ class ClockOutBody(BaseModel):
     miles: Optional[float] = None
 
 
+def _my_routes_summary(db: Session, current_user: User, oid: int) -> list:
+    """One row per route this sub has been offered or owns. No members.
+
+    A summary, not a detail: the point is that a standing offer can't sit
+    unseen because it lives behind a tab nobody opened.
+    """
+    from database.models import Route
+
+    rows = (db.query(Route)
+            .filter(Route.owner_cleaner_id == current_user.cleaner_id,
+                    Route.status.in_(["offered", "active"]),
+                    or_(Route.org_id == oid, Route.org_id.is_(None)))
+            .order_by(Route.day_of_week)
+            .all())
+    return [{"id": r.id, "name": r.name, "day_of_week": r.day_of_week,
+             "rate": round(float(r.rate), 2) if r.rate is not None else None,
+             "status": r.status} for r in rows]
+
+
 @router.get("/my-day")
 def my_day(
     days: int = 7,
@@ -409,6 +428,13 @@ def my_day(
                       "checklist_template": None}
                      for j in upcoming_jobs],
         "open_jobs": open_jobs,
+        # Routes (migration 100), deliberately LIGHT: enough to say "you've been
+        # offered a standing block" and to label an owned route, and nothing
+        # more. The houses and their shares arrive only if the sub taps through
+        # to /api/crew/my-routes — riding this payload rather than adding a
+        # second call on a rural connection (brightbase-economy), without
+        # making every my-day refresh carry a route detail nobody opened.
+        "routes": _my_routes_summary(db, current_user, oid),
         # Unread office messages, so the crew app's Chat tab can badge without
         # a second request. Reading the thread (GET /messages) marks them read.
         "unread_messages": (
@@ -820,6 +846,18 @@ def claim_job(
     which is now the step that actually assigns the job and fixes the rate.
     """
     _require_crew_id(current_user)
+    # The vetting gate (migration 098). Nobody works as a non-employee before
+    # their file is complete and current — an agreement on record, a W-9, and
+    # a certificate of insurance that hasn't lapsed. The 403 carries the list
+    # so the app can say WHICH part is missing: "finish your file" without
+    # naming the piece is the same as no message at all.
+    from services.sub_vetting import missing_requirements
+    missing = missing_requirements(db, current_user.id)
+    if missing:
+        raise HTTPException(status_code=403, detail={
+            "message": "Finish your file before you can ask for jobs.",
+            "missing": missing,
+        })
     body = body or ClaimRequestBody()
     oid = resolve_org_id(org_id, db)
     org_scope = or_(Job.org_id == oid, Job.org_id.is_(None))
@@ -898,20 +936,156 @@ def claim_job(
     db.commit()
     db.refresh(request)
 
+    # Auto-approval (Phase 6), OFF by default. Runs here rather than on a tick
+    # so the answer is instant — a sub who asks for a posted job at the posted
+    # price on a bench they're cleared for gets told it's theirs while they're
+    # still looking at the offer, instead of waiting for the office to click a
+    # button that was never going to say anything else.
+    #
+    # It refuses far more than it acts (see services/claim_autoapprove.py) and
+    # a refusal is not visible to the sub: their request simply stays pending,
+    # exactly as before, and the office looks at it.
+    auto = {"auto_approved": False}
     try:
-        from services.push_service import notify_staff
-        notify_staff(
-            db, "Job request",
-            f"{who} wants {job.title} on {when}{rate_note}"
-            + (f' — "{msg}"' if msg else "") + ". Review it in Schedule.",
-            url=f"/jobs/{job.id}", tag=f"job-claim-{job.id}", org_id=oid,
-            category="crew",
-        )
+        from services.claim_autoapprove import consider
+        auto = consider(db, job, request, org_id=oid)
     except Exception:
-        log.exception("push notify failed on claim_job")
+        log.exception("auto-approve failed on claim_job")
+    if auto.get("auto_approved"):
+        db.refresh(request)
+
+    if not auto.get("auto_approved"):
+        # No "review it" push for something already decided — the office being
+        # told to go and approve a job that is already assigned is how an
+        # automation stops being trusted.
+        try:
+            from services.push_service import notify_staff
+            notify_staff(
+                db, "Job request",
+                f"{who} wants {job.title} on {when}{rate_note}"
+                + (f' — "{msg}"' if msg else "") + ". Review it in Schedule.",
+                url=f"/jobs/{job.id}", tag=f"job-claim-{job.id}", org_id=oid,
+                category="crew",
+            )
+        except Exception:
+            log.exception("push notify failed on claim_job")
 
     return {"job_id": job.id, "status": request.status, "requested_rate": request.requested_rate,
-            "message": request.message}
+            "message": request.message,
+            # So the crew app can say "it's yours" instead of "we'll let you
+            # know" on the one path where that's true.
+            "auto_approved": bool(auto.get("auto_approved"))}
+
+
+# ── My file: the vetting documents (migration 098) ──────────────────────────
+#
+# A sub's own view of what's on record and what's still missing. The same
+# service answers the office's review screen, so the two can't drift into
+# disagreeing about whether somebody is cleared to work.
+
+
+@router.get("/my-file")
+def my_file(db: Session = Depends(get_db),
+            current_user: User = Depends(require_role("cleaner"))):
+    """Everything on my file, and anything still standing in my way."""
+    from services.sub_vetting import vetting_status
+    return vetting_status(db, current_user.id)
+
+
+@router.post("/my-file/agreement")
+def accept_agreement(request: Request, db: Session = Depends(get_db),
+                     org_id: int = Depends(current_org_id),
+                     current_user: User = Depends(require_role("cleaner"))):
+    """Accept the current subcontractor agreement.
+
+    Append-only: a second acceptance of the same version is a no-op rather than
+    an update, because the value of this table is being able to say what
+    somebody agreed to and when. Overwriting destroys exactly that.
+    """
+    from services.sub_vetting import (
+        CURRENT_AGREEMENT_VERSION, has_current_agreement, vetting_status,
+    )
+    if not has_current_agreement(db, current_user.id):
+        db.add(SubAgreement(
+            org_id=resolve_org_id(org_id, db), user_id=current_user.id,
+            version=CURRENT_AGREEMENT_VERSION, accepted_at=_now_naive_utc(),
+            # Best-effort provenance; behind Railway's proxy this is the
+            # forwarded client address, and a missing one is not a reason to
+            # refuse an acceptance.
+            accepted_ip=(request.client.host if request.client else None),
+        ))
+        db.commit()
+    return vetting_status(db, current_user.id)
+
+
+@router.post("/my-file/{kind}")
+async def upload_my_document(
+    kind: str,
+    file: UploadFile = File(...),
+    expires_at: str = Form(None),
+    db: Session = Depends(get_db),
+    org_id: int = Depends(current_org_id),
+    current_user: User = Depends(require_role("cleaner")),
+):
+    """Upload or replace one document on my file.
+
+    Replaces rather than accumulates (UNIQUE on user_id+kind): three COIs and
+    no way to tell which is live is worse than one that might be stale.
+    Re-uploading always returns the document to `pending` — a new file has not
+    been reviewed, whatever the old one's status was.
+    """
+    from services.sub_vetting import (
+        ALLOWED_CONTENT_TYPES, DOCUMENT_KINDS, EXPIRING_KINDS,
+        _MAX_DOCUMENT_BYTES, vetting_status,
+    )
+    kind = (kind or "").strip().lower()
+    if kind not in DOCUMENT_KINDS or kind == "agreement":
+        raise HTTPException(status_code=422, detail="Unknown document type.")
+
+    data = await file.read()
+    if not data:
+        raise HTTPException(status_code=422, detail="That file was empty.")
+    if len(data) > _MAX_DOCUMENT_BYTES:
+        raise HTTPException(status_code=413,
+                            detail="That file is too big — 10MB is the limit.")
+    ctype = (file.content_type or "").lower()
+    if ctype not in ALLOWED_CONTENT_TYPES:
+        raise HTTPException(status_code=422,
+                            detail="Send a PDF or a photo of the document.")
+
+    exp = coerce_date(expires_at) if expires_at else None
+    if kind in EXPIRING_KINDS and exp is None:
+        raise HTTPException(
+            status_code=422,
+            detail="Add the expiry date from the certificate — it's how the "
+                   "office knows to ask you for the next one.")
+
+    now = _now_naive_utc()
+    doc = (db.query(SubDocument)
+           .filter(SubDocument.user_id == current_user.id, SubDocument.kind == kind)
+           .first())
+    if doc is None:
+        doc = SubDocument(org_id=resolve_org_id(org_id, db),
+                          user_id=current_user.id, kind=kind, created_at=now)
+        db.add(doc)
+    doc.filename = (file.filename or kind)[:255]
+    doc.content_type, doc.size_bytes, doc.data = ctype, len(data), data
+    doc.expires_at, doc.uploaded_at, doc.updated_at = exp, now, now
+    # A replacement is unreviewed by definition, and the office's note on the
+    # PREVIOUS file would be read as a verdict on this one.
+    doc.status, doc.reviewed_by, doc.reviewed_at, doc.notes = "pending", None, None, None
+    db.commit()
+
+    try:
+        from services.push_service import notify_staff
+        who = getattr(current_user, "full_name", None) or current_user.email
+        notify_staff(db, "Document to review",
+                     f"{who} uploaded a {kind.upper()} for review.",
+                     url="/staff", tag=f"sub-doc-{current_user.id}",
+                     org_id=resolve_org_id(org_id, db), category="crew")
+    except Exception:
+        log.exception("push notify failed on document upload")
+    return vetting_status(db, current_user.id)
 
 
 # ── Accept / decline (crew app Phase 2) ──────────────────────────────────────
@@ -2913,3 +3087,149 @@ def add_crew(body: CrewCreate, db: Session = Depends(get_db),
 # The invite email itself lives in modules/auth/router.py (send_staff_invite) —
 # one sender for both the crew add and the generic Users-screen invite, so the
 # wording and 7-day TTL can never drift apart.
+
+
+# ── Routes: the sub's side (marketplace pivot Phase 4, migration 100) ────────
+#
+# A route is a standing block of recurring work. The office offers it; the sub
+# accepts or declines. Nothing here lets the office skip the acceptance, and
+# nothing here lets a sub take on standing work while their file is incomplete.
+
+@router.get("/my-routes")
+def my_routes(
+    db: Session = Depends(get_db),
+    org_id: int = Depends(current_org_id),
+    current_user: User = Depends(require_role("cleaner")),
+):
+    """Routes offered to me, and routes I already own.
+
+    ONE request, and a light one — this rides a phone on rural cell data
+    (brightbase-economy). Offered routes carry their houses so a sub can see
+    what they're agreeing to before agreeing to it; active ones are the
+    standing commitment and its rate, which is a shorter answer.
+    """
+    from database.models import Route
+    from services import routes as routes_service
+
+    _require_crew_id(current_user)
+    oid = resolve_org_id(org_id, db)
+    rows = (db.query(Route)
+            .filter(Route.owner_cleaner_id == current_user.cleaner_id,
+                    Route.status.in_(["offered", "active"]),
+                    or_(Route.org_id == oid, Route.org_id.is_(None)))
+            .order_by(Route.day_of_week)
+            .all())
+    offered = [routes_service.route_dict(db, r, with_members=True)
+               for r in rows if r.status == "offered"]
+    active = [routes_service.route_dict(db, r, with_members=True)
+              for r in rows if r.status == "active"]
+    return {"offered": offered, "active": active}
+
+
+@router.post("/routes/{route_id}/accept")
+def accept_route(
+    route_id: int,
+    db: Session = Depends(get_db),
+    org_id: int = Depends(current_org_id),
+    current_user: User = Depends(require_role("cleaner")),
+):
+    """Take the route. This is the step that fixes the owner and the rate.
+
+    LOCKED (R5). Accept is not idempotent in the way a read is — it stamps
+    accepted_at and turns generation on for this block — so the row is taken
+    FOR UPDATE and its status re-read underneath the lock. Two taps on a slow
+    phone must produce one accept.
+
+    RE-CHECKED, both the route and the person. The office can change a route
+    between offering it and this tap, and a certificate of insurance can lapse
+    in that window — that gap is the entire reason `is_expired` reads the date
+    rather than the stored status. The sub should not be the one who discovers
+    either problem, but they must not slip through it either.
+    """
+    from database.models import Route
+    from services import routes as routes_service
+    from services.sub_vetting import missing_requirements
+
+    _require_crew_id(current_user)
+    oid = resolve_org_id(org_id, db)
+
+    route = (db.query(Route)
+             .filter(Route.id == route_id,
+                     or_(Route.org_id == oid, Route.org_id.is_(None)))
+             .with_for_update()
+             .first())
+    if route is None:
+        raise HTTPException(status_code=404, detail="That route isn't available.")
+    if route.owner_cleaner_id != current_user.cleaner_id:
+        # Deliberately the same answer as "doesn't exist": whose route this is
+        # isn't information for someone it wasn't offered to.
+        raise HTTPException(status_code=404, detail="That route isn't available.")
+    if route.status == "active":
+        raise HTTPException(status_code=409, detail="You've already got this one.")
+    if route.status != "offered":
+        raise HTTPException(status_code=409, detail="That route isn't on offer any more.")
+
+    missing = missing_requirements(db, current_user.id)
+    if missing:
+        raise HTTPException(status_code=403, detail={
+            "message": "Finish your file before you take on a standing route.",
+            "missing": missing,
+        })
+
+    blocker = routes_service.validate_offerable(db, route)
+    if blocker:
+        # Not the sub's problem to fix, so it says so plainly rather than
+        # reading like something they did wrong.
+        raise HTTPException(
+            status_code=409,
+            detail=f"The office needs to sort something first — {blocker}")
+
+    route.status = "active"
+    route.accepted_at = _now_naive_utc()
+    route.updated_at = _now_naive_utc()
+    db.commit(); db.refresh(route)
+    return routes_service.route_dict(db, route, with_members=True)
+
+
+@router.post("/routes/{route_id}/decline")
+def decline_route(
+    route_id: int,
+    db: Session = Depends(get_db),
+    org_id: int = Depends(current_org_id),
+    current_user: User = Depends(require_role("cleaner")),
+):
+    """Turn the route down. It goes back to the office as a draft.
+
+    Back to DRAFT and not to some `declined` state: the office's next move is
+    to offer it to somebody else, and a route sitting in a terminal-sounding
+    status is a route that gets rebuilt from scratch instead. The owner is
+    cleared, because a declined route has no owner.
+
+    Declining a single OCCURRENCE is a different thing entirely — that's an
+    ordinary JobResponse on that day's job, which the crew app already renders.
+    This is giving the whole block back.
+    """
+    from database.models import Route
+    from services import routes as routes_service
+
+    _require_crew_id(current_user)
+    oid = resolve_org_id(org_id, db)
+
+    route = (db.query(Route)
+             .filter(Route.id == route_id,
+                     or_(Route.org_id == oid, Route.org_id.is_(None)))
+             .with_for_update()
+             .first())
+    if route is None or route.owner_cleaner_id != current_user.cleaner_id:
+        raise HTTPException(status_code=404, detail="That route isn't available.")
+    if route.status != "offered":
+        raise HTTPException(
+            status_code=409,
+            detail="You've already accepted this one — talk to the office to hand it back.")
+
+    route.status = "draft"
+    route.owner_cleaner_id = None
+    route.offered_at = None
+    route.updated_at = _now_naive_utc()
+    db.commit(); db.refresh(route)
+    return routes_service.route_dict(db, route)

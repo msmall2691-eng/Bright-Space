@@ -903,6 +903,209 @@ class JobClaimRequest(Base):
     job = relationship("Job")
 
 
+class SubDocument(Base):
+    """One vetting document on a subcontractor's file (migration 098).
+
+    Bytes live in the database, the same deliberate choice JobPhoto makes:
+    Railway's container disk is ephemeral, so a file written to it is a file
+    lost on the next deploy.
+
+    UNIQUE on (user_id, kind) — re-uploading a COI replaces the one on file
+    rather than leaving three rows and the office guessing which is live.
+
+    NO SSN/TIN FIELD, deliberately. A sole-proprietor W-9 carries one; the
+    document is stored as bytes and never parsed, and `ein` is the only
+    identifier with a column because it identifies a business, not a person.
+    """
+    __tablename__ = "sub_documents"
+    __table_args__ = (
+        UniqueConstraint("user_id", "kind", name="uq_sub_documents_user_kind"),
+    )
+    org_id = Column(Integer, ForeignKey("orgs.id"), nullable=True, index=True)  # tenant scope (MT-1)
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"),
+                     nullable=False, index=True)
+    kind = Column(String(16), nullable=False, index=True)   # w9|coi|license|agreement|id
+    status = Column(String(16), nullable=False, default="pending")  # missing|pending|accepted|expired
+    expires_at = Column(Date, nullable=True)
+    filename = Column(String(255), nullable=True)
+    content_type = Column(String(64), nullable=True)
+    size_bytes = Column(Integer, nullable=True)
+    data = Column(LargeBinary, nullable=True)
+    notes = Column(Text, nullable=True)
+    uploaded_at = Column(DateTime, nullable=True)
+    reviewed_by = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    reviewed_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, default=_utcnow)
+    updated_at = Column(DateTime, default=_utcnow, onupdate=_utcnow)
+
+
+class SubAgreement(Base):
+    """One acceptance of the subcontractor agreement, versioned (migration 098).
+
+    Append-only: a new acceptance is a new row, never an update to the last
+    one. The whole value of this table is being able to say which text a
+    person agreed to and when — an updated row destroys exactly that.
+    """
+    __tablename__ = "sub_agreements"
+    org_id = Column(Integer, ForeignKey("orgs.id"), nullable=True, index=True)  # tenant scope (MT-1)
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"),
+                     nullable=False, index=True)
+    version = Column(String(32), nullable=False)
+    accepted_at = Column(DateTime, nullable=False, default=_utcnow)
+    accepted_ip = Column(String(64), nullable=True)
+    created_at = Column(DateTime, default=_utcnow)
+
+
+class SubPayout(Base):
+    """One amount owed to a subcontractor, and whether it went out
+    (migration 099).
+
+    Subs are VENDORS, not payroll: Square's Labor timecard path carries hours
+    at an hourly rate, which is the exact shape a subcontractor's pay must not
+    have. This is the ledger that survives whatever payment rail is chosen
+    later — the rail changes, the record of what was owed does not.
+
+    UNIQUE (user_id, job_id): re-running a period must never pay the same
+    cleaning twice. Adjustments carry a NULL job_id and are exempt for free,
+    since NULLs compare distinct in a unique constraint.
+    """
+    __tablename__ = "sub_payouts"
+    __table_args__ = (
+        UniqueConstraint("user_id", "job_id", name="uq_sub_payouts_user_job"),
+    )
+    org_id = Column(Integer, ForeignKey("orgs.id"), nullable=True, index=True)  # tenant scope (MT-1)
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"),
+                     nullable=False, index=True)
+    cleaner_id = Column(String, nullable=True, index=True)
+    job_id = Column(Integer, ForeignKey("jobs.id", ondelete="SET NULL"),
+                    nullable=True, index=True)
+    amount = Column(Float, nullable=False)
+    status = Column(String(16), nullable=False, default="due")  # due|sent|paid|void
+    method = Column(String(32), nullable=True)
+    external_ref = Column(String(128), nullable=True)
+    memo = Column(Text, nullable=True)
+    # The work date this pays for. A January payout for December work belongs
+    # to December, so a year-to-date total groups by this and not created_at.
+    earned_on = Column(Date, nullable=True, index=True)
+    paid_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, default=_utcnow)
+    updated_at = Column(DateTime, default=_utcnow, onupdate=_utcnow)
+
+
+class TurnoverWindow(Base):
+    """One week's turnovers, staffed as a batch (migration 101).
+
+    STR turnovers can't be a route — the volume swings week to week — so they
+    stay posted jobs. A window is the schedule and the price ladder around a
+    single service day: it opens that day's turnovers to the bench all at once
+    and raises the price on whatever is still unclaimed as the date closes in.
+
+    UNIQUE (org_id, service_date): the date is the identity. Two windows for
+    one Saturday would step the same jobs twice.
+
+    It owns no work. Opening writes `open_for_claims` and `posted_rate` on
+    ordinary Jobs — the marketplace path from 097 — and the claim, the
+    approval and the money all run exactly as they already do.
+    """
+    __tablename__ = "turnover_windows"
+    __table_args__ = (
+        UniqueConstraint("org_id", "service_date", name="uq_turnover_windows_org_date"),
+    )
+    org_id = Column(Integer, ForeignKey("orgs.id"), nullable=True, index=True)  # tenant scope (MT-1)
+
+    id = Column(Integer, primary_key=True, index=True)
+    service_date = Column(Date, nullable=False, index=True)
+    status = Column(String(16), nullable=False, default="pending")  # pending|open|closed
+    base_rate = Column(Float, nullable=True)
+    # A step adds this percentage of the BASE rate, not of the current one.
+    # Compounding turns a 10% ladder into a 61% raise by step five, which is
+    # not what anybody typed.
+    step_pct = Column(Float, nullable=False, default=10.0)
+    max_steps = Column(Integer, nullable=False, default=3)
+    # Stored, not derived from the current price: the office can nudge a job's
+    # posted_rate by hand, and a ladder that re-read its position from the rate
+    # would restart or skip depending on which way they nudged it.
+    steps_taken = Column(Integer, nullable=False, default=0)
+    open_days_before = Column(Integer, nullable=False, default=10)
+    first_step_days_before = Column(Integer, nullable=False, default=4)
+    opened_at = Column(DateTime, nullable=True)
+    closed_at = Column(DateTime, nullable=True)
+    last_stepped_at = Column(DateTime, nullable=True)
+    notes = Column(Text, nullable=True)
+    created_at = Column(DateTime, default=_utcnow)
+    updated_at = Column(DateTime, default=_utcnow, onupdate=_utcnow)
+
+
+class Route(Base):
+    """A standing block of recurring work owned by one subcontractor
+    (migration 100).
+
+    The marketplace (097) fits one-off work: post, request, approve, done.
+    Recurring work is most of the book and re-bidding the same Tuesday house
+    every week serves nobody — so a route is offered ONCE, accepted once, and
+    then simply happens.
+
+    `rate` is per occurrence of the whole block. Generation splits it across
+    that occurrence's jobs into Job.agreed_rate, which is the flat-rate path
+    payroll already pays — see services/routes.py for the split, and note the
+    deliberate consequence that a route job is indistinguishable from an
+    approved marketplace job by the time it reaches money.
+
+    Offered, never assigned: a route a sub can decline is work they chose,
+    which is the same control point the marketplace claim provides and is
+    load-bearing for contractor classification.
+    """
+    __tablename__ = "routes"
+    org_id = Column(Integer, ForeignKey("orgs.id"), nullable=True, index=True)  # tenant scope (MT-1)
+
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String, nullable=False)
+    day_of_week = Column(Integer, nullable=False)      # 0=Mon … 6=Sun, display/grouping
+    owner_cleaner_id = Column(String, nullable=True, index=True)
+    backup_cleaner_id = Column(String, nullable=True)
+    rate = Column(Float, nullable=True)                # per occurrence, whole block
+    status = Column(String(16), nullable=False, default="draft")  # draft|offered|active|ended
+    offered_at = Column(DateTime, nullable=True)
+    accepted_at = Column(DateTime, nullable=True)
+    ended_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, default=_utcnow)
+    updated_at = Column(DateTime, default=_utcnow, onupdate=_utcnow)
+
+    members = relationship("RouteMember", back_populates="route",
+                           cascade="all, delete-orphan",
+                           order_by="RouteMember.position")
+
+
+class RouteMember(Base):
+    """One recurring schedule's place in a route, in drive order.
+
+    UNIQUE on recurring_schedule_id: a schedule in two routes means two people
+    are paid for one house.
+    """
+    __tablename__ = "route_members"
+    __table_args__ = (
+        UniqueConstraint("recurring_schedule_id", name="uq_route_members_schedule"),
+    )
+    org_id = Column(Integer, ForeignKey("orgs.id"), nullable=True, index=True)  # tenant scope (MT-1)
+
+    id = Column(Integer, primary_key=True, index=True)
+    route_id = Column(Integer, ForeignKey("routes.id", ondelete="CASCADE"),
+                      nullable=False, index=True)
+    recurring_schedule_id = Column(Integer,
+                                   ForeignKey("recurring_schedules.id", ondelete="CASCADE"),
+                                   nullable=False, index=True)
+    position = Column(Integer, nullable=False, default=0)
+    created_at = Column(DateTime, default=_utcnow)
+
+    route = relationship("Route", back_populates="members")
+    schedule = relationship("RecurringSchedule")
+
 class CrewDoc(Base):
     """One training / reference document for the crew (crew app Phase 5):
     cleaning standards, chemical guides, onboarding steps, policies. The

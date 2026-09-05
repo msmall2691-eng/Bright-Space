@@ -222,6 +222,80 @@ def _group_live_duplicates(rows: List[RecurringSchedule], today) -> List[List[in
     return groups
 
 
+def _group_paused_duplicates(rows: List[RecurringSchedule], today) -> List[List[int]]:
+    """Groups of PAUSED copies of the same series.
+
+    `_group_live_duplicates` only looks at live rows, which is right for the
+    "you'd trip the creation guard" finding. But the owner's list is mostly
+    paused: the same house appears three and four times because a duplicate was
+    paused rather than cancelled, and pausing takes a row out of `_is_live` —
+    so the duplicate detector could not see a single one of them. Thirty-two
+    series, most of them the same dozen houses, and no finding said so.
+
+    MIXED GROUPS ARE THE COMMON CASE, and the first version of this missed
+    them. After an "all future visits" edit the old series is left behind and a
+    new one takes over, so the usual shape is ONE LIVE copy and one or more
+    paused ones — which fell through both detectors, because the live one
+    needs every member live and this one needed every member paused. Owner
+    screenshot: Sandra Fox with two identical "Every 4 weeks Fri 9:00" series
+    and Paul Day with two "Biweekly Mon 9:00", one of each still running.
+
+    So live rows are bucketed too — they're what a paused copy is a duplicate
+    OF — but only the PAUSED ones are returned. A live series is never
+    something to cancel as a duplicate: it's the survivor, and cancelling it
+    would take real visits off the calendar.
+
+    Cancelled and ended rows are excluded entirely: somebody already decided
+    about those, and a decided row is not a duplicate to resolve — it's
+    history.
+    """
+    def _decided(s):
+        end = coerce_date(s.series_end_date)
+        return bool(getattr(s, "cancelled_at", None)) or (
+            end is not None and end <= today and not s.active)
+
+    candidates = [s for s in rows if not _decided(s)]
+    buckets: Dict[Any, List[RecurringSchedule]] = {}
+    for s in candidates:
+        buckets.setdefault(_dup_bucket_key(s), []).append(s)
+
+    groups: List[List[int]] = []
+    for members in buckets.values():
+        if len(members) < 2:
+            continue
+        parent = {s.id: s.id for s in members}
+
+        def find(x):
+            while parent[x] != x:
+                parent[x] = parent[parent[x]]
+                x = parent[x]
+            return x
+
+        day_sets = {s.id: _effective_days(s.days_of_week, s.day_of_week, s.frequency)
+                    for s in members}
+        for i, a in enumerate(members):
+            for b in members[i + 1:]:
+                if a.frequency == "monthly" or (day_sets[a.id] & day_sets[b.id]):
+                    ra, rb = find(a.id), find(b.id)
+                    if ra != rb:
+                        parent[ra] = rb
+        clusters: Dict[int, List[RecurringSchedule]] = {}
+        for s in members:
+            clusters.setdefault(find(s.id), []).append(s)
+        for cluster in clusters.values():
+            if len(cluster) < 2:
+                continue
+            # Only the paused ones are offered for cancelling. A cluster of one
+            # live series plus one paused copy is a real duplicate and yields
+            # exactly one finding — on the paused row.
+            paused = sorted(s.id for s in cluster if not _is_live(s, today))
+            if not paused:
+                continue
+            live = sorted(s.id for s in cluster if _is_live(s, today))
+            groups.append({"paused": paused, "live": live})
+    return groups
+
+
 def audit_series(db: Session, org_id: Optional[int]) -> dict:
     """Full health scan of the org's recurring series. Every problem carries a
     code, a human message, a suggested fix, and a ``destructive`` flag (the UI
@@ -259,6 +333,9 @@ def audit_series(db: Session, org_id: Optional[int]) -> dict:
     dup_groups = _group_live_duplicates(rows, today)
     in_dup_group = {sid for g in dup_groups for sid in g}
 
+    paused_dup_groups = _group_paused_duplicates(rows, today)
+    in_paused_dup = {sid: g for g in paused_dup_groups for sid in g["paused"]}
+
     issues = []
     for s in rows:
         problems = []
@@ -267,6 +344,51 @@ def audit_series(db: Session, org_id: Optional[int]) -> dict:
         end = coerce_date(s.series_end_date)
         title = (s.title or "").strip()
 
+        # A series somebody DECIDED was over — cancelled, or past a recorded
+        # end date — is not a to-do list. Owner report, with a screenshot: a
+        # CANCELLED series was being flagged "no start/end time on file — visits
+        # can't be scheduled at a real time". It will never schedule a visit.
+        # Setting its time window is busywork this scan invented, and busywork
+        # in a health check is why the count never appeared to go down.
+        #
+        # The findings below that describe how a series will MISBEHAVE WHEN IT
+        # GENERATES are therefore skipped for a decided one.
+        #
+        # Two things are deliberately NOT decided. Paused, because a paused
+        # series can come back and its problems come back with it. And
+        # ended-but-still-ACTIVE, because that is half-decided — the office is
+        # about to open it anyway (`ended_but_active` says so right below), and
+        # hiding its other problems in the meantime just means finding them one
+        # at a time afterwards.
+        decided = bool(getattr(s, "cancelled_at", None)) or (
+            end is not None and end <= today and not s.active)
+
+        if s.id in in_paused_dup:
+            group = in_paused_dup[s.id]
+            others = [p for p in group["paused"] if p != s.id]
+            if group["live"]:
+                # The common shape after an "all future visits" edit: the live
+                # series took over and this one was paused instead of ended.
+                # There's no "which do I keep" question here — the running one
+                # is the keeper by definition.
+                message = ("A running series covers this same house and time — "
+                           "this is the paused copy left behind.")
+                suggestion = ("⚠️ Cancel it; the live one keeps going "
+                              "(history is kept).")
+            else:
+                message = (f"One of {len(group['paused'])} paused copies of the "
+                           "same series for this client.")
+                suggestion = ("⚠️ Keep the one you'd resume and cancel the rest "
+                              "(history is kept).")
+            problems.append({
+                "code": "duplicate_paused", "severity": "warn", "destructive": True,
+                "message": message,
+                "suggestion": suggestion,
+                "partners": others,
+                # True when a live series already covers this — the frontend
+                # reads it to know there is no keeper to hold back.
+                "has_live_copy": bool(group["live"]),
+            })
         if s.id in in_dup_group:
             partners = next(g for g in dup_groups if s.id in g)
             problems.append({
@@ -280,7 +402,8 @@ def audit_series(db: Session, org_id: Optional[int]) -> dict:
                 "message": "The client this series belongs to no longer exists.",
                 "suggestion": "Cancel the series, or relink it to the right client.",
             })
-        if coerce_time(s.start_time) is None or coerce_time(s.end_time) is None:
+        if not decided and (coerce_time(s.start_time) is None
+                            or coerce_time(s.end_time) is None):
             problems.append({
                 "code": "no_time_set", "severity": "error", "destructive": False,
                 "message": "No start/end time on file — visits can't be scheduled at a real time.",
@@ -298,7 +421,9 @@ def audit_series(db: Session, org_id: Optional[int]) -> dict:
                 "message": "Marked active but has no upcoming visits generated.",
                 "suggestion": "Generate visits, or check the rule (time window, days, end date).",
             })
-        if not title or len(title) < 4 or title.lower() in _JUNK_TITLES or title.lower() == (s.frequency or ""):
+        if not decided and (not title or len(title) < 4
+                            or title.lower() in _JUNK_TITLES
+                            or title.lower() == (s.frequency or "")):
             client = client_names.get(s.client_id)
             better = f"{client} — {_cadence_text(s)}" if client else _cadence_text(s)
             problems.append({
@@ -306,7 +431,9 @@ def audit_series(db: Session, org_id: Optional[int]) -> dict:
                 "message": f"Title “{title or '(blank)'}” doesn't say whose clean this is.",
                 "suggestion": f"Rename it, e.g. “{better}”.",
             })
-        if s.property_id and s.property_id not in live_prop_ids:
+        if decided:
+            pass                      # see the `decided` comment above
+        elif s.property_id and s.property_id not in live_prop_ids:
             problems.append({
                 "code": "property_missing", "severity": "warn", "destructive": False,
                 "message": "Points at a property that no longer exists.",
@@ -328,8 +455,7 @@ def audit_series(db: Session, org_id: Optional[int]) -> dict:
         # same count forever. The suggestion below promised it "removes it from
         # the list" — a promise the code didn't keep, and the same shape as the
         # bug the owner reported about cancel not appearing to do anything.
-        decided = bool(getattr(s, "cancelled_at", None)) or (end is not None and end <= today)
-        if not s.active and upcoming == 0 and not decided:
+        if not s.active and upcoming == 0 and not decided and s.id not in in_paused_dup:
             problems.append({
                 "code": "stale_paused", "severity": "info", "destructive": True,
                 "message": "Paused with nothing upcoming — likely a leftover.",
@@ -359,5 +485,9 @@ def audit_series(db: Session, org_id: Optional[int]) -> dict:
         "scanned": len(rows),
         "healthy": len(rows) - len(issues),
         "duplicate_groups": dup_groups,
+        # Paused copies of the same series. Kept separate from the live groups:
+        # the fix is different (cancel the extras vs. pick a winner) and so is
+        # the urgency.
+        "paused_duplicate_groups": paused_dup_groups,
         "issues": issues,
     }

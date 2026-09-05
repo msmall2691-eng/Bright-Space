@@ -402,6 +402,41 @@ def schedule_audit_tick() -> dict:
         except Exception:
             log.exception("[crew-escalation] pass failed (schedule audit continues)")
 
+        # Lapsing insurance rides this tick too (R1: no new ticks). An expired
+        # COI is worse than a missing one — nobody goes looking for it, because
+        # the office believes it has one. Warned here so it reaches the log the
+        # office already reads, and self-gated so a failure can't take the
+        # duplicate audit down with it.
+        try:
+            from services.sub_vetting import expiring_documents
+            lapsing = expiring_documents(db, org_id=1)
+            if lapsing:
+                gone = [r for r in lapsing if r["expired"]]
+                if gone:
+                    log.warning(
+                        "[sub-vetting] %s document(s) EXPIRED — those subs can no "
+                        "longer take jobs: %s", len(gone), gone[:10])
+                soon = [r for r in lapsing if not r["expired"]]
+                if soon:
+                    log.warning("[sub-vetting] %s document(s) expiring within 30 "
+                                "days: %s", len(soon), soon[:10])
+        except Exception:
+            log.exception("[sub-vetting] expiry pass failed (schedule audit continues)")
+
+        # The weekly bench digest rides this tick too (R1). It is its own
+        # once-a-week gate — day-of-week plus a date marker, so a redeploy
+        # mid-morning can't send a second copy — and it stays silent in a week
+        # with nothing to decide, because a message that always arrives is a
+        # message nobody opens.
+        try:
+            from services.bench_digest import due_today, send
+            if due_today(db):
+                outcome = send(db, org_id=1)
+                if outcome.get("sent"):
+                    log.info("[bench-digest] sent: %s", " · ".join(outcome["lines"]))
+        except Exception:
+            log.exception("[bench-digest] pass failed (schedule audit continues)")
+
         from modules.scheduling.router import find_schedule_issues
         issues = find_schedule_issues(db)
         c = issues.get("counts", {})
@@ -533,6 +568,27 @@ def turnover_coverage_tick() -> dict:
                 f"[turnover-coverage] all upcoming checkouts covered across "
                 f"{result['properties_checked']} STR property(ies)"
             )
+
+        # The Saturday window (migration 101) rides THIS tick rather than
+        # adding a background job (R1 — the count only goes down). It belongs
+        # here on the merits too: this is already the daily "is the STR side
+        # covered" pass, and opening a batch and stepping its price is the
+        # same question answered with money instead of a log line.
+        #
+        # Self-gated and wrapped: a window problem must never stop the coverage
+        # audit reporting, which is the safety net people actually rely on.
+        try:
+            if _db_flag(db, "turnover_window_enabled",
+                        env_flag("TURNOVER_WINDOW_ENABLED", True)):
+                from services.turnover_windows import run_due
+                windows = run_due(db)
+                if windows["opened"] or windows["stepped"]:
+                    log.info(f"[turnover-window] opened {len(windows['opened'])}, "
+                             f"stepped {len(windows['stepped'])}")
+                result["windows"] = windows
+        except Exception as e:
+            log.error(f"[turnover-window] window pass failed: {e}")
+
         return result
     except Exception as e:
         log.error(f"[turnover-coverage] check failed: {e}")
