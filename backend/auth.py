@@ -72,7 +72,27 @@ _PUBLIC_PREFIXES = (
 )
 
 
+# Paths that are public EXACTLY, with nothing beneath them.
+#
+# _PUBLIC_PREFIXES is a prefix match, which is right for a family like
+# "/api/booking" but wrong for a single endpoint: listing "/api/apply" there
+# would also open "/api/apply-status", "/api/applications" and anything else
+# somebody later names with that stem — silently, with no test failing. The
+# public apply form is one POST and should stay one POST.
+_PUBLIC_EXACT = frozenset({
+    # Applying to join the bench (migration 102). Rate-limited, honeypotted and
+    # length-capped in the handler; it can only ever write a `new` row to
+    # sub_applications. It creates no login, reads nothing back, and never
+    # reveals whether an email is already known — approval is an admin
+    # clicking a button (modules/apply/router.py).
+    "/api/apply",
+})
+
+
 def _is_public(path: str) -> bool:
+    # Exact matches first — a stem that must not open its neighbours.
+    if path.rstrip("/") in _PUBLIC_EXACT:
+        return True
     if path.startswith(_PUBLIC_PREFIXES):
         return True
     # Let the SPA catch-all serve frontend routes

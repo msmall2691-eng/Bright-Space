@@ -69,6 +69,10 @@ TENANT_TABLES = [
     # The Saturday window (migration 101): which service day is posted to the
     # bench, and where its price ladder has got to.
     "turnover_windows",
+    # Applications to join the bench (migration 102). Anyone can POST one, so
+    # the tenant scope matters more here than almost anywhere: this table takes
+    # unauthenticated writes.
+    "sub_applications",
     # `users` is DELIBERATELY excluded — re-audited 2026-08-16, still not safe.
     # Re-read this whole comment before adding it; don't re-derive from scratch.
     #
