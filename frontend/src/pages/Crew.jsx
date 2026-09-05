@@ -15,6 +15,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { HardHat, RefreshCw, UserPlus, Mail } from 'lucide-react'
 import { get, post, patch } from '../api'
 import { PageHeader, EmptyState, ErrorState, Skeleton, SubNav } from '../components/ui'
+import CrewFiles from '../components/crew/CrewFiles'
 import { pushToast } from '../utils/toastBus'
 import CrewDocsAdmin from '../components/crew/CrewDocsAdmin'
 import { CrewThreadPane } from '../components/comms/CrewThreadPane'
@@ -246,6 +247,14 @@ export default function Crew() {
           </div>
         )}
 
+
+        {/* Documents, above the roster: what needs YOU comes before who's on
+            the books. This is where the "Document to review" notification
+            lands — it used to point at /staff, which was never a route. */}
+        <section>
+          <h2 className="mb-2 text-sm font-semibold text-ink">Documents</h2>
+          <CrewFiles />
+        </section>
 
         {/* Roster */}
         <div>

@@ -68,8 +68,11 @@ def why_not(db: Session, job, req: JobClaimRequest) -> Optional[str]:
     if _mode(db) != "auto":
         return "rule_off"
 
-    from services.sub_vetting import can_take_jobs
-    if not req.user_id or not can_take_jobs(db, req.user_id):
+    from database.models import User
+    from services.sub_vetting import blocking_requirements
+    requester = (db.query(User).filter(User.id == req.user_id).first()
+                 if req.user_id else None)
+    if requester is None or blocking_requirements(db, requester):
         # Belt and braces: the crew claim endpoint already refuses an
         # incomplete file. This is the gate that must not be reachable around,
         # so it is checked at the point of scheduling too.

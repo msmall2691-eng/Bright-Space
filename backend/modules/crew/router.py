@@ -851,8 +851,8 @@ def claim_job(
     # a certificate of insurance that hasn't lapsed. The 403 carries the list
     # so the app can say WHICH part is missing: "finish your file" without
     # naming the piece is the same as no message at all.
-    from services.sub_vetting import missing_requirements
-    missing = missing_requirements(db, current_user.id)
+    from services.sub_vetting import blocking_requirements
+    missing = blocking_requirements(db, current_user)
     if missing:
         raise HTTPException(status_code=403, detail={
             "message": "Finish your file before you can ask for jobs.",
@@ -1081,7 +1081,7 @@ async def upload_my_document(
         who = getattr(current_user, "full_name", None) or current_user.email
         notify_staff(db, "Document to review",
                      f"{who} uploaded a {kind.upper()} for review.",
-                     url="/staff", tag=f"sub-doc-{current_user.id}",
+                     url="/crew", tag=f"sub-doc-{current_user.id}",
                      org_id=resolve_org_id(org_id, db), category="crew")
     except Exception:
         log.exception("push notify failed on document upload")
@@ -2984,6 +2984,23 @@ def crew_roster(db: Session = Depends(get_db), org_id: int = Depends(current_org
     return [_crew_row(u) for u in rows]
 
 
+@router.get("/files", dependencies=[Depends(require_role("admin", "manager"))])
+def crew_files(db: Session = Depends(get_db), org_id: int = Depends(current_org_id)):
+    """Who owes you a document, and what's sitting waiting for you to accept it.
+
+    The office's real question isn't "is this one person cleared" — it's "who
+    still owes me something". Before this you could only ask it one person at a
+    time, by opening a disclosure on each row of the staff list, which is how a
+    document gets uploaded on Tuesday and noticed in March.
+
+    One request for the whole roster (brightbase-economy). The counts at the
+    top are what tells you whether to open it at all.
+    """
+    from services.sub_vetting import roster
+
+    return roster(db, resolve_org_id(org_id, db))
+
+
 @router.get("/unclaimed-ids", dependencies=[Depends(require_role("admin", "manager"))])
 def unclaimed_crew_ids(db: Session = Depends(get_db), org_id: int = Depends(current_org_id)):
     """Crew IDs already on upcoming jobs (Job.cleaner_ids) that no native user
@@ -3148,7 +3165,7 @@ def accept_route(
     """
     from database.models import Route
     from services import routes as routes_service
-    from services.sub_vetting import missing_requirements
+    from services.sub_vetting import blocking_requirements
 
     _require_crew_id(current_user)
     oid = resolve_org_id(org_id, db)
@@ -3169,7 +3186,7 @@ def accept_route(
     if route.status != "offered":
         raise HTTPException(status_code=409, detail="That route isn't on offer any more.")
 
-    missing = missing_requirements(db, current_user.id)
+    missing = blocking_requirements(db, current_user)
     if missing:
         raise HTTPException(status_code=403, detail={
             "message": "Finish your file before you take on a standing route.",

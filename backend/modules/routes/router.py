@@ -28,7 +28,7 @@ from database.db import get_db
 from database.models import Route, RouteMember, User
 from modules.auth.router import require_role, current_org_id, resolve_org_id
 from services import routes as routes_service
-from services.sub_vetting import missing_requirements
+from services.sub_vetting import blocking_requirements, missing_requirements
 
 router = APIRouter()
 
@@ -202,8 +202,12 @@ def offer_check(route_id: int, cleaner_id: str, db: Session = Depends(get_db),
         "cleaner_name": (u.full_name or u.email) if u else None,
         "known": u is not None,
         # The vetting file (Phase 2). An unvetted sub can't be offered a route
-        # for the same reason they can't claim a job.
+        # for the same reason they can't claim a job. Both numbers are shown:
+        # what's actually missing, and whether the gate would stop them — a
+        # grandfathered crew member has gaps AND can still be offered work, and
+        # the office should see both rather than one standing in for the other.
         "missing": missing_requirements(db, u.id) if u else [],
+        "blocked_by": blocking_requirements(db, u) if u else [],
         "conflicts": routes_service.upcoming_conflicts(db, route, cleaner_id, oid),
     }
 
@@ -237,7 +241,7 @@ def offer_route(route_id: int, body: OfferBody, db: Session = Depends(get_db),
     if u is None:
         raise HTTPException(status_code=404,
                             detail="That crew ID isn't linked to anyone who can sign in.")
-    missing = missing_requirements(db, u.id)
+    missing = blocking_requirements(db, u)
     if missing:
         raise HTTPException(status_code=403, detail={
             "message": f"{u.full_name or u.email} can't take work yet.",
