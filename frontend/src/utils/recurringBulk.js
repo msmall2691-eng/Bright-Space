@@ -88,9 +88,10 @@ export const BULK_FIXES = {
     preview: (issue) =>
       `${issue.title || 'Untitled'} · ${issue.client_name || 'unknown client'}`
       + (issue.cadence ? ` · ${issue.cadence}` : ''),
-    tail: 'One copy of each is kept — the one with visits still on the calendar, '
-        + 'or the most recent. History is untouched and each kept copy can still '
-        + 'be resumed from Manage.',
+    tail: 'Where a series is still running, the paused copy goes and the running '
+        + 'one carries on. Where every copy is paused, one is kept — the one with '
+        + 'visits still on the calendar, or the most recent. History is untouched '
+        + 'and each kept copy can still be resumed from Manage.',
     guard: keepOneCopyPerGroup,
   },
 }
@@ -110,16 +111,24 @@ export const BULK_FIXES = {
  */
 export function keepOneCopyPerGroup(list) {
   const groups = new Map()
+  const cancel = []
+  const keep = []
   for (const issue of list) {
     const prob = (issue.problems || []).find(p => p.code === 'duplicate_paused')
+    if (prob?.has_live_copy) {
+      // A live series already covers this house and time, so there is no
+      // "which do I keep" question — the running one is the keeper and this
+      // paused copy goes. Holding one back here would mean the most common
+      // shape (one live, one left behind) could never be batched at all.
+      cancel.push(issue)
+      continue
+    }
     // The group's identity is its whole membership, sorted — every member
     // carries the same set, so any of them names the same bucket.
     const key = [issue.schedule_id, ...(prob?.partners || [])].sort((a, b) => a - b).join(',')
     if (!groups.has(key)) groups.set(key, [])
     groups.get(key).push(issue)
   }
-  const cancel = []
-  const keep = []
   for (const members of groups.values()) {
     const sorted = [...members].sort((a, b) => {
       const byVisits = (b.upcoming_job_count || 0) - (a.upcoming_job_count || 0)

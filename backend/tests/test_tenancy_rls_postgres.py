@@ -132,3 +132,52 @@ def test_unset_guc_is_noop(app_url, seeded):
     eng.dispose()
     assert val is None
     assert {f"A-Client-{seeded['tag']}", f"B-Client-{seeded['tag']}"} <= names
+
+
+def test_apply_org_rls_actually_protects_every_tenant_table():
+    """The policy lands on all of them, not just the ones a test remembers.
+
+    `apply_org_rls` skips a TENANT_TABLES entry that isn't a real table, and
+    does it silently — so nothing else in the suite would notice a tenant table
+    ending up with no policy at all. That is the failure migration 095 exists
+    to fix: two tables sat org-scoped but unprotected for months.
+
+    This runs the REAL function against a real Postgres and then asks Postgres
+    itself, rather than trusting the call not to have skipped anything.
+    """
+    from database.models import Base
+    from database.rls import POLICY, TENANT_TABLES, apply_org_rls
+
+    super_url = make_url(_RAW.replace("postgres://", "postgresql://", 1))
+    su = create_engine(super_url, poolclass=NullPool)
+    try:
+        with su.begin() as c:
+            Base.metadata.create_all(bind=c)
+            apply_org_rls(c)
+
+        with su.connect() as c:
+            state = dict(c.execute(text(
+                "SELECT relname, relrowsecurity AND relforcerowsecurity "
+                "FROM pg_class JOIN pg_namespace n ON n.oid = relnamespace "
+                "WHERE n.nspname = 'public' AND relname = ANY(:names)"
+            ), {"names": list(TENANT_TABLES)}).fetchall())
+            policed = {r[0] for r in c.execute(text(
+                "SELECT tablename FROM pg_policies "
+                "WHERE schemaname = 'public' AND policyname = :p"
+            ), {"p": POLICY}).fetchall()}
+
+        # A name that reached neither pg_class nor the skip branch's notice.
+        unknown = [t for t in TENANT_TABLES if t not in state]
+        assert not unknown, (
+            f"{unknown} are in TENANT_TABLES but not in the database — "
+            "apply_org_rls skipped them silently and they carry no policy.")
+
+        unforced = [t for t in TENANT_TABLES if not state[t]]
+        assert not unforced, f"RLS not enabled+forced on: {unforced}"
+
+        # FORCE without a policy denies everything rather than isolating, so
+        # the policy's presence is a separate question from RLS being on.
+        unpoliced = [t for t in TENANT_TABLES if t not in policed]
+        assert not unpoliced, f"no {POLICY} policy on: {unpoliced}"
+    finally:
+        su.dispose()

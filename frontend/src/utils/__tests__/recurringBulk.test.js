@@ -93,6 +93,36 @@ describe('which fixes may be applied in bulk', () => {
     expect(list.map(i => i.schedule_id).sort()).toEqual([31, 41])
   })
 
+  it('cancels a paused copy outright when a live series already covers it', () => {
+    // The common shape after an "all future visits" edit. There is no keeper to
+    // choose — the running series is the keeper — so holding one back would
+    // mean this case could never be batched at all.
+    const left_behind = {
+      schedule_id: 51, title: 'Copy 51', client_id: 7, cadence: 'Weekly Wed',
+      upcoming_job_count: 0,
+      problems: [{ code: 'duplicate_paused', partners: [], has_live_copy: true }],
+    }
+    const { list, held } = keepOneCopyPerGroup([left_behind])
+    expect(list.map(i => i.schedule_id)).toEqual([51])
+    expect(held).toEqual([])
+  })
+
+  it('mixes both shapes in one batch without confusing them', () => {
+    const liveTwin = {
+      schedule_id: 61, title: 'Copy 61', client_id: 7, cadence: 'Weekly Wed',
+      upcoming_job_count: 0,
+      problems: [{ code: 'duplicate_paused', partners: [], has_live_copy: true }],
+    }
+    const mk = (id, partners) => ({
+      schedule_id: id, title: `Copy ${id}`, client_id: 8, cadence: 'Weekly Mon',
+      upcoming_job_count: 0,
+      problems: [{ code: 'duplicate_paused', partners, has_live_copy: false }],
+    })
+    const { list, held } = keepOneCopyPerGroup([liveTwin, mk(71, [72]), mk(72, [71])])
+    expect(list.map(i => i.schedule_id).sort()).toEqual([61, 71])
+    expect(held.map(i => i.schedule_id)).toEqual([72])
+  })
+
   it('never batches the ones with no single right answer', () => {
     // Which duplicate survives, and which property to relink to, differ per
     // series — there is no fix to repeat.

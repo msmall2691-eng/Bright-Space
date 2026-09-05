@@ -224,7 +224,8 @@ def test_paused_copies_of_one_series_are_seen_as_duplicates(made):
     live = _mk_sched(db, made, c.id, property_id=p.id, days=(3,))   # the one still running
 
     report = audit_series(db, None)
-    assert sorted([a.id, b.id]) in report["paused_duplicate_groups"]
+    group = next(g for g in report["paused_duplicate_groups"]
+                 if sorted(g["paused"]) == sorted([a.id, b.id]))
     for sid in (a.id, b.id):
         issue = _issue_for(report, sid)
         assert "duplicate_paused" in _codes(issue)
@@ -232,8 +233,56 @@ def test_paused_copies_of_one_series_are_seen_as_duplicates(made):
         assert prob["destructive"] is True
         assert prob["partners"] == [x for x in sorted([a.id, b.id]) if x != sid]
 
-    # The live one is not swept into the paused group — it's the survivor.
-    assert all(live.id not in g for g in report["paused_duplicate_groups"])
+    # The live one anchors the group but is never offered for cancelling —
+    # it's the survivor, and cancelling it would take real visits off the
+    # calendar.
+    assert group["live"] == [live.id]
+    assert all(live.id not in g["paused"] for g in report["paused_duplicate_groups"])
+    db.close()
+
+
+def test_a_live_copy_and_a_paused_one_is_still_a_duplicate(made):
+    """The shape my first version missed, and the common one.
+
+    After an "all future visits" edit the old series is left behind and a new
+    one takes over, so the usual pile is ONE LIVE copy plus paused ones. That
+    fell through both detectors: the live grouping needs every member live,
+    the paused grouping needed every member paused. Owner screenshot: Sandra
+    Fox with two identical "Every 4 weeks Fri 9:00" and Paul Day with two
+    "Biweekly Mon 9:00", one of each still running.
+    """
+    db = SessionLocal()
+    c = _mk_client(db, made)
+    p = _mk_prop(db, made, c.id)
+    live = _mk_sched(db, made, c.id, property_id=p.id, days=(3,))
+    left_behind = _mk_sched(db, made, c.id, property_id=p.id, days=(3,), active=False)
+
+    report = audit_series(db, None)
+    issue = _issue_for(report, left_behind.id)
+    prob = next(x for x in issue["problems"] if x["code"] == "duplicate_paused")
+    assert prob["has_live_copy"] is True
+    assert prob["partners"] == [], "there is no other paused copy to choose between"
+    assert "running series" in prob["message"]
+
+    # And the live one gets no such finding — it is the thing being duplicated.
+    live_issue = _issue_for(report, live.id)
+    assert "duplicate_paused" not in (_codes(live_issue) if live_issue else set())
+    db.close()
+
+
+def test_a_lone_paused_group_says_there_is_a_choice_to_make(made):
+    """No live copy means the office picks which one survives, and the wording
+    has to say so — that's a different sentence from "cancel the leftover"."""
+    db = SessionLocal()
+    c = _mk_client(db, made)
+    p = _mk_prop(db, made, c.id)
+    a = _mk_sched(db, made, c.id, property_id=p.id, days=(3,), active=False)
+    _mk_sched(db, made, c.id, property_id=p.id, days=(3,), active=False)
+
+    prob = next(x for x in _issue_for(audit_series(db, None), a.id)["problems"]
+                if x["code"] == "duplicate_paused")
+    assert prob["has_live_copy"] is False
+    assert "paused copies" in prob["message"]
     db.close()
 
 
@@ -249,10 +298,10 @@ def test_a_cancelled_copy_is_not_a_duplicate_to_resolve(made):
     _cancel(db, b)
 
     report = audit_series(db, None)
-    assert report["paused_duplicate_groups"] == [] or all(
-        b.id not in g for g in report["paused_duplicate_groups"])
-    # And with only one paused copy left there is no duplicate at all.
-    assert all(a.id not in g for g in report["paused_duplicate_groups"])
+    assert all(b.id not in g["paused"] for g in report["paused_duplicate_groups"])
+    # And with only one paused copy left and nothing live, there is no
+    # duplicate at all.
+    assert all(a.id not in g["paused"] for g in report["paused_duplicate_groups"])
     db.close()
 
 
