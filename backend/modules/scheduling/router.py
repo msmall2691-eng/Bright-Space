@@ -433,6 +433,9 @@ def auto_assign_unassigned_turnovers(db: Session, *, dry_run: bool = False,
 
     dry_run=True computes the picks without writing them (for a preview).
 
+    Jobs OPEN TO THE BENCH are skipped entirely — see the filter below. This
+    function assigns, and a subcontractor is never assigned.
+
     org_id scopes every read/write to one tenant (MT-2) when it's an int: the
     endpoint passes the caller's org so a tenant admin can't read or reassign
     another org's jobs. org_id=None (the background scheduler) spans all orgs,
@@ -447,7 +450,20 @@ def auto_assign_unassigned_turnovers(db: Session, *, dry_run: bool = False,
     if isinstance(org_id, int):
         q = q.filter(or_(Job.org_id == org_id, Job.org_id.is_(None)))
     jobs = q.order_by(Job.scheduled_date, Job.start_time).all()
-    jobs = [j for j in jobs if not (j.cleaner_ids or [])][:limit]
+    jobs = [j for j in jobs if not (j.cleaner_ids or [])]
+    # A job on the open board belongs to whoever ASKS for it. Auto-assign is
+    # the employee path: it picks the least-loaded person and puts the work on
+    # them, which is precisely what a subcontractor arrangement cannot do — a
+    # sub requests or accepts, the office never assigns. Without this filter
+    # the Saturday window (migration 101) would post the day's turnovers to
+    # the bench on Wednesday and this tick would assign them out from under it
+    # on Thursday morning, with nobody having agreed to anything.
+    #
+    # posted_rate as well as open_for_claims: a job whose rate has been named
+    # is a job somebody was invited to price their own work against, whether
+    # or not the board flag survived an edit.
+    jobs = [j for j in jobs
+            if not j.open_for_claims and not j.posted_rate][:limit]
 
     assigned, unassignable = [], []
     for job in jobs:

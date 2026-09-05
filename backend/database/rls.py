@@ -66,6 +66,9 @@ TENANT_TABLES = [
     # Routes (migration 100): a standing block of recurring work, who owns it,
     # and what it pays. Added with the tables, not in a later audit.
     "routes", "route_members",
+    # The Saturday window (migration 101): which service day is posted to the
+    # bench, and where its price ladder has got to.
+    "turnover_windows",
     # `users` is DELIBERATELY excluded — re-audited 2026-08-16, still not safe.
     # Re-read this whole comment before adding it; don't re-derive from scratch.
     #

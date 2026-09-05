@@ -2,7 +2,7 @@ import {
   LayoutDashboard, Sparkles, Users, Calendar, Receipt,
   DollarSign, MessageSquare, Home, Repeat, Settings, Inbox,
   TrendingUp, Radar, Rows3, Filter, HardHat, CalendarDays, FileText, Star,
-  GitMerge, Route,
+  GitMerge, Route, CalendarClock,
 } from 'lucide-react'
 
 /**
@@ -66,6 +66,9 @@ export const NAV_SECTIONS = [
           // every /api/routes endpoint is admin/manager (the crew side lives in
           // the crew app, on /api/crew/my-routes).
           { to: '/routes',    icon: Route,    label: 'Routes', roles: ['admin', 'manager'], keywords: 'block standing subcontractor owner day' },
+          // Guest changeover days staffed as a batch. Office-only, like the
+          // rest of this family — the crew side is the ordinary open board.
+          { to: '/turnovers', icon: CalendarClock, label: 'Turnovers', roles: ['admin', 'manager'], keywords: 'saturday changeover str airbnb window price step' },
           // Renamed from "Sync" — plain enough in context, but "Calendar sync"
           // reads unambiguously on first glance for a non-technical owner.
           { to: '/sync',      icon: Radar,    label: 'Calendar sync', roles: ['admin', 'manager', 'viewer'], keywords: 'google ical feeds turnovers' },

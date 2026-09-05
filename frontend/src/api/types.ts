@@ -3906,6 +3906,140 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/turnover-windows": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Windows
+         * @description Upcoming windows and how each day is actually going.
+         *
+         *     One request draws the screen, coverage numbers included — the point of
+         *     looking is "is Saturday a problem", and a list that made you open each one
+         *     to find out would be the wrong shape.
+         */
+        get: operations["list_windows_api_turnover_windows_get"];
+        put?: never;
+        /**
+         * Create Window
+         * @description Plan a service day. Nothing is posted until it opens.
+         *
+         *     A second window for a date that already has one is refused rather than
+         *     created: two ladders on one Saturday would step the same jobs twice, and
+         *     the unique constraint would refuse it anyway — this just says so in words.
+         */
+        post: operations["create_window_api_turnover_windows_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/turnover-windows/{window_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Window */
+        get: operations["get_window_api_turnover_windows__window_id__get"];
+        put?: never;
+        post?: never;
+        /**
+         * Delete Window
+         * @description Delete a window that never opened.
+         *
+         *     An opened window is the record of what was posted and at what price. It
+         *     gets closed, not erased — and deleting it would not un-post the jobs
+         *     anyway, which is the more misleading half.
+         */
+        delete: operations["delete_window_api_turnover_windows__window_id__delete"];
+        options?: never;
+        head?: never;
+        /**
+         * Update Window
+         * @description Edit the ladder.
+         *
+         *     Editing does NOT reprice jobs already posted — the rate on the board is
+         *     what people are looking at, and silently moving it under them is how a
+         *     claim gets made against a number that no longer exists. The new settings
+         *     take effect at the next step. Lowering `max_steps` below where the ladder
+         *     already is simply stops it climbing further.
+         */
+        patch: operations["update_window_api_turnover_windows__window_id__patch"];
+        trace?: never;
+    };
+    "/api/turnover-windows/{window_id}/open": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Open Now
+         * @description Post this day's turnovers to the bench now, ahead of schedule.
+         *
+         *     Safe to press twice: jobs somebody has already taken are skipped, and the
+         *     response says how many.
+         */
+        post: operations["open_now_api_turnover_windows__window_id__open_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/turnover-windows/{window_id}/step": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Step Now
+         * @description Raise the price on what's left, now, without waiting for tomorrow.
+         *
+         *     Refused at the ceiling and refused twice in one day — the same rules the
+         *     tick obeys, because it is the same function.
+         */
+        post: operations["step_now_api_turnover_windows__window_id__step_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/turnover-windows/{window_id}/close": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Close Now
+         * @description Stop the ladder. Unclaimed turnovers stay on the board at whatever they
+         *     reached — somebody taking one late still beats nobody taking it.
+         */
+        post: operations["close_now_api_turnover_windows__window_id__close_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/reminders/jobs/{job_id}/invite.ics": {
         parameters: {
             query?: never;
@@ -9770,6 +9904,23 @@ export interface components {
             week: {
                 [key: string]: unknown;
             };
+        };
+        /** WindowBody */
+        WindowBody: {
+            /** Service Date */
+            service_date?: string | null;
+            /** Base Rate */
+            base_rate?: number | null;
+            /** Step Pct */
+            step_pct?: number | null;
+            /** Max Steps */
+            max_steps?: number | null;
+            /** Open Days Before */
+            open_days_before?: number | null;
+            /** First Step Days Before */
+            first_step_days_before?: number | null;
+            /** Notes */
+            notes?: string | null;
         };
     };
     responses: never;
@@ -15804,6 +15955,260 @@ export interface operations {
                 "application/json": components["schemas"]["EndBody"];
             };
         };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_windows_api_turnover_windows_get: {
+        parameters: {
+            query?: {
+                days?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_window_api_turnover_windows_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WindowBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_window_api_turnover_windows__window_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                window_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_window_api_turnover_windows__window_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                window_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_window_api_turnover_windows__window_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                window_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WindowBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    open_now_api_turnover_windows__window_id__open_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                window_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    step_now_api_turnover_windows__window_id__step_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                window_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    close_now_api_turnover_windows__window_id__close_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                window_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
         responses: {
             /** @description Successful Response */
             200: {

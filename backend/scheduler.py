@@ -554,6 +554,27 @@ def turnover_coverage_tick() -> dict:
                 f"[turnover-coverage] all upcoming checkouts covered across "
                 f"{result['properties_checked']} STR property(ies)"
             )
+
+        # The Saturday window (migration 101) rides THIS tick rather than
+        # adding a background job (R1 — the count only goes down). It belongs
+        # here on the merits too: this is already the daily "is the STR side
+        # covered" pass, and opening a batch and stepping its price is the
+        # same question answered with money instead of a log line.
+        #
+        # Self-gated and wrapped: a window problem must never stop the coverage
+        # audit reporting, which is the safety net people actually rely on.
+        try:
+            if _db_flag(db, "turnover_window_enabled",
+                        env_flag("TURNOVER_WINDOW_ENABLED", True)):
+                from services.turnover_windows import run_due
+                windows = run_due(db)
+                if windows["opened"] or windows["stepped"]:
+                    log.info(f"[turnover-window] opened {len(windows['opened'])}, "
+                             f"stepped {len(windows['stepped'])}")
+                result["windows"] = windows
+        except Exception as e:
+            log.error(f"[turnover-window] window pass failed: {e}")
+
         return result
     except Exception as e:
         log.error(f"[turnover-coverage] check failed: {e}")

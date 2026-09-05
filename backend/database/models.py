@@ -998,6 +998,50 @@ class SubPayout(Base):
     updated_at = Column(DateTime, default=_utcnow, onupdate=_utcnow)
 
 
+class TurnoverWindow(Base):
+    """One week's turnovers, staffed as a batch (migration 101).
+
+    STR turnovers can't be a route — the volume swings week to week — so they
+    stay posted jobs. A window is the schedule and the price ladder around a
+    single service day: it opens that day's turnovers to the bench all at once
+    and raises the price on whatever is still unclaimed as the date closes in.
+
+    UNIQUE (org_id, service_date): the date is the identity. Two windows for
+    one Saturday would step the same jobs twice.
+
+    It owns no work. Opening writes `open_for_claims` and `posted_rate` on
+    ordinary Jobs — the marketplace path from 097 — and the claim, the
+    approval and the money all run exactly as they already do.
+    """
+    __tablename__ = "turnover_windows"
+    __table_args__ = (
+        UniqueConstraint("org_id", "service_date", name="uq_turnover_windows_org_date"),
+    )
+    org_id = Column(Integer, ForeignKey("orgs.id"), nullable=True, index=True)  # tenant scope (MT-1)
+
+    id = Column(Integer, primary_key=True, index=True)
+    service_date = Column(Date, nullable=False, index=True)
+    status = Column(String(16), nullable=False, default="pending")  # pending|open|closed
+    base_rate = Column(Float, nullable=True)
+    # A step adds this percentage of the BASE rate, not of the current one.
+    # Compounding turns a 10% ladder into a 61% raise by step five, which is
+    # not what anybody typed.
+    step_pct = Column(Float, nullable=False, default=10.0)
+    max_steps = Column(Integer, nullable=False, default=3)
+    # Stored, not derived from the current price: the office can nudge a job's
+    # posted_rate by hand, and a ladder that re-read its position from the rate
+    # would restart or skip depending on which way they nudged it.
+    steps_taken = Column(Integer, nullable=False, default=0)
+    open_days_before = Column(Integer, nullable=False, default=10)
+    first_step_days_before = Column(Integer, nullable=False, default=4)
+    opened_at = Column(DateTime, nullable=True)
+    closed_at = Column(DateTime, nullable=True)
+    last_stepped_at = Column(DateTime, nullable=True)
+    notes = Column(Text, nullable=True)
+    created_at = Column(DateTime, default=_utcnow)
+    updated_at = Column(DateTime, default=_utcnow, onupdate=_utcnow)
+
+
 class Route(Base):
     """A standing block of recurring work owned by one subcontractor
     (migration 100).
