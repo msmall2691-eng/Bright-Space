@@ -71,6 +71,68 @@ export const BULK_FIXES = {
         + 'later from Manage.',
     guard: guardLastScheduleForClient,
   },
+  // Paused COPIES of the same series. Distinct from stale_paused: that one is
+  // a lone leftover, this is a pile of the same house, and the difference is
+  // that here there is a keeper.
+  //
+  // The scan groups them (services/recurring_guards._group_paused_duplicates);
+  // this reduces each group to "everything except the one worth keeping". That
+  // reduction is what makes an otherwise per-series judgement bulk-able at
+  // all — without it "cancel all" would cancel the keeper too.
+  duplicate_paused: {
+    label: 'duplicate copies',
+    verb: 'Cancel the extra copies',
+    danger: true,
+    method: 'delete',
+    body: () => null,
+    preview: (issue) =>
+      `${issue.title || 'Untitled'} · ${issue.client_name || 'unknown client'}`
+      + (issue.cadence ? ` · ${issue.cadence}` : ''),
+    tail: 'One copy of each is kept — the one with visits still on the calendar, '
+        + 'or the most recent. History is untouched and each kept copy can still '
+        + 'be resumed from Manage.',
+    guard: keepOneCopyPerGroup,
+  },
+}
+
+/**
+ * Reduce each duplicate group to the copies that should go, holding back the
+ * one to keep.
+ *
+ * Which one survives: the copy that still has visits on the calendar, because
+ * cancelling that one would take real work off the schedule. Failing that, the
+ * highest id — the most recently created, which is the one an "all future
+ * visits" edit would have left as the working series.
+ *
+ * The keeper is HELD, not dropped, so the confirm names it. "I cancelled four
+ * of these five" is only a decision somebody can make if they can see which
+ * one stayed.
+ */
+export function keepOneCopyPerGroup(list) {
+  const groups = new Map()
+  for (const issue of list) {
+    const prob = (issue.problems || []).find(p => p.code === 'duplicate_paused')
+    // The group's identity is its whole membership, sorted — every member
+    // carries the same set, so any of them names the same bucket.
+    const key = [issue.schedule_id, ...(prob?.partners || [])].sort((a, b) => a - b).join(',')
+    if (!groups.has(key)) groups.set(key, [])
+    groups.get(key).push(issue)
+  }
+  const cancel = []
+  const keep = []
+  for (const members of groups.values()) {
+    const sorted = [...members].sort((a, b) => {
+      const byVisits = (b.upcoming_job_count || 0) - (a.upcoming_job_count || 0)
+      return byVisits !== 0 ? byVisits : b.schedule_id - a.schedule_id
+    })
+    keep.push(sorted[0])
+    cancel.push(...sorted.slice(1))
+  }
+  return {
+    list: cancel,
+    held: keep,
+    heldReason: 'it is the copy being kept',
+  }
 }
 
 /**

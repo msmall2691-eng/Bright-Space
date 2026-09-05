@@ -9,6 +9,7 @@
 import { describe, it, expect, vi } from 'vitest'
 import {
   BULK_FIXES, betterTitle, groupBulkable, applyBatch, describeBatch,
+  keepOneCopyPerGroup,
   guardLastScheduleForClient,
 } from '../recurringBulk'
 
@@ -22,9 +23,13 @@ const issue = (id, code, extra = {}) => ({
 })
 
 describe('which fixes may be applied in bulk', () => {
-  it('batches the identical ones, plus the guarded cancel', () => {
+  it('batches the identical ones, plus the two guarded cancels', () => {
+    // duplicate_paused joined deliberately: the scan now groups paused COPIES
+    // of one series, and reducing each group to "everything but the keeper" is
+    // a mechanical rule, which is what makes it bulk-able where live
+    // `duplicate` still isn't.
     expect(Object.keys(BULK_FIXES).sort())
-      .toEqual(['ended_but_active', 'junk_title', 'stale_paused'])
+      .toEqual(['duplicate_paused', 'ended_but_active', 'junk_title', 'stale_paused'])
   })
 
   it('marks cancelling as the destructive one', () => {
@@ -40,6 +45,52 @@ describe('which fixes may be applied in bulk', () => {
     // "Generate visits" puts real work on the calendar and on crew phones, and
     // undoing it means deleting jobs — which must never happen automatically.
     expect(BULK_FIXES.active_no_upcoming).toBeUndefined()
+  })
+
+  it('keeps one copy per duplicate group, and names the one it kept', () => {
+    // Without this reduction "cancel all" would cancel the keeper too. The
+    // survivor is the copy that still has visits on the calendar — cancelling
+    // that one would take real work off the schedule.
+    const group = [11, 12, 13]
+    const mk = (id, upcoming) => ({
+      schedule_id: id, title: `Copy ${id}`, client_name: 'Bre', client_id: 5,
+      cadence: 'Every 4 weeks Tue', upcoming_job_count: upcoming,
+      problems: [{ code: 'duplicate_paused',
+                   partners: group.filter(g => g !== id) }],
+    })
+    const { list, held, heldReason } = keepOneCopyPerGroup(
+      [mk(11, 0), mk(12, 2), mk(13, 0)])
+
+    expect(held.map(i => i.schedule_id)).toEqual([12])
+    expect(list.map(i => i.schedule_id).sort()).toEqual([11, 13])
+    // The confirm has to be able to say which one stayed.
+    expect(heldReason).toMatch(/kept/)
+  })
+
+  it('falls back to the most recent copy when none has visits', () => {
+    const group = [21, 22]
+    const mk = (id) => ({
+      schedule_id: id, title: `Copy ${id}`, client_id: 5, cadence: 'Weekly Mon',
+      upcoming_job_count: 0,
+      problems: [{ code: 'duplicate_paused', partners: group.filter(g => g !== id) }],
+    })
+    const { list, held } = keepOneCopyPerGroup([mk(21), mk(22)])
+    expect(held.map(i => i.schedule_id)).toEqual([22])
+    expect(list.map(i => i.schedule_id)).toEqual([21])
+  })
+
+  it('keeps groups separate — two clients are two decisions', () => {
+    const mk = (id, partners, client) => ({
+      schedule_id: id, title: `Copy ${id}`, client_id: client, cadence: 'Weekly',
+      upcoming_job_count: 0,
+      problems: [{ code: 'duplicate_paused', partners }],
+    })
+    const { list, held } = keepOneCopyPerGroup([
+      mk(31, [32], 1), mk(32, [31], 1),
+      mk(41, [42], 2), mk(42, [41], 2),
+    ])
+    expect(held.map(i => i.schedule_id).sort()).toEqual([32, 42])
+    expect(list.map(i => i.schedule_id).sort()).toEqual([31, 41])
   })
 
   it('never batches the ones with no single right answer', () => {
