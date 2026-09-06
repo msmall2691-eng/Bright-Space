@@ -9,6 +9,7 @@ out of scheduling/router.py, which is trying to shrink — R6).
 """
 import logging
 from datetime import datetime, timedelta, timezone
+from utils.dates import business_today
 
 from sqlalchemy.orm import Session
 
@@ -55,7 +56,12 @@ def auto_create_draft_invoice(db: Session, job) -> None:
         tax_rate = float(quote.tax_rate) if (quote and quote.tax_rate is not None) else 5.5
         tax = round(subtotal * (tax_rate / 100), 2)
         total = round(subtotal + tax, 2)
-        due_date = (datetime.now(timezone.utc) + timedelta(days=14)).strftime("%Y-%m-%d")
+        # Net 14 counted in business days-of-the-calendar, not UTC ones: from
+        # 8pm here the UTC date is already tomorrow, so a job closed in the
+        # evening quietly got net-15 while the same job closed at 2pm got
+        # net-14. due_date is read back against business_today() by AR aging
+        # and by dunning, so it has to be a business-local date.
+        due_date = (business_today() + timedelta(days=14)).isoformat()
         invoice = Invoice(
             client_id=job.client_id,
             job_id=job.id,

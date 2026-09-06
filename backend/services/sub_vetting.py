@@ -90,13 +90,18 @@ def enforce_from(db: Session):
     return coerce_date(get_setting(db, ENFORCE_FROM_KEY))
 
 
-def is_exempt(db: Session, user) -> bool:
-    """True when this person predates the gate and shouldn't be blocked by it.
+def exempt_against(cutoff, user) -> bool:
+    """The exemption itself, against an already-resolved cutoff.
 
-    Reads the USER's creation date, not today's: the question is "was this
-    person already working here", and that answer doesn't change over time.
+    Split out from `is_exempt` for two reasons. The small one: `roster` asks
+    this for a whole crew and shouldn't re-read the setting once per person.
+    The load-bearing one: there must be exactly ONE definition of who is
+    grandfathered. `roster` used to carry its own inline copy of this
+    expression, which meant it did not receive the UTC-vs-Maine fix below and
+    told the office a crew member couldn't work while the actual gate let them
+    — two screens disagreeing about the answer, which is the failure `roster`
+    exists to prevent.
     """
-    cutoff = enforce_from(db)
     if cutoff is None:
         return False
     # business_date, not coerce_date: created_at is UTC and the cutoff is a
@@ -110,6 +115,15 @@ def is_exempt(db: Session, user) -> bool:
         # blocking somebody over a missing timestamp.
         return True
     return created < cutoff
+
+
+def is_exempt(db: Session, user) -> bool:
+    """True when this person predates the gate and shouldn't be blocked by it.
+
+    Reads the USER's creation date, not today's: the question is "was this
+    person already working here", and that answer doesn't change over time.
+    """
+    return exempt_against(enforce_from(db), user)
 
 
 def blocking_requirements(db: Session, user) -> list:
@@ -311,8 +325,7 @@ def roster(db: Session, org_id: int) -> dict:
                      if d.status == "pending" and d.data]
         waiting += len(to_review)
 
-        exempt = bool(cutoff and (coerce_date(getattr(u, "created_at", None)) is None
-                                  or coerce_date(u.created_at) < cutoff))
+        exempt = exempt_against(cutoff, u)
         rows.append({
             "user_id": u.id,
             "name": u.full_name or u.email,

@@ -24,7 +24,7 @@ would post Saturday to the bench on Wednesday and the tick would hand it out
 on Thursday with nobody having agreed to anything.
 """
 import uuid
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, time as time_cls, timedelta, timezone
 
 import pytest
 from fastapi.testclient import TestClient
@@ -34,7 +34,7 @@ from database.db import SessionLocal
 from database.models import Client, Job, Property, TurnoverWindow, User
 from modules.auth.router import get_current_user, current_org_id
 from services import turnover_windows as svc
-from utils.dates import business_today
+from utils.dates import business_today, business_tz
 
 
 class _Admin:
@@ -248,6 +248,43 @@ def test_the_ladder_refuses_a_second_step_the_same_day(world):
         again = api.post(f"/api/turnover-windows/{w['id']}/step")
         assert again.status_code == 409
         assert "already stepped today" in again.json()["detail"]
+    finally:
+        _clear()
+
+
+def test_an_evening_step_does_not_block_the_next_days(world):
+    """last_stepped_at is UTC; the one-step-a-day guard is business-local.
+
+    A step taken at 8:30pm here is stamped with TOMORROW's UTC date, so the
+    next day's tick read "already stepped today" and refused. The ladder has
+    only a handful of rungs and they all sit in the last days before the
+    service date, so a swallowed day leaves an unclaimed Saturday underpriced
+    on exactly the days this module exists for.
+
+    Over-refusing only: the UTC date is never BEHIND the business date, so
+    "never twice in a day" was always safe. Liveness was not.
+    """
+    when = business_today() + timedelta(days=3)
+    _mk_turnovers(world, when, n=1)
+    api = _api()
+    try:
+        w = _mk_window(world, api, when)
+        api.post(f"/api/turnover-windows/{w['id']}/open")
+        db = SessionLocal()
+        row = db.query(TurnoverWindow).filter(TurnoverWindow.id == w["id"]).first()
+        # 8:30pm YESTERDAY in Maine, stored the way the column holds it: UTC.
+        yesterday_evening = datetime.combine(
+            business_today() - timedelta(days=1), time_cls(20, 30), tzinfo=business_tz())
+        row.last_stepped_at = yesterday_evening.astimezone(timezone.utc).replace(tzinfo=None)
+        db.commit()
+        # The fixture only means something if the raw UTC date really is today.
+        assert row.last_stepped_at.date() == business_today(), \
+            "fixture must straddle midnight UTC or it proves nothing"
+
+        out = svc.step_window(db, row)
+        assert out.get("reason") != "already stepped today"
+        assert out["stepped"] is True
+        db.close()
     finally:
         _clear()
 

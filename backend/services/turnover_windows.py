@@ -38,7 +38,7 @@ from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from database.models import Job, TurnoverWindow
-from utils.dates import business_today
+from utils.dates import business_date, business_today
 
 logger = logging.getLogger(__name__)
 
@@ -143,7 +143,12 @@ def step_window(db: Session, window: TurnoverWindow) -> dict:
     if int(window.steps_taken or 0) >= int(window.max_steps or 0):
         return {"stepped": False, "reason": "at the ceiling"}
     last = window.last_stepped_at
-    if last is not None and last.date() >= business_today():
+    # business_date: last_stepped_at is UTC. Its raw date is already tomorrow
+    # for a step taken after 8pm here, so an evening step blocked the NEXT
+    # day's — losing a rung of a ladder that only has a handful, on exactly
+    # the days it exists for. Over-refusing only: the UTC date is never
+    # behind, so "never twice in a day" was always safe. Liveness was not.
+    if last is not None and business_date(last) >= business_today():
         return {"stepped": False, "reason": "already stepped today"}
 
     remaining = [j for j in window_jobs(db, window) if not _is_taken(j)]
@@ -251,7 +256,7 @@ def due_to_step(db: Session, today: Optional[date] = None) -> list:
             continue
         if not (first_step_on(w) <= today <= w.service_date):
             continue
-        if w.last_stepped_at is not None and w.last_stepped_at.date() >= today:
+        if w.last_stepped_at is not None and business_date(w.last_stepped_at) >= today:
             continue
         out.append(w)
     return out

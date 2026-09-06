@@ -20,6 +20,12 @@ from main import app
 from database.db import SessionLocal
 from database.models import AppSetting, Client, Invoice
 from modules.auth.router import get_current_user, current_org_id
+from utils.dates import business_today
+# business_today, not date.today: Invoice.due_date is a business-local date and
+# the service now measures "past due" in business-local days. date.today() is
+# the SERVER's date, which on a UTC container is a day ahead of Maine every
+# evening — these fixtures used to agree with the service only because both
+# were making the same mistake.
 from services.dunning_service import (
     _due_stage, _days_past_due, send_due_dunning, DEFAULT_CADENCE_DAYS,
 )
@@ -108,7 +114,7 @@ def test_due_stage_advances_one_at_a_time():
 
 def test_dunning_fires_stage_1_at_first_past_due_day(ctx):
     db, c, ids = ctx
-    inv = _mk_invoice(db, c, ids, due_date=date.today() - timedelta(days=1))
+    inv = _mk_invoice(db, c, ids, due_date=business_today() - timedelta(days=1))
     with patch("services.dunning_service.send_email") as mock_send:
         r = send_due_dunning(db)
     assert r["sent"] == 1
@@ -122,7 +128,7 @@ def test_dunning_fires_stage_1_at_first_past_due_day(ctx):
 def test_dunning_does_not_double_send_same_stage(ctx):
     """Second tick on the same day: stage 1 already fired, no new send."""
     db, c, ids = ctx
-    _mk_invoice(db, c, ids, due_date=date.today() - timedelta(days=1),
+    _mk_invoice(db, c, ids, due_date=business_today() - timedelta(days=1),
                 dunning_stage=1)
     with patch("services.dunning_service.send_email") as mock_send:
         r = send_due_dunning(db)
@@ -132,7 +138,7 @@ def test_dunning_does_not_double_send_same_stage(ctx):
 
 def test_dunning_advances_to_stage_2_at_day_7(ctx):
     db, c, ids = ctx
-    inv = _mk_invoice(db, c, ids, due_date=date.today() - timedelta(days=7),
+    inv = _mk_invoice(db, c, ids, due_date=business_today() - timedelta(days=7),
                       dunning_stage=1)
     with patch("services.dunning_service.send_email") as mock_send:
         r = send_due_dunning(db)
@@ -145,7 +151,7 @@ def test_dunning_advances_to_stage_2_at_day_7(ctx):
 def test_dunning_stops_after_final_stage(ctx):
     """An invoice already at the final stage is filtered out at the query level."""
     db, c, ids = ctx
-    _mk_invoice(db, c, ids, due_date=date.today() - timedelta(days=60),
+    _mk_invoice(db, c, ids, due_date=business_today() - timedelta(days=60),
                 dunning_stage=3)
     with patch("services.dunning_service.send_email") as mock_send:
         r = send_due_dunning(db)
@@ -155,7 +161,7 @@ def test_dunning_stops_after_final_stage(ctx):
 
 def test_dunning_skips_paid_invoices(ctx):
     db, c, ids = ctx
-    _mk_invoice(db, c, ids, due_date=date.today() - timedelta(days=10),
+    _mk_invoice(db, c, ids, due_date=business_today() - timedelta(days=10),
                 status="paid")
     with patch("services.dunning_service.send_email") as mock_send:
         r = send_due_dunning(db)
@@ -169,7 +175,7 @@ def test_dunning_skips_client_with_no_email_but_advances_stage(ctx):
     db, c, ids = ctx
     c.email = None
     db.commit()
-    inv = _mk_invoice(db, c, ids, due_date=date.today() - timedelta(days=1))
+    inv = _mk_invoice(db, c, ids, due_date=business_today() - timedelta(days=1))
     with patch("services.dunning_service.send_email") as mock_send:
         r = send_due_dunning(db)
     assert r["sent"] == 0
@@ -182,7 +188,7 @@ def test_dunning_skips_client_with_no_email_but_advances_stage(ctx):
 def test_dunning_survives_send_email_failure(ctx):
     """send_email raising leaves the stage unchanged so the next tick retries."""
     db, c, ids = ctx
-    inv = _mk_invoice(db, c, ids, due_date=date.today() - timedelta(days=1))
+    inv = _mk_invoice(db, c, ids, due_date=business_today() - timedelta(days=1))
     with patch("services.dunning_service.send_email",
                side_effect=RuntimeError("SMTP down")):
         r = send_due_dunning(db)

@@ -188,6 +188,37 @@ def test_an_account_opened_in_the_evening_is_not_stamped_with_tomorrow(made):
         "existing crew, added the evening before the gate started"
 
 
+def test_the_roster_agrees_with_the_gate_about_who_is_grandfathered(made):
+    """Two screens, one answer.
+
+    roster() used to carry its own inline copy of the exemption expression, so
+    it did not receive the UTC-vs-Maine fix and told the office a crew member
+    was blocked while the real gate was letting them through. Both now go
+    through exempt_against, so there is one definition to get wrong instead of
+    two to keep in step — which is the failure roster()'s own docstring says
+    it exists to prevent.
+    """
+    evening_local = datetime(2026, 3, 10, 21, 0, tzinfo=business_tz())
+    evening_utc = evening_local.astimezone(timezone.utc)
+    assert evening_utc.date() > evening_local.date(), "fixture must straddle midnight UTC"
+
+    _cutoff((evening_local.date() + timedelta(days=1)).isoformat())
+    who = _mk_crew(made, created_at=evening_utc.replace(tzinfo=None))
+
+    db = SessionLocal()
+    try:
+        u = db.query(User).filter(User.id == who.id).first()
+        gate_says = sub_vetting.is_exempt(db, u)
+        row = next(r for r in sub_vetting.roster(db, 1)["crew"] if r["user_id"] == who.id)
+        assert gate_says is True
+        assert row["exempt"] is True, "the roster must not contradict the gate"
+        assert row["can_work"] is True
+        # And the exemption is still honest about the file itself.
+        assert row["complete"] is False
+    finally:
+        db.close()
+
+
 def test_somebody_onboarded_after_the_cutoff_still_needs_a_file(made):
     """A grandfather clause, not an off switch."""
     _cutoff((business_today() - timedelta(days=7)).isoformat())

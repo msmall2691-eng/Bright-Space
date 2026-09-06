@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime, timedelta, timezone
+from utils.dates import business_date
 
 from sqlalchemy import or_
 from sqlalchemy.orm import Session, joinedload
@@ -50,8 +51,11 @@ def _horizon(now: datetime, hours: int) -> tuple:
     the current day to avoid a partial-day edge would skip exactly that one.
     Jobs are dated (and timed) separately, so this filters on the date and lets
     the day boundary be generous."""
-    end = (now + timedelta(hours=hours)).date()
-    return now.date(), end
+    # Both ends business-local: Job.scheduled_date is a business-local Date,
+    # and the UTC date is already tomorrow from 8pm here. That slid the window
+    # a day out AND dropped today — the one case the docstring above says this
+    # is deliberately inclusive of.
+    return business_date(now), business_date(now + timedelta(hours=hours))
 
 
 def find_uncovered(db: Session, *, hours: int, now: datetime | None = None,
