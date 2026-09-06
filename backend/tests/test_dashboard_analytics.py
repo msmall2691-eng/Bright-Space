@@ -137,8 +137,12 @@ def test_property_economics_math(ids):
     assert row["revenue_invoiced"] == 500.0     # paid + sent, draft excluded
     assert row["invoice_count"] == 2
     assert row["visits"] == 2                   # completed only
-    assert row["crew_hours"] == 4.0             # 2.5 + 1.5
-    assert row["effective_hourly"] == 75.0      # 300 paid / 4h
+    # crew_hours and effective_hourly are gone with the employee model: a
+    # subcontractor is paid for the job, not the hour, so there are no hours to
+    # divide revenue by — and a "$/hr" for a sub would derive exactly the
+    # number this arrangement must never be priced on.
+    assert "crew_hours" not in row
+    assert "effective_hourly" not in row
     assert row["client_id"] == cid
     assert body["window_days"] == 90
 
@@ -154,12 +158,9 @@ def test_property_economics_no_hours_and_shape(ids):
     api = _as(_Admin())
     _, row = _econ_row(api, pid)
     assert row is not None
-    assert row["crew_hours"] == 0.0
-    assert row["effective_hourly"] is None
     assert set(row.keys()) == {
         "property_id", "property_name", "property_type", "client_id",
         "invoice_count", "revenue_paid", "revenue_invoiced", "visits",
-        "crew_hours", "effective_hourly",
     }
 
 

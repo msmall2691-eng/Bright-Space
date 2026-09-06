@@ -4,7 +4,6 @@
  *   • PropertyEconomicsTile: renders the per-property money table, links each
  *     property to its record, and blanks $/hr when no crew hours exist.
  *   • WeekCapacityTile: utilization headline + honest "assumed 8h/day" caption.
- *   • CrewHoursTile: hours per cleaner, amber-dot + footer for unclassified.
  *
  * FeedHealthTile and RecurringHealthTile used to live here too. They were
  * read-only copies of what /sync and /recurring own, and Home now carries the
@@ -16,7 +15,6 @@ import { describe, it, expect, vi, afterEach } from 'vitest'
 import { render, screen, fireEvent, cleanup } from '@testing-library/react'
 import { PropertyEconomicsTile } from '../PropertyEconomicsTile'
 import { WeekCapacityTile } from '../WeekCapacityTile'
-import { CrewHoursTile } from '../CrewHoursTile'
 
 afterEach(cleanup)
 
@@ -87,27 +85,3 @@ describe('WeekCapacityTile', () => {
   })
 })
 
-describe('CrewHoursTile', () => {
-  const data = {
-    employees: [
-      { employee_id: 'a1', name: 'Dana', total_hours: 22.5, unclassified_hours: 0 },
-      { employee_id: 'b2', name: 'Kim', total_hours: 12, unclassified_hours: 3 },
-      { employee_id: 'c3', name: 'Idle', total_hours: 0, unclassified_hours: 0 },
-    ],
-  }
-
-  it('lists cleaners with hours (skipping zero-hour rows) and flags unclassified', () => {
-    render(<CrewHoursTile loading={false} data={data} navigate={() => {}} />)
-    expect(screen.getByText('Dana')).toBeTruthy()
-    expect(screen.getByText(/3h unclassified/)).toBeTruthy()
-    expect(screen.queryByText('Idle')).toBeNull()
-    expect(screen.getByText(/unpaid until the punch is assigned/)).toBeTruthy()
-  })
-
-  it('routes the tile action to payroll', () => {
-    const navigate = vi.fn()
-    render(<CrewHoursTile loading={false} data={data} navigate={navigate} />)
-    fireEvent.click(screen.getByText('Open payroll'))
-    expect(navigate).toHaveBeenCalledWith('/payroll')
-  })
-})

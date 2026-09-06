@@ -30,7 +30,7 @@ from sqlalchemy import func, or_
 from sqlalchemy.orm import Session, joinedload
 
 from database.models import (
-    CleanerTimeOff, Invoice, Job, PropertyIcal, TimeEntry, User,
+    CleanerTimeOff, Invoice, Job, PropertyIcal, User,
 )
 from utils.dates import business_tz, coerce_date, week_monday
 
@@ -88,13 +88,6 @@ def _aware(dt):
     return dt.replace(tzinfo=timezone.utc) if dt.tzinfo is None else dt.astimezone(timezone.utc)
 
 
-def _entry_hours(clock_in_at, clock_out_at, break_minutes) -> float:
-    """Worked hours for one punch, breaks removed, never negative. Mirrors
-    dashboard.analytics._entry_hours and payroll's _native_entry_hours so the
-    three surfaces can never disagree about what a punch is worth."""
-    secs = (clock_out_at - clock_in_at).total_seconds() - (break_minutes or 0) * 60
-    return max(0.0, secs) / 3600.0
-
 
 def _name_map(db: Session, cleaner_ids) -> dict:
     """crew-ID → display name, one query. Unclaimed IDs stay unmapped; callers
@@ -139,25 +132,14 @@ def _money_today(db: Session, oid: int, today: date, collected_today: float) -> 
     total = len(rows)
     done = sum(1 for (st,) in rows if st == "completed")
 
-    # Crew hours from the native time clock: closed punches contribute their
-    # real duration; open punches are counted separately rather than guessed
-    # at, so the hours number is never inflated by someone who forgot to
-    # clock out.
-    punches = db.query(
-        TimeEntry.clock_in_at, TimeEntry.clock_out_at, TimeEntry.break_minutes,
-    ).filter(org(TimeEntry), TimeEntry.clock_in_at >= start).all()
-    hours = sum(_entry_hours(_aware(cin), _aware(cout), brk)
-                for cin, cout, brk in punches if cout)
-    on_clock = sum(1 for _, cout, _ in punches if not cout)
-
+    # Crew hours and the on-the-clock count used to come from time-clock
+    # punches. There is no clock: a subcontractor is paid for the job, not the
+    # hour. What today is worth is the money above and the visits below.
     return {
         "collected": round(float(collected_today or 0.0), 2),
         "collected_label": _money(collected_today),
         "invoiced": round(float(invoiced), 2),
         "invoiced_label": _money(invoiced),
-        "hours": round(hours, 2),
-        "hours_label": _hours(hours),
-        "on_clock": on_clock,
         "visits_done": done,
         "visits_total": total,
     }

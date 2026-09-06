@@ -9,7 +9,6 @@
  *   /api/dashboard/owner              close rate, MRR, AR aging, revenue mix
  *   /api/dashboard/property-economics "am I making money on this house"
  *   /api/dashboard/week-capacity      booked vs available crew hours
- *   /api/payroll/summary (Mon–Sun)    crew hours this week (native clock)
  *
  * Turnover-feed health and stalled recurring series used to sit here too,
  * as read-only copies of what /sync and /recurring already own. Home now
@@ -33,7 +32,6 @@ import { fmtMoney } from '../components/dashboard/utils'
 import { KpiCard, Tile, TileLoading, BarTip } from '../components/dashboard/primitives'
 import { PropertyEconomicsTile } from '../components/dashboard/PropertyEconomicsTile'
 import { WeekCapacityTile } from '../components/dashboard/WeekCapacityTile'
-import { CrewHoursTile } from '../components/dashboard/CrewHoursTile'
 import { ErrorState, PageHeader, SubNav } from '../components/ui'
 
 // Human-facing labels for the API's job_type values. The backend returns
@@ -96,7 +94,6 @@ export default function OwnerDashboard() {
   const owner = useGet('/api/dashboard/owner')
   const economics = useGet('/api/dashboard/property-economics')
   const capacity = useGet('/api/dashboard/week-capacity')
-  const crewHours = useGet(`/api/payroll/summary?start_date=${week.start}&end_date=${week.end}`)
 
   if (owner.error) {
     return (
@@ -170,7 +167,6 @@ export default function OwnerDashboard() {
       <div className="grid grid-cols-1 shell:grid-cols-2 gap-5">
         {/* This week: how packed, and who's been on the clock */}
         <WeekCapacityTile {...capacity} navigate={navigate} />
-        <CrewHoursTile {...crewHours} navigate={navigate} />
 
         {/* AR aging — every bucket links to the matching invoice list */}
         <Tile icon={AlertTriangle} iconColor="rose" title={`AR aging · ${fmtMoney(arTotal)} past due`}>
