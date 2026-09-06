@@ -27,6 +27,7 @@ import logging
 from datetime import datetime, timezone
 from typing import Optional
 
+from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from database.models import JobClaimRequest
@@ -66,6 +67,23 @@ def approve(db: Session, job, req: JobClaimRequest, *, org_id: int,
         raise ClaimApprovalError("not_pending", f"This request is already {req.status}.")
     if not job.open_for_claims:
         raise ClaimApprovalError("closed", "This job isn't open anymore.")
+    # THE FLAG IS NOT THE JOB. Approval checked `open_for_claims` and never
+    # `status`, and nothing wrote the flag False on cancel — so approving a
+    # cancelled job scheduled the sub onto it, fixed a rate, and pushed them
+    # "You got the job!" for work that no longer existed.
+    #
+    # `close_offer` below now closes the offer at every cancel path we own, so
+    # this should be unreachable through them. It is here for the paths we do
+    # not: a row cancelled by an older release, a bulk update, an endpoint
+    # somebody adds next year. Scheduling somebody onto dead work is the kind
+    # of mistake that must fail at the last gate too, not only the first.
+    if job.status != "scheduled":
+        raise ClaimApprovalError(
+            "not_scheduled",
+            f"This job is {job.status} — it can't be given to anyone."
+            if job.status != "cancelled" else
+            "This job was cancelled. Re-open it on the schedule first if it's "
+            "back on.")
 
     # No rate on either side means nobody has agreed what this job pays, and
     # approving would schedule someone to work for an unstated amount. The crew
@@ -278,3 +296,124 @@ def release_if_displaced(db, job, *, notify=True) -> bool:
         except Exception:
             logger.warning("release notification failed", exc_info=True)
     return True
+
+
+def close_offer(db, job, *, reason: str, notify: bool = True) -> int:
+    """Take a job off the board and answer everyone still waiting on it.
+
+    THE OFFER AND ITS PENDING REQUESTS LIVE AND DIE TOGETHER. That was true in
+    intent and nowhere in code: `open_for_claims` was written True by the
+    posting paths and False by exactly one thing — a successful approval.
+    Cancel a posted job and it stayed posted. The crew board lists only jobs
+    that are open AND `scheduled`, so the request went invisible in the sub's
+    app while staying `pending` in the database, forever: never answered, still
+    counting against them on the bench roster ("holding 3"), and — because
+    `approve` checked the flag and not the status — still approvable, which
+    pushed somebody "You got the job!" for a job that no longer existed.
+
+    `withdrawn`, not `declined`. The sub was not turned down; the work was
+    taken off the table. Telling somebody they were declined for a cancelled
+    job says they lost a competition that never happened. This is also the
+    first code to write that status, which the office UI has rendered since the
+    marketplace pivot and nothing produced.
+
+    Idempotent, and returns how many people it answered. The caller commits —
+    same reasoning as `release_if_displaced`: a helper that committed would
+    decide the transaction boundary for a handler that owns it.
+
+    `reason` is the phrase the sub reads ("was cancelled", "is no longer
+    available"), so it must complete "The job you asked for ...".
+    """
+    if getattr(job, "open_for_claims", False):
+        job.open_for_claims = False
+
+    # FOR UPDATE (scheduling-invariants R5). The write paths that call this
+    # already hold the Job; the unattended sweep holds nothing, and without the
+    # lock it could read a row as pending, have an approval commit underneath
+    # it, and then stamp `withdrawn` over `approved` — a request marked
+    # withdrawn on a job the person is actually scheduled for. Narrow window,
+    # cheap to close, and the office would never work out what happened.
+    # SQLite ignores FOR UPDATE (it serializes writers anyway).
+    pending = (db.query(JobClaimRequest)
+               .filter(JobClaimRequest.job_id == job.id,
+                       JobClaimRequest.status == "pending")
+               .with_for_update()
+               .all())
+    if not pending:
+        return 0
+
+    now = datetime.now(timezone.utc)
+    for req in pending:
+        # No `decided_by`: nobody decided about this person. The office
+        # withdrew the work, and attributing that to whoever happened to be
+        # logged in would read, later, as "Meg declined Dan".
+        req.status, req.decided_at = "withdrawn", now
+
+    if notify:
+        # Best-effort and last: a push outage must never be what decides
+        # whether the job came off the board.
+        try:
+            from services.push_service import notify_user
+            when = f" on {job.scheduled_date}" if job.scheduled_date else ""
+            for req in pending:
+                if req.user_id:
+                    notify_user(req.user_id, "That job is off the board",
+                                f"{job.title}{when} {reason}. Your request is "
+                                f"closed — nothing else of yours is affected.",
+                                url="/my-day", tag=f"offer-closed-{job.id}",
+                                category="open_jobs")
+        except Exception:
+            logger.warning("offer-closed notification failed", exc_info=True)
+    return len(pending)
+
+
+def sweep_dead_offers(db, *, limit: int = 500) -> int:
+    """Close offers that outlived their job, quietly. Returns how many.
+
+    `close_offer` runs at the paths that CHANGE a job — cancel, skip, un-post,
+    delete. Two kinds of dead offer never go through one of those:
+
+      * the day came and went. A job posted for Saturday and never approved is
+        still flagged open on Sunday, and the requests on it are still pending
+        — for work that cannot now be done. Nothing edits the row, so nothing
+        was ever going to notice.
+      * a job cancelled by a release that predates this fix, and not touched
+        since. Those rows exist in production right now; this heals them
+        without a migration, which is the honest way to fix data that a bug
+        wrote rather than pretending the code change alone is the whole fix.
+
+    SILENT, deliberately — `notify=False`. The other paths tell people because
+    something just changed under them. Here nothing did: the day passed, or the
+    cancellation they were already told about is being tidied up. Pushing "that
+    job is off the board" for a job from three weeks ago is a notification with
+    no possible action, and on the first pass over the backlog it would be
+    dozens of them at once.
+
+    Rides the existing schedule-audit tick (scheduling-invariants R1: a task on
+    an existing tick, not a new one). Capped per pass so a large backlog is
+    worked down over a few hours instead of in one long transaction.
+
+    Not org-scoped, like every other tick-side pass: this runs with no request
+    and no `app.current_org_id` GUC, so there is no tenant to scope TO. It is
+    safe because it never crosses records — each job's own requests, decided
+    by that job's own state — and an offer whose day has gone is dead in every
+    org there is.
+    """
+    from database.models import Job
+    from utils.dates import business_today
+
+    today = business_today()
+    dead = (db.query(Job)
+            .filter(Job.open_for_claims.is_(True))
+            .filter(or_(Job.scheduled_date < today,
+                        Job.scheduled_date.is_(None),
+                        Job.status != "scheduled"))
+            .limit(limit)
+            .all())
+    closed = 0
+    for job in dead:
+        close_offer(db, job, reason="is no longer available", notify=False)
+        closed += 1
+    if closed:
+        db.commit()
+    return closed

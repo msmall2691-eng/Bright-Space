@@ -423,6 +423,19 @@ def schedule_audit_tick() -> dict:
         except Exception:
             log.exception("[sub-vetting] expiry pass failed (schedule audit continues)")
 
+        # Offers that outlived their job ride this tick too (R1). A job posted
+        # for Saturday and never approved is still flagged open on Sunday, with
+        # its requests still pending — nothing edits that row, so nothing was
+        # ever going to notice. Silent by design: the day passing is not news.
+        try:
+            from services.claim_approval import sweep_dead_offers
+            swept = sweep_dead_offers(db)
+            if swept:
+                log.info("[offers] closed %s offer(s) whose job is no longer "
+                         "live work", swept)
+        except Exception:
+            log.exception("[offers] sweep failed (schedule audit continues)")
+
         # The weekly bench digest rides this tick too (R1). It is its own
         # once-a-week gate — day-of-week plus a date marker, so a redeploy
         # mid-morning can't send a second copy — and it stays silent in a week
