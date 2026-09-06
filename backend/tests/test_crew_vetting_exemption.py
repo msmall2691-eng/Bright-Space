@@ -23,7 +23,7 @@ Plus the roster the office verifies from — one request, everyone, what each
 person owes and what's sitting waiting to be accepted.
 """
 import uuid
-from datetime import datetime, time, timedelta
+from datetime import datetime, time, timedelta, timezone
 
 import pytest
 from fastapi.testclient import TestClient
@@ -36,7 +36,7 @@ from database.models import (
 from modules.auth.router import get_current_user, current_org_id
 from modules.settings.router import set_setting
 from services import sub_vetting
-from utils.dates import business_today
+from utils.dates import business_today, business_tz
 
 
 class _Admin:
@@ -89,12 +89,13 @@ def _cutoff(value):
     db.commit(); db.close()
 
 
-def _mk_crew(m, *, created_days_ago=30, name="A Cleaner"):
+def _mk_crew(m, *, created_days_ago=30, name="A Cleaner", created_at=None):
     tag = uuid.uuid4().hex[:6]
     db = SessionLocal()
     u = User(email=f"crew-{tag}@example.com", role="cleaner", full_name=f"{name} {tag}",
              org_id=1, active=True, status="active", cleaner_id=f"CT-{tag[:5]}",
-             created_at=datetime.utcnow() - timedelta(days=created_days_ago))
+             created_at=created_at or (datetime.utcnow()
+                                       - timedelta(days=created_days_ago)))
     db.add(u); db.commit(); db.refresh(u)
     m["users"].append(u.id)
     out = _CleanerUser(u)
@@ -158,6 +159,33 @@ def test_somebody_added_this_morning_is_still_existing_crew(made):
     # And with the naive version, they'd have been locked out.
     _cutoff(business_today().isoformat())
     assert _claim(this_morning, _mk_open_job(made)).status_code == 403
+
+
+def test_an_account_opened_in_the_evening_is_not_stamped_with_tomorrow(made):
+    """The same off-by-one, arriving through the timezone instead.
+
+    created_at is UTC (models._utcnow); the cutoff is a date in the business
+    timezone. From 8pm in Maine it is already tomorrow in UTC, so reading the
+    stored date verbatim ages an account opened this evening by a day — and
+    gates the very crew member the cutoff was set a day late to protect.
+
+    Found by CI at 00:26 UTC, which is 8:26pm here, when
+    test_somebody_added_this_morning_is_still_existing_crew started failing on
+    a diff that had nothing to do with vetting. It is not a test-only problem:
+    anyone added after supper on the day before the cutoff would have been
+    locked out of claiming work in production.
+    """
+    # 9pm in Maine, the evening BEFORE the cutoff.
+    evening_local = datetime(2026, 3, 10, 21, 0, tzinfo=business_tz())
+    evening_utc = evening_local.astimezone(timezone.utc)
+    assert evening_utc.date() > evening_local.date(), \
+        "fixture must straddle midnight UTC or it proves nothing"
+
+    _cutoff((evening_local.date() + timedelta(days=1)).isoformat())
+    # Stored naive, as a UTC column holds it — that is the shape is_exempt reads.
+    who = _mk_crew(made, created_at=evening_utc.replace(tzinfo=None))
+    assert _claim(who, _mk_open_job(made)).status_code == 200, \
+        "existing crew, added the evening before the gate started"
 
 
 def test_somebody_onboarded_after_the_cutoff_still_needs_a_file(made):

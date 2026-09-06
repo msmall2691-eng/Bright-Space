@@ -12,13 +12,14 @@ resuming clears the stamp so a working series can't sit there labelled
 Cancelled.
 """
 import uuid
-from datetime import time
+from datetime import time, timedelta
 
 from fastapi.testclient import TestClient
 
 from main import app
 from database.db import SessionLocal
 from database.models import Client, Job, Property, RecurringSchedule
+from utils.dates import business_today
 
 client = TestClient(app)
 
@@ -157,6 +158,18 @@ def _codes(schedule_id):
         row = next((i for i in audit_series(db, 1)["issues"]
                     if i["schedule_id"] == schedule_id), None)
         return [p["code"] for p in (row or {}).get("problems", [])]
+    finally:
+        db.close()
+
+
+def _issues():
+    """The whole scan, for assertions that need a finding's payload and not
+    just its code."""
+    from services.recurring_guards import audit_series
+    from database.db import SessionLocal as _SL
+    db = _SL()
+    try:
+        return audit_series(db, 1)["issues"]
     finally:
         db.close()
 
@@ -353,5 +366,98 @@ def test_another_orgs_series_is_not_reachable():
     c, p, sched = _seed_series(db, org_id=99999)
     try:
         assert client.post(f"/api/recurring/{sched.id}/cancel-upcoming").status_code == 404
+    finally:
+        _cleanup(db, c, p, sched)
+
+
+# ── The scan says so (Sept 2026) ─────────────────────────────────────────────
+# Cancelling a series deliberately leaves its already-generated visits alone —
+# that is R7, and `cancel-upcoming` above is the separate, explicit second act
+# that removes them. What was missing is that the health check never mentioned
+# the in-between state, so a board could read "29 healthy" while five cleanings
+# for cancelled clients waited to be dispatched.
+
+def test_a_cancelled_series_with_visits_still_on_the_calendar_is_flagged():
+    db = SessionLocal()
+    c, p, sched = _seed_series(db)
+    try:
+        client.post(f"/api/recurring/{sched.id}/generate")
+        db.expire_all()
+        live = _dates(db, sched.id, "scheduled")
+        assert len(live) > 1
+
+        assert "cancelled_with_upcoming" not in _codes(sched.id), \
+            "a running series' own visits are not stranded"
+
+        client.delete(f"/api/recurring/{sched.id}")
+        codes = _codes(sched.id)
+        assert "cancelled_with_upcoming" in codes
+
+        prob = next(pr for i in _issues() if i["schedule_id"] == sched.id
+                    for pr in i["problems"] if pr["code"] == "cancelled_with_upcoming")
+        # The number has to be the number the button will actually remove, or
+        # the confirm sentence lies about what it is about to do.
+        assert prob["stranded"] == len(live)
+        assert str(len(live)) in prob["message"]
+        assert prob["destructive"] is True
+    finally:
+        _cleanup(db, c, p, sched)
+
+
+def test_cancelling_those_visits_clears_the_finding():
+    """The fix has to be able to clear the finding it is offered for.
+
+    The same contract `stale_paused` had to be rewritten to keep: a health
+    check that reports the same thing after you have done what it asked is
+    worse than one that never mentioned it.
+    """
+    db = SessionLocal()
+    c, p, sched = _seed_series(db)
+    try:
+        client.post(f"/api/recurring/{sched.id}/generate")
+        client.delete(f"/api/recurring/{sched.id}")
+        assert "cancelled_with_upcoming" in _codes(sched.id)
+
+        assert client.post(f"/api/recurring/{sched.id}/cancel-upcoming").status_code == 200
+        assert "cancelled_with_upcoming" not in _codes(sched.id)
+    finally:
+        _cleanup(db, c, p, sched)
+
+
+def test_a_cancelled_series_with_nothing_left_is_never_flagged():
+    db = SessionLocal()
+    c, p, sched = _seed_series(db)
+    try:
+        client.delete(f"/api/recurring/{sched.id}")     # never generated anything
+        assert "cancelled_with_upcoming" not in _codes(sched.id)
+    finally:
+        _cleanup(db, c, p, sched)
+
+
+def test_an_undated_visit_raises_no_finding_the_fix_could_not_clear():
+    """Sized from the set cancel-upcoming actually cancels, not from the
+    looser "does this series look alive" count the rest of the scan uses.
+
+    That count also keeps undated jobs. Sizing the finding from it would name
+    a visit `cancel-upcoming` skips (it filters on scheduled_date >= today), so
+    the finding would survive its own fix — and an undated row cannot be
+    dispatched to, which is the whole risk this finding is about.
+    """
+    db = SessionLocal()
+    c, p, sched = _seed_series(db)
+    try:
+        client.delete(f"/api/recurring/{sched.id}")
+        j = Job(client_id=c.id, property_id=p.id, title="Undated",
+                job_type="residential", status="scheduled",
+                scheduled_date=None, recurring_schedule_id=sched.id, org_id=1)
+        db.add(j); db.commit(); db.refresh(j)
+        assert "cancelled_with_upcoming" not in _codes(sched.id)
+
+        # Control: the same row WITH a date does trip it, so the assertion
+        # above is about the missing date and not about some other reason the
+        # series failed to qualify.
+        j.scheduled_date = business_today() + timedelta(days=3)
+        db.commit()
+        assert "cancelled_with_upcoming" in _codes(sched.id)
     finally:
         _cleanup(db, c, p, sched)

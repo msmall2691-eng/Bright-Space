@@ -330,6 +330,29 @@ def audit_series(db: Session, org_id: Optional[int]) -> dict:
     if prop_ids:
         live_prop_ids = {pid for (pid,) in db.query(Property.id).filter(Property.id.in_(prop_ids)).all()}
 
+    # The visits POST /{id}/cancel-upcoming would actually take off the
+    # calendar — a deliberate mirror of _upcoming_series_jobs() in
+    # modules/recurring/router.py, not a reuse of `counts` above.
+    #
+    # `counts` answers "does this series look alive", so it keeps undated jobs
+    # and completed ones. Sizing a finding from it would let the scan name a
+    # number the one-tap fix cannot clear, and the finding would then survive
+    # its own fix forever. That exact shape is the bug `stale_paused` below was
+    # rewritten to escape; it is not worth learning twice.
+    cancellable: Dict[int, int] = {}
+    if ids:
+        cancellable = dict(
+            db.query(Job.recurring_schedule_id, func.count(Job.id))
+            .filter(
+                Job.recurring_schedule_id.in_(ids),
+                Job.scheduled_date.isnot(None),
+                Job.scheduled_date >= today,
+                Job.status.notin_(("completed", "cancelled")),
+            )
+            .group_by(Job.recurring_schedule_id)
+            .all()
+        )
+
     dup_groups = _group_live_duplicates(rows, today)
     in_dup_group = {sid for g in dup_groups for sid in g}
 
@@ -362,6 +385,42 @@ def audit_series(db: Session, org_id: Optional[int]) -> dict:
         # at a time afterwards.
         decided = bool(getattr(s, "cancelled_at", None)) or (
             end is not None and end <= today and not s.active)
+
+        # A series the office CLOSED whose already-generated visits are still
+        # sitting on the calendar.
+        #
+        # Cancelling a series only stops GENERATION. Every visit already
+        # materialized stays, on purpose: scheduling-invariants R7 says a Job
+        # never disappears as a side effect of an operation aimed at something
+        # else, so removing them is a separate explicit act
+        # (POST /{id}/cancel-upcoming). That design is right and this scan's
+        # silence about it was not — the board read "29 healthy" while five
+        # cleanings for cancelled clients sat waiting to be dispatched.
+        #
+        # Nobody re-opens a cancelled series to check on it; the whole point of
+        # cancelling is to stop thinking about it. So the scan says it out
+        # loud. The fix stays the same deliberate second act it always was —
+        # destructive, human-confirmed, and excluded from the batch fixes,
+        # because "cancel every leftover visit across N series" is not a button
+        # this scan should hand anyone.
+        #
+        # Sized from `cancellable`, not `upcoming`: see the note where it is
+        # built. A visit whose date is still unset cannot be dispatched to and
+        # is not what this finding is about.
+        stranded = cancellable.get(s.id, 0)
+        if decided and stranded > 0:
+            when = "Cancelled"
+            if not getattr(s, "cancelled_at", None):
+                when = f"Ended {end.isoformat()}" if end else "Ended"
+            problems.append({
+                "code": "cancelled_with_upcoming", "severity": "error", "destructive": True,
+                "message": (f"{when}, but {stranded} "
+                            f"{'visit is' if stranded == 1 else 'visits are'} "
+                            "still on the calendar."),
+                "suggestion": ("⚠️ Take those visits off the calendar so nobody is "
+                               "dispatched to a cancelled client (history is kept)."),
+                "stranded": stranded,
+            })
 
         if s.id in in_paused_dup:
             group = in_paused_dup[s.id]
