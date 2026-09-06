@@ -911,6 +911,42 @@ class JobClaimRequest(Base):
     job = relationship("Job")
 
 
+class JobHelper(Base):
+    """Somebody a subcontractor brought with them to a job (migration 107).
+
+    ONE OF THE FIVE MAINE CRITERIA, not a convenience. Part 1 #4 is "hires,
+    pays and supervises their own assistants, if any", and all five of Part 1
+    must hold. Modelling exactly one cleaner per claim made #4 hard to satisfy
+    in fact — see `.claude/skills/brightbase-marketplace`.
+
+    The absences are the design:
+
+      * no `user_id` and no FK to `users` — a helper gets no account, no login,
+        no vetting file. The moment TMCC onboards and clears them they are
+        TMCC's worker, and the sub is no longer hiring their own assistant;
+      * no rate and no payout link — the sub is paid `Job.agreed_rate` and pays
+        their helper from it. A helper the app pays is a person TMCC pays;
+      * no office write path — choosing who else works a job would be the
+        office staffing it, and the office never assigns.
+
+    What it is for is the office knowing who is actually in a customer's house.
+    """
+    __tablename__ = "job_helpers"
+    org_id = Column(Integer, ForeignKey("orgs.id"), nullable=True, index=True)  # tenant scope (MT-1)
+
+    id = Column(Integer, primary_key=True, index=True)
+    job_id = Column(Integer, ForeignKey("jobs.id", ondelete="CASCADE"), nullable=False, index=True)
+    # Whose helper — same crew-ID string space as Job.cleaner_ids. NOT NULL:
+    # a helper with nobody responsible for them is the one ambiguity this
+    # table must never create.
+    sub_cleaner_id = Column(String, nullable=False, index=True)
+    name = Column(String(120), nullable=False)
+    # For reaching whoever is at the house when the sub's phone is dead. Not a
+    # contact record; nothing messages it in bulk.
+    phone = Column(String(32), nullable=True)
+    created_at = Column(DateTime, default=_utcnow)
+
+
 class SubDocument(Base):
     """One vetting document on a subcontractor's file (migration 098).
 

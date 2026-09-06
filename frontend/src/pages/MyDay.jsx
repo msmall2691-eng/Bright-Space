@@ -12,7 +12,7 @@
  */
 import { useCallback, useEffect, useState } from 'react'
 import { MapPin, LogOut, RefreshCw, CalendarDays, Clock, Car, DollarSign, CheckCircle2, CalendarRange, CircleUserRound, Sparkles, BookOpen, MessageSquare, Sun, CalendarClock, CalendarOff, Smartphone, CalendarPlus, ShieldCheck } from 'lucide-react'
-import { get, post, patch, logout } from '../api'
+import { get, post, patch, del, logout } from '../api'
 import { toast } from '../utils/toastBus'
 import { EmptyState, ErrorState, Skeleton } from '../components/ui'
 import JobPhotoSheet from '../components/crew/JobPhotoSheet'
@@ -205,6 +205,10 @@ export default function MyDay() {
   const [declineReason, setDeclineReason] = useState('')
   // Claim confirm sheet: the open job being claimed (null = closed).
   const [claimJob, setClaimJob] = useState(null)
+  // Who I'm bringing (migration 107) — see the sheet at the bottom.
+  const [helperJob, setHelperJob] = useState(null)
+  const [helperName, setHelperName] = useState('')
+  const [helperPhone, setHelperPhone] = useState('')
   // Marketplace pivot (migration 097): an open job is asked for, not taken.
   // Blank counter = "I'll take your posted rate" — the common case, so it
   // starts empty rather than pre-filled with a number to delete.
@@ -377,6 +381,40 @@ export default function MyDay() {
     finally { setActionBusy(false) }
   }, [claimJob, claimRate, claimMessage, fetchDay])
 
+  // BRINGING SOMEONE (migration 107). One of the five Maine criteria for this
+  // arrangement is that a subcontractor hires, pays and supervises their own
+  // assistants — the app modelled one cleaner per job, so there was nowhere to
+  // say it. The office is told (somebody they've never met will be in a
+  // customer's house) and does not approve: this is the sub's call.
+  const addHelper = useCallback(async () => {
+    if (!helperJob) return
+    const name = helperName.trim()
+    if (!name) { setActionError('Who are you bringing?'); return }
+    setActionBusy(true); setActionError(null)
+    try {
+      await post(`/api/crew/jobs/${helperJob.id}/helpers`,
+                 { name, phone: helperPhone.trim() || null })
+      setHelperName(''); setHelperPhone('')
+      toast.success(`${name} is on the job with you`)
+      await fetchDay(true)
+      setHelperJob(null)
+    }
+    catch (e) { setActionError(e.detail || e.message || 'Could not add them') }
+    finally { setActionBusy(false) }
+  }, [helperJob, helperName, helperPhone, fetchDay])
+
+  const removeHelper = useCallback(async (id) => {
+    if (!helperJob) return
+    setActionBusy(true); setActionError(null)
+    try {
+      await del(`/api/crew/jobs/${helperJob.id}/helpers/${id}`)
+      await fetchDay(true)
+      setHelperJob(null)
+    }
+    catch (e) { setActionError(e.detail || e.message || 'Could not remove them') }
+    finally { setActionBusy(false) }
+  }, [helperJob, fetchDay])
+
   // Correct the miles on an already-closed punch (from the Today's punches list).
 
   return (
@@ -511,6 +549,7 @@ export default function MyDay() {
                       onDecline={() => requestDecline(j)}
                       onTextClient={() => { setTextNote(''); setTextSent(null); setActionError(null); setTextJob(j) }}
                       onHouseInfo={() => setHouseJob(j)}
+                      onHelpers={() => { setActionError(null); setHelperName(''); setHelperPhone(''); setHelperJob(j) }}
                       busy={actionBusy}
                     />
                   ))}
@@ -590,6 +629,7 @@ export default function MyDay() {
                       onDecline={() => requestDecline(j)}
                       onTextClient={() => { setTextNote(''); setTextSent(null); setActionError(null); setTextJob(j) }}
                       onHouseInfo={() => setHouseJob(j)}
+                      onHelpers={() => { setActionError(null); setHelperName(''); setHelperPhone(''); setHelperJob(j) }}
                       busy={actionBusy} />
                   ))}
                 </div>
@@ -692,6 +732,60 @@ export default function MyDay() {
           <ErrorNote>{actionError}</ErrorNote>
           <SheetActions onCancel={() => setMarkDoneJob(null)} onConfirm={confirmMarkDone}
             busy={actionBusy} confirmLabel="Mark done" busyLabel="Saving…" tone="emerald"
+            confirmIcon={<CheckCircle2 className="w-4 h-4" />} />
+        </Sheet>
+      )}
+
+      {helperJob && (
+        <Sheet onClose={() => { setHelperJob(null); setActionError(null) }} busy={actionBusy}>
+          <div>
+            <div className="text-base font-bold text-ink">Bringing someone?</div>
+            <div className="text-[13px] text-ink-3 mt-0.5 truncate">
+              {helperJob.property_name || helperJob.title}
+            </div>
+          </div>
+
+          {/* Said first, because it is the first question and the honest answer
+              is what makes this the sub's assistant rather than the company's:
+              the job's rate is the job's rate, and they pay their own help. */}
+          <p className="flex items-start gap-1.5 text-[12px] text-ink-2">
+            <span className="mt-1.5 w-1.5 h-1.5 rounded-full bg-ink-3/50 shrink-0" aria-hidden="true" />
+            <span>Your rate for this job doesn’t change — you’re bringing them,
+              and you settle up with them. We just need to know who’s at the house.</span>
+          </p>
+
+          {(helperJob.my_helpers?.length || 0) > 0 && (
+            <div className="space-y-1.5">
+              {helperJob.my_helpers.map(h => (
+                <div key={h.id} className="flex items-center justify-between gap-2 rounded-lg border border-hairline bg-panel px-3 py-2">
+                  <span className="min-w-0 text-[13px] text-ink truncate">
+                    {h.name}{h.phone ? <span className="text-ink-3"> · {h.phone}</span> : null}
+                  </span>
+                  <button type="button" onClick={() => removeHelper(h.id)} disabled={actionBusy}
+                    className="shrink-0 text-[12px] font-medium text-ink-3 hover:text-ink-2 disabled:opacity-60">
+                    Remove
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+
+          <label className="block">
+            <span className="text-[13px] font-medium text-ink-2">Their name</span>
+            <input value={helperName} onChange={e => setHelperName(e.target.value)}
+              maxLength={120} autoFocus placeholder="e.g. Sam Reed"
+              className="mt-1.5 w-full rounded-lg border border-hairline bg-bg px-3 py-2.5 text-[13px] text-ink placeholder-ink-3 focus:outline-none focus:border-blue-400" />
+          </label>
+          <label className="block">
+            <span className="text-[13px] font-medium text-ink-2">Their number <span className="text-ink-3 font-normal">· optional</span></span>
+            <input value={helperPhone} onChange={e => setHelperPhone(e.target.value)}
+              type="tel" maxLength={32} placeholder="If the office needs to reach the house"
+              className="mt-1.5 w-full rounded-lg border border-hairline bg-bg px-3 py-2.5 text-[13px] text-ink placeholder-ink-3 focus:outline-none focus:border-blue-400" />
+          </label>
+          <ErrorNote>{actionError}</ErrorNote>
+          <SheetActions onCancel={() => { setHelperJob(null); setActionError(null) }}
+            onConfirm={addHelper} busy={actionBusy}
+            confirmLabel="Add them" busyLabel="Saving…" tone="emerald"
             confirmIcon={<CheckCircle2 className="w-4 h-4" />} />
         </Sheet>
       )}

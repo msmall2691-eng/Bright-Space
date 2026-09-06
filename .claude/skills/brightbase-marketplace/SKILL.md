@@ -68,8 +68,9 @@ Where the code sits against Part 1:
   Rule 0. Anything that erodes them is the whole risk.
 - **#3 profit and loss** — the counter-offer is this. Keep it.
 - **#2 independently established business** — evidence-based; needs documents.
-- **#4 own assistants** — **currently a gap.** The app models one cleaner per
-  claim. If a sub cannot bring a helper, this is hard to satisfy in fact.
+- **#4 own assistants** — **closed by migration 107** (`job_helpers`). Was the
+  live gap: the app modelled one cleaner per claim, so a sub could not bring
+  anyone. The table records who they brought and deliberately nothing else.
 
 Also live: **Form WCB-267**, Maine's Independent Contractor Statement, filed
 with the Workers' Compensation Board, creates a **rebuttable presumption** of
@@ -195,7 +196,13 @@ Real, verified, unfixed. Do not rediscover them from scratch.
   string — while Part 2's "a written contract defining the relationship" is one
   of the criteria this arrangement most needs. **Highest-value open item, and
   it is a writing task, not a coding one.**
-- **A sub cannot bring a helper** — Part 1 #4.
+- ~~**A sub cannot bring a helper** — Part 1 #4.~~ **DONE — migration 107.**
+  A sub adds their own helper to their own job: a name, optionally a phone,
+  and nothing else. No account, no vetting file, no rate, no payout, and no
+  office write path — each absence is the criterion, since a helper the
+  company onboards, clears and pays is the company's worker rather than the
+  sub's assistant. The office is TOLD (somebody they have not met will be in
+  a customer's house) and does not approve.
 - **W-9 scans contain SSNs.** The rule "never store SSNs or TINs" is honored in
   the schema and defeated by the file store: a sole proprietor's W-9 has one
   printed on it. Consider pushing W-9 collection to a payments rail that also

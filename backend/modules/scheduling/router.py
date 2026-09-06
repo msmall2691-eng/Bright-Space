@@ -11,7 +11,7 @@ from zoneinfo import ZoneInfo
 
 from database.db import get_db
 from database.models import (
-    Job, Client, ICalEvent, CleanerTimeOff, JobClaimRequest, Property,
+    Job, Client, ICalEvent, CleanerTimeOff, JobClaimRequest, JobHelper, Property,
     RecurrenceException, AppSetting, User,
 )
 # Aliased, and it must stay aliased: this module defines its own Pydantic
@@ -560,8 +560,15 @@ def _turnover_lead_hours(j: Job, next_arrival: Optional[ICalEvent],
         return None
 
 
-def strip_rates_for_crew(payload, role):
-    """Take the money off a job payload when a cleaner is looking at it.
+def strip_office_only_for_crew(payload, role):
+    """Take off a job payload the parts a cleaner has no business enumerating.
+
+    TWO THINGS NOW, and the second arrived with migration 107 — the name is
+    `strip_office_only_*` rather than `strip_rates_*` because "rates" stopped
+    being the whole list and a function whose name undersells what it removes
+    is one somebody will forget to extend again.
+
+    MONEY. `job_to_dict` serializes posted_rate and agreed_rate.
 
     `job_to_dict` serializes posted_rate and agreed_rate, and four endpoints on
     this router allow the `cleaner` role: GET /api/jobs, /api/jobs/{id},
@@ -576,6 +583,14 @@ def strip_rates_for_crew(payload, role):
     agreed rate once they have won it. This closes a side door, not the front
     one.
 
+    HELPERS. `helpers` carries the NAME AND PHONE NUMBER of people a sub
+    brought — third parties who have no account here and never agreed to
+    anything with TMCC. Left in, any sub could enumerate every other sub's
+    assistants and their mobile numbers through the office's own API, which is
+    a worse version of the same side door: at least a rate belongs to somebody
+    who signed up. A sub reads their OWN helpers from
+    /api/crew/jobs/{id}/helpers and their own job cards, which is all they need.
+
     Mutates in place and returns the payload; a job dict here is freshly built
     per request, never a shared object.
     """
@@ -586,14 +601,21 @@ def strip_rates_for_crew(payload, role):
         if isinstance(row, dict):
             row.pop("posted_rate", None)
             row.pop("agreed_rate", None)
+            row.pop("helpers", None)
     return payload
+
+
+# The old name, kept for one release: `test_agent_ws_and_rate_privacy` and any
+# out-of-tree caller import it directly.
+strip_rates_for_crew = strip_office_only_for_crew
 
 
 def job_to_dict(j: Job, client: Client = None, effective_date=None,
                 booking_event: ICalEvent = None, next_arrival: ICalEvent = None,
                 property_name: Optional[str] = None, lead_buffer_hours: float = 3.0,
                 property_check_in_time: Optional[str] = None,
-                pending_claim_requests: int = 0) -> dict:
+                pending_claim_requests: int = 0,
+                helpers: Optional[list] = None) -> dict:
     # Resolve client name if not passed in
     client_name = ""
     if client:
@@ -659,6 +681,12 @@ def job_to_dict(j: Job, client: Client = None, effective_date=None,
         # per-row query in the shared serializer would put an N+1 on the
         # calendar's hot path.
         "pending_claim_requests": pending_claim_requests,
+        # Who the subs on this job said they are bringing (migration 107).
+        # READ-ONLY here and everywhere on the office side: a sub hires their
+        # own assistants, so the office is told who is going to be in the
+        # customer's house — which is a real insurance and operational need —
+        # and does not get a say in it. There is no office write path at all.
+        "helpers": helpers or [],
         "gcal_event_id": j.gcal_event_id,
         "created_at": j.created_at.isoformat() if j.created_at else None,
         "updated_at": j.updated_at.isoformat() if j.updated_at else None,
@@ -886,6 +914,18 @@ def get_jobs(
         # One query for the whole page, and only when something on it is
         # actually posted — a shop with nothing on the board pays nothing
         # (brightbase-economy). ix_job_claim_requests_job_status covers it.
+        # Same bulk-and-gate shape as the claim counts below: one query for the
+        # page, and only for jobs that actually have somebody on them.
+        helpers_by_job: dict = {}
+        staffed_ids = [j.id for j, _ in rows if (j.cleaner_ids or [])]
+        if staffed_ids:
+            for h in (db.query(JobHelper)
+                      .filter(JobHelper.job_id.in_(staffed_ids))
+                      .order_by(JobHelper.id).all()):
+                helpers_by_job.setdefault(h.job_id, []).append(
+                    {"id": h.id, "name": h.name, "phone": h.phone,
+                     "sub_cleaner_id": h.sub_cleaner_id})
+
         pending_by_job: dict = {}
         open_ids = [j.id for j, _ in rows if getattr(j, "open_for_claims", False)]
         if open_ids:
@@ -921,16 +961,17 @@ def get_jobs(
                                         property_name=prop_names.get(j.property_id),
                                         lead_buffer_hours=lead_buffer_hours,
                                         property_check_in_time=prop_meta.get(j.property_id, (None, None))[1],
-                                        pending_claim_requests=pending_by_job.get(j.id, 0)))
+                                        pending_claim_requests=pending_by_job.get(j.id, 0),
+                                        helpers=helpers_by_job.get(j.id)))
     role = getattr(current_user, "role", None)
     if paginated:
         return {
-            "items": strip_rates_for_crew(rendered, role),
+            "items": strip_office_only_for_crew(rendered, role),
             "total": total,
             "limit": limit,
             "offset": offset,
         }
-    return strip_rates_for_crew(rendered, role)
+    return strip_office_only_for_crew(rendered, role)
 
 
 @router.post("", status_code=201, dependencies=[Depends(require_role("admin", "manager"))])
@@ -3007,7 +3048,7 @@ def get_job(job_id: int, db: Session = Depends(get_db), org_id: int = Depends(cu
     ).first()
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
-    return strip_rates_for_crew(_job_to_dict_enriched(db, job),
+    return strip_office_only_for_crew(_job_to_dict_enriched(db, job),
                                 getattr(current_user, "role", None))
 
 
@@ -3063,7 +3104,7 @@ def get_job_details(job_id: int, db: Session = Depends(get_db), org_id: int = De
     ).order_by(Activity.created_at.desc()).limit(50).all()
 
     return {
-        **strip_rates_for_crew(_job_to_dict_enriched(db, job),
+        **strip_office_only_for_crew(_job_to_dict_enriched(db, job),
                                getattr(current_user, "role", None)),
         # Photos the office Complete modal stored inline on Job.photos (data
         # URLs / pasted links) BEFORE the job_photos table existed. Emitted so
@@ -4375,7 +4416,7 @@ def schedule_week(
         # Visits are derived from jobs post-unification; the shape mirrors what
         # /api/visits used to emit so the FE fallback keeps rendering unchanged.
         "visits": [_job_as_visit(j) for j in (jobs or [])],
-        "jobs": strip_rates_for_crew(jobs, getattr(current_user, "role", None)),
+        "jobs": strip_office_only_for_crew(jobs, getattr(current_user, "role", None)),
         "properties": _get_properties(db=db, org_id=org_id),
         # limit/offset are Query() defaults — pass explicitly. 50 matches the
         # standalone /api/clients default the page used before.

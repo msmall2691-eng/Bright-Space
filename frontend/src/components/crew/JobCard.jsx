@@ -19,7 +19,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   MapPin, KeyRound, ParkingCircle, ChevronDown, Navigation, CheckCircle2,
   Camera, Users, Phone, ClipboardList, Sparkles, Wifi, Home, Copy, Check,
-  QrCode,
+  QrCode, UserPlus,
 } from 'lucide-react'
 import { wifiQrPayload, qrMatrix, qrSvgPath } from './wifiQr'
 import { copyToClipboard } from '../../utils/clipboard'
@@ -214,7 +214,7 @@ function RespondRow({ job, onRespond, onDecline, busy }) {
   )
 }
 
-export default function JobCard({ job, onMarkDone, onPhotos, onRespond, onDecline, onClaim, onTextClient, onHouseInfo, busy = false }) {
+export default function JobCard({ job, onMarkDone, onPhotos, onRespond, onDecline, onClaim, onTextClient, onHouseInfo, onHelpers, busy = false }) {
   const isTurnover = job.job_type === 'str_turnover'
   const done = job.status === 'completed'
   const houseLine = houseSpecsLine(job)
@@ -378,6 +378,35 @@ export default function JobCard({ job, onMarkDone, onPhotos, onRespond, onDeclin
       )}
 
       <ChecklistBlock template={job.checklist_template} />
+
+      {/* BRINGING SOMEONE (migration 107).
+          Not a nicety: one of the five Maine criteria for this arrangement is
+          that a subcontractor hires, pays and supervises their own assistants.
+          The app modelled one cleaner per job, so there was nowhere to say it.
+
+          It says "you're paid the same" out loud because that is the first
+          question anyone has, and the honest answer — the job's rate is the
+          job's rate, and the helper is paid by the sub — is exactly what makes
+          this their assistant rather than the company's. Only on a job that is
+          actually theirs and not yet finished; the open-jobs board never shows
+          it, because you don't staff a job you haven't got. */}
+      {onHelpers && !job.open && job.status !== 'completed' && job.status !== 'cancelled' && (
+        <button onClick={onHelpers} disabled={busy}
+          className="mt-2 w-full text-left text-[12px] text-ink-2 hover:bg-bg-2 disabled:opacity-60 py-2 px-2.5 rounded-lg transition-colors border border-dashed border-hairline">
+          {(job.my_helpers?.length || 0) > 0 ? (
+            <span className="flex items-center gap-1.5">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" aria-hidden="true" />
+              Bringing {job.my_helpers.map(h => h.name).join(', ')}
+              <span className="text-ink-3">· change</span>
+            </span>
+          ) : (
+            <span className="flex items-center gap-1.5 text-ink-3">
+              <UserPlus className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
+              Bringing someone? Add them — you're paid the same
+            </span>
+          )}
+        </button>
+      )}
 
       {onClaim && (() => {
         /* Open-jobs board. Since the marketplace pivot (migration 097) this
