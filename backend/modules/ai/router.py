@@ -86,6 +86,7 @@ def _anthropic_client():
 
 
 def _run_tool_loop(client, system: str, user_content: str, *, max_tokens: int = 1024,
+                   org_id: int | None = None,
                    max_iters: int = 5) -> str:
     """Run a bounded agentic loop: let the model call the read-only business
     tools until it produces a final text answer. Returns the text."""
@@ -101,7 +102,8 @@ def _run_tool_loop(client, system: str, user_content: str, *, max_tokens: int = 
             results = []
             for block in resp.content:
                 if block.type == "tool_use":
-                    out = execute_tool(block.name, dict(block.input), _AGENT)
+                    out = execute_tool(block.name, dict(block.input), _AGENT,
+                                       org_id=org_id)
                     results.append({
                         "type": "tool_result",
                         "tool_use_id": block.id,

@@ -402,6 +402,26 @@ async def agent_websocket(websocket: WebSocket, agent_name: str):
         await websocket.close(code=1008, reason="unauthorized")
         return
 
+    # The org every tool call is scoped to. Resolved once from the JWT's user;
+    # the API-key path is server-to-server and has no user, so it falls back to
+    # the default workspace exactly as the HTTP dependency does. Without this
+    # the agent tools query every org's rows AND leave the RLS GUC unset, so
+    # the backstop matches everything instead of denying it.
+    agent_org_id = None
+    if claims:
+        try:
+            from database.db import SessionLocal
+            from database.models import User as _User
+            _db = SessionLocal()
+            try:
+                _u = _db.get(_User, claims.get("user_id"))
+                agent_org_id = getattr(_u, "org_id", None)
+            finally:
+                _db.close()
+        except Exception:
+            _logging.getLogger(__name__).warning(
+                "could not resolve agent org from JWT", exc_info=True)
+
     await websocket.accept()
     conn_key = f"{id(websocket)}_{agent_name}"
 
@@ -493,7 +513,8 @@ async def agent_websocket(websocket: WebSocket, agent_name: str):
                     for block in final_msg.content:
                         if block.type == "tool_use":
                             tools_used.append(block.name)
-                            result = execute_tool(block.name, dict(block.input), agent_name)
+                            result = execute_tool(block.name, dict(block.input), agent_name,
+                                                  org_id=agent_org_id)
                             result_text = json.dumps(result, default=str)
                             tool_results.append({
                                 "type": "tool_result",
