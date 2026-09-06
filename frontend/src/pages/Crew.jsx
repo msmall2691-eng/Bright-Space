@@ -17,6 +17,7 @@ import { get, post, patch } from '../api'
 import { PageHeader, EmptyState, ErrorState, Skeleton, SubNav } from '../components/ui'
 import CrewFiles from '../components/crew/CrewFiles'
 import { pushToast } from '../utils/toastBus'
+import { reportInvite } from '../utils/inviteFallback'
 import CrewDocsAdmin from '../components/crew/CrewDocsAdmin'
 import { CrewThreadPane } from '../components/comms/CrewThreadPane'
 import { MessageSquare, Sparkles, X } from 'lucide-react'
@@ -155,7 +156,13 @@ export default function Crew() {
 
   const resend = async (id) => {
     setBusyId(id)
-    try { await post(`/api/crew/${id}/resend-invite`); pushToast('Invite re-sent.', 'success') }
+    try {
+      const r = await post(`/api/crew/${id}/resend-invite`)
+      // Resend fails the same silent way the first send did when the cause is
+      // configuration rather than a hiccup — reporting success there is what
+      // made this unrecoverable.
+      if (!await reportInvite(r, r?.email || 'them')) pushToast('Invite re-sent.', 'success')
+    }
     catch (err) { pushToast(err?.message || 'Could not resend the invite.', 'error') }
     finally { setBusyId(null) }
   }

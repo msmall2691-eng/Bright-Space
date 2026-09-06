@@ -39,7 +39,8 @@ from database.models import (
     PropertyPhoto, SubAgreement, SubDocument, User, TimeEntry,
 )
 from modules.auth.router import (
-    get_current_user, require_role, current_org_id, resolve_org_id, send_staff_invite,
+    get_current_user, invite_status_fields, require_role, current_org_id,
+    resolve_org_id, send_staff_invite,
 )
 from modules.scheduling.completion import auto_create_draft_invoice
 from utils.activity_logger import log_job_status_change
@@ -3051,8 +3052,7 @@ def resend_crew_invite(user_id: int, db: Session = Depends(get_db),
     if u.password_hash:
         raise HTTPException(status_code=409,
                             detail="This cleaner has already set their password.")
-    send_staff_invite(u)
-    return _crew_row(u)
+    return {**_crew_row(u), **invite_status_fields(send_staff_invite(u))}
 
 
 @router.post("", dependencies=[Depends(require_role("admin"))])
@@ -3097,8 +3097,7 @@ def add_crew(body: CrewCreate, db: Session = Depends(get_db),
         # numeric legacy IDs.
         u.cleaner_id = f"bb{u.id}"
     db.commit(); db.refresh(u)
-    send_staff_invite(u)
-    return _crew_row(u)
+    return {**_crew_row(u), **invite_status_fields(send_staff_invite(u))}
 
 
 # The invite email itself lives in modules/auth/router.py (send_staff_invite) —

@@ -24,6 +24,7 @@ import { ChevronDown, UserPlus } from 'lucide-react'
 import { get, patch, post } from '../api'
 import { toast } from '../utils/toastBus'
 import { confirmDialog } from '../utils/confirmBus'
+import { reportInvite } from '../utils/inviteFallback'
 
 const STATE = {
   new: { dot: 'bg-amber-500', word: 'New' },
@@ -81,6 +82,12 @@ export default function SubApplications() {
     if (!ok) return
     await run(a.id, async () => {
       const r = await post(`/api/sub-applications/${a.id}/approve`)
+      // A failed invite is not a failed approval — the account is real either
+      // way — but it IS the difference between somebody who can sign in and
+      // somebody holding an account they can never reach. Say so, with the
+      // link, instead of the cheerful message the server used to send back
+      // regardless.
+      if (await reportInvite(r, a.email)) return
       toast.success(r.message || 'Approved')
     })
   }

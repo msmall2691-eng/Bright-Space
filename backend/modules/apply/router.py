@@ -42,7 +42,8 @@ from sqlalchemy.orm import Session
 from database.db import get_db
 from database.models import SubApplication, User
 from modules.auth.router import (
-    current_org_id, require_role, resolve_org_id, send_staff_invite,
+    current_org_id, invite_status_fields, require_role, resolve_org_id,
+    send_staff_invite,
 )
 from ratelimit import limiter
 from utils.contacts import normalize_phone
@@ -312,11 +313,15 @@ def approve_application(app_id: int, db: Session = Depends(get_db),
     row.updated_at = _now()
     db.commit(); db.refresh(user)
 
-    try:
-        send_staff_invite(user)
-    except Exception:
-        # The account exists either way. An invite that didn't send is a resend
-        # from the Staff screen, not a reason to roll back an approval.
-        pass
+    # The account exists either way — a mail failure is never a reason to roll
+    # back an approval. But it IS a reason to say so: the set-password token
+    # lives only inside that email, so an unreported failure leaves an approved
+    # applicant with an account they can never reach. The link comes back with
+    # the failure so the office can text it to them instead.
+    invite = send_staff_invite(user)
+    message = (f"Invited {user.email}. They'll set a password, then their file."
+               if invite["sent"] else
+               f"Account created for {user.email}, but the invite email didn't "
+               f"send. Copy the link and get it to them another way.")
     return {**_row(row), "created_account": True, "cleaner_id": user.cleaner_id,
-            "message": f"Invited {user.email}. They'll set a password, then their file."}
+            **invite_status_fields(invite), "message": message}
