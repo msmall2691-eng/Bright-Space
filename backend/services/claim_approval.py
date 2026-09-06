@@ -78,6 +78,20 @@ def approve(db: Session, job, req: JobClaimRequest, *, org_id: int,
             "No rate agreed: this job has no posted rate and the request didn't "
             "name one. Set a posted rate before approving.")
 
+    # The other half of the same finding. Even with the posting guard, a job can
+    # be posted, then assigned directly while a request is pending — and
+    # approving would append the requester beside somebody who is already on it.
+    # Refuse rather than silently make a two-person job out of a one-person
+    # price. The office can unassign and approve, which is the same action said
+    # out loud.
+    others_on_it = [c for c in (job.cleaner_ids or [])
+                    if str(c).strip() and str(c) != str(req.cleaner_id)]
+    if others_on_it:
+        raise ClaimApprovalError(
+            "already_assigned",
+            "Somebody is already assigned to this job. Take them off it first "
+            "if you mean to give it to this person instead.")
+
     conflicts = find_conflicts(
         db, cleaner_ids=[req.cleaner_id], scheduled_date=job.scheduled_date,
         start_time=job.start_time, end_time=job.end_time, exclude_job_id=job.id,

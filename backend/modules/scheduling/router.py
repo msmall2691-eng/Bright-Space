@@ -3200,6 +3200,33 @@ def update_job(job_id: int, data: JobUpdate, db: Session = Depends(get_db), org_
         raise HTTPException(status_code=400, detail="pay_rate_bump cannot be negative")
     if updates.get("posted_rate") is not None and updates["posted_rate"] <= 0:
         raise HTTPException(status_code=400, detail="posted_rate must be positive")
+
+    # A JOB THAT ALREADY HAS SOMEBODY ON IT IS NOT AN OFFER.
+    #
+    # Posting was gated only on status == "scheduled", and approval APPENDS to
+    # cleaner_ids rather than replacing. So: post a job at $80, assign Maria
+    # directly, forget to close the offer, Dan asks, office approves Dan — and
+    # the job now has Maria AND Dan on it, with nothing having said that
+    # approving added a second person rather than filling a vacancy.
+    #
+    # Before migration 106 that also paid both of them $80. It no longer does,
+    # but the composition is still wrong: work priced for one person, quietly
+    # staffed with two. This guard is the cheapest place to end it — the
+    # office unassigns first, deliberately, and then posts.
+    #
+    # Checked against the POST-update assignment, so one request that clears
+    # cleaner_ids and posts in the same breath is still allowed. That is a
+    # coherent thing to want; it is only the silent version that is the bug.
+    if updates.get("open_for_claims") is True:
+        after = (updates.get("cleaner_ids")
+                 if "cleaner_ids" in updates else (job.cleaner_ids or []))
+        if [c for c in (after or []) if str(c).strip()]:
+            raise HTTPException(
+                status_code=409,
+                detail="This job is already assigned. Take the cleaner off it "
+                       "first, then post it — approving a request on an "
+                       "assigned job would add a second person, not fill a "
+                       "vacancy.")
     if "status" in updates and updates["status"] not in JOB_STATUSES \
             and updates["status"] != job.status:
         raise HTTPException(status_code=400, detail=f"Unknown status '{updates['status']}'")

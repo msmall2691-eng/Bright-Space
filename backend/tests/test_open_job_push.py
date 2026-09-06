@@ -169,9 +169,25 @@ def test_a_sub_whose_file_is_incomplete_is_not_told_what_work_exists(ids, pushes
 
 
 def test_somebody_already_on_the_job_is_not_offered_it(ids, pushes):
+    """Defensive, and no longer reachable through the API.
+
+    Posting an already-assigned job is refused now (review finding 6), so this
+    state can only arrive from a row that predates that guard. The filter stays
+    because the row can still exist — but the fixture has to build it directly
+    rather than through PATCH, which would now correctly 409.
+    """
+    from services.crew_notify import notify_jobs_posted
+
     uid, crew = _mk_sub(ids)
     other, _ = _mk_sub(ids, name="Someone Else")
-    _post(_mk_job(ids, cleaner_ids=[crew], posted_rate=150))
+    job = _mk_job(ids, cleaner_ids=[crew], posted_rate=150)
+
+    db = SessionLocal()
+    row = db.get(Job, job)
+    row.open_for_claims = True
+    db.commit()
+    notify_jobs_posted(db, [row], org_id=1)
+    db.close()
 
     told = {p["user_id"] for p in pushes}
     assert uid not in told, "offered a job they are already on"
