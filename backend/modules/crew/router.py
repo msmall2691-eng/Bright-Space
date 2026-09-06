@@ -33,6 +33,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, joinedload
 
 from database.db import get_db
+from ratelimit import rate_limit
 from database.models import (
     CleanerAvailability, CleanerTimeOff, CleanerWeekAvailability, CrewDoc,
     CrewMessage, Job, JobClaimRequest, JobPhoto, JobResponse, PropertyCrewNote,
@@ -2650,7 +2651,15 @@ class AskBody(BaseModel):
     history: Optional[list] = None    # [{role: 'user'|'assistant', content: str}]
 
 
-@router.post("/ask")
+# Metered like every other endpoint that spends Anthropic tokens
+# (modules/ai/router.py uses 30/3600 and 12/3600). This one had no limit at
+# all: any cleaner account — including one approved minutes earlier, before a
+# single document is on file — could loop it against the company's API key,
+# 500 characters of question plus six turns of history at a time. The prompt
+# hygiene is sound and the context is built server-side from the caller's own
+# rows, so this was a cost problem rather than a data one, which is exactly the
+# kind that goes unnoticed until the bill.
+@router.post("/ask", dependencies=[Depends(rate_limit(20, 3600, "crew_ask"))])
 def crew_ask(
     body: AskBody,
     db: Session = Depends(get_db),
