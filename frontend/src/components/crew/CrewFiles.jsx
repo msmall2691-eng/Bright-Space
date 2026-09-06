@@ -23,7 +23,7 @@
  */
 import { useCallback, useEffect, useState } from 'react'
 import { Check, ExternalLink, FileCheck, X } from 'lucide-react'
-import { get, post } from '../../api'
+import { download, get, post } from '../../api'
 import { toast } from '../../utils/toastBus'
 
 const DOC = {
@@ -44,6 +44,18 @@ export default function CrewFiles() {
   const [data, setData] = useState(null)
   const [error, setError] = useState(false)
   const [busy, setBusy] = useState(null)
+  // Fetches with the Bearer token, then hands the blob to the browser. The
+  // filename matters: these land in a downloads folder alongside other
+  // people's tax forms.
+  const viewDoc = async (userId, doc) => {
+    try {
+      await download(`/api/auth/users/${userId}/file/${doc.kind}/download`,
+                     doc.filename || `${doc.kind}-${userId}`)
+    } catch (e) {
+      toast.error(e?.message || 'Could not open that document')
+    }
+  }
+
 
   const load = useCallback(() => {
     get('/api/crew/files')
@@ -172,11 +184,13 @@ function Person({ person, busy, onAccept, onSendBack }) {
                   {/* Opens in a tab rather than downloading: the job is to read
                       the certificate and check its dates, not to collect a
                       folder of other people's tax forms. */}
-                  <a href={`/api/auth/users/${person.user_id}/file/${doc.kind}/download`}
-                    target="_blank" rel="noopener noreferrer"
+                  {/* download(), not <a href>: a new tab sends no Authorization
+                      header, so this was a 401 in a blank tab. */}
+                  <button type="button"
+                    onClick={() => viewDoc(person.user_id, doc)}
                     className="inline-flex items-center gap-1 rounded-md border border-hairline-2 bg-panel px-2 py-1 text-[11px] font-medium text-ink-2 transition-colors hover:bg-bg-2">
                     <ExternalLink className="h-3 w-3" /> View
-                  </a>
+                  </button>
                   {doc.status !== 'accepted' && (
                     <button type="button" disabled={busy === key}
                       onClick={() => onAccept(doc.kind)}

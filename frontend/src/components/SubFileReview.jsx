@@ -19,7 +19,7 @@
  */
 import { useCallback, useEffect, useState } from 'react'
 import { Check, ExternalLink, FileCheck, X } from 'lucide-react'
-import { get, post } from '../api'
+import { download, get, post } from '../api'
 import { toast } from '../utils/toastBus'
 
 const STATE = {
@@ -41,6 +41,18 @@ export default function SubFileReview({ userId }) {
   const [file, setFile] = useState(null)
   const [error, setError] = useState(false)
   const [busy, setBusy] = useState(null)
+  // Fetches with the Bearer token, then hands the blob to the browser. The
+  // filename matters: these land in a downloads folder alongside other
+  // people's tax forms.
+  const viewDoc = async (doc) => {
+    try {
+      await download(`/api/auth/users/${userId}/file/${doc.kind}/download`,
+                     doc.filename || `${doc.kind}-${userId}`)
+    } catch (e) {
+      toast.error(e?.message || 'Could not open that document')
+    }
+  }
+
 
   const load = useCallback(() => {
     get(`/api/auth/users/${userId}/file`)
@@ -133,11 +145,16 @@ export default function SubFileReview({ userId }) {
 
               {uploaded && (
                 <div className="flex items-center gap-1.5 shrink-0">
-                  <a href={`/api/auth/users/${userId}/file/${doc.kind}/download`}
-                    target="_blank" rel="noopener noreferrer"
+                  {/* download(), not <a href>: these endpoints are behind
+                      APIKeyMiddleware and a new tab carries no Authorization
+                      header, so View returned a 401 in a blank tab — and a
+                      certificate got Accepted without anybody seeing it, which
+                      is the one failure this whole file exists to prevent. */}
+                  <button type="button"
+                    onClick={() => viewDoc(doc)}
                     className="inline-flex items-center gap-1 rounded-md border border-hairline-2 bg-panel px-2.5 py-1.5 text-xs font-medium text-ink-2 hover:bg-bg-2 transition-colors">
                     <ExternalLink className="w-3.5 h-3.5" /> View
-                  </a>
+                  </button>
                   {doc.status !== 'accepted' && (
                     <button type="button" disabled={busy === doc.kind}
                       onClick={() => review(doc.kind, 'accepted')}
