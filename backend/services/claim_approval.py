@@ -181,21 +181,45 @@ def approve(db: Session, job, req: JobClaimRequest, *, org_id: int,
 def notify(job, req, others) -> None:
     """Tell the winner and the losers. Never allowed to fail the approval —
     the assignment is committed by the time this runs, and a push outage must
-    not look like the job didn't happen."""
-    try:
-        from services.push_service import notify_user
-        if req.user_id:
-            notify_user(req.user_id, "You got the job!",
-                        f"{job.title} on {job.scheduled_date} is yours "
-                        f"at ${job.agreed_rate:,.2f}.",
-                        url=f"/crew/jobs/{job.id}", category="crew")
-        for other in others:
-            if other.user_id:
-                notify_user(other.user_id, "Job request declined",
-                            f"Someone else got {job.title} on {job.scheduled_date}.",
-                            url="/crew", category="crew")
-    except Exception:
-        pass
+    not look like the job didn't happen.
+
+    TWO THINGS WERE WRONG HERE (review findings 13 and 14).
+
+    CATEGORY. Both messages went out under `category="crew"`, which is an
+    OFFICE category (`push_service.OFFICE_NOTIFICATION_CATEGORIES`). A
+    subcontractor's notification settings offer job_assignments, open_jobs,
+    office_messages, time_off and digest — so the two messages that matter
+    most to them answered to none of their toggles. Winning work is
+    `job_assignments`; losing an offer is `open_jobs`, which is the
+    offered-versus-given distinction those categories exist to keep.
+
+    ONE TRY BLOCK. The winner and every loser shared a single try/except
+    ending in a bare `pass`. A push that raised for the winner — a dead
+    subscription row, a malformed endpoint — meant the loop telling everyone
+    else never ran, and nothing was logged to say why they heard nothing. Each
+    recipient now stands alone and a failure is written down.
+    """
+    from services import push_service
+
+    def _tell(user_id, title, body, *, url, category):
+        if not user_id:
+            return
+        try:
+            push_service.notify_user(user_id, title, body, url=url, category=category)
+        except Exception:
+            # Per recipient, deliberately: one unreachable phone is one person
+            # who missed a message, not everybody.
+            logger.warning("claim notification failed for user %s on job %s",
+                           user_id, getattr(job, "id", "?"), exc_info=True)
+
+    _tell(req.user_id, "You got the job!",
+          f"{job.title} on {job.scheduled_date} is yours "
+          f"at ${job.agreed_rate:,.2f}.",
+          url=f"/crew/jobs/{job.id}", category="job_assignments")
+    for other in others:
+        _tell(other.user_id, "Job request declined",
+              f"Someone else got {job.title} on {job.scheduled_date}.",
+              url="/crew", category="open_jobs")
 
 
 def agreed_with(job, cleaner_id) -> bool:

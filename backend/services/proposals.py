@@ -228,9 +228,11 @@ def _execute_open_to_crew(db: Session, org_id: int, payload: dict) -> dict:
     "Open to crew". `open_for_claims` is a real field on JobUpdate, so this is
     the identical write a human makes — no raw column poke.
 
-    Opening does NOT assign anyone: a cleaner still has to claim it, and the
-    claim path is what closes the offer and reveals the access details
-    (BB-SEC-11/12). That's why this is safe to run on a standing rule at all."""
+    Opening does NOT assign anyone. A subcontractor ASKS for the job (several
+    may be waiting at once) and the OFFICE approving one of them is what closes
+    the offer and reveals the access details (BB-SEC-11/12) — not the first tap,
+    which is what this said before the marketplace pivot. A rule that can only
+    open an offer, never hand one out, is why this is safe to run standing."""
     from modules.scheduling import router as scheduling_router
 
     job_id = int(payload["job_id"])

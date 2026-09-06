@@ -91,6 +91,29 @@ def _where(job: Job) -> str:
     return job.title or f"job {job.id}"
 
 
+def _proposal_detail(job, when: str) -> str:
+    """What the office reads before approving "offer this to the bench".
+
+    Says the PRICE STATE, which it did not (review finding 15). This rule opens
+    work with whatever `posted_rate` the job happens to carry, and most
+    uncovered jobs carry none — so approving the card put a job on the board
+    that can only be worked at a price the sub names. That is opening a
+    negotiation, and it is a different decision from offering known work at a
+    known price. The office should be making it on purpose.
+    """
+    rate = getattr(job, "posted_rate", None)
+    price = (f"It goes up at ${rate:,.2f}." if rate is not None else
+             "IT GOES UP WITH NO ASKING PRICE — whoever wants it has to name "
+             "their own, so approving this opens a negotiation rather than "
+             "offering a set rate. Put a rate on the job first if you'd "
+             "rather not.")
+    return (f"'{job.title or 'This job'}' is scheduled for {when} and still has "
+            f"nobody on it. Opening it puts the job on the bench's board, where "
+            f"a subcontractor can ASK for it — nothing is assigned until you "
+            f"approve somebody, and the house's access details stay hidden "
+            f"until then. {price}")
+
+
 def escalate_uncovered_jobs(db: Session, *, mode: str, hours: int,
                             now: datetime | None = None) -> dict:
     """Run the rule. 'off' does nothing; 'propose' queues; 'auto' opens.
@@ -132,10 +155,7 @@ def escalate_uncovered_jobs(db: Session, *, mode: str, hours: int,
 
         when = str(job.scheduled_date) if job.scheduled_date else "an upcoming date"
         title = f"Offer {_where(job)} on {when} to the crew"
-        detail = (f"'{job.title or 'This job'}' is scheduled for {when} and still "
-                  "has no cleaner. Opening it lets any available cleaner claim it "
-                  "from their phone; nothing is assigned and the house's access "
-                  "details stay hidden until someone does.")
+        detail = _proposal_detail(job, when)
         try:
             if mode == "auto":
                 _open_now(db, org_id, job.id)
