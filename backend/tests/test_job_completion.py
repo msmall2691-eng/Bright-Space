@@ -16,6 +16,7 @@ from datetime import date, datetime, time, timedelta, timezone
 import pytest
 
 from database.db import SessionLocal
+from utils.dates import business_today
 from database.models import (
     Client, Property, Job, RecurringSchedule, RecurrenceException, Invoice, User,
 )
@@ -129,6 +130,22 @@ def test_complete_job_auto_creates_draft_invoice(ctx):
     assert inv.client_id == c.id
     assert inv.status == "draft"
     assert inv.items and inv.items[0]["name"] == j.title
+
+
+def test_the_auto_invoice_due_date_is_net_14_in_maine_not_in_utc(ctx):
+    """Net 14 has to mean 14 of the days the office counts.
+
+    due_date was built from datetime.now(timezone.utc), so from 8pm here the
+    UTC date is already tomorrow and the invoice quietly got net-15 — while
+    the same job closed at 2pm got net-14. Crew marking jobs done in the
+    evening is the ordinary case, not the edge. It matters downstream because
+    due_date is read back against business_today() by AR aging and by the
+    dunning cadence, so a UTC-dated invoice ages on the wrong schedule.
+    """
+    db, _c, _p, j = ctx
+    complete_job(j.id, JobCompleteRequest(), db=db)
+    inv = db.query(Invoice).filter(Invoice.job_id == j.id).first()
+    assert inv.due_date == (business_today() + timedelta(days=14)).isoformat()
 
 
 def test_complete_job_auto_invoice_is_idempotent(ctx):

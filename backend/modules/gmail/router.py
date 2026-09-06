@@ -26,6 +26,7 @@ from integrations.email_filter import evaluate_inbound_email, should_thread_inbo
 from services.inbox_triage import capture_triage_item
 from utils.activity_logger import log_email
 from datetime import datetime, timezone
+from utils.dates import business_today
 import logging
 
 logger = logging.getLogger(__name__)
@@ -384,7 +385,10 @@ def run_inbox_sync(
     # next tick would skip re-scanning (and re-threading) today's messages.
     if advance_cursor and commit_ok:
         from integrations.gmail_inbox import set_last_synced_at
-        set_last_synced_at(datetime.now(timezone.utc).date().isoformat())
+        # The business date, not the UTC one: a sync at 8pm here would
+        # otherwise stamp tomorrow, and the next scan's IMAP SINCE bound would
+        # step past anything the server dated today.
+        set_last_synced_at(business_today().isoformat())
 
     total = len(emails)
     linked = sum(1 for e in emails if e["is_known_contact"])
