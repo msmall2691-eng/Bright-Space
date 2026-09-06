@@ -549,6 +549,35 @@ def _turnover_lead_hours(j: Job, next_arrival: Optional[ICalEvent],
         return None
 
 
+def strip_rates_for_crew(payload, role):
+    """Take the money off a job payload when a cleaner is looking at it.
+
+    `job_to_dict` serializes posted_rate and agreed_rate, and four endpoints on
+    this router allow the `cleaner` role: GET /api/jobs, /api/jobs/{id},
+    /api/jobs/{id}/details and /api/schedule/week. So any sub could enumerate
+    what every OTHER sub had agreed on every job — their competitors' prices,
+    from the office's own API. The crew payloads are carefully stripped of door
+    codes and the customer's identity; this was not stripped at all.
+
+    A sub is not deprived of anything they need. The board they bid from is
+    /api/crew/my-day, which builds its own rows and deliberately carries
+    posted_rate — the asking price of a job they may claim — and their own
+    agreed rate once they have won it. This closes a side door, not the front
+    one.
+
+    Mutates in place and returns the payload; a job dict here is freshly built
+    per request, never a shared object.
+    """
+    if role != "cleaner":
+        return payload
+    rows = payload if isinstance(payload, list) else [payload]
+    for row in rows:
+        if isinstance(row, dict):
+            row.pop("posted_rate", None)
+            row.pop("agreed_rate", None)
+    return payload
+
+
 def job_to_dict(j: Job, client: Client = None, effective_date=None,
                 booking_event: ICalEvent = None, next_arrival: ICalEvent = None,
                 property_name: Optional[str] = None, lead_buffer_hours: float = 3.0,
@@ -721,6 +750,7 @@ def get_jobs(
     paginated: bool = False,
     db: Session = Depends(get_db),
     org_id: int = Depends(current_org_id),
+    current_user=Depends(get_current_user),
 ):
     # Job/Visit unification (PR-C): the pre-migration code had a `visit_min`
     # subquery so consumers could bucket by the earliest Visit date when
@@ -856,14 +886,15 @@ def get_jobs(
                                         property_name=prop_names.get(j.property_id),
                                         lead_buffer_hours=lead_buffer_hours,
                                         property_check_in_time=prop_meta.get(j.property_id, (None, None))[1]))
+    role = getattr(current_user, "role", None)
     if paginated:
         return {
-            "items": rendered,
+            "items": strip_rates_for_crew(rendered, role),
             "total": total,
             "limit": limit,
             "offset": offset,
         }
-    return rendered
+    return strip_rates_for_crew(rendered, role)
 
 
 @router.post("", status_code=201, dependencies=[Depends(require_role("admin", "manager"))])
@@ -2861,7 +2892,8 @@ def decline_claim_request(job_id: int, request_id: int, db: Session = Depends(ge
 
 
 @router.get("/{job_id}", dependencies=[Depends(require_role("admin", "manager", "viewer", "cleaner"))])
-def get_job(job_id: int, db: Session = Depends(get_db), org_id: int = Depends(current_org_id)):
+def get_job(job_id: int, db: Session = Depends(get_db), org_id: int = Depends(current_org_id),
+            current_user=Depends(get_current_user)):
     org_id = resolve_org_id(org_id, db)
     job = db.query(Job).options(joinedload(Job.client)).filter(
         Job.id == job_id,
@@ -2869,7 +2901,8 @@ def get_job(job_id: int, db: Session = Depends(get_db), org_id: int = Depends(cu
     ).first()
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
-    return _job_to_dict_enriched(db, job)
+    return strip_rates_for_crew(_job_to_dict_enriched(db, job),
+                                getattr(current_user, "role", None))
 
 
 @router.get("/{job_id}/details", dependencies=[Depends(require_role("admin", "manager", "viewer", "cleaner"))])
@@ -2924,7 +2957,8 @@ def get_job_details(job_id: int, db: Session = Depends(get_db), org_id: int = De
     ).order_by(Activity.created_at.desc()).limit(50).all()
 
     return {
-        **_job_to_dict_enriched(db, job),
+        **strip_rates_for_crew(_job_to_dict_enriched(db, job),
+                               getattr(current_user, "role", None)),
         # Photos the office Complete modal stored inline on Job.photos (data
         # URLs / pasted links) BEFORE the job_photos table existed. Emitted so
         # the JobDetail gallery can finally show them — they used to be
@@ -4177,7 +4211,7 @@ def schedule_week(
         # Visits are derived from jobs post-unification; the shape mirrors what
         # /api/visits used to emit so the FE fallback keeps rendering unchanged.
         "visits": [_job_as_visit(j) for j in (jobs or [])],
-        "jobs": jobs,
+        "jobs": strip_rates_for_crew(jobs, getattr(current_user, "role", None)),
         "properties": _get_properties(db=db, org_id=org_id),
         # limit/offset are Query() defaults — pass explicitly. 50 matches the
         # standalone /api/clients default the page used before.

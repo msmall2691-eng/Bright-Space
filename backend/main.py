@@ -348,6 +348,13 @@ async def list_agents():
     return load_agent_roster()
 
 
+# Who may talk to an AI agent. Deliberately spelled out here rather than reusing
+# push_service.OFFICE_ROLES: that constant answers "which notification
+# categories does this role get", and a change made for notifications must not
+# silently widen who can read the client list.
+_AGENT_ROLES = frozenset({"admin", "manager", "viewer", "member"})
+
+
 @app.websocket("/ws/agent/{agent_name}")
 async def agent_websocket(websocket: WebSocket, agent_name: str):
     # BaseHTTPMiddleware does not see WebSocket connections, so the
@@ -362,8 +369,26 @@ async def agent_websocket(websocket: WebSocket, agent_name: str):
     # and every connection was accepted unauthenticated. No valid JWT and no
     # key configured now means there's no way to authenticate the
     # connection, so it's rejected rather than let through.
+    #
+    # ROLE, not just a valid token. Any authenticated login used to reach any
+    # agent, and the agents read the whole business: Finn returns the client
+    # list and the outstanding-invoice total, and `run_operation` in the shared
+    # tool set creates Job rows and sends real Google Calendar invites to
+    # customers. That was tolerable while every login belonged to someone hired
+    # here. The public apply form (#761) mints a `cleaner` login for anybody who
+    # fills in a web form and sets a password, so it is not tolerable now.
+    #
+    # Office roles only. The API-key path below is server-to-server and stays
+    # as it was — that key is the master credential and never reaches a browser.
     token = websocket.query_params.get("token", "")
-    authed = bool(token and verify_jwt(token))
+    claims = verify_jwt(token) if token else None
+    authed = bool(claims)
+    if authed and (claims or {}).get("role") not in _AGENT_ROLES:
+        _logging.getLogger(__name__).warning(
+            "[auth] role %r may not open agent %r — rejecting WS connection.",
+            (claims or {}).get("role"), agent_name)
+        await websocket.close(code=1008, reason="forbidden")
+        return
     if not authed:
         expected_key = os.getenv("BRIGHTBASE_API_KEY", "")
         if not expected_key:
