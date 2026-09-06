@@ -592,7 +592,8 @@ def strip_rates_for_crew(payload, role):
 def job_to_dict(j: Job, client: Client = None, effective_date=None,
                 booking_event: ICalEvent = None, next_arrival: ICalEvent = None,
                 property_name: Optional[str] = None, lead_buffer_hours: float = 3.0,
-                property_check_in_time: Optional[str] = None) -> dict:
+                property_check_in_time: Optional[str] = None,
+                pending_claim_requests: int = 0) -> dict:
     # Resolve client name if not passed in
     client_name = ""
     if client:
@@ -647,6 +648,17 @@ def job_to_dict(j: Job, client: Client = None, effective_date=None,
         # reads agreed_rate, never posted_rate.
         "posted_rate": j.posted_rate,
         "agreed_rate": j.agreed_rate,
+        # How many subs are waiting on an answer for this job. The office was
+        # told a request had arrived by web push and by NOTHING ELSE — no push
+        # subscription, push switched off, VAPID unset, and the request sat
+        # unseen until somebody happened to open that job. Counted here so the
+        # screens the office already loads can say it (review finding 11).
+        #
+        # Callers that don't pass it get 0 rather than a wrong number: a
+        # single-job endpoint has its own claim-requests call, and inventing a
+        # per-row query in the shared serializer would put an N+1 on the
+        # calendar's hot path.
+        "pending_claim_requests": pending_claim_requests,
         "gcal_event_id": j.gcal_event_id,
         "created_at": j.created_at.isoformat() if j.created_at else None,
         "updated_at": j.updated_at.isoformat() if j.updated_at else None,
@@ -871,6 +883,18 @@ def get_jobs(
             for pid, evs in events_by_prop.items():
                 evs.sort(key=lambda e: e.checkin_date or "")
 
+        # One query for the whole page, and only when something on it is
+        # actually posted — a shop with nothing on the board pays nothing
+        # (brightbase-economy). ix_job_claim_requests_job_status covers it.
+        pending_by_job: dict = {}
+        open_ids = [j.id for j, _ in rows if getattr(j, "open_for_claims", False)]
+        if open_ids:
+            for jid, n in (db.query(JobClaimRequest.job_id, func.count(JobClaimRequest.id))
+                           .filter(JobClaimRequest.job_id.in_(open_ids),
+                                   JobClaimRequest.status == "pending")
+                           .group_by(JobClaimRequest.job_id).all()):
+                pending_by_job[jid] = n
+
         for j, eff in rows:
             booking = None
             next_arrival = None
@@ -896,7 +920,8 @@ def get_jobs(
                                         next_arrival=next_arrival,
                                         property_name=prop_names.get(j.property_id),
                                         lead_buffer_hours=lead_buffer_hours,
-                                        property_check_in_time=prop_meta.get(j.property_id, (None, None))[1]))
+                                        property_check_in_time=prop_meta.get(j.property_id, (None, None))[1],
+                                        pending_claim_requests=pending_by_job.get(j.id, 0)))
     role = getattr(current_user, "role", None)
     if paginated:
         return {
