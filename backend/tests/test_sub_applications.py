@@ -27,6 +27,7 @@ not a shortcut past it.
 """
 import uuid
 
+from unittest.mock import patch
 import pytest
 from fastapi.testclient import TestClient
 
@@ -432,3 +433,106 @@ def test_the_public_form_is_rate_limited(made):
         if 429 in seen:
             break
     assert 429 in seen, "the public apply form must be rate limited"
+
+
+# ── The invite has to be honest about whether it sent ────────────────────────
+# The account is real either way — a mail failure is never a reason to roll
+# back an approval. But the set-password token lives ONLY inside that email, so
+# a failure reported as success left an approved applicant holding an account
+# nobody could ever reach: status "invited", no password, and no second copy of
+# the link anywhere in the product. Resend failed the same silent way.
+
+def test_a_failed_invite_is_reported_with_a_link_that_actually_works(made):
+    """The rescue path, end to end.
+
+    Not just "the response says it failed" — the link it hands back is put
+    through /api/auth/accept-invite and must produce a real signed-in session.
+    A copyable string that doesn't work would be a worse lie than the silence.
+    """
+    email = _email(made)
+    _apply({"name": "Dana Applicant", "email": email})
+    api = _api(_Admin())
+    try:
+        app_id = _rows(email)[0]["id"]
+        with patch("integrations.email.send_email",
+                   side_effect=ValueError("Email credentials missing.")):
+            r = api.post(f"/api/sub-applications/{app_id}/approve")
+        assert r.status_code == 200, r.text
+        body = r.json()
+        assert body["created_account"] is True, "the approval still stands"
+        assert body["invite_sent"] is False
+        assert "didn't send" in body["message"]
+        link = body["invite_link"]
+        assert "/accept-invite?token=" in link
+    finally:
+        _clear()
+
+    db = SessionLocal()
+    user = db.query(User).filter(User.email == email).first()
+    made["users"].append(user.id)
+    assert user.password_hash is None
+    db.close()
+
+    token = link.split("token=", 1)[1]
+    done = TestClient(app).post("/api/auth/accept-invite",
+                                json={"token": token, "password": "a-real-password-1"})
+    assert done.status_code == 200, done.text
+    assert done.json().get("access_token"), "the link has to sign them in"
+
+    db = SessionLocal()
+    user = db.query(User).filter(User.email == email).first()
+    assert user.password_hash is not None
+    assert user.status == "active"
+    db.close()
+
+
+def test_a_successful_invite_does_not_hand_the_link_back(made):
+    """The link is a credential — seven days, single use, sets a password on
+    that account. When the mail went out there is nothing to rescue, so there
+    is nothing to expose; it must not ride along in the response by default."""
+    email = _email(made)
+    _apply({"name": "Dana", "email": email})
+    api = _api(_Admin())
+    try:
+        app_id = _rows(email)[0]["id"]
+        with patch("integrations.email.send_email", return_value={"ok": True}) as mail:
+            r = api.post(f"/api/sub-applications/{app_id}/approve")
+        assert r.status_code == 200, r.text
+        body = r.json()
+        assert body["invite_sent"] is True
+        assert "invite_link" not in body
+        assert mail.call_count == 1
+        assert "didn't send" not in body["message"]
+    finally:
+        _clear()
+    db = SessionLocal()
+    u = db.query(User).filter(User.email == email).first()
+    made["users"].append(u.id)
+    db.close()
+
+
+def test_resend_says_so_too_rather_than_returning_a_cheerful_200(made):
+    """Resend was the documented recovery for a lost invite, and it called the
+    same swallowing sender — so the one thing the office was told to try when
+    somebody never got their email also reported success while sending nothing.
+    """
+    email = _email(made)
+    _apply({"name": "Dana", "email": email})
+    api = _api(_Admin())
+    try:
+        app_id = _rows(email)[0]["id"]
+        with patch("integrations.email.send_email", return_value={"ok": True}):
+            api.post(f"/api/sub-applications/{app_id}/approve")
+        db = SessionLocal()
+        uid = db.query(User).filter(User.email == email).first().id
+        made["users"].append(uid)
+        db.close()
+
+        with patch("integrations.email.send_email",
+                   side_effect=ValueError("Email credentials missing.")):
+            r = api.post(f"/api/crew/{uid}/resend-invite")
+        assert r.status_code == 200, r.text
+        assert r.json()["invite_sent"] is False
+        assert "/accept-invite?token=" in r.json()["invite_link"]
+    finally:
+        _clear()

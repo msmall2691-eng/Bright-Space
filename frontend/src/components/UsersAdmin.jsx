@@ -4,6 +4,7 @@ import { Link } from 'react-router-dom'
 import { get, post, patch } from '../api'
 import SubFileReview from './SubFileReview'
 import { pushToast } from '../utils/toastBus'
+import { reportInvite } from '../utils/inviteFallback'
 
 const ROLES = ['admin', 'manager', 'member', 'viewer', 'cleaner']
 
@@ -72,7 +73,7 @@ export default function UsersAdmin() {
   const saveField = (u, patchObj) => act(u.id, () => patch(`/api/auth/users/${u.id}`, patchObj))
   const resend = (u) => act(u.id, async () => {
     const row = await post(`/api/auth/users/${u.id}/resend-invite`)
-    pushToast(`Invite re-sent to ${u.email}`, 'success')
+    if (!await reportInvite(row, u.email)) pushToast(`Invite re-sent to ${u.email}`, 'success')
     return row
   })
 
