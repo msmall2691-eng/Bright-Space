@@ -109,3 +109,68 @@ it('says nothing changed when the list cannot be loaded', async () => {
   render(<JobClaimRequests jobId={5} postedRate={80} />)
   expect(await screen.findByText(/Nothing has changed/)).toBeTruthy()
 })
+
+// ── the heads-up line (review finding 7) ──────────────────────────────────
+//
+// Approval never checked whether the requester had booked the day off, and
+// its docstring claimed it did. The fix is not a refusal — availability is a
+// signal, not a schedule, and a sub who ASKS for a day they'd booked off has
+// overridden their own signal. The fix is that the office is told.
+
+it('shows what the office should weigh before approving somebody', async () => {
+  mount({
+    job_id: 5, posted_rate: 80,
+    requests: [{ id: 1, cleaner_id: 'CT-1', cleaner_name: 'Annie', requested_rate: null,
+      message: null, status: 'pending',
+      heads_up: ['Booked off 2026-09-10–2026-09-12 (vacation) — they asked anyway'] }],
+  })
+  expect(await screen.findByText(/Booked off/)).toBeTruthy()
+})
+
+it('never lets the heads-up stand in the way of approving', async () => {
+  // The whole point of a line rather than a block: this is a yes she is
+  // allowed to give. A disabled button here would be the app overruling a
+  // subcontractor about their own day.
+  mount({
+    job_id: 5, posted_rate: 80,
+    requests: [{ id: 1, cleaner_id: 'CT-1', cleaner_name: 'Annie', requested_rate: null,
+      message: null, status: 'pending', heads_up: ['Booked off — they asked anyway'] }],
+  })
+  // "Give it to them", not "Approve" — the button's own words.
+  const approve = await screen.findByRole('button', { name: /give it to them/i })
+  expect(approve.disabled).toBe(false)
+})
+
+it('says nothing when there is nothing to say', async () => {
+  // A warning on every row is furniture; she stops reading it.
+  mount()
+  expect(await screen.findByText('Dana')).toBeTruthy()
+  expect(screen.queryByText(/Booked off/)).toBeNull()
+})
+
+it('survives a row with no heads_up field at all', async () => {
+  // A cached older payload, or any caller that doesn't send the key. `.map`
+  // on undefined is the crash this guards.
+  mount({
+    job_id: 5, posted_rate: 80,
+    requests: [{ id: 1, cleaner_id: 'CT-1', cleaner_name: 'Dana', requested_rate: null,
+      message: null, status: 'pending' }],
+  })
+  expect(await screen.findByText('Dana')).toBeTruthy()
+})
+
+it('says the heads-up as a dot and words, never a tinted banner', async () => {
+  // The owner has vetoed the SaaS warning banner twice. A resting tinted fill
+  // (bg-*-50/100/200) is the vetoed pattern; the 1.5×1.5 dot is the required
+  // one. (?!\d) keeps `bg-amber-500` — the DOT itself — from matching the
+  // `bg-amber-50` alternative.
+  const { container } = mount({
+    job_id: 5, posted_rate: 80,
+    requests: [{ id: 1, cleaner_id: 'CT-1', cleaner_name: 'Annie', requested_rate: null,
+      message: null, status: 'pending', heads_up: ['Booked off — they asked anyway'] }],
+  })
+  await screen.findByText(/Booked off/)
+  const html = container.innerHTML
+  expect(html).not.toMatch(/\bbg-\w+-(50|100|200)(?!\d)/)
+  expect(container.querySelectorAll('.h-1\\.5.w-1\\.5.rounded-full').length).toBeGreaterThan(0)
+})

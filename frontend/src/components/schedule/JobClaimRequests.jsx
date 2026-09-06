@@ -153,6 +153,24 @@ export default function JobClaimRequests({ jobId, postedRate, onDecided }) {
                       “{req.message}”
                     </p>
                   )}
+                  {/* What the office should weigh before handing this person
+                      the job — approved time off over the date, or another job
+                      at the same hour. Backend sends it only on rows still to
+                      be decided, and only when there is something to say.
+
+                      A LINE, NOT A BANNER. This is information for a decision
+                      she is already making, not an alarm: same dot+word
+                      vocabulary as the status above, amber because it wants a
+                      second's thought, and it never disables Approve — the
+                      time-off case is one she is allowed to say yes to, and
+                      the app has no business overruling a subcontractor about
+                      their own day. */}
+                  {(req.heads_up || []).map((note, i) => (
+                    <p key={i} className="flex items-start gap-1.5 text-[11px] text-ink-2 mt-1">
+                      <span className="mt-1 h-1.5 w-1.5 shrink-0 rounded-full bg-amber-500" aria-hidden="true" />
+                      <span>{note}</span>
+                    </p>
+                  ))}
                   {req.status !== 'pending' && (
                     <div className="text-[11px] text-ink-3 mt-1">{state.label}</div>
                   )}
