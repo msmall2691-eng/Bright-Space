@@ -36,7 +36,7 @@ from database.db import get_db
 from ratelimit import rate_limit
 from database.models import (
     CleanerAvailability, CleanerTimeOff, CleanerWeekAvailability, CrewDoc,
-    CrewMessage, Job, JobClaimRequest, JobPhoto, JobResponse, PropertyCrewNote,
+    CrewMessage, Job, JobClaimRequest, JobHelper, JobPhoto, JobResponse, PropertyCrewNote,
     PropertyPhoto, SubAgreement, SubDocument, User,
 )
 from modules.auth.router import (
@@ -74,7 +74,8 @@ def _turnover_line(job: Job) -> str:
 def _job_row(job: Job, names_by_cid: dict | None = None, self_cid: str | None = None,
              my_response: "JobResponse | None" = None,
              house_notes: "list | None" = None,
-             my_claim_request: "JobClaimRequest | None" = None) -> dict:
+             my_claim_request: "JobClaimRequest | None" = None,
+             my_helpers: "list | None" = None) -> dict:
     prop = job.property
     client = job.client
     return {
@@ -113,6 +114,9 @@ def _job_row(job: Job, names_by_cid: dict | None = None, self_cid: str | None = 
         # Office-SHARED house notes ("upstairs drain clogs") inline so
         # they're readable offline too. Author-only notes don't ride here.
         "house_notes": house_notes or [],
+        # Who I said I'm bringing (migration 107). Mine only — never another
+        # sub's, on a job we share.
+        "my_helpers": my_helpers or [],
         "turnover_line": _turnover_line(job),
         "checklist_template": (prop.checklist_template if prop else None) or None,
         # Who the customer is. Their NUMBER is deliberately absent (owner
@@ -312,6 +316,17 @@ def my_day(
         ).all()
     }
 
+    # My own helpers for the window (migration 107), one query for the lot —
+    # so a sub sees "bringing Sam Reed" on the card without a second round trip
+    # per job on a rural signal (brightbase-economy). MINE ONLY: on a shared
+    # job the other sub's assistant is their responsibility, and their business.
+    my_helpers: dict = {}
+    for h in db.query(JobHelper).filter(
+            JobHelper.job_id.in_([j.id for j in mine] or [0]),
+            JobHelper.sub_cleaner_id == current_user.cleaner_id).order_by(JobHelper.id).all():
+        my_helpers.setdefault(h.job_id, []).append(
+            {"id": h.id, "name": h.name, "phone": h.phone})
+
     # The time clock used to be read here and folded into this payload
     # (active punch, hours today, the day's entries). It is gone — a punch
     # records hours, and hours are what an employer pays for. See the note
@@ -384,14 +399,19 @@ def my_day(
         "first_name": ((getattr(current_user, "full_name", None) or "").strip().split(" ")[0]
                        or (getattr(current_user, "email", "") or "").split("@")[0]),
         "today": [_job_row(j, names, current_user.cleaner_id, my_responses.get(j.id),
-                           house_notes=house_notes.get(j.property_id))
+                           house_notes=house_notes.get(j.property_id),
+                           my_helpers=my_helpers.get(j.id))
                   for j in today_jobs],
         # Upcoming rows are a 13-day preview and the bulk of the payload, so
         # the heavy per-house fields stay off them (rural cell data): no
         # checklist_template, no house_notes. Both are served on tap — the
         # crew job detail (GET /api/crew/jobs/{id}) and the house sheet
         # (GET /api/crew/properties/{id}/notes) return the full row.
-        "upcoming": [{**_job_row(j, names, current_user.cleaner_id, my_responses.get(j.id)),
+        # Helpers ride the upcoming rows too, unlike house notes: they are two
+        # short strings, and "who am I bringing on Thursday" is a question you
+        # ask BEFORE Thursday — which is the whole point of arranging one.
+        "upcoming": [{**_job_row(j, names, current_user.cleaner_id, my_responses.get(j.id),
+                                 my_helpers=my_helpers.get(j.id)),
                       "checklist_template": None}
                      for j in upcoming_jobs],
         "open_jobs": open_jobs,
@@ -580,6 +600,164 @@ def mark_job_done(
         auto_create_draft_invoice(db, job)
 
     return _job_row(job, _names_by_cleaner_id(db, [job]), current_user.cleaner_id)
+
+
+# ── My own helper on a job (migration 107) ──────────────────────────────────
+#
+# ONE OF THE FIVE MAINE CRITERIA, not a convenience. Part 1 #4 is "hires, pays
+# and supervises their own assistants, if any", and all five of Part 1 must
+# hold. BrightBase modelled one cleaner per claim, so a sub could not bring
+# anyone — a gap the marketplace skill has carried since migration 104.
+#
+# THE SUB IS THE ONLY WRITER. There is deliberately no office endpoint: the
+# office adding somebody to a job would be the office staffing it, and a sub
+# requests or accepts — the office never assigns. And the helper gets no
+# account, no rate and no payout, because a helper the app onboards and pays is
+# TMCC's worker, which is the criterion inverted.
+
+MAX_HELPERS_PER_SUB = 3
+
+
+class HelperBody(BaseModel):
+    name: str
+    # For reaching whoever is at the house when the sub's phone is dead.
+    phone: Optional[str] = None
+
+
+def _helper_row(h) -> dict:
+    return {"id": h.id, "name": h.name, "phone": h.phone,
+            "sub_cleaner_id": h.sub_cleaner_id}
+
+
+def _my_job_or_403(db: Session, job_id: int, current_user: User, oid: int) -> Job:
+    """The job, if it is actually this sub's to speak for.
+
+    Membership in cleaner_ids, not `agreed_with`: a sub who is ON the job is
+    the person who decides whether they need a second pair of hands, whether or
+    not they are the one who negotiated the rate.
+    """
+    job = (db.query(Job)
+           .filter(or_(Job.org_id == oid, Job.org_id.is_(None)), Job.id == job_id)
+           .first())
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found.")
+    if current_user.cleaner_id not in (job.cleaner_ids or []):
+        raise HTTPException(status_code=403, detail="That job isn't yours.")
+    return job
+
+
+@router.get("/jobs/{job_id}/helpers")
+def list_my_helpers(
+    job_id: int,
+    db: Session = Depends(get_db),
+    org_id: int = Depends(current_org_id),
+    current_user: User = Depends(require_role("cleaner")),
+):
+    """Who I said I'm bringing. Mine only — another sub's helper on a shared
+    job is their business and their responsibility."""
+    _require_crew_id(current_user)
+    oid = resolve_org_id(org_id, db)
+    job = _my_job_or_403(db, job_id, current_user, oid)
+    rows = (db.query(JobHelper)
+            .filter(JobHelper.job_id == job.id,
+                    JobHelper.sub_cleaner_id == current_user.cleaner_id)
+            .order_by(JobHelper.id)
+            .all())
+    return {"job_id": job.id, "helpers": [_helper_row(h) for h in rows]}
+
+
+@router.post("/jobs/{job_id}/helpers", status_code=201)
+def add_my_helper(
+    job_id: int,
+    body: HelperBody,
+    db: Session = Depends(get_db),
+    org_id: int = Depends(current_org_id),
+    current_user: User = Depends(require_role("cleaner")),
+):
+    """Bring somebody with me to this job.
+
+    No vetting gate on the HELPER, deliberately, and it is worth being explicit
+    about why given how hard `blocking_requirements` is enforced everywhere
+    else: vetting is what TMCC requires of the people it contracts with, and it
+    does not contract with this person. The sub does. Requiring TMCC's paperwork
+    from the sub's own assistant is TMCC deciding who the sub may hire.
+
+    The SUB still has to be cleared — they are, or they would not be on the job.
+    """
+    _require_crew_id(current_user)
+    oid = resolve_org_id(org_id, db)
+    job = _my_job_or_403(db, job_id, current_user, oid)
+    if job.status in ("completed", "cancelled"):
+        raise HTTPException(status_code=409,
+                            detail=f"That job is {job.status} — nothing to add anyone to.")
+
+    name = (body.name or "").strip()[:120]
+    if not name:
+        raise HTTPException(status_code=422, detail="Who are you bringing? A name, so the office knows who's at the house.")
+    phone = (body.phone or "").strip()[:32] or None
+
+    mine = (db.query(JobHelper)
+            .filter(JobHelper.job_id == job.id,
+                    JobHelper.sub_cleaner_id == current_user.cleaner_id))
+    if mine.count() >= MAX_HELPERS_PER_SUB:
+        raise HTTPException(
+            status_code=409,
+            detail=f"You can bring up to {MAX_HELPERS_PER_SUB} people. Remove one first.")
+    if mine.filter(func.lower(JobHelper.name) == name.lower()).first():
+        raise HTTPException(status_code=409, detail=f"{name} is already on this one.")
+
+    row = JobHelper(org_id=oid, job_id=job.id, sub_cleaner_id=current_user.cleaner_id,
+                    name=name, phone=phone, created_at=_now_naive_utc())
+    db.add(row)
+    try:
+        from utils.activity_logger import log_activity
+        who = getattr(current_user, "full_name", None) or current_user.email
+        log_activity(
+            db, "job_helper_added", job_id=job.id, client_id=job.client_id, actor=who,
+            summary=f"{who} is bringing {name} to {job.title}",
+            extra_data={"cleaner_id": current_user.cleaner_id, "helper_name": name},
+            commit=False,
+        )
+    except Exception:
+        log.exception("activity log failed on add_my_helper")
+    db.commit(); db.refresh(row)
+
+    # The office is told because somebody they have never met is going to be in
+    # a customer's house. That is the whole operational reason this is recorded
+    # — not approval, which nobody is asking for.
+    try:
+        from services.push_service import notify_staff
+        when = job.scheduled_date.isoformat() if job.scheduled_date else "an upcoming date"
+        notify_staff(db, "Extra pair of hands",
+                     f"{getattr(current_user, 'full_name', None) or current_user.email} "
+                     f"is bringing {name} to {job.title} on {when}.",
+                     url=f"/jobs/{job.id}", tag=f"job-helper-{job.id}", org_id=oid,
+                     category="crew")
+    except Exception:
+        log.exception("push notify failed on add_my_helper")
+    return _helper_row(row)
+
+
+@router.delete("/jobs/{job_id}/helpers/{helper_id}", status_code=204)
+def remove_my_helper(
+    job_id: int,
+    helper_id: int,
+    db: Session = Depends(get_db),
+    org_id: int = Depends(current_org_id),
+    current_user: User = Depends(require_role("cleaner")),
+):
+    """Plans change. Only my own row — on a job two subs share, each one's
+    helper is theirs to add and theirs to withdraw."""
+    _require_crew_id(current_user)
+    oid = resolve_org_id(org_id, db)
+    job = _my_job_or_403(db, job_id, current_user, oid)
+    row = (db.query(JobHelper)
+           .filter(JobHelper.id == helper_id, JobHelper.job_id == job.id,
+                   JobHelper.sub_cleaner_id == current_user.cleaner_id)
+           .first())
+    if not row:
+        raise HTTPException(status_code=404, detail="Not found.")
+    db.delete(row); db.commit()
 
 
 # ── Open jobs: request to claim (marketplace pivot, migration 097) ──────────

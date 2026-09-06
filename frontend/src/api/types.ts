@@ -6425,6 +6425,60 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/crew/jobs/{job_id}/helpers": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List My Helpers
+         * @description Who I said I'm bringing. Mine only — another sub's helper on a shared
+         *     job is their business and their responsibility.
+         */
+        get: operations["list_my_helpers_api_crew_jobs__job_id__helpers_get"];
+        put?: never;
+        /**
+         * Add My Helper
+         * @description Bring somebody with me to this job.
+         *
+         *     No vetting gate on the HELPER, deliberately, and it is worth being explicit
+         *     about why given how hard `blocking_requirements` is enforced everywhere
+         *     else: vetting is what TMCC requires of the people it contracts with, and it
+         *     does not contract with this person. The sub does. Requiring TMCC's paperwork
+         *     from the sub's own assistant is TMCC deciding who the sub may hire.
+         *
+         *     The SUB still has to be cleared — they are, or they would not be on the job.
+         */
+        post: operations["add_my_helper_api_crew_jobs__job_id__helpers_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/crew/jobs/{job_id}/helpers/{helper_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Remove My Helper
+         * @description Plans change. Only my own row — on a job two subs share, each one's
+         *     helper is theirs to add and theirs to withdraw.
+         */
+        delete: operations["remove_my_helper_api_crew_jobs__job_id__helpers__helper_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/crew/jobs/{job_id}/claim": {
         parameters: {
             query?: never;
@@ -8456,6 +8510,13 @@ export interface components {
         HTTPValidationError: {
             /** Detail */
             detail?: components["schemas"]["ValidationError"][];
+        };
+        /** HelperBody */
+        HelperBody: {
+            /** Name */
+            name: string;
+            /** Phone */
+            phone?: string | null;
         };
         /**
          * InstantQuoteRequest
@@ -19774,6 +19835,102 @@ export interface operations {
                 content: {
                     "application/json": unknown;
                 };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_my_helpers_api_crew_jobs__job_id__helpers_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                job_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    add_my_helper_api_crew_jobs__job_id__helpers_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                job_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["HelperBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    remove_my_helper_api_crew_jobs__job_id__helpers__helper_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                job_id: number;
+                helper_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Validation Error */
             422: {

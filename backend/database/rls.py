@@ -73,6 +73,11 @@ TENANT_TABLES = [
     # the tenant scope matters more here than almost anywhere: this table takes
     # unauthenticated writes.
     "sub_applications",
+    # A sub's own helper on a job (migration 107). One of the five Maine
+    # criteria is that a subcontractor hires and pays their own assistants; the
+    # row records who was in the customer's house and nothing else — no login,
+    # no rate, no payout. Added with the table, not in a later audit.
+    "job_helpers",
     # `users` is DELIBERATELY excluded — re-audited 2026-08-16, still not safe.
     # Re-read this whole comment before adding it; don't re-derive from scratch.
     #
