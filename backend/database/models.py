@@ -955,6 +955,11 @@ class SubAgreement(Base):
     user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"),
                      nullable=False, index=True)
     version = Column(String(32), nullable=False)
+    # SHA-256 of the exact bytes the person was shown (migration 105). The
+    # version string alone was never proof: a typo fixed without bumping it
+    # would silently change what every earlier acceptance appears to mean.
+    # NULL means "signed before the text was under version control".
+    text_sha256 = Column(String(64), nullable=True)
     accepted_at = Column(DateTime, nullable=False, default=_utcnow)
     accepted_ip = Column(String(64), nullable=True)
     created_at = Column(DateTime, default=_utcnow)

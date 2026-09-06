@@ -56,12 +56,54 @@ it('says plainly when the file is done', async () => {
   expect(screen.queryByText('To start asking for jobs:')).toBeNull()
 })
 
-it('signs the agreement and takes the refreshed file back', async () => {
+const AGREEMENT = {
+  version: '2026-09',
+  sha256: 'a'.repeat(64),
+  text: 'Independent Contractor Agreement\n\n' + 'You run your own business. '.repeat(40),
+}
+
+it('shows the agreement before it can be signed, and will not sign it unread', async () => {
+  // The button used to POST straight away, and there was no document anywhere
+  // in the repo to read — subs were signing a version string. "A contract that
+  // defines the relationship" is one of the criteria the whole contractor
+  // arrangement leans on, so being shown it is the point, not decoration.
   mount()
-  fireEvent.click(await screen.findByRole('button', { name: /Sign the subcontractor agreement/ }))
-  await waitFor(() => expect(post).toHaveBeenCalledWith('/api/crew/my-file/agreement', {}))
-  // The POST returns the whole file — no second request to find out what changed.
-  await waitFor(() => expect(get).toHaveBeenCalledTimes(1))
+  await screen.findByRole('button', { name: /Read the subcontractor agreement/ })
+  get.mockResolvedValue(AGREEMENT)
+
+  fireEvent.click(screen.getByRole('button', { name: /Read the subcontractor agreement/ }))
+  await screen.findByTestId('agreement-text')
+
+  // Reached the bottom? Not yet — so accepting is not offered.
+  expect(screen.getByRole('button', { name: /I agree/ }).disabled).toBe(true)
+  expect(post).not.toHaveBeenCalled()
+  expect(screen.getByText(/Scroll to the end to accept/)).toBeTruthy()
+})
+
+it('signs with the hash of the text it actually showed', async () => {
+  post.mockResolvedValue(INCOMPLETE)
+  const { container } = mount()
+  await screen.findByRole('button', { name: /Read the subcontractor agreement/ })
+  get.mockResolvedValue(AGREEMENT)
+
+  fireEvent.click(screen.getByRole('button', { name: /Read the subcontractor agreement/ }))
+  const box = await screen.findByTestId('agreement-text')
+
+  // Reach the bottom.
+  Object.defineProperty(box, 'scrollHeight', { value: 1000, configurable: true })
+  Object.defineProperty(box, 'clientHeight', { value: 500, configurable: true })
+  Object.defineProperty(box, 'scrollTop', { value: 500, configurable: true })
+  fireEvent.scroll(box)
+
+  const agree = screen.getByRole('button', { name: /I agree/ })
+  await waitFor(() => expect(agree.disabled).toBe(false))
+  fireEvent.click(agree)
+
+  // The hash is the whole point: the server refuses a mismatch rather than
+  // recording a signature against text nobody saw.
+  await waitFor(() => expect(post).toHaveBeenCalledWith(
+    '/api/crew/my-file/agreement', { sha256: AGREEMENT.sha256 }))
+  expect(container).toBeTruthy()
 })
 
 it('will not let a certificate be uploaded before its expiry date is set', async () => {

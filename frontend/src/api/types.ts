@@ -6636,7 +6636,17 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        get?: never;
+        /**
+         * Read Agreement
+         * @description The agreement text a sub is asked to accept, with its version and hash.
+         *
+         *     There was no such endpoint. The button said "Sign the subcontractor
+         *     agreement" and there was nothing anywhere to read — which mattered more
+         *     than a missing screen usually does, because "a contract that defines the
+         *     relationship" is one of the criteria Maine's employment standard counts,
+         *     and it was being asserted with no document behind it.
+         */
+        get: operations["read_agreement_api_crew_my_file_agreement_get"];
         put?: never;
         /**
          * Accept Agreement
@@ -6645,6 +6655,11 @@ export interface paths {
          *     Append-only: a second acceptance of the same version is a no-op rather than
          *     an update, because the value of this table is being able to say what
          *     somebody agreed to and when. Overwriting destroys exactly that.
+         *
+         *     The caller must echo the SHA-256 of the text it displayed. A mismatch means
+         *     the phone is showing a different document from the one on this server — a
+         *     stale tab across a deploy, most likely — and the honest answer is to refuse
+         *     and re-render rather than record a signature against text nobody saw.
          */
         post: operations["accept_agreement_api_crew_my_file_agreement_post"];
         delete?: never;
@@ -7817,6 +7832,11 @@ export interface components {
             can_view_full_schedule?: boolean | null;
             /** Home Address */
             home_address?: string | null;
+        };
+        /** AgreementAccept */
+        AgreementAccept: {
+            /** Sha256 */
+            sha256: string;
         };
         /** ApplyBody */
         ApplyBody: {
@@ -20249,7 +20269,7 @@ export interface operations {
             };
         };
     };
-    accept_agreement_api_crew_my_file_agreement_post: {
+    read_agreement_api_crew_my_file_agreement_get: {
         parameters: {
             query?: never;
             header?: never;
@@ -20265,6 +20285,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+        };
+    };
+    accept_agreement_api_crew_my_file_agreement_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AgreementAccept"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
