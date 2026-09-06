@@ -36,7 +36,7 @@ const PERSON = {
     completed: 12, on_day: 11, upcoming: 2, last_worked: '2026-09-02',
     pending_requests: 1, history_days: 90,
   },
-  paid_ytd: 1240.5, form_1099_due: true,
+  paid_ytd: 2140.5, form_1099_due: true, form_1099_threshold: 2000,
 }
 
 const BENCH = {
@@ -75,7 +75,12 @@ it('reports work as outcomes, with on-the-day as a count not a percentage', asyn
 it('shows the 1099 in September rather than in January', async () => {
   render(<BenchRoster />)
   await screen.findByText('Dana Fields')
-  expect(screen.getByText(/1,240\.50 this year/)).toBeTruthy()
+  // The threshold comes from the payload. It was $600 until the 2026 tax year
+  // and is inflation-indexed after 2026, so a literal in the UI goes stale
+  // silently — which is exactly what happened the first time this shipped.
+  expect(screen.getByText(/over \$2,000 this year/)).toBeTruthy()
+  expect(document.body.textContent).not.toContain('$600')
+  expect(screen.getByText(/2,140\.50 this year/)).toBeTruthy()
   expect(screen.getByText('1099 due')).toBeTruthy()
 })
 

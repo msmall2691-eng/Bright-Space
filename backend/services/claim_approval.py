@@ -166,6 +166,38 @@ def notify(job, req, others) -> None:
         pass
 
 
+def agreed_with(job, cleaner_id) -> bool:
+    """Is this the person who agreed the job's flat rate?
+
+    THE BUG THIS REPLACES: three call sites asked `cid in job.cleaner_ids`,
+    which is membership in the assignment list, not identity with the person
+    who negotiated the number. Add a helper to a job agreed at $100 with sub A
+    and both clock in — payroll paid A $100 and B $100. $200 out on a $100 job,
+    every pay run, silently.
+
+    Migration 106 put the answer on the row. The fallback covers rows written
+    before it that the backfill could not resolve: exactly one cleaner on the
+    job is unambiguous and is what payroll already paid them. Several cleaners
+    and nobody named is the ambiguous case the column exists to end — nobody
+    gets the flat rate (they fall through to the hourly ladder, which is
+    recoverable) rather than everybody getting it (which is money out the
+    door).
+
+    THREE call sites, not two. The payroll summary and the Square export were
+    fixed together in #774; services/sub_payouts.preview — the code that
+    generates what a subcontractor is actually PAID — had the same
+    `for cid in (j.cleaner_ids or [])` and was missed. Adding an hourly
+    employee to a $100 marketplace job wrote them a $100 vendor payout row,
+    which then feeds their 1099 year-to-date. Hence one function, here, rather
+    than a fourth copy of the expression somewhere else later.
+    """
+    named = getattr(job, "agreed_cleaner_id", None)
+    if named:
+        return str(named) == str(cleaner_id)
+    ids = [str(c) for c in (getattr(job, "cleaner_ids", None) or []) if str(c).strip()]
+    return len(ids) == 1 and ids[0] == str(cleaner_id)
+
+
 def release_if_displaced(db, job, *, notify=True) -> bool:
     """Clear the agreed rate when the sub who agreed it is no longer on the job.
 

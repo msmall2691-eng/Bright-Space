@@ -33,6 +33,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from database.models import Job, SubPayout, User
+from services.claim_approval import agreed_with
 from utils.dates import business_today, coerce_date
 
 logger = logging.getLogger(__name__)
@@ -116,6 +117,21 @@ def preview(db: Session, org_id: int, start: date, end: date) -> dict:
     for j in jobs:
         amount = round(float(j.agreed_rate or 0.0), 2)
         for cid in (j.cleaner_ids or []):
+            # ONE person agreed this price, and only they are owed it.
+            #
+            # This iterated every cleaner on the job and cut a full payout each,
+            # which is the same bug #774 fixed in the payroll summary and the
+            # Square export — in the one place that generates what a sub is
+            # actually paid. Add an hourly employee to a $100 marketplace job
+            # and they got a $100 vendor payout row, feeding a 1099 year-to-date
+            # for a W-2 employee.
+            #
+            # A job never carries two APPROVED claims: approval auto-declines
+            # every other pending request and closes the offer. So a second
+            # name on a marketplace job is somebody the office added, and they
+            # are on the clock, not on the price.
+            if not agreed_with(j, cid):
+                continue
             u = users.get(cid)
             if u is None:
                 # A crew ID with no login: recorded as a problem, never as a

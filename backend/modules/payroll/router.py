@@ -152,28 +152,10 @@ def _native_local_date(dt_utc_naive) -> date:
     return dt_utc_naive.replace(tzinfo=_tz.utc).astimezone(business_tz()).date()
 
 
-def _agreed_with(job, cleaner_id) -> bool:
-    """Is this the person who agreed the job's flat rate?
-
-    THE BUG THIS REPLACES: both call sites asked `cid in job.cleaner_ids`,
-    which is membership in the assignment list, not identity with the person
-    who negotiated the number. Add a helper to a job agreed at $100 with sub A
-    and both clock in — payroll paid A $100 and B $100. $200 out on a $100 job,
-    every pay run, silently.
-
-    Migration 106 put the answer on the row. The fallback covers rows written
-    before it that the backfill could not resolve: exactly one cleaner on the
-    job is unambiguous and is what payroll already paid them. Several cleaners
-    and nobody named is the ambiguous case the column exists to end — nobody
-    gets the flat rate (they fall through to the hourly ladder, which is
-    recoverable) rather than everybody getting it (which is money out the
-    door).
-    """
-    named = getattr(job, "agreed_cleaner_id", None)
-    if named:
-        return str(named) == str(cleaner_id)
-    ids = [str(c) for c in (getattr(job, "cleaner_ids", None) or []) if str(c).strip()]
-    return len(ids) == 1 and ids[0] == str(cleaner_id)
+# The one identity check, shared with services/sub_payouts — which had the same
+# bug in the place that actually generates what a sub is paid. It lives beside
+# release_if_displaced, because that is where agreed_cleaner_id gets written.
+from services.claim_approval import agreed_with as _agreed_with  # noqa: E402
 
 
 def _native_entry_hours(e) -> float:

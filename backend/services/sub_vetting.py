@@ -47,7 +47,18 @@ EXPIRING_KINDS = ("coi", "license")
 
 # Bump when the agreement text changes. Acceptance is per-version, so raising
 # this asks everyone to re-accept — which is the point of versioning it.
-CURRENT_AGREEMENT_VERSION = "2026-09"
+#
+# 2026-09 -> 2026-10: section 7 stated the 1099-NEC threshold as $600. The One
+# Big Beautiful Bill Act raised it to $2,000 for payments made after 31 Dec
+# 2025, so the figure was wrong for the first year this document covers.
+#
+# A NEW VERSION rather than an edit, deliberately. Every acceptance records a
+# SHA-256 of the exact bytes shown (migration 105); editing 2026-09 in place
+# would leave any past acceptance pointing at a hash that no longer matches
+# anything, which is precisely the failure that hash exists to catch. A
+# re-accept costs a sub one tap. Quietly changing what they agreed to costs
+# more than that.
+CURRENT_AGREEMENT_VERSION = "2026-10"
 
 DOCUMENT_LABELS = {
     "w9": "W-9",

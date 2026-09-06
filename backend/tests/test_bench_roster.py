@@ -212,21 +212,52 @@ def test_upcoming_work_is_counted_but_not_as_completed(made):
 
 # ── the 1099 you will owe them ──────────────────────────────────────────────
 
+def test_the_threshold_is_the_one_for_the_year_not_a_hard_coded_600():
+    """It was $600, and $600 is now wrong.
+
+    The One Big Beautiful Bill Act raised the 1099-NEC threshold to $2,000 for
+    payments made after 31 Dec 2025. This shipped flagging at $600, which
+    over-warns rather than under-warns — annoying rather than dangerous, but
+    wrong, and the same number was wrong in section 7 of the agreement, which
+    is a contract.
+    """
+    from services.bench import form_1099_threshold
+
+    assert form_1099_threshold(2025) == 600.0
+    assert form_1099_threshold(2026) == 2000.0
+    assert form_1099_threshold(2027) == 2000.0   # base; indexing not modelled
+
+
 def test_the_1099_threshold_is_flagged_in_september_not_january(made):
     uid, crew, _ = _mk_crew(made)
     db = SessionLocal()
-    db.add(SubPayout(user_id=uid, cleaner_id=crew, amount=450.0, status="due", org_id=1))
+    db.add(SubPayout(user_id=uid, cleaner_id=crew, amount=1800.0, status="due", org_id=1))
     db.commit(); db.close()
     me = _me(_api(_Admin()).get("/api/crew/bench").json(), uid)
-    assert me["paid_ytd"] == 450.0
+    assert me["paid_ytd"] == 1800.0
     assert me["form_1099_due"] is False
+    # The line is reported, not just the verdict — it moves, and a number with
+    # no stated threshold is one nobody can check.
+    assert me["form_1099_threshold"] == 2000.0
 
     db = SessionLocal()
-    db.add(SubPayout(user_id=uid, cleaner_id=crew, amount=200.0, status="paid", org_id=1))
+    db.add(SubPayout(user_id=uid, cleaner_id=crew, amount=300.0, status="paid", org_id=1))
     db.commit(); db.close()
     me = _me(_api(_Admin()).get("/api/crew/bench").json(), uid)
-    assert me["paid_ytd"] == 650.0
+    assert me["paid_ytd"] == 2100.0
     assert me["form_1099_due"] is True
+
+
+def test_the_running_total_is_kept_regardless_of_the_filing_line(made):
+    """Tracking is not gated on reporting. The line moves, states differ, and
+    the total is what you need either way."""
+    uid, crew, _ = _mk_crew(made)
+    db = SessionLocal()
+    db.add(SubPayout(user_id=uid, cleaner_id=crew, amount=120.0, status="due", org_id=1))
+    db.commit(); db.close()
+    me = _me(_api(_Admin()).get("/api/crew/bench").json(), uid)
+    assert me["paid_ytd"] == 120.0, "a small total still has to be visible"
+    assert me["form_1099_due"] is False
 
 
 def test_a_voided_payout_was_never_money(made):
