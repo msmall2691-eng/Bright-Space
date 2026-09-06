@@ -666,20 +666,33 @@ function DuplicateReviewPanel({ schedules, clientsById, reviewedKeys, onToggleRe
 
   const doCancel = async (s) => {
     const n = s.upcoming_job_count || 0
-    const ok = await confirmDialog(
+    // Same choice as the detail page's cancel: the losing duplicate's booked
+    // visits are exactly the ones cluttering the calendar, so offering to
+    // leave them there was never the helpful default it looked like.
+    const answer = await confirmDialog(
       `Cancel “${s.title || 'Untitled'}”?\n\nNo new visits will be generated for this series.`
-      + (n > 0
-        ? ` Its ${n} already-scheduled visit${n === 1 ? ' stays' : 's stay'} on the calendar until you remove them individually.`
-        : '')
+      + (n > 0 ? ` It still has ${n} visit${n === 1 ? '' : 's'} booked.` : '')
       + ` Past and completed visits are untouched.`,
-      { title: 'Cancel series', confirmLabel: 'Cancel series', cancelLabel: 'Never mind', danger: true },
+      {
+        title: 'Cancel series',
+        confirmLabel: n > 0 ? `Cancel series and its ${n} visit${n === 1 ? '' : 's'}` : 'Cancel series',
+        altLabel: n > 0 ? 'Keep the booked visits' : undefined,
+        cancelLabel: 'Never mind',
+        danger: true,
+      },
     )
-    if (!ok) return
+    if (!answer) return
     setBusyId(s.id)
     try {
       await del(`/api/recurring/${s.id}`)
+      let removed = 0
+      if (answer !== 'alt') {
+        removed = (await post(`/api/recurring/${s.id}/cancel-upcoming`, {}))?.cancelled_count || 0
+      }
       setActioned(a => ({ ...a, [s.id]: 'cancelled' }))
-      toast.success('Series cancelled')
+      toast.success(removed > 0
+        ? `Series cancelled — ${removed} booked visit${removed === 1 ? '' : 's'} taken off the schedule`
+        : 'Series cancelled')
       onChanged?.()
     } catch (e) {
       toast.error(e.message || 'Failed to cancel series')
@@ -916,11 +929,50 @@ function SeriesDetail({ id, onBack, onChanged, toast }) {
     } finally { setBusy('') }
   }
   const cancelSeries = async () => {
-    if (!(await confirmDialog('Cancel this recurring series? Existing scheduled jobs stay on the calendar; no new ones will be generated.', { confirmLabel: 'Cancel series', cancelLabel: 'Never mind', danger: true }))) return
+    // Visits already on the calendar for this series, from today on. Counted
+    // from generatedDates (fetched with the page) rather than a fresh request:
+    // these are real Job rows, and the answer only has to be right enough to
+    // put a number in the question — the server reports what it actually
+    // cancelled afterwards.
+    const todayIso = new Date().toISOString().slice(0, 10)
+    const booked = [...generatedDates].filter(d => d >= todayIso).length
+
+    // Cancelling used to stop generation and leave every booked visit sitting
+    // on the schedule — up to eight weeks of them — with the confirm text
+    // explaining that she could go remove them one at a time. That reads as
+    // "the button didn't work", and it's what she reported, twice.
+    const answer = await confirmDialog(
+      booked > 0
+        ? `Cancel this recurring series?\n\nNo new visits will be generated.`
+          + ` It still has ${booked} visit${booked === 1 ? '' : 's'} booked from today on.`
+        : 'Cancel this recurring series?\n\nNo new visits will be generated.',
+      {
+        title: 'Cancel series',
+        confirmLabel: booked > 0
+          ? `Cancel series and its ${booked} visit${booked === 1 ? '' : 's'}`
+          : 'Cancel series',
+        // Only offered when there's something to keep. Someone does want this:
+        // "stop the contract, but Thursday is still coming."
+        altLabel: booked > 0 ? 'Keep the booked visits' : undefined,
+        cancelLabel: 'Never mind',
+        danger: true,
+      },
+    )
+    if (!answer) return
     setBusy('delete')
     try {
       await del(`/api/recurring/${id}`)
-      toast.success('Series cancelled')
+      // Cancelling the visits is a SECOND call on purpose: the series is
+      // already cancelled by the time this runs, so a failure here leaves her
+      // with the thing she asked for plus an honest error, not a half-written
+      // state she can't see.
+      let removed = 0
+      if (answer !== 'alt') {
+        removed = (await post(`/api/recurring/${id}/cancel-upcoming`, {}))?.cancelled_count || 0
+      }
+      toast.success(removed > 0
+        ? `Series cancelled — ${removed} booked visit${removed === 1 ? '' : 's'} taken off the schedule`
+        : 'Series cancelled')
       onBack()
       onChanged?.()
     } catch (e) {
@@ -1207,6 +1259,64 @@ function HealthPanel({ onClose, onChanged, onOpenSeries, onOpenDuplicates, onCle
         return { short: 'Mark ended', run: () => act(issue, async () => {
           await patch(`/api/recurring/${id}`, { active: false })
         }, 'Marked ended — history kept') }
+      // The series is already closed, so nothing regenerates and there is no
+      // "which copy do I keep" question — but it still cancels real Jobs, so
+      // it gets the danger confirm and stays out of the batch fixes.
+      case 'cancelled_with_upcoming': {
+        const n = prob.stranded ?? issue.upcoming_job_count ?? 0
+        const noun = n === 1 ? 'visit' : 'visits'
+        return { short: `Remove ${n} ${noun}`, danger: true, run: async () => {
+          const ok = await confirmDialog(
+            `Take ${n === 1 ? 'the 1 remaining visit' : `all ${n} remaining visits`} for `
+            + `“${issue.title || 'Untitled'}” (${issue.client_name || 'this client'}) `
+            + 'off the calendar? The series is already closed, so nothing will regenerate. '
+            + 'Completed visits and history are kept.',
+            { title: 'Remove these visits?', confirmLabel: `Remove ${n} ${noun}`, danger: true },
+          )
+          if (!ok) return
+          act(issue, async () => {
+            const r = await post(`/api/recurring/${id}/cancel-upcoming`)
+            toast.success(`Removed ${r?.cancelled_count ?? n} ${noun} from the calendar`)
+          })
+        } }
+      }
+      // Linking IS the fix, not tidying: with no property the series can't
+      // insert a Job at all (property_id is NOT NULL), so it has been silently
+      // dead. Generate straight after, or she'd link it and still see nothing.
+      case 'no_property':
+        if (prob.suggest_property_id) {
+          return { short: `Link to ${prob.suggest_property_label}`, run: () => act(issue, async () => {
+            await patch(`/api/recurring/${id}`, { property_id: prob.suggest_property_id })
+            const r = await post(`/api/recurring/${id}/generate`)
+            const n = r?.created ?? r?.generated ?? 0
+            toast.success(n ? `Linked — ${n} visits generated` : 'Linked to the property')
+          }) }
+        }
+        // Two houses on the client: the scan withholds the suggestion rather
+        // than guess which one, so this falls back to opening the series.
+        return { short: 'Open series', run: () => { onClose(); onOpenSeries(id) } }
+      // Cancels a real series AND takes its booked visits off the calendar, so
+      // it names both in the confirm and never runs without one.
+      case 'reschedule_leftover':
+        return { short: 'Cancel the old one', danger: true, run: async () => {
+          const n = issue.upcoming_job_count || 0
+          const ok = await confirmDialog(
+            `Cancel “${issue.title || 'Untitled'}” for `
+            + `${issue.client_name || 'this client'}?\n\n${prob.message}\n\n`
+            + (n ? `Its ${n} booked ${n === 1 ? 'visit comes' : 'visits come'} off the calendar too. ` : '')
+            + 'The running series carries on. History is kept, and this cannot be resumed.',
+            { title: 'Cancel the old series?', confirmLabel: 'Cancel series', danger: true },
+          )
+          if (!ok) return
+          act(issue, async () => {
+            await del(`/api/recurring/${id}`)
+            const r = await post(`/api/recurring/${id}/cancel-upcoming`)
+            const c = r?.cancelled_count || 0
+            toast.success(c
+              ? `Cancelled — ${c} booked ${c === 1 ? 'visit' : 'visits'} removed`
+              : 'Series cancelled')
+          })
+        } }
       case 'active_no_upcoming':
         return { short: 'Generate visits', run: () => act(issue, async () => {
           const r = await post(`/api/recurring/${id}/generate`)
@@ -1224,6 +1334,24 @@ function HealthPanel({ onClose, onChanged, onOpenSeries, onOpenDuplicates, onCle
         } }
       case 'duplicate':
         return { short: 'Review duplicates', run: () => { onClose(); onOpenDuplicates() } }
+      case 'duplicate_paused':
+        // Per-row it's the same act as cancelling a leftover — the difference
+        // is only that the scan can now tell you it isn't a lone one. The
+        // batch version ("Cancel the extra copies") keeps one per group.
+        return { short: 'Cancel this copy', danger: true, run: async () => {
+          const n = prob.partners?.length ?? 0
+          const context = prob.has_live_copy
+            ? 'A running series already covers this house and time — that one carries on.'
+            : `There ${n === 1 ? 'is 1 other paused copy' : `are ${n} other paused copies`} of it.`
+          const ok = await confirmDialog(
+            `Cancel this copy of “${issue.title || 'Untitled'}” for `
+            + `${issue.client_name || 'this client'}? ${context} `
+            + 'History is kept and this cannot be resumed.',
+            { title: 'Cancel this copy?', confirmLabel: 'Cancel copy', danger: true },
+          )
+          if (!ok) return
+          act(issue, () => del(`/api/recurring/${id}`), 'Copy cancelled')
+        } }
       default:
         return { short: 'Open series', run: () => { onClose(); onOpenSeries(id) } }
     }

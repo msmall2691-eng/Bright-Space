@@ -11,8 +11,16 @@ from zoneinfo import ZoneInfo
 
 from database.db import get_db
 from database.models import (
-    Job, Client, ICalEvent, CleanerTimeOff, Property, RecurrenceException, AppSetting,
+    Job, Client, ICalEvent, CleanerTimeOff, JobClaimRequest, JobHelper, Property,
+    RecurrenceException, AppSetting, User,
 )
+# Aliased, and it must stay aliased: this module defines its own Pydantic
+# `JobResponse` schema below, which would shadow a plain import of the ORM
+# model of the same name — the class statement wins, and the claim-approval
+# path would try to write a request schema to the database. The existing
+# `_JobResponse` local imports elsewhere in this file exist for the same
+# reason.
+from database.models import JobResponse as JobResponseRow
 from modules.auth.router import get_current_user, require_role, current_org_id, resolve_org_id
 from utils.activity_logger import (
     log_job_created, log_job_status_change, log_calendar_event, log_activity
@@ -82,9 +90,24 @@ class JobUpdate(BaseModel):
     # Crew app Phase 3: put the job "up for grabs" on every cleaner's phone
     # (claiming flips it back off atomically, crew router's /claim).
     open_for_claims: Optional[bool] = None
+    # Marketplace pivot (migration 097): the asking rate shown to subs when
+    # open_for_claims is on. NULL is fine (a re-opened job may not need a new
+    # rate) — the crew app just won't show a number until one's set.
+    posted_rate: Optional[float] = None
 
 JOB_TYPES = {"residential", "deep_clean", "commercial", "str_turnover", "one_time"}
 JOB_STATUSES = {"unscheduled", "scheduled", "in_progress", "completed", "cancelled"}
+# Fields where sending an explicit null MEANS "clear it", rather than "I didn't
+# say". Everything else on JobUpdate keeps `exclude_none` semantics, because the
+# job edit modal sends every field it knows and a bare None there means absent.
+#
+# `posted_rate` had no way back to NULL — which is a state the model's own
+# comment calls valid ("a re-opened job may not need a new rate") and which
+# JobDetail's asking-rate box already asks for when you empty it. The request
+# was honest, the server dropped it, and the old number came back on reload.
+# Distinguishing the two cases needs pydantic's `model_fields_set`, not the
+# value: absent and null both arrive as None.
+CLEARABLE_FIELDS = frozenset({"posted_rate"})
 # Native-payroll per-job override (Job.pay_mode). "auto" = the automatic rule.
 PAY_MODES = {"auto", "hourly", "piece"}
 
@@ -421,6 +444,9 @@ def auto_assign_unassigned_turnovers(db: Session, *, dry_run: bool = False,
 
     dry_run=True computes the picks without writing them (for a preview).
 
+    Jobs OPEN TO THE BENCH are skipped entirely — see the filter below. This
+    function assigns, and a subcontractor is never assigned.
+
     org_id scopes every read/write to one tenant (MT-2) when it's an int: the
     endpoint passes the caller's org so a tenant admin can't read or reassign
     another org's jobs. org_id=None (the background scheduler) spans all orgs,
@@ -435,7 +461,20 @@ def auto_assign_unassigned_turnovers(db: Session, *, dry_run: bool = False,
     if isinstance(org_id, int):
         q = q.filter(or_(Job.org_id == org_id, Job.org_id.is_(None)))
     jobs = q.order_by(Job.scheduled_date, Job.start_time).all()
-    jobs = [j for j in jobs if not (j.cleaner_ids or [])][:limit]
+    jobs = [j for j in jobs if not (j.cleaner_ids or [])]
+    # A job on the open board belongs to whoever ASKS for it. Auto-assign is
+    # the employee path: it picks the least-loaded person and puts the work on
+    # them, which is precisely what a subcontractor arrangement cannot do — a
+    # sub requests or accepts, the office never assigns. Without this filter
+    # the Saturday window (migration 101) would post the day's turnovers to
+    # the bench on Wednesday and this tick would assign them out from under it
+    # on Thursday morning, with nobody having agreed to anything.
+    #
+    # posted_rate as well as open_for_claims: a job whose rate has been named
+    # is a job somebody was invited to price their own work against, whether
+    # or not the board flag survived an edit.
+    jobs = [j for j in jobs
+            if not j.open_for_claims and not j.posted_rate][:limit]
 
     assigned, unassignable = [], []
     for job in jobs:
@@ -521,10 +560,62 @@ def _turnover_lead_hours(j: Job, next_arrival: Optional[ICalEvent],
         return None
 
 
+def strip_office_only_for_crew(payload, role):
+    """Take off a job payload the parts a cleaner has no business enumerating.
+
+    TWO THINGS NOW, and the second arrived with migration 107 — the name is
+    `strip_office_only_*` rather than `strip_rates_*` because "rates" stopped
+    being the whole list and a function whose name undersells what it removes
+    is one somebody will forget to extend again.
+
+    MONEY. `job_to_dict` serializes posted_rate and agreed_rate.
+
+    `job_to_dict` serializes posted_rate and agreed_rate, and four endpoints on
+    this router allow the `cleaner` role: GET /api/jobs, /api/jobs/{id},
+    /api/jobs/{id}/details and /api/schedule/week. So any sub could enumerate
+    what every OTHER sub had agreed on every job — their competitors' prices,
+    from the office's own API. The crew payloads are carefully stripped of door
+    codes and the customer's identity; this was not stripped at all.
+
+    A sub is not deprived of anything they need. The board they bid from is
+    /api/crew/my-day, which builds its own rows and deliberately carries
+    posted_rate — the asking price of a job they may claim — and their own
+    agreed rate once they have won it. This closes a side door, not the front
+    one.
+
+    HELPERS. `helpers` carries the NAME AND PHONE NUMBER of people a sub
+    brought — third parties who have no account here and never agreed to
+    anything with TMCC. Left in, any sub could enumerate every other sub's
+    assistants and their mobile numbers through the office's own API, which is
+    a worse version of the same side door: at least a rate belongs to somebody
+    who signed up. A sub reads their OWN helpers from
+    /api/crew/jobs/{id}/helpers and their own job cards, which is all they need.
+
+    Mutates in place and returns the payload; a job dict here is freshly built
+    per request, never a shared object.
+    """
+    if role != "cleaner":
+        return payload
+    rows = payload if isinstance(payload, list) else [payload]
+    for row in rows:
+        if isinstance(row, dict):
+            row.pop("posted_rate", None)
+            row.pop("agreed_rate", None)
+            row.pop("helpers", None)
+    return payload
+
+
+# The old name, kept for one release: `test_agent_ws_and_rate_privacy` and any
+# out-of-tree caller import it directly.
+strip_rates_for_crew = strip_office_only_for_crew
+
+
 def job_to_dict(j: Job, client: Client = None, effective_date=None,
                 booking_event: ICalEvent = None, next_arrival: ICalEvent = None,
                 property_name: Optional[str] = None, lead_buffer_hours: float = 3.0,
-                property_check_in_time: Optional[str] = None) -> dict:
+                property_check_in_time: Optional[str] = None,
+                pending_claim_requests: int = 0,
+                helpers: Optional[list] = None) -> dict:
     # Resolve client name if not passed in
     client_name = ""
     if client:
@@ -574,6 +665,28 @@ def job_to_dict(j: Job, client: Client = None, effective_date=None,
         # Crew app Phase 3: "up for grabs" flag the office toggles; claiming
         # flips it back off (crew router's /claim).
         "open_for_claims": bool(getattr(j, "open_for_claims", False)),
+        # Marketplace pivot (migration 097): asking rate (posted) vs. the
+        # final rate once a claim request is approved (agreed) — payroll
+        # reads agreed_rate, never posted_rate.
+        "posted_rate": j.posted_rate,
+        "agreed_rate": j.agreed_rate,
+        # How many subs are waiting on an answer for this job. The office was
+        # told a request had arrived by web push and by NOTHING ELSE — no push
+        # subscription, push switched off, VAPID unset, and the request sat
+        # unseen until somebody happened to open that job. Counted here so the
+        # screens the office already loads can say it (review finding 11).
+        #
+        # Callers that don't pass it get 0 rather than a wrong number: a
+        # single-job endpoint has its own claim-requests call, and inventing a
+        # per-row query in the shared serializer would put an N+1 on the
+        # calendar's hot path.
+        "pending_claim_requests": pending_claim_requests,
+        # Who the subs on this job said they are bringing (migration 107).
+        # READ-ONLY here and everywhere on the office side: a sub hires their
+        # own assistants, so the office is told who is going to be in the
+        # customer's house — which is a real insurance and operational need —
+        # and does not get a say in it. There is no office write path at all.
+        "helpers": helpers or [],
         "gcal_event_id": j.gcal_event_id,
         "created_at": j.created_at.isoformat() if j.created_at else None,
         "updated_at": j.updated_at.isoformat() if j.updated_at else None,
@@ -688,6 +801,7 @@ def get_jobs(
     paginated: bool = False,
     db: Session = Depends(get_db),
     org_id: int = Depends(current_org_id),
+    current_user=Depends(get_current_user),
 ):
     # Job/Visit unification (PR-C): the pre-migration code had a `visit_min`
     # subquery so consumers could bucket by the earliest Visit date when
@@ -797,6 +911,30 @@ def get_jobs(
             for pid, evs in events_by_prop.items():
                 evs.sort(key=lambda e: e.checkin_date or "")
 
+        # One query for the whole page, and only when something on it is
+        # actually posted — a shop with nothing on the board pays nothing
+        # (brightbase-economy). ix_job_claim_requests_job_status covers it.
+        # Same bulk-and-gate shape as the claim counts below: one query for the
+        # page, and only for jobs that actually have somebody on them.
+        helpers_by_job: dict = {}
+        staffed_ids = [j.id for j, _ in rows if (j.cleaner_ids or [])]
+        if staffed_ids:
+            for h in (db.query(JobHelper)
+                      .filter(JobHelper.job_id.in_(staffed_ids))
+                      .order_by(JobHelper.id).all()):
+                helpers_by_job.setdefault(h.job_id, []).append(
+                    {"id": h.id, "name": h.name, "phone": h.phone,
+                     "sub_cleaner_id": h.sub_cleaner_id})
+
+        pending_by_job: dict = {}
+        open_ids = [j.id for j, _ in rows if getattr(j, "open_for_claims", False)]
+        if open_ids:
+            for jid, n in (db.query(JobClaimRequest.job_id, func.count(JobClaimRequest.id))
+                           .filter(JobClaimRequest.job_id.in_(open_ids),
+                                   JobClaimRequest.status == "pending")
+                           .group_by(JobClaimRequest.job_id).all()):
+                pending_by_job[jid] = n
+
         for j, eff in rows:
             booking = None
             next_arrival = None
@@ -822,15 +960,18 @@ def get_jobs(
                                         next_arrival=next_arrival,
                                         property_name=prop_names.get(j.property_id),
                                         lead_buffer_hours=lead_buffer_hours,
-                                        property_check_in_time=prop_meta.get(j.property_id, (None, None))[1]))
+                                        property_check_in_time=prop_meta.get(j.property_id, (None, None))[1],
+                                        pending_claim_requests=pending_by_job.get(j.id, 0),
+                                        helpers=helpers_by_job.get(j.id)))
+    role = getattr(current_user, "role", None)
     if paginated:
         return {
-            "items": rendered,
+            "items": strip_office_only_for_crew(rendered, role),
             "total": total,
             "limit": limit,
             "offset": offset,
         }
-    return rendered
+    return strip_office_only_for_crew(rendered, role)
 
 
 @router.post("", status_code=201, dependencies=[Depends(require_role("admin", "manager"))])
@@ -2689,8 +2830,217 @@ def decline_reschedule(job_id: int, db: Session = Depends(get_db), org_id: int =
     return {"status": "declined", "job_id": job.id}
 
 
+# ── Marketplace claim requests (migration 097) ───────────────────────────────
+# The office posts a job open (open_for_claims + posted_rate); subs REQUEST it
+# via crew router's POST /jobs/{id}/claim, optionally countering the rate.
+# These three endpoints are where the office reviews and decides — the one
+# place a claim request actually becomes a schedule assignment.
+
+def _claim_request_heads_up(db: Session, job, pending, org_id) -> dict:
+    """What the office should know about each still-undecided requester, keyed
+    by cleaner_id. Never a refusal — see `approve_claim_request` below.
+
+    Two facts, both of which the office's own assign flow would 409 on and
+    which approval said nothing about:
+
+      * the requester has APPROVED TIME OFF over this date;
+      * they are already on another job that overlaps these hours.
+
+    One query each for the whole pending set, not one per row — this rides a
+    screen the office opens to make one decision, and N+1 on a bench of twenty
+    would be twenty queries to say "nothing to report" (brightbase-economy).
+
+    Pending only. A warning on a request decided last month is noise about a
+    decision nobody can take back.
+    """
+    if not pending:
+        return {}
+    cids = [r.cleaner_id for r in pending]
+    out: dict = {}
+
+    for cid, off in _find_unavailable_cleaners(
+            db, cleaner_ids=cids, scheduled_date=job.scheduled_date, org_id=org_id):
+        why = f" ({off.reason})" if off.reason else ""
+        out.setdefault(str(cid), []).append(
+            f"Booked off {off.start_date}–{off.end_date}{why} — they asked anyway")
+
+    for cid, other in _find_cleaner_conflicts(
+            db, cleaner_ids=cids, scheduled_date=job.scheduled_date,
+            start_time=job.start_time, end_time=job.end_time,
+            exclude_job_id=job.id, org_id=org_id):
+        when = _to_time(other.start_time)
+        at = f" at {when.strftime('%H:%M')}" if when else ""
+        out.setdefault(str(cid), []).append(
+            f"Already on “{other.title or f'job #{other.id}'}”{at} — "
+            f"approving would double-book them")
+
+    return out
+
+
+def _claim_request_row(r: JobClaimRequest, names_by_cid: dict,
+                       heads_up: dict | None = None) -> dict:
+    return {
+        "id": r.id,
+        "job_id": r.job_id,
+        "cleaner_id": r.cleaner_id,
+        "cleaner_name": names_by_cid.get(r.cleaner_id, r.cleaner_id),
+        "requested_rate": r.requested_rate,
+        "message": r.message,
+        "status": r.status,
+        "created_at": r.created_at.isoformat() if r.created_at else None,
+        "decided_at": r.decided_at.isoformat() if r.decided_at else None,
+        # Things the office should weigh before handing this person the job.
+        # Empty on a decided row and on a requester with a clear diary — a
+        # warning that appears on every row is furniture. Decided rows are
+        # empty because the caller only computes the map for pending requests,
+        # not because of a second guard here: one place to get it wrong beats
+        # two, and a redundant guard is a guard no test can hold honest.
+        "heads_up": (heads_up or {}).get(str(r.cleaner_id), []),
+    }
+
+
+@router.get("/{job_id}/claim-requests", dependencies=[Depends(require_role("admin", "manager"))])
+def list_claim_requests(job_id: int, db: Session = Depends(get_db), org_id: int = Depends(current_org_id)):
+    """All requests (pending and decided) for one posted job, newest first —
+    the office's review list. Cleaner IDs are resolved to display names in
+    one query rather than N (same pattern board_service uses elsewhere)."""
+    job = _get_owned_job(job_id, db, org_id)
+    rows = (db.query(JobClaimRequest)
+            .filter(JobClaimRequest.job_id == job.id)
+            .order_by(JobClaimRequest.created_at.desc())
+            .all())
+    cleaner_ids = {r.cleaner_id for r in rows}
+    names = {}
+    if cleaner_ids:
+        for u in db.query(User).filter(User.cleaner_id.in_(cleaner_ids)).all():
+            names[u.cleaner_id] = u.full_name or u.email
+    heads_up = _claim_request_heads_up(
+        db, job, [r for r in rows if r.status == "pending"], org_id)
+    return {
+        "job_id": job.id,
+        "posted_rate": job.posted_rate,
+        "requests": [_claim_request_row(r, names, heads_up) for r in rows],
+    }
+
+
+@router.post("/{job_id}/claim-requests/{request_id}/approve",
+             dependencies=[Depends(require_role("admin", "manager"))])
+def approve_claim_request(job_id: int, request_id: int, db: Session = Depends(get_db),
+                          org_id: int = Depends(current_org_id),
+                          current_user: User = Depends(require_role("admin", "manager"))):
+    """Approve one request: assigns the sub, sets the FINAL agreed_rate
+    (their counter if they made one, else the posted rate), closes the
+    offer, and auto-declines every other pending request on this job — a
+    job can only go to one winner.
+
+    WHAT IT CHECKS, and what it deliberately does not. This used to claim it
+    ran "the same conflict/availability checks the office's normal assign flow
+    uses (one implementation, no drift)". It ran one of the three, and the
+    sentence made the other two look like a bug rather than a decision:
+
+      * DOUBLE-BOOKING is refused (`_find_cleaner_conflicts`). Two jobs at the
+        same hour is not a preference, it is impossible.
+      * APPROVED TIME OFF is NOT refused. `brightbase-marketplace` Rule 0:
+        availability is a signal, never a block and never an obligation. A sub
+        who ASKS for a job on a day they had booked off has overridden their
+        own signal by asking, and refusing would be the office overruling a
+        subcontractor about their own time — the control that turns a
+        contractor into an employee.
+      * DAILY CAPACITY is NOT refused, for the same reason plus a plainer one:
+        a cap on how many jobs somebody may work in a day is a limit on their
+        hours, and a sub is paid per job, not per hour.
+
+    What was actually missing is that nobody was TOLD. `list_claim_requests`
+    now carries `heads_up` on each pending request, so the office sees "booked
+    off Sept 10–12 — they asked anyway" beside the name and makes the call.
+
+    CONCURRENCY (scheduling-invariants R5): the Job row is locked and
+    open_for_claims re-read under that lock. This is the step the old
+    first-come-first-served claim used to lock, and it needs it more: two
+    approvals racing (two office logins, or one impatient double-tap on a
+    slow phone) would otherwise both pass the open check, put BOTH subs on
+    the job, leave agreed_rate at whichever write landed last, and send two
+    people a "You got the job!" push. On Postgres this is SELECT ... FOR
+    UPDATE; SQLite serializes writers.
+    """
+    org_id = resolve_org_id(org_id, db)
+    job = _get_owned_job(job_id, db, org_id)
+    job = (db.query(Job).filter(Job.id == job.id).with_for_update().first())
+    req = db.query(JobClaimRequest).filter(
+        JobClaimRequest.id == request_id, JobClaimRequest.job_id == job.id,
+    ).with_for_update().first()
+    if not req:
+        raise HTTPException(status_code=404, detail="Request not found")
+
+    # The approval itself lives in services/claim_approval.py (R6, and so the
+    # auto-approver calls the SAME code rather than a second copy of it). The
+    # locks above stay here: they belong to the transaction this handler owns.
+    from services.claim_approval import ClaimApprovalError, approve
+    try:
+        return approve(db, job, req, org_id=org_id, actor_user_id=current_user.id,
+                       find_conflicts=_find_cleaner_conflicts,
+                       conflict_detail=_conflict_detail,
+                       log_activity=log_activity)
+    except ClaimApprovalError as e:
+        raise HTTPException(status_code=e.status, detail=e.message)
+
+
+@router.get("/{job_id}/margin", dependencies=[Depends(require_role("admin", "manager"))])
+def job_margin(job_id: int, pay: Optional[float] = None, db: Session = Depends(get_db),
+               org_id: int = Depends(current_org_id)):
+    """What this job bills, what it would pay, and what's left.
+
+    `pay` is a what-if: the office asks "what's the margin if I post this at
+    $120" WITHOUT writing $120 down first. That is the whole point — the number
+    is only useful before the price is set, and a margin you can only see after
+    committing to a rate is a margin you find out about in the payroll run.
+
+    Always says where the billed figure came from. A margin computed from a
+    guess, shown as confidently as one computed from an invoice, is a number
+    somebody will price the next ten jobs against.
+    """
+    from services.job_margin import margin
+
+    oid = resolve_org_id(org_id, db)
+    job = _get_owned_job(job_id, db, oid)
+    return margin(db, job, oid, pay=pay)
+
+
+@router.post("/{job_id}/claim-requests/{request_id}/decline",
+             dependencies=[Depends(require_role("admin", "manager"))])
+def decline_claim_request(job_id: int, request_id: int, db: Session = Depends(get_db),
+                          org_id: int = Depends(current_org_id),
+                          current_user: User = Depends(require_role("admin", "manager"))):
+    """Decline a single request without approving anyone — the job stays
+    open for other pending requests (or new ones) unless the office also
+    turns off "Open to crew" separately."""
+    org_id = resolve_org_id(org_id, db)
+    job = _get_owned_job(job_id, db, org_id)
+    req = db.query(JobClaimRequest).filter(
+        JobClaimRequest.id == request_id, JobClaimRequest.job_id == job.id,
+    ).with_for_update().first()
+    if not req:
+        raise HTTPException(status_code=404, detail="Request not found")
+    if req.status != "pending":
+        raise HTTPException(status_code=409, detail=f"This request is already {req.status}.")
+    req.status = "declined"
+    req.decided_at = datetime.now(timezone.utc)
+    req.decided_by = current_user.id
+    db.commit()
+    try:
+        from services.push_service import notify_user
+        if req.user_id:
+            notify_user(req.user_id, "Job request declined",
+                        f"Your request for {job.title} on {job.scheduled_date} was declined.",
+                        url="/crew", category="crew")
+    except Exception:
+        pass
+    return {"status": "declined", "job_id": job.id, "request_id": req.id}
+
+
 @router.get("/{job_id}", dependencies=[Depends(require_role("admin", "manager", "viewer", "cleaner"))])
-def get_job(job_id: int, db: Session = Depends(get_db), org_id: int = Depends(current_org_id)):
+def get_job(job_id: int, db: Session = Depends(get_db), org_id: int = Depends(current_org_id),
+            current_user=Depends(get_current_user)):
     org_id = resolve_org_id(org_id, db)
     job = db.query(Job).options(joinedload(Job.client)).filter(
         Job.id == job_id,
@@ -2698,7 +3048,8 @@ def get_job(job_id: int, db: Session = Depends(get_db), org_id: int = Depends(cu
     ).first()
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
-    return _job_to_dict_enriched(db, job)
+    return strip_office_only_for_crew(_job_to_dict_enriched(db, job),
+                                getattr(current_user, "role", None))
 
 
 @router.get("/{job_id}/details", dependencies=[Depends(require_role("admin", "manager", "viewer", "cleaner"))])
@@ -2753,7 +3104,8 @@ def get_job_details(job_id: int, db: Session = Depends(get_db), org_id: int = De
     ).order_by(Activity.created_at.desc()).limit(50).all()
 
     return {
-        **_job_to_dict_enriched(db, job),
+        **strip_office_only_for_crew(_job_to_dict_enriched(db, job),
+                               getattr(current_user, "role", None)),
         # Photos the office Complete modal stored inline on Job.photos (data
         # URLs / pasted links) BEFORE the job_photos table existed. Emitted so
         # the JobDetail gallery can finally show them — they used to be
@@ -2971,7 +3323,14 @@ def update_job(job_id: int, data: JobUpdate, db: Session = Depends(get_db), org_
     prev_job_type = job.job_type or "residential"
     prev_scheduled_date = job.scheduled_date
     prev_start_time = job.start_time
+    # Posting is a TRANSITION, not a state. A later edit that happens to send
+    # open_for_claims=True again on an already-posted job must not re-announce
+    # it to the whole bench.
+    prev_open_for_claims = bool(getattr(job, "open_for_claims", False))
     updates = data.model_dump(exclude_none=True)
+    for field in CLEARABLE_FIELDS & data.model_fields_set:
+        if getattr(data, field, "unset") is None:
+            updates[field] = None
     allow_conflicts = updates.pop("allow_conflicts", False)
     # Per-move notify override — pull it out before the setattr loop (it's not a
     # Job column). None → use the Settings toggle; True/False → force this move's
@@ -2989,6 +3348,35 @@ def update_job(job_id: int, data: JobUpdate, db: Session = Depends(get_db), org_
         raise HTTPException(status_code=400, detail=f"Unknown pay_mode '{updates['pay_mode']}'")
     if updates.get("pay_rate_bump") is not None and updates["pay_rate_bump"] < 0:
         raise HTTPException(status_code=400, detail="pay_rate_bump cannot be negative")
+    if updates.get("posted_rate") is not None and updates["posted_rate"] <= 0:
+        raise HTTPException(status_code=400, detail="posted_rate must be positive")
+
+    # A JOB THAT ALREADY HAS SOMEBODY ON IT IS NOT AN OFFER.
+    #
+    # Posting was gated only on status == "scheduled", and approval APPENDS to
+    # cleaner_ids rather than replacing. So: post a job at $80, assign Maria
+    # directly, forget to close the offer, Dan asks, office approves Dan — and
+    # the job now has Maria AND Dan on it, with nothing having said that
+    # approving added a second person rather than filling a vacancy.
+    #
+    # Before migration 106 that also paid both of them $80. It no longer does,
+    # but the composition is still wrong: work priced for one person, quietly
+    # staffed with two. This guard is the cheapest place to end it — the
+    # office unassigns first, deliberately, and then posts.
+    #
+    # Checked against the POST-update assignment, so one request that clears
+    # cleaner_ids and posts in the same breath is still allowed. That is a
+    # coherent thing to want; it is only the silent version that is the bug.
+    if updates.get("open_for_claims") is True:
+        after = (updates.get("cleaner_ids")
+                 if "cleaner_ids" in updates else (job.cleaner_ids or []))
+        if [c for c in (after or []) if str(c).strip()]:
+            raise HTTPException(
+                status_code=409,
+                detail="This job is already assigned. Take the cleaner off it "
+                       "first, then post it — approving a request on an "
+                       "assigned job would add a second person, not fill a "
+                       "vacancy.")
     if "status" in updates and updates["status"] not in JOB_STATUSES \
             and updates["status"] != job.status:
         raise HTTPException(status_code=400, detail=f"Unknown status '{updates['status']}'")
@@ -3132,6 +3520,44 @@ def update_job(job_id: int, data: JobUpdate, db: Session = Depends(get_db), org_
         if added_cleaners:
             from services.crew_notify import notify_job_assigned
             notify_job_assigned(db, job, sorted(added_cleaners))
+
+    # Reassigning a job away from the sub who agreed its rate used to leave the
+    # rate behind, so an hourly employee inherited a flat marketplace price and
+    # the sub was never told. Runs on every cleaner_ids write and is a no-op
+    # unless the named person has actually gone.
+    if "cleaner_ids" in updates:
+        from services.claim_approval import release_if_displaced
+        if release_if_displaced(db, job):
+            db.commit()
+
+    # A job that stops being live work stops being an offer (findings 4+5).
+    # `open_for_claims` was written False by exactly one thing — a successful
+    # approval — so cancelling, completing or un-scheduling a posted job left
+    # it advertised, and left everyone who had asked for it pending in the
+    # database and invisible in their own app.
+    #
+    # Gated on the job having BEEN posted, so an ordinary edit costs nothing.
+    # A cancelled job whose flag an older release left True still trips this
+    # on its next edit, which is why the gate reads the previous value.
+    if prev_open_for_claims and not (job.open_for_claims and job.status == "scheduled"):
+        from services.claim_approval import close_offer
+        why = ("was cancelled" if job.status == "cancelled"
+               else "is no longer on the board")
+        if close_offer(db, job, reason=why) or not job.open_for_claims:
+            db.commit()
+
+    # Posting a job announced itself to nobody. The bench found out by opening
+    # the app, which on a Friday afternoon means the Saturday work sits there.
+    # Event-driven at the write, post-commit, like the assignment push above —
+    # no tick (scheduling-invariants R1).
+    #
+    # Only on the false → true edge, and only to people whose file clears them
+    # to claim it: a push to somebody the claim endpoint would 403 is a
+    # notification with no possible outcome.
+    if (bool(getattr(job, "open_for_claims", False)) and not prev_open_for_claims
+            and job.status == "scheduled"):
+        from services.crew_notify import notify_jobs_posted
+        notify_jobs_posted(db, [job], org_id=job.org_id)
 
     # Auto-create a draft Invoice the first time a job lands on "completed".
     # Shared with complete_job() below — both are real "mark complete" paths
@@ -3418,6 +3844,12 @@ def delete_job(job_id: int, db: Session = Depends(get_db), org_id: int = Depends
             _log_integration(db, entity_type="job", entity_id=job.id, org_id=job.org_id, provider="gcal",
                              action="delete", status="failed", external_id=old_event_id,
                              detail=str(e), commit=False)
+    # The request rows cascade away with the job (migration 097's FK), so
+    # nothing is left to read later — which makes telling the people who asked
+    # the entire deliverable here. A sub whose request evaporates with no word
+    # is the same silence as a cancel, minus the audit trail.
+    from services.claim_approval import close_offer
+    close_offer(db, job, reason="was removed from the schedule")
     db.delete(job)
     db.commit()
 
@@ -3773,6 +4205,12 @@ def skip_job(job_id: int, reason: Optional[str] = None,
     if reason:
         job.notes = (job.notes or "") + f"\n[Skipped: {reason}]"
 
+    # Skipping a visit is cancelling it, so the offer goes with it. This
+    # endpoint writes status directly rather than through update_job, so it
+    # needs its own call — the commit below covers both writes.
+    from services.claim_approval import close_offer
+    close_offer(db, job, reason="was cancelled")
+
     if job.recurring_schedule_id and job.scheduled_date:
         existing = (
             db.query(RecurrenceException)
@@ -3879,6 +4317,10 @@ def auto_assign_job_crew(job_id: int, db: Session = Depends(get_db), org_id: int
 
     top_cleaner = max(crew_freq.items(), key=lambda x: x[1])[0]
     job.cleaner_ids = [top_cleaner]
+    # This REPLACES the list, so it is the other path that can take a job off
+    # the sub who agreed its rate (see release_if_displaced).
+    from services.claim_approval import release_if_displaced
+    release_if_displaced(db, job)
     db.commit()
     db.refresh(job)
     return {
@@ -3974,7 +4416,7 @@ def schedule_week(
         # Visits are derived from jobs post-unification; the shape mirrors what
         # /api/visits used to emit so the FE fallback keeps rendering unchanged.
         "visits": [_job_as_visit(j) for j in (jobs or [])],
-        "jobs": jobs,
+        "jobs": strip_office_only_for_crew(jobs, getattr(current_user, "role", None)),
         "properties": _get_properties(db=db, org_id=org_id),
         # limit/offset are Query() defaults — pass explicitly. 50 matches the
         # standalone /api/clients default the page used before.

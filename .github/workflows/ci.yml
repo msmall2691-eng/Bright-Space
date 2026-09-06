@@ -97,5 +97,14 @@ jobs:
           cache-dependency-path: frontend/package-lock.json
       - name: Install dependencies
         run: npm ci
+      # THE SUITE GATES NOW. 600+ vitest tests existed and CI ran none of
+      # them — only `npm run build`, which type-checks nothing and asserts
+      # nothing. The cost showed: an OpsBoard assertion went red on main and
+      # stayed red long enough to be repeatedly described as "pre-existing"
+      # rather than fixed, because nothing ever failed on account of it.
+      # Runs before the build so a broken test is reported as a broken test
+      # rather than hiding behind a bundling error.
+      - name: Test
+        run: npm run test
       - name: Build
         run: npm run build

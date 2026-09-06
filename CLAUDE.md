@@ -16,6 +16,13 @@ already been litigated:
   tick, or external API call. No polling where events work, one fetch per
   screen per need, metered APIs cached at the row, crew payloads light
   (rural cell data).
+- **`brightbase-marketplace`** — load before touching the subcontractor
+  surface (apply/vetting/claims/routes/payouts), before changing who can see an
+  open job, and before anything shaped like matching a job to a person. Three
+  of its constraints are legal rather than stylistic — a sub requests or
+  accepts and is never assigned, is paid per job and never per hour, and
+  availability is a signal not a schedule — and it carries the traps that have
+  already shipped once.
 - **`recurring-doctor`** — load when recurring-series data looks wrong
   (duplicates, ghosts, ended-but-active). Points at the health scan and the
   root causes already identified; don't re-diagnose from scratch.

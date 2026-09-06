@@ -315,6 +315,74 @@ export interface paths {
         patch: operations["update_workspace_user_api_auth_users__user_id__patch"];
         trace?: never;
     };
+    "/api/auth/users/{user_id}/file": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Sub File
+         * @description One subcontractor's file: every document, its state, and what's missing.
+         */
+        get: operations["get_sub_file_api_auth_users__user_id__file_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/auth/users/{user_id}/file/{kind}/download": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Download Sub Document
+         * @description The document itself, to actually read before accepting it.
+         *
+         *     Inline rather than an attachment: the point is to look at the certificate
+         *     and check the dates, not to collect a downloads folder. Sent with
+         *     nosniff + a no-store cache header — these are insurance certificates and
+         *     tax forms, not something to leave in a shared browser cache.
+         */
+        get: operations["download_sub_document_api_auth_users__user_id__file__kind__download_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/auth/users/{user_id}/file/{kind}/review": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Review Sub Document
+         * @description Accept or reject one document, optionally correcting its expiry.
+         *
+         *     The office can fix an expiry the sub typed wrong — the date on the
+         *     certificate is what matters, and it is the office that reads it.
+         */
+        post: operations["review_sub_document_api_auth_users__user_id__file__kind__review_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/auth/users/invite": {
         parameters: {
             query?: never;
@@ -1958,6 +2026,132 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/jobs/{job_id}/claim-requests": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Claim Requests
+         * @description All requests (pending and decided) for one posted job, newest first —
+         *     the office's review list. Cleaner IDs are resolved to display names in
+         *     one query rather than N (same pattern board_service uses elsewhere).
+         */
+        get: operations["list_claim_requests_api_jobs__job_id__claim_requests_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/jobs/{job_id}/claim-requests/{request_id}/approve": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Approve Claim Request
+         * @description Approve one request: assigns the sub, sets the FINAL agreed_rate
+         *     (their counter if they made one, else the posted rate), closes the
+         *     offer, and auto-declines every other pending request on this job — a
+         *     job can only go to one winner.
+         *
+         *     WHAT IT CHECKS, and what it deliberately does not. This used to claim it
+         *     ran "the same conflict/availability checks the office's normal assign flow
+         *     uses (one implementation, no drift)". It ran one of the three, and the
+         *     sentence made the other two look like a bug rather than a decision:
+         *
+         *       * DOUBLE-BOOKING is refused (`_find_cleaner_conflicts`). Two jobs at the
+         *         same hour is not a preference, it is impossible.
+         *       * APPROVED TIME OFF is NOT refused. `brightbase-marketplace` Rule 0:
+         *         availability is a signal, never a block and never an obligation. A sub
+         *         who ASKS for a job on a day they had booked off has overridden their
+         *         own signal by asking, and refusing would be the office overruling a
+         *         subcontractor about their own time — the control that turns a
+         *         contractor into an employee.
+         *       * DAILY CAPACITY is NOT refused, for the same reason plus a plainer one:
+         *         a cap on how many jobs somebody may work in a day is a limit on their
+         *         hours, and a sub is paid per job, not per hour.
+         *
+         *     What was actually missing is that nobody was TOLD. `list_claim_requests`
+         *     now carries `heads_up` on each pending request, so the office sees "booked
+         *     off Sept 10–12 — they asked anyway" beside the name and makes the call.
+         *
+         *     CONCURRENCY (scheduling-invariants R5): the Job row is locked and
+         *     open_for_claims re-read under that lock. This is the step the old
+         *     first-come-first-served claim used to lock, and it needs it more: two
+         *     approvals racing (two office logins, or one impatient double-tap on a
+         *     slow phone) would otherwise both pass the open check, put BOTH subs on
+         *     the job, leave agreed_rate at whichever write landed last, and send two
+         *     people a "You got the job!" push. On Postgres this is SELECT ... FOR
+         *     UPDATE; SQLite serializes writers.
+         */
+        post: operations["approve_claim_request_api_jobs__job_id__claim_requests__request_id__approve_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/jobs/{job_id}/margin": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Job Margin
+         * @description What this job bills, what it would pay, and what's left.
+         *
+         *     `pay` is a what-if: the office asks "what's the margin if I post this at
+         *     $120" WITHOUT writing $120 down first. That is the whole point — the number
+         *     is only useful before the price is set, and a margin you can only see after
+         *     committing to a rate is a margin you find out about in the payroll run.
+         *
+         *     Always says where the billed figure came from. A margin computed from a
+         *     guess, shown as confidently as one computed from an invoice, is a number
+         *     somebody will price the next ten jobs against.
+         */
+        get: operations["job_margin_api_jobs__job_id__margin_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/jobs/{job_id}/claim-requests/{request_id}/decline": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Decline Claim Request
+         * @description Decline a single request without approving anyone — the job stays
+         *     open for other pending requests (or new ones) unless the office also
+         *     turns off "Open to crew" separately.
+         */
+        post: operations["decline_claim_request_api_jobs__job_id__claim_requests__request_id__decline_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/jobs/{job_id}": {
         parameters: {
             query?: never;
@@ -2417,7 +2611,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/payroll/rates": {
+    "/api/payroll/subcontractors": {
         parameters: {
             query?: never;
             header?: never;
@@ -2425,37 +2619,17 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * Get Pay Rates
-         * @description Current pay rates so the Payroll page can show + edit them.
+         * Subcontractor Summary
+         * @description Everything the Subcontractors view needs, in ONE request
+         *     (brightbase-economy): what the period earned, what's already on the ledger,
+         *     year-to-date per person, and which rail pays them.
+         *
+         *     `earned` is what the period's completed marketplace jobs come to;
+         *     `unrecorded` is the part of that with no payout row yet — the number the
+         *     Generate button acts on. They differ only until Generate is pressed, and
+         *     showing both is what makes pressing it safe.
          */
-        get: operations["get_pay_rates_api_payroll_rates_get"];
-        /**
-         * Update Pay Rates
-         * @description Persist edited pay rates. Only provided fields change.
-         */
-        put: operations["update_pay_rates_api_payroll_rates_put"];
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/payroll/summary": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Payroll Summary
-         * @description The payroll-ready breakdown for a pay period: per-crew hours split into
-         *     residential / deep / rental-weekday / weekend-turnover buckets, mileage, and
-         *     a computed gross — from the native time clock. This is the endpoint the
-         *     Payroll page runs on.
-         */
-        get: operations["payroll_summary_api_payroll_summary_get"];
+        get: operations["subcontractor_summary_api_payroll_subcontractors_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -2464,32 +2638,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/payroll/mileage": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Mileage Report
-         * @description Pre-calculated drive mileage per cleaner: for each day in the range,
-         *     chain their scheduled jobs by start time and measure home → first job →
-         *     between houses → back home. Distances are road distances when the Google
-         *     key is configured, otherwise straight-line × 1.3 clearly flagged
-         *     estimated. DISPLAY ONLY — nothing here feeds gross pay; reimbursement
-         *     still runs on the miles crew enter at clock-out (TimeEntry.miles).
-         */
-        get: operations["mileage_report_api_payroll_mileage_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/payroll/send-to-square": {
+    "/api/payroll/subcontractors/payouts/generate": {
         parameters: {
             query?: never;
             header?: never;
@@ -2499,17 +2648,61 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * Send To Square
-         * @description Push the period's HOURLY hours to Square as Labor API Timecards (which
-         *     Square Payroll then imports), and return the piece-rate + mileage amounts as
-         *     a per-person adjustment list to enter in Square manually.
+         * Generate Payouts
+         * @description Record what the period's completed marketplace work owes.
          *
-         *     Defaults to a DRY RUN — it matches people and shows exactly what WOULD be
-         *     sent (nothing is written to Square) so the operator can verify before
-         *     committing. Set dry_run=false to actually create the timecards. Hours come
-         *     from the native BrightBase clock.
+         *     Creates `due` rows only — no money moves here. Idempotent: running it twice
+         *     on the same period creates nothing the second time.
          */
-        post: operations["send_to_square_api_payroll_send_to_square_post"];
+        post: operations["generate_payouts_api_payroll_subcontractors_payouts_generate_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/payroll/subcontractors/payouts/mark": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Mark Payouts
+         * @description Move payouts along: due → sent → paid, or void.
+         *
+         *     Marking `paid` is a human asserting money left. Nothing else in the system
+         *     sets it, because nothing else knows.
+         */
+        post: operations["mark_payouts_api_payroll_subcontractors_payouts_mark_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/payroll/subcontractors/payouts/send": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Send Payouts
+         * @description Hand the selected payouts to the configured rail.
+         *
+         *     The manual rail returns a CSV and marks them `sent` — it cannot know
+         *     whether a cheque was written, so `paid` stays a separate human act. Only
+         *     `due` payouts are sendable; re-sending something already out is how one
+         *     person gets paid twice.
+         */
+        post: operations["send_payouts_api_payroll_subcontractors_payouts_send_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -3379,6 +3572,48 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/recurring/{schedule_id}/cancel-upcoming": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Cancel Upcoming Visits
+         * @description Take this series' remaining visits off the calendar.
+         *
+         *     WHY THIS EXISTS: cancelling a series only stops GENERATION. Every visit
+         *     already materialized stays on the schedule — and generation runs eight
+         *     weeks ahead by default, so cancelling a weekly series left roughly eight
+         *     cleanings sitting there. The app said so in the confirm text, but "its 8
+         *     already-scheduled visits stay on the calendar until you remove them
+         *     individually" describes a chore, not a cancellation, and the owner
+         *     reported the obvious reading of it: "I deleted it and it's still there."
+         *
+         *     Soft-cancel, matching every other recurring-cancellation path: the rows
+         *     stay, status becomes 'cancelled', and the linked Google Calendar event is
+         *     released so the visit doesn't outlive the app on her phone. Past and
+         *     completed visits are never touched.
+         *
+         *     Deliberately SEPARATE from DELETE /{id} rather than folded into it: this
+         *     is the destructive half, it is the caller's explicit second act, and
+         *     scheduling-invariants R7 exists precisely so a Job never disappears as a
+         *     side effect of an operation aimed at something else. The link to the
+         *     schedule is kept (unlike the skip path, which must detach to free the
+         *     date) — generation is off for a cancelled series, so nothing will
+         *     recreate these, and keeping it preserves "these belonged to that series"
+         *     for history.
+         */
+        post: operations["cancel_upcoming_visits_api_recurring__schedule_id__cancel_upcoming_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/recurring/{schedule_id}/skip": {
         parameters: {
             query?: never;
@@ -3467,6 +3702,412 @@ export interface paths {
          *     the cancelled Job from the skip is now an unrelated historical record.
          */
         delete: operations["delete_exception_api_recurring__schedule_id__exceptions__exception_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/routes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Routes
+         * @description Every route, with its owner's name and how many houses it holds.
+         *
+         *     One request draws the list (brightbase-economy): names are resolved in a
+         *     single lookup rather than one per row.
+         */
+        get: operations["list_routes_api_routes_get"];
+        put?: never;
+        /**
+         * Create Route
+         * @description Start a route as a DRAFT. Generation ignores drafts entirely, so a
+         *     half-built route can sit here without touching anybody's calendar.
+         */
+        post: operations["create_route_api_routes_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/routes/{route_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Route
+         * @description The route and its houses, each with the share of the block rate it
+         *     carries — a route priced without its parts visible is a number somebody
+         *     has to trust.
+         */
+        get: operations["get_route_api_routes__route_id__get"];
+        put?: never;
+        post?: never;
+        /**
+         * Delete Route
+         * @description Drafts only. A route that was ever offered is a record of something
+         *     somebody was asked to do — that gets ended, not erased.
+         */
+        delete: operations["delete_route_api_routes__route_id__delete"];
+        options?: never;
+        head?: never;
+        /**
+         * Update Route
+         * @description Edit a route's name, day, rate, backup or houses.
+         *
+         *     An ACTIVE route can be repriced, and the new rate applies to visits
+         *     generated from here on — jobs already generated keep the `agreed_rate`
+         *     they were created with. Never retroactively reprice work somebody has
+         *     already been told they're doing.
+         */
+        patch: operations["update_route_api_routes__route_id__patch"];
+        trace?: never;
+    };
+    "/api/routes/{route_id}/offer-check": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Offer Check
+         * @description What would happen if this route were offered to this person.
+         *
+         *     Read-only, so the office sees the conflicts and the file problems BEFORE
+         *     sending rather than by having the offer bounce. One request, because the
+         *     answer is one decision.
+         */
+        get: operations["offer_check_api_routes__route_id__offer_check_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/routes/{route_id}/offer": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Offer Route
+         * @description Offer the route to one subcontractor. It is not theirs until they accept.
+         *
+         *     Three gates, in the order that gives the most useful refusal:
+         *       1. the route itself has to be offerable (a rate, houses, times);
+         *       2. the person has to exist as a crew login;
+         *       3. their file has to be complete — an uninsured person is not offered
+         *          standing work, and finding that out at acceptance time is finding out
+         *          too late.
+         *     Conflicts are surfaced but do NOT block: a double-book on one occurrence
+         *     is a coverage question for one date, not a reason to refuse a standing
+         *     arrangement. `offer-check` shows them first.
+         */
+        post: operations["offer_route_api_routes__route_id__offer_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/routes/{route_id}/end": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * End Route
+         * @description Stop a route generating. It stays for history.
+         *
+         *     Visits already generated keep their owner and their agreed_rate — ending a
+         *     route is a statement about the future, and no automated path here deletes
+         *     or reprices a Job (R7). If a date needs to come off the calendar, that is a
+         *     schedule edit somebody makes on purpose.
+         */
+        post: operations["end_route_api_routes__route_id__end_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/turnover-windows": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Windows
+         * @description Upcoming windows and how each day is actually going.
+         *
+         *     One request draws the screen, coverage numbers included — the point of
+         *     looking is "is Saturday a problem", and a list that made you open each one
+         *     to find out would be the wrong shape.
+         */
+        get: operations["list_windows_api_turnover_windows_get"];
+        put?: never;
+        /**
+         * Create Window
+         * @description Plan a service day. Nothing is posted until it opens.
+         *
+         *     A second window for a date that already has one is refused rather than
+         *     created: two ladders on one Saturday would step the same jobs twice, and
+         *     the unique constraint would refuse it anyway — this just says so in words.
+         */
+        post: operations["create_window_api_turnover_windows_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/turnover-windows/{window_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Window */
+        get: operations["get_window_api_turnover_windows__window_id__get"];
+        put?: never;
+        post?: never;
+        /**
+         * Delete Window
+         * @description Delete a window that never opened.
+         *
+         *     An opened window is the record of what was posted and at what price. It
+         *     gets closed, not erased — and deleting it would not un-post the jobs
+         *     anyway, which is the more misleading half.
+         */
+        delete: operations["delete_window_api_turnover_windows__window_id__delete"];
+        options?: never;
+        head?: never;
+        /**
+         * Update Window
+         * @description Edit the ladder.
+         *
+         *     Editing does NOT reprice jobs already posted — the rate on the board is
+         *     what people are looking at, and silently moving it under them is how a
+         *     claim gets made against a number that no longer exists. The new settings
+         *     take effect at the next step. Lowering `max_steps` below where the ladder
+         *     already is simply stops it climbing further.
+         */
+        patch: operations["update_window_api_turnover_windows__window_id__patch"];
+        trace?: never;
+    };
+    "/api/turnover-windows/{window_id}/margin": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Window Margin
+         * @description What the ladder does to the margin — now, and at the top of it.
+         *
+         *     The ceiling is the number worth looking at. A ladder set once in March
+         *     quietly becomes the thing that eats a July Saturday, and without this the
+         *     office finds out from the payroll run rather than from the box they typed
+         *     it into.
+         */
+        get: operations["window_margin_api_turnover_windows__window_id__margin_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/turnover-windows/{window_id}/open": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Open Now
+         * @description Post this day's turnovers to the bench now, ahead of schedule.
+         *
+         *     Safe to press twice: jobs somebody has already taken are skipped, and the
+         *     response says how many.
+         */
+        post: operations["open_now_api_turnover_windows__window_id__open_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/turnover-windows/{window_id}/step": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Step Now
+         * @description Raise the price on what's left, now, without waiting for tomorrow.
+         *
+         *     Refused at the ceiling and refused twice in one day — the same rules the
+         *     tick obeys, because it is the same function.
+         */
+        post: operations["step_now_api_turnover_windows__window_id__step_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/turnover-windows/{window_id}/close": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Close Now
+         * @description Stop the ladder. Unclaimed turnovers stay on the board at whatever they
+         *     reached — somebody taking one late still beats nobody taking it.
+         */
+        post: operations["close_now_api_turnover_windows__window_id__close_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/apply": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Apply
+         * @description Public. Records an application; creates nothing else.
+         *
+         *     Always answers the same way. It will not say whether this email already
+         *     applied, already works here, or was declined last spring — an endpoint that
+         *     distinguishes those is an account-enumeration oracle wearing a form.
+         */
+        post: operations["apply_api_apply_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/sub-applications": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Applications
+         * @description Everyone who's asked, newest first, with the counts the tab needs.
+         *
+         *     One request draws the screen (brightbase-economy) — the counts come from
+         *     the same rows rather than a second query per status.
+         */
+        get: operations["list_applications_api_sub_applications_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/sub-applications/{app_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Review Application
+         * @description Move an application along, or write a note on it.
+         *
+         *     `approved` is NOT settable here — that status is a side effect of the
+         *     approve endpoint, which also creates the account. Letting it be set
+         *     directly would produce applications marked approved with nobody to show
+         *     for it.
+         */
+        patch: operations["review_application_api_sub_applications__app_id__patch"];
+        trace?: never;
+    };
+    "/api/sub-applications/{app_id}/approve": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Approve Application
+         * @description Turn an application into a crew account and email the invite.
+         *
+         *     This is the only path from "somebody filled in a form" to "somebody can
+         *     sign in", and it is admin-only and manual by design.
+         *
+         *     Approving does NOT clear them to work. It gives them a login, and the login
+         *     lands them on My File with a W-9, a certificate of insurance and an
+         *     agreement to provide (098). `can_take_jobs` stays false until those are on
+         *     record and accepted — so an approved application is an invitation to get
+         *     vetted, not a shortcut past it.
+         *
+         *     The invite email is the SAME sender the crew-add screen uses
+         *     (`send_staff_invite`), so wording and the 7-day expiry can't drift apart.
+         */
+        post: operations["approve_application_api_sub_applications__app_id__approve_post"];
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -5354,6 +5995,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/dashboard/bench": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Bench Digest
+         * @description This week on the bench, on demand.
+         *
+         *     The same thing the Wednesday round-up sends, readable whenever somebody
+         *     wants it. One function builds both (R6) — a digest that disagreed with the
+         *     screen it links to would be worse than no digest.
+         */
+        get: operations["bench_digest_api_dashboard_bench_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/cleanup/scan": {
         parameters: {
             query?: never;
@@ -5701,15 +6366,21 @@ export interface paths {
         };
         /**
          * My Week
-         * @description A cleaner's week of pay, so they can see what the week is shaping up to
-         *     be worth: what they've EARNED so far (from their closed punches, computed by
-         *     the exact same code the office's Payroll page runs — one pay-math
-         *     implementation, no drift) plus a PREDICTION for the rest of the week from
-         *     the jobs still assigned to them (scheduled length × their hourly rate + any
-         *     per-job bump; piece-rate turnovers at the property's flat rate).
+         * @description What this week is worth to a subcontractor.
          *
-         *     Only ever returns the CALLER's own numbers — the full payroll breakdown
-         *     stays admin/manager-only.
+         *     REWRITTEN, not deleted. The old version asked the payroll summary for hours
+         *     and reimbursements and predicted the rest from hourly rates, per-cleaner
+         *     overrides and weekend piece rates. Every input to that was the employee
+         *     model, and it is gone.
+         *
+         *     A sub's week is simpler and truer: the jobs they agreed a price on. Earned
+         *     is what is finished, upcoming is what is booked, and both are the amounts
+         *     both sides actually shook on. No hours, no mileage, no prediction from a
+         *     rate card — predicting somebody's pay from a rate they never agreed is how
+         *     an estimate becomes an argument.
+         *
+         *     One query. `agreed_cleaner_id` (migration 106) is what makes it honest:
+         *     being listed on a job is not the same as being the person it is priced for.
          */
         get: operations["my_week_api_crew_my_week_get"];
         put?: never;
@@ -5718,73 +6389,6 @@ export interface paths {
         options?: never;
         head?: never;
         patch?: never;
-        trace?: never;
-    };
-    "/api/crew/clock-in": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Clock In
-         * @description Start a punch. One open punch per cleaner — a second clock-in while
-         *     already on the clock is a 409 (clock out first). These punches are what
-         *     native payroll pays from.
-         */
-        post: operations["clock_in_api_crew_clock_in_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/crew/clock-out": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Clock Out
-         * @description Close the open punch. 400 if not currently clocked in. break_minutes is
-         *     clamped to the elapsed time so a fat-fingered break can't make worked hours
-         *     negative.
-         */
-        post: operations["clock_out_api_crew_clock_out_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/crew/entry/{entry_id}/miles": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        /**
-         * Set Entry Miles
-         * @description Correct the miles on one of the caller's own punches — the safety net for
-         *     a forgotten or fat-fingered clock-out entry, before payroll runs. Scoped to
-         *     the caller's cleaner_id so a cleaner can only edit their own mileage. 404 if
-         *     the punch isn't theirs (or doesn't exist).
-         */
-        patch: operations["set_entry_miles_api_crew_entry__entry_id__miles_patch"];
         trace?: never;
     };
     "/api/crew/jobs/{job_id}/complete": {
@@ -5821,6 +6425,60 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/crew/jobs/{job_id}/helpers": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List My Helpers
+         * @description Who I said I'm bringing. Mine only — another sub's helper on a shared
+         *     job is their business and their responsibility.
+         */
+        get: operations["list_my_helpers_api_crew_jobs__job_id__helpers_get"];
+        put?: never;
+        /**
+         * Add My Helper
+         * @description Bring somebody with me to this job.
+         *
+         *     No vetting gate on the HELPER, deliberately, and it is worth being explicit
+         *     about why given how hard `blocking_requirements` is enforced everywhere
+         *     else: vetting is what TMCC requires of the people it contracts with, and it
+         *     does not contract with this person. The sub does. Requiring TMCC's paperwork
+         *     from the sub's own assistant is TMCC deciding who the sub may hire.
+         *
+         *     The SUB still has to be cleared — they are, or they would not be on the job.
+         */
+        post: operations["add_my_helper_api_crew_jobs__job_id__helpers_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/crew/jobs/{job_id}/helpers/{helper_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Remove My Helper
+         * @description Plans change. Only my own row — on a job two subs share, each one's
+         *     helper is theirs to add and theirs to withdraw.
+         */
+        delete: operations["remove_my_helper_api_crew_jobs__job_id__helpers__helper_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/crew/jobs/{job_id}/claim": {
         parameters: {
             query?: never;
@@ -5832,22 +6490,111 @@ export interface paths {
         put?: never;
         /**
          * Claim Job
-         * @description First-come-first-served claim of a job the office marked open.
+         * @description Request an open job — marketplace pivot (migration 097).
          *
-         *     This is the one place the crew app writes schedule state, and it's
-         *     narrowly gated (scheduling-invariants reviewed): the job must carry the
-         *     office-set open_for_claims flag (owner decision #2 — being unassigned is
-         *     NOT enough), the write is this endpoint's atomic add-claimer +
-         *     close-the-offer, it's activity-logged and pushes a staff notification.
-         *     BrightBase stays the canonical schedule owner throughout — no projection
-         *     or external system is involved.
+         *     This used to be an instant first-come-first-served claim. It's now a
+         *     REQUEST: the sub optionally counters the office's posted_rate and/or
+         *     leaves a message, and the office picks who gets it (see
+         *     modules.scheduling.router's approve/decline-claim-request endpoints).
+         *     Nothing here writes Job.cleaner_ids or closes the offer — a job can
+         *     carry several pending requests at once, exactly the point of "the
+         *     office picks."
          *
-         *     Concurrency (R5): the row is locked (SELECT ... FOR UPDATE on Postgres;
-         *     SQLite serializes writers) and the open flag is re-checked under the
-         *     lock, so two cleaners racing on the same offer get exactly one winner —
-         *     the loser sees 409 "already claimed".
+         *     Still narrowly gated the same way Phase 3 was (scheduling-invariants
+         *     reviewed): the job must carry open_for_claims (being unassigned is NOT
+         *     enough), BrightBase stays the sole schedule-state owner, and a second
+         *     tap from the same sub UPDATES their pending request (a changed-my-mind
+         *     counter-offer) rather than creating a duplicate.
+         *
+         *     No row lock here, unlike the claim it replaces: filing a request writes
+         *     nothing anyone else races for. The lock moved to the approval endpoint,
+         *     which is now the step that actually assigns the job and fixes the rate.
          */
         post: operations["claim_job_api_crew_jobs__job_id__claim_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/crew/my-file": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * My File
+         * @description Everything on my file, and anything still standing in my way.
+         */
+        get: operations["my_file_api_crew_my_file_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/crew/my-file/agreement": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read Agreement
+         * @description The agreement text a sub is asked to accept, with its version and hash.
+         *
+         *     There was no such endpoint. The button said "Sign the subcontractor
+         *     agreement" and there was nothing anywhere to read — which mattered more
+         *     than a missing screen usually does, because "a contract that defines the
+         *     relationship" is one of the criteria Maine's employment standard counts,
+         *     and it was being asserted with no document behind it.
+         */
+        get: operations["read_agreement_api_crew_my_file_agreement_get"];
+        put?: never;
+        /**
+         * Accept Agreement
+         * @description Accept the current subcontractor agreement.
+         *
+         *     Append-only: a second acceptance of the same version is a no-op rather than
+         *     an update, because the value of this table is being able to say what
+         *     somebody agreed to and when. Overwriting destroys exactly that.
+         *
+         *     The caller must echo the SHA-256 of the text it displayed. A mismatch means
+         *     the phone is showing a different document from the one on this server — a
+         *     stale tab across a deploy, most likely — and the honest answer is to refuse
+         *     and re-render rather than record a signature against text nobody saw.
+         */
+        post: operations["accept_agreement_api_crew_my_file_agreement_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/crew/my-file/{kind}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Upload My Document
+         * @description Upload or replace one document on my file.
+         *
+         *     Replaces rather than accumulates (UNIQUE on user_id+kind): three COIs and
+         *     no way to tell which is live is worse than one that might be stale.
+         *     Re-uploading always returns the document to `pending` — a new file has not
+         *     been reviewed, whatever the old one's status was.
+         */
+        post: operations["upload_my_document_api_crew_my_file__kind__post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -6489,6 +7236,64 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/crew/files": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Crew Files
+         * @description Who owes you a document, and what's sitting waiting for you to accept it.
+         *
+         *     The office's real question isn't "is this one person cleared" — it's "who
+         *     still owes me something". Before this you could only ask it one person at a
+         *     time, by opening a disclosure on each row of the staff list, which is how a
+         *     document gets uploaded on Tuesday and noticed in March.
+         *
+         *     One request for the whole roster (brightbase-economy). The counts at the
+         *     top are what tells you whether to open it at all.
+         */
+        get: operations["crew_files_api_crew_files_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/crew/bench": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Crew Bench
+         * @description The bench screen: who you have, whether they can work, what they've done.
+         *
+         *     /files answers "who owes me a document". This answers the question the
+         *     office actually opens the app with — "who have I got" — by hanging the work
+         *     history and the 1099 total off the same roster rows, so the file status and
+         *     the person are one screen instead of three.
+         *
+         *     One request draws it (brightbase-economy). See services/bench.py for what
+         *     is deliberately NOT counted: declines (the signed agreement says declining
+         *     is free) and punctuality from clock punches (control of hours is the
+         *     classification risk).
+         */
+        get: operations["crew_bench_api_crew_bench_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/crew/unclaimed-ids": {
         parameters: {
             query?: never;
@@ -6551,6 +7356,91 @@ export interface paths {
          *     (see /unclaimed-ids). No Connecteam involved.
          */
         post: operations["add_crew_api_crew_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/crew/my-routes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * My Routes
+         * @description Routes offered to me, and routes I already own.
+         *
+         *     ONE request, and a light one — this rides a phone on rural cell data
+         *     (brightbase-economy). Offered routes carry their houses so a sub can see
+         *     what they're agreeing to before agreeing to it; active ones are the
+         *     standing commitment and its rate, which is a shorter answer.
+         */
+        get: operations["my_routes_api_crew_my_routes_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/crew/routes/{route_id}/accept": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Accept Route
+         * @description Take the route. This is the step that fixes the owner and the rate.
+         *
+         *     LOCKED (R5). Accept is not idempotent in the way a read is — it stamps
+         *     accepted_at and turns generation on for this block — so the row is taken
+         *     FOR UPDATE and its status re-read underneath the lock. Two taps on a slow
+         *     phone must produce one accept.
+         *
+         *     RE-CHECKED, both the route and the person. The office can change a route
+         *     between offering it and this tap, and a certificate of insurance can lapse
+         *     in that window — that gap is the entire reason `is_expired` reads the date
+         *     rather than the stored status. The sub should not be the one who discovers
+         *     either problem, but they must not slip through it either.
+         */
+        post: operations["accept_route_api_crew_routes__route_id__accept_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/crew/routes/{route_id}/decline": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Decline Route
+         * @description Turn the route down. It goes back to the office as a draft.
+         *
+         *     Back to DRAFT and not to some `declined` state: the office's next move is
+         *     to offer it to somebody else, and a route sitting in a terminal-sounding
+         *     status is a route that gets rebuilt from scratch instead. The owner is
+         *     cleared, because a declined route has no owner.
+         *
+         *     Declining a single OCCURRENCE is a different thing entirely — that's an
+         *     ordinary JobResponse on that day's job, which the crew app already renders.
+         *     This is giving the whole block back.
+         */
+        post: operations["decline_route_api_crew_routes__route_id__decline_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -6881,6 +7771,40 @@ export interface components {
             /** Home Address */
             home_address?: string | null;
         };
+        /** AgreementAccept */
+        AgreementAccept: {
+            /** Sha256 */
+            sha256: string;
+        };
+        /** ApplyBody */
+        ApplyBody: {
+            /** Name */
+            name?: string | null;
+            /** Email */
+            email?: string | null;
+            /** Phone */
+            phone?: string | null;
+            /** Business Name */
+            business_name?: string | null;
+            /** Ein */
+            ein?: string | null;
+            /** Towns */
+            towns?: string | null;
+            /** Experience */
+            experience?: string | null;
+            /** Message */
+            message?: string | null;
+            /** Has Insurance */
+            has_insurance?: boolean | null;
+            /** Has Transport */
+            has_transport?: boolean | null;
+            /** Weekends */
+            weekends?: boolean | null;
+            /** Source */
+            source?: string | null;
+            /** Website */
+            website?: string | null;
+        };
         /** AskBody */
         AskBody: {
             /** Question */
@@ -6972,6 +7896,16 @@ export interface components {
             file: string;
             /** Kind */
             kind?: string;
+        };
+        /** Body_upload_my_document_api_crew_my_file__kind__post */
+        Body_upload_my_document_api_crew_my_file__kind__post: {
+            /**
+             * File
+             * Format: binary
+             */
+            file: string;
+            /** Expires At */
+            expires_at?: string;
         };
         /** Body_upload_property_photo_api_crew_properties__property_id__photos_post */
         Body_upload_property_photo_api_crew_properties__property_id__photos_post: {
@@ -7131,6 +8065,13 @@ export interface components {
              */
             status: "lead" | "active" | "inactive";
         };
+        /** ClaimRequestBody */
+        ClaimRequestBody: {
+            /** Requested Rate */
+            requested_rate?: number | null;
+            /** Message */
+            message?: string | null;
+        };
         /** ClientCreate */
         ClientCreate: {
             /** Name */
@@ -7231,26 +8172,6 @@ export interface components {
             custom_fields?: {
                 [key: string]: unknown;
             } | null;
-        };
-        /** ClockInBody */
-        ClockInBody: {
-            /** Job Id */
-            job_id?: number | null;
-            /** Lat */
-            lat?: number | null;
-            /** Lng */
-            lng?: number | null;
-            /** Accuracy M */
-            accuracy_m?: number | null;
-        };
-        /** ClockOutBody */
-        ClockOutBody: {
-            /** Break Minutes */
-            break_minutes?: number | null;
-            /** Note */
-            note?: string | null;
-            /** Miles */
-            miles?: number | null;
         };
         /** ContactPhoneCreate */
         ContactPhoneCreate: {
@@ -7454,10 +8375,10 @@ export interface components {
             /** Client Id */
             client_id?: number | null;
         };
-        /** EntryMilesBody */
-        EntryMilesBody: {
-            /** Miles */
-            miles: number;
+        /** EndBody */
+        EndBody: {
+            /** Reason */
+            reason?: string | null;
         };
         /**
          * ExceptionCreate
@@ -7561,6 +8482,13 @@ export interface components {
             /** Service Scope Str */
             service_scope_str?: string | null;
         };
+        /** GeneratePayoutsBody */
+        GeneratePayoutsBody: {
+            /** Start Date */
+            start_date: string;
+            /** End Date */
+            end_date: string;
+        };
         /** GoogleAccountUpdate */
         GoogleAccountUpdate: {
             /** Gmail Sync Enabled */
@@ -7582,6 +8510,13 @@ export interface components {
         HTTPValidationError: {
             /** Detail */
             detail?: components["schemas"]["ValidationError"][];
+        };
+        /** HelperBody */
+        HelperBody: {
+            /** Name */
+            name: string;
+            /** Phone */
+            phone?: string | null;
         };
         /**
          * InstantQuoteRequest
@@ -7905,6 +8840,8 @@ export interface components {
             notify_customer?: boolean | null;
             /** Open For Claims */
             open_for_claims?: boolean | null;
+            /** Posted Rate */
+            posted_rate?: number | null;
         };
         /**
          * LinkClientRequest
@@ -7985,6 +8922,17 @@ export interface components {
         MarkDoneBody: {
             /** Note */
             note?: string | null;
+        };
+        /** MarkPayoutsBody */
+        MarkPayoutsBody: {
+            /** Payout Ids */
+            payout_ids: unknown[];
+            /** Status */
+            status: string;
+            /** Method */
+            method?: string | null;
+            /** External Ref */
+            external_ref?: string | null;
         };
         /** MeUpdate */
         MeUpdate: {
@@ -8078,6 +9026,11 @@ export interface components {
             /** Job Ids */
             job_ids?: number[] | null;
         };
+        /** OfferBody */
+        OfferBody: {
+            /** Cleaner Id */
+            cleaner_id: string;
+        };
         /** OpportunityCreate */
         OpportunityCreate: {
             /** Client Id */
@@ -8138,17 +9091,6 @@ export interface components {
             custom_fields?: {
                 [key: string]: unknown;
             } | null;
-        };
-        /** PayRates */
-        PayRates: {
-            /** Residential Rate */
-            residential_rate?: number | null;
-            /** Rental Weekday Rate */
-            rental_weekday_rate?: number | null;
-            /** Deep Clean Rate */
-            deep_clean_rate?: number | null;
-            /** Mileage Rate */
-            mileage_rate?: number | null;
         };
         /** PriorityRequest */
         PriorityRequest: {
@@ -8646,6 +9588,26 @@ export interface components {
             /** Reason */
             reason?: string | null;
         };
+        /** ReviewBody */
+        ReviewBody: {
+            /** Status */
+            status?: string | null;
+            /** Notes */
+            notes?: string | null;
+        };
+        /** RouteBody */
+        RouteBody: {
+            /** Name */
+            name?: string | null;
+            /** Day Of Week */
+            day_of_week?: number | null;
+            /** Rate */
+            rate?: number | null;
+            /** Backup Cleaner Id */
+            backup_cleaner_id?: string | null;
+            /** Schedule Ids */
+            schedule_ids?: number[] | null;
+        };
         /** RouteRequest */
         RouteRequest: {
             /** Message */
@@ -8900,6 +9862,11 @@ export interface components {
             /** Custom Message */
             custom_message?: string | null;
         };
+        /** SendPayoutsBody */
+        SendPayoutsBody: {
+            /** Payout Ids */
+            payout_ids: unknown[];
+        };
         /** SendReplyRequest */
         SendReplyRequest: {
             /** Body */
@@ -8908,25 +9875,6 @@ export interface components {
             subject?: string | null;
             /** Author */
             author?: string | null;
-        };
-        /** SendToSquareBody */
-        SendToSquareBody: {
-            /** Start Date */
-            start_date: string;
-            /** End Date */
-            end_date: string;
-            /**
-             * Dry Run
-             * @default true
-             */
-            dry_run: boolean;
-            /**
-             * Overrides
-             * @default {}
-             */
-            overrides: {
-                [key: string]: unknown;
-            };
         };
         /** ServiceScopesUpdate */
         ServiceScopesUpdate: {
@@ -8954,6 +9902,15 @@ export interface components {
             status: string;
             /** Snoozed Until */
             snoozed_until?: string | null;
+        };
+        /** SubDocumentReview */
+        SubDocumentReview: {
+            /** Status */
+            status: string;
+            /** Notes */
+            notes?: string | null;
+            /** Expires At */
+            expires_at?: string | null;
         };
         /** SubscribeBody */
         SubscribeBody: {
@@ -9103,6 +10060,23 @@ export interface components {
             week: {
                 [key: string]: unknown;
             };
+        };
+        /** WindowBody */
+        WindowBody: {
+            /** Service Date */
+            service_date?: string | null;
+            /** Base Rate */
+            base_rate?: number | null;
+            /** Step Pct */
+            step_pct?: number | null;
+            /** Max Steps */
+            max_steps?: number | null;
+            /** Open Days Before */
+            open_days_before?: number | null;
+            /** First Step Days Before */
+            first_step_days_before?: number | null;
+            /** Notes */
+            notes?: string | null;
         };
     };
     responses: never;
@@ -9495,6 +10469,105 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["AdminUserUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_sub_file_api_auth_users__user_id__file_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                user_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    download_sub_document_api_auth_users__user_id__file__kind__download_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                user_id: number;
+                kind: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    review_sub_document_api_auth_users__user_id__file__kind__review_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                user_id: number;
+                kind: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SubDocumentReview"];
             };
         };
         responses: {
@@ -12072,6 +13145,134 @@ export interface operations {
             };
         };
     };
+    list_claim_requests_api_jobs__job_id__claim_requests_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                job_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    approve_claim_request_api_jobs__job_id__claim_requests__request_id__approve_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                job_id: number;
+                request_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    job_margin_api_jobs__job_id__margin_get: {
+        parameters: {
+            query?: {
+                pay?: number | null;
+            };
+            header?: never;
+            path: {
+                job_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    decline_claim_request_api_jobs__job_id__claim_requests__request_id__decline_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                job_id: number;
+                request_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     get_job_api_jobs__job_id__get: {
         parameters: {
             query?: never;
@@ -12848,60 +14049,7 @@ export interface operations {
             };
         };
     };
-    get_pay_rates_api_payroll_rates_get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-        };
-    };
-    update_pay_rates_api_payroll_rates_put: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["PayRates"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    payroll_summary_api_payroll_summary_get: {
+    subcontractor_summary_api_payroll_subcontractors_get: {
         parameters: {
             query: {
                 /** @description YYYY-MM-DD */
@@ -12935,21 +14083,18 @@ export interface operations {
             };
         };
     };
-    mileage_report_api_payroll_mileage_get: {
+    generate_payouts_api_payroll_subcontractors_payouts_generate_post: {
         parameters: {
-            query?: {
-                /** @description YYYY-MM-DD (default today) */
-                start_date?: string | null;
-                /** @description YYYY-MM-DD (default start_date) */
-                end_date?: string | null;
-                /** @description Limit to one crew ID */
-                cleaner_id?: string | null;
-            };
+            query?: never;
             header?: never;
             path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["GeneratePayoutsBody"];
+            };
+        };
         responses: {
             /** @description Successful Response */
             200: {
@@ -12971,7 +14116,7 @@ export interface operations {
             };
         };
     };
-    send_to_square_api_payroll_send_to_square_post: {
+    mark_payouts_api_payroll_subcontractors_payouts_mark_post: {
         parameters: {
             query?: never;
             header?: never;
@@ -12980,7 +14125,40 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["SendToSquareBody"];
+                "application/json": components["schemas"]["MarkPayoutsBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    send_payouts_api_payroll_subcontractors_payouts_send_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SendPayoutsBody"];
             };
         };
         responses: {
@@ -14416,6 +15594,37 @@ export interface operations {
             };
         };
     };
+    cancel_upcoming_visits_api_recurring__schedule_id__cancel_upcoming_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                schedule_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     add_skip_exception_api_recurring__schedule_id__skip_post: {
         parameters: {
             query?: never;
@@ -14535,6 +15744,674 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_routes_api_routes_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    create_route_api_routes_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RouteBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_route_api_routes__route_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                route_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_route_api_routes__route_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                route_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_route_api_routes__route_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                route_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RouteBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    offer_check_api_routes__route_id__offer_check_get: {
+        parameters: {
+            query: {
+                cleaner_id: string;
+            };
+            header?: never;
+            path: {
+                route_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    offer_route_api_routes__route_id__offer_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                route_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["OfferBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    end_route_api_routes__route_id__end_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                route_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["EndBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_windows_api_turnover_windows_get: {
+        parameters: {
+            query?: {
+                days?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_window_api_turnover_windows_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WindowBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_window_api_turnover_windows__window_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                window_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_window_api_turnover_windows__window_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                window_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_window_api_turnover_windows__window_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                window_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WindowBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    window_margin_api_turnover_windows__window_id__margin_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                window_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    open_now_api_turnover_windows__window_id__open_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                window_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    step_now_api_turnover_windows__window_id__step_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                window_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    close_now_api_turnover_windows__window_id__close_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                window_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    apply_api_apply_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ApplyBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_applications_api_sub_applications_get: {
+        parameters: {
+            query?: {
+                status?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    review_application_api_sub_applications__app_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                app_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ReviewBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    approve_application_api_sub_applications__app_id__approve_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                app_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
             };
             /** @description Validation Error */
             422: {
@@ -17446,6 +19323,26 @@ export interface operations {
             };
         };
     };
+    bench_digest_api_dashboard_bench_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
     cleanup_scan_api_cleanup_scan_get: {
         parameters: {
             query?: never;
@@ -17915,107 +19812,6 @@ export interface operations {
             };
         };
     };
-    clock_in_api_crew_clock_in_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["ClockInBody"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    clock_out_api_crew_clock_out_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["ClockOutBody"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    set_entry_miles_api_crew_entry__entry_id__miles_patch: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                entry_id: number;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["EntryMilesBody"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
     mark_job_done_api_crew_jobs__job_id__complete_post: {
         parameters: {
             query?: never;
@@ -18051,7 +19847,7 @@ export interface operations {
             };
         };
     };
-    claim_job_api_crew_jobs__job_id__claim_post: {
+    list_my_helpers_api_crew_jobs__job_id__helpers_get: {
         parameters: {
             query?: never;
             header?: never;
@@ -18061,6 +19857,214 @@ export interface operations {
             cookie?: never;
         };
         requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    add_my_helper_api_crew_jobs__job_id__helpers_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                job_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["HelperBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    remove_my_helper_api_crew_jobs__job_id__helpers__helper_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                job_id: number;
+                helper_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    claim_job_api_crew_jobs__job_id__claim_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                job_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["ClaimRequestBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    my_file_api_crew_my_file_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    read_agreement_api_crew_my_file_agreement_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    accept_agreement_api_crew_my_file_agreement_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AgreementAccept"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    upload_my_document_api_crew_my_file__kind__post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                kind: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": components["schemas"]["Body_upload_my_document_api_crew_my_file__kind__post"];
+            };
+        };
         responses: {
             /** @description Successful Response */
             200: {
@@ -19289,6 +21293,46 @@ export interface operations {
             };
         };
     };
+    crew_files_api_crew_files_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    crew_bench_api_crew_bench_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
     unclaimed_crew_ids_api_crew_unclaimed_ids_get: {
         parameters: {
             query?: never;
@@ -19352,6 +21396,88 @@ export interface operations {
                 "application/json": components["schemas"]["CrewCreate"];
             };
         };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    my_routes_api_crew_my_routes_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    accept_route_api_crew_routes__route_id__accept_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                route_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    decline_route_api_crew_routes__route_id__decline_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                route_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
         responses: {
             /** @description Successful Response */
             200: {

@@ -43,6 +43,9 @@ from modules.payroll.router import router as payroll_router
 from modules.comms.router import router as comms_router
 from modules.properties.router import router as properties_router
 from modules.recurring.router import router as recurring_router
+from modules.routes.router import router as routes_router
+from modules.turnover_windows.router import router as turnover_windows_router
+from modules.apply.router import router as apply_router
 from modules.reminders.router import router as reminders_router
 from modules.intake.router import router as intake_router
 from modules.booking.router import router as booking_router
@@ -163,6 +166,16 @@ app.include_router(payroll_router, prefix="/api/payroll", tags=["payroll"])
 app.include_router(comms_router, prefix="/api/comms", tags=["comms"])
 app.include_router(properties_router, prefix="/api/properties", tags=["properties"])
 app.include_router(recurring_router, prefix="/api/recurring", tags=["recurring"])
+# Routes (migration 100): standing blocks of recurring work owned by one sub.
+app.include_router(routes_router, prefix="/api/routes", tags=["routes"])
+# The Saturday window (migration 101): a service day posted to the bench
+# as one batch, with a price ladder on whatever nobody takes.
+app.include_router(turnover_windows_router, prefix="/api/turnover-windows",
+                   tags=["turnover-windows"])
+# Joining the bench (migration 102). POST /api/apply is PUBLIC — see the
+# _PUBLIC_PREFIXES entry and the module docstring for what that costs and
+# what guards it. Everything else on this router is office-only.
+app.include_router(apply_router, prefix="/api", tags=["apply"])
 app.include_router(reminders_router, prefix="/api/reminders", tags=["reminders"])
 app.include_router(intake_router, prefix="/api/intake", tags=["intake"])
 app.include_router(booking_router, prefix="/api/booking", tags=["booking"])
@@ -335,6 +348,13 @@ async def list_agents():
     return load_agent_roster()
 
 
+# Who may talk to an AI agent. Deliberately spelled out here rather than reusing
+# push_service.OFFICE_ROLES: that constant answers "which notification
+# categories does this role get", and a change made for notifications must not
+# silently widen who can read the client list.
+_AGENT_ROLES = frozenset({"admin", "manager", "viewer", "member"})
+
+
 @app.websocket("/ws/agent/{agent_name}")
 async def agent_websocket(websocket: WebSocket, agent_name: str):
     # BaseHTTPMiddleware does not see WebSocket connections, so the
@@ -349,8 +369,26 @@ async def agent_websocket(websocket: WebSocket, agent_name: str):
     # and every connection was accepted unauthenticated. No valid JWT and no
     # key configured now means there's no way to authenticate the
     # connection, so it's rejected rather than let through.
+    #
+    # ROLE, not just a valid token. Any authenticated login used to reach any
+    # agent, and the agents read the whole business: Finn returns the client
+    # list and the outstanding-invoice total, and `run_operation` in the shared
+    # tool set creates Job rows and sends real Google Calendar invites to
+    # customers. That was tolerable while every login belonged to someone hired
+    # here. The public apply form (#761) mints a `cleaner` login for anybody who
+    # fills in a web form and sets a password, so it is not tolerable now.
+    #
+    # Office roles only. The API-key path below is server-to-server and stays
+    # as it was — that key is the master credential and never reaches a browser.
     token = websocket.query_params.get("token", "")
-    authed = bool(token and verify_jwt(token))
+    claims = verify_jwt(token) if token else None
+    authed = bool(claims)
+    if authed and (claims or {}).get("role") not in _AGENT_ROLES:
+        _logging.getLogger(__name__).warning(
+            "[auth] role %r may not open agent %r — rejecting WS connection.",
+            (claims or {}).get("role"), agent_name)
+        await websocket.close(code=1008, reason="forbidden")
+        return
     if not authed:
         expected_key = os.getenv("BRIGHTBASE_API_KEY", "")
         if not expected_key:
@@ -363,6 +401,26 @@ async def agent_websocket(websocket: WebSocket, agent_name: str):
     if not authed:
         await websocket.close(code=1008, reason="unauthorized")
         return
+
+    # The org every tool call is scoped to. Resolved once from the JWT's user;
+    # the API-key path is server-to-server and has no user, so it falls back to
+    # the default workspace exactly as the HTTP dependency does. Without this
+    # the agent tools query every org's rows AND leave the RLS GUC unset, so
+    # the backstop matches everything instead of denying it.
+    agent_org_id = None
+    if claims:
+        try:
+            from database.db import SessionLocal
+            from database.models import User as _User
+            _db = SessionLocal()
+            try:
+                _u = _db.get(_User, claims.get("user_id"))
+                agent_org_id = getattr(_u, "org_id", None)
+            finally:
+                _db.close()
+        except Exception:
+            _logging.getLogger(__name__).warning(
+                "could not resolve agent org from JWT", exc_info=True)
 
     await websocket.accept()
     conn_key = f"{id(websocket)}_{agent_name}"
@@ -455,7 +513,8 @@ async def agent_websocket(websocket: WebSocket, agent_name: str):
                     for block in final_msg.content:
                         if block.type == "tool_use":
                             tools_used.append(block.name)
-                            result = execute_tool(block.name, dict(block.input), agent_name)
+                            result = execute_tool(block.name, dict(block.input), agent_name,
+                                                  org_id=agent_org_id)
                             result_text = json.dumps(result, default=str)
                             tool_results.append({
                                 "type": "tool_result",

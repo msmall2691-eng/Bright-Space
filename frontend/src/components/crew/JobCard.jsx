@@ -19,7 +19,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   MapPin, KeyRound, ParkingCircle, ChevronDown, Navigation, CheckCircle2,
   Camera, Users, Phone, ClipboardList, Sparkles, Wifi, Home, Copy, Check,
-  QrCode,
+  QrCode, UserPlus,
 } from 'lucide-react'
 import { wifiQrPayload, qrMatrix, qrSvgPath } from './wifiQr'
 import { copyToClipboard } from '../../utils/clipboard'
@@ -214,12 +214,12 @@ function RespondRow({ job, onRespond, onDecline, busy }) {
   )
 }
 
-export default function JobCard({ job, clockable = false, activeEntry = null, onClockIn, onClockOut, onMarkDone, onPhotos, onRespond, onDecline, onClaim, onTextClient, onHouseInfo, busy = false }) {
+export default function JobCard({ job, onMarkDone, onPhotos, onRespond, onDecline, onClaim, onTextClient, onHouseInfo, onHelpers, busy = false }) {
   const isTurnover = job.job_type === 'str_turnover'
   const done = job.status === 'completed'
   const houseLine = houseSpecsLine(job)
-  const isActiveJob = clockable && activeEntry && activeEntry.job_id === job.id
-  const someoneElseActive = clockable && activeEntry && activeEntry.job_id !== job.id
+  const isActiveJob = false   // the time clock is gone (Sept 2026)
+  const someoneElseActive = false
   const houseNoteCount = job.house_notes?.length || 0
   const hasHouseSection = !!(houseLine || houseNoteCount > 0 || (!job.open && job.property_id && onHouseInfo))
   return (
@@ -379,55 +379,87 @@ export default function JobCard({ job, clockable = false, activeEntry = null, on
 
       <ChecklistBlock template={job.checklist_template} />
 
-      {onClaim && (
-        /* Open-jobs board (Phase 3): first tap wins server-side; access
-           details and the customer's number unlock once it's theirs. */
-        <div className="mt-3 border-t border-hairline pt-3">
-          <button onClick={onClaim} disabled={busy}
-            className="w-full text-[13px] font-semibold bg-blue-600 hover:bg-blue-700 disabled:opacity-60 text-white py-2.5 rounded-lg transition-colors inline-flex items-center justify-center gap-1.5">
-            <Sparkles className="w-4 h-4" /> Claim this job
-          </button>
-          <p className="text-[10px] text-ink-3 mt-1.5 text-center">
-            First come, first served{job.teammates?.length ? ` · you'd join ${job.teammates.join(', ')}` : ''}
-          </p>
-        </div>
-      )}
+      {/* BRINGING SOMEONE (migration 107).
+          Not a nicety: one of the five Maine criteria for this arrangement is
+          that a subcontractor hires, pays and supervises their own assistants.
+          The app modelled one cleaner per job, so there was nowhere to say it.
 
-      {clockable && !done && (
-        <div className="mt-3 border-t border-hairline pt-3 grid grid-cols-2 gap-2">
-          {isActiveJob ? (
-            <button onClick={onClockOut} disabled={busy}
-              className="text-[13px] font-semibold bg-emerald-600 hover:bg-emerald-700 disabled:opacity-60 text-white py-2 rounded-lg transition-colors">
-              Clock out
-            </button>
-          ) : someoneElseActive ? (
-            <button disabled title="Clock out of your current job first"
-              className="text-[13px] font-medium bg-panel border border-hairline text-ink-3 py-2 rounded-lg cursor-not-allowed">
-              Clock in
-            </button>
+          It says "you're paid the same" out loud because that is the first
+          question anyone has, and the honest answer — the job's rate is the
+          job's rate, and the helper is paid by the sub — is exactly what makes
+          this their assistant rather than the company's. Only on a job that is
+          actually theirs and not yet finished; the open-jobs board never shows
+          it, because you don't staff a job you haven't got. */}
+      {onHelpers && !job.open && job.status !== 'completed' && job.status !== 'cancelled' && (
+        <button onClick={onHelpers} disabled={busy}
+          className="mt-2 w-full text-left text-[12px] text-ink-2 hover:bg-bg-2 disabled:opacity-60 py-2 px-2.5 rounded-lg transition-colors border border-dashed border-hairline">
+          {(job.my_helpers?.length || 0) > 0 ? (
+            <span className="flex items-center gap-1.5">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" aria-hidden="true" />
+              Bringing {job.my_helpers.map(h => h.name).join(', ')}
+              <span className="text-ink-3">· change</span>
+            </span>
           ) : (
-            <button onClick={onClockIn} disabled={busy}
-              className="text-[13px] font-semibold bg-blue-600 hover:bg-blue-700 disabled:opacity-60 text-white py-2 rounded-lg transition-colors">
-              Clock in
-            </button>
+            <span className="flex items-center gap-1.5 text-ink-3">
+              <UserPlus className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
+              Bringing someone? Add them — you're paid the same
+            </span>
           )}
-          <button onClick={onMarkDone} disabled={busy}
-            className="text-[13px] font-semibold bg-panel border border-hairline text-ink-2 hover:bg-bg-2 disabled:opacity-60 py-2 rounded-lg transition-colors inline-flex items-center justify-center gap-1.5">
-            <CheckCircle2 className="w-4 h-4 text-emerald-600" /> Mark done
-          </button>
-        </div>
+        </button>
       )}
 
-      {clockable && done && isActiveJob && (
-        /* Marked done but the punch is still open — keep clock-out reachable
-           right on the card (the green header bar has it too). */
-        <div className="mt-3 border-t border-hairline pt-3">
-          <button onClick={onClockOut} disabled={busy}
-            className="w-full text-[13px] font-semibold bg-emerald-600 hover:bg-emerald-700 disabled:opacity-60 text-white py-2 rounded-lg transition-colors">
-            Clock out
-          </button>
-        </div>
-      )}
+      {onClaim && (() => {
+        /* Open-jobs board. Since the marketplace pivot (migration 097) this
+           is an ASK, not a claim: several people can want the same job and
+           the office picks, so the button can't promise "it's yours". A sub
+           who already asked sees their own standing request instead of a
+           button that looks like it never worked. Access details and the
+           customer's number still unlock only once it's actually theirs. */
+        const mine = job.my_claim_request
+        const rate = job.posted_rate
+        const asked = mine?.requested_rate
+        return (
+          <div className="mt-3 border-t border-hairline pt-3">
+            {rate != null ? (
+              <p className="text-[13px] text-ink-2 mb-2 text-center">
+                Pays <span className="font-semibold text-ink">${Number(rate).toLocaleString(undefined, { maximumFractionDigits: 2 })}</span>
+              </p>
+            ) : (
+              /* The server refuses a request where neither side named a number,
+                 so without this the sub taps Ask, fills nothing in, and gets a
+                 422 for a rule they were never told. Say it on the card, where
+                 they decide whether to bother. */
+              <p className="flex items-start justify-center gap-1.5 text-[13px] text-ink-2 mb-2 text-center">
+                <span className="mt-1.5 w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0" aria-hidden="true" />
+                <span>No price set — name yours when you ask.</span>
+              </p>
+            )}
+            {mine?.status === 'pending' ? (
+              <>
+                <p className="flex items-center justify-center gap-1.5 text-[13px] text-ink-2">
+                  <span className="w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0" aria-hidden="true" />
+                  You asked{asked != null ? ` for $${Number(asked).toLocaleString(undefined, { maximumFractionDigits: 2 })}` : ''} — waiting to hear back
+                </p>
+                <button onClick={onClaim} disabled={busy}
+                  className="mt-2 w-full text-[13px] font-medium bg-panel border border-hairline-2 text-ink-2 hover:bg-bg-2 disabled:opacity-60 py-2.5 rounded-lg transition-colors">
+                  Change what I asked for
+                </button>
+              </>
+            ) : (
+              <>
+                <button onClick={onClaim} disabled={busy}
+                  className="w-full text-[13px] font-semibold bg-blue-600 hover:bg-blue-700 disabled:opacity-60 text-white py-2.5 rounded-lg transition-colors inline-flex items-center justify-center gap-1.5">
+                  <Sparkles className="w-4 h-4" /> Ask for this job
+                </button>
+                <p className="text-[10px] text-ink-3 mt-1.5 text-center">
+                  The office picks who gets it{job.teammates?.length ? ` · you'd join ${job.teammates.join(', ')}` : ''}
+                </p>
+              </>
+            )}
+          </div>
+        )
+      })()}
+
 
       {onPhotos && (
         /* Photos stay reachable after Mark done on purpose — "after" shots are

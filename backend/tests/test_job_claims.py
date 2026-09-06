@@ -1,17 +1,19 @@
-"""Crew open-jobs board + claim (crew app Phase 3).
+"""Crew open-jobs board + request-to-claim (marketplace pivot, migration 097).
 
 The gate under test is owner decision #2: ONLY a job the office explicitly
-flagged open_for_claims is claimable — being unassigned is not enough — and
-one claim closes the offer atomically (the loser of a race sees 409). A claim
-is the crew app's single schedule write: it adds the claimer to cleaner_ids,
-flips the flag off, and seeds an "accepted" response so the office sees a
-green check on a job the cleaner chose themself.
+flagged open_for_claims is claimable — being unassigned is not enough.
+Claiming FILES A REQUEST (optionally countering the office's posted_rate) —
+it does not assign the job or close the offer; several subs can request the
+same open job, and the office picks who gets it (see
+test_marketplace_claim_requests.py for the approve/decline side). A request
+is refused as a 409 if it would double-book the requester against a job
+they're already assigned to — the same conflict engine the office's assign
+flow uses.
 
 Also covered: open listings hide access details / customer phone until the
-job is actually claimed; a claim that would double-book the claimer is
-refused by the same conflict engine the office assign flow uses; and the
-Phase 2 cleanup — removing a cleaner from a job (office PATCH) deletes their
-stale accept/decline answer so a re-add starts at "no answer yet".
+job is actually approved; and the Phase 2 cleanup — removing a cleaner from
+a job (office PATCH) deletes their stale accept/decline answer so a re-add
+starts at "no answer yet".
 """
 import uuid
 from datetime import time
@@ -21,7 +23,7 @@ from fastapi.testclient import TestClient
 
 from main import app
 from database.db import SessionLocal
-from database.models import Client, Property, Job, JobResponse
+from database.models import Client, Property, Job, JobClaimRequest, JobResponse
 from modules.auth.router import get_current_user, current_org_id
 from utils.dates import business_today
 
@@ -42,6 +44,8 @@ class _Admin:
 
 
 def _as(user):
+    if getattr(user, "role", None) == "cleaner":
+        _vet(user.id)          # a sub has to be cleared to work before claiming
     app.dependency_overrides[get_current_user] = lambda: user
     app.dependency_overrides[current_org_id] = lambda: 1
     return TestClient(app)
@@ -52,19 +56,46 @@ def _clear():
     app.dependency_overrides.pop(current_org_id, None)
 
 
+def _vet(uid, org_id=1):
+    """Give a stub cleaner a complete vetting file (migration 098).
+
+    The claim endpoint refuses anyone whose file is incomplete — that is the
+    whole point of Phase 2 — so a test about claiming has to be about a sub who
+    is cleared to work, or it only ever exercises the gate. Called from _as()
+    so no individual test has to remember; the gate itself is tested in
+    tests/test_sub_vetting.py, where an unvetted sub is the subject.
+    """
+    from datetime import timedelta
+    from database.models import SubAgreement, SubDocument
+    from services.sub_vetting import CURRENT_AGREEMENT_VERSION
+    from utils.dates import business_today
+
+    db = SessionLocal()
+    db.query(SubDocument).filter(SubDocument.user_id == uid).delete(synchronize_session=False)
+    db.query(SubAgreement).filter(SubAgreement.user_id == uid).delete(synchronize_session=False)
+    db.add(SubAgreement(org_id=org_id, user_id=uid, version=CURRENT_AGREEMENT_VERSION,
+                        accepted_at=business_today()))
+    db.add(SubDocument(org_id=org_id, user_id=uid, kind="w9", status="accepted", data=b"x"))
+    db.add(SubDocument(org_id=org_id, user_id=uid, kind="coi", status="accepted", data=b"x",
+                       expires_at=business_today() + timedelta(days=365)))
+    db.commit(); db.close()
+
+
 @pytest.fixture
 def ids():
     ids = {"clients": [], "properties": [], "jobs": []}
     yield ids
     db = SessionLocal()
     db.query(JobResponse).filter(JobResponse.job_id.in_(ids["jobs"] or [0])).delete(synchronize_session=False)
+    db.query(JobClaimRequest).filter(JobClaimRequest.job_id.in_(ids["jobs"] or [0])).delete(synchronize_session=False)
     db.query(Job).filter(Job.id.in_(ids["jobs"] or [0])).delete(synchronize_session=False)
     db.query(Property).filter(Property.id.in_(ids["properties"] or [0])).delete(synchronize_session=False)
     db.query(Client).filter(Client.id.in_(ids["clients"] or [0])).delete(synchronize_session=False)
     db.commit(); db.close()
 
 
-def _mk_job(ids, cleaner_ids, *, open_for_claims=False, start=time(9, 0), end=time(11, 0)):
+def _mk_job(ids, cleaner_ids, *, open_for_claims=False, start=time(9, 0), end=time(11, 0),
+            posted_rate=80.0):
     db = SessionLocal()
     tag = uuid.uuid4().hex[:6]
     c = Client(name=f"Claim {tag}", status="active", org_id=1, phone="207-555-0100")
@@ -75,7 +106,7 @@ def _mk_job(ids, cleaner_ids, *, open_for_claims=False, start=time(9, 0), end=ti
     j = Job(client_id=c.id, property_id=p.id, job_type="residential", title=f"Clean {tag}",
             scheduled_date=business_today(), start_time=start, end_time=end,
             cleaner_ids=cleaner_ids, status="scheduled", org_id=1,
-            open_for_claims=open_for_claims)
+            open_for_claims=open_for_claims, posted_rate=posted_rate)
     db.add(j); db.commit(); db.refresh(j)
     ids["clients"].append(c.id); ids["properties"].append(p.id); ids["jobs"].append(j.id)
     jid = j.id; db.close()
@@ -90,7 +121,11 @@ def _job(jid):
     return out
 
 
-def test_open_listing_hides_access_and_claim_wins_once(ids):
+def test_open_listing_hides_access_and_request_stays_open_for_others(ids):
+    """Marketplace pivot (migration 097): claiming files a REQUEST, it
+    doesn't assign the job or close the offer — a second sub can still
+    request the same job. Access details stay hidden until the sub is
+    actually approved, same as before."""
     jid = _mk_job(ids, ["CT-901"], open_for_claims=True)
     try:
         api = _as(_Cleaner(9901, "CT-902"))
@@ -104,28 +139,62 @@ def test_open_listing_hides_access_and_claim_wins_once(ids):
         assert "client_phone" not in row          # numbers never reach crew
         assert row["can_text_client"] is False    # offers can't text either
         assert row["open"] is True
+        assert row["my_claim_request"] is None    # haven't asked yet
 
-        r = api.post(f"/api/crew/jobs/{jid}/claim")
+        r = api.post(f"/api/crew/jobs/{jid}/claim", json={"requested_rate": 90.0,
+                                                         "message": "I can do this one"})
         assert r.status_code == 200, r.text
-        assert r.json()["my_response"] == {"response": "accepted", "reason": None}
+        # `auto_approved` is new in Phase 6 and deliberately part of this shape:
+        # it's the only way the crew app can say "it's yours" instead of "we'll
+        # let you know" on the one path where that's true. False here because
+        # the auto-approval rule is off by default, which is itself the point.
+        assert r.json() == {"job_id": jid, "status": "pending",
+                            "requested_rate": 90.0, "message": "I can do this one",
+                            "auto_approved": False}
 
+        # Not assigned yet — still just a request. Office decides.
         state = _job(jid)
-        assert "CT-902" in state["cleaner_ids"] and "CT-901" in state["cleaner_ids"]
-        assert state["open"] is False   # one claim closes the offer
+        assert "CT-902" not in state["cleaner_ids"]
+        assert state["open"] is True
 
-        # Now it's theirs: full details flow on my-day, and it left the board.
+        # My own listing now shows my pending request instead of letting me
+        # request twice blind.
         day = api.get("/api/crew/my-day").json()
-        mine = [j for j in day["today"] if j["id"] == jid]
-        assert mine and mine[0]["house_code"] == "9999"
-        assert not [j for j in day["open_jobs"] if j["id"] == jid]
+        listing = [j for j in day["open_jobs"] if j["id"] == jid]
+        assert listing[0]["my_claim_request"] == {
+            "status": "pending", "requested_rate": 90.0, "message": "I can do this one"}
+
+        # A second sub can ALSO request the same still-open job.
+        _clear()
+        second = _as(_Cleaner(9902, "CT-903"))
+        r2 = second.post(f"/api/crew/jobs/{jid}/claim")   # accepts posted rate, no counter
+        assert r2.status_code == 200, r2.text
+        assert r2.json()["requested_rate"] is None
+        assert _job(jid)["open"] is True   # still open — office hasn't picked
+    finally:
         _clear()
 
-        # Second cleaner arrives late → clean 409, assignment untouched.
-        late = _as(_Cleaner(9902, "CT-903"))
-        r = late.post(f"/api/crew/jobs/{jid}/claim")
-        assert r.status_code == 409
-        assert "already claimed" in r.json()["detail"]
-        assert "CT-903" not in _job(jid)["cleaner_ids"]
+
+def test_a_job_with_no_posted_rate_cannot_be_requested_blind(ids):
+    """Fix: a sub must not end up working for an unstated amount.
+
+    posted_rate is nullable by design (a re-opened job may not carry a new
+    price), and a request with no counter means "I'll take your rate" — so
+    both being NULL is nobody having named a number. Refused here, while the
+    sub is still looking at the offer, rather than at approval time where the
+    error would surface to the office instead of to the person it concerns.
+    """
+    jid = _mk_job(ids, [], open_for_claims=True, posted_rate=None)
+    try:
+        api = _as(_Cleaner(9903, "CT-904"))
+        r = api.post(f"/api/crew/jobs/{jid}/claim")
+        assert r.status_code == 422
+        assert "name your price" in r.json()["detail"]
+
+        # Naming a price is exactly how you take an unpriced job.
+        r2 = api.post(f"/api/crew/jobs/{jid}/claim", json={"requested_rate": 120.0})
+        assert r2.status_code == 200, r2.text
+        assert r2.json()["requested_rate"] == 120.0
     finally:
         _clear()
 
@@ -176,5 +245,75 @@ def test_office_unassign_clears_stale_response(ids):
         db.close()
         # The removed cleaner's answer is gone; a later re-add starts fresh.
         assert [x.cleaner_id for x in rows] == []
+    finally:
+        _clear()
+
+
+# ── The board is for people cleared to work (Sep 2026) ───────────────────────
+# my_day required role="cleaner" and nothing else, so approving an application
+# — which mints a login, NOT clearance — handed a stranger the open-jobs board
+# the moment they set a password: no insurance, no signed agreement, no W-9.
+# And an offer carried the customer's NAME and STREET ADDRESS. Gate codes and
+# WiFi were correctly stripped; whose house it is was not.
+
+def _unvetted(uid, cleaner_id):
+    """A cleaner login with an empty file — exactly what Approve produces."""
+    from database.models import SubAgreement, SubDocument
+    db = SessionLocal()
+    db.query(SubDocument).filter(SubDocument.user_id == uid).delete(synchronize_session=False)
+    db.query(SubAgreement).filter(SubAgreement.user_id == uid).delete(synchronize_session=False)
+    db.commit(); db.close()
+    who = _Cleaner(uid, cleaner_id)
+    app.dependency_overrides[get_current_user] = lambda: who
+    app.dependency_overrides[current_org_id] = lambda: 1
+    return TestClient(app)
+
+
+def test_an_unvetted_account_sees_no_open_jobs_at_all(ids):
+    jid = _mk_job(ids, [], open_for_claims=True)
+    api = _unvetted(9971, "CT-971")
+    try:
+        body = api.get("/api/crew/my-day?days=14").json()
+        assert body["open_jobs"] == [], \
+            "approval is a login, not clearance — the board waits for the file"
+    finally:
+        _clear()
+
+    # Control: the SAME job is on the board for somebody who is cleared, so the
+    # assertion above is about the vetting gate and not about a fixture that
+    # never produced an open job.
+    api = _as(_Cleaner(9972, "CT-972"))
+    try:
+        open_ids = [r["id"] for r in api.get("/api/crew/my-day?days=14").json()["open_jobs"]]
+        assert jid in open_ids
+    finally:
+        _clear()
+
+
+def test_an_offer_names_the_town_not_the_customer(ids):
+    """Town and the size of the place is enough to judge the drive and the
+    hours. Whose house it is stops being the bidder's business until they have
+    won it — the customer agreed to a cleaning company in their home, not to
+    their name and address circulating around the bench."""
+    jid = _mk_job(ids, [], open_for_claims=True)
+    db = SessionLocal()
+    j = db.query(Job).filter(Job.id == jid).first()
+    p = db.query(Property).filter(Property.id == j.property_id).first()
+    p.city, p.state = "Scarborough", "ME"
+    db.commit(); db.close()
+
+    api = _as(_Cleaner(9973, "CT-973"))
+    try:
+        row = next(r for r in api.get("/api/crew/my-day?days=14").json()["open_jobs"]
+                   if r["id"] == jid)
+        assert row["address"] is None
+        assert row["client_name"] is None
+        assert row["property_name"] is None
+        assert row["area"] == "Scarborough ME", "town is what they get instead"
+        # Still the things a bid actually needs.
+        assert row["posted_rate"] == 80.0
+        assert row["scheduled_date"]
+        # And the house internals stay gone, as they always were.
+        assert row["house_code"] is None and row["access_notes"] is None
     finally:
         _clear()

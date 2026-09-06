@@ -27,6 +27,7 @@ export default function AgendaHero({
   todayVisits,
   todayStats,
   unassignedToday,
+  awaitingReply,
   weekDates,
   loadByDate,
   jobs,
@@ -82,6 +83,7 @@ export default function AgendaHero({
         <OpsAlerts
           stats={todayStats}
           unassignedToday={unassignedToday}
+          awaitingReply={awaitingReply}
           onFocusUnassigned={onFocusUnassigned}
           onOpenToCrew={onOpenToCrew}
         />

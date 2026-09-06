@@ -103,6 +103,10 @@ export default function Settings() {
           <div className="flex-1 overflow-y-auto px-4 sm:px-8 pb-8 bg-bg">
             <div className="max-w-2xl pt-6">
               <UsersAdmin />
+              {/* Applications moved to Crew > The bench. They belong beside
+                  the people they turn into, not in the account-admin list —
+                  someone deciding whether to approve an applicant wants the
+                  bench they'd be joining on the same screen. */}
             </div>
           </div>
         )}

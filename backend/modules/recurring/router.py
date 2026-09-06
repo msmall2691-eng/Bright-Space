@@ -44,6 +44,29 @@ def _release_sync_links(db: Session, job: Job, *, notify: bool = True) -> None:
             logger.warning(f"GCal delete failed for job {job.id}: {e}")
 
 
+def _cancel_side_effects(db: Session, job: Job, *, notify: bool = True) -> None:
+    """Everything that has to happen when a recurring visit is cancelled,
+    besides writing the status — in one place, because there are five paths
+    here that cancel a visit and each one of them has to do all of it.
+
+    Two things so far:
+
+      * the linked Google Calendar event is deleted (`_release_sync_links`);
+      * the job comes off the open-jobs board, and every subcontractor still
+        waiting on a request for it is answered (review findings 4 and 5).
+
+    The second was missing at all five paths. `open_for_claims` was written
+    False by exactly one thing — a successful approval — so a posted visit that
+    a series edit, a drift cleanup, a split, a series cancel or a skip
+    cancelled stayed advertised as available work, and the requests on it sat
+    `pending` forever: invisible in the sub's own app (the board lists only
+    scheduled jobs) and still approvable by the office.
+    """
+    _release_sync_links(db, job, notify=notify)
+    from services.claim_approval import close_offer
+    close_offer(db, job, reason="was cancelled")
+
+
 def _get_schedule_or_404(db: Session, schedule_id: int, org_id: int) -> RecurringSchedule:
     """Fetch a RecurringSchedule scoped to the caller's org, 404 otherwise.
 
@@ -580,6 +603,29 @@ def generate_jobs(db: Session, sched: RecurringSchedule) -> int:
     from database.models import Client
     from integrations.google_calendar import create_event
 
+    # Job.property_id is NOT NULL (models.py: "Every job must have a property"),
+    # and every occurrence copies it straight off the schedule. A series with no
+    # property therefore cannot produce a single visit — each insert trips the
+    # constraint, the race-safe IntegrityError handler below rolls the savepoint
+    # back, and the run reports "0 created" while logging "Skipped duplicate job
+    # ... expected and harmless" about a constraint failure that is neither.
+    #
+    # So this stopped being generation-with-a-cosmetic-gap and became silent
+    # death: the visits already on the books run out, no more are made, and
+    # nothing says so. The owner had three such series and the health scan was
+    # calling it severity `info` ("visits inherit only the free-text address").
+    #
+    # Refuse loudly instead of failing quietly N times. NOT a fallback to the
+    # client's property: which house a cleaner is sent to is not a thing for
+    # the app to guess. audit_series raises it as an error with a one-tap link.
+    if sched.property_id is None:
+        logger.warning(
+            "[recurring] schedule %s (client %s) has no property_id — generated "
+            "nothing. Link it to a property; visits cannot be created without one.",
+            sched.id, sched.client_id,
+        )
+        return 0
+
     # Pin the cadence phase before expanding dates so biweekly stays biweekly.
     _ensure_anchor(db, sched)
 
@@ -663,6 +709,33 @@ def generate_jobs(db: Session, sched: RecurringSchedule) -> int:
     if timeless:
         db.flush()
 
+    # Routes (migration 100): resolved once per call, not per occurrence — a
+    # schedule's route membership can't change midway through generating its
+    # own dates. `route_share` stays None for the overwhelming majority of
+    # schedules, which is what keeps this a no-op for everything that isn't on
+    # a route.
+    route_share, route_owner = None, None
+    try:
+        from database.models import Route, RouteMember
+        from services.routes import shares_by_schedule
+
+        _rt = (db.query(Route)
+               .join(RouteMember, RouteMember.route_id == Route.id)
+               .filter(RouteMember.recurring_schedule_id == sched.id,
+                       Route.status == "active")
+               .first())
+        if _rt is not None and _rt.owner_cleaner_id:
+            _share = shares_by_schedule(db, _rt).get(sched.id)
+            # A zero share would pay nothing at all (payroll's flat-rate branch
+            # is gated on agreed_rate > 0), so treat it as "not priced" and let
+            # the schedule's own crew stand rather than silently assigning
+            # someone to unpaid work.
+            if _share and _share > 0:
+                route_share, route_owner = _share, _rt.owner_cleaner_id
+    except Exception:
+        # A broken route must never stop the calendar being generated.
+        logger.exception("[recurring] route lookup failed for schedule %s", sched.id)
+
     # Availability guards — mirror the one-off create path (create_job) so a
     # recurring occurrence never SILENTLY double-books a cleaner, books someone
     # on approved time off, or blows past the daily cap. Reuses the scheduling
@@ -728,6 +801,16 @@ def generate_jobs(db: Session, sched: RecurringSchedule) -> int:
             notes=sched.notes,
             org_id=sched.org_id,  # MT-2: inherit the schedule's tenant
         )
+        # Routes (migration 100): a house inside an ACTIVE route belongs to that
+        # route's owner at that route's price, so the occurrence is assigned and
+        # priced here rather than being offered to anyone. The arithmetic lives
+        # in services/routes.py — routers route (R6), and a second copy of the
+        # calculation that decides what somebody is paid is not a thing to have.
+        if route_share is not None:
+            job.cleaner_ids = [route_owner]
+            job.agreed_rate = route_share      # the flat-rate path payroll pays
+            job.agreed_cleaner_id = route_owner  # ...and who it belongs to (106)
+            job.open_for_claims = False        # a route job never goes on the board
         # Race-safe: if a concurrent /generate-all already inserted this row,
         # the partial unique index added in migration 004 raises IntegrityError;
         # roll back the savepoint and treat as already-exists.
@@ -1087,7 +1170,7 @@ def _resync_future_jobs(db: Session, sched: RecurringSchedule) -> int:
         j.status = "cancelled"
         j.recurring_schedule_id = None
         j.notes = (j.notes or "") + "\n[Superseded by an updated recurring schedule]"
-        _release_sync_links(db, j)
+        _cancel_side_effects(db, j)
         removed += 1
     if removed:
         db.flush()
@@ -1272,7 +1355,7 @@ def apply_off_phase_cleanup(body: OffPhaseCleanupApply, db: Session = Depends(ge
                 continue
             j.status = "cancelled"
             j.notes = (j.notes or "") + "\n[Removed off-cadence duplicate — biweekly drift cleanup]"
-            _release_sync_links(db, j)
+            _cancel_side_effects(db, j)
             cancelled.append(j.id)
     if cancelled:
         db.commit()
@@ -1380,7 +1463,7 @@ def split_schedule(schedule_id: int, data: ScheduleSplit, db: Session = Depends(
         j.status = "cancelled"
         j.recurring_schedule_id = None
         j.notes = (j.notes or "") + "\n[Superseded by a series split]"
-        _release_sync_links(db, j)
+        _cancel_side_effects(db, j)
     db.commit()
     db.refresh(new_sched)
 
@@ -1389,6 +1472,71 @@ def split_schedule(schedule_id: int, data: ScheduleSplit, db: Session = Depends(
     result["jobs_created"] = jobs_created
     result["previous_schedule_id"] = old.id
     return result
+
+
+def _upcoming_series_jobs(db: Session, sched_id: int) -> list:
+    """The visits this series still has ahead of it: today or later, not
+    already done, not already cancelled.
+
+    "Today or later" uses business_today, the same boundary the rest of the
+    scheduling code calls today — a visit happening this afternoon is still
+    ahead of you, and cancelling the series should take it off the board.
+    Completed visits are never in scope: they happened, and the invoice and
+    payroll rows hanging off them are real."""
+    return (
+        db.query(Job)
+        .filter(
+            Job.recurring_schedule_id == sched_id,
+            Job.scheduled_date >= business_today(),
+            Job.status.notin_(["completed", "cancelled"]),
+        )
+        .order_by(Job.scheduled_date)
+        .all()
+    )
+
+
+@router.post("/{schedule_id}/cancel-upcoming", dependencies=[Depends(require_role("admin", "manager"))])
+def cancel_upcoming_visits(schedule_id: int, db: Session = Depends(get_db),
+                           org_id: int = Depends(current_org_id)):
+    """Take this series' remaining visits off the calendar.
+
+    WHY THIS EXISTS: cancelling a series only stops GENERATION. Every visit
+    already materialized stays on the schedule — and generation runs eight
+    weeks ahead by default, so cancelling a weekly series left roughly eight
+    cleanings sitting there. The app said so in the confirm text, but "its 8
+    already-scheduled visits stay on the calendar until you remove them
+    individually" describes a chore, not a cancellation, and the owner
+    reported the obvious reading of it: "I deleted it and it's still there."
+
+    Soft-cancel, matching every other recurring-cancellation path: the rows
+    stay, status becomes 'cancelled', and the linked Google Calendar event is
+    released so the visit doesn't outlive the app on her phone. Past and
+    completed visits are never touched.
+
+    Deliberately SEPARATE from DELETE /{id} rather than folded into it: this
+    is the destructive half, it is the caller's explicit second act, and
+    scheduling-invariants R7 exists precisely so a Job never disappears as a
+    side effect of an operation aimed at something else. The link to the
+    schedule is kept (unlike the skip path, which must detach to free the
+    date) — generation is off for a cancelled series, so nothing will
+    recreate these, and keeping it preserves "these belonged to that series"
+    for history.
+    """
+    sched = _get_schedule_or_404(db, schedule_id, resolve_org_id(org_id, db))
+    jobs = _upcoming_series_jobs(db, sched.id)
+    cancelled = []
+    for j in jobs:
+        j.status = "cancelled"
+        j.notes = (j.notes or "") + "\n[Series cancelled — visit removed from the calendar]"
+        _cancel_side_effects(db, j)
+        cancelled.append({
+            "job_id": j.id,
+            "scheduled_date": _as_date(j.scheduled_date).isoformat() if j.scheduled_date else None,
+        })
+    if cancelled:
+        db.commit()
+    return {"schedule_id": sched.id, "cancelled_count": len(cancelled),
+            "cancelled": cancelled}
 
 
 @router.delete("/{schedule_id}", status_code=204, dependencies=[Depends(require_role("admin", "manager"))])
@@ -1460,7 +1608,7 @@ def _cancel_existing_job(db: Session, sched_id: int, target_date: date, reason: 
     # date collided with this inert row and 500'd at commit. Matches the
     # detach convention _resync_future_jobs and split_schedule already use.
     job.recurring_schedule_id = None
-    _release_sync_links(db, job, notify=notify)
+    _cancel_side_effects(db, job, notify=notify)
 
 
 @router.post("/{schedule_id}/skip", status_code=201, response_model=RecurrenceExceptionRead, dependencies=[Depends(require_role("admin", "manager"))])
@@ -1637,7 +1785,7 @@ def _reschedule_occurrence(db: Session, sched: RecurringSchedule, exception_date
         if old_occurrence is not None:
             old_occurrence.public_token = None  # freed for the new row below
             # Detach the calendar event from the old row BEFORE the cancel so
-            # _release_sync_links doesn't delete it — we re-point it at the moved
+            # _cancel_side_effects doesn't delete it — we re-point it at the moved
             # occurrence and update it in place below (one silent event move,
             # not a delete + re-create). If there's no carried event, this is a
             # no-op and the cancel behaves exactly as before.

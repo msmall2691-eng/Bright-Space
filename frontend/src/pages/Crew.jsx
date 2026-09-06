@@ -15,7 +15,10 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { HardHat, RefreshCw, UserPlus, Mail } from 'lucide-react'
 import { get, post, patch } from '../api'
 import { PageHeader, EmptyState, ErrorState, Skeleton, SubNav } from '../components/ui'
+import BenchRoster from '../components/crew/BenchRoster'
+import SubApplications from '../components/SubApplications'
 import { pushToast } from '../utils/toastBus'
+import { reportInvite } from '../utils/inviteFallback'
 import CrewDocsAdmin from '../components/crew/CrewDocsAdmin'
 import { CrewThreadPane } from '../components/comms/CrewThreadPane'
 import { MessageSquare, Sparkles, X } from 'lucide-react'
@@ -154,7 +157,13 @@ export default function Crew() {
 
   const resend = async (id) => {
     setBusyId(id)
-    try { await post(`/api/crew/${id}/resend-invite`); pushToast('Invite re-sent.', 'success') }
+    try {
+      const r = await post(`/api/crew/${id}/resend-invite`)
+      // Resend fails the same silent way the first send did when the cause is
+      // configuration rather than a hiccup — reporting success there is what
+      // made this unrecoverable.
+      if (!await reportInvite(r, r?.email || 'them')) pushToast('Invite re-sent.', 'success')
+    }
     catch (err) { pushToast(err?.message || 'Could not resend the invite.', 'error') }
     finally { setBusyId(null) }
   }
@@ -246,6 +255,23 @@ export default function Crew() {
           </div>
         )}
 
+
+        {/* THE BENCH LEADS. Who you have and whether they can work comes
+            before the setup list of who's on the books — that ordering is the
+            page's whole point, and it's also where the "Document to review"
+            notification lands (it used to point at /staff, which was never a
+            route).
+
+            Applications sit directly under it because that is the same
+            question one step earlier: who WANTS to be on the bench. They used
+            to live in Settings > Users, two clicks away from every other thing
+            about the same person, which is how somebody applies on Tuesday and
+            is noticed in March. */}
+        <section>
+          <h2 className="mb-2 text-sm font-semibold text-ink">The bench</h2>
+          <BenchRoster />
+          <div className="mt-4"><SubApplications /></div>
+        </section>
 
         {/* Roster */}
         <div>

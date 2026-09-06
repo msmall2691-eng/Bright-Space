@@ -114,6 +114,46 @@ RULES: list[dict[str, Any]] = [
         ],
     },
     {
+        "key": "claim_auto_approve",
+        "title": "Approve a job request without asking me",
+        "summary": "Only when there's nothing to decide: their file is complete "
+                   "and current, they asked at or under the posted price, "
+                   "nobody else has asked for that job, and they're free that "
+                   "day. Anything else waits for you — a counter-offer above "
+                   "the posted price always does.",
+        "fields": [
+            {"key": "claim_auto_approve_mode", "type": "choice", "default": "off",
+             "label": "When a sub asks for a posted job", "choices": [
+                 {"value": "off", "label": "Ask me first"},
+                 {"value": "auto", "label": "Just do it"},
+             ],
+             "help": "Turning this on is what stops you approving the same "
+                     "obvious request every week. It never picks between two "
+                     "people who both want the same job."},
+            {"key": "claim_auto_approve_max_rate", "type": "number", "default": 0,
+             "label": "Never above", "unit": "$", "min": 0, "max": 5000,
+             "help": "0 means no ceiling. Above this, the request waits for "
+                     "you however ordinary it looks."},
+        ],
+    },
+    {
+        "key": "bench_digest",
+        "title": "Send me one round-up of the bench each week",
+        "summary": "Turnovers nobody has taken, routes offered and unanswered, "
+                   "insurance about to lapse, money owed to subs, and anyone "
+                   "past $600 for the year. Nothing arrives in a week with "
+                   "nothing to decide.",
+        "fields": [
+            {"key": "bench_digest_enabled", "type": "bool", "default": False,
+             "label": "Send the round-up"},
+            {"key": "bench_digest_weekday", "type": "number", "default": 2,
+             "label": "Which day", "min": 0, "max": 6,
+             "help": "0 is Monday, 2 is Wednesday. Wednesday is the last point "
+                     "where a gap can be fixed by posting or pricing rather "
+                     "than by ringing people up."},
+        ],
+    },
+    {
         "key": "crew_escalation",
         "title": "Offer a job to the crew when nobody's on it",
         "summary": "A scheduled job still has no cleaner as the date closes in, so "

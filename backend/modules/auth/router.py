@@ -757,11 +757,31 @@ def _ensure_not_last_admin(db: Session, user: User):
         raise HTTPException(status_code=409, detail="Can't remove or demote the last active admin.")
 
 
-def send_staff_invite(u: User) -> None:
+def send_staff_invite(u: User) -> dict:
     """Email any staff user (cleaner or office) a link to set their password.
-    Best-effort — a mail failure never fails the create; the admin can resend.
+
+    Returns ``{"sent": bool, "link": str, "error": str | None}``. Still
+    best-effort — a mail failure must never fail the create, because the
+    account is the thing that matters and a resend is cheap. But it is no
+    longer SILENT, and that distinction is the whole point of the return
+    value: **every caller must surface `sent`.**
+
+    What it used to do instead: swallow the exception, log it, and return
+    None. send_email raises when SMTP credentials are absent, so on an
+    unconfigured deployment the office read "Invited them" while nothing was
+    sent — and the set-password token existed only inside the email that never
+    went, with no way to hand it over. The account sat `status="invited"` with
+    no password and no route to one. Resend failed the same silent way.
+
+    `link` is returned so a caller can offer it out of band when the mail
+    failed. It is a live credential — seven days, single use, sets a password
+    on that account — so surface it ONLY on failure and only to the office;
+    `invite_status_fields` below does that consistently.
+
     The ONE invite sender: the crew module imports this rather than keeping its
-    own copy, so wording and TTL can't drift between the two add-a-person flows."""
+    own copy, so wording and TTL can't drift between the two add-a-person flows.
+    """
+    link = ""
     try:
         token = make_invite_token(u.email)
         from config import app_base_url
@@ -786,8 +806,28 @@ def send_staff_invite(u: User) -> None:
             ),
             text_body=f"Hi {name}, set your BrightBase password (good for 7 days): {link}",
         )
-    except Exception:
+        return {"sent": True, "link": link, "error": None}
+    except Exception as e:
         logger.exception("[auth] staff invite email failed")
+        # Truncated: this reaches an admin's screen, and an SMTP server's
+        # rejection can be long. It never carries the credentials themselves —
+        # send_email raises before connecting when they're missing.
+        return {"sent": False, "link": link, "error": str(e)[:300] or e.__class__.__name__}
+
+
+def invite_status_fields(result: dict) -> dict:
+    """The response fields every invite-sending endpoint adds.
+
+    The link is included ONLY when the email didn't send. It is a credential;
+    when the mail went out there is nothing to rescue and nothing to expose.
+    """
+    if result.get("sent"):
+        return {"invite_sent": True}
+    return {
+        "invite_sent": False,
+        "invite_link": result.get("link") or "",
+        "invite_error": result.get("error") or "",
+    }
 
 
 class AcceptInvite(BaseModel):
@@ -958,6 +998,104 @@ class InviteUser(BaseModel):
     role: str = "member"
 
 
+# ── The vetting file, office side (migration 098) ───────────────────────────
+#
+# Same service as the crew's "My file", so the two screens can't drift into
+# disagreeing about whether somebody is cleared to work.
+
+
+@router.get("/users/{user_id}/file", dependencies=[Depends(require_role("admin", "manager"))])
+def get_sub_file(user_id: int, db: Session = Depends(get_db)):
+    """One subcontractor's file: every document, its state, and what's missing."""
+    from services.sub_vetting import vetting_status
+    return vetting_status(db, user_id)
+
+
+@router.get("/users/{user_id}/file/{kind}/download",
+            dependencies=[Depends(require_role("admin", "manager"))])
+def download_sub_document(user_id: int, kind: str, db: Session = Depends(get_db)):
+    """The document itself, to actually read before accepting it.
+
+    Inline rather than an attachment: the point is to look at the certificate
+    and check the dates, not to collect a downloads folder. Sent with
+    nosniff + a no-store cache header — these are insurance certificates and
+    tax forms, not something to leave in a shared browser cache.
+    """
+    from fastapi import Response as _Response
+    from database.models import SubDocument as _Doc
+
+    doc = (db.query(_Doc)
+           .filter(_Doc.user_id == user_id, _Doc.kind == (kind or "").lower())
+           .first())
+    if doc is None or not doc.data:
+        raise HTTPException(status_code=404, detail="No document on file")
+    return _Response(
+        content=doc.data,
+        media_type=doc.content_type or "application/octet-stream",
+        headers={
+            "Content-Disposition": f'inline; filename="{doc.filename or kind}"',
+            "X-Content-Type-Options": "nosniff",
+            "Cache-Control": "no-store",
+        },
+    )
+
+
+class SubDocumentReview(BaseModel):
+    # accepted | pending | missing — "expired" is never set by hand, it's
+    # derived from the date so it can't be wrong the morning it lapses.
+    status: str
+    notes: Optional[str] = None
+    expires_at: Optional[str] = None
+
+
+@router.post("/users/{user_id}/file/{kind}/review",
+             dependencies=[Depends(require_role("admin", "manager"))])
+def review_sub_document(user_id: int, kind: str, body: SubDocumentReview,
+                        db: Session = Depends(get_db),
+                        current_user: User = Depends(get_current_user)):
+    """Accept or reject one document, optionally correcting its expiry.
+
+    The office can fix an expiry the sub typed wrong — the date on the
+    certificate is what matters, and it is the office that reads it.
+    """
+    from datetime import datetime as _dt, timezone as _tz
+    from database.models import SubDocument as _Doc
+    from services.sub_vetting import vetting_status
+    from utils.dates import coerce_date as _coerce_date
+
+    allowed = {"accepted", "pending", "missing"}
+    if body.status not in allowed:
+        raise HTTPException(status_code=422,
+                            detail=f"status must be one of {', '.join(sorted(allowed))}")
+    doc = (db.query(_Doc)
+           .filter(_Doc.user_id == user_id, _Doc.kind == (kind or "").lower())
+           .first())
+    if doc is None:
+        raise HTTPException(status_code=404, detail="No document on file")
+
+    doc.status = body.status
+    doc.notes = (body.notes or "").strip() or None
+    if body.expires_at is not None:
+        doc.expires_at = _coerce_date(body.expires_at) if body.expires_at else None
+    doc.reviewed_by = current_user.id
+    doc.reviewed_at = _dt.now(_tz.utc).replace(tzinfo=None)
+    db.commit()
+
+    try:
+        from services.push_service import notify_user
+        if body.status == "accepted":
+            notify_user(user_id, "Document accepted",
+                        f"Your {kind.upper()} is on file.", url="/crew", category="crew")
+        elif body.notes:
+            # Only when there's a reason — a bare "rejected" push tells them
+            # nothing they can act on.
+            notify_user(user_id, "Document needs another look", body.notes,
+                        url="/crew", category="crew")
+    except Exception:
+        pass
+    return vetting_status(db, user_id)
+
+
 @router.post("/users/invite")
 def invite_user(data: InviteUser, db: Session = Depends(get_db),
                 current_user: User = Depends(require_role("admin")),
@@ -989,9 +1127,9 @@ def invite_user(data: InviteUser, db: Session = Depends(get_db),
     if role == "cleaner" and not u.cleaner_id:
         u.cleaner_id = f"bb{u.id}"
     db.commit(); db.refresh(u)
-    send_staff_invite(u)
+    invite = send_staff_invite(u)
     logger.info(f"[auth] {current_user.email} invited {u.email} as {role}")
-    return _user_row(db, u)
+    return {**_user_row(db, u), **invite_status_fields(invite)}
 
 
 @router.post("/users/{user_id}/resend-invite")
@@ -1006,8 +1144,7 @@ def resend_user_invite(user_id: int, db: Session = Depends(get_db),
     if u.password_hash:
         raise HTTPException(status_code=409,
                             detail="They've already set a password — use sign-in or a reset instead.")
-    send_staff_invite(u)
-    return _user_row(db, u)
+    return {**_user_row(db, u), **invite_status_fields(send_staff_invite(u))}
 
 
 # ── Per-user Google account: explicit Gmail + Calendar grant (phase B) ──────

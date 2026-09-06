@@ -96,6 +96,27 @@ def business_today() -> date:
     return business_now().date()
 
 
+def business_date(v: DateLike) -> Optional[date]:
+    """The calendar date ``v`` fell on IN THE BUSINESS TIMEZONE.
+
+    ``coerce_date`` takes a datetime's date exactly as stored, which for the
+    UTC columns in this schema (``models._utcnow``) is the UTC date. For the
+    four hours after midnight UTC — an ordinary Maine evening — that is
+    TOMORROW's date. Comparing it against ``business_today()`` is therefore an
+    off-by-one waiting for somebody to work late: a row stamped at 8pm reads as
+    the next day.
+
+    Use this instead of ``coerce_date`` whenever a stored timestamp is about to
+    be compared against a business-local date. A naive datetime is assumed UTC,
+    which is what those columns hold. A plain ``date`` has no time to convert
+    and is returned unchanged.
+    """
+    if isinstance(v, datetime):
+        aware = v if v.tzinfo is not None else v.replace(tzinfo=timezone.utc)
+        return aware.astimezone(business_tz()).date()
+    return coerce_date(v)
+
+
 def week_monday(d: date) -> date:
     """The Monday of the week containing ``d`` (ISO week anchor).
 

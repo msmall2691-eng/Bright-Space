@@ -26,24 +26,26 @@ from collections import defaultdict
 from datetime import date, datetime, timedelta, timezone, time as dtime
 from typing import List, Optional
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, Response, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, Response, UploadFile
 from pydantic import BaseModel
 from sqlalchemy import or_, func
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, joinedload
 
 from database.db import get_db
+from ratelimit import rate_limit
 from database.models import (
     CleanerAvailability, CleanerTimeOff, CleanerWeekAvailability, CrewDoc,
-    CrewMessage, Job, JobPhoto, JobResponse, PropertyCrewNote, PropertyPhoto,
-    User, TimeEntry,
+    CrewMessage, Job, JobClaimRequest, JobHelper, JobPhoto, JobResponse, PropertyCrewNote,
+    PropertyPhoto, SubAgreement, SubDocument, User,
 )
 from modules.auth.router import (
-    get_current_user, require_role, current_org_id, resolve_org_id, send_staff_invite,
+    get_current_user, invite_status_fields, require_role, current_org_id,
+    resolve_org_id, send_staff_invite,
 )
 from modules.scheduling.completion import auto_create_draft_invoice
 from utils.activity_logger import log_job_status_change
-from utils.dates import business_today, business_tz, week_monday
+from utils.dates import business_today, business_tz, coerce_date, week_monday
 
 router = APIRouter()
 
@@ -71,7 +73,9 @@ def _turnover_line(job: Job) -> str:
 
 def _job_row(job: Job, names_by_cid: dict | None = None, self_cid: str | None = None,
              my_response: "JobResponse | None" = None,
-             house_notes: "list | None" = None) -> dict:
+             house_notes: "list | None" = None,
+             my_claim_request: "JobClaimRequest | None" = None,
+             my_helpers: "list | None" = None) -> dict:
     prop = job.property
     client = job.client
     return {
@@ -110,6 +114,9 @@ def _job_row(job: Job, names_by_cid: dict | None = None, self_cid: str | None = 
         # Office-SHARED house notes ("upstairs drain clogs") inline so
         # they're readable offline too. Author-only notes don't ride here.
         "house_notes": house_notes or [],
+        # Who I said I'm bringing (migration 107). Mine only — never another
+        # sub's, on a job we share.
+        "my_helpers": my_helpers or [],
         "turnover_line": _turnover_line(job),
         "checklist_template": (prop.checklist_template if prop else None) or None,
         # Who the customer is. Their NUMBER is deliberately absent (owner
@@ -134,6 +141,19 @@ def _job_row(job: Job, names_by_cid: dict | None = None, self_cid: str | None = 
         # note the cleaner left, instead of the job silently vanishing.
         "completed_at": _iso_utc(job.completed_at),
         "completion_note": job.completion_note,
+        # Marketplace pivot (migration 097): posted_rate is the office's
+        # asking price on an open offer; agreed_rate is the final rate once
+        # a request is approved (may differ — the winner may have
+        # countered). my_claim_request is the CALLER's own pending/decided
+        # request on this specific job, so the app can show "You asked for
+        # $85 — waiting to hear back" instead of letting them request twice.
+        "posted_rate": job.posted_rate,
+        "agreed_rate": job.agreed_rate,
+        "my_claim_request": (
+            {"status": my_claim_request.status, "requested_rate": my_claim_request.requested_rate,
+             "message": my_claim_request.message}
+            if my_claim_request else None
+        ),
     }
 
 
@@ -187,46 +207,6 @@ def _iso_utc(dt):
     return dt.isoformat()
 
 
-def _entry_hours(e: TimeEntry):
-    """Worked hours for a punch: elapsed minus breaks, never negative. None while
-    still on the clock (no clock-out yet)."""
-    if not e.clock_out_at:
-        return None
-    secs = (e.clock_out_at - e.clock_in_at).total_seconds() - (e.break_minutes or 0) * 60
-    return round(max(0.0, secs) / 3600, 2)
-
-
-def _sanitize_miles(v):
-    """Clamp crew-entered miles into a sane, non-negative range so a fat-finger
-    ('10000') can't reimburse thousands of dollars and a negative can't subtract
-    from pay. None (not entered) passes through untouched. The generous 2000-mile
-    ceiling clips only nonsense, never a real local drive — clock-out must never
-    fail over a mileage typo, so this clamps rather than rejects."""
-    if v is None:
-        return None
-    try:
-        m = float(v)
-    except (TypeError, ValueError):
-        return None
-    return round(min(2000.0, max(0.0, m)), 1)
-
-
-def _entry_row(e: TimeEntry) -> dict:
-    return {
-        "id": e.id,
-        "job_id": e.job_id,
-        "clock_in_at": _iso_utc(e.clock_in_at),
-        "clock_out_at": _iso_utc(e.clock_out_at),
-        "break_minutes": e.break_minutes or 0,
-        "miles": e.miles,
-        "hours": _entry_hours(e),
-        "open": e.clock_out_at is None,
-        "clock_in_lat": e.clock_in_lat,
-        "clock_in_lng": e.clock_in_lng,
-        "has_location": e.clock_in_lat is not None and e.clock_in_lng is not None,
-    }
-
-
 def _business_day_bounds_utc(day):
     """[start, end) of a business-local day, as naive UTC — so 'hours today'
     rolls over at local midnight, not UTC midnight."""
@@ -263,6 +243,25 @@ class ClockOutBody(BaseModel):
     # Miles driven for this job, entered at clock-out.
     # Optional — blank/omitted means no driving to reimburse for this punch.
     miles: Optional[float] = None
+
+
+def _my_routes_summary(db: Session, current_user: User, oid: int) -> list:
+    """One row per route this sub has been offered or owns. No members.
+
+    A summary, not a detail: the point is that a standing offer can't sit
+    unseen because it lives behind a tab nobody opened.
+    """
+    from database.models import Route
+
+    rows = (db.query(Route)
+            .filter(Route.owner_cleaner_id == current_user.cleaner_id,
+                    Route.status.in_(["offered", "active"]),
+                    or_(Route.org_id == oid, Route.org_id.is_(None)))
+            .order_by(Route.day_of_week)
+            .all())
+    return [{"id": r.id, "name": r.name, "day_of_week": r.day_of_week,
+             "rate": round(float(r.rate), 2) if r.rate is not None else None,
+             "status": r.status} for r in rows]
 
 
 @router.get("/my-day")
@@ -317,52 +316,80 @@ def my_day(
         ).all()
     }
 
-    # ── Native time clock status ─────────────────────────────────────────────
-    # Read-only w.r.t. the schedule. Folded into /my-day so the crew app is
-    # one call; native payroll reads these same punches.
-    day_start, day_end = _business_day_bounds_utc(today)
-    entries_today = (
-        db.query(TimeEntry)
-        .filter(
-            org_scope(TimeEntry),
-            TimeEntry.cleaner_id == current_user.cleaner_id,
-            TimeEntry.clock_in_at >= day_start,
-            TimeEntry.clock_in_at < day_end,
-        )
-        .order_by(TimeEntry.clock_in_at)
-        .all()
-    )
-    # The open punch is authoritative regardless of which day it started (an
-    # overnight shift is still "on the clock").
-    active = (
-        db.query(TimeEntry)
-        .filter(
-            org_scope(TimeEntry),
-            TimeEntry.cleaner_id == current_user.cleaner_id,
-            TimeEntry.clock_out_at.is_(None),
-        )
-        .order_by(TimeEntry.clock_in_at.desc())
-        .first()
-    )
-    hours_today = round(sum((_entry_hours(e) or 0.0) for e in entries_today), 2)
+    # My own helpers for the window (migration 107), one query for the lot —
+    # so a sub sees "bringing Sam Reed" on the card without a second round trip
+    # per job on a rural signal (brightbase-economy). MINE ONLY: on a shared
+    # job the other sub's assistant is their responsibility, and their business.
+    my_helpers: dict = {}
+    for h in db.query(JobHelper).filter(
+            JobHelper.job_id.in_([j.id for j in mine] or [0]),
+            JobHelper.sub_cleaner_id == current_user.cleaner_id).order_by(JobHelper.id).all():
+        my_helpers.setdefault(h.job_id, []).append(
+            {"id": h.id, "name": h.name, "phone": h.phone})
+
+    # The time clock used to be read here and folded into this payload
+    # (active punch, hours today, the day's entries). It is gone — a punch
+    # records hours, and hours are what an employer pays for. See the note
+    # where the endpoints were.
 
     # Jobs the office put "up for grabs" (crew app Phase 3) — visible to every
-    # cleaner in the org, claim is first-come-first-served. Access details and
-    # the customer's phone stay hidden until the job is actually theirs: an
-    # open listing is an offer, not a work order, and gate codes don't belong
-    # on every phone in the crew.
+    # cleaner in the org. Marketplace pivot (migration 097): a sub REQUESTS
+    # an open job (optionally countering posted_rate) rather than instantly
+    # claiming it — the office picks who gets it. Access details and the
+    # customer's phone stay hidden until the job is actually theirs: an open
+    # listing is an offer, not a work order, and gate codes don't belong on
+    # every phone in the crew.
+    # THE BOARD IS FOR PEOPLE CLEARED TO WORK. Approving an application mints
+    # a login, not clearance (modules/apply/router.py) — so without this gate a
+    # stranger who filled in the public form and set a password saw every
+    # posted job the moment they were approved, with no insurance, no signed
+    # agreement and no W-9 on file. The same gate claim_job enforces below;
+    # showing work somebody cannot legally take was only ever going to produce
+    # a 403 anyway, and it did it after exposing the listing.
+    from services.sub_vetting import blocking_requirements
+    cleared = not blocking_requirements(db, current_user)
+
     open_jobs = []
+    open_job_ids = [j.id for j in jobs if cleared
+                    and getattr(j, "open_for_claims", False)
+                    and j.status == "scheduled"]
+    my_requests_by_job = {
+        r.job_id: r
+        for r in db.query(JobClaimRequest).filter(
+            JobClaimRequest.job_id.in_(open_job_ids or [0]),
+            JobClaimRequest.cleaner_id == current_user.cleaner_id,
+        ).all()
+    }
     for j in jobs:
+        if not cleared:
+            break
         if not getattr(j, "open_for_claims", False) or j.status != "scheduled":
             continue
         if current_user.cleaner_id in (j.cleaner_ids or []):
             continue
-        row = _job_row(j, names, current_user.cleaner_id)
+        row = _job_row(j, names, current_user.cleaner_id,
+                       my_claim_request=my_requests_by_job.get(j.id))
+        # An offer says enough to bid on and no more. The house internals were
+        # always stripped; the CUSTOMER'S IDENTITY was not, and it should have
+        # been. Whose house it is stops being the bidder's business until they
+        # have actually won the job — the customer agreed to a cleaning
+        # company in their home, not to their name and street address being
+        # circulated to whoever is currently on the bench.
+        #
+        # Town plus the size of the place is what a sub needs to judge the
+        # drive and the hours. `area` is built here rather than in _job_row so
+        # the assigned path keeps the real address it needs.
+        prop = getattr(j, "property", None)
+        area = " ".join(x for x in [getattr(prop, "city", None),
+                                    getattr(prop, "state", None)] if x) or None
         row.update({"open": True, "house_code": None, "access_notes": None,
                     "parking_notes": None, "can_text_client": False,
                     "checklist_template": None, "turnover_line": "",
                     "notes": None, "wifi_ssid": None, "wifi_password": None,
-                    "house_notes": []})   # offers carry no house internals
+                    "house_notes": [],
+                    "address": None, "client_name": None,
+                    "property_name": None, "teammates": [],
+                    "area": area})       # offers carry no house internals
         open_jobs.append(row)
 
     return {
@@ -372,17 +399,29 @@ def my_day(
         "first_name": ((getattr(current_user, "full_name", None) or "").strip().split(" ")[0]
                        or (getattr(current_user, "email", "") or "").split("@")[0]),
         "today": [_job_row(j, names, current_user.cleaner_id, my_responses.get(j.id),
-                           house_notes=house_notes.get(j.property_id))
+                           house_notes=house_notes.get(j.property_id),
+                           my_helpers=my_helpers.get(j.id))
                   for j in today_jobs],
         # Upcoming rows are a 13-day preview and the bulk of the payload, so
         # the heavy per-house fields stay off them (rural cell data): no
         # checklist_template, no house_notes. Both are served on tap — the
         # crew job detail (GET /api/crew/jobs/{id}) and the house sheet
         # (GET /api/crew/properties/{id}/notes) return the full row.
-        "upcoming": [{**_job_row(j, names, current_user.cleaner_id, my_responses.get(j.id)),
+        # Helpers ride the upcoming rows too, unlike house notes: they are two
+        # short strings, and "who am I bringing on Thursday" is a question you
+        # ask BEFORE Thursday — which is the whole point of arranging one.
+        "upcoming": [{**_job_row(j, names, current_user.cleaner_id, my_responses.get(j.id),
+                                 my_helpers=my_helpers.get(j.id)),
                       "checklist_template": None}
                      for j in upcoming_jobs],
         "open_jobs": open_jobs,
+        # Routes (migration 100), deliberately LIGHT: enough to say "you've been
+        # offered a standing block" and to label an owned route, and nothing
+        # more. The houses and their shares arrive only if the sub taps through
+        # to /api/crew/my-routes — riding this payload rather than adding a
+        # second call on a rural connection (brightbase-economy), without
+        # making every my-day refresh carry a route detail nobody opened.
+        "routes": _my_routes_summary(db, current_user, oid),
         # Unread office messages, so the crew app's Chat tab can badge without
         # a second request. Reading the thread (GET /messages) marks them read.
         "unread_messages": (
@@ -392,11 +431,6 @@ def my_day(
                     CrewMessage.read_at.is_(None))
             .scalar() or 0
         ),
-        "clock": {
-            "active": _entry_row(active) if active else None,
-            "hours_today": hours_today,
-            "entries_today": [_entry_row(e) for e in entries_today],
-        },
     }
 
 
@@ -404,276 +438,87 @@ def my_day(
 def my_week(
     db: Session = Depends(get_db),
     org_id: int = Depends(current_org_id),
-    current_user: User = Depends(require_role("cleaner")),
+    current_user: User = Depends(get_current_user),
 ):
-    """A cleaner's week of pay, so they can see what the week is shaping up to
-    be worth: what they've EARNED so far (from their closed punches, computed by
-    the exact same code the office's Payroll page runs — one pay-math
-    implementation, no drift) plus a PREDICTION for the rest of the week from
-    the jobs still assigned to them (scheduled length × their hourly rate + any
-    per-job bump; piece-rate turnovers at the property's flat rate).
+    """What this week is worth to a subcontractor.
 
-    Only ever returns the CALLER's own numbers — the full payroll breakdown
-    stays admin/manager-only."""
-    from modules.payroll.router import _get_rates, _native_summary
+    REWRITTEN, not deleted. The old version asked the payroll summary for hours
+    and reimbursements and predicted the rest from hourly rates, per-cleaner
+    overrides and weekend piece rates. Every input to that was the employee
+    model, and it is gone.
 
-    _require_crew_id(current_user)
+    A sub's week is simpler and truer: the jobs they agreed a price on. Earned
+    is what is finished, upcoming is what is booked, and both are the amounts
+    both sides actually shook on. No hours, no mileage, no prediction from a
+    rate card — predicting somebody's pay from a rate they never agreed is how
+    an estimate becomes an argument.
+
+    One query. `agreed_cleaner_id` (migration 106) is what makes it honest:
+    being listed on a job is not the same as being the person it is priced for.
+    """
+    from services.claim_approval import agreed_with
+
+    # Kept from the old version: this is one person's money, and it is theirs.
+    if current_user.role != "cleaner":
+        raise HTTPException(status_code=403, detail="Crew only.")
+    if not current_user.cleaner_id:
+        raise HTTPException(
+            status_code=400,
+            detail="Your account isn't linked to a crew ID yet — ask the office.")
+
     oid = resolve_org_id(org_id, db)
-    org_scope = lambda model: or_(model.org_id == oid, model.org_id.is_(None))
+    org_scope = lambda model: or_(model.org_id == oid, model.org_id.is_(None))  # noqa: E731
     today = business_today()
-    week_start = today - timedelta(days=today.weekday())   # Monday
-    week_end = week_start + timedelta(days=6)              # Sunday
-
-    rates = _get_rates(db)
-
-    # Earned so far: the payroll engine over this week's window, then pick out
-    # ONLY the caller's row. The window is a week and the shop is small, so
-    # computing everyone and filtering costs nothing measurable.
-    summary = _native_summary(db, week_start.isoformat(), week_end.isoformat(), rates, oid)
-    mine = next((e for e in summary["employees"] if e["employee_id"] == current_user.cleaner_id), None)
-    earned = {
-        "gross_pay": mine["gross_pay"] if mine else 0.0,
-        "hours": mine["total_hours"] if mine else 0.0,
-        "miles": mine["miles"] if mine else 0.0,
-        "mileage_reimbursement": mine["mileage_reimbursement"] if mine else 0.0,
-        "turnovers": mine["weekend_turnovers"] if mine else 0,
-    }
-
-    # Which jobs already have a CLOSED punch by this cleaner this week — those
-    # are in "earned" and must not also be predicted. An OPEN punch keeps its
-    # job in the prediction: mid-job, the estimate stands until clock-out.
-    tz = business_tz()
-    lo = datetime.combine(week_start, dtime(0, 0), tzinfo=tz).astimezone(timezone.utc).replace(tzinfo=None)
-    hi = datetime.combine(week_end + timedelta(days=1), dtime(0, 0), tzinfo=tz).astimezone(timezone.utc).replace(tzinfo=None)
-    punched_job_ids = {
-        e.job_id for e in db.query(TimeEntry).filter(
-            org_scope(TimeEntry),
-            TimeEntry.cleaner_id == current_user.cleaner_id,
-            TimeEntry.clock_out_at.isnot(None),
-            TimeEntry.clock_in_at >= lo,
-            TimeEntry.clock_in_at < hi,
-        ).all() if e.job_id
-    }
+    week_start = week_monday(today)
+    week_end = week_start + timedelta(days=6)
 
     jobs = (
         db.query(Job)
         .options(joinedload(Job.property))
         .filter(
             org_scope(Job),
-            Job.scheduled_date >= today,
+            Job.scheduled_date >= week_start,
             Job.scheduled_date <= week_end,
-            Job.status.in_(("scheduled", "in_progress")),
+            Job.status.notin_(("cancelled", "skipped")),
         )
         .order_by(Job.scheduled_date, Job.start_time)
         .all()
     )
-    upcoming = []
-    predicted_upcoming = 0.0
+
+    earned_total, upcoming_total = 0.0, 0.0
+    earned, upcoming = [], []
     for j in jobs:
-        if current_user.cleaner_id not in (j.cleaner_ids or []):
+        if not agreed_with(j, current_user.cleaner_id):
             continue
-        if j.id in punched_job_ids:
+        amount = float(j.agreed_rate or 0.0)
+        if not amount:
             continue
         prop = j.property
-        weekend = j.scheduled_date.weekday() >= 5
-        if j.job_type == "str_turnover":
-            kind = "rental"
-        elif j.job_type == "deep_clean":
-            kind = "deep"
-        else:
-            kind = "residential"
-        mode = (j.pay_mode or "auto").lower()
-        use_piece = (kind == "rental" and weekend) if mode == "auto" else (mode == "piece")
-
-        # Scheduled length in hours (start/end are NOT NULL on Job).
-        dur = (datetime.combine(j.scheduled_date, j.end_time)
-               - datetime.combine(j.scheduled_date, j.start_time)).total_seconds() / 3600.0
-        dur = max(0.0, dur)
-
-        bump = float(j.pay_rate_bump or 0.0)
-        unpriced = False
-        if use_piece:
-            rate = getattr(prop, "turnover_rate", None) if prop is not None else None
-            if rate is None:
-                unpriced = True
-                pay = 0.0
-            else:
-                pay = float(rate)
-        else:
-            if kind == "deep":
-                hourly = (current_user.pay_rate_deep if current_user.pay_rate_deep is not None
-                          else rates["deep_clean_rate"])
-            elif kind == "rental":
-                hourly = (current_user.pay_rate_rental if current_user.pay_rate_rental is not None
-                          else rates["rental_weekday_rate"])
-            else:
-                hourly = (current_user.pay_rate_residential if current_user.pay_rate_residential is not None
-                          else rates["residential_rate"])
-            pay = dur * (hourly + bump)
-
-        predicted_upcoming += pay
-        upcoming.append({
+        row = {
             "id": j.id,
             "date": j.scheduled_date.isoformat(),
             "title": j.title,
-            "property_name": prop.name if prop else None,
-            "start_time": _fmt_time(j.start_time),
-            "end_time": _fmt_time(j.end_time),
-            "hours": round(dur, 2),
-            "piece": use_piece,
-            "bump": bump or 0.0,
-            "unpriced": unpriced,
-            "predicted_pay": round(pay, 2),
-        })
+            "property_name": prop.name if prop is not None else None,
+            "amount": round(amount, 2),
+        }
+        if j.status == "completed":
+            earned_total += amount
+            earned.append(row)
+        else:
+            upcoming_total += amount
+            upcoming.append(row)
 
     return {
-        "as_of": today.isoformat(),
         "week_start": week_start.isoformat(),
         "week_end": week_end.isoformat(),
+        "earned_total": round(earned_total, 2),
+        "upcoming_total": round(upcoming_total, 2),
+        "week_total": round(earned_total + upcoming_total, 2),
         "earned": earned,
         "upcoming": upcoming,
-        "predicted_upcoming_total": round(predicted_upcoming, 2),
-        "predicted_week_total": round(earned["gross_pay"] + predicted_upcoming, 2),
     }
 
 
-@router.post("/clock-in")
-def clock_in(
-    body: ClockInBody,
-    db: Session = Depends(get_db),
-    org_id: int = Depends(current_org_id),
-    current_user: User = Depends(require_role("cleaner")),
-):
-    """Start a punch. One open punch per cleaner — a second clock-in while
-    already on the clock is a 409 (clock out first). These punches are what
-    native payroll pays from."""
-    _require_crew_id(current_user)
-    oid = resolve_org_id(org_id, db)
-    org_scope = lambda model: or_(model.org_id == oid, model.org_id.is_(None))
-
-    existing = (
-        db.query(TimeEntry)
-        .filter(org_scope(TimeEntry),
-                TimeEntry.cleaner_id == current_user.cleaner_id,
-                TimeEntry.clock_out_at.is_(None))
-        .first()
-    )
-    if existing:
-        raise HTTPException(status_code=409, detail="You're already clocked in — clock out first.")
-
-    job_id = body.job_id
-    if job_id is not None:
-        job = db.query(Job).filter(Job.id == job_id, org_scope(Job)).first()
-        if not job:
-            raise HTTPException(status_code=404, detail="Job not found.")
-        # Only clock into a job you're assigned to — otherwise a stale or crafted
-        # request could attribute hours (and weekend piece-rate pay) to another
-        # cleaner's work once native payroll reads these punches.
-        if current_user.cleaner_id not in (job.cleaner_ids or []):
-            raise HTTPException(status_code=403, detail="You're not assigned to that job.")
-
-    entry = TimeEntry(
-        org_id=oid,
-        cleaner_id=current_user.cleaner_id,
-        user_id=current_user.id,
-        job_id=job_id,
-        clock_in_at=_now_naive_utc(),
-        source="native",
-        clock_in_lat=body.lat,
-        clock_in_lng=body.lng,
-        clock_in_accuracy_m=body.accuracy_m,
-    )
-    db.add(entry)
-    try:
-        db.commit()
-    except IntegrityError:
-        # Backstop for the one-open-punch invariant against a concurrent double
-        # clock-in — the partial unique index (org_id, cleaner_id WHERE
-        # clock_out_at IS NULL) rejects the second row. The pre-check above
-        # handles the common (non-racing) case with a friendlier path.
-        db.rollback()
-        raise HTTPException(status_code=409, detail="You're already clocked in — clock out first.")
-    db.refresh(entry)
-    return _entry_row(entry)
-
-
-@router.post("/clock-out")
-def clock_out(
-    body: ClockOutBody,
-    db: Session = Depends(get_db),
-    org_id: int = Depends(current_org_id),
-    current_user: User = Depends(require_role("cleaner")),
-):
-    """Close the open punch. 400 if not currently clocked in. break_minutes is
-    clamped to the elapsed time so a fat-fingered break can't make worked hours
-    negative."""
-    _require_crew_id(current_user)
-    oid = resolve_org_id(org_id, db)
-    org_scope = lambda model: or_(model.org_id == oid, model.org_id.is_(None))
-
-    entry = (
-        db.query(TimeEntry)
-        .filter(org_scope(TimeEntry),
-                TimeEntry.cleaner_id == current_user.cleaner_id,
-                TimeEntry.clock_out_at.is_(None))
-        .order_by(TimeEntry.clock_in_at.desc())
-        .first()
-    )
-    if not entry:
-        raise HTTPException(status_code=400, detail="You're not clocked in.")
-
-    now = _now_naive_utc()
-    elapsed_min = (now - entry.clock_in_at).total_seconds() / 60
-    bm = max(0, int(body.break_minutes or 0))
-    if bm > elapsed_min:
-        bm = int(elapsed_min)
-    entry.clock_out_at = now
-    entry.break_minutes = bm
-    if body.note is not None:
-        entry.note = body.note.strip() or None
-    # Clamp, never reject: a mileage typo must not strand the cleaner on the
-    # clock. A wrong value can be corrected via PATCH /entry/{id}/miles.
-    if body.miles is not None:
-        entry.miles = _sanitize_miles(body.miles)
-    db.commit(); db.refresh(entry)
-    return _entry_row(entry)
-
-
-class EntryMilesBody(BaseModel):
-    miles: float
-
-
-@router.patch("/entry/{entry_id}/miles")
-def set_entry_miles(
-    entry_id: int,
-    body: EntryMilesBody,
-    db: Session = Depends(get_db),
-    org_id: int = Depends(current_org_id),
-    current_user: User = Depends(require_role("cleaner")),
-):
-    """Correct the miles on one of the caller's own punches — the safety net for
-    a forgotten or fat-fingered clock-out entry, before payroll runs. Scoped to
-    the caller's cleaner_id so a cleaner can only edit their own mileage. 404 if
-    the punch isn't theirs (or doesn't exist)."""
-    _require_crew_id(current_user)
-    oid = resolve_org_id(org_id, db)
-    org_scope = lambda model: or_(model.org_id == oid, model.org_id.is_(None))
-
-    entry = (
-        db.query(TimeEntry)
-        .filter(org_scope(TimeEntry),
-                TimeEntry.id == entry_id,
-                TimeEntry.cleaner_id == current_user.cleaner_id)
-        .first()
-    )
-    if not entry:
-        raise HTTPException(status_code=404, detail="Time entry not found.")
-    entry.miles = _sanitize_miles(body.miles)
-    db.commit(); db.refresh(entry)
-    return _entry_row(entry)
-
-
-# ── Mark done (Phase 2c) ─────────────────────────────────────────────────────
 
 def _sanitize_note(v: Optional[str]) -> Optional[str]:
     """Trim and cap the completion note. Empty/whitespace → None (no note)."""
@@ -757,49 +602,232 @@ def mark_job_done(
     return _job_row(job, _names_by_cleaner_id(db, [job]), current_user.cleaner_id)
 
 
-# ── Open jobs: claim (crew app Phase 3) ──────────────────────────────────────
+# ── My own helper on a job (migration 107) ──────────────────────────────────
+#
+# ONE OF THE FIVE MAINE CRITERIA, not a convenience. Part 1 #4 is "hires, pays
+# and supervises their own assistants, if any", and all five of Part 1 must
+# hold. BrightBase modelled one cleaner per claim, so a sub could not bring
+# anyone — a gap the marketplace skill has carried since migration 104.
+#
+# THE SUB IS THE ONLY WRITER. There is deliberately no office endpoint: the
+# office adding somebody to a job would be the office staffing it, and a sub
+# requests or accepts — the office never assigns. And the helper gets no
+# account, no rate and no payout, because a helper the app onboards and pays is
+# TMCC's worker, which is the criterion inverted.
 
-@router.post("/jobs/{job_id}/claim")
-def claim_job(
+MAX_HELPERS_PER_SUB = 3
+
+
+class HelperBody(BaseModel):
+    name: str
+    # For reaching whoever is at the house when the sub's phone is dead.
+    phone: Optional[str] = None
+
+
+def _helper_row(h) -> dict:
+    return {"id": h.id, "name": h.name, "phone": h.phone,
+            "sub_cleaner_id": h.sub_cleaner_id}
+
+
+def _my_job_or_403(db: Session, job_id: int, current_user: User, oid: int) -> Job:
+    """The job, if it is actually this sub's to speak for.
+
+    Membership in cleaner_ids, not `agreed_with`: a sub who is ON the job is
+    the person who decides whether they need a second pair of hands, whether or
+    not they are the one who negotiated the rate.
+    """
+    job = (db.query(Job)
+           .filter(or_(Job.org_id == oid, Job.org_id.is_(None)), Job.id == job_id)
+           .first())
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found.")
+    if current_user.cleaner_id not in (job.cleaner_ids or []):
+        raise HTTPException(status_code=403, detail="That job isn't yours.")
+    return job
+
+
+@router.get("/jobs/{job_id}/helpers")
+def list_my_helpers(
     job_id: int,
     db: Session = Depends(get_db),
     org_id: int = Depends(current_org_id),
     current_user: User = Depends(require_role("cleaner")),
 ):
-    """First-come-first-served claim of a job the office marked open.
+    """Who I said I'm bringing. Mine only — another sub's helper on a shared
+    job is their business and their responsibility."""
+    _require_crew_id(current_user)
+    oid = resolve_org_id(org_id, db)
+    job = _my_job_or_403(db, job_id, current_user, oid)
+    rows = (db.query(JobHelper)
+            .filter(JobHelper.job_id == job.id,
+                    JobHelper.sub_cleaner_id == current_user.cleaner_id)
+            .order_by(JobHelper.id)
+            .all())
+    return {"job_id": job.id, "helpers": [_helper_row(h) for h in rows]}
 
-    This is the one place the crew app writes schedule state, and it's
-    narrowly gated (scheduling-invariants reviewed): the job must carry the
-    office-set open_for_claims flag (owner decision #2 — being unassigned is
-    NOT enough), the write is this endpoint's atomic add-claimer +
-    close-the-offer, it's activity-logged and pushes a staff notification.
-    BrightBase stays the canonical schedule owner throughout — no projection
-    or external system is involved.
 
-    Concurrency (R5): the row is locked (SELECT ... FOR UPDATE on Postgres;
-    SQLite serializes writers) and the open flag is re-checked under the
-    lock, so two cleaners racing on the same offer get exactly one winner —
-    the loser sees 409 "already claimed".
+@router.post("/jobs/{job_id}/helpers", status_code=201)
+def add_my_helper(
+    job_id: int,
+    body: HelperBody,
+    db: Session = Depends(get_db),
+    org_id: int = Depends(current_org_id),
+    current_user: User = Depends(require_role("cleaner")),
+):
+    """Bring somebody with me to this job.
+
+    No vetting gate on the HELPER, deliberately, and it is worth being explicit
+    about why given how hard `blocking_requirements` is enforced everywhere
+    else: vetting is what TMCC requires of the people it contracts with, and it
+    does not contract with this person. The sub does. Requiring TMCC's paperwork
+    from the sub's own assistant is TMCC deciding who the sub may hire.
+
+    The SUB still has to be cleared — they are, or they would not be on the job.
     """
     _require_crew_id(current_user)
+    oid = resolve_org_id(org_id, db)
+    job = _my_job_or_403(db, job_id, current_user, oid)
+    if job.status in ("completed", "cancelled"):
+        raise HTTPException(status_code=409,
+                            detail=f"That job is {job.status} — nothing to add anyone to.")
+
+    name = (body.name or "").strip()[:120]
+    if not name:
+        raise HTTPException(status_code=422, detail="Who are you bringing? A name, so the office knows who's at the house.")
+    phone = (body.phone or "").strip()[:32] or None
+
+    mine = (db.query(JobHelper)
+            .filter(JobHelper.job_id == job.id,
+                    JobHelper.sub_cleaner_id == current_user.cleaner_id))
+    if mine.count() >= MAX_HELPERS_PER_SUB:
+        raise HTTPException(
+            status_code=409,
+            detail=f"You can bring up to {MAX_HELPERS_PER_SUB} people. Remove one first.")
+    if mine.filter(func.lower(JobHelper.name) == name.lower()).first():
+        raise HTTPException(status_code=409, detail=f"{name} is already on this one.")
+
+    row = JobHelper(org_id=oid, job_id=job.id, sub_cleaner_id=current_user.cleaner_id,
+                    name=name, phone=phone, created_at=_now_naive_utc())
+    db.add(row)
+    try:
+        from utils.activity_logger import log_activity
+        who = getattr(current_user, "full_name", None) or current_user.email
+        log_activity(
+            db, "job_helper_added", job_id=job.id, client_id=job.client_id, actor=who,
+            summary=f"{who} is bringing {name} to {job.title}",
+            extra_data={"cleaner_id": current_user.cleaner_id, "helper_name": name},
+            commit=False,
+        )
+    except Exception:
+        log.exception("activity log failed on add_my_helper")
+    db.commit(); db.refresh(row)
+
+    # The office is told because somebody they have never met is going to be in
+    # a customer's house. That is the whole operational reason this is recorded
+    # — not approval, which nobody is asking for.
+    try:
+        from services.push_service import notify_staff
+        when = job.scheduled_date.isoformat() if job.scheduled_date else "an upcoming date"
+        notify_staff(db, "Extra pair of hands",
+                     f"{getattr(current_user, 'full_name', None) or current_user.email} "
+                     f"is bringing {name} to {job.title} on {when}.",
+                     url=f"/jobs/{job.id}", tag=f"job-helper-{job.id}", org_id=oid,
+                     category="crew")
+    except Exception:
+        log.exception("push notify failed on add_my_helper")
+    return _helper_row(row)
+
+
+@router.delete("/jobs/{job_id}/helpers/{helper_id}", status_code=204)
+def remove_my_helper(
+    job_id: int,
+    helper_id: int,
+    db: Session = Depends(get_db),
+    org_id: int = Depends(current_org_id),
+    current_user: User = Depends(require_role("cleaner")),
+):
+    """Plans change. Only my own row — on a job two subs share, each one's
+    helper is theirs to add and theirs to withdraw."""
+    _require_crew_id(current_user)
+    oid = resolve_org_id(org_id, db)
+    job = _my_job_or_403(db, job_id, current_user, oid)
+    row = (db.query(JobHelper)
+           .filter(JobHelper.id == helper_id, JobHelper.job_id == job.id,
+                   JobHelper.sub_cleaner_id == current_user.cleaner_id)
+           .first())
+    if not row:
+        raise HTTPException(status_code=404, detail="Not found.")
+    db.delete(row); db.commit()
+
+
+# ── Open jobs: request to claim (marketplace pivot, migration 097) ──────────
+
+class ClaimRequestBody(BaseModel):
+    # NULL/omitted = "I'll take your posted rate." Set = a counter-offer.
+    requested_rate: Optional[float] = None
+    message: Optional[str] = None
+
+
+@router.post("/jobs/{job_id}/claim")
+def claim_job(
+    job_id: int,
+    body: ClaimRequestBody = None,
+    db: Session = Depends(get_db),
+    org_id: int = Depends(current_org_id),
+    current_user: User = Depends(require_role("cleaner")),
+):
+    """Request an open job — marketplace pivot (migration 097).
+
+    This used to be an instant first-come-first-served claim. It's now a
+    REQUEST: the sub optionally counters the office's posted_rate and/or
+    leaves a message, and the office picks who gets it (see
+    modules.scheduling.router's approve/decline-claim-request endpoints).
+    Nothing here writes Job.cleaner_ids or closes the offer — a job can
+    carry several pending requests at once, exactly the point of "the
+    office picks."
+
+    Still narrowly gated the same way Phase 3 was (scheduling-invariants
+    reviewed): the job must carry open_for_claims (being unassigned is NOT
+    enough), BrightBase stays the sole schedule-state owner, and a second
+    tap from the same sub UPDATES their pending request (a changed-my-mind
+    counter-offer) rather than creating a duplicate.
+
+    No row lock here, unlike the claim it replaces: filing a request writes
+    nothing anyone else races for. The lock moved to the approval endpoint,
+    which is now the step that actually assigns the job and fixes the rate.
+    """
+    _require_crew_id(current_user)
+    # The vetting gate (migration 098). Nobody works as a non-employee before
+    # their file is complete and current — an agreement on record, a W-9, and
+    # a certificate of insurance that hasn't lapsed. The 403 carries the list
+    # so the app can say WHICH part is missing: "finish your file" without
+    # naming the piece is the same as no message at all.
+    from services.sub_vetting import blocking_requirements
+    missing = blocking_requirements(db, current_user)
+    if missing:
+        raise HTTPException(status_code=403, detail={
+            "message": "Finish your file before you can ask for jobs.",
+            "missing": missing,
+        })
+    body = body or ClaimRequestBody()
     oid = resolve_org_id(org_id, db)
     org_scope = or_(Job.org_id == oid, Job.org_id.is_(None))
 
     job = (db.query(Job)
            .options(joinedload(Job.property), joinedload(Job.client))
            .filter(org_scope, Job.id == job_id)
-           .with_for_update()
            .first())
     if not job:
         raise HTTPException(status_code=404, detail="Job not found.")
     if current_user.cleaner_id in (job.cleaner_ids or []):
         raise HTTPException(status_code=400, detail="You're already on this job.")
     if not getattr(job, "open_for_claims", False) or job.status != "scheduled":
-        raise HTTPException(status_code=409,
-                            detail="Somebody beat you to it — this job was already claimed.")
+        raise HTTPException(status_code=409, detail="This job isn't open anymore.")
 
-    # Don't let a claim double-book the claimer: same conflict engine the
-    # office's assign flow uses (one implementation, no drift).
+    # A request can't be approved into a double-booking, so refuse it here
+    # too (not just at approve time) — no point letting the office review a
+    # request that could never be honored. Checked again at approval since
+    # the sub's schedule may have changed in between.
     from modules.scheduling.router import _find_cleaner_conflicts, _conflict_detail
     conflicts = _find_cleaner_conflicts(
         db, cleaner_ids=[current_user.cleaner_id], scheduled_date=job.scheduled_date,
@@ -809,52 +837,243 @@ def claim_job(
     if conflicts:
         raise HTTPException(status_code=409, detail=_conflict_detail(conflicts))
 
-    job.cleaner_ids = [*(job.cleaner_ids or []), current_user.cleaner_id]
-    job.open_for_claims = False   # one claim closes the offer; office can re-open
-    # Claiming IS accepting — seed the Phase 2 response so the office sees a
-    # green check, not "no answer yet", on a job they chose themselves.
-    existing = (db.query(JobResponse)
-                .filter(JobResponse.job_id == job.id,
-                        JobResponse.cleaner_id == current_user.cleaner_id)
+    rate = body.requested_rate
+    if rate is not None and rate <= 0:
+        raise HTTPException(status_code=422, detail="requested_rate must be positive.")
+    # A job posted with no asking price can only be worked for a price if the
+    # sub names one. Catching it here means they find out while they're still
+    # looking at the offer, rather than having the office's approval bounce
+    # later for a reason neither of them can see. Approval enforces it too.
+    if rate is None and job.posted_rate is None:
+        raise HTTPException(
+            status_code=422,
+            detail="This job has no posted rate — name your price to request it.")
+    msg = _sanitize_note(body.message) if body.message else None
+
+    existing = (db.query(JobClaimRequest)
+                .filter(JobClaimRequest.job_id == job.id,
+                        JobClaimRequest.cleaner_id == current_user.cleaner_id)
                 .first())
-    if existing:
-        existing.response, existing.reason = "accepted", None
-        existing.updated_at = _now_naive_utc()
+    now = _now_naive_utc()
+    if existing and existing.status == "pending":
+        existing.requested_rate, existing.message, existing.updated_at = rate, msg, now
+        request = existing
+    elif existing:
+        # A previously declined/withdrawn request from this sub — reopen it
+        # rather than accumulating rows for the same (job, cleaner) pair.
+        existing.status, existing.requested_rate, existing.message = "pending", rate, msg
+        existing.updated_at, existing.decided_at, existing.decided_by = now, None, None
+        request = existing
     else:
-        db.add(JobResponse(org_id=oid, job_id=job.id,
-                           cleaner_id=current_user.cleaner_id,
-                           user_id=current_user.id, response="accepted",
-                           created_at=_now_naive_utc(), updated_at=_now_naive_utc()))
+        request = JobClaimRequest(
+            org_id=oid, job_id=job.id, cleaner_id=current_user.cleaner_id,
+            user_id=current_user.id, requested_rate=rate, message=msg,
+            status="pending", created_at=now, updated_at=now,
+        )
+        db.add(request)
 
     who = getattr(current_user, "full_name", None) or current_user.email
     when = job.scheduled_date.isoformat() if job.scheduled_date else "unscheduled"
+    rate_note = f" at ${rate:,.2f}" if rate is not None else ""
     try:
         from utils.activity_logger import log_activity
         log_activity(
-            db, "crew_claim", job_id=job.id, client_id=job.client_id, actor=who,
-            summary=f"{who} claimed {job.title} ({when})",
-            extra_data={"cleaner_id": current_user.cleaner_id},
+            db, "crew_claim_request", job_id=job.id, client_id=job.client_id, actor=who,
+            summary=f"{who} requested {job.title} ({when}){rate_note}",
+            extra_data={"cleaner_id": current_user.cleaner_id, "requested_rate": rate},
         )
     except Exception:
         log.exception("activity log failed on claim_job")
     db.commit()
-    db.refresh(job)
+    db.refresh(request)
+
+    # Auto-approval (Phase 6), OFF by default. Runs here rather than on a tick
+    # so the answer is instant — a sub who asks for a posted job at the posted
+    # price on a bench they're cleared for gets told it's theirs while they're
+    # still looking at the offer, instead of waiting for the office to click a
+    # button that was never going to say anything else.
+    #
+    # It refuses far more than it acts (see services/claim_autoapprove.py) and
+    # a refusal is not visible to the sub: their request simply stays pending,
+    # exactly as before, and the office looks at it.
+    auto = {"auto_approved": False}
+    try:
+        from services.claim_autoapprove import consider
+        auto = consider(db, job, request, org_id=oid)
+    except Exception:
+        log.exception("auto-approve failed on claim_job")
+    if auto.get("auto_approved"):
+        db.refresh(request)
+
+    if not auto.get("auto_approved"):
+        # No "review it" push for something already decided — the office being
+        # told to go and approve a job that is already assigned is how an
+        # automation stops being trusted.
+        try:
+            from services.push_service import notify_staff
+            notify_staff(
+                db, "Job request",
+                f"{who} wants {job.title} on {when}{rate_note}"
+                + (f' — "{msg}"' if msg else "") + ". Review it in Schedule.",
+                url=f"/jobs/{job.id}", tag=f"job-claim-{job.id}", org_id=oid,
+                category="crew",
+            )
+        except Exception:
+            log.exception("push notify failed on claim_job")
+
+    return {"job_id": job.id, "status": request.status, "requested_rate": request.requested_rate,
+            "message": request.message,
+            # So the crew app can say "it's yours" instead of "we'll let you
+            # know" on the one path where that's true.
+            "auto_approved": bool(auto.get("auto_approved"))}
+
+
+# ── My file: the vetting documents (migration 098) ──────────────────────────
+#
+# A sub's own view of what's on record and what's still missing. The same
+# service answers the office's review screen, so the two can't drift into
+# disagreeing about whether somebody is cleared to work.
+
+
+@router.get("/my-file")
+def my_file(db: Session = Depends(get_db),
+            current_user: User = Depends(require_role("cleaner"))):
+    """Everything on my file, and anything still standing in my way."""
+    from services.sub_vetting import vetting_status
+    return vetting_status(db, current_user.id)
+
+
+@router.get("/my-file/agreement")
+def read_agreement(current_user: User = Depends(require_role("cleaner"))):
+    """The agreement text a sub is asked to accept, with its version and hash.
+
+    There was no such endpoint. The button said "Sign the subcontractor
+    agreement" and there was nothing anywhere to read — which mattered more
+    than a missing screen usually does, because "a contract that defines the
+    relationship" is one of the criteria Maine's employment standard counts,
+    and it was being asserted with no document behind it.
+    """
+    from services.sub_agreement import current
+    return current()
+
+
+class AgreementAccept(BaseModel):
+    # The hash of the text the phone actually rendered. Required: accepting is
+    # a statement about a document, and without this the server cannot tell
+    # whether the person read THIS version or one left on screen across a
+    # deploy. See services/sub_agreement.
+    sha256: str
+
+
+@router.post("/my-file/agreement")
+def accept_agreement(request: Request, body: AgreementAccept,
+                     db: Session = Depends(get_db),
+                     org_id: int = Depends(current_org_id),
+                     current_user: User = Depends(require_role("cleaner"))):
+    """Accept the current subcontractor agreement.
+
+    Append-only: a second acceptance of the same version is a no-op rather than
+    an update, because the value of this table is being able to say what
+    somebody agreed to and when. Overwriting destroys exactly that.
+
+    The caller must echo the SHA-256 of the text it displayed. A mismatch means
+    the phone is showing a different document from the one on this server — a
+    stale tab across a deploy, most likely — and the honest answer is to refuse
+    and re-render rather than record a signature against text nobody saw.
+    """
+    from services.sub_agreement import current
+    from services.sub_vetting import (
+        CURRENT_AGREEMENT_VERSION, has_current_agreement, vetting_status,
+    )
+    agreement = current()
+    if body.sha256 != agreement["sha256"]:
+        raise HTTPException(
+            status_code=409,
+            detail="This agreement has been updated. Reopen it and read the "
+                   "current version before accepting.",
+        )
+    if not has_current_agreement(db, current_user.id):
+        db.add(SubAgreement(
+            org_id=resolve_org_id(org_id, db), user_id=current_user.id,
+            version=CURRENT_AGREEMENT_VERSION, accepted_at=_now_naive_utc(),
+            text_sha256=agreement["sha256"],
+            # Best-effort provenance; behind Railway's proxy this is the
+            # forwarded client address, and a missing one is not a reason to
+            # refuse an acceptance.
+            accepted_ip=(request.client.host if request.client else None),
+        ))
+        db.commit()
+    return vetting_status(db, current_user.id)
+
+
+@router.post("/my-file/{kind}")
+async def upload_my_document(
+    kind: str,
+    file: UploadFile = File(...),
+    expires_at: str = Form(None),
+    db: Session = Depends(get_db),
+    org_id: int = Depends(current_org_id),
+    current_user: User = Depends(require_role("cleaner")),
+):
+    """Upload or replace one document on my file.
+
+    Replaces rather than accumulates (UNIQUE on user_id+kind): three COIs and
+    no way to tell which is live is worse than one that might be stale.
+    Re-uploading always returns the document to `pending` — a new file has not
+    been reviewed, whatever the old one's status was.
+    """
+    from services.sub_vetting import (
+        ALLOWED_CONTENT_TYPES, DOCUMENT_KINDS, EXPIRING_KINDS,
+        _MAX_DOCUMENT_BYTES, vetting_status,
+    )
+    kind = (kind or "").strip().lower()
+    if kind not in DOCUMENT_KINDS or kind == "agreement":
+        raise HTTPException(status_code=422, detail="Unknown document type.")
+
+    data = await file.read()
+    if not data:
+        raise HTTPException(status_code=422, detail="That file was empty.")
+    if len(data) > _MAX_DOCUMENT_BYTES:
+        raise HTTPException(status_code=413,
+                            detail="That file is too big — 10MB is the limit.")
+    ctype = (file.content_type or "").lower()
+    if ctype not in ALLOWED_CONTENT_TYPES:
+        raise HTTPException(status_code=422,
+                            detail="Send a PDF or a photo of the document.")
+
+    exp = coerce_date(expires_at) if expires_at else None
+    if kind in EXPIRING_KINDS and exp is None:
+        raise HTTPException(
+            status_code=422,
+            detail="Add the expiry date from the certificate — it's how the "
+                   "office knows to ask you for the next one.")
+
+    now = _now_naive_utc()
+    doc = (db.query(SubDocument)
+           .filter(SubDocument.user_id == current_user.id, SubDocument.kind == kind)
+           .first())
+    if doc is None:
+        doc = SubDocument(org_id=resolve_org_id(org_id, db),
+                          user_id=current_user.id, kind=kind, created_at=now)
+        db.add(doc)
+    doc.filename = (file.filename or kind)[:255]
+    doc.content_type, doc.size_bytes, doc.data = ctype, len(data), data
+    doc.expires_at, doc.uploaded_at, doc.updated_at = exp, now, now
+    # A replacement is unreviewed by definition, and the office's note on the
+    # PREVIOUS file would be read as a verdict on this one.
+    doc.status, doc.reviewed_by, doc.reviewed_at, doc.notes = "pending", None, None, None
+    db.commit()
 
     try:
         from services.push_service import notify_staff
-        notify_staff(
-            db, "Open job claimed",
-            f"{who} claimed {job.title} on {when}.",
-            url=f"/jobs/{job.id}", tag=f"job-claim-{job.id}", org_id=oid,
-            category="crew",
-        )
+        who = getattr(current_user, "full_name", None) or current_user.email
+        notify_staff(db, "Document to review",
+                     f"{who} uploaded a {kind.upper()} for review.",
+                     url="/crew", tag=f"sub-doc-{current_user.id}",
+                     org_id=resolve_org_id(org_id, db), category="crew")
     except Exception:
-        log.exception("push notify failed on claim_job")
-
-    return _job_row(job, _names_by_cleaner_id(db, [job]), current_user.cleaner_id,
-                    my_response=db.query(JobResponse).filter(
-                        JobResponse.job_id == job.id,
-                        JobResponse.cleaner_id == current_user.cleaner_id).first())
+        log.exception("push notify failed on document upload")
+    return vetting_status(db, current_user.id)
 
 
 # ── Accept / decline (crew app Phase 2) ──────────────────────────────────────
@@ -2352,7 +2571,15 @@ class AskBody(BaseModel):
     history: Optional[list] = None    # [{role: 'user'|'assistant', content: str}]
 
 
-@router.post("/ask")
+# Metered like every other endpoint that spends Anthropic tokens
+# (modules/ai/router.py uses 30/3600 and 12/3600). This one had no limit at
+# all: any cleaner account — including one approved minutes earlier, before a
+# single document is on file — could loop it against the company's API key,
+# 500 characters of question plus six turns of history at a time. The prompt
+# hygiene is sound and the context is built server-side from the caller's own
+# rows, so this was a cost problem rather than a data one, which is exactly the
+# kind that goes unnoticed until the bill.
+@router.post("/ask", dependencies=[Depends(rate_limit(20, 3600, "crew_ask"))])
 def crew_ask(
     body: AskBody,
     db: Session = Depends(get_db),
@@ -2753,6 +2980,42 @@ def crew_roster(db: Session = Depends(get_db), org_id: int = Depends(current_org
     return [_crew_row(u) for u in rows]
 
 
+@router.get("/files", dependencies=[Depends(require_role("admin", "manager"))])
+def crew_files(db: Session = Depends(get_db), org_id: int = Depends(current_org_id)):
+    """Who owes you a document, and what's sitting waiting for you to accept it.
+
+    The office's real question isn't "is this one person cleared" — it's "who
+    still owes me something". Before this you could only ask it one person at a
+    time, by opening a disclosure on each row of the staff list, which is how a
+    document gets uploaded on Tuesday and noticed in March.
+
+    One request for the whole roster (brightbase-economy). The counts at the
+    top are what tells you whether to open it at all.
+    """
+    from services.sub_vetting import roster
+
+    return roster(db, resolve_org_id(org_id, db))
+
+
+@router.get("/bench", dependencies=[Depends(require_role("admin", "manager"))])
+def crew_bench(db: Session = Depends(get_db), org_id: int = Depends(current_org_id)):
+    """The bench screen: who you have, whether they can work, what they've done.
+
+    /files answers "who owes me a document". This answers the question the
+    office actually opens the app with — "who have I got" — by hanging the work
+    history and the 1099 total off the same roster rows, so the file status and
+    the person are one screen instead of three.
+
+    One request draws it (brightbase-economy). See services/bench.py for what
+    is deliberately NOT counted: declines (the signed agreement says declining
+    is free) and punctuality from clock punches (control of hours is the
+    classification risk).
+    """
+    from services.bench import build
+
+    return build(db, resolve_org_id(org_id, db))
+
+
 @router.get("/unclaimed-ids", dependencies=[Depends(require_role("admin", "manager"))])
 def unclaimed_crew_ids(db: Session = Depends(get_db), org_id: int = Depends(current_org_id)):
     """Crew IDs already on upcoming jobs (Job.cleaner_ids) that no native user
@@ -2803,8 +3066,7 @@ def resend_crew_invite(user_id: int, db: Session = Depends(get_db),
     if u.password_hash:
         raise HTTPException(status_code=409,
                             detail="This cleaner has already set their password.")
-    send_staff_invite(u)
-    return _crew_row(u)
+    return {**_crew_row(u), **invite_status_fields(send_staff_invite(u))}
 
 
 @router.post("", dependencies=[Depends(require_role("admin"))])
@@ -2849,10 +3111,155 @@ def add_crew(body: CrewCreate, db: Session = Depends(get_db),
         # numeric legacy IDs.
         u.cleaner_id = f"bb{u.id}"
     db.commit(); db.refresh(u)
-    send_staff_invite(u)
-    return _crew_row(u)
+    return {**_crew_row(u), **invite_status_fields(send_staff_invite(u))}
 
 
 # The invite email itself lives in modules/auth/router.py (send_staff_invite) —
 # one sender for both the crew add and the generic Users-screen invite, so the
 # wording and 7-day TTL can never drift apart.
+
+
+# ── Routes: the sub's side (marketplace pivot Phase 4, migration 100) ────────
+#
+# A route is a standing block of recurring work. The office offers it; the sub
+# accepts or declines. Nothing here lets the office skip the acceptance, and
+# nothing here lets a sub take on standing work while their file is incomplete.
+
+@router.get("/my-routes")
+def my_routes(
+    db: Session = Depends(get_db),
+    org_id: int = Depends(current_org_id),
+    current_user: User = Depends(require_role("cleaner")),
+):
+    """Routes offered to me, and routes I already own.
+
+    ONE request, and a light one — this rides a phone on rural cell data
+    (brightbase-economy). Offered routes carry their houses so a sub can see
+    what they're agreeing to before agreeing to it; active ones are the
+    standing commitment and its rate, which is a shorter answer.
+    """
+    from database.models import Route
+    from services import routes as routes_service
+
+    _require_crew_id(current_user)
+    oid = resolve_org_id(org_id, db)
+    rows = (db.query(Route)
+            .filter(Route.owner_cleaner_id == current_user.cleaner_id,
+                    Route.status.in_(["offered", "active"]),
+                    or_(Route.org_id == oid, Route.org_id.is_(None)))
+            .order_by(Route.day_of_week)
+            .all())
+    offered = [routes_service.route_dict(db, r, with_members=True)
+               for r in rows if r.status == "offered"]
+    active = [routes_service.route_dict(db, r, with_members=True)
+              for r in rows if r.status == "active"]
+    return {"offered": offered, "active": active}
+
+
+@router.post("/routes/{route_id}/accept")
+def accept_route(
+    route_id: int,
+    db: Session = Depends(get_db),
+    org_id: int = Depends(current_org_id),
+    current_user: User = Depends(require_role("cleaner")),
+):
+    """Take the route. This is the step that fixes the owner and the rate.
+
+    LOCKED (R5). Accept is not idempotent in the way a read is — it stamps
+    accepted_at and turns generation on for this block — so the row is taken
+    FOR UPDATE and its status re-read underneath the lock. Two taps on a slow
+    phone must produce one accept.
+
+    RE-CHECKED, both the route and the person. The office can change a route
+    between offering it and this tap, and a certificate of insurance can lapse
+    in that window — that gap is the entire reason `is_expired` reads the date
+    rather than the stored status. The sub should not be the one who discovers
+    either problem, but they must not slip through it either.
+    """
+    from database.models import Route
+    from services import routes as routes_service
+    from services.sub_vetting import blocking_requirements
+
+    _require_crew_id(current_user)
+    oid = resolve_org_id(org_id, db)
+
+    route = (db.query(Route)
+             .filter(Route.id == route_id,
+                     or_(Route.org_id == oid, Route.org_id.is_(None)))
+             .with_for_update()
+             .first())
+    if route is None:
+        raise HTTPException(status_code=404, detail="That route isn't available.")
+    if route.owner_cleaner_id != current_user.cleaner_id:
+        # Deliberately the same answer as "doesn't exist": whose route this is
+        # isn't information for someone it wasn't offered to.
+        raise HTTPException(status_code=404, detail="That route isn't available.")
+    if route.status == "active":
+        raise HTTPException(status_code=409, detail="You've already got this one.")
+    if route.status != "offered":
+        raise HTTPException(status_code=409, detail="That route isn't on offer any more.")
+
+    missing = blocking_requirements(db, current_user)
+    if missing:
+        raise HTTPException(status_code=403, detail={
+            "message": "Finish your file before you take on a standing route.",
+            "missing": missing,
+        })
+
+    blocker = routes_service.validate_offerable(db, route)
+    if blocker:
+        # Not the sub's problem to fix, so it says so plainly rather than
+        # reading like something they did wrong.
+        raise HTTPException(
+            status_code=409,
+            detail=f"The office needs to sort something first — {blocker}")
+
+    route.status = "active"
+    route.accepted_at = _now_naive_utc()
+    route.updated_at = _now_naive_utc()
+    db.commit(); db.refresh(route)
+    return routes_service.route_dict(db, route, with_members=True)
+
+
+@router.post("/routes/{route_id}/decline")
+def decline_route(
+    route_id: int,
+    db: Session = Depends(get_db),
+    org_id: int = Depends(current_org_id),
+    current_user: User = Depends(require_role("cleaner")),
+):
+    """Turn the route down. It goes back to the office as a draft.
+
+    Back to DRAFT and not to some `declined` state: the office's next move is
+    to offer it to somebody else, and a route sitting in a terminal-sounding
+    status is a route that gets rebuilt from scratch instead. The owner is
+    cleared, because a declined route has no owner.
+
+    Declining a single OCCURRENCE is a different thing entirely — that's an
+    ordinary JobResponse on that day's job, which the crew app already renders.
+    This is giving the whole block back.
+    """
+    from database.models import Route
+    from services import routes as routes_service
+
+    _require_crew_id(current_user)
+    oid = resolve_org_id(org_id, db)
+
+    route = (db.query(Route)
+             .filter(Route.id == route_id,
+                     or_(Route.org_id == oid, Route.org_id.is_(None)))
+             .with_for_update()
+             .first())
+    if route is None or route.owner_cleaner_id != current_user.cleaner_id:
+        raise HTTPException(status_code=404, detail="That route isn't available.")
+    if route.status != "offered":
+        raise HTTPException(
+            status_code=409,
+            detail="You've already accepted this one — talk to the office to hand it back.")
+
+    route.status = "draft"
+    route.owner_cleaner_id = None
+    route.offered_at = None
+    route.updated_at = _now_naive_utc()
+    db.commit(); db.refresh(route)
+    return routes_service.route_dict(db, route)

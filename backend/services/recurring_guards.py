@@ -222,6 +222,124 @@ def _group_live_duplicates(rows: List[RecurringSchedule], today) -> List[List[in
     return groups
 
 
+def _group_paused_duplicates(rows: List[RecurringSchedule], today) -> List[List[int]]:
+    """Groups of PAUSED copies of the same series.
+
+    `_group_live_duplicates` only looks at live rows, which is right for the
+    "you'd trip the creation guard" finding. But the owner's list is mostly
+    paused: the same house appears three and four times because a duplicate was
+    paused rather than cancelled, and pausing takes a row out of `_is_live` —
+    so the duplicate detector could not see a single one of them. Thirty-two
+    series, most of them the same dozen houses, and no finding said so.
+
+    MIXED GROUPS ARE THE COMMON CASE, and the first version of this missed
+    them. After an "all future visits" edit the old series is left behind and a
+    new one takes over, so the usual shape is ONE LIVE copy and one or more
+    paused ones — which fell through both detectors, because the live one
+    needs every member live and this one needed every member paused. Owner
+    screenshot: Sandra Fox with two identical "Every 4 weeks Fri 9:00" series
+    and Paul Day with two "Biweekly Mon 9:00", one of each still running.
+
+    So live rows are bucketed too — they're what a paused copy is a duplicate
+    OF — but only the PAUSED ones are returned. A live series is never
+    something to cancel as a duplicate: it's the survivor, and cancelling it
+    would take real visits off the calendar.
+
+    Cancelled and ended rows are excluded entirely: somebody already decided
+    about those, and a decided row is not a duplicate to resolve — it's
+    history.
+    """
+    def _decided(s):
+        end = coerce_date(s.series_end_date)
+        return bool(getattr(s, "cancelled_at", None)) or (
+            end is not None and end <= today and not s.active)
+
+    candidates = [s for s in rows if not _decided(s)]
+    buckets: Dict[Any, List[RecurringSchedule]] = {}
+    for s in candidates:
+        buckets.setdefault(_dup_bucket_key(s), []).append(s)
+
+    groups: List[List[int]] = []
+    for members in buckets.values():
+        if len(members) < 2:
+            continue
+        parent = {s.id: s.id for s in members}
+
+        def find(x):
+            while parent[x] != x:
+                parent[x] = parent[parent[x]]
+                x = parent[x]
+            return x
+
+        day_sets = {s.id: _effective_days(s.days_of_week, s.day_of_week, s.frequency)
+                    for s in members}
+        for i, a in enumerate(members):
+            for b in members[i + 1:]:
+                if a.frequency == "monthly" or (day_sets[a.id] & day_sets[b.id]):
+                    ra, rb = find(a.id), find(b.id)
+                    if ra != rb:
+                        parent[ra] = rb
+        clusters: Dict[int, List[RecurringSchedule]] = {}
+        for s in members:
+            clusters.setdefault(find(s.id), []).append(s)
+        for cluster in clusters.values():
+            if len(cluster) < 2:
+                continue
+            # Only the paused ones are offered for cancelling. A cluster of one
+            # live series plus one paused copy is a real duplicate and yields
+            # exactly one finding — on the paused row.
+            paused = sorted(s.id for s in cluster if not _is_live(s, today))
+            if not paused:
+                continue
+            live = sorted(s.id for s in cluster if _is_live(s, today))
+            groups.append({"paused": paused, "live": live})
+    return groups
+
+
+def _group_reschedule_leftovers(rows: List[RecurringSchedule], today) -> Dict[int, dict]:
+    """Paused series that a LIVE one appears to have replaced on another day.
+
+    `_group_paused_duplicates` keys on day-of-week, by design: two series on
+    the SAME day at the same time are one booking entered twice. The commoner
+    real mess is the other shape — the office moved a client from Friday to
+    Tuesday, the Tuesday series went live, and the Friday one was PAUSED
+    instead of cancelled, keeping whatever visits were already booked on it.
+    Same client, same cadence, different day: invisible to a day-keyed bucket,
+    and it went unreported until the owner spotted two Sandra Foxes by eye.
+
+    Keyed WITHOUT the day and without the time, because a move can change the
+    slot as well as the weekday. Frequency and interval must still match — a
+    client who legitimately has a weekly clean and a monthly deep clean differs
+    there, and offering to cancel one of those would be worse than silence.
+
+    Only the PAUSED side is ever returned: the running series is the keeper by
+    definition, and there is no "which do I keep" question to put to anybody.
+    """
+    live_by_key: Dict[tuple, list] = {}
+    paused: List[tuple] = []
+    for s in rows:
+        if getattr(s, "cancelled_at", None):
+            continue                      # decided; not a to-do
+        key = (s.client_id, s.property_id, (s.frequency or ""),
+               int(s.interval_weeks or 1))
+        if _is_live(s, today):
+            live_by_key.setdefault(key, []).append(s)
+        elif not s.active:
+            paused.append((key, s))
+
+    out: Dict[int, dict] = {}
+    for key, s in paused:
+        mine = _effective_days(s.days_of_week, s.day_of_week, s.frequency)
+        others = [
+            l for l in live_by_key.get(key, [])
+            if _effective_days(l.days_of_week, l.day_of_week, l.frequency) != mine
+        ]
+        if others:
+            out[s.id] = {"live": [l.id for l in others],
+                         "live_cadence": _cadence_text(others[0])}
+    return out
+
+
 def audit_series(db: Session, org_id: Optional[int]) -> dict:
     """Full health scan of the org's recurring series. Every problem carries a
     code, a human message, a suggested fix, and a ``destructive`` flag (the UI
@@ -256,8 +374,55 @@ def audit_series(db: Session, org_id: Optional[int]) -> dict:
     if prop_ids:
         live_prop_ids = {pid for (pid,) in db.query(Property.id).filter(Property.id.in_(prop_ids)).all()}
 
+    # The visits POST /{id}/cancel-upcoming would actually take off the
+    # calendar — a deliberate mirror of _upcoming_series_jobs() in
+    # modules/recurring/router.py, not a reuse of `counts` above.
+    #
+    # `counts` answers "does this series look alive", so it keeps undated jobs
+    # and completed ones. Sizing a finding from it would let the scan name a
+    # number the one-tap fix cannot clear, and the finding would then survive
+    # its own fix forever. That exact shape is the bug `stale_paused` below was
+    # rewritten to escape; it is not worth learning twice.
+    cancellable: Dict[int, int] = {}
+    if ids:
+        cancellable = dict(
+            db.query(Job.recurring_schedule_id, func.count(Job.id))
+            .filter(
+                Job.recurring_schedule_id.in_(ids),
+                Job.scheduled_date.isnot(None),
+                Job.scheduled_date >= today,
+                Job.status.notin_(("completed", "cancelled")),
+            )
+            .group_by(Job.recurring_schedule_id)
+            .all()
+        )
+
+    # For a series with no property: the client's own property, when they have
+    # exactly ONE. That turns the fix from "open the series and hunt for the
+    # field" into one tap. One query for the whole scan rather than one per
+    # series (brightbase-economy), and deliberately silent when a client has
+    # two — sending a cleaner to the wrong house beats making the office pick.
+    suggest: Dict[int, tuple] = {}
+    unlinked_clients = {s.client_id for s in rows if s.client_id and not s.property_id}
+    if unlinked_clients:
+        by_client: Dict[int, list] = {}
+        for p in (db.query(Property)
+                  .filter(Property.client_id.in_(unlinked_clients),
+                          or_(Property.active.is_(True), Property.active.is_(None)))
+                  .all()):
+            by_client.setdefault(p.client_id, []).append(p)
+        for cid, props in by_client.items():
+            if len(props) == 1:
+                only = props[0]
+                suggest[cid] = (only.id, only.name or only.address or f"property {only.id}")
+
+    leftovers = _group_reschedule_leftovers(rows, today)
+
     dup_groups = _group_live_duplicates(rows, today)
     in_dup_group = {sid for g in dup_groups for sid in g}
+
+    paused_dup_groups = _group_paused_duplicates(rows, today)
+    in_paused_dup = {sid: g for g in paused_dup_groups for sid in g["paused"]}
 
     issues = []
     for s in rows:
@@ -267,6 +432,102 @@ def audit_series(db: Session, org_id: Optional[int]) -> dict:
         end = coerce_date(s.series_end_date)
         title = (s.title or "").strip()
 
+        # A series somebody DECIDED was over — cancelled, or past a recorded
+        # end date — is not a to-do list. Owner report, with a screenshot: a
+        # CANCELLED series was being flagged "no start/end time on file — visits
+        # can't be scheduled at a real time". It will never schedule a visit.
+        # Setting its time window is busywork this scan invented, and busywork
+        # in a health check is why the count never appeared to go down.
+        #
+        # The findings below that describe how a series will MISBEHAVE WHEN IT
+        # GENERATES are therefore skipped for a decided one.
+        #
+        # Two things are deliberately NOT decided. Paused, because a paused
+        # series can come back and its problems come back with it. And
+        # ended-but-still-ACTIVE, because that is half-decided — the office is
+        # about to open it anyway (`ended_but_active` says so right below), and
+        # hiding its other problems in the meantime just means finding them one
+        # at a time afterwards.
+        decided = bool(getattr(s, "cancelled_at", None)) or (
+            end is not None and end <= today and not s.active)
+
+        # A series the office CLOSED whose already-generated visits are still
+        # sitting on the calendar.
+        #
+        # Cancelling a series only stops GENERATION. Every visit already
+        # materialized stays, on purpose: scheduling-invariants R7 says a Job
+        # never disappears as a side effect of an operation aimed at something
+        # else, so removing them is a separate explicit act
+        # (POST /{id}/cancel-upcoming). That design is right and this scan's
+        # silence about it was not — the board read "29 healthy" while five
+        # cleanings for cancelled clients sat waiting to be dispatched.
+        #
+        # Nobody re-opens a cancelled series to check on it; the whole point of
+        # cancelling is to stop thinking about it. So the scan says it out
+        # loud. The fix stays the same deliberate second act it always was —
+        # destructive, human-confirmed, and excluded from the batch fixes,
+        # because "cancel every leftover visit across N series" is not a button
+        # this scan should hand anyone.
+        #
+        # Sized from `cancellable`, not `upcoming`: see the note where it is
+        # built. A visit whose date is still unset cannot be dispatched to and
+        # is not what this finding is about.
+        stranded = cancellable.get(s.id, 0)
+        if decided and stranded > 0:
+            when = "Cancelled"
+            if not getattr(s, "cancelled_at", None):
+                when = f"Ended {end.isoformat()}" if end else "Ended"
+            problems.append({
+                "code": "cancelled_with_upcoming", "severity": "error", "destructive": True,
+                "message": (f"{when}, but {stranded} "
+                            f"{'visit is' if stranded == 1 else 'visits are'} "
+                            "still on the calendar."),
+                "suggestion": ("⚠️ Take those visits off the calendar so nobody is "
+                               "dispatched to a cancelled client (history is kept)."),
+                "stranded": stranded,
+            })
+
+        # Not folded into duplicate_paused: that one is "the same booking
+        # twice", this one is "the day they moved off". Different question to
+        # the office, different sentence. in_paused_dup wins if somehow both
+        # match, so a series is never asked about twice.
+        if s.id in leftovers and s.id not in in_paused_dup:
+            moved = leftovers[s.id]
+            problems.append({
+                "code": "reschedule_leftover", "severity": "warn", "destructive": True,
+                "message": ("Paused, while a live series for this client runs "
+                            f"{moved['live_cadence']} — this looks like the day "
+                            "they moved off."),
+                "suggestion": ("\u26a0\ufe0f Check it's the old one, then cancel it and take "
+                               "its booked visits off the calendar (history is kept)."),
+                "partners": moved["live"],
+            })
+        if s.id in in_paused_dup:
+            group = in_paused_dup[s.id]
+            others = [p for p in group["paused"] if p != s.id]
+            if group["live"]:
+                # The common shape after an "all future visits" edit: the live
+                # series took over and this one was paused instead of ended.
+                # There's no "which do I keep" question here — the running one
+                # is the keeper by definition.
+                message = ("A running series covers this same house and time — "
+                           "this is the paused copy left behind.")
+                suggestion = ("⚠️ Cancel it; the live one keeps going "
+                              "(history is kept).")
+            else:
+                message = (f"One of {len(group['paused'])} paused copies of the "
+                           "same series for this client.")
+                suggestion = ("⚠️ Keep the one you'd resume and cancel the rest "
+                              "(history is kept).")
+            problems.append({
+                "code": "duplicate_paused", "severity": "warn", "destructive": True,
+                "message": message,
+                "suggestion": suggestion,
+                "partners": others,
+                # True when a live series already covers this — the frontend
+                # reads it to know there is no keeper to hold back.
+                "has_live_copy": bool(group["live"]),
+            })
         if s.id in in_dup_group:
             partners = next(g for g in dup_groups if s.id in g)
             problems.append({
@@ -280,7 +541,8 @@ def audit_series(db: Session, org_id: Optional[int]) -> dict:
                 "message": "The client this series belongs to no longer exists.",
                 "suggestion": "Cancel the series, or relink it to the right client.",
             })
-        if coerce_time(s.start_time) is None or coerce_time(s.end_time) is None:
+        if not decided and (coerce_time(s.start_time) is None
+                            or coerce_time(s.end_time) is None):
             problems.append({
                 "code": "no_time_set", "severity": "error", "destructive": False,
                 "message": "No start/end time on file — visits can't be scheduled at a real time.",
@@ -298,7 +560,9 @@ def audit_series(db: Session, org_id: Optional[int]) -> dict:
                 "message": "Marked active but has no upcoming visits generated.",
                 "suggestion": "Generate visits, or check the rule (time window, days, end date).",
             })
-        if not title or len(title) < 4 or title.lower() in _JUNK_TITLES or title.lower() == (s.frequency or ""):
+        if not decided and (not title or len(title) < 4
+                            or title.lower() in _JUNK_TITLES
+                            or title.lower() == (s.frequency or "")):
             client = client_names.get(s.client_id)
             better = f"{client} — {_cadence_text(s)}" if client else _cadence_text(s)
             problems.append({
@@ -306,17 +570,31 @@ def audit_series(db: Session, org_id: Optional[int]) -> dict:
                 "message": f"Title “{title or '(blank)'}” doesn't say whose clean this is.",
                 "suggestion": f"Rename it, e.g. “{better}”.",
             })
-        if s.property_id and s.property_id not in live_prop_ids:
+        if decided:
+            pass                      # see the `decided` comment above
+        elif s.property_id and s.property_id not in live_prop_ids:
             problems.append({
                 "code": "property_missing", "severity": "warn", "destructive": False,
                 "message": "Points at a property that no longer exists.",
                 "suggestion": "Relink the series to the client's current property.",
             })
         elif not s.property_id:
+            # Was severity `info`, worded as though the only cost were that
+            # "visits inherit only the free-text address". It is not cosmetic:
+            # Job.property_id is NOT NULL and every occurrence copies it off
+            # the schedule, so a series with no property generates NOTHING —
+            # each insert trips the constraint and is swallowed as a duplicate.
+            # The visits already booked run out and no more are made. That is
+            # an error, and the scan now says which house to attach.
+            hint = suggest.get(s.client_id)
             problems.append({
-                "code": "no_property", "severity": "info", "destructive": False,
-                "message": "Not linked to a property (visits inherit only the free-text address).",
-                "suggestion": "Link it to the client's property so visits, photos and access details connect.",
+                "code": "no_property", "severity": "error", "destructive": False,
+                "message": ("Not linked to a property — this series can't create "
+                            "visits at all, and fails silently when it tries."),
+                "suggestion": ("Link it to the client's property; nothing new is "
+                               "generated until you do."),
+                **({"suggest_property_id": hint[0],
+                    "suggest_property_label": hint[1]} if hint else {}),
             })
         # "Leftover" means nobody ever decided this series was over — it just
         # stopped. A series that was CANCELLED, or that reached a recorded end
@@ -328,8 +606,7 @@ def audit_series(db: Session, org_id: Optional[int]) -> dict:
         # same count forever. The suggestion below promised it "removes it from
         # the list" — a promise the code didn't keep, and the same shape as the
         # bug the owner reported about cancel not appearing to do anything.
-        decided = bool(getattr(s, "cancelled_at", None)) or (end is not None and end <= today)
-        if not s.active and upcoming == 0 and not decided:
+        if not s.active and upcoming == 0 and not decided and s.id not in in_paused_dup:
             problems.append({
                 "code": "stale_paused", "severity": "info", "destructive": True,
                 "message": "Paused with nothing upcoming — likely a leftover.",
@@ -359,5 +636,9 @@ def audit_series(db: Session, org_id: Optional[int]) -> dict:
         "scanned": len(rows),
         "healthy": len(rows) - len(issues),
         "duplicate_groups": dup_groups,
+        # Paused copies of the same series. Kept separate from the live groups:
+        # the fix is different (cancel the extras vs. pick a winner) and so is
+        # the urgency.
+        "paused_duplicate_groups": paused_dup_groups,
         "issues": issues,
     }

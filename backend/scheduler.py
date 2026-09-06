@@ -402,6 +402,54 @@ def schedule_audit_tick() -> dict:
         except Exception:
             log.exception("[crew-escalation] pass failed (schedule audit continues)")
 
+        # Lapsing insurance rides this tick too (R1: no new ticks). An expired
+        # COI is worse than a missing one — nobody goes looking for it, because
+        # the office believes it has one. Warned here so it reaches the log the
+        # office already reads, and self-gated so a failure can't take the
+        # duplicate audit down with it.
+        try:
+            from services.sub_vetting import expiring_documents
+            lapsing = expiring_documents(db, org_id=1)
+            if lapsing:
+                gone = [r for r in lapsing if r["expired"]]
+                if gone:
+                    log.warning(
+                        "[sub-vetting] %s document(s) EXPIRED — those subs can no "
+                        "longer take jobs: %s", len(gone), gone[:10])
+                soon = [r for r in lapsing if not r["expired"]]
+                if soon:
+                    log.warning("[sub-vetting] %s document(s) expiring within 30 "
+                                "days: %s", len(soon), soon[:10])
+        except Exception:
+            log.exception("[sub-vetting] expiry pass failed (schedule audit continues)")
+
+        # Offers that outlived their job ride this tick too (R1). A job posted
+        # for Saturday and never approved is still flagged open on Sunday, with
+        # its requests still pending — nothing edits that row, so nothing was
+        # ever going to notice. Silent by design: the day passing is not news.
+        try:
+            from services.claim_approval import sweep_dead_offers
+            swept = sweep_dead_offers(db)
+            if swept:
+                log.info("[offers] closed %s offer(s) whose job is no longer "
+                         "live work", swept)
+        except Exception:
+            log.exception("[offers] sweep failed (schedule audit continues)")
+
+        # The weekly bench digest rides this tick too (R1). It is its own
+        # once-a-week gate — day-of-week plus a date marker, so a redeploy
+        # mid-morning can't send a second copy — and it stays silent in a week
+        # with nothing to decide, because a message that always arrives is a
+        # message nobody opens.
+        try:
+            from services.bench_digest import due_today, send
+            if due_today(db):
+                outcome = send(db, org_id=1)
+                if outcome.get("sent"):
+                    log.info("[bench-digest] sent: %s", " · ".join(outcome["lines"]))
+        except Exception:
+            log.exception("[bench-digest] pass failed (schedule audit continues)")
+
         from modules.scheduling.router import find_schedule_issues
         issues = find_schedule_issues(db)
         c = issues.get("counts", {})
@@ -533,6 +581,27 @@ def turnover_coverage_tick() -> dict:
                 f"[turnover-coverage] all upcoming checkouts covered across "
                 f"{result['properties_checked']} STR property(ies)"
             )
+
+        # The Saturday window (migration 101) rides THIS tick rather than
+        # adding a background job (R1 — the count only goes down). It belongs
+        # here on the merits too: this is already the daily "is the STR side
+        # covered" pass, and opening a batch and stepping its price is the
+        # same question answered with money instead of a log line.
+        #
+        # Self-gated and wrapped: a window problem must never stop the coverage
+        # audit reporting, which is the safety net people actually rely on.
+        try:
+            if _db_flag(db, "turnover_window_enabled",
+                        env_flag("TURNOVER_WINDOW_ENABLED", True)):
+                from services.turnover_windows import run_due
+                windows = run_due(db)
+                if windows["opened"] or windows["stepped"]:
+                    log.info(f"[turnover-window] opened {len(windows['opened'])}, "
+                             f"stepped {len(windows['stepped'])}")
+                result["windows"] = windows
+        except Exception as e:
+            log.error(f"[turnover-window] window pass failed: {e}")
+
         return result
     except Exception as e:
         log.error(f"[turnover-coverage] check failed: {e}")
@@ -786,17 +855,49 @@ def start_scheduler():
         "activation gated on the in-app Settings toggle."
     )
 
-    # Recurring residential/commercial job generation (runs daily)
+    # Recurring residential/commercial job generation (runs daily, and once
+    # shortly after every boot).
+    #
+    # THE STARTUP RUN IS THE POINT, not a nicety. An IntervalTrigger schedules
+    # its FIRST fire one whole interval after registration — for a 24-hour
+    # interval that is tomorrow, and every deploy restarts the container and
+    # resets the clock. So on any day this app was deployed, visit generation
+    # never ran. Three deploys in a day meant three days of no generation.
+    #
+    # That failure is silent and it drains the calendar rather than breaking
+    # it: series stay active, their already-generated visits slide into the
+    # past, and one by one they become "active but no upcoming visits" on the
+    # Recurring health scan. The owner's report was the scan getting WORSE with
+    # nothing touched — 9 healthy down to 6 — which is exactly this shape.
+    #
+    # Every other tick here uses a minutes-long interval and self-heals within
+    # the hour; this one is the only interval long enough for a deploy to
+    # starve it. (The 12-hour Google/Gmail watch renewals below are the same
+    # latent shape — left alone here deliberately rather than widening this
+    # change, but they want the same treatment.)
+    #
+    # A small delay rather than 0: let the app finish booting and pass its
+    # Railway healthcheck before a generation sweep competes for the DB. Only
+    # one worker ever runs the scheduler (see _claim_scheduler_singleton_lock),
+    # so this is one run per deploy, not one per worker, and generate_jobs is
+    # idempotent anyway — it skips dates that already have a Job.
     if env_flag("RECURRING_AUTO_GENERATE_ENABLED", True):
+        from datetime import datetime, timedelta, timezone
+
         recurring_interval_hours = env_int("RECURRING_AUTO_GENERATE_INTERVAL_HOURS", 24)
+        recurring_first_run_delay = env_int("RECURRING_AUTO_GENERATE_STARTUP_DELAY_SECONDS", 120)
         _scheduler.add_job(
             recurring_jobs_tick,
             IntervalTrigger(hours=recurring_interval_hours),
             id="recurring_jobs",
             name="Recurring jobs auto-generate",
             replace_existing=True,
+            next_run_time=datetime.now(timezone.utc) + timedelta(seconds=recurring_first_run_delay),
         )
-        log.info(f"Recurring auto-generate enabled (interval: {recurring_interval_hours} hr)")
+        log.info(
+            f"Recurring auto-generate enabled (interval: {recurring_interval_hours} hr; "
+            f"first run {recurring_first_run_delay}s after start)"
+        )
     else:
         log.info("Recurring auto-generate disabled via RECURRING_AUTO_GENERATE_ENABLED=0")
 

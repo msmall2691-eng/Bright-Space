@@ -130,6 +130,20 @@ export default function Schedule() {
     weekDates, loadByDate, todayVisits, todayStats,
     crewLoad, unassignedToday,
   } = useScheduleAnalytics({ visits, currentDate, employees })
+
+  // Posted jobs with somebody waiting on an answer, across the WHOLE loaded
+  // range rather than just today: a sub asks for work later in the week far
+  // more often than for this afternoon, and a today-only alert would show
+  // nothing on most of the days it matters (review finding 11).
+  //
+  // `pending_claim_requests` already rides every job in the week payload, so
+  // this is free — no fetch, no push, nothing to go missing.
+  const awaitingReply = useMemo(
+    () => (visits || [])
+      .filter(v => (v.pending_claim_requests || 0) > 0 && v.status !== 'cancelled')
+      .sort((a, b) => (a.scheduled_date || '').localeCompare(b.scheduled_date || '')),
+    [visits],
+  )
   const [showFilters, setShowFilters] = useState(false)  // filters hidden by default; most days show everything
   // Crew availability signals for the board's date (crew app Phase 4):
   // { [cleaner_id]: {status, detail} } from /api/jobs/cleaner-availability —
@@ -245,11 +259,16 @@ export default function Schedule() {
     setJobs(prev => (prev && prev[jobId]) ? { ...prev, [jobId]: { ...prev[jobId], ...next } } : prev)
   }
 
-  // "Open to crew" (crew app Phase 3): flip open_for_claims on still-closed
-  // unassigned jobs so they show on every cleaner's phone with a Claim
-  // button — the same toggle JobDetail carries, surfaced where the office
-  // actually sees the gap (needs-crew alert + unassigned queue). Uses the
-  // EXISTING jobs PATCH; first claim adds the cleaner and closes it again.
+  // "Open to crew": flip open_for_claims on still-closed unassigned jobs so
+  // they go up on the bench's board — the same toggle JobDetail carries,
+  // surfaced where the office actually sees the gap (needs-crew alert +
+  // unassigned queue). Uses the EXISTING jobs PATCH.
+  //
+  // Posting is an OFFER, not a race. Since the marketplace pivot a sub ASKS
+  // for the job, optionally at their own price, and several can be waiting at
+  // once; what closes the offer is the office approving one of them, not the
+  // first tap. This comment described the old first-come-first-served claim
+  // for a year after it stopped existing.
   const handleOpenToCrew = async (visitList) => {
     const targets = (visitList || []).filter(v => !v.open_for_claims)
     if (targets.length === 0) return
@@ -258,9 +277,12 @@ export default function Schedule() {
         patch(`/api/jobs/${v.job_id ?? v.id}`, { open_for_claims: true })
       ))
       targets.forEach(v => applyLocalMove(v.job_id ?? v.id, { open_for_claims: true }))
+      // Says what actually happens next. "Cleaners can claim it" promised a
+      // one-tap handover that stopped existing at the marketplace pivot; what
+      // she needs to know is that the ball comes back to her.
       toast.success(targets.length === 1
-        ? 'Opened to crew — cleaners can claim it from their phone'
-        : `${targets.length} jobs opened to crew`)
+        ? 'On the board — subs can ask for it, and you pick who gets it'
+        : `${targets.length} jobs on the board — subs ask, you pick`)
     } catch (err) {
       toast.error('Could not open to crew: ' + err.message)
       refresh() // reconcile any partial success
@@ -557,6 +579,7 @@ export default function Schedule() {
             todayVisits={todayVisits}
             todayStats={todayStats}
             unassignedToday={unassignedToday}
+            awaitingReply={awaitingReply}
             weekDates={weekDates}
             loadByDate={loadByDate}
             jobs={jobs}

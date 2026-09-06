@@ -2,7 +2,7 @@ import {
   LayoutDashboard, Sparkles, Users, Calendar, Receipt,
   DollarSign, MessageSquare, Home, Repeat, Settings, Inbox,
   TrendingUp, Radar, Rows3, Filter, HardHat, CalendarDays, FileText, Star,
-  GitMerge,
+  GitMerge, Route, CalendarClock,
 } from 'lucide-react'
 
 /**
@@ -62,6 +62,13 @@ export const NAV_SECTIONS = [
           { to: '/schedule',  icon: Calendar, label: 'Schedule', keywords: 'jobs calendar dispatch' },
           // Every /api/recurring endpoint is admin/manager-only.
           { to: '/recurring', icon: Repeat,   label: 'Recurring', roles: ['admin', 'manager'], keywords: 'series weekly biweekly' },
+          // Routes group recurring houses into one sub's standing day. Office-only:
+          // every /api/routes endpoint is admin/manager (the crew side lives in
+          // the crew app, on /api/crew/my-routes).
+          { to: '/routes',    icon: Route,    label: 'Routes', roles: ['admin', 'manager'], keywords: 'block standing subcontractor owner day' },
+          // Guest changeover days staffed as a batch. Office-only, like the
+          // rest of this family — the crew side is the ordinary open board.
+          { to: '/turnovers', icon: CalendarClock, label: 'Turnovers', roles: ['admin', 'manager'], keywords: 'saturday changeover str airbnb window price step' },
           // Renamed from "Sync" — plain enough in context, but "Calendar sync"
           // reads unambiguously on first glance for a non-technical owner.
           { to: '/sync',      icon: Radar,    label: 'Calendar sync', roles: ['admin', 'manager', 'viewer'], keywords: 'google ical feeds turnovers' },
@@ -109,7 +116,8 @@ export const SETTINGS_ITEM = {
     { to: '/settings', icon: Settings,   label: 'Settings', keywords: 'account integrations users email fields' },
     { to: '/crew',     icon: HardHat,    label: 'Crew', roles: ['admin', 'manager'], keywords: 'team cleaners rates invite' },
     // Payroll reads (/rates, /summary, /mileage) are admin/manager-only.
-    { to: '/payroll',  icon: DollarSign, label: 'Payroll', roles: ['admin', 'manager'], keywords: 'team hours pay period square' },
+    // Renamed with the employee model: there is no payroll, there are payouts.
+    { to: '/payroll',  icon: DollarSign, label: 'Payouts', roles: ['admin', 'manager'], keywords: 'pay subcontractors payouts ledger 1099' },
   ],
 }
 

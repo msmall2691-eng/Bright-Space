@@ -24,6 +24,7 @@ from __future__ import annotations
 import logging
 import os
 from datetime import datetime, timedelta, timezone, date as date_cls
+from utils.dates import business_date
 
 from sqlalchemy.orm import Session
 
@@ -134,7 +135,13 @@ def send_due_dunning(
     invoice can't be re-dunned.
     """
     now = now or datetime.now(timezone.utc)
-    today = now.date()
+    # Invoice.due_date is a business-local date string, so the day it is
+    # compared against has to be a business-local one. Taking the UTC date
+    # made an invoice due TODAY read as one day past due from 8pm here — the
+    # "Overdue: … (1 days past due)" email fired on its own due date, and
+    # advancing dunning_stage meant the correctly-timed nudge was skipped.
+    # `now` itself stays UTC: it is written to Invoice.dunning_last_sent_at.
+    today = business_date(now)
     cadence = cadence or _cadence()
 
     candidates = (

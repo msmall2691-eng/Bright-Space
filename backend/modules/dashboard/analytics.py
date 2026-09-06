@@ -111,33 +111,12 @@ def property_economics(db: Session, oid, *, window_days: int = 90, limit: int = 
     )
     visits = dict(visit_rows)
 
-    # Crew hours per property from closed native punches. Duration math stays
-    # in Python (naive-UTC datetime subtraction) so it's identical on SQLite
-    # and Postgres — the volume is one org's punches for a window, small.
-    punch_rows = (
-        db.query(
-            Job.property_id,
-            TimeEntry.clock_in_at,
-            TimeEntry.clock_out_at,
-            TimeEntry.break_minutes,
-        )
-        .select_from(TimeEntry)
-        .join(Job, TimeEntry.job_id == Job.id)
-        .filter(
-            org(TimeEntry),
-            TimeEntry.clock_out_at.isnot(None),
-            TimeEntry.clock_in_at >= window_start_dt,
-        )
-        .all()
-    )
-    hours: dict = defaultdict(float)
-    for pid, cin, cout, brk in punch_rows:
-        hours[pid] += _entry_hours(cin, cout, brk)
-
-    # Resolve names for every property that saw activity. org(Property) is the
-    # isolation backstop: a cross-org job/invoice link (not validated at write
-    # time) must never leak another tenant's property name into this payload.
-    pids = set(revenue) | set(visits) | set(hours)
+    # Crew hours per property used to come from closed time-clock punches, and
+    # the effective $/hr from dividing revenue by them. Both are gone with the
+    # employee model: a subcontractor is paid for the job, not the hour, so
+    # there is no hours figure to divide by and an "$/hr" for a sub would be
+    # deriving exactly the number the arrangement must not be priced on.
+    pids = set(revenue) | set(visits)
     pids.discard(None)
     props = {}
     if pids:
@@ -149,7 +128,6 @@ def property_economics(db: Session, oid, *, window_days: int = 90, limit: int = 
     rows = []
     for pid, p in props.items():
         rev = revenue.get(pid, {"invoice_count": 0, "revenue_paid": 0.0, "revenue_invoiced": 0.0})
-        h = hours.get(pid, 0.0)
         paid = rev["revenue_paid"]
         rows.append({
             "property_id": pid,
@@ -160,11 +138,6 @@ def property_economics(db: Session, oid, *, window_days: int = 90, limit: int = 
             "revenue_paid": round(paid, 2),
             "revenue_invoiced": round(rev["revenue_invoiced"], 2),
             "visits": int(visits.get(pid, 0)),
-            "crew_hours": round(h, 1),
-            # Paid dollars per crew hour — the pricing-decision number. None
-            # when there are no recorded hours (no rate is more honest than a
-            # divide-by-almost-zero fantasy rate).
-            "effective_hourly": round(paid / h, 2) if h > 0 else None,
         })
 
     rows.sort(key=lambda r: (r["revenue_paid"], r["revenue_invoiced"]), reverse=True)

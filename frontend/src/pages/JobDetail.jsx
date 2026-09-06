@@ -5,6 +5,10 @@ import {
   Sparkles, Copy, Check, X, Trash2,
 } from 'lucide-react'
 import { get, patch, post, del, download } from '../api'
+import RecurrenceScopeDialog from '../components/schedule/RecurrenceScopeDialog'
+import JobClaimRequests from '../components/schedule/JobClaimRequests'
+import JobMargin from '../components/schedule/JobMargin'
+import { rescheduleRecurringVisit } from '../utils/recurringReschedule'
 import { toast } from '../utils/toastBus'
 import { confirmDialog } from '../utils/confirmBus'
 import { formatDateShort as fmtDate } from '../utils/format'
@@ -129,7 +133,7 @@ function PropertyAccessCard({ property, canEdit: editable }) {
 }
 import InlineEditField from '../components/InlineEditField'
 import { AlertCircle, CheckCircle, CalendarClock } from 'lucide-react'
-import { computeDisplayStatus } from '../components/schedule/constants'
+import { computeDisplayStatus, FIELD_LABELS } from '../components/schedule/constants'
 import Timeline, { jobTimelineSource } from '../components/Timeline'
 import RecordSkeleton from '../components/record/RecordSkeleton'
 import JobPhotosCard from '../components/schedule/JobPhotosCard'
@@ -256,6 +260,53 @@ export default function JobDetail() {
     patch(`/api/jobs/${id}`, body)
       .then(updated => { setJob(j => ({ ...j, ...updated })); return updated })
       .catch(() => { toast.error('Could not save change'); load() })
+
+  // ── Editing a visit that belongs to a repeating series ───────────────────
+  //
+  // This page used to PATCH /api/jobs/{id} for EVERY field, including the
+  // date — with no scope question and no sign anywhere that the job was part
+  // of a series. That is the exact bare-PATCH the recurrence machinery exists
+  // to prevent: it orphans the rule's own copy of that date, and the next
+  // generation tick puts a duplicate back on the calendar. The Schedule
+  // page's drawer and drag-to-reschedule both went through the scope flow;
+  // this page, reachable from every visit card, quietly did not.
+  //
+  // WHICH FIELDS: only date/start/end. Title, address, notes and status
+  // describe THIS visit and are safe to patch directly — routing them through
+  // a series-wide prompt would be its own kind of wrong.
+  const isRecurring = Boolean(job?.recurring_schedule_id)
+  const [timingEdit, setTimingEdit] = useState(null)   // pending {date,start,end}
+  const [scopeBusy, setScopeBusy] = useState(false)
+
+  const saveTiming = (body) => {
+    if (!isRecurring) return saveField(body)
+    // Hold the edit and ask what it applies to. Nothing is written until she
+    // answers, and cancelling writes nothing at all.
+    setTimingEdit(body)
+    return Promise.resolve()
+  }
+
+  const applyTimingScope = async (scope) => {
+    setScopeBusy(true)
+    try {
+      const { message } = await rescheduleRecurringVisit(scope, {
+        schedId: job.recurring_schedule_id,
+        originalDate: job.scheduled_date,
+        newDate: timingEdit.scheduled_date ?? job.scheduled_date,
+        newStart: timingEdit.start_time ?? job.start_time,
+        newEnd: timingEdit.end_time ?? job.end_time,
+        cleanerIds: job.cleaner_ids || [],
+        reason: 'Rescheduled from the job page',
+      })
+      toast.success(message)
+      setTimingEdit(null)
+      load()
+    } catch (e) {
+      toast.error(e?.message || 'Could not move this visit — nothing was changed.')
+    } finally {
+      setScopeBusy(false)
+    }
+  }
 
   const resolveReschedule = (action) =>
     post(`/api/jobs/${id}/${action}-reschedule`, {})
@@ -430,26 +481,39 @@ export default function JobDetail() {
                 <InlineSelect value={job.status} options={STATUS_OPTIONS} onSelect={setStatus} />
               </div>
               {/* Warn when the DB status is 'scheduled' but the job is missing a
-                  date, a property, or a crew — so a convert-to-job quote with no
-                  time never silently reads as ready-to-run. Lists exactly what's
-                  missing so staff know what to fill. */}
+                  date or a property — so a convert-to-job quote with no time
+                  never silently reads as ready-to-run. Lists exactly what's
+                  missing so staff know what to fill.
+                  A crew-only gap is NOT this banner: it's the ordinary
+                  "not dispatched yet" state and gets the quieter note below
+                  (see computeDisplayStatus). */}
               {computeDisplayStatus(job) === 'needs_setup' && (() => {
                 const missing = []
                 if (!job.scheduled_date) missing.push('a date')
                 if (!job.property_id) missing.push('a property')
-                if (!(job.cleaner_ids && job.cleaner_ids.length)) missing.push('a crew')
                 return (
                   <div className="mb-3 flex items-start gap-2 rounded-lg border border-hairline bg-panel px-3 py-2 text-[12px] text-ink-2">
                     <span className="w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0 mt-1.5" aria-hidden="true" />
                     <div>
                       <p className="font-semibold text-ink">Needs setup</p>
                       <p className="text-ink-3">
-                        This job isn't fully scheduled yet — add {missing.join(' + ')} to make it live.
+                        This job isn't on the calendar yet — add {missing.join(' + ')} to make it live.
                       </p>
                     </div>
                   </div>
                 )
               })()}
+              {computeDisplayStatus(job) === 'unassigned' && (
+                <div className="mb-3 flex items-start gap-2 rounded-lg border border-hairline bg-panel px-3 py-2 text-[12px] text-ink-2">
+                  <span className="w-1.5 h-1.5 rounded-full bg-ink-3 shrink-0 mt-1.5" aria-hidden="true" />
+                  <div>
+                    <p className="font-semibold text-ink">Unassigned</p>
+                    <p className="text-ink-3">
+                      Date and place are set — nobody's on it yet. Pick a crew when you're ready.
+                    </p>
+                  </div>
+                </div>
+              )}
               {/* Customer-link state from the confirm/reschedule page — makes a
                   customer's confirm or reschedule visible in-app, not just in
                   the owner's inbox. A pending reschedule request wins (it needs
@@ -504,13 +568,28 @@ export default function JobDetail() {
             </div>
 
             <div className="border-t border-hairline pt-3 space-y-3">
+              {isRecurring && (
+                /* Say it BEFORE she edits, not after: this visit is one of a
+                   series, and a date change here is a series decision. */
+                <p className="flex items-start gap-1.5 text-[12px] text-ink-2">
+                  <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-violet-500" aria-hidden="true" />
+                  <span>
+                    This visit repeats.{' '}
+                    <Link to={`/recurring?series=${job.recurring_schedule_id}`}
+                      className="text-ink hover:text-indigo-600 no-underline font-medium">
+                      See the series
+                    </Link>
+                    {' '}— changing the date or time will ask what it applies to.
+                  </span>
+                </p>
+              )}
               <InlineEditField label="Scheduled date" type="date" value={job.scheduled_date} placeholder="Add date"
-                format={fmtDate} onSave={(v) => saveField({ scheduled_date: v })} />
+                format={fmtDate} onSave={(v) => saveTiming({ scheduled_date: v })} />
               <div className="grid grid-cols-2 gap-2">
                 <InlineEditField label="Start" type="time" value={job.start_time} placeholder="--"
-                  onSave={(v) => saveField({ start_time: v })} />
+                  onSave={(v) => saveTiming({ start_time: v })} />
                 <InlineEditField label="End" type="time" value={job.end_time} placeholder="--"
-                  onSave={(v) => saveField({ end_time: v })} />
+                  onSave={(v) => saveTiming({ end_time: v })} />
               </div>
               <InlineEditField label="Address" value={job.address} placeholder="Add address"
                 onSave={(v) => saveField({ address: v })} />
@@ -520,9 +599,12 @@ export default function JobDetail() {
                   onSelect={(v) => saveField({ job_type: v })} />
               </div>
               {canEdit() && job.status === 'scheduled' && (
-                /* Open-jobs board (crew app Phase 3): flip to show this job on
-                   every cleaner's phone with a Claim button. First claim adds
-                   them to the crew and turns this back off automatically. */
+                /* Open-jobs board: flip to show this job on every cleaner's
+                   phone. Since the marketplace pivot (migration 097) they
+                   REQUEST it rather than claiming instantly — the copy says
+                   "ask for it" because that's what the button on their phone
+                   now does, and promising a claim it can't deliver is how the
+                   two screens end up describing different products. */
                 <button
                   onClick={() => saveField({ open_for_claims: !job.open_for_claims })}
                   className={`w-full flex items-center justify-between gap-2 rounded-lg border px-3 py-2 text-[12px] font-medium transition-colors ${
@@ -531,14 +613,52 @@ export default function JobDetail() {
                       : 'border-hairline bg-panel text-ink-2 hover:bg-bg-2'}`}>
                   <span className="inline-flex items-center gap-1.5">
                     <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${job.open_for_claims ? 'bg-violet-500' : 'bg-ink-3/40'}`} aria-hidden="true" />
-                    {job.open_for_claims ? 'Open to crew — they can claim it' : 'Open to crew'}
+                    {job.open_for_claims ? 'Open to crew — they can ask for it' : 'Open to crew'}
                   </span>
                   <span className="text-[10px] uppercase tracking-wide opacity-70">
                     {job.open_for_claims ? 'On · tap to close' : 'Off'}
                   </span>
                 </button>
               )}
+              {canEdit() && job.open_for_claims && (
+                /* The asking price. Sits under the toggle because it only
+                   means anything while the job is posted, and a posted job
+                   with no number on it is one nobody can price their answer
+                   against — the crew app refuses a request against it. */
+                <div className="mt-2">
+                  <InlineEditField label="Asking rate" type="number" value={job.posted_rate}
+                    placeholder="Set what it pays"
+                    format={(v) => money(v)}
+                    onSave={(v) => saveField({ posted_rate: v == null ? null : Number(v) })} />
+                  {job.posted_rate == null && (
+                    <p className="mt-1 flex items-start gap-1.5 text-[11px] text-ink-2">
+                      <span className="mt-1 h-1.5 w-1.5 shrink-0 rounded-full bg-amber-500" aria-hidden="true" />
+                      <span>Nobody can ask for this until it has a price, or names their own.</span>
+                    </p>
+                  )}
+                  {/* The margin, right beside the box the price goes in. Post a
+                      job without seeing this and the margin is what you lose. */}
+                  <JobMargin jobId={job.id} pay={job.posted_rate} />
+                </div>
+              )}
+              {canEdit() && job.agreed_rate != null && (
+                /* What the job actually pays, once someone was approved. Kept
+                   separate from the asking rate on purpose: they differ
+                   whenever the winner countered, and payroll pays THIS one. */
+                <p className="mt-2 flex items-start gap-1.5 text-[12px] text-ink-2">
+                  <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-emerald-500" aria-hidden="true" />
+                  <span>Agreed at <span className="font-medium text-ink">{money(job.agreed_rate)}</span> — this is what payroll pays for it.</span>
+                </p>
+              )}
             </div>
+
+            {canEdit() && (job.open_for_claims || job.agreed_rate != null) && (
+              /* Only fetched for a job that has actually been posted — an
+                 ordinary job never pays for the request (brightbase-economy).
+                 agreed_rate keeps the decided history readable after the
+                 offer closes. */
+              <JobClaimRequests jobId={job.id} postedRate={job.posted_rate} onDecided={load} />
+            )}
 
             {(job.crew_responses || []).length > 0 && (
               /* Accept/decline state per assigned cleaner (crew app Phase 2).
@@ -680,6 +800,16 @@ export default function JobDetail() {
         </div>
       </div>
       {reviewDraft && <ReviewDraftModal draft={reviewDraft} onClose={() => setReviewDraft(null)} />}
+      {timingEdit && (
+        <RecurrenceScopeDialog
+          /* Name what's about to be applied, the same as the edit drawer does —
+             picking a blast radius shouldn't mean guessing what's in the blast. */
+          fields={Object.keys(timingEdit).map(k => FIELD_LABELS[k]).filter(Boolean)}
+          busy={scopeBusy}
+          onChoose={applyTimingScope}
+          onCancel={() => setTimingEdit(null)}
+        />
+      )}
     </div>
   )
 }

@@ -23,6 +23,7 @@ import logging
 import os
 import secrets
 from datetime import datetime, timedelta, timezone, date as date_cls
+from utils.dates import business_date, business_now
 
 from sqlalchemy.orm import Session
 
@@ -136,9 +137,17 @@ def send_due_reminders(db: Session, *, lead_hours: int | None = None, now: datet
     Returns a summary dict: {sent, skipped_no_phone, failed, candidates}.
     """
     lead = lead_hours if lead_hours is not None else _lead_hours(db)
-    now = now or datetime.now(timezone.utc)
-    today = now.date()
-    window_end = (now + timedelta(hours=lead)).date()
+    # Business-local, not UTC. Job.scheduled_date is a business-local Date,
+    # but now.date() is the UTC date — already TOMORROW from 8pm here. That
+    # slid the whole window a day forward on every evening tick, and
+    # build_reminder_body says "tomorrow" unconditionally, so a job two days
+    # out was texted the wrong day. Worse, sms_reminder_sent was then set, so
+    # the correct next-day reminder never went: the wrong text was the only
+    # one that customer got. A caller-supplied `now` is converted too, so a
+    # UTC datetime passed by a test still lands on the right local day.
+    now = now or business_now()
+    today = business_date(now)
+    window_end = business_date(now + timedelta(hours=lead))
 
     # Candidate jobs: scheduled, not yet reminded, with a date in [today, window_end].
     # Date-grained (jobs store a Date + Time) — fine for a daily-ahead reminder.

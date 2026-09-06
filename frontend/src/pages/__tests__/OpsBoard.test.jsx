@@ -245,10 +245,23 @@ describe('OpsBoard', () => {
   // separate "Communication" strip and stat-tile band merged into one row at
   // the top, so a stat tile's value is visible without any scrolling and
   // without a second band lower down repeating it.
+  //
+  // ASSERTED ON THE TILE, NOT ON THE BARE STRING. This used to be
+  // `getAllByText('4')).toHaveLength(1)`, which stopped meaning what it says
+  // the moment the mini-calendar shipped: a day cell for the 4th of the month
+  // renders a "4" too, so the test failed on every date whose visible grid
+  // contains a 4 — which is every date there is. It had been red on main long
+  // enough to be quoted as "pre-existing" rather than fixed.
+  //
+  // The tile is a button whose accessible name is its value followed by its
+  // label (no separator — two adjacent spans), so matching that names the
+  // thing the test is actually about — one Unassigned jobs tile — and cannot
+  // collide with a calendar cell, a badge, or the next number somebody puts on
+  // this page.
   it('shows stat tiles in one merged band near the top, not a separate lower band', async () => {
     renderBoard()
     await screen.findByText('No cleaner assigned')
-    expect(screen.getAllByText('4')).toHaveLength(1)   // "Unassigned jobs" value — appears once, not twice
+    expect(screen.getAllByRole('button', { name: /^4\s*Unassigned jobs$/ })).toHaveLength(1)
     expect(screen.getByText('Unassigned jobs')).toBeTruthy()
     expect(screen.getByText('Collected today')).toBeTruthy()
   })

@@ -92,6 +92,36 @@ def _schema_parity_issues(engine) -> list[str]:
     return issues
 
 
+def _missing_rls_policies(engine) -> list[str]:
+    """Every TENANT_TABLES entry must actually carry the org policy.
+
+    Being on the list does nothing by itself — the policy exists only where a
+    migration called apply_org_rls(). tests/test_tenancy_rls_postgres.py builds
+    the schema with create_all and then calls apply_org_rls itself, so it
+    proves the FUNCTION works and never that any deploy path invokes it. That
+    is how eight marketplace tables (W-9 scans, payouts, claim requests) sat on
+    the protected list for months with no policy behind them, and how the same
+    gap opened for nine others before them.
+
+    This asserts the property that actually matters, against the real chain:
+    after `alembic upgrade head` on an empty database, is the backstop there?
+    """
+    from database.rls import POLICY, TENANT_TABLES
+
+    insp = sa.inspect(engine)
+    live = set(insp.get_table_names())
+    with engine.connect() as conn:
+        protected = {
+            row[0] for row in conn.execute(
+                text("SELECT tablename FROM pg_policies WHERE policyname = :p"),
+                {"p": POLICY},
+            )
+        }
+    # A table the chain never creates is a different bug; this check is only
+    # about tables that exist and are claimed to be protected.
+    return sorted(t for t in TENANT_TABLES if t in live and t not in protected)
+
+
 def test_alembic_upgrade_head_from_empty_db():
     server_url = make_url(_RAW.replace("postgres://", "postgresql://", 1))
     fresh_db_name = f"brightspace_migtest_{uuid.uuid4().hex[:12]}"
@@ -129,8 +159,14 @@ def test_alembic_upgrade_head_from_empty_db():
         assert actual == expected_head
 
         issues = _schema_parity_issues(check_engine)
+        unprotected = _missing_rls_policies(check_engine)
         check_engine.dispose()
         assert not issues, "migrated schema drifted from database/models:\n" + "\n".join(issues)
+        assert not unprotected, (
+            "TENANT_TABLES entries with no RLS policy after the full migration "
+            "chain — the backstop the list claims to provide is not there:\n  "
+            + "\n  ".join(unprotected)
+        )
     finally:
         admin_engine = create_engine(admin_url, poolclass=NullPool, isolation_level="AUTOCOMMIT")
         with admin_engine.connect() as conn:

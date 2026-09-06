@@ -2,7 +2,9 @@ import { useState, useEffect, useCallback } from 'react'
 import { Users, Check, X, ShieldCheck, RefreshCw, UserPlus, Mail, Clock, Ban, CheckCircle2 } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { get, post, patch } from '../api'
+import SubFileReview from './SubFileReview'
 import { pushToast } from '../utils/toastBus'
+import { reportInvite } from '../utils/inviteFallback'
 
 const ROLES = ['admin', 'manager', 'member', 'viewer', 'cleaner']
 
@@ -71,7 +73,7 @@ export default function UsersAdmin() {
   const saveField = (u, patchObj) => act(u.id, () => patch(`/api/auth/users/${u.id}`, patchObj))
   const resend = (u) => act(u.id, async () => {
     const row = await post(`/api/auth/users/${u.id}/resend-invite`)
-    pushToast(`Invite re-sent to ${u.email}`, 'success')
+    if (!await reportInvite(row, u.email)) pushToast(`Invite re-sent to ${u.email}`, 'success')
     return row
   })
 
@@ -284,6 +286,12 @@ export default function UsersAdmin() {
                     </>
                   )}
                 </div>
+
+                {/* The vetting file (migration 098). Cleaners only, and it
+                    fetches nothing until opened — the list renders every user
+                    at once, so a panel that loaded on mount would fire one
+                    request per cleaner just to draw the page. */}
+                {u.role === 'cleaner' && <SubFileReview userId={u.id} />}
 
                 {/* Actions */}
                 <div className="flex flex-wrap items-center gap-2 mt-3">

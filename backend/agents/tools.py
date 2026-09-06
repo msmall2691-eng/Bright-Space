@@ -196,7 +196,32 @@ def get_tools_for_agent(agent_name: str) -> list:
 
 # ── Tool execution ─────────────────────────────────────────────────────────────
 
-def execute_tool(name: str, input_data: dict, agent_name: str = "") -> dict:
+def execute_tool(name: str, input_data: dict, agent_name: str = "",
+                 org_id: int | None = None) -> dict:
+    """Run one agent tool.
+
+    ORG SCOPE (MT-3). Every query in here used to be unscoped, and the session
+    was opened straight from SessionLocal — which also meant the per-transaction
+    GUC `app.current_org_id` was never set, so Row-Level Security matched
+    everything instead of denying it. Two layers missing at once: no filter, and
+    no backstop behind the missing filter.
+
+    `org_id` is now threaded from the caller (the agent WebSocket resolves it
+    from the JWT's user; the HTTP review path from the request's org). It is
+    applied two ways on purpose:
+
+      * `_org(Model)` on every query, which is the app's actual convention and
+        the only layer that works on SQLite;
+      * set_rls_org_context(), so Postgres RLS denies anything a future query
+        forgets to filter.
+
+    Single-tenant today. The tools read the whole client list and every invoice
+    total, so this is the difference between "harmless" and "a real hole" on the
+    day there is a second org — and the day it stops being single-tenant is not
+    a day anybody remembers to audit an agent tool file.
+    """
+    from sqlalchemy import or_
+
     from database.db import SessionLocal
     from database.models import Client, Job, RecurringSchedule, Property, Invoice, ICalEvent
 
@@ -208,6 +233,22 @@ def execute_tool(name: str, input_data: dict, agent_name: str = "") -> dict:
         return {"error": f"Tool '{name}' is disabled in this environment."}
 
     db = SessionLocal()
+
+    # An unknown org resolves to the DEFAULT WORKSPACE, never to "no filter".
+    # That is what resolve_org_id() does everywhere else in the app, and it is
+    # the difference between an internal drafting helper that didn't thread its
+    # org reading one tenant's rows and it reading all of them. Single-tenant
+    # today, so this is also simply correct today.
+    from modules.auth.router import _default_org_id, set_rls_org_context
+    oid = org_id if isinstance(org_id, int) else _default_org_id(db)
+
+    def _org(model):
+        """org_id == ours, or NULL — rows written before MT-3 or by background
+        jobs. Same shape as every other tenant filter in the app."""
+        return or_(model.org_id == oid, model.org_id.is_(None))
+
+    set_rls_org_context(db, oid)
+
     try:
 
         # ── Business data ──────────────────────────────────────────────────────
@@ -217,32 +258,32 @@ def execute_tool(name: str, input_data: dict, agent_name: str = "") -> dict:
             week_end = (business_today() + timedelta(days=7)).isoformat()
             return {
                 "date_today": today,
-                "clients_total":  db.query(Client).count(),
-                "clients_active": db.query(Client).filter(Client.status == "active").count(),
-                "clients_leads":  db.query(Client).filter(Client.status == "lead").count(),
-                "jobs_today":     db.query(Job).filter(Job.scheduled_date == today).count(),
-                "jobs_this_week": db.query(Job).filter(
+                "clients_total":  db.query(Client).filter(_org(Client)).count(),
+                "clients_active": db.query(Client).filter(_org(Client), Client.status == "active").count(),
+                "clients_leads":  db.query(Client).filter(_org(Client), Client.status == "lead").count(),
+                "jobs_today":     db.query(Job).filter(_org(Job), Job.scheduled_date == today).count(),
+                "jobs_this_week": db.query(Job).filter(_org(Job), 
                     Job.scheduled_date >= today, Job.scheduled_date <= week_end,
                     Job.status == "scheduled"
                 ).count(),
-                "jobs_upcoming_total": db.query(Job).filter(
+                "jobs_upcoming_total": db.query(Job).filter(_org(Job), 
                     Job.scheduled_date >= today, Job.status == "scheduled"
                 ).count(),
-                "jobs_not_on_gcal": db.query(Job).filter(
+                "jobs_not_on_gcal": db.query(Job).filter(_org(Job), 
                     Job.scheduled_date >= today,
                     Job.status == "scheduled",
                     Job.calendar_invite_sent == False,
                 ).count(),
-                "active_recurring_schedules": db.query(RecurringSchedule).filter(RecurringSchedule.active == True).count(),
-                "str_properties": db.query(Property).filter(Property.property_type == "str", Property.active == True).count(),
+                "active_recurring_schedules": db.query(RecurringSchedule).filter(_org(RecurringSchedule), RecurringSchedule.active == True).count(),
+                "str_properties": db.query(Property).filter(_org(Property), Property.property_type == "str", Property.active == True).count(),
                 "outstanding_invoices": sum(
                     i.total or 0
-                    for i in db.query(Invoice).filter(Invoice.status.in_(["sent", "overdue"])).all()
+                    for i in db.query(Invoice).filter(_org(Invoice), Invoice.status.in_(["sent", "overdue"])).all()
                 ),
             }
 
         elif name == "get_clients":
-            q = db.query(Client)
+            q = db.query(Client).filter(_org(Client))
             if input_data.get("status"):
                 q = q.filter(Client.status == input_data["status"])
             return [
@@ -252,12 +293,12 @@ def execute_tool(name: str, input_data: dict, agent_name: str = "") -> dict:
             ]
 
         elif name == "get_jobs":
-            q = db.query(Job)
+            q = db.query(Job).filter(_org(Job))
             if input_data.get("date_from"): q = q.filter(Job.scheduled_date >= input_data["date_from"])
             if input_data.get("date_to"):   q = q.filter(Job.scheduled_date <= input_data["date_to"])
             if input_data.get("status"):    q = q.filter(Job.status == input_data["status"])
             if input_data.get("job_type"):  q = q.filter(Job.job_type == input_data["job_type"])
-            client_map = {c.id: c.name for c in db.query(Client).all()}
+            client_map = {c.id: c.name for c in db.query(Client).filter(_org(Client)).all()}
             return [
                 {
                     "id": j.id, "title": j.title,
@@ -271,16 +312,16 @@ def execute_tool(name: str, input_data: dict, agent_name: str = "") -> dict:
             ]
 
         elif name == "get_recurring_schedules":
-            client_map = {c.id: c.name for c in db.query(Client).all()}
+            client_map = {c.id: c.name for c in db.query(Client).filter(_org(Client)).all()}
             day_names = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
             today = business_today().isoformat()
             result = []
-            for s in db.query(RecurringSchedule).all():
-                upcoming = db.query(Job).filter(
+            for s in db.query(RecurringSchedule).filter(_org(RecurringSchedule)).all():
+                upcoming = db.query(Job).filter(_org(Job), 
                     Job.recurring_schedule_id == s.id,
                     Job.scheduled_date >= today
                 ).count()
-                unpushed = db.query(Job).filter(
+                unpushed = db.query(Job).filter(_org(Job), 
                     Job.recurring_schedule_id == s.id,
                     Job.scheduled_date >= today,
                     Job.calendar_invite_sent == False,
@@ -323,7 +364,7 @@ def execute_tool(name: str, input_data: dict, agent_name: str = "") -> dict:
             else: issues.append("ANTHROPIC_API_KEY missing")
 
             # Upcoming jobs not on GCal
-            unpushed = db.query(Job).filter(
+            unpushed = db.query(Job).filter(_org(Job), 
                 Job.scheduled_date >= today,
                 Job.status == "scheduled",
                 Job.calendar_invite_sent == False,
@@ -334,9 +375,9 @@ def execute_tool(name: str, input_data: dict, agent_name: str = "") -> dict:
                 ok.append("All upcoming jobs are on Google Calendar")
 
             # Recurring schedules with no upcoming jobs
-            active_scheds = db.query(RecurringSchedule).filter(RecurringSchedule.active == True).all()
+            active_scheds = db.query(RecurringSchedule).filter(_org(RecurringSchedule), RecurringSchedule.active == True).all()
             for s in active_scheds:
-                count = db.query(Job).filter(
+                count = db.query(Job).filter(_org(Job), 
                     Job.recurring_schedule_id == s.id,
                     Job.scheduled_date >= today
                 ).count()
@@ -348,7 +389,7 @@ def execute_tool(name: str, input_data: dict, agent_name: str = "") -> dict:
             from database.models import PropertyIcal
             str_prop_ids = [
                 row[0] for row in (
-                    db.query(Property.id)
+                    db.query(Property.id).filter(_org(Property))
                     .join(PropertyIcal, PropertyIcal.property_id == Property.id)
                     .filter(
                         Property.property_type == "str",
@@ -359,13 +400,13 @@ def execute_tool(name: str, input_data: dict, agent_name: str = "") -> dict:
                     .all()
                 )
             ]
-            for p in db.query(Property).filter(Property.id.in_(str_prop_ids)).all():
+            for p in db.query(Property).filter(_org(Property), Property.id.in_(str_prop_ids)).all():
                 if not p.ical_last_synced_at:
                     issues.append(f"STR property '{p.name}' has never been synced")
 
             # Clients with no jobs or schedules
-            active_clients = db.query(Client).filter(Client.status == "active").count()
-            clients_with_jobs = db.query(Job.client_id).distinct().count()
+            active_clients = db.query(Client).filter(_org(Client), Client.status == "active").count()
+            clients_with_jobs = db.query(Job.client_id).filter(_org(Job)).distinct().count()
 
             return {
                 "status": "issues_found" if issues else "healthy",
@@ -386,7 +427,7 @@ def execute_tool(name: str, input_data: dict, agent_name: str = "") -> dict:
 
             if op == "generate_all_jobs":
                 from modules.recurring.router import generate_jobs
-                schedules = db.query(RecurringSchedule).filter(RecurringSchedule.active == True).all()
+                schedules = db.query(RecurringSchedule).filter(_org(RecurringSchedule), RecurringSchedule.active == True).all()
                 total = 0
                 results = []
                 for s in schedules:
@@ -398,12 +439,12 @@ def execute_tool(name: str, input_data: dict, agent_name: str = "") -> dict:
             elif op == "push_all_to_gcal":
                 from integrations.google_calendar import create_event
                 today = business_today().isoformat()
-                jobs = db.query(Job).filter(
+                jobs = db.query(Job).filter(_org(Job), 
                     Job.scheduled_date >= today,
                     Job.status == "scheduled",
                     Job.calendar_invite_sent == False,
                 ).all()
-                client_map = {c.id: c for c in db.query(Client).all()}
+                client_map = {c.id: c for c in db.query(Client).filter(_org(Client)).all()}
                 pushed, failed = 0, 0
                 for j in jobs:
                     c = client_map.get(j.client_id)
@@ -428,14 +469,14 @@ def execute_tool(name: str, input_data: dict, agent_name: str = "") -> dict:
                 from database.models import PropertyIcal
                 prop_ids = [
                     row[0] for row in (
-                        db.query(Property.id)
+                        db.query(Property.id).filter(_org(Property))
                         .join(PropertyIcal, PropertyIcal.property_id == Property.id)
                         .filter(Property.active == True, PropertyIcal.active == True)
                         .distinct()
                         .all()
                     )
                 ]
-                props = db.query(Property).filter(Property.id.in_(prop_ids)).all() if prop_ids else []
+                props = db.query(Property).filter(_org(Property), Property.id.in_(prop_ids)).all() if prop_ids else []
                 results = []
                 for p in props:
                     r = sync_property(db, p)

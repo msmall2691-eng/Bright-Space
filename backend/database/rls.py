@@ -52,6 +52,32 @@ TENANT_TABLES = [
     # router.py) — see 095's docstring for why `users` itself is deliberately
     # NOT in this list yet.
     "user_google_accounts", "push_subscriptions",
+    # Marketplace claim requests (migration 097): who asked for which job and
+    # at what price. Org-scoped from creation. Added here at the same time as
+    # the table rather than in a later audit — 095 exists precisely because two
+    # tables carried org_id for months with no RLS backstop behind them.
+    "job_claim_requests",
+    # The vetting file (migration 098): what a subcontractor has on record.
+    # Insurance certificates and signed agreements, org-scoped from creation.
+    "sub_documents", "sub_agreements",
+    # Subcontractor payouts (migration 099): the ledger of what is owed to
+    # whom. Org-scoped from creation.
+    "sub_payouts",
+    # Routes (migration 100): a standing block of recurring work, who owns it,
+    # and what it pays. Added with the tables, not in a later audit.
+    "routes", "route_members",
+    # The Saturday window (migration 101): which service day is posted to the
+    # bench, and where its price ladder has got to.
+    "turnover_windows",
+    # Applications to join the bench (migration 102). Anyone can POST one, so
+    # the tenant scope matters more here than almost anywhere: this table takes
+    # unauthenticated writes.
+    "sub_applications",
+    # A sub's own helper on a job (migration 107). One of the five Maine
+    # criteria is that a subcontractor hires and pays their own assistants; the
+    # row records who was in the customer's house and nothing else — no login,
+    # no rate, no payout. Added with the table, not in a later audit.
+    "job_helpers",
     # `users` is DELIBERATELY excluded — re-audited 2026-08-16, still not safe.
     # Re-read this whole comment before adding it; don't re-derive from scratch.
     #
