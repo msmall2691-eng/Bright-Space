@@ -1259,6 +1259,27 @@ function HealthPanel({ onClose, onChanged, onOpenSeries, onOpenDuplicates, onCle
         return { short: 'Mark ended', run: () => act(issue, async () => {
           await patch(`/api/recurring/${id}`, { active: false })
         }, 'Marked ended — history kept') }
+      // The series is already closed, so nothing regenerates and there is no
+      // "which copy do I keep" question — but it still cancels real Jobs, so
+      // it gets the danger confirm and stays out of the batch fixes.
+      case 'cancelled_with_upcoming': {
+        const n = prob.stranded ?? issue.upcoming_job_count ?? 0
+        const noun = n === 1 ? 'visit' : 'visits'
+        return { short: `Remove ${n} ${noun}`, danger: true, run: async () => {
+          const ok = await confirmDialog(
+            `Take ${n === 1 ? 'the 1 remaining visit' : `all ${n} remaining visits`} for `
+            + `“${issue.title || 'Untitled'}” (${issue.client_name || 'this client'}) `
+            + 'off the calendar? The series is already closed, so nothing will regenerate. '
+            + 'Completed visits and history are kept.',
+            { title: 'Remove these visits?', confirmLabel: `Remove ${n} ${noun}`, danger: true },
+          )
+          if (!ok) return
+          act(issue, async () => {
+            const r = await post(`/api/recurring/${id}/cancel-upcoming`)
+            toast.success(`Removed ${r?.cancelled_count ?? n} ${noun} from the calendar`)
+          })
+        } }
+      }
       case 'active_no_upcoming':
         return { short: 'Generate visits', run: () => act(issue, async () => {
           const r = await post(`/api/recurring/${id}/generate`)
