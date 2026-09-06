@@ -2592,110 +2592,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/payroll/rates": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Get Pay Rates
-         * @description Current pay rates so the Payroll page can show + edit them.
-         */
-        get: operations["get_pay_rates_api_payroll_rates_get"];
-        /**
-         * Update Pay Rates
-         * @description Persist edited pay rates. Only provided fields change.
-         */
-        put: operations["update_pay_rates_api_payroll_rates_put"];
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/payroll/summary": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Payroll Summary
-         * @description The payroll-ready breakdown for a pay period: per-crew hours split into
-         *     residential / deep / rental-weekday / weekend-turnover buckets, mileage, and
-         *     a computed gross — from the native time clock. This is the endpoint the
-         *     Payroll page runs on.
-         */
-        get: operations["payroll_summary_api_payroll_summary_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/payroll/mileage": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Mileage Report
-         * @description Pre-calculated drive mileage per cleaner: for each day in the range,
-         *     chain their scheduled jobs by start time and measure home → first job →
-         *     between houses → back home. Distances are road distances when the Google
-         *     key is configured, otherwise straight-line × 1.3 clearly flagged
-         *     estimated. DISPLAY ONLY — nothing here feeds gross pay; reimbursement
-         *     still runs on the miles crew enter at clock-out (TimeEntry.miles).
-         */
-        get: operations["mileage_report_api_payroll_mileage_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/payroll/send-to-square": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Send To Square
-         * @description Push the period's HOURLY hours to Square as Labor API Timecards (which
-         *     Square Payroll then imports), and return the piece-rate + mileage amounts as
-         *     a per-person adjustment list to enter in Square manually.
-         *
-         *     Defaults to a DRY RUN — it matches people and shows exactly what WOULD be
-         *     sent (nothing is written to Square) so the operator can verify before
-         *     committing. Set dry_run=false to actually create the timecards. Hours come
-         *     from the native BrightBase clock.
-         *
-         *     Subcontractor work is deliberately absent: punches on a job carrying
-         *     `agreed_rate` are excluded and counted in `marketplace_excluded`. Square
-         *     Payroll is the employee rail; subs are paid from the payout ledger
-         *     (`/api/payroll/subcontractors/payouts`).
-         */
-        post: operations["send_to_square_api_payroll_send_to_square_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/payroll/subcontractors": {
         parameters: {
             query?: never;
@@ -6451,15 +6347,21 @@ export interface paths {
         };
         /**
          * My Week
-         * @description A cleaner's week of pay, so they can see what the week is shaping up to
-         *     be worth: what they've EARNED so far (from their closed punches, computed by
-         *     the exact same code the office's Payroll page runs — one pay-math
-         *     implementation, no drift) plus a PREDICTION for the rest of the week from
-         *     the jobs still assigned to them (scheduled length × their hourly rate + any
-         *     per-job bump; piece-rate turnovers at the property's flat rate).
+         * @description What this week is worth to a subcontractor.
          *
-         *     Only ever returns the CALLER's own numbers — the full payroll breakdown
-         *     stays admin/manager-only.
+         *     REWRITTEN, not deleted. The old version asked the payroll summary for hours
+         *     and reimbursements and predicted the rest from hourly rates, per-cleaner
+         *     overrides and weekend piece rates. Every input to that was the employee
+         *     model, and it is gone.
+         *
+         *     A sub's week is simpler and truer: the jobs they agreed a price on. Earned
+         *     is what is finished, upcoming is what is booked, and both are the amounts
+         *     both sides actually shook on. No hours, no mileage, no prediction from a
+         *     rate card — predicting somebody's pay from a rate they never agreed is how
+         *     an estimate becomes an argument.
+         *
+         *     One query. `agreed_cleaner_id` (migration 106) is what makes it honest:
+         *     being listed on a job is not the same as being the person it is priced for.
          */
         get: operations["my_week_api_crew_my_week_get"];
         put?: never;
@@ -6468,73 +6370,6 @@ export interface paths {
         options?: never;
         head?: never;
         patch?: never;
-        trace?: never;
-    };
-    "/api/crew/clock-in": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Clock In
-         * @description Start a punch. One open punch per cleaner — a second clock-in while
-         *     already on the clock is a 409 (clock out first). These punches are what
-         *     native payroll pays from.
-         */
-        post: operations["clock_in_api_crew_clock_in_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/crew/clock-out": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Clock Out
-         * @description Close the open punch. 400 if not currently clocked in. break_minutes is
-         *     clamped to the elapsed time so a fat-fingered break can't make worked hours
-         *     negative.
-         */
-        post: operations["clock_out_api_crew_clock_out_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/crew/entry/{entry_id}/miles": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        /**
-         * Set Entry Miles
-         * @description Correct the miles on one of the caller's own punches — the safety net for
-         *     a forgotten or fat-fingered clock-out entry, before payroll runs. Scoped to
-         *     the caller's cleaner_id so a cleaner can only edit their own mileage. 404 if
-         *     the punch isn't theirs (or doesn't exist).
-         */
-        patch: operations["set_entry_miles_api_crew_entry__entry_id__miles_patch"];
         trace?: never;
     };
     "/api/crew/jobs/{job_id}/complete": {
@@ -8265,26 +8100,6 @@ export interface components {
                 [key: string]: unknown;
             } | null;
         };
-        /** ClockInBody */
-        ClockInBody: {
-            /** Job Id */
-            job_id?: number | null;
-            /** Lat */
-            lat?: number | null;
-            /** Lng */
-            lng?: number | null;
-            /** Accuracy M */
-            accuracy_m?: number | null;
-        };
-        /** ClockOutBody */
-        ClockOutBody: {
-            /** Break Minutes */
-            break_minutes?: number | null;
-            /** Note */
-            note?: string | null;
-            /** Miles */
-            miles?: number | null;
-        };
         /** ContactPhoneCreate */
         ContactPhoneCreate: {
             /** Phone */
@@ -8491,11 +8306,6 @@ export interface components {
         EndBody: {
             /** Reason */
             reason?: string | null;
-        };
-        /** EntryMilesBody */
-        EntryMilesBody: {
-            /** Miles */
-            miles: number;
         };
         /**
          * ExceptionCreate
@@ -9201,17 +9011,6 @@ export interface components {
             custom_fields?: {
                 [key: string]: unknown;
             } | null;
-        };
-        /** PayRates */
-        PayRates: {
-            /** Residential Rate */
-            residential_rate?: number | null;
-            /** Rental Weekday Rate */
-            rental_weekday_rate?: number | null;
-            /** Deep Clean Rate */
-            deep_clean_rate?: number | null;
-            /** Mileage Rate */
-            mileage_rate?: number | null;
         };
         /** PriorityRequest */
         PriorityRequest: {
@@ -9996,25 +9795,6 @@ export interface components {
             subject?: string | null;
             /** Author */
             author?: string | null;
-        };
-        /** SendToSquareBody */
-        SendToSquareBody: {
-            /** Start Date */
-            start_date: string;
-            /** End Date */
-            end_date: string;
-            /**
-             * Dry Run
-             * @default true
-             */
-            dry_run: boolean;
-            /**
-             * Overrides
-             * @default {}
-             */
-            overrides: {
-                [key: string]: unknown;
-            };
         };
         /** ServiceScopesUpdate */
         ServiceScopesUpdate: {
@@ -14185,162 +13965,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
-                };
-            };
-        };
-    };
-    get_pay_rates_api_payroll_rates_get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-        };
-    };
-    update_pay_rates_api_payroll_rates_put: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["PayRates"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    payroll_summary_api_payroll_summary_get: {
-        parameters: {
-            query: {
-                /** @description YYYY-MM-DD */
-                start_date: string;
-                /** @description YYYY-MM-DD */
-                end_date: string;
-            };
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    mileage_report_api_payroll_mileage_get: {
-        parameters: {
-            query?: {
-                /** @description YYYY-MM-DD (default today) */
-                start_date?: string | null;
-                /** @description YYYY-MM-DD (default start_date) */
-                end_date?: string | null;
-                /** @description Limit to one crew ID */
-                cleaner_id?: string | null;
-            };
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    send_to_square_api_payroll_send_to_square_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["SendToSquareBody"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
@@ -20104,107 +19728,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
-                };
-            };
-        };
-    };
-    clock_in_api_crew_clock_in_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["ClockInBody"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    clock_out_api_crew_clock_out_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["ClockOutBody"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    set_entry_miles_api_crew_entry__entry_id__miles_patch: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                entry_id: number;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["EntryMilesBody"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

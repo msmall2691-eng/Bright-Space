@@ -18,7 +18,7 @@ from main import app
 from database.db import SessionLocal
 from database.models import (
     CleanerTimeOff, Client, Invoice, Job, LeadIntake, Property, PropertyIcal,
-    RecurringSchedule, TimeEntry, User,
+    RecurringSchedule, User,
 )
 from modules.auth.router import get_current_user, current_org_id
 from services.board_snapshot import (
@@ -38,14 +38,14 @@ def client():
     app.dependency_overrides[get_current_user] = lambda: _Admin()
     app.dependency_overrides[current_org_id] = lambda: 1
     api = TestClient(app)
-    ids = {"clients": [], "properties": [], "jobs": [], "punches": [],
+    ids = {"clients": [], "properties": [], "jobs": [],
            "timeoff": [], "feeds": [], "series": [], "users": [],
            "invoices": [], "leads": []}
     yield api, ids
     app.dependency_overrides.pop(get_current_user, None)
     app.dependency_overrides.pop(current_org_id, None)
     db = SessionLocal()
-    for model, key in ((TimeEntry, "punches"), (CleanerTimeOff, "timeoff"),
+    for model, key in ((CleanerTimeOff, "timeoff"),
                        (PropertyIcal, "feeds"), (Job, "jobs"),
                        (RecurringSchedule, "series"), (User, "users"),
                        (Invoice, "invoices"), (LeadIntake, "leads"),
@@ -100,34 +100,17 @@ def _mk_lead(ids):
     ids["leads"].append(li.id); db.close()
 
 
-def _mk_punch(ids, cleaner_id, *, hours=None, break_minutes=0):
-    """A punch that started today. hours=None leaves it open (still clocked in)."""
-    db = SessionLocal()
-    start = _day_start_utc(business_today()) + timedelta(hours=9)
-    e = TimeEntry(cleaner_id=cleaner_id, clock_in_at=start,
-                  clock_out_at=start + timedelta(hours=hours) if hours else None,
-                  break_minutes=break_minutes, org_id=1)
-    db.add(e); db.commit(); db.refresh(e)
-    ids["punches"].append(e.id); db.close()
+# ── money today ──────────────────────────────────────────────────────
 
-
-# ── money & hours today ──────────────────────────────────────────────────────
-
-def test_hours_count_closed_punches_only_and_flag_who_is_still_on_the_clock(client):
-    """An open punch has no duration yet. Adding elapsed time for someone who
-    forgot to clock out would silently inflate today's labour every hour they
-    stay logged in — the number the owner reads to decide if a day went well."""
-    api, ids = client
-    before = _snapshot(api)["money_today"]
-
-    cid = f"snap-{uuid.uuid4().hex[:6]}"
-    _mk_punch(ids, cid, hours=3, break_minutes=30)   # 3h worked, 30m break → 2.5h
-    _mk_punch(ids, f"{cid}-b")                       # still on the clock
-
-    after = _snapshot(api)["money_today"]
-    assert round(after["hours"] - before["hours"], 2) == 2.5
-    assert after["on_clock"] - before["on_clock"] == 1
-    assert after["hours_label"].endswith("h")
+def test_the_snapshot_carries_no_hours_at_all(client):
+    """Replaces a test that counted closed punches and flagged who was still on
+    the clock. There is no clock: a subcontractor is paid for the job, not the
+    hour. What today is worth is the money and the visits."""
+    api, _ids = client
+    money = _snapshot(api)["money_today"]
+    for gone in ("hours", "hours_label", "on_clock"):
+        assert gone not in money, gone
+    assert "collected" in money and "visits_done" in money
 
 
 def test_cancelled_visits_are_not_part_of_todays_visit_count(client):

@@ -1,5 +1,10 @@
 """The flat rate belongs to ONE person, and it does not outlive them.
 
+RE-BASED (Sept 2026) onto the payout ledger. These originally asserted through
+the payroll summary, which walked time-clock punches; the employee model is
+gone and so is that endpoint. The rule they pin did not change — only the one
+surface that still pays anybody.
+
 Two money bugs, both from the same missing fact: the row said what was agreed
 and never with whom.
 
@@ -73,7 +78,8 @@ def _mk_crew(m, name="Sub"):
     return out
 
 
-def _mk_job(m, *, cleaner_ids, agreed_rate=None, agreed_cleaner_id=None, day=None):
+def _mk_job(m, *, cleaner_ids, agreed_rate=None, agreed_cleaner_id=None, day=None,
+            status="scheduled"):
     db = SessionLocal()
     tag = uuid.uuid4().hex[:6]
     c = Client(name=f"Rate {tag}", status="active", org_id=1)
@@ -83,27 +89,27 @@ def _mk_job(m, *, cleaner_ids, agreed_rate=None, agreed_cleaner_id=None, day=Non
     db.add(p); db.commit(); db.refresh(p); m["properties"].append(p.id)
     j = Job(client_id=c.id, property_id=p.id, org_id=1, title="Clean",
             scheduled_date=day or business_today(), start_time=dtime(9, 0),
-            status="scheduled", cleaner_ids=list(cleaner_ids),
+            status=status, cleaner_ids=list(cleaner_ids),
             agreed_rate=agreed_rate, agreed_cleaner_id=agreed_cleaner_id)
     db.add(j); db.commit(); db.refresh(j); m["jobs"].append(j.id)
     jid = j.id; db.close()
     return jid
 
 
-def _punch(m, job_id, crew, uid, hours=3.0):
+def _preview():
+    """What the ledger would pay for today, per person. This is the only thing
+    that pays anybody now — there is no hourly rail to cross-check against."""
+    from services import sub_payouts
+
     db = SessionLocal()
-    start = datetime.combine(business_today(), dtime(9, 0))
-    e = TimeEntry(org_id=1, cleaner_id=crew, user_id=uid, job_id=job_id,
-                  clock_in_at=start, clock_out_at=start + timedelta(hours=hours))
-    db.add(e); db.commit(); db.refresh(e); m["entries"].append(e.id)
-    db.close()
+    try:
+        return sub_payouts.preview(db, 1, business_today(), business_today())
+    finally:
+        db.close()
 
 
-def _summary():
-    today = business_today().isoformat()
-    r = _api().get(f"/api/payroll/summary?start_date={today}&end_date={today}")
-    assert r.status_code == 200, r.text
-    return r.json()
+def _owed(plan, crew):
+    return round(sum(r["amount"] for r in plan["new"] if r["cleaner_id"] == crew), 2)
 
 
 def _pay_for(body, crew):
@@ -120,21 +126,15 @@ def _pay_for(body, crew):
 
 def test_the_agreed_rate_pays_only_the_person_who_agreed_it(made):
     """THE $200-on-a-$100-job case, which is the common one and was untested."""
-    a_uid, a = _mk_crew(made, "Sub A")
-    b_uid, b = _mk_crew(made, "Helper B")
-    job = _mk_job(made, cleaner_ids=[a, b], agreed_rate=100.0, agreed_cleaner_id=a)
-    _punch(made, job, a, a_uid)
-    _punch(made, job, b, b_uid)
+    _, a = _mk_crew(made, "Sub A")
+    _, b = _mk_crew(made, "Helper B")
+    _mk_job(made, cleaner_ids=[a, b], agreed_rate=100.0, agreed_cleaner_id=a,
+            status="completed")
 
-    body = _summary()
-    ea, eb = _pay_for(body, a), _pay_for(body, b)
-    assert ea["marketplace_pay"] == 100.0
-    assert eb["marketplace_pay"] == 0.0, "the helper was paid the sub's flat rate too"
-    # B is an employee doing employee work: hourly, not nothing.
-    # An employee doing employee work: hourly, not nothing.
-    assert eb["residential_hours"] > 0
-    assert eb["residential_pay"] > 0
-    assert eb["gross_pay"] > 0
+    plan = _preview()
+    assert _owed(plan, a) == 100.0
+    assert _owed(plan, b) == 0.0, "the helper was cut the sub's flat rate too"
+    assert plan["new_total"] == 100.0, "a $100 job paid out more than $100"
 
 
 def test_the_ambiguous_legacy_row_pays_nobody_the_flat_rate(made):
@@ -142,22 +142,21 @@ def test_the_ambiguous_legacy_row_pays_nobody_the_flat_rate(made):
     not resolve. Under-paying is recoverable; paying everyone is money gone."""
     a_uid, a = _mk_crew(made, "Legacy A")
     b_uid, b = _mk_crew(made, "Legacy B")
-    job = _mk_job(made, cleaner_ids=[a, b], agreed_rate=100.0, agreed_cleaner_id=None)
-    _punch(made, job, a, a_uid)
-    _punch(made, job, b, b_uid)
+    _mk_job(made, cleaner_ids=[a, b], agreed_rate=100.0, agreed_cleaner_id=None,
+            status="completed")
 
-    body = _summary()
-    assert _pay_for(body, a)["marketplace_pay"] == 0.0
-    assert _pay_for(body, b)["marketplace_pay"] == 0.0
+    plan = _preview()
+    assert _owed(plan, a) == 0.0
+    assert _owed(plan, b) == 0.0
 
 
 def test_a_lone_cleaner_on_a_legacy_row_is_still_paid(made):
     """One cleaner and no name is unambiguous, and is what payroll already
     paid them. Migration 106 backfills exactly this case."""
     uid, crew = _mk_crew(made, "Legacy Solo")
-    job = _mk_job(made, cleaner_ids=[crew], agreed_rate=95.0, agreed_cleaner_id=None)
-    _punch(made, job, crew, uid)
-    assert _pay_for(_summary(), crew)["marketplace_pay"] == 95.0
+    _mk_job(made, cleaner_ids=[crew], agreed_rate=95.0, agreed_cleaner_id=None,
+            status="completed")
+    assert _owed(_preview(), crew) == 95.0
 
 
 # ── finding 3 ───────────────────────────────────────────────────────────────
@@ -187,10 +186,7 @@ def test_reassigning_the_job_clears_the_rate_it_was_agreed_at(made):
     assert req.message is None or "assigned" not in (req.message or "")
     db.close()
 
-    _punch(made, job, b, b_uid)
-    eb = _pay_for(_summary(), b)
-    assert eb["marketplace_pay"] == 0.0
-    assert eb["residential_hours"] > 0
+    assert _owed(_preview(), b) == 0.0, "an employee inherited the sub\'s payout"
 
 
 def test_adding_a_helper_does_not_clear_the_rate(made):
@@ -242,19 +238,21 @@ def test_approving_a_claim_records_who_agreed_it(made):
 
 # ── the Square export, both directions ──────────────────────────────────────
 
-def test_the_helper_still_reaches_square_and_the_sub_still_does_not(made):
-    """The exclusion moved with the identity check, and it had to.
+def test_the_identity_check_is_one_function_shared_by_every_payer(made):
+    """There used to be three call sites asking this and two of them were
+    wrong. The Square export was the third; it is gone with the rest of the
+    employee rail, so the ledger is the only payer left — and it asks the same
+    function."""
+    from services.claim_approval import agreed_with
+    from services import sub_payouts
+    import inspect
 
-    Excluding everyone on a marketplace job would drop the hourly helper from
-    the export while the summary paid them nothing flat either — worked for
-    free, in both systems at once."""
-    from modules.payroll.router import _agreed_with
-
-    a_uid, a = _mk_crew(made, "Sub A")
-    b_uid, b = _mk_crew(made, "Helper B")
+    _, a = _mk_crew(made, "Sub A")
+    _, b = _mk_crew(made, "Helper B")
     job = _mk_job(made, cleaner_ids=[a, b], agreed_rate=100.0, agreed_cleaner_id=a)
     db = SessionLocal()
     row = db.get(Job, job)
-    assert _agreed_with(row, a) is True, "a sub must never be exported to Square"
-    assert _agreed_with(row, b) is False, "the helper is an employee on the clock"
+    assert agreed_with(row, a) is True
+    assert agreed_with(row, b) is False
     db.close()
+    assert "agreed_with" in inspect.getsource(sub_payouts.preview)

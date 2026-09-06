@@ -227,44 +227,38 @@ class _PaidCleaner(_Cleaner):
         self.pay_rate_deep = deep
 
 
-def test_my_week_predicts_upcoming_and_excludes_punched_jobs(ids):
-    """The cleaner's week view: a job already worked (closed punch) counts in
-    'earned' via the payroll engine and is NOT double-counted as a prediction;
-    remaining assigned jobs are predicted at scheduled-hours × (rate + bump),
-    piece jobs at the property's flat rate."""
-    from datetime import datetime, time as dtime
-    from database.models import TimeEntry
+def test_my_week_is_the_jobs_they_agreed_a_price_on(ids):
+    """REWRITTEN with the employee model (Sept 2026).
 
-    crew = f"CT-{uuid.uuid4().hex[:6]}"
+    my-week used to read hours off the payroll summary and predict the rest
+    from hourly rates, per-cleaner overrides and weekend piece rates. Every
+    input to that was the employee model.
+
+    A subcontractor's week is the jobs they agreed a price on: finished is
+    earned, booked is upcoming, and both are the amount both sides shook on.
+    No hours, no prediction from a rate card they never agreed to.
+    """
     cid = _mk_client(ids)
+    crew = f"CT-{uuid.uuid4().hex[:5]}"
+    # A property each: jobs are UNIQUE on (property_id, scheduled_date,
+    # job_type), so two on one house the same day is a constraint error, not a
+    # scenario.
+    # All dated TODAY. offset_days=1 looks harmless and isn't: the week is
+    # Monday-anchored, so on a Sunday "tomorrow" is next week and the job
+    # correctly drops out — a fixture that only passes six days in seven.
+    done = _mk_job(ids, cid, _mk_str_property(ids, cid), [crew], offset_days=0)
+    booked = _mk_job(ids, cid, _mk_str_property(ids, cid), [crew], offset_days=0)
+    someone_elses = _mk_job(ids, cid, _mk_str_property(ids, cid), [crew], offset_days=0)
 
-    # Job A — worked already: 2h closed punch. Shop default residential rate
-    # (no DB user for this crew ID) → earned = 2 × $25 = $50.
-    pid_a = _mk_str_property(ids, cid)
-    job_a = _mk_job(ids, cid, pid_a, [crew], offset_days=0, job_type="residential")
     db = SessionLocal()
-    e = TimeEntry(org_id=1, cleaner_id=crew, job_id=job_a,
-                  clock_in_at=datetime.combine(business_today(), dtime(12, 0)),
-                  clock_out_at=datetime.combine(business_today(), dtime(14, 0)),
-                  source="native")
-    db.add(e); db.commit(); db.refresh(e); entry_id = e.id
-    db.close()
-
-    # Job B — still ahead today, 10:00–13:00 (3h), +$1/hr bump → 3 × (30+1) = 93
-    # at the caller's residential override.
-    pid_b = _mk_str_property(ids, cid)
-    job_b = _mk_job(ids, cid, pid_b, [crew], offset_days=0, job_type="residential")
-    db = SessionLocal()
-    db.query(Job).filter(Job.id == job_b).update({"pay_rate_bump": 1.0})
-    db.commit(); db.close()
-
-    # Job C — a turnover forced to piece rate, $80 flat (deterministic on any
-    # weekday, so the test doesn't care which day of the week 'today' is).
-    pid_c = _mk_str_property(ids, cid)
-    job_c = _mk_job(ids, cid, pid_c, [crew], offset_days=0, job_type="str_turnover")
-    db = SessionLocal()
-    db.query(Job).filter(Job.id == job_c).update({"pay_mode": "piece"})
-    db.query(Property).filter(Property.id == pid_c).update({"turnover_rate": 80.0})
+    db.query(Job).filter(Job.id == done).update(
+        {"status": "completed", "agreed_rate": 120.0, "agreed_cleaner_id": crew})
+    db.query(Job).filter(Job.id == booked).update(
+        {"agreed_rate": 95.0, "agreed_cleaner_id": crew})
+    # On the job, but not the person it was priced for — the distinction
+    # migration 106 exists to make. Must not count toward their week.
+    db.query(Job).filter(Job.id == someone_elses).update(
+        {"agreed_rate": 300.0, "agreed_cleaner_id": "CT-OTHER"})
     db.commit(); db.close()
 
     app.dependency_overrides[get_current_user] = lambda: _PaidCleaner(9005, crew)
@@ -275,28 +269,18 @@ def test_my_week_predicts_upcoming_and_excludes_punched_jobs(ids):
         assert res.status_code == 200, res.text
         body = res.json()
 
-        # Earned = 2h at the CURRENT shop residential rate (no DB user carries
-        # this crew ID, so the engine falls back to the settings default —
-        # read it live so an earlier test tweaking rates can't flake this).
-        from modules.payroll.router import _get_rates
-        db = SessionLocal(); shop_res = _get_rates(db)["residential_rate"]; db.close()
-        expected_earned = round(2.0 * shop_res, 2)
-        assert body["earned"]["gross_pay"] == expected_earned
-        assert body["earned"]["hours"] == 2.0
+        assert body["earned_total"] == 120.0
+        assert body["upcoming_total"] == 95.0
+        assert body["week_total"] == 215.0
+        assert [r["id"] for r in body["earned"]] == [done]
+        assert [r["id"] for r in body["upcoming"]] == [booked]
 
-        by_id = {j["id"]: j for j in body["upcoming"]}
-        assert job_a not in by_id          # worked → earned, never predicted too
-        assert by_id[job_b]["predicted_pay"] == 93.0
-        assert by_id[job_b]["bump"] == 1.0
-        assert by_id[job_c]["piece"] is True
-        assert by_id[job_c]["predicted_pay"] == 80.0
-
-        assert body["predicted_upcoming_total"] == 173.0
-        assert body["predicted_week_total"] == round(expected_earned + 173.0, 2)
+        # Nothing about hours reaches a subcontractor's earnings screen.
+        blob = repr(body).lower()
+        assert "hour" not in blob
+        assert "predicted" not in blob
+        assert "mileage" not in blob
     finally:
-        db = SessionLocal()
-        db.query(TimeEntry).filter(TimeEntry.id == entry_id).delete(synchronize_session=False)
-        db.commit(); db.close()
         app.dependency_overrides.pop(get_current_user, None)
         app.dependency_overrides.pop(current_org_id, None)
 
@@ -312,7 +296,6 @@ def _as_cleaner(uid, crew_id):
 def _clear_overrides():
     app.dependency_overrides.pop(get_current_user, None)
     app.dependency_overrides.pop(current_org_id, None)
-
 
 def test_mark_done_completes_own_job_with_note_invoice_and_activity(ids):
     """The embarrassing-if-broken path: cleaner marks their own job done →

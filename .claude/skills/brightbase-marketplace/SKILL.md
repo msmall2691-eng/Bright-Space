@@ -5,8 +5,9 @@ description: The subcontractor marketplace — the three constraints that are le
 
 # The subcontractor marketplace
 
-The Maine Cleaning Co. is moving off payroll onto a closed bench of ~10–20
-vetted subcontractors. A cleaner applies through a public form, gets an
+The Maine Cleaning Co. has moved off payroll onto a closed bench of ~10–20
+vetted subcontractors. There is no employee model any more — see the note in
+"Out of scope" below. A cleaner applies through a public form, gets an
 account, puts documents on file, sees open jobs, asks for one at a price, and
 gets paid per job.
 
@@ -116,7 +117,14 @@ public /apply  →  office approves  →  account + set-password invite
   Including a "smart" one. Including as a tiebreaker.
 - **Any path that prices a sub's work by the hour**, including deriving an
   hourly figure for display or comparison.
-- **Removing the employee payroll code.** Both models run side by side.
+- ~~**Removing the employee payroll code.**~~ **DONE — Sept 2026.** The owner
+  decided in writing that TMCC no longer employs cleaners, and confirmed nobody
+  was on payroll. The hourly rates, the native time clock, mileage and the
+  Square Payroll export are gone; `modules/payroll/router.py` is the
+  subcontractor payout ledger and nothing else. What survives, deliberately:
+  the `time_entries` table and the `User.pay_rate_*` columns stay in the
+  schema, because dropping them is a destructive migration for history nobody
+  can regenerate and the discipline here is additive-only (R8).
 - **Auto-approve as a tiebreaker between competing requests.** `why_not()`
   returns `competing_requests` on purpose; first-come-first-served was
   considered and rejected. A match score here would be the system picking a

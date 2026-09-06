@@ -214,12 +214,12 @@ function RespondRow({ job, onRespond, onDecline, busy }) {
   )
 }
 
-export default function JobCard({ job, clockable = false, activeEntry = null, onClockIn, onClockOut, onMarkDone, onPhotos, onRespond, onDecline, onClaim, onTextClient, onHouseInfo, busy = false }) {
+export default function JobCard({ job, onMarkDone, onPhotos, onRespond, onDecline, onClaim, onTextClient, onHouseInfo, busy = false }) {
   const isTurnover = job.job_type === 'str_turnover'
   const done = job.status === 'completed'
   const houseLine = houseSpecsLine(job)
-  const isActiveJob = clockable && activeEntry && activeEntry.job_id === job.id
-  const someoneElseActive = clockable && activeEntry && activeEntry.job_id !== job.id
+  const isActiveJob = false   // the time clock is gone (Sept 2026)
+  const someoneElseActive = false
   const houseNoteCount = job.house_notes?.length || 0
   const hasHouseSection = !!(houseLine || houseNoteCount > 0 || (!job.open && job.property_id && onHouseInfo))
   return (
@@ -431,41 +431,6 @@ export default function JobCard({ job, clockable = false, activeEntry = null, on
         )
       })()}
 
-      {clockable && !done && (
-        <div className="mt-3 border-t border-hairline pt-3 grid grid-cols-2 gap-2">
-          {isActiveJob ? (
-            <button onClick={onClockOut} disabled={busy}
-              className="text-[13px] font-semibold bg-emerald-600 hover:bg-emerald-700 disabled:opacity-60 text-white py-2 rounded-lg transition-colors">
-              Clock out
-            </button>
-          ) : someoneElseActive ? (
-            <button disabled title="Clock out of your current job first"
-              className="text-[13px] font-medium bg-panel border border-hairline text-ink-3 py-2 rounded-lg cursor-not-allowed">
-              Clock in
-            </button>
-          ) : (
-            <button onClick={onClockIn} disabled={busy}
-              className="text-[13px] font-semibold bg-blue-600 hover:bg-blue-700 disabled:opacity-60 text-white py-2 rounded-lg transition-colors">
-              Clock in
-            </button>
-          )}
-          <button onClick={onMarkDone} disabled={busy}
-            className="text-[13px] font-semibold bg-panel border border-hairline text-ink-2 hover:bg-bg-2 disabled:opacity-60 py-2 rounded-lg transition-colors inline-flex items-center justify-center gap-1.5">
-            <CheckCircle2 className="w-4 h-4 text-emerald-600" /> Mark done
-          </button>
-        </div>
-      )}
-
-      {clockable && done && isActiveJob && (
-        /* Marked done but the punch is still open — keep clock-out reachable
-           right on the card (the green header bar has it too). */
-        <div className="mt-3 border-t border-hairline pt-3">
-          <button onClick={onClockOut} disabled={busy}
-            className="w-full text-[13px] font-semibold bg-emerald-600 hover:bg-emerald-700 disabled:opacity-60 text-white py-2 rounded-lg transition-colors">
-            Clock out
-          </button>
-        </div>
-      )}
 
       {onPhotos && (
         /* Photos stay reachable after Mark done on purpose — "after" shots are

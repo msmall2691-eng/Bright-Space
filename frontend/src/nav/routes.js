@@ -116,7 +116,8 @@ export const SETTINGS_ITEM = {
     { to: '/settings', icon: Settings,   label: 'Settings', keywords: 'account integrations users email fields' },
     { to: '/crew',     icon: HardHat,    label: 'Crew', roles: ['admin', 'manager'], keywords: 'team cleaners rates invite' },
     // Payroll reads (/rates, /summary, /mileage) are admin/manager-only.
-    { to: '/payroll',  icon: DollarSign, label: 'Payroll', roles: ['admin', 'manager'], keywords: 'team hours pay period square' },
+    // Renamed with the employee model: there is no payroll, there are payouts.
+    { to: '/payroll',  icon: DollarSign, label: 'Payouts', roles: ['admin', 'manager'], keywords: 'pay subcontractors payouts ledger 1099' },
   ],
 }
 

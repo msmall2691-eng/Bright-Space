@@ -37,7 +37,7 @@ from ratelimit import rate_limit
 from database.models import (
     CleanerAvailability, CleanerTimeOff, CleanerWeekAvailability, CrewDoc,
     CrewMessage, Job, JobClaimRequest, JobPhoto, JobResponse, PropertyCrewNote,
-    PropertyPhoto, SubAgreement, SubDocument, User, TimeEntry,
+    PropertyPhoto, SubAgreement, SubDocument, User,
 )
 from modules.auth.router import (
     get_current_user, invite_status_fields, require_role, current_org_id,
@@ -203,46 +203,6 @@ def _iso_utc(dt):
     return dt.isoformat()
 
 
-def _entry_hours(e: TimeEntry):
-    """Worked hours for a punch: elapsed minus breaks, never negative. None while
-    still on the clock (no clock-out yet)."""
-    if not e.clock_out_at:
-        return None
-    secs = (e.clock_out_at - e.clock_in_at).total_seconds() - (e.break_minutes or 0) * 60
-    return round(max(0.0, secs) / 3600, 2)
-
-
-def _sanitize_miles(v):
-    """Clamp crew-entered miles into a sane, non-negative range so a fat-finger
-    ('10000') can't reimburse thousands of dollars and a negative can't subtract
-    from pay. None (not entered) passes through untouched. The generous 2000-mile
-    ceiling clips only nonsense, never a real local drive — clock-out must never
-    fail over a mileage typo, so this clamps rather than rejects."""
-    if v is None:
-        return None
-    try:
-        m = float(v)
-    except (TypeError, ValueError):
-        return None
-    return round(min(2000.0, max(0.0, m)), 1)
-
-
-def _entry_row(e: TimeEntry) -> dict:
-    return {
-        "id": e.id,
-        "job_id": e.job_id,
-        "clock_in_at": _iso_utc(e.clock_in_at),
-        "clock_out_at": _iso_utc(e.clock_out_at),
-        "break_minutes": e.break_minutes or 0,
-        "miles": e.miles,
-        "hours": _entry_hours(e),
-        "open": e.clock_out_at is None,
-        "clock_in_lat": e.clock_in_lat,
-        "clock_in_lng": e.clock_in_lng,
-        "has_location": e.clock_in_lat is not None and e.clock_in_lng is not None,
-    }
-
-
 def _business_day_bounds_utc(day):
     """[start, end) of a business-local day, as naive UTC — so 'hours today'
     rolls over at local midnight, not UTC midnight."""
@@ -352,34 +312,10 @@ def my_day(
         ).all()
     }
 
-    # ── Native time clock status ─────────────────────────────────────────────
-    # Read-only w.r.t. the schedule. Folded into /my-day so the crew app is
-    # one call; native payroll reads these same punches.
-    day_start, day_end = _business_day_bounds_utc(today)
-    entries_today = (
-        db.query(TimeEntry)
-        .filter(
-            org_scope(TimeEntry),
-            TimeEntry.cleaner_id == current_user.cleaner_id,
-            TimeEntry.clock_in_at >= day_start,
-            TimeEntry.clock_in_at < day_end,
-        )
-        .order_by(TimeEntry.clock_in_at)
-        .all()
-    )
-    # The open punch is authoritative regardless of which day it started (an
-    # overnight shift is still "on the clock").
-    active = (
-        db.query(TimeEntry)
-        .filter(
-            org_scope(TimeEntry),
-            TimeEntry.cleaner_id == current_user.cleaner_id,
-            TimeEntry.clock_out_at.is_(None),
-        )
-        .order_by(TimeEntry.clock_in_at.desc())
-        .first()
-    )
-    hours_today = round(sum((_entry_hours(e) or 0.0) for e in entries_today), 2)
+    # The time clock used to be read here and folded into this payload
+    # (active punch, hours today, the day's entries). It is gone — a punch
+    # records hours, and hours are what an employer pays for. See the note
+    # where the endpoints were.
 
     # Jobs the office put "up for grabs" (crew app Phase 3) — visible to every
     # cleaner in the org. Marketplace pivot (migration 097): a sub REQUESTS
@@ -475,11 +411,6 @@ def my_day(
                     CrewMessage.read_at.is_(None))
             .scalar() or 0
         ),
-        "clock": {
-            "active": _entry_row(active) if active else None,
-            "hours_today": hours_today,
-            "entries_today": [_entry_row(e) for e in entries_today],
-        },
     }
 
 
@@ -487,276 +418,87 @@ def my_day(
 def my_week(
     db: Session = Depends(get_db),
     org_id: int = Depends(current_org_id),
-    current_user: User = Depends(require_role("cleaner")),
+    current_user: User = Depends(get_current_user),
 ):
-    """A cleaner's week of pay, so they can see what the week is shaping up to
-    be worth: what they've EARNED so far (from their closed punches, computed by
-    the exact same code the office's Payroll page runs — one pay-math
-    implementation, no drift) plus a PREDICTION for the rest of the week from
-    the jobs still assigned to them (scheduled length × their hourly rate + any
-    per-job bump; piece-rate turnovers at the property's flat rate).
+    """What this week is worth to a subcontractor.
 
-    Only ever returns the CALLER's own numbers — the full payroll breakdown
-    stays admin/manager-only."""
-    from modules.payroll.router import _get_rates, _native_summary
+    REWRITTEN, not deleted. The old version asked the payroll summary for hours
+    and reimbursements and predicted the rest from hourly rates, per-cleaner
+    overrides and weekend piece rates. Every input to that was the employee
+    model, and it is gone.
 
-    _require_crew_id(current_user)
+    A sub's week is simpler and truer: the jobs they agreed a price on. Earned
+    is what is finished, upcoming is what is booked, and both are the amounts
+    both sides actually shook on. No hours, no mileage, no prediction from a
+    rate card — predicting somebody's pay from a rate they never agreed is how
+    an estimate becomes an argument.
+
+    One query. `agreed_cleaner_id` (migration 106) is what makes it honest:
+    being listed on a job is not the same as being the person it is priced for.
+    """
+    from services.claim_approval import agreed_with
+
+    # Kept from the old version: this is one person's money, and it is theirs.
+    if current_user.role != "cleaner":
+        raise HTTPException(status_code=403, detail="Crew only.")
+    if not current_user.cleaner_id:
+        raise HTTPException(
+            status_code=400,
+            detail="Your account isn't linked to a crew ID yet — ask the office.")
+
     oid = resolve_org_id(org_id, db)
-    org_scope = lambda model: or_(model.org_id == oid, model.org_id.is_(None))
+    org_scope = lambda model: or_(model.org_id == oid, model.org_id.is_(None))  # noqa: E731
     today = business_today()
-    week_start = today - timedelta(days=today.weekday())   # Monday
-    week_end = week_start + timedelta(days=6)              # Sunday
-
-    rates = _get_rates(db)
-
-    # Earned so far: the payroll engine over this week's window, then pick out
-    # ONLY the caller's row. The window is a week and the shop is small, so
-    # computing everyone and filtering costs nothing measurable.
-    summary = _native_summary(db, week_start.isoformat(), week_end.isoformat(), rates, oid)
-    mine = next((e for e in summary["employees"] if e["employee_id"] == current_user.cleaner_id), None)
-    earned = {
-        "gross_pay": mine["gross_pay"] if mine else 0.0,
-        "hours": mine["total_hours"] if mine else 0.0,
-        "miles": mine["miles"] if mine else 0.0,
-        "mileage_reimbursement": mine["mileage_reimbursement"] if mine else 0.0,
-        "turnovers": mine["weekend_turnovers"] if mine else 0,
-    }
-
-    # Which jobs already have a CLOSED punch by this cleaner this week — those
-    # are in "earned" and must not also be predicted. An OPEN punch keeps its
-    # job in the prediction: mid-job, the estimate stands until clock-out.
-    tz = business_tz()
-    lo = datetime.combine(week_start, dtime(0, 0), tzinfo=tz).astimezone(timezone.utc).replace(tzinfo=None)
-    hi = datetime.combine(week_end + timedelta(days=1), dtime(0, 0), tzinfo=tz).astimezone(timezone.utc).replace(tzinfo=None)
-    punched_job_ids = {
-        e.job_id for e in db.query(TimeEntry).filter(
-            org_scope(TimeEntry),
-            TimeEntry.cleaner_id == current_user.cleaner_id,
-            TimeEntry.clock_out_at.isnot(None),
-            TimeEntry.clock_in_at >= lo,
-            TimeEntry.clock_in_at < hi,
-        ).all() if e.job_id
-    }
+    week_start = week_monday(today)
+    week_end = week_start + timedelta(days=6)
 
     jobs = (
         db.query(Job)
         .options(joinedload(Job.property))
         .filter(
             org_scope(Job),
-            Job.scheduled_date >= today,
+            Job.scheduled_date >= week_start,
             Job.scheduled_date <= week_end,
-            Job.status.in_(("scheduled", "in_progress")),
+            Job.status.notin_(("cancelled", "skipped")),
         )
         .order_by(Job.scheduled_date, Job.start_time)
         .all()
     )
-    upcoming = []
-    predicted_upcoming = 0.0
+
+    earned_total, upcoming_total = 0.0, 0.0
+    earned, upcoming = [], []
     for j in jobs:
-        if current_user.cleaner_id not in (j.cleaner_ids or []):
+        if not agreed_with(j, current_user.cleaner_id):
             continue
-        if j.id in punched_job_ids:
+        amount = float(j.agreed_rate or 0.0)
+        if not amount:
             continue
         prop = j.property
-        weekend = j.scheduled_date.weekday() >= 5
-        if j.job_type == "str_turnover":
-            kind = "rental"
-        elif j.job_type == "deep_clean":
-            kind = "deep"
-        else:
-            kind = "residential"
-        mode = (j.pay_mode or "auto").lower()
-        use_piece = (kind == "rental" and weekend) if mode == "auto" else (mode == "piece")
-
-        # Scheduled length in hours (start/end are NOT NULL on Job).
-        dur = (datetime.combine(j.scheduled_date, j.end_time)
-               - datetime.combine(j.scheduled_date, j.start_time)).total_seconds() / 3600.0
-        dur = max(0.0, dur)
-
-        bump = float(j.pay_rate_bump or 0.0)
-        unpriced = False
-        if use_piece:
-            rate = getattr(prop, "turnover_rate", None) if prop is not None else None
-            if rate is None:
-                unpriced = True
-                pay = 0.0
-            else:
-                pay = float(rate)
-        else:
-            if kind == "deep":
-                hourly = (current_user.pay_rate_deep if current_user.pay_rate_deep is not None
-                          else rates["deep_clean_rate"])
-            elif kind == "rental":
-                hourly = (current_user.pay_rate_rental if current_user.pay_rate_rental is not None
-                          else rates["rental_weekday_rate"])
-            else:
-                hourly = (current_user.pay_rate_residential if current_user.pay_rate_residential is not None
-                          else rates["residential_rate"])
-            pay = dur * (hourly + bump)
-
-        predicted_upcoming += pay
-        upcoming.append({
+        row = {
             "id": j.id,
             "date": j.scheduled_date.isoformat(),
             "title": j.title,
-            "property_name": prop.name if prop else None,
-            "start_time": _fmt_time(j.start_time),
-            "end_time": _fmt_time(j.end_time),
-            "hours": round(dur, 2),
-            "piece": use_piece,
-            "bump": bump or 0.0,
-            "unpriced": unpriced,
-            "predicted_pay": round(pay, 2),
-        })
+            "property_name": prop.name if prop is not None else None,
+            "amount": round(amount, 2),
+        }
+        if j.status == "completed":
+            earned_total += amount
+            earned.append(row)
+        else:
+            upcoming_total += amount
+            upcoming.append(row)
 
     return {
-        "as_of": today.isoformat(),
         "week_start": week_start.isoformat(),
         "week_end": week_end.isoformat(),
+        "earned_total": round(earned_total, 2),
+        "upcoming_total": round(upcoming_total, 2),
+        "week_total": round(earned_total + upcoming_total, 2),
         "earned": earned,
         "upcoming": upcoming,
-        "predicted_upcoming_total": round(predicted_upcoming, 2),
-        "predicted_week_total": round(earned["gross_pay"] + predicted_upcoming, 2),
     }
 
 
-@router.post("/clock-in")
-def clock_in(
-    body: ClockInBody,
-    db: Session = Depends(get_db),
-    org_id: int = Depends(current_org_id),
-    current_user: User = Depends(require_role("cleaner")),
-):
-    """Start a punch. One open punch per cleaner — a second clock-in while
-    already on the clock is a 409 (clock out first). These punches are what
-    native payroll pays from."""
-    _require_crew_id(current_user)
-    oid = resolve_org_id(org_id, db)
-    org_scope = lambda model: or_(model.org_id == oid, model.org_id.is_(None))
-
-    existing = (
-        db.query(TimeEntry)
-        .filter(org_scope(TimeEntry),
-                TimeEntry.cleaner_id == current_user.cleaner_id,
-                TimeEntry.clock_out_at.is_(None))
-        .first()
-    )
-    if existing:
-        raise HTTPException(status_code=409, detail="You're already clocked in — clock out first.")
-
-    job_id = body.job_id
-    if job_id is not None:
-        job = db.query(Job).filter(Job.id == job_id, org_scope(Job)).first()
-        if not job:
-            raise HTTPException(status_code=404, detail="Job not found.")
-        # Only clock into a job you're assigned to — otherwise a stale or crafted
-        # request could attribute hours (and weekend piece-rate pay) to another
-        # cleaner's work once native payroll reads these punches.
-        if current_user.cleaner_id not in (job.cleaner_ids or []):
-            raise HTTPException(status_code=403, detail="You're not assigned to that job.")
-
-    entry = TimeEntry(
-        org_id=oid,
-        cleaner_id=current_user.cleaner_id,
-        user_id=current_user.id,
-        job_id=job_id,
-        clock_in_at=_now_naive_utc(),
-        source="native",
-        clock_in_lat=body.lat,
-        clock_in_lng=body.lng,
-        clock_in_accuracy_m=body.accuracy_m,
-    )
-    db.add(entry)
-    try:
-        db.commit()
-    except IntegrityError:
-        # Backstop for the one-open-punch invariant against a concurrent double
-        # clock-in — the partial unique index (org_id, cleaner_id WHERE
-        # clock_out_at IS NULL) rejects the second row. The pre-check above
-        # handles the common (non-racing) case with a friendlier path.
-        db.rollback()
-        raise HTTPException(status_code=409, detail="You're already clocked in — clock out first.")
-    db.refresh(entry)
-    return _entry_row(entry)
-
-
-@router.post("/clock-out")
-def clock_out(
-    body: ClockOutBody,
-    db: Session = Depends(get_db),
-    org_id: int = Depends(current_org_id),
-    current_user: User = Depends(require_role("cleaner")),
-):
-    """Close the open punch. 400 if not currently clocked in. break_minutes is
-    clamped to the elapsed time so a fat-fingered break can't make worked hours
-    negative."""
-    _require_crew_id(current_user)
-    oid = resolve_org_id(org_id, db)
-    org_scope = lambda model: or_(model.org_id == oid, model.org_id.is_(None))
-
-    entry = (
-        db.query(TimeEntry)
-        .filter(org_scope(TimeEntry),
-                TimeEntry.cleaner_id == current_user.cleaner_id,
-                TimeEntry.clock_out_at.is_(None))
-        .order_by(TimeEntry.clock_in_at.desc())
-        .first()
-    )
-    if not entry:
-        raise HTTPException(status_code=400, detail="You're not clocked in.")
-
-    now = _now_naive_utc()
-    elapsed_min = (now - entry.clock_in_at).total_seconds() / 60
-    bm = max(0, int(body.break_minutes or 0))
-    if bm > elapsed_min:
-        bm = int(elapsed_min)
-    entry.clock_out_at = now
-    entry.break_minutes = bm
-    if body.note is not None:
-        entry.note = body.note.strip() or None
-    # Clamp, never reject: a mileage typo must not strand the cleaner on the
-    # clock. A wrong value can be corrected via PATCH /entry/{id}/miles.
-    if body.miles is not None:
-        entry.miles = _sanitize_miles(body.miles)
-    db.commit(); db.refresh(entry)
-    return _entry_row(entry)
-
-
-class EntryMilesBody(BaseModel):
-    miles: float
-
-
-@router.patch("/entry/{entry_id}/miles")
-def set_entry_miles(
-    entry_id: int,
-    body: EntryMilesBody,
-    db: Session = Depends(get_db),
-    org_id: int = Depends(current_org_id),
-    current_user: User = Depends(require_role("cleaner")),
-):
-    """Correct the miles on one of the caller's own punches — the safety net for
-    a forgotten or fat-fingered clock-out entry, before payroll runs. Scoped to
-    the caller's cleaner_id so a cleaner can only edit their own mileage. 404 if
-    the punch isn't theirs (or doesn't exist)."""
-    _require_crew_id(current_user)
-    oid = resolve_org_id(org_id, db)
-    org_scope = lambda model: or_(model.org_id == oid, model.org_id.is_(None))
-
-    entry = (
-        db.query(TimeEntry)
-        .filter(org_scope(TimeEntry),
-                TimeEntry.id == entry_id,
-                TimeEntry.cleaner_id == current_user.cleaner_id)
-        .first()
-    )
-    if not entry:
-        raise HTTPException(status_code=404, detail="Time entry not found.")
-    entry.miles = _sanitize_miles(body.miles)
-    db.commit(); db.refresh(entry)
-    return _entry_row(entry)
-
-
-# ── Mark done (Phase 2c) ─────────────────────────────────────────────────────
 
 def _sanitize_note(v: Optional[str]) -> Optional[str]:
     """Trim and cap the completion note. Empty/whitespace → None (no note)."""
