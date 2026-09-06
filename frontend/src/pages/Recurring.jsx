@@ -1280,6 +1280,43 @@ function HealthPanel({ onClose, onChanged, onOpenSeries, onOpenDuplicates, onCle
           })
         } }
       }
+      // Linking IS the fix, not tidying: with no property the series can't
+      // insert a Job at all (property_id is NOT NULL), so it has been silently
+      // dead. Generate straight after, or she'd link it and still see nothing.
+      case 'no_property':
+        if (prob.suggest_property_id) {
+          return { short: `Link to ${prob.suggest_property_label}`, run: () => act(issue, async () => {
+            await patch(`/api/recurring/${id}`, { property_id: prob.suggest_property_id })
+            const r = await post(`/api/recurring/${id}/generate`)
+            const n = r?.created ?? r?.generated ?? 0
+            toast.success(n ? `Linked — ${n} visits generated` : 'Linked to the property')
+          }) }
+        }
+        // Two houses on the client: the scan withholds the suggestion rather
+        // than guess which one, so this falls back to opening the series.
+        return { short: 'Open series', run: () => { onClose(); onOpenSeries(id) } }
+      // Cancels a real series AND takes its booked visits off the calendar, so
+      // it names both in the confirm and never runs without one.
+      case 'reschedule_leftover':
+        return { short: 'Cancel the old one', danger: true, run: async () => {
+          const n = issue.upcoming_job_count || 0
+          const ok = await confirmDialog(
+            `Cancel “${issue.title || 'Untitled'}” for `
+            + `${issue.client_name || 'this client'}?\n\n${prob.message}\n\n`
+            + (n ? `Its ${n} booked ${n === 1 ? 'visit comes' : 'visits come'} off the calendar too. ` : '')
+            + 'The running series carries on. History is kept, and this cannot be resumed.',
+            { title: 'Cancel the old series?', confirmLabel: 'Cancel series', danger: true },
+          )
+          if (!ok) return
+          act(issue, async () => {
+            await del(`/api/recurring/${id}`)
+            const r = await post(`/api/recurring/${id}/cancel-upcoming`)
+            const c = r?.cancelled_count || 0
+            toast.success(c
+              ? `Cancelled — ${c} booked ${c === 1 ? 'visit' : 'visits'} removed`
+              : 'Series cancelled')
+          })
+        } }
       case 'active_no_upcoming':
         return { short: 'Generate visits', run: () => act(issue, async () => {
           const r = await post(`/api/recurring/${id}/generate`)
