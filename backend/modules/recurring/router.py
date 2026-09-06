@@ -580,6 +580,29 @@ def generate_jobs(db: Session, sched: RecurringSchedule) -> int:
     from database.models import Client
     from integrations.google_calendar import create_event
 
+    # Job.property_id is NOT NULL (models.py: "Every job must have a property"),
+    # and every occurrence copies it straight off the schedule. A series with no
+    # property therefore cannot produce a single visit — each insert trips the
+    # constraint, the race-safe IntegrityError handler below rolls the savepoint
+    # back, and the run reports "0 created" while logging "Skipped duplicate job
+    # ... expected and harmless" about a constraint failure that is neither.
+    #
+    # So this stopped being generation-with-a-cosmetic-gap and became silent
+    # death: the visits already on the books run out, no more are made, and
+    # nothing says so. The owner had three such series and the health scan was
+    # calling it severity `info` ("visits inherit only the free-text address").
+    #
+    # Refuse loudly instead of failing quietly N times. NOT a fallback to the
+    # client's property: which house a cleaner is sent to is not a thing for
+    # the app to guess. audit_series raises it as an error with a one-tap link.
+    if sched.property_id is None:
+        logger.warning(
+            "[recurring] schedule %s (client %s) has no property_id — generated "
+            "nothing. Link it to a property; visits cannot be created without one.",
+            sched.id, sched.client_id,
+        )
+        return 0
+
     # Pin the cadence phase before expanding dates so biweekly stays biweekly.
     _ensure_anchor(db, sched)
 

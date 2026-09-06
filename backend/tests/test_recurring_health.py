@@ -133,7 +133,16 @@ def test_active_no_upcoming_and_stale_paused(made):
     db.close()
 
 
-def test_missing_property_link_is_flagged_info(made):
+def test_missing_property_link_is_an_error_and_carries_the_fix(made):
+    """It was `info`, worded as though the only cost were a missing link.
+
+    It is not cosmetic. Job.property_id is NOT NULL and every occurrence copies
+    it off the schedule, so a series with no property generates NOTHING: each
+    insert trips the constraint and the race-safe handler swallows it as a
+    duplicate. The visits already booked run out and no more are made, silently.
+    That is an error, and when the client has exactly one property the scan now
+    carries it so the fix is one tap instead of a hunt.
+    """
     db = SessionLocal()
     c = _mk_client(db, made)
     p = _mk_prop(db, made, c.id)
@@ -143,7 +152,113 @@ def test_missing_property_link_is_flagged_info(made):
     issue = _issue_for(report, s.id)
     assert "no_property" in _codes(issue)
     prob = next(p_ for p_ in issue["problems"] if p_["code"] == "no_property")
-    assert prob["severity"] == "info" and prob["destructive"] is False
+    assert prob["severity"] == "error" and prob["destructive"] is False
+    assert "can't create visits" in prob["message"]
+    assert prob["suggest_property_id"] == p.id
+    assert prob["suggest_property_label"] == p.name
+    db.close()
+
+
+def test_a_series_with_no_property_really_does_generate_nothing(made):
+    """Why the finding above is an error and not a note.
+
+    Proves the mechanism rather than trusting the label: generation returns 0
+    and writes no rows, without raising. That is exactly how three of the
+    owner's live series went quiet with nothing telling her — the constraint
+    failure is caught by the race-safe handler and logged as a duplicate.
+    """
+    from modules.recurring.router import generate_jobs
+
+    db = SessionLocal()
+    c = _mk_client(db, made)
+    p = _mk_prop(db, made, c.id)
+    s = _mk_sched(db, made, c.id, property_id=None)
+
+    assert generate_jobs(db, s) == 0
+    assert db.query(Job).filter(Job.recurring_schedule_id == s.id).count() == 0
+
+    # Control: the same series WITH the property generates, so the assertion
+    # above is about the missing link and not about a fixture that never had
+    # any dates to expand in the first place.
+    s.property_id = p.id
+    db.commit()
+    assert generate_jobs(db, s) > 0
+
+    db.query(Job).filter(Job.recurring_schedule_id == s.id).delete(synchronize_session=False)
+    db.commit(); db.close()
+
+
+# ── The shape the duplicate detector cannot see (owner, Sep 2026) ────────────
+# Sandra Fox had a live "every 4 weeks Tue" and a paused "every 4 weeks Fri"
+# with one stranded visit — the Friday she was moved off. Same client, same
+# cadence, different day, so a day-keyed duplicate bucket never matched, and it
+# sat there until the owner noticed two of her by eye.
+
+def test_a_paused_series_on_the_day_they_moved_off_is_flagged(made):
+    db = SessionLocal()
+    c = _mk_client(db, made)
+    p = _mk_prop(db, made, c.id)
+    live = _mk_sched(db, made, c.id, property_id=p.id, days=(1,))
+    moved_off = _mk_sched(db, made, c.id, property_id=p.id, days=(4,), active=False)
+
+    report = audit_series(db, None)
+    issue = _issue_for(report, moved_off.id)
+    assert "reschedule_leftover" in _codes(issue)
+    prob = next(x for x in issue["problems"] if x["code"] == "reschedule_leftover")
+    assert prob["partners"] == [live.id]
+    assert prob["destructive"] is True, "it cancels a real series; the UI must escalate"
+
+    # The running series is the keeper by definition and is never the thing
+    # offered for cancelling.
+    assert "reschedule_leftover" not in _codes(_issue_for(report, live.id))
+    db.close()
+
+
+def test_a_paused_copy_on_the_same_day_stays_a_duplicate(made):
+    """Same day is 'entered twice', a different day is 'they moved'. Two
+    different sentences to the office, and a series is never asked about
+    under both."""
+    db = SessionLocal()
+    c = _mk_client(db, made)
+    p = _mk_prop(db, made, c.id)
+    _mk_sched(db, made, c.id, property_id=p.id, days=(1,))
+    twin = _mk_sched(db, made, c.id, property_id=p.id, days=(1,), active=False)
+
+    codes = _codes(_issue_for(audit_series(db, None), twin.id))
+    assert "duplicate_paused" in codes
+    assert "reschedule_leftover" not in codes
+    db.close()
+
+
+def test_a_weekly_and_a_monthly_series_for_one_client_are_left_alone(made):
+    """A client can legitimately have a weekly clean and a monthly deep clean.
+    Offering to cancel one of those would be worse than saying nothing, which
+    is why the key still has to match on frequency and interval."""
+    db = SessionLocal()
+    c = _mk_client(db, made)
+    p = _mk_prop(db, made, c.id)
+    _mk_sched(db, made, c.id, property_id=p.id, days=(1,))
+    monthly = _mk_sched(db, made, c.id, property_id=p.id, days=(4,), active=False)
+    monthly.interval_weeks = 4
+    db.commit()
+
+    assert "reschedule_leftover" not in _codes(_issue_for(audit_series(db, None), monthly.id))
+    db.close()
+
+
+def test_no_property_is_offered_when_the_client_has_two_houses(made):
+    """Only when it is unambiguous. Sending a cleaner to the wrong house is
+    worse than making the office pick, so a second property withdraws the
+    one-tap fix and leaves the finding (which is still a real error)."""
+    db = SessionLocal()
+    c = _mk_client(db, made)
+    _mk_prop(db, made, c.id)
+    _mk_prop(db, made, c.id)
+    s = _mk_sched(db, made, c.id, property_id=None)
+    issue = _issue_for(audit_series(db, None), s.id)
+    prob = next(p_ for p_ in issue["problems"] if p_["code"] == "no_property")
+    assert prob["severity"] == "error"
+    assert "suggest_property_id" not in prob, "two houses: the office chooses"
     db.close()
 
 

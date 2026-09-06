@@ -296,6 +296,50 @@ def _group_paused_duplicates(rows: List[RecurringSchedule], today) -> List[List[
     return groups
 
 
+def _group_reschedule_leftovers(rows: List[RecurringSchedule], today) -> Dict[int, dict]:
+    """Paused series that a LIVE one appears to have replaced on another day.
+
+    `_group_paused_duplicates` keys on day-of-week, by design: two series on
+    the SAME day at the same time are one booking entered twice. The commoner
+    real mess is the other shape — the office moved a client from Friday to
+    Tuesday, the Tuesday series went live, and the Friday one was PAUSED
+    instead of cancelled, keeping whatever visits were already booked on it.
+    Same client, same cadence, different day: invisible to a day-keyed bucket,
+    and it went unreported until the owner spotted two Sandra Foxes by eye.
+
+    Keyed WITHOUT the day and without the time, because a move can change the
+    slot as well as the weekday. Frequency and interval must still match — a
+    client who legitimately has a weekly clean and a monthly deep clean differs
+    there, and offering to cancel one of those would be worse than silence.
+
+    Only the PAUSED side is ever returned: the running series is the keeper by
+    definition, and there is no "which do I keep" question to put to anybody.
+    """
+    live_by_key: Dict[tuple, list] = {}
+    paused: List[tuple] = []
+    for s in rows:
+        if getattr(s, "cancelled_at", None):
+            continue                      # decided; not a to-do
+        key = (s.client_id, s.property_id, (s.frequency or ""),
+               int(s.interval_weeks or 1))
+        if _is_live(s, today):
+            live_by_key.setdefault(key, []).append(s)
+        elif not s.active:
+            paused.append((key, s))
+
+    out: Dict[int, dict] = {}
+    for key, s in paused:
+        mine = _effective_days(s.days_of_week, s.day_of_week, s.frequency)
+        others = [
+            l for l in live_by_key.get(key, [])
+            if _effective_days(l.days_of_week, l.day_of_week, l.frequency) != mine
+        ]
+        if others:
+            out[s.id] = {"live": [l.id for l in others],
+                         "live_cadence": _cadence_text(others[0])}
+    return out
+
+
 def audit_series(db: Session, org_id: Optional[int]) -> dict:
     """Full health scan of the org's recurring series. Every problem carries a
     code, a human message, a suggested fix, and a ``destructive`` flag (the UI
@@ -352,6 +396,27 @@ def audit_series(db: Session, org_id: Optional[int]) -> dict:
             .group_by(Job.recurring_schedule_id)
             .all()
         )
+
+    # For a series with no property: the client's own property, when they have
+    # exactly ONE. That turns the fix from "open the series and hunt for the
+    # field" into one tap. One query for the whole scan rather than one per
+    # series (brightbase-economy), and deliberately silent when a client has
+    # two — sending a cleaner to the wrong house beats making the office pick.
+    suggest: Dict[int, tuple] = {}
+    unlinked_clients = {s.client_id for s in rows if s.client_id and not s.property_id}
+    if unlinked_clients:
+        by_client: Dict[int, list] = {}
+        for p in (db.query(Property)
+                  .filter(Property.client_id.in_(unlinked_clients),
+                          or_(Property.active.is_(True), Property.active.is_(None)))
+                  .all()):
+            by_client.setdefault(p.client_id, []).append(p)
+        for cid, props in by_client.items():
+            if len(props) == 1:
+                only = props[0]
+                suggest[cid] = (only.id, only.name or only.address or f"property {only.id}")
+
+    leftovers = _group_reschedule_leftovers(rows, today)
 
     dup_groups = _group_live_duplicates(rows, today)
     in_dup_group = {sid for g in dup_groups for sid in g}
@@ -422,6 +487,21 @@ def audit_series(db: Session, org_id: Optional[int]) -> dict:
                 "stranded": stranded,
             })
 
+        # Not folded into duplicate_paused: that one is "the same booking
+        # twice", this one is "the day they moved off". Different question to
+        # the office, different sentence. in_paused_dup wins if somehow both
+        # match, so a series is never asked about twice.
+        if s.id in leftovers and s.id not in in_paused_dup:
+            moved = leftovers[s.id]
+            problems.append({
+                "code": "reschedule_leftover", "severity": "warn", "destructive": True,
+                "message": ("Paused, while a live series for this client runs "
+                            f"{moved['live_cadence']} — this looks like the day "
+                            "they moved off."),
+                "suggestion": ("\u26a0\ufe0f Check it's the old one, then cancel it and take "
+                               "its booked visits off the calendar (history is kept)."),
+                "partners": moved["live"],
+            })
         if s.id in in_paused_dup:
             group = in_paused_dup[s.id]
             others = [p for p in group["paused"] if p != s.id]
@@ -499,10 +579,22 @@ def audit_series(db: Session, org_id: Optional[int]) -> dict:
                 "suggestion": "Relink the series to the client's current property.",
             })
         elif not s.property_id:
+            # Was severity `info`, worded as though the only cost were that
+            # "visits inherit only the free-text address". It is not cosmetic:
+            # Job.property_id is NOT NULL and every occurrence copies it off
+            # the schedule, so a series with no property generates NOTHING —
+            # each insert trips the constraint and is swallowed as a duplicate.
+            # The visits already booked run out and no more are made. That is
+            # an error, and the scan now says which house to attach.
+            hint = suggest.get(s.client_id)
             problems.append({
-                "code": "no_property", "severity": "info", "destructive": False,
-                "message": "Not linked to a property (visits inherit only the free-text address).",
-                "suggestion": "Link it to the client's property so visits, photos and access details connect.",
+                "code": "no_property", "severity": "error", "destructive": False,
+                "message": ("Not linked to a property — this series can't create "
+                            "visits at all, and fails silently when it tries."),
+                "suggestion": ("Link it to the client's property; nothing new is "
+                               "generated until you do."),
+                **({"suggest_property_id": hint[0],
+                    "suggest_property_label": hint[1]} if hint else {}),
             })
         # "Leftover" means nobody ever decided this series was over — it just
         # stopped. A series that was CANCELLED, or that reached a recorded end
