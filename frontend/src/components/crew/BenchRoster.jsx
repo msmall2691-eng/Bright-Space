@@ -133,7 +133,10 @@ export default function CrewFiles() {
         )}
         {t.form_1099_due > 0 && (
           <span className="text-ink-3">
-            {t.form_1099_due} over $600 this year
+            {/* The figure comes from the payload, never a literal here: it was
+                $600 until the 2026 tax year and is inflation-indexed after
+                2026, so a number typed into the UI goes stale silently. */}
+            {t.form_1099_due} over ${(people[0]?.form_1099_threshold ?? 2000).toLocaleString()} this year
           </span>
         )}
       </div>

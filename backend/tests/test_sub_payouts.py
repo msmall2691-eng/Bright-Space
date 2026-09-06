@@ -71,7 +71,8 @@ def _mk_sub(ids, name="A Sub", org_id=1):
 
 
 def _mk_job(ids, *, cleaner_ids, agreed_rate=None, when=IN_PERIOD,
-            status="completed", org_id=1, title="Weekly clean"):
+            status="completed", org_id=1, title="Weekly clean",
+            agreed_cleaner_id=None):
     db = SessionLocal()
     tag = uuid.uuid4().hex[:6]
     c = Client(name=f"Payout {tag}", status="active", org_id=org_id)
@@ -81,7 +82,8 @@ def _mk_job(ids, *, cleaner_ids, agreed_rate=None, when=IN_PERIOD,
     db.add(p); db.commit(); db.refresh(p); ids["properties"].append(p.id)
     j = Job(client_id=c.id, property_id=p.id, job_type="residential", title=title,
             scheduled_date=when, status=status, cleaner_ids=list(cleaner_ids),
-            org_id=org_id, agreed_rate=agreed_rate)
+            org_id=org_id, agreed_rate=agreed_rate,
+            agreed_cleaner_id=agreed_cleaner_id)
     db.add(j); db.commit(); db.refresh(j); ids["jobs"].append(j.id)
     jid = j.id; db.close()
     return jid
@@ -171,19 +173,43 @@ def test_a_crew_id_with_no_login_is_reported_not_dropped(ids):
         _clear()
 
 
-def test_two_subs_on_one_job_are_each_owed_the_agreed_rate(ids):
-    """agreed_rate is the price of the job to each person who agreed to it.
+def test_only_the_sub_who_agreed_the_rate_is_owed_it(ids):
+    """The flat rate is the price ONE person agreed, and only they are owed it.
 
-    Both rows exist because UNIQUE is (user_id, job_id), not (job_id) — a
-    two-person job that paid one of them would be the more expensive bug.
+    THIS TEST USED TO ASSERT THE OPPOSITE — two cleaners, two payout rows,
+    $150 on a $75 job — reasoning that "a two-person job that paid one of them
+    would be the more expensive bug". That reasoning does not survive the
+    request-and-approve model: approval auto-declines every other pending
+    request and closes the offer (services/claim_approval.py), so a job can
+    never carry two APPROVED claims. There is no second sub who agreed to $75.
+
+    The two-cleaner job the product actually produces is one sub plus somebody
+    the office added, and that somebody is an hourly employee. The old
+    assertion pinned a state the system cannot reach while permitting the one
+    it can — a W-2 employee handed a vendor payout row that feeds a 1099.
     """
     _, cid_a = _mk_sub(ids, name="Sub A")
-    _, cid_b = _mk_sub(ids, name="Sub B")
-    _mk_job(ids, cleaner_ids=[cid_a, cid_b], agreed_rate=75.0)
+    _, cid_b = _mk_sub(ids, name="Helper B")
+    _mk_job(ids, cleaner_ids=[cid_a, cid_b], agreed_rate=75.0,
+            agreed_cleaner_id=cid_a)
     api = _api()
     try:
         out = _generate(api)
-        assert out["created"] == 2 and out["total"] == 150.0
+        assert out["created"] == 1, "the helper was cut a subcontractor payout"
+        assert out["total"] == 75.0, "a $75 job paid out more than $75"
+    finally:
+        _clear()
+
+
+def test_a_pre_106_row_with_one_cleaner_is_still_owed(ids):
+    """The unambiguous legacy case, so the identity check can't quietly stop
+    paying people whose jobs predate migration 106."""
+    _, cid = _mk_sub(ids, name="Legacy Sub")
+    _mk_job(ids, cleaner_ids=[cid], agreed_rate=140.0, agreed_cleaner_id=None)
+    api = _api()
+    try:
+        out = _generate(api)
+        assert out["created"] == 1 and out["total"] == 140.0
     finally:
         _clear()
 

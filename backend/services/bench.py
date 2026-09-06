@@ -51,6 +51,30 @@ from utils.dates import business_date, business_today, coerce_date
 HISTORY_DAYS = 90
 
 
+def form_1099_threshold(year: int) -> float:
+    """The 1099-NEC reporting threshold for payments made in `year`.
+
+    This was hard-coded at $600, which was correct until it wasn't. The One
+    Big Beautiful Bill Act raised the section 6041(a) threshold to $2,000 for
+    payments made after 31 December 2025, and indexes it for inflation for
+    years after 2026 (IRS, Instructions for Forms 1099-MISC and 1099-NEC).
+
+    Taken as a function of the year rather than a constant because it is now a
+    number that MOVES, and because a year-to-date figure for 2025 and one for
+    2026 are measured against different lines. The inflation indexing after
+    2026 is not modelled — there is no published figure to model yet, so this
+    reports the statutory base and will need the real number each January.
+
+    Two things this deliberately does NOT do. It does not gate what is
+    TRACKED: the per-sub running total is kept regardless of where the filing
+    line sits, because the line moves and the total is what you need either
+    way. And it says nothing about STATE thresholds, which did not all follow
+    the federal one — Maine's is a question for an accountant, not for this
+    file.
+    """
+    return 2000.0 if year >= 2026 else 600.0
+
+
 def _crew_key(job) -> list:
     """Job.cleaner_ids is JSON, so this joins in memory rather than in SQL.
 
@@ -66,6 +90,7 @@ def build(db: Session, org_id: int) -> dict:
     today = business_today()
     since = today - timedelta(days=HISTORY_DAYS)
 
+    threshold = form_1099_threshold(today.year)
     base = roster(db, org_id)
     people = base["crew"]
     by_crew = {p["cleaner_id"]: p for p in people if p.get("cleaner_id")}
@@ -111,9 +136,8 @@ def build(db: Session, org_id: int) -> dict:
 
     # ── money, this calendar year ──────────────────────────────────────────
     #
-    # Not a vanity number: the 1099-NEC threshold is $600 and it is crossed
-    # mid-year, not in January. Void rows are excluded — a voided payout was
-    # never money.
+    # Not a vanity number: the 1099-NEC threshold is crossed mid-year, not in
+    # January. Void rows are excluded — a voided payout was never money.
     paid: dict = {}
     for p in (db.query(SubPayout)
               .filter(or_(SubPayout.org_id == org_id, SubPayout.org_id.is_(None)),
@@ -138,7 +162,8 @@ def build(db: Session, org_id: int) -> dict:
         p["paid_ytd"] = round(paid.get(p["user_id"], 0.0), 2)
         # The 1099 you will owe them. Surfaced where you look at the person,
         # not in January when it is a scramble.
-        p["form_1099_due"] = p["paid_ytd"] >= 600
+        p["form_1099_due"] = p["paid_ytd"] >= threshold
+        p["form_1099_threshold"] = threshold
 
     return {
         "people": people,
