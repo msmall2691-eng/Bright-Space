@@ -17,7 +17,7 @@
  */
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Check, FileUp, ShieldCheck } from 'lucide-react'
-import { get, post } from '../../api'
+import { get, post, upload as uploadFile } from '../../api'
 import { toast } from '../../utils/toastBus'
 
 /** Dot + word, per the design language — never a filled pill. */
@@ -110,9 +110,15 @@ export default function CrewMyFile({ bare = false }) {
       const form = new FormData()
       form.append('file', f)
       if (expiresAt) form.append('expires_at', expiresAt)
+      // uploadFile, NOT post: post() does JSON.stringify(body) and forces
+      // Content-Type: application/json, and JSON.stringify(new FormData()) is
+      // "{}" — so every W-9 and every certificate of insurance reached a
+      // multipart endpoint as an empty JSON object and 422'd. Every time, for
+      // everyone. can_take_jobs is derived from these documents, so nobody
+      // recruited after the vetting gate could ever ask for a job.
       // The POST returns the refreshed file, so there's no second request to
       // find out what changed.
-      setFile(await post(`/api/crew/my-file/${kind}`, form))
+      setFile(await uploadFile(`/api/crew/my-file/${kind}`, form))
       toast.success('Sent to the office')
     } catch (e) {
       toast.error(e?.detail || e?.message || 'Could not upload that')

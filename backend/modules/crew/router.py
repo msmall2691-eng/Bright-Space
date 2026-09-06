@@ -387,8 +387,19 @@ def my_day(
     # customer's phone stay hidden until the job is actually theirs: an open
     # listing is an offer, not a work order, and gate codes don't belong on
     # every phone in the crew.
+    # THE BOARD IS FOR PEOPLE CLEARED TO WORK. Approving an application mints
+    # a login, not clearance (modules/apply/router.py) — so without this gate a
+    # stranger who filled in the public form and set a password saw every
+    # posted job the moment they were approved, with no insurance, no signed
+    # agreement and no W-9 on file. The same gate claim_job enforces below;
+    # showing work somebody cannot legally take was only ever going to produce
+    # a 403 anyway, and it did it after exposing the listing.
+    from services.sub_vetting import blocking_requirements
+    cleared = not blocking_requirements(db, current_user)
+
     open_jobs = []
-    open_job_ids = [j.id for j in jobs if getattr(j, "open_for_claims", False)
+    open_job_ids = [j.id for j in jobs if cleared
+                    and getattr(j, "open_for_claims", False)
                     and j.status == "scheduled"]
     my_requests_by_job = {
         r.job_id: r
@@ -398,17 +409,35 @@ def my_day(
         ).all()
     }
     for j in jobs:
+        if not cleared:
+            break
         if not getattr(j, "open_for_claims", False) or j.status != "scheduled":
             continue
         if current_user.cleaner_id in (j.cleaner_ids or []):
             continue
         row = _job_row(j, names, current_user.cleaner_id,
                        my_claim_request=my_requests_by_job.get(j.id))
+        # An offer says enough to bid on and no more. The house internals were
+        # always stripped; the CUSTOMER'S IDENTITY was not, and it should have
+        # been. Whose house it is stops being the bidder's business until they
+        # have actually won the job — the customer agreed to a cleaning
+        # company in their home, not to their name and street address being
+        # circulated to whoever is currently on the bench.
+        #
+        # Town plus the size of the place is what a sub needs to judge the
+        # drive and the hours. `area` is built here rather than in _job_row so
+        # the assigned path keeps the real address it needs.
+        prop = getattr(j, "property", None)
+        area = " ".join(x for x in [getattr(prop, "city", None),
+                                    getattr(prop, "state", None)] if x) or None
         row.update({"open": True, "house_code": None, "access_notes": None,
                     "parking_notes": None, "can_text_client": False,
                     "checklist_template": None, "turnover_line": "",
                     "notes": None, "wifi_ssid": None, "wifi_password": None,
-                    "house_notes": []})   # offers carry no house internals
+                    "house_notes": [],
+                    "address": None, "client_name": None,
+                    "property_name": None, "teammates": [],
+                    "area": area})       # offers carry no house internals
         open_jobs.append(row)
 
     return {

@@ -32,7 +32,34 @@ class _Cleaner:
         self.cleaner_id = cleaner_id
 
 
+def _vet(uid, org_id=1):
+    """Give a stub cleaner a complete vetting file.
+
+    my_day's open-jobs board is gated on `blocking_requirements` — approving an
+    application mints a login, not clearance, so an unvetted account gets an
+    empty board. A test about what an OPEN LISTING hides therefore has to be
+    about somebody cleared to work, or there is no listing to inspect. The gate
+    itself is the subject of tests/test_job_claims.py.
+    """
+    from datetime import timedelta
+    from database.models import SubAgreement, SubDocument
+    from services.sub_vetting import CURRENT_AGREEMENT_VERSION
+    from utils.dates import business_today
+
+    db = SessionLocal()
+    db.query(SubDocument).filter(SubDocument.user_id == uid).delete(synchronize_session=False)
+    db.query(SubAgreement).filter(SubAgreement.user_id == uid).delete(synchronize_session=False)
+    db.add(SubAgreement(org_id=org_id, user_id=uid, version=CURRENT_AGREEMENT_VERSION,
+                        accepted_at=business_today()))
+    db.add(SubDocument(org_id=org_id, user_id=uid, kind="w9", status="accepted", data=b"x"))
+    db.add(SubDocument(org_id=org_id, user_id=uid, kind="coi", status="accepted", data=b"x",
+                       expires_at=business_today() + timedelta(days=365)))
+    db.commit(); db.close()
+
+
 def _as(user):
+    if getattr(user, "role", None) == "cleaner":
+        _vet(user.id)
     app.dependency_overrides[get_current_user] = lambda: user
     app.dependency_overrides[current_org_id] = lambda: 1
     return TestClient(app)

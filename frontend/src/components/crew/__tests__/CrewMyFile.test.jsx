@@ -11,12 +11,12 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { render, screen, cleanup, fireEvent, waitFor } from '@testing-library/react'
 
-vi.mock('../../../api', () => ({ get: vi.fn(), post: vi.fn() }))
+vi.mock('../../../api', () => ({ get: vi.fn(), post: vi.fn(), upload: vi.fn() }))
 vi.mock('../../../utils/toastBus', () => ({
   toast: { success: vi.fn(), error: vi.fn(), info: vi.fn() },
 }))
 
-import { get, post } from '../../../api'
+import { get, post, upload } from '../../../api'
 import CrewMyFile from '../CrewMyFile'
 
 const INCOMPLETE = {
@@ -95,4 +95,47 @@ it('says nothing changed when the file cannot be loaded', async () => {
   get.mockRejectedValue(new Error('offline'))
   render(<CrewMyFile bare />)
   expect(await screen.findByText(/Nothing has changed/)).toBeTruthy()
+})
+
+
+// ── The upload had to be a multipart POST, and wasn't ───────────────────────
+// It went through post(), which does JSON.stringify(body) and forces
+// Content-Type: application/json. JSON.stringify(new FormData()) is "{}", so
+// every W-9 and every certificate reached a multipart endpoint as an empty
+// JSON object and 422'd — for everyone, every time. Nothing downstream could
+// work: can_take_jobs is derived from these documents, so no subcontractor
+// recruited after the vetting gate could ever ask for a job.
+//
+// The old test mocked `post` and asserted it was called, which is exactly why
+// this passed CI while being completely broken in a browser. It now asserts
+// the helper that actually sends multipart, and that a FormData carrying the
+// real file is what reaches it.
+describe('the document upload actually sends the file', () => {
+  beforeEach(() => {
+    get.mockResolvedValue(INCOMPLETE)
+    upload.mockResolvedValue(INCOMPLETE)
+    post.mockResolvedValue(INCOMPLETE)
+  })
+  afterEach(cleanup)
+
+  it('posts multipart via upload(), never JSON via post()', async () => {
+    const { container } = render(<CrewMyFile />)
+    await screen.findByText('Certificate of insurance')
+
+    const input = container.querySelector('input[type="file"]')
+    expect(input).toBeTruthy()
+    const file = new File(['pretend-pdf'], 'coi.pdf', { type: 'application/pdf' })
+    fireEvent.change(input, { target: { files: [file] } })
+
+    await waitFor(() => expect(upload).toHaveBeenCalled())
+
+    const [url, body] = upload.mock.calls[0]
+    expect(url).toContain('/api/crew/my-file/')
+    expect(body).toBeInstanceOf(FormData)
+    expect(body.get('file')).toBe(file)
+
+    // The precise regression: a FormData handed to post() serializes to "{}".
+    expect(post).not.toHaveBeenCalledWith(
+      expect.stringContaining('/api/crew/my-file/'), expect.any(FormData))
+  })
 })

@@ -11,12 +11,12 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { render, screen, cleanup, fireEvent, waitFor } from '@testing-library/react'
 
-vi.mock('../../api', () => ({ get: vi.fn(), post: vi.fn() }))
+vi.mock('../../api', () => ({ get: vi.fn(), post: vi.fn(), download: vi.fn() }))
 vi.mock('../../utils/toastBus', () => ({
   toast: { success: vi.fn(), error: vi.fn(), info: vi.fn() },
 }))
 
-import { get, post } from '../../api'
+import { download, get, post } from '../../api'
 import SubFileReview from '../SubFileReview'
 
 const FILE = {
@@ -90,9 +90,21 @@ it('an already-accepted document offers no second Accept', async () => {
   expect(screen.getAllByRole('button', { name: /Accept/ })).toHaveLength(1)
 })
 
-it('links to the document itself rather than making her guess', async () => {
+it('fetches the document with the session token rather than opening a blank 401', async () => {
+  // The intent here was always right — she must be able to SEE the certificate
+  // before accepting it. The mechanism was not: this was an <a href target=
+  // "_blank">, and a new tab carries no Authorization header, so the document
+  // endpoint (require_role admin/manager, behind APIKeyMiddleware) answered
+  // 401 into an empty tab. Every COI on this screen was Accepted unseen, which
+  // is the exact failure the vetting file exists to prevent. The old test
+  // asserted the href and the target, so it pinned the broken mechanism in
+  // place instead of the outcome.
   await open()
-  const link = screen.getAllByRole('link', { name: /View/ })[0]
-  expect(link.getAttribute('href')).toBe('/api/auth/users/7/file/w9/download')
-  expect(link.getAttribute('target')).toBe('_blank')
+  download.mockResolvedValue(undefined)
+  fireEvent.click(screen.getAllByRole('button', { name: /View/ })[0])
+  await waitFor(() => expect(download).toHaveBeenCalled())
+  expect(download.mock.calls[0][0]).toBe('/api/auth/users/7/file/w9/download')
+  // And it names the file, because these land in a downloads folder next to
+  // other people's tax forms.
+  expect(download.mock.calls[0][1]).toBeTruthy()
 })

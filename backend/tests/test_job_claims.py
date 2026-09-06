@@ -247,3 +247,73 @@ def test_office_unassign_clears_stale_response(ids):
         assert [x.cleaner_id for x in rows] == []
     finally:
         _clear()
+
+
+# ── The board is for people cleared to work (Sep 2026) ───────────────────────
+# my_day required role="cleaner" and nothing else, so approving an application
+# — which mints a login, NOT clearance — handed a stranger the open-jobs board
+# the moment they set a password: no insurance, no signed agreement, no W-9.
+# And an offer carried the customer's NAME and STREET ADDRESS. Gate codes and
+# WiFi were correctly stripped; whose house it is was not.
+
+def _unvetted(uid, cleaner_id):
+    """A cleaner login with an empty file — exactly what Approve produces."""
+    from database.models import SubAgreement, SubDocument
+    db = SessionLocal()
+    db.query(SubDocument).filter(SubDocument.user_id == uid).delete(synchronize_session=False)
+    db.query(SubAgreement).filter(SubAgreement.user_id == uid).delete(synchronize_session=False)
+    db.commit(); db.close()
+    who = _Cleaner(uid, cleaner_id)
+    app.dependency_overrides[get_current_user] = lambda: who
+    app.dependency_overrides[current_org_id] = lambda: 1
+    return TestClient(app)
+
+
+def test_an_unvetted_account_sees_no_open_jobs_at_all(ids):
+    jid = _mk_job(ids, [], open_for_claims=True)
+    api = _unvetted(9971, "CT-971")
+    try:
+        body = api.get("/api/crew/my-day?days=14").json()
+        assert body["open_jobs"] == [], \
+            "approval is a login, not clearance — the board waits for the file"
+    finally:
+        _clear()
+
+    # Control: the SAME job is on the board for somebody who is cleared, so the
+    # assertion above is about the vetting gate and not about a fixture that
+    # never produced an open job.
+    api = _as(_Cleaner(9972, "CT-972"))
+    try:
+        open_ids = [r["id"] for r in api.get("/api/crew/my-day?days=14").json()["open_jobs"]]
+        assert jid in open_ids
+    finally:
+        _clear()
+
+
+def test_an_offer_names_the_town_not_the_customer(ids):
+    """Town and the size of the place is enough to judge the drive and the
+    hours. Whose house it is stops being the bidder's business until they have
+    won it — the customer agreed to a cleaning company in their home, not to
+    their name and address circulating around the bench."""
+    jid = _mk_job(ids, [], open_for_claims=True)
+    db = SessionLocal()
+    j = db.query(Job).filter(Job.id == jid).first()
+    p = db.query(Property).filter(Property.id == j.property_id).first()
+    p.city, p.state = "Scarborough", "ME"
+    db.commit(); db.close()
+
+    api = _as(_Cleaner(9973, "CT-973"))
+    try:
+        row = next(r for r in api.get("/api/crew/my-day?days=14").json()["open_jobs"]
+                   if r["id"] == jid)
+        assert row["address"] is None
+        assert row["client_name"] is None
+        assert row["property_name"] is None
+        assert row["area"] == "Scarborough ME", "town is what they get instead"
+        # Still the things a bid actually needs.
+        assert row["posted_rate"] == 80.0
+        assert row["scheduled_date"]
+        # And the house internals stay gone, as they always were.
+        assert row["house_code"] is None and row["access_notes"] is None
+    finally:
+        _clear()
