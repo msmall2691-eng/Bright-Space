@@ -20,6 +20,11 @@ const DISMISS_KEY = 'bb_crew_setup_dismissed'
 
 const CREW_CATEGORY_LABELS = {
   job_assignments: 'New jobs assigned to me',
+  // Separate from the line above, deliberately. Work you were GIVEN and work
+  // you could ASK FOR are different things here — a sub requests or accepts and
+  // is never assigned — so somebody can keep the job that's theirs and quieten
+  // the board without losing both.
+  open_jobs: 'New jobs on the board',
   office_messages: 'Messages from the office',
   time_off: 'Time-off decisions',
   digest: 'Morning digest',

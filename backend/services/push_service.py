@@ -36,7 +36,15 @@ logger = logging.getLogger(__name__)
 OFFICE_ROLES = ("admin", "manager", "viewer", "member")
 CREW_ROLES = ("cleaner",)
 OFFICE_NOTIFICATION_CATEGORIES: tuple[str, ...] = ("requests", "messages", "quotes", "crew")
-CREW_NOTIFICATION_CATEGORIES: tuple[str, ...] = ("job_assignments", "office_messages", "time_off", "digest")
+# "open_jobs" is separate from "job_assignments" on purpose, though the list is
+# otherwise kept short. Being OFFERED work and being GIVEN work are different
+# events here in a way that is legal rather than cosmetic — a sub requests or
+# accepts and is never assigned — and somebody may reasonably want the job that
+# is now theirs and not every posting they could bid on. Folding them together
+# would be the preferences screen blurring the one distinction the whole
+# arrangement rests on.
+CREW_NOTIFICATION_CATEGORIES: tuple[str, ...] = (
+    "job_assignments", "open_jobs", "office_messages", "time_off", "digest")
 
 
 def categories_for_role(role: Optional[str]) -> tuple[str, ...]:

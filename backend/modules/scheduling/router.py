@@ -3142,6 +3142,10 @@ def update_job(job_id: int, data: JobUpdate, db: Session = Depends(get_db), org_
     prev_job_type = job.job_type or "residential"
     prev_scheduled_date = job.scheduled_date
     prev_start_time = job.start_time
+    # Posting is a TRANSITION, not a state. A later edit that happens to send
+    # open_for_claims=True again on an already-posted job must not re-announce
+    # it to the whole bench.
+    prev_open_for_claims = bool(getattr(job, "open_for_claims", False))
     updates = data.model_dump(exclude_none=True)
     allow_conflicts = updates.pop("allow_conflicts", False)
     # Per-move notify override — pull it out before the setattr loop (it's not a
@@ -3305,6 +3309,19 @@ def update_job(job_id: int, data: JobUpdate, db: Session = Depends(get_db), org_
         if added_cleaners:
             from services.crew_notify import notify_job_assigned
             notify_job_assigned(db, job, sorted(added_cleaners))
+
+    # Posting a job announced itself to nobody. The bench found out by opening
+    # the app, which on a Friday afternoon means the Saturday work sits there.
+    # Event-driven at the write, post-commit, like the assignment push above —
+    # no tick (scheduling-invariants R1).
+    #
+    # Only on the false → true edge, and only to people whose file clears them
+    # to claim it: a push to somebody the claim endpoint would 403 is a
+    # notification with no possible outcome.
+    if (bool(getattr(job, "open_for_claims", False)) and not prev_open_for_claims
+            and job.status == "scheduled"):
+        from services.crew_notify import notify_jobs_posted
+        notify_jobs_posted(db, [job], org_id=job.org_id)
 
     # Auto-create a draft Invoice the first time a job lands on "completed".
     # Shared with complete_job() below — both are real "mark complete" paths

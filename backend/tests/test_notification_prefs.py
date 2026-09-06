@@ -111,8 +111,12 @@ def test_get_preferences_default_all_on_crew(ids):
         assert r.status_code == 200
     finally:
         _clear()
+    # open_jobs joined the set when posting a job started notifying the bench.
+    # It defaults ON like the rest, and — because the gate is opt-OUT (a missing
+    # key reads as true) — every existing crew member with prefs already stored
+    # gets it without a migration or a re-consent.
     assert r.json() == {
-        "job_assignments": True, "office_messages": True,
+        "job_assignments": True, "open_jobs": True, "office_messages": True,
         "time_off": True, "digest": True,
     }
 
