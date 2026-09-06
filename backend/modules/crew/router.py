@@ -3077,6 +3077,25 @@ def crew_files(db: Session = Depends(get_db), org_id: int = Depends(current_org_
     return roster(db, resolve_org_id(org_id, db))
 
 
+@router.get("/bench", dependencies=[Depends(require_role("admin", "manager"))])
+def crew_bench(db: Session = Depends(get_db), org_id: int = Depends(current_org_id)):
+    """The bench screen: who you have, whether they can work, what they've done.
+
+    /files answers "who owes me a document". This answers the question the
+    office actually opens the app with — "who have I got" — by hanging the work
+    history and the 1099 total off the same roster rows, so the file status and
+    the person are one screen instead of three.
+
+    One request draws it (brightbase-economy). See services/bench.py for what
+    is deliberately NOT counted: declines (the signed agreement says declining
+    is free) and punctuality from clock punches (control of hours is the
+    classification risk).
+    """
+    from services.bench import build
+
+    return build(db, resolve_org_id(org_id, db))
+
+
 @router.get("/unclaimed-ids", dependencies=[Depends(require_role("admin", "manager"))])
 def unclaimed_crew_ids(db: Session = Depends(get_db), org_id: int = Depends(current_org_id)):
     """Crew IDs already on upcoming jobs (Job.cleaner_ids) that no native user
