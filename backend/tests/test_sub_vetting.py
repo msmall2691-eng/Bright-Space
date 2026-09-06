@@ -203,8 +203,10 @@ def test_accepting_the_agreement_is_append_only(sub):
     db, uid = sub
     u = db.query(User).filter(User.id == uid).first()
     api = _as(_Cleaner(uid, u.cleaner_id))
-    api.post("/api/crew/my-file/agreement")
-    api.post("/api/crew/my-file/agreement")   # a second tap is not a second row
+    from services.sub_agreement import current
+    body = {"sha256": current()["sha256"]}
+    api.post("/api/crew/my-file/agreement", json=body)
+    api.post("/api/crew/my-file/agreement", json=body)   # a second tap is not a second row
     _clear()
 
     rows = db.query(SubAgreement).filter(SubAgreement.user_id == uid).all()
@@ -293,3 +295,66 @@ def test_both_tables_are_covered_by_row_level_security():
     from database.rls import TENANT_TABLES
     assert "sub_documents" in TENANT_TABLES
     assert "sub_agreements" in TENANT_TABLES
+
+
+# ── The agreement is a document now, not a version string ───────────────────
+# CURRENT_AGREEMENT_VERSION pointed at nothing: no text in the repo, no
+# endpoint serving one, no screen rendering one. Subs tapped "sign" on a
+# version number, while "a contract that defines the relationship" is one of
+# the criteria Maine's employment standard counts and one of the few this
+# business can satisfy outright.
+
+def test_the_current_version_has_text_behind_it():
+    """The structural guard. Bumping CURRENT_AGREEMENT_VERSION without adding
+    the matching file would put everyone back to signing nothing — silently,
+    because every other check here only compares version strings."""
+    from services.sub_agreement import current
+
+    a = current()
+    assert a["version"] == CURRENT_AGREEMENT_VERSION
+    assert len(a["sha256"]) == 64
+    assert len(a["text"]) > 2000, "a real agreement, not a placeholder"
+    # The things the arrangement actually rests on have to be in it.
+    low = a["text"].lower()
+    for phrase in ("independent contractor", "not an employee", "per job",
+                   "insurance", "w-9", "1099", "maine"):
+        assert phrase in low, f"the agreement never mentions {phrase!r}"
+
+
+def test_a_missing_version_raises_rather_than_signing_nothing():
+    from services.sub_agreement import AgreementMissing, load
+    with pytest.raises(AgreementMissing):
+        load("0000-00")
+
+
+def test_accepting_records_which_text_was_shown(sub):
+    db, uid = sub
+    u = db.query(User).filter(User.id == uid).first()
+    api = _as(_Cleaner(uid, u.cleaner_id))
+    try:
+        shown = api.get("/api/crew/my-file/agreement").json()
+        assert shown["version"] == CURRENT_AGREEMENT_VERSION
+        r = api.post("/api/crew/my-file/agreement", json={"sha256": shown["sha256"]})
+        assert r.status_code == 200, r.text
+    finally:
+        _clear()
+
+    row = db.query(SubAgreement).filter(SubAgreement.user_id == uid).first()
+    assert row.text_sha256 == shown["sha256"], \
+        "the version string was never proof; the hash of the bytes is"
+
+
+def test_accepting_text_the_server_no_longer_serves_is_refused(sub):
+    """A phone left open across a deploy is showing a different document from
+    the one on the server. Recording that as a signature would be recording a
+    signature against text nobody saw."""
+    db, uid = sub
+    u = db.query(User).filter(User.id == uid).first()
+    api = _as(_Cleaner(uid, u.cleaner_id))
+    try:
+        r = api.post("/api/crew/my-file/agreement", json={"sha256": "0" * 64})
+        assert r.status_code == 409
+        assert "updated" in r.json()["detail"].lower()
+    finally:
+        _clear()
+    assert db.query(SubAgreement).filter(SubAgreement.user_id == uid).count() == 0

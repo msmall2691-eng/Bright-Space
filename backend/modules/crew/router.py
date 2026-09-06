@@ -1022,8 +1022,31 @@ def my_file(db: Session = Depends(get_db),
     return vetting_status(db, current_user.id)
 
 
+@router.get("/my-file/agreement")
+def read_agreement(current_user: User = Depends(require_role("cleaner"))):
+    """The agreement text a sub is asked to accept, with its version and hash.
+
+    There was no such endpoint. The button said "Sign the subcontractor
+    agreement" and there was nothing anywhere to read — which mattered more
+    than a missing screen usually does, because "a contract that defines the
+    relationship" is one of the criteria Maine's employment standard counts,
+    and it was being asserted with no document behind it.
+    """
+    from services.sub_agreement import current
+    return current()
+
+
+class AgreementAccept(BaseModel):
+    # The hash of the text the phone actually rendered. Required: accepting is
+    # a statement about a document, and without this the server cannot tell
+    # whether the person read THIS version or one left on screen across a
+    # deploy. See services/sub_agreement.
+    sha256: str
+
+
 @router.post("/my-file/agreement")
-def accept_agreement(request: Request, db: Session = Depends(get_db),
+def accept_agreement(request: Request, body: AgreementAccept,
+                     db: Session = Depends(get_db),
                      org_id: int = Depends(current_org_id),
                      current_user: User = Depends(require_role("cleaner"))):
     """Accept the current subcontractor agreement.
@@ -1031,14 +1054,28 @@ def accept_agreement(request: Request, db: Session = Depends(get_db),
     Append-only: a second acceptance of the same version is a no-op rather than
     an update, because the value of this table is being able to say what
     somebody agreed to and when. Overwriting destroys exactly that.
+
+    The caller must echo the SHA-256 of the text it displayed. A mismatch means
+    the phone is showing a different document from the one on this server — a
+    stale tab across a deploy, most likely — and the honest answer is to refuse
+    and re-render rather than record a signature against text nobody saw.
     """
+    from services.sub_agreement import current
     from services.sub_vetting import (
         CURRENT_AGREEMENT_VERSION, has_current_agreement, vetting_status,
     )
+    agreement = current()
+    if body.sha256 != agreement["sha256"]:
+        raise HTTPException(
+            status_code=409,
+            detail="This agreement has been updated. Reopen it and read the "
+                   "current version before accepting.",
+        )
     if not has_current_agreement(db, current_user.id):
         db.add(SubAgreement(
             org_id=resolve_org_id(org_id, db), user_id=current_user.id,
             version=CURRENT_AGREEMENT_VERSION, accepted_at=_now_naive_utc(),
+            text_sha256=agreement["sha256"],
             # Best-effort provenance; behind Railway's proxy this is the
             # forwarded client address, and a missing one is not a reason to
             # refuse an acceptance.

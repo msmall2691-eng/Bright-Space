@@ -16,7 +16,7 @@
  * phone in a driveway is the actual user.
  */
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { Check, FileUp, ShieldCheck } from 'lucide-react'
+import { Check, FileText, FileUp, ShieldCheck } from 'lucide-react'
 import { get, post, upload as uploadFile } from '../../api'
 import { toast } from '../../utils/toastBus'
 
@@ -125,10 +125,38 @@ export default function CrewMyFile({ bare = false }) {
     } finally { setBusy(false) }
   }
 
+  // The agreement text, fetched only when they open it — it is ~8KB and most
+  // visits to this screen are about a document, not the contract.
+  const [agreement, setAgreement] = useState(null)
+  const [readToEnd, setReadToEnd] = useState(false)
+  const [openingAgreement, setOpeningAgreement] = useState(false)
+
+  const openAgreement = async () => {
+    setOpeningAgreement(true)
+    try {
+      setAgreement(await get('/api/crew/my-file/agreement'))
+      setReadToEnd(false)
+    } catch (e) {
+      toast.error(e?.detail || e?.message || 'Could not open the agreement')
+    } finally { setOpeningAgreement(false) }
+  }
+
+  // Enabled only once they have reached the bottom. Not friction for its own
+  // sake: this is the document the whole contractor arrangement rests on, and
+  // "I was never shown it" is the objection it exists to answer.
+  const onScroll = (e) => {
+    const el = e.currentTarget
+    if (el.scrollHeight - el.scrollTop - el.clientHeight < 24) setReadToEnd(true)
+  }
+
   const signAgreement = async () => {
+    if (!agreement) return
     setBusy(true)
     try {
-      setFile(await post('/api/crew/my-file/agreement', {}))
+      // Echo the hash of what was actually rendered. The server refuses a
+      // mismatch rather than recording a signature against text nobody saw.
+      setFile(await post('/api/crew/my-file/agreement', { sha256: agreement.sha256 }))
+      setAgreement(null)
       toast.success('Agreement signed')
     } catch (e) {
       toast.error(e?.detail || e?.message || 'Could not save that')
@@ -165,11 +193,39 @@ export default function CrewMyFile({ bare = false }) {
         </div>
       )}
 
-      {!file.agreement_accepted && (
-        <button type="button" onClick={signAgreement} disabled={busy}
+      {!file.agreement_accepted && !agreement && (
+        <button type="button" onClick={openAgreement} disabled={busy || openingAgreement}
           className="mt-3 w-full text-[13px] font-semibold bg-blue-600 hover:bg-blue-700 disabled:opacity-60 text-white py-2.5 rounded-lg transition-colors inline-flex items-center justify-center gap-1.5">
-          <Check className="w-4 h-4" /> Sign the subcontractor agreement
+          <FileText className="w-4 h-4" />
+          {openingAgreement ? 'Opening…' : 'Read the subcontractor agreement'}
         </button>
+      )}
+
+      {!file.agreement_accepted && agreement && (
+        <div className="mt-3">
+          <div onScroll={onScroll} data-testid="agreement-text"
+            className="max-h-[52vh] overflow-y-auto rounded-lg border border-hairline bg-bg-2/40 p-3
+                       text-[13px] leading-relaxed text-ink-2 whitespace-pre-wrap">
+            {agreement.text}
+          </div>
+          <p className="mt-2 flex items-center gap-1.5 text-[12px] text-ink-3">
+            <span className={`h-1.5 w-1.5 rounded-full shrink-0 ${readToEnd ? 'bg-emerald-500' : 'bg-amber-500'}`}
+              aria-hidden="true" />
+            {readToEnd
+              ? `Version ${agreement.version} — you've read to the end`
+              : 'Scroll to the end to accept'}
+          </p>
+          <div className="mt-2 flex gap-2">
+            <button type="button" onClick={signAgreement} disabled={busy || !readToEnd}
+              className="flex-1 text-[13px] font-semibold bg-blue-600 hover:bg-blue-700 disabled:opacity-40 text-white py-2.5 rounded-lg transition-colors inline-flex items-center justify-center gap-1.5">
+              <Check className="w-4 h-4" /> I agree
+            </button>
+            <button type="button" onClick={() => setAgreement(null)} disabled={busy}
+              className="text-[13px] font-medium text-ink-3 px-3 py-2.5 rounded-lg hover:bg-bg-2 transition-colors">
+              Not now
+            </button>
+          </div>
+        </div>
       )}
 
       <div className="mt-3 divide-y divide-hairline">
