@@ -58,11 +58,21 @@ EXPOSE 8000
 # Railway instance). Override via UVICORN_WORKERS env var if we ever need to
 # scale down (dev / staging).
 #
-# --proxy-headers --forwarded-allow-ips="*": without this, every request
-# behind Railway's edge proxy shows up as the SAME client IP (the proxy's),
-# so ratelimit.py's per-IP limiter (login, /api/intake/submit,
-# /api/booking/submit) was actually a GLOBAL cap — one busy day or one bot
-# could 429 real website leads for everyone. "*" is safe here because the
-# container is only ever reached through Railway's own proxy layer, never
-# directly from the internet.
-CMD ["sh", "-c", "uvicorn main:app --host 0.0.0.0 --port ${PORT:-8000} --workers ${UVICORN_WORKERS:-4} --proxy-headers --forwarded-allow-ips=\"*\""]
+# --proxy-headers --forwarded-allow-ips="*": without this, every request behind
+# Railway's edge proxy shows up as the SAME client IP (the proxy's), so
+# ratelimit.py's per-IP limiter (login, /api/intake/submit, /api/booking/submit)
+# was actually a GLOBAL cap — one busy day or one bot could 429 real website
+# leads for everyone. "*" rather than a CIDR because Railway's proxy address is
+# not fixed and Railway does not publish a range.
+#
+# What "*" costs: it sets always_trust in uvicorn's ProxyHeadersMiddleware, and
+# request.client.host then becomes the LEFTMOST X-Forwarded-For entry, which the
+# caller writes. So it must never be the rate-limit key — ratelimit.client_ip()
+# charges the LAST entry, the one Railway appended (#770). Anything else that
+# reaches for a client address here needs the same treatment.
+#
+# export UVICORN_WORKERS: the app divides every rate-limit cap by the worker
+# count, because the counters live in one process (ratelimit.WORKERS). Exporting
+# the resolved value means uvicorn and the app read one number instead of the
+# app guessing at the shell default.
+CMD ["sh", "-c", "export UVICORN_WORKERS=${UVICORN_WORKERS:-4}; uvicorn main:app --host 0.0.0.0 --port ${PORT:-8000} --workers $UVICORN_WORKERS --proxy-headers --forwarded-allow-ips=\"*\""]
