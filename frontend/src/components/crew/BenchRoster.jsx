@@ -1,5 +1,13 @@
 /**
- * Who owes you a document, and what's sitting waiting for you to accept it.
+ * The bench: everyone who can work for you, and whether they actually can.
+ *
+ * Modelled on what Turno puts in front of a host — the person, their badges,
+ * their history — because the alternative was what this app had: applications
+ * in Settings > Users, document review nested in a disclosure on a staff row,
+ * the weekly digest on the Ops Board. Three places, none of which answered
+ * "who have I got".
+ *
+ * Grew out of the crew-files panel, which answered only the first half:
  *
  * The office's real question was never "is this one person cleared" — it's
  * "who still owes me something". Before this you could only ask it one person
@@ -18,7 +26,13 @@
  * blocked, and they still owe you documents. Collapsing that into one green
  * tick is how an uninsured person ends up in a customer's house.
  *
- * REQUEST ECONOMY: one GET for the whole roster; accepting returns the
+ * WHAT THE WORK LINE DELIBERATELY DOES NOT SAY: nothing about declines, and
+ * nothing about punctuality. The agreement they signed says declining a job is
+ * free (section 2), and timing a contractor's arrival is supervision of hours.
+ * Both are explained in services/bench.py — this is the screen that would make
+ * either one tempting, so the reason lives next to the temptation.
+ *
+ * REQUEST ECONOMY: one GET draws the whole screen; accepting returns the
  * refreshed file so a decision costs one call, not two.
  */
 import { useCallback, useEffect, useState } from 'react'
@@ -58,7 +72,7 @@ export default function CrewFiles() {
 
 
   const load = useCallback(() => {
-    get('/api/crew/files')
+    get('/api/crew/bench')
       .then(r => { setData(r); setError(false) })
       .catch(() => setError(true))
   }, [])
@@ -90,11 +104,13 @@ export default function CrewFiles() {
     )
   }
   if (!data) return <div className="h-24 animate-pulse rounded-xl bg-bg-2" aria-hidden="true" />
-  if (!data.crew.length) return null
+  const people = data.people || []
+  if (!people.length) return null
 
-  const waiting = data.crew.filter(c => c.awaiting_review.length)
-  const owing = data.crew.filter(c => !c.awaiting_review.length && !c.complete)
-  const done = data.crew.filter(c => c.complete)
+  const t = data.totals || {}
+  const waiting = people.filter(c => c.awaiting_review.length)
+  const owing = people.filter(c => !c.awaiting_review.length && !c.complete)
+  const done = people.filter(c => c.complete)
 
   return (
     <div className="space-y-4">
@@ -102,14 +118,22 @@ export default function CrewFiles() {
       <div className="flex flex-wrap items-center gap-x-5 gap-y-1 text-[13px]">
         <span className="inline-flex items-center gap-1.5 text-ink-2">
           <span className={`h-1.5 w-1.5 rounded-full ${
-            data.awaiting_review ? 'bg-amber-500' : 'bg-emerald-500'}`} aria-hidden="true" />
-          {data.awaiting_review
-            ? `${data.awaiting_review} document${data.awaiting_review === 1 ? '' : 's'} waiting for you`
+            t.awaiting_review ? 'bg-amber-500' : 'bg-emerald-500'}`} aria-hidden="true" />
+          {t.awaiting_review
+            ? `${t.awaiting_review} document${t.awaiting_review === 1 ? '' : 's'} waiting for you`
             : 'Nothing waiting for you'}
         </span>
-        {data.incomplete > 0 && (
+        <span className="text-ink-3">
+          {t.can_work} of {t.people} can take work
+        </span>
+        {t.incomplete > 0 && (
           <span className="text-ink-3">
-            {data.incomplete} {data.incomplete === 1 ? 'person' : 'people'} still owe documents
+            {t.incomplete} still {t.incomplete === 1 ? 'owes' : 'owe'} documents
+          </span>
+        )}
+        {t.form_1099_due > 0 && (
+          <span className="text-ink-3">
+            {t.form_1099_due} over $600 this year
           </span>
         )}
       </div>
@@ -134,6 +158,7 @@ export default function CrewFiles() {
             <div className="divide-y divide-hairline rounded-lg border border-hairline">
               {list.map(person => (
                 <Person key={person.user_id} person={person} busy={busy}
+                  onView={(doc) => viewDoc(person.user_id, doc)}
                   onAccept={(kind) => review(person.user_id, kind, 'accepted')}
                   onSendBack={(kind) => sendBack(person.user_id, kind)} />
               ))}
@@ -144,7 +169,7 @@ export default function CrewFiles() {
   )
 }
 
-function Person({ person, busy, onAccept, onSendBack }) {
+function Person({ person, busy, onAccept, onSendBack, onView }) {
   return (
     <div className="px-3 py-2.5">
       <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
@@ -158,6 +183,8 @@ function Person({ person, busy, onAccept, onSendBack }) {
               : 'Can’t take work yet'}
         </span>
       </div>
+
+      <WorkLine person={person} />
 
       {person.missing.length > 0 && (
         <ul className="mt-1 space-y-0.5">
@@ -187,7 +214,7 @@ function Person({ person, busy, onAccept, onSendBack }) {
                   {/* download(), not <a href>: a new tab sends no Authorization
                       header, so this was a 401 in a blank tab. */}
                   <button type="button"
-                    onClick={() => viewDoc(person.user_id, doc)}
+                    onClick={() => onView(doc)}
                     className="inline-flex items-center gap-1 rounded-md border border-hairline-2 bg-panel px-2 py-1 text-[11px] font-medium text-ink-2 transition-colors hover:bg-bg-2">
                     <ExternalLink className="h-3 w-3" /> View
                   </button>
@@ -210,6 +237,55 @@ function Person({ person, busy, onAccept, onSendBack }) {
         </div>
       )}
     </div>
+  )
+}
+
+/** What they've actually done, in plain numbers.
+ *
+ * Outcome-shaped on purpose. "12 jobs, 11 finished on the day" is something a
+ * customer of a business may fairly look at; "arrived 6 minutes late twice"
+ * is a supervisor looking at an employee's hours, and that difference is the
+ * whole classification argument (see services/bench.py).
+ *
+ * "on the day" is a count beside the total, never a lone percentage — 1 of 1
+ * is 100% and tells you nothing about a person who has done one job.
+ */
+function WorkLine({ person }) {
+  const w = person.work || {}
+  const bits = []
+  if (w.completed) {
+    bits.push(`${w.completed} ${w.completed === 1 ? 'job' : 'jobs'} in the last ${w.history_days} days`)
+    bits.push(`${w.on_day} finished on the day`)
+  }
+  if (w.upcoming) bits.push(`${w.upcoming} coming up`)
+  if (w.pending_requests) {
+    bits.push(`${w.pending_requests} ${w.pending_requests === 1 ? 'job' : 'jobs'} asked for`)
+  }
+  if (!bits.length && !person.paid_ytd) {
+    return <p className="mt-1 text-[12px] text-ink-3">No work yet</p>
+  }
+  return (
+    <p className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[12px] text-ink-3">
+      {bits.map((b, i) => (
+        <span key={b}>{i > 0 && <span className="mr-2 text-ink-3/50">·</span>}{b}</span>
+      ))}
+      {person.paid_ytd > 0 && (
+        <span>
+          <span className="mr-2 text-ink-3/50">·</span>
+          ${person.paid_ytd.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} this year
+        </span>
+      )}
+      {/* The 1099 you will owe them, surfaced in September rather than in
+          January when it is a scramble. Amber dot = something to do, same
+          vocabulary as everywhere else. */}
+      {person.form_1099_due && (
+        <span className="inline-flex items-center gap-1.5 text-ink-2">
+          <span className="mr-1 text-ink-3/50">·</span>
+          <span className="h-1.5 w-1.5 rounded-full bg-amber-500" aria-hidden="true" />
+          1099 due
+        </span>
+      )}
+    </p>
   )
 }
 

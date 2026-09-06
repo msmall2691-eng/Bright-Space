@@ -15,7 +15,8 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { HardHat, RefreshCw, UserPlus, Mail } from 'lucide-react'
 import { get, post, patch } from '../api'
 import { PageHeader, EmptyState, ErrorState, Skeleton, SubNav } from '../components/ui'
-import CrewFiles from '../components/crew/CrewFiles'
+import BenchRoster from '../components/crew/BenchRoster'
+import SubApplications from '../components/SubApplications'
 import { pushToast } from '../utils/toastBus'
 import { reportInvite } from '../utils/inviteFallback'
 import CrewDocsAdmin from '../components/crew/CrewDocsAdmin'
@@ -255,12 +256,21 @@ export default function Crew() {
         )}
 
 
-        {/* Documents, above the roster: what needs YOU comes before who's on
-            the books. This is where the "Document to review" notification
-            lands — it used to point at /staff, which was never a route. */}
+        {/* THE BENCH LEADS. Who you have and whether they can work comes
+            before the setup list of who's on the books — that ordering is the
+            page's whole point, and it's also where the "Document to review"
+            notification lands (it used to point at /staff, which was never a
+            route).
+
+            Applications sit directly under it because that is the same
+            question one step earlier: who WANTS to be on the bench. They used
+            to live in Settings > Users, two clicks away from every other thing
+            about the same person, which is how somebody applies on Tuesday and
+            is noticed in March. */}
         <section>
-          <h2 className="mb-2 text-sm font-semibold text-ink">Documents</h2>
-          <CrewFiles />
+          <h2 className="mb-2 text-sm font-semibold text-ink">The bench</h2>
+          <BenchRoster />
+          <div className="mt-4"><SubApplications /></div>
         </section>
 
         {/* Roster */}

@@ -7356,6 +7356,36 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/crew/bench": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Crew Bench
+         * @description The bench screen: who you have, whether they can work, what they've done.
+         *
+         *     /files answers "who owes me a document". This answers the question the
+         *     office actually opens the app with — "who have I got" — by hanging the work
+         *     history and the 1099 total off the same roster rows, so the file status and
+         *     the person are one screen instead of three.
+         *
+         *     One request draws it (brightbase-economy). See services/bench.py for what
+         *     is deliberately NOT counted: declines (the signed agreement says declining
+         *     is free) and punctuality from clock punches (control of hours is the
+         *     classification risk).
+         */
+        get: operations["crew_bench_api_crew_bench_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/crew/unclaimed-ids": {
         parameters: {
             query?: never;
@@ -21565,6 +21595,26 @@ export interface operations {
         };
     };
     crew_files_api_crew_files_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    crew_bench_api_crew_bench_get: {
         parameters: {
             query?: never;
             header?: never;
