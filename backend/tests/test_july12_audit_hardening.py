@@ -27,10 +27,10 @@ from main import app
 client = TestClient(app)
 
 
-def _make_cleaner_user():
+def _make_cleaner_user(role="cleaner"):
     db = SessionLocal()
-    email = f"cleaner-{uuid.uuid4().hex[:8]}@example.com"
-    user = User(email=email, role="cleaner", full_name="Test Cleaner", active=True, status="active")
+    email = f"{role}-{uuid.uuid4().hex[:8]}@example.com"
+    user = User(email=email, role=role, full_name=f"Test {role.title()}", active=True, status="active")
     db.add(user)
     db.commit()
     db.refresh(user)
@@ -184,8 +184,18 @@ def test_ws_agent_rejects_connection_when_api_key_unset_and_no_jwt():
 
 def test_ws_agent_accepts_valid_jwt_even_when_api_key_unset():
     """A valid JWT must still authenticate the WS connection — only the
-    API-key fallback is unavailable when BRIGHTBASE_API_KEY is unset."""
-    user = _make_cleaner_user()
+    API-key fallback is unavailable when BRIGHTBASE_API_KEY is unset.
+
+    Uses a MANAGER, not a cleaner. This test is about the API-key fallback, and
+    the role was incidental to it — but the socket now checks one: a cleaner
+    login reaching any agent could read the client list and the outstanding-
+    invoice total, which stopped being an internal-only concern when the public
+    apply form began minting cleaner accounts. That gate has its own coverage
+    in tests/test_agent_ws_and_rate_privacy.py, including that the office is
+    unaffected; here the office role just keeps this assertion about something
+    else.
+    """
+    user = _make_cleaner_user(role="manager")
     saved = os.environ.pop("BRIGHTBASE_API_KEY", None)
     try:
         token = create_jwt(user.id, user.email, user.role)
