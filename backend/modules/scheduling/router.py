@@ -97,6 +97,17 @@ class JobUpdate(BaseModel):
 
 JOB_TYPES = {"residential", "deep_clean", "commercial", "str_turnover", "one_time"}
 JOB_STATUSES = {"unscheduled", "scheduled", "in_progress", "completed", "cancelled"}
+# Fields where sending an explicit null MEANS "clear it", rather than "I didn't
+# say". Everything else on JobUpdate keeps `exclude_none` semantics, because the
+# job edit modal sends every field it knows and a bare None there means absent.
+#
+# `posted_rate` had no way back to NULL — which is a state the model's own
+# comment calls valid ("a re-opened job may not need a new rate") and which
+# JobDetail's asking-rate box already asks for when you empty it. The request
+# was honest, the server dropped it, and the old number came back on reload.
+# Distinguishing the two cases needs pydantic's `model_fields_set`, not the
+# value: absent and null both arrive as None.
+CLEARABLE_FIELDS = frozenset({"posted_rate"})
 # Native-payroll per-job override (Job.pay_mode). "auto" = the automatic rule.
 PAY_MODES = {"auto", "hourly", "piece"}
 
@@ -2759,7 +2770,49 @@ def decline_reschedule(job_id: int, db: Session = Depends(get_db), org_id: int =
 # These three endpoints are where the office reviews and decides — the one
 # place a claim request actually becomes a schedule assignment.
 
-def _claim_request_row(r: JobClaimRequest, names_by_cid: dict) -> dict:
+def _claim_request_heads_up(db: Session, job, pending, org_id) -> dict:
+    """What the office should know about each still-undecided requester, keyed
+    by cleaner_id. Never a refusal — see `approve_claim_request` below.
+
+    Two facts, both of which the office's own assign flow would 409 on and
+    which approval said nothing about:
+
+      * the requester has APPROVED TIME OFF over this date;
+      * they are already on another job that overlaps these hours.
+
+    One query each for the whole pending set, not one per row — this rides a
+    screen the office opens to make one decision, and N+1 on a bench of twenty
+    would be twenty queries to say "nothing to report" (brightbase-economy).
+
+    Pending only. A warning on a request decided last month is noise about a
+    decision nobody can take back.
+    """
+    if not pending:
+        return {}
+    cids = [r.cleaner_id for r in pending]
+    out: dict = {}
+
+    for cid, off in _find_unavailable_cleaners(
+            db, cleaner_ids=cids, scheduled_date=job.scheduled_date, org_id=org_id):
+        why = f" ({off.reason})" if off.reason else ""
+        out.setdefault(str(cid), []).append(
+            f"Booked off {off.start_date}–{off.end_date}{why} — they asked anyway")
+
+    for cid, other in _find_cleaner_conflicts(
+            db, cleaner_ids=cids, scheduled_date=job.scheduled_date,
+            start_time=job.start_time, end_time=job.end_time,
+            exclude_job_id=job.id, org_id=org_id):
+        when = _to_time(other.start_time)
+        at = f" at {when.strftime('%H:%M')}" if when else ""
+        out.setdefault(str(cid), []).append(
+            f"Already on “{other.title or f'job #{other.id}'}”{at} — "
+            f"approving would double-book them")
+
+    return out
+
+
+def _claim_request_row(r: JobClaimRequest, names_by_cid: dict,
+                       heads_up: dict | None = None) -> dict:
     return {
         "id": r.id,
         "job_id": r.job_id,
@@ -2770,6 +2823,13 @@ def _claim_request_row(r: JobClaimRequest, names_by_cid: dict) -> dict:
         "status": r.status,
         "created_at": r.created_at.isoformat() if r.created_at else None,
         "decided_at": r.decided_at.isoformat() if r.decided_at else None,
+        # Things the office should weigh before handing this person the job.
+        # Empty on a decided row and on a requester with a clear diary — a
+        # warning that appears on every row is furniture. Decided rows are
+        # empty because the caller only computes the map for pending requests,
+        # not because of a second guard here: one place to get it wrong beats
+        # two, and a redundant guard is a guard no test can hold honest.
+        "heads_up": (heads_up or {}).get(str(r.cleaner_id), []),
     }
 
 
@@ -2788,10 +2848,12 @@ def list_claim_requests(job_id: int, db: Session = Depends(get_db), org_id: int 
     if cleaner_ids:
         for u in db.query(User).filter(User.cleaner_id.in_(cleaner_ids)).all():
             names[u.cleaner_id] = u.full_name or u.email
+    heads_up = _claim_request_heads_up(
+        db, job, [r for r in rows if r.status == "pending"], org_id)
     return {
         "job_id": job.id,
         "posted_rate": job.posted_rate,
-        "requests": [_claim_request_row(r, names) for r in rows],
+        "requests": [_claim_request_row(r, names, heads_up) for r in rows],
     }
 
 
@@ -2803,9 +2865,28 @@ def approve_claim_request(job_id: int, request_id: int, db: Session = Depends(ge
     """Approve one request: assigns the sub, sets the FINAL agreed_rate
     (their counter if they made one, else the posted rate), closes the
     offer, and auto-declines every other pending request on this job — a
-    job can only go to one winner. Runs the same conflict/availability
-    checks the office's normal assign flow uses (one implementation, no
-    drift) since this is the first point the sub is actually scheduled.
+    job can only go to one winner.
+
+    WHAT IT CHECKS, and what it deliberately does not. This used to claim it
+    ran "the same conflict/availability checks the office's normal assign flow
+    uses (one implementation, no drift)". It ran one of the three, and the
+    sentence made the other two look like a bug rather than a decision:
+
+      * DOUBLE-BOOKING is refused (`_find_cleaner_conflicts`). Two jobs at the
+        same hour is not a preference, it is impossible.
+      * APPROVED TIME OFF is NOT refused. `brightbase-marketplace` Rule 0:
+        availability is a signal, never a block and never an obligation. A sub
+        who ASKS for a job on a day they had booked off has overridden their
+        own signal by asking, and refusing would be the office overruling a
+        subcontractor about their own time — the control that turns a
+        contractor into an employee.
+      * DAILY CAPACITY is NOT refused, for the same reason plus a plainer one:
+        a cap on how many jobs somebody may work in a day is a limit on their
+        hours, and a sub is paid per job, not per hour.
+
+    What was actually missing is that nobody was TOLD. `list_claim_requests`
+    now carries `heads_up` on each pending request, so the office sees "booked
+    off Sept 10–12 — they asked anyway" beside the name and makes the call.
 
     CONCURRENCY (scheduling-invariants R5): the Job row is locked and
     open_for_claims re-read under that lock. This is the step the old
@@ -3181,6 +3262,9 @@ def update_job(job_id: int, data: JobUpdate, db: Session = Depends(get_db), org_
     # it to the whole bench.
     prev_open_for_claims = bool(getattr(job, "open_for_claims", False))
     updates = data.model_dump(exclude_none=True)
+    for field in CLEARABLE_FIELDS & data.model_fields_set:
+        if getattr(data, field, "unset") is None:
+            updates[field] = None
     allow_conflicts = updates.pop("allow_conflicts", False)
     # Per-move notify override — pull it out before the setattr loop (it's not a
     # Job column). None → use the Settings toggle; True/False → force this move's

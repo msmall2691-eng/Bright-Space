@@ -2062,9 +2062,28 @@ export interface paths {
          * @description Approve one request: assigns the sub, sets the FINAL agreed_rate
          *     (their counter if they made one, else the posted rate), closes the
          *     offer, and auto-declines every other pending request on this job — a
-         *     job can only go to one winner. Runs the same conflict/availability
-         *     checks the office's normal assign flow uses (one implementation, no
-         *     drift) since this is the first point the sub is actually scheduled.
+         *     job can only go to one winner.
+         *
+         *     WHAT IT CHECKS, and what it deliberately does not. This used to claim it
+         *     ran "the same conflict/availability checks the office's normal assign flow
+         *     uses (one implementation, no drift)". It ran one of the three, and the
+         *     sentence made the other two look like a bug rather than a decision:
+         *
+         *       * DOUBLE-BOOKING is refused (`_find_cleaner_conflicts`). Two jobs at the
+         *         same hour is not a preference, it is impossible.
+         *       * APPROVED TIME OFF is NOT refused. `brightbase-marketplace` Rule 0:
+         *         availability is a signal, never a block and never an obligation. A sub
+         *         who ASKS for a job on a day they had booked off has overridden their
+         *         own signal by asking, and refusing would be the office overruling a
+         *         subcontractor about their own time — the control that turns a
+         *         contractor into an employee.
+         *       * DAILY CAPACITY is NOT refused, for the same reason plus a plainer one:
+         *         a cap on how many jobs somebody may work in a day is a limit on their
+         *         hours, and a sub is paid per job, not per hour.
+         *
+         *     What was actually missing is that nobody was TOLD. `list_claim_requests`
+         *     now carries `heads_up` on each pending request, so the office sees "booked
+         *     off Sept 10–12 — they asked anyway" beside the name and makes the call.
          *
          *     CONCURRENCY (scheduling-invariants R5): the Job row is locked and
          *     open_for_claims re-read under that lock. This is the step the old
