@@ -3380,6 +3380,22 @@ def update_job(job_id: int, data: JobUpdate, db: Session = Depends(get_db), org_
         if release_if_displaced(db, job):
             db.commit()
 
+    # A job that stops being live work stops being an offer (findings 4+5).
+    # `open_for_claims` was written False by exactly one thing — a successful
+    # approval — so cancelling, completing or un-scheduling a posted job left
+    # it advertised, and left everyone who had asked for it pending in the
+    # database and invisible in their own app.
+    #
+    # Gated on the job having BEEN posted, so an ordinary edit costs nothing.
+    # A cancelled job whose flag an older release left True still trips this
+    # on its next edit, which is why the gate reads the previous value.
+    if prev_open_for_claims and not (job.open_for_claims and job.status == "scheduled"):
+        from services.claim_approval import close_offer
+        why = ("was cancelled" if job.status == "cancelled"
+               else "is no longer on the board")
+        if close_offer(db, job, reason=why) or not job.open_for_claims:
+            db.commit()
+
     # Posting a job announced itself to nobody. The bench found out by opening
     # the app, which on a Friday afternoon means the Saturday work sits there.
     # Event-driven at the write, post-commit, like the assignment push above —
@@ -3678,6 +3694,12 @@ def delete_job(job_id: int, db: Session = Depends(get_db), org_id: int = Depends
             _log_integration(db, entity_type="job", entity_id=job.id, org_id=job.org_id, provider="gcal",
                              action="delete", status="failed", external_id=old_event_id,
                              detail=str(e), commit=False)
+    # The request rows cascade away with the job (migration 097's FK), so
+    # nothing is left to read later — which makes telling the people who asked
+    # the entire deliverable here. A sub whose request evaporates with no word
+    # is the same silence as a cancel, minus the audit trail.
+    from services.claim_approval import close_offer
+    close_offer(db, job, reason="was removed from the schedule")
     db.delete(job)
     db.commit()
 
@@ -4032,6 +4054,12 @@ def skip_job(job_id: int, reason: Optional[str] = None,
     job.status = "cancelled"
     if reason:
         job.notes = (job.notes or "") + f"\n[Skipped: {reason}]"
+
+    # Skipping a visit is cancelling it, so the offer goes with it. This
+    # endpoint writes status directly rather than through update_job, so it
+    # needs its own call — the commit below covers both writes.
+    from services.claim_approval import close_offer
+    close_offer(db, job, reason="was cancelled")
 
     if job.recurring_schedule_id and job.scheduled_date:
         existing = (

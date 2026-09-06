@@ -44,6 +44,29 @@ def _release_sync_links(db: Session, job: Job, *, notify: bool = True) -> None:
             logger.warning(f"GCal delete failed for job {job.id}: {e}")
 
 
+def _cancel_side_effects(db: Session, job: Job, *, notify: bool = True) -> None:
+    """Everything that has to happen when a recurring visit is cancelled,
+    besides writing the status — in one place, because there are five paths
+    here that cancel a visit and each one of them has to do all of it.
+
+    Two things so far:
+
+      * the linked Google Calendar event is deleted (`_release_sync_links`);
+      * the job comes off the open-jobs board, and every subcontractor still
+        waiting on a request for it is answered (review findings 4 and 5).
+
+    The second was missing at all five paths. `open_for_claims` was written
+    False by exactly one thing — a successful approval — so a posted visit that
+    a series edit, a drift cleanup, a split, a series cancel or a skip
+    cancelled stayed advertised as available work, and the requests on it sat
+    `pending` forever: invisible in the sub's own app (the board lists only
+    scheduled jobs) and still approvable by the office.
+    """
+    _release_sync_links(db, job, notify=notify)
+    from services.claim_approval import close_offer
+    close_offer(db, job, reason="was cancelled")
+
+
 def _get_schedule_or_404(db: Session, schedule_id: int, org_id: int) -> RecurringSchedule:
     """Fetch a RecurringSchedule scoped to the caller's org, 404 otherwise.
 
@@ -1147,7 +1170,7 @@ def _resync_future_jobs(db: Session, sched: RecurringSchedule) -> int:
         j.status = "cancelled"
         j.recurring_schedule_id = None
         j.notes = (j.notes or "") + "\n[Superseded by an updated recurring schedule]"
-        _release_sync_links(db, j)
+        _cancel_side_effects(db, j)
         removed += 1
     if removed:
         db.flush()
@@ -1332,7 +1355,7 @@ def apply_off_phase_cleanup(body: OffPhaseCleanupApply, db: Session = Depends(ge
                 continue
             j.status = "cancelled"
             j.notes = (j.notes or "") + "\n[Removed off-cadence duplicate — biweekly drift cleanup]"
-            _release_sync_links(db, j)
+            _cancel_side_effects(db, j)
             cancelled.append(j.id)
     if cancelled:
         db.commit()
@@ -1440,7 +1463,7 @@ def split_schedule(schedule_id: int, data: ScheduleSplit, db: Session = Depends(
         j.status = "cancelled"
         j.recurring_schedule_id = None
         j.notes = (j.notes or "") + "\n[Superseded by a series split]"
-        _release_sync_links(db, j)
+        _cancel_side_effects(db, j)
     db.commit()
     db.refresh(new_sched)
 
@@ -1505,7 +1528,7 @@ def cancel_upcoming_visits(schedule_id: int, db: Session = Depends(get_db),
     for j in jobs:
         j.status = "cancelled"
         j.notes = (j.notes or "") + "\n[Series cancelled — visit removed from the calendar]"
-        _release_sync_links(db, j)
+        _cancel_side_effects(db, j)
         cancelled.append({
             "job_id": j.id,
             "scheduled_date": _as_date(j.scheduled_date).isoformat() if j.scheduled_date else None,
@@ -1585,7 +1608,7 @@ def _cancel_existing_job(db: Session, sched_id: int, target_date: date, reason: 
     # date collided with this inert row and 500'd at commit. Matches the
     # detach convention _resync_future_jobs and split_schedule already use.
     job.recurring_schedule_id = None
-    _release_sync_links(db, job, notify=notify)
+    _cancel_side_effects(db, job, notify=notify)
 
 
 @router.post("/{schedule_id}/skip", status_code=201, response_model=RecurrenceExceptionRead, dependencies=[Depends(require_role("admin", "manager"))])
@@ -1762,7 +1785,7 @@ def _reschedule_occurrence(db: Session, sched: RecurringSchedule, exception_date
         if old_occurrence is not None:
             old_occurrence.public_token = None  # freed for the new row below
             # Detach the calendar event from the old row BEFORE the cancel so
-            # _release_sync_links doesn't delete it — we re-point it at the moved
+            # _cancel_side_effects doesn't delete it — we re-point it at the moved
             # occurrence and update it in place below (one silent event move,
             # not a delete + re-create). If there's no carried event, this is a
             # no-op and the cancel behaves exactly as before.
