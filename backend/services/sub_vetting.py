@@ -30,7 +30,7 @@ from typing import Optional
 from sqlalchemy.orm import Session
 
 from database.models import SubAgreement, SubDocument
-from utils.dates import business_today, coerce_date
+from utils.dates import business_date, business_today, coerce_date
 
 logger = logging.getLogger(__name__)
 
@@ -99,7 +99,11 @@ def is_exempt(db: Session, user) -> bool:
     cutoff = enforce_from(db)
     if cutoff is None:
         return False
-    created = coerce_date(getattr(user, "created_at", None))
+    # business_date, not coerce_date: created_at is UTC and the cutoff is a
+    # business-local date. Taking the UTC date reads an account opened at 8pm
+    # in Maine as created TOMORROW, which locks existing crew out on exactly
+    # the boundary migration 103 set its cutoff to a day later to protect.
+    created = business_date(getattr(user, "created_at", None))
     if created is None:
         # A crew row with no created_at predates the column, which means it
         # certainly predates the gate. Treat as existing crew rather than
