@@ -152,6 +152,30 @@ def _native_local_date(dt_utc_naive) -> date:
     return dt_utc_naive.replace(tzinfo=_tz.utc).astimezone(business_tz()).date()
 
 
+def _agreed_with(job, cleaner_id) -> bool:
+    """Is this the person who agreed the job's flat rate?
+
+    THE BUG THIS REPLACES: both call sites asked `cid in job.cleaner_ids`,
+    which is membership in the assignment list, not identity with the person
+    who negotiated the number. Add a helper to a job agreed at $100 with sub A
+    and both clock in — payroll paid A $100 and B $100. $200 out on a $100 job,
+    every pay run, silently.
+
+    Migration 106 put the answer on the row. The fallback covers rows written
+    before it that the backfill could not resolve: exactly one cleaner on the
+    job is unambiguous and is what payroll already paid them. Several cleaners
+    and nobody named is the ambiguous case the column exists to end — nobody
+    gets the flat rate (they fall through to the hourly ladder, which is
+    recoverable) rather than everybody getting it (which is money out the
+    door).
+    """
+    named = getattr(job, "agreed_cleaner_id", None)
+    if named:
+        return str(named) == str(cleaner_id)
+    ids = [str(c) for c in (getattr(job, "cleaner_ids", None) or []) if str(c).strip()]
+    return len(ids) == 1 and ids[0] == str(cleaner_id)
+
+
 def _native_entry_hours(e) -> float:
     """Worked hours for a native punch: elapsed minus breaks, never negative."""
     if not e.clock_out_at:
@@ -300,7 +324,7 @@ def _native_summary(db: Session, start_date: str, end_date: str, rates: dict, oi
         # payment, not one each. Hours still accrue for the timesheet — a sub's
         # time is worth seeing even when it doesn't set the price.
         agreed = float(getattr(job, "agreed_rate", None) or 0.0)
-        if agreed > 0 and cid in (job.cleaner_ids or []):
+        if agreed > 0 and _agreed_with(job, cid):
             emp["marketplace_hours"] += hours
             detail["kind"] = "marketplace"
             detail["rate_pay"] = False
@@ -772,8 +796,11 @@ async def _native_send_to_square(body: SendToSquareBody, db: Session, oid: int) 
         # is an employee benefit. A sub's driving is their own cost of doing
         # business, already priced into the rate they named.
         _job = e.job
-        if float(getattr(_job, "agreed_rate", None) or 0.0) > 0 and cid in (
-                getattr(_job, "cleaner_ids", None) or []):
+        # `_agreed_with`, not membership in cleaner_ids: an hourly HELPER on a
+        # marketplace job is an employee doing employee work, and excluding
+        # them here would drop them from the export while the summary paid
+        # them nothing flat either — worked for free, in both systems at once.
+        if float(getattr(_job, "agreed_rate", None) or 0.0) > 0 and _agreed_with(_job, cid):
             # Counted, not silently dropped — the office should be able to see
             # that the export left work out on purpose.
             emp["marketplace_excluded"] += 1

@@ -664,6 +664,14 @@ class Job(Base):
     # marketplace job should read agreed_rate, never posted_rate.
     posted_rate = Column(Float, nullable=True)
     agreed_rate = Column(Float, nullable=True)
+    # Migration 106: WHO agreed that rate. agreed_rate alone was paid to
+    # everyone in cleaner_ids, so adding a helper to a $100 job paid $200; and
+    # with nobody named on the row there was no way to tell that reassigning
+    # the job had left the price behind. Set by both producers at write time
+    # (an approved claim request; a route occurrence's owner) and cleared with
+    # agreed_rate when that person leaves the job. NULL + a rate means the
+    # ambiguous legacy case — payroll reports it rather than guessing.
+    agreed_cleaner_id = Column(String, nullable=True)
     # (connecteam_shift_ids / connecteam_synced_schedule were dropped by
     # migration 079 with the Connecteam removal.)
 

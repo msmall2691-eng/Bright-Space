@@ -786,6 +786,7 @@ def generate_jobs(db: Session, sched: RecurringSchedule) -> int:
         if route_share is not None:
             job.cleaner_ids = [route_owner]
             job.agreed_rate = route_share      # the flat-rate path payroll pays
+            job.agreed_cleaner_id = route_owner  # ...and who it belongs to (106)
             job.open_for_claims = False        # a route job never goes on the board
         # Race-safe: if a concurrent /generate-all already inserted this row,
         # the partial unique index added in migration 004 raises IntegrityError;

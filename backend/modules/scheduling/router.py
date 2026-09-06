@@ -3310,6 +3310,15 @@ def update_job(job_id: int, data: JobUpdate, db: Session = Depends(get_db), org_
             from services.crew_notify import notify_job_assigned
             notify_job_assigned(db, job, sorted(added_cleaners))
 
+    # Reassigning a job away from the sub who agreed its rate used to leave the
+    # rate behind, so an hourly employee inherited a flat marketplace price and
+    # the sub was never told. Runs on every cleaner_ids write and is a no-op
+    # unless the named person has actually gone.
+    if "cleaner_ids" in updates:
+        from services.claim_approval import release_if_displaced
+        if release_if_displaced(db, job):
+            db.commit()
+
     # Posting a job announced itself to nobody. The bench found out by opening
     # the app, which on a Friday afternoon means the Saturday work sits there.
     # Event-driven at the write, post-commit, like the assignment push above —
@@ -4069,6 +4078,10 @@ def auto_assign_job_crew(job_id: int, db: Session = Depends(get_db), org_id: int
 
     top_cleaner = max(crew_freq.items(), key=lambda x: x[1])[0]
     job.cleaner_ids = [top_cleaner]
+    # This REPLACES the list, so it is the other path that can take a job off
+    # the sub who agreed its rate (see release_if_displaced).
+    from services.claim_approval import release_if_displaced
+    release_if_displaced(db, job)
     db.commit()
     db.refresh(job)
     return {
