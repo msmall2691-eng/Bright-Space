@@ -111,10 +111,16 @@ def open_window(db: Session, window: TurnoverWindow) -> dict:
     """
     rate = current_rate(window)
     opened, skipped = [], 0
+    # Jobs that were NOT already on the board. This function is idempotent by
+    # design and the daily tick re-runs it, so notifying on `opened` would text
+    # the whole bench the same Saturday every morning until somebody took it.
+    newly_posted = []
     for job in window_jobs(db, window):
         if _is_taken(job):
             skipped += 1
             continue
+        if not getattr(job, "open_for_claims", False):
+            newly_posted.append(job)
         job.open_for_claims = True
         if rate is not None:
             job.posted_rate = rate
@@ -124,6 +130,14 @@ def open_window(db: Session, window: TurnoverWindow) -> dict:
         window.opened_at = _now()
     window.updated_at = _now()
     db.commit()
+
+    # ONE push for the whole day, not one per house. A twelve-house changeover
+    # posting twelve times is how somebody turns notifications off — and then
+    # they are off for the assignment that matters too.
+    if newly_posted:
+        from services.crew_notify import notify_jobs_posted
+        notify_jobs_posted(db, newly_posted, org_id=window.org_id)
+
     return {"window_id": window.id, "opened": len(opened), "already_taken": skipped,
             "posted_rate": rate}
 
