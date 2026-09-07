@@ -13,7 +13,7 @@ Payload rule: NOTHING here may carry property access details (door codes,
 wifi, lockbox notes). Only ids, names and aggregate numbers leave this module.
 """
 from collections import defaultdict
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 
 from sqlalchemy import case, func, or_
 from sqlalchemy.orm import Session
@@ -30,7 +30,7 @@ from database.models import (
     TimeEntry,
     User,
 )
-from utils.dates import business_today, week_monday
+from utils.dates import business_date, business_today, week_monday
 
 # A cleaner-set availability slot is a half day. The crew app's vocabulary is
 # AM / PM / Off (per-day), so 4h per slot ≈ 8h for a full day — the same 8h/day
@@ -487,4 +487,184 @@ def lead_funnel(db: Session, oid, *, days: int = 30) -> dict:
         },
         "value": {k: round(v, 2) for k, v in value.items()},
         "by_source": by_source_list,
+    }
+
+
+# ── The two numbers that say whether this business is working ───────────────
+#
+# Labour as a share of revenue, and whether customers come back. Added Sept
+# 2026 after a research pass on how managed home-services businesses actually
+# fail, and both are here because of what that found rather than because they
+# were easy to compute.
+#
+# LABOUR SHARE is the operating ratio the whole industry steers by. Published
+# benchmarks for residential cleaning put direct labour at 45–55% of revenue,
+# with well-run operators in the low 40s and trouble above 55; residential sits
+# at the high end because unbillable drive time between houses is real, and
+# rural Maine is the worst case for that. A two-point move here swings net
+# profit by a quarter, which is why it is worth a number on a screen rather
+# than a feeling at the end of the month.
+#
+# REPEAT RATE is the one Homejoy died of. They raised $40M, were killed by
+# 15–20% of customers rebooking within a month against ~75% of bookings coming
+# from discounts, and the misclassification suits everyone remembers as the
+# cause were the accelerant on a business that had no path anyway. Molly Maid
+# franchisees run a 91% recurring-customer rate. It is the difference between
+# the two businesses, and nothing in BrightBase said it out loud.
+
+_REPEAT_WINDOW_DAYS = 60
+
+
+def _month_bounds(today, months_back: int):
+    """(first, last) dates of the calendar month `months_back` before today."""
+    y, m = today.year, today.month - months_back
+    while m <= 0:
+        m += 12
+        y -= 1
+    first = date(y, m, 1)
+    last = date(y + (m == 12), (m % 12) + 1, 1) - timedelta(days=1)
+    return first, last
+
+
+def operating_health(db: Session, oid, *, months: int = 6) -> dict:
+    """Labour share by month, and the share of customers who came back.
+
+    Both numbers carry their own denominators and a coverage figure, because a
+    ratio computed off partial data is worse than no ratio: it reads as fact
+    and moves decisions. Where the inputs are too thin to mean anything this
+    returns the counts and a null rate rather than a confident number.
+    """
+    from database.models import SubPayout
+
+    org_scope = lambda model: or_(model.org_id == oid, model.org_id.is_(None))
+    today = business_today()
+
+    # ── Labour share, by calendar month ───────────────────────────────────
+    #
+    # REVENUE is invoiced, not collected: an invoice that goes out in March for
+    # March's work belongs to March whether or not the cheque cleared in May.
+    # Collection timing is a cash-flow question and it is answered elsewhere
+    # (AR aging); mixing it in here would make the ratio swing on how promptly
+    # customers pay, which has nothing to do with how efficiently the work was
+    # staffed. Drafts are excluded — an invoice nobody has sent is not revenue.
+    #
+    # LABOUR is `SubPayout.earned_on`, which the ledger already defines as when
+    # the work happened rather than when money moved, for the same reason.
+    #
+    # The two therefore line up on the month the cleaning was done, which is
+    # the only basis on which their ratio means anything.
+    first_month_start, _ = _month_bounds(today, months - 1)
+
+    revenue_by_month: dict = defaultdict(float)
+    invoiced_jobs: set = set()
+    for inv in (db.query(Invoice)
+                .filter(org_scope(Invoice),
+                        Invoice.status != "draft",
+                        Invoice.created_at >= datetime(
+                            first_month_start.year, first_month_start.month, 1))
+                .all()):
+        d = business_date(inv.created_at)
+        if d:
+            revenue_by_month[(d.year, d.month)] += float(inv.total or 0.0)
+            if inv.job_id:
+                invoiced_jobs.add(inv.job_id)
+
+    labour_by_month: dict = defaultdict(float)
+    for p in (db.query(SubPayout)
+              .filter(org_scope(SubPayout),
+                      SubPayout.status != "void",
+                      SubPayout.earned_on >= first_month_start)
+              .all()):
+        if p.earned_on:
+            labour_by_month[(p.earned_on.year, p.earned_on.month)] += float(p.amount or 0.0)
+
+    labour_months = []
+    for back in range(months - 1, -1, -1):
+        start, _end = _month_bounds(today, back)
+        key = (start.year, start.month)
+        rev = round(revenue_by_month.get(key, 0.0), 2)
+        lab = round(labour_by_month.get(key, 0.0), 2)
+        labour_months.append({
+            "month": start.isoformat()[:7],
+            "revenue": rev,
+            "labour": lab,
+            # Null, not zero, when there is no revenue to divide by. A month
+            # with no invoices is not a month with 0% labour cost.
+            "labour_pct": round(lab / rev * 100, 1) if rev > 0 else None,
+        })
+
+    # COVERAGE. The ratio is only as honest as the share of completed work that
+    # actually carries an invoice. If half the cleanings never got one, the
+    # denominator is half-size and the percentage is roughly double the truth —
+    # so the screen says so instead of quietly being wrong.
+    completed = (db.query(Job.id)
+                 .filter(org_scope(Job), Job.status == "completed",
+                         Job.scheduled_date >= first_month_start)
+                 .all())
+    completed_ids = {j.id for j in completed}
+    covered = len(completed_ids & invoiced_jobs)
+
+    # ── Do they come back? ────────────────────────────────────────────────
+    #
+    # Measured on jobs completed between 60 and 240 days ago, so every one has
+    # had its full 60 days to produce a return visit. Including last week's
+    # cleanings would count every one of them as "didn't come back" and drag
+    # the number down by exactly the amount of recent business.
+    window_end = today - timedelta(days=_REPEAT_WINDOW_DAYS)
+    window_start = today - timedelta(days=240)
+
+    jobs = (db.query(Job.id, Job.client_id, Job.scheduled_date, Job.recurring_schedule_id)
+            .filter(org_scope(Job), Job.status == "completed",
+                    Job.client_id.isnot(None),
+                    Job.scheduled_date >= window_start)
+            .all())
+    by_client: dict = defaultdict(list)
+    for j in jobs:
+        if j.scheduled_date:
+            by_client[j.client_id].append(j)
+
+    considered = returned = 0
+    one_off_considered = one_off_returned = 0
+    for client_id, rows in by_client.items():
+        dates = sorted(r.scheduled_date for r in rows)
+        for r in rows:
+            if not (window_start <= r.scheduled_date <= window_end):
+                continue
+            considered += 1
+            came_back = any(
+                r.scheduled_date < d <= r.scheduled_date + timedelta(days=_REPEAT_WINDOW_DAYS)
+                for d in dates)
+            if came_back:
+                returned += 1
+            # Split out the one-offs. A rate of 95% that is entirely recurring
+            # customers says the schedule generator is working, not that the
+            # cleaning is winning anybody over — and the number worth steering
+            # by is whether people who are NOT on a standing schedule choose to
+            # come back.
+            if not r.recurring_schedule_id:
+                one_off_considered += 1
+                if came_back:
+                    one_off_returned += 1
+
+    def _pct(n, d):
+        return round(n / d * 100, 1) if d else None
+
+    return {
+        "as_of": today.isoformat(),
+        "labour": {
+            "months": labour_months,
+            "benchmark": {"good_max": 45, "warn_max": 55},
+            "jobs_completed": len(completed_ids),
+            "jobs_invoiced": covered,
+            "coverage_pct": _pct(covered, len(completed_ids)),
+        },
+        "repeat": {
+            "window_days": _REPEAT_WINDOW_DAYS,
+            "considered": considered,
+            "returned": returned,
+            "rate_pct": _pct(returned, considered),
+            "one_off_considered": one_off_considered,
+            "one_off_returned": one_off_returned,
+            "one_off_rate_pct": _pct(one_off_returned, one_off_considered),
+        },
     }
