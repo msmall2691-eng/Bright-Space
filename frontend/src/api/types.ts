@@ -2461,6 +2461,11 @@ export interface paths {
          * @description Paid-revenue split by service type (residential/commercial/str_turnover),
          *     joined through the invoice's job. `period=mtd` (default) limits to this month
          *     by paid_at; `all` is all-time. Powers the dashboard's revenue breakdown.
+         *
+         *     ORG-SCOPED, and it was not: role-gated but with no tenant filter, so the
+         *     totals summed every workspace's paid invoices together. Latent with one
+         *     org and a wrong number with two — and revenue is the last figure anybody
+         *     would think to doubt.
          */
         get: operations["invoice_summary_by_service_api_invoices_summary_by_service_get"];
         put?: never;
