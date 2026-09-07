@@ -686,7 +686,11 @@ def turnover_sweep(db: Session = Depends(get_db)):
     return {"totals": totals, "properties": report}
 
 
-@router.get("/{property_id}/ical-events")
+# Office only. Guest booking summaries from an Airbnb/VRBO feed routinely
+# carry the guest's name, and this was the one route in the file with no
+# role gate — any login could enumerate property ids and read who is
+# staying where.
+@router.get("/{property_id}/ical-events", dependencies=[Depends(require_role("admin", "manager", "viewer"))])
 def get_ical_events(
     property_id: int,
     start: Optional[str] = None,   # YYYY-MM-DD

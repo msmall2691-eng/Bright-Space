@@ -731,7 +731,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Get Client Phones */
+        /**
+         * Get Client Phones
+         * @description Raw customer phone numbers — this read queried by bare id.
+         */
         get: operations["get_client_phones_api_clients__client_id__phones_get"];
         put?: never;
         /** Add Client Phone */

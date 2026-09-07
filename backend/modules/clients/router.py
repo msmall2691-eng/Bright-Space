@@ -15,7 +15,11 @@ from database.models import Client, Property, Job, ICalEvent, Opportunity, Quote
 from utils.phone import digits_only as _digits_only, phone_tail as _phone_tail
 from utils.contacts import normalize_phone
 from utils.enrichment import enrich_client_data
-from modules.auth.router import get_current_user, require_role, current_org_id
+# resolve_org_id was USED at bulk_update_client_status and never imported —
+# POST /api/clients/bulk-status raised NameError -> 500 for anyone changing
+# several clients' status at once. Found while org-scoping the reads below.
+from modules.auth.router import (get_current_user, require_role,
+                                 current_org_id, resolve_org_id)
 from utils.dates import business_today
 
 router = APIRouter()
@@ -842,7 +846,9 @@ def get_client(client_id: int, db: Session = Depends(get_db), org_id: int = Depe
     return client_to_dict(client)
 
 
-@router.get("/{client_id}/profile")
+# Office only. Every other route in this file carries a role gate; three
+# reads did not — the copy-paste loss the security-roles skill warns about.
+@router.get("/{client_id}/profile", dependencies=[Depends(require_role("admin", "manager", "viewer"))])
 def get_client_profile(client_id: int, db: Session = Depends(get_db), org_id: int = Depends(current_org_id)):
     """
     Get client's full profile including properties, upcoming/past visits, and GCal sync status.
@@ -937,12 +943,18 @@ def get_client_profile(client_id: int, db: Session = Depends(get_db), org_id: in
     return profile
 
 
-@router.get("/{client_id}/crm-summary")
-def get_client_crm_summary(client_id: int, db: Session = Depends(get_db)):
+# Office only, and org-scoped below. Returns the whole CRM record —
+# opportunities, quotes, invoices with balances, contact emails and phones,
+# the activity timeline. A bench subcontractor has a login because the
+# office approved them onto the bench: admission, not clearance.
+@router.get("/{client_id}/crm-summary", dependencies=[Depends(require_role("admin", "manager", "viewer"))])
+def get_client_crm_summary(client_id: int, db: Session = Depends(get_db),
+                           org_id: int = Depends(current_org_id)):
     """
     Get complete CRM view of client with all relationships:
     opportunities, quotes, invoices, messages, activities, and contacts.
     """
+    org_id = resolve_org_id(org_id, db)
     client = db.query(Client).options(
         joinedload(Client.opportunities),
         joinedload(Client.quotes),
@@ -952,9 +964,12 @@ def get_client_crm_summary(client_id: int, db: Session = Depends(get_db)):
         joinedload(Client.contact_emails),
         joinedload(Client.contact_phones),
         joinedload(Client.jobs),
-    ).filter(Client.id == client_id).first()
+    ).filter(Client.id == client_id,
+             or_(Client.org_id == org_id, Client.org_id.is_(None))).first()
 
     if not client:
+        # Wrong org and nonexistent look identical on purpose, so a probing
+        # caller cannot learn which client ids exist in another workspace.
         raise HTTPException(status_code=404, detail="Client not found")
 
     base = client_to_dict(client)
@@ -1317,9 +1332,16 @@ def delete_client(client_id: int, force: bool = False,
     db.commit()
 
 
-@router.get("/{client_id}/phones", response_model=List[ContactPhoneRead])
-def get_client_phones(client_id: int, db: Session = Depends(get_db)):
-    client = db.query(Client).filter(Client.id == client_id).first()
+# Office only, and org-scoped — matching the guarded POST just below.
+@router.get("/{client_id}/phones", response_model=List[ContactPhoneRead],
+            dependencies=[Depends(require_role("admin", "manager", "viewer"))])
+def get_client_phones(client_id: int, db: Session = Depends(get_db),
+                      org_id: int = Depends(current_org_id)):
+    """Raw customer phone numbers — this read queried by bare id."""
+    org_id = resolve_org_id(org_id, db)
+    client = db.query(Client).filter(
+        Client.id == client_id,
+        or_(Client.org_id == org_id, Client.org_id.is_(None))).first()
     if not client:
         raise HTTPException(status_code=404, detail="Client not found")
     phones = db.query(ContactPhone).filter(ContactPhone.client_id == client_id).all()
