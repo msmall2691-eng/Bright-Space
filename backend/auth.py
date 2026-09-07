@@ -38,8 +38,18 @@ _PUBLIC_PREFIXES = (
     # before any session exists; the handler validates a signed, typed,
     # short-lived invite token itself.
     "/api/auth/accept-invite",
-    # Google sign-in: the login page calls these before a JWT exists.
-    "/api/auth/google",
+    # Google SIGN-IN. Note the trailing slash, and note that it is load-bearing.
+    #
+    # This read "/api/auth/google" — a bare stem — and _is_public is a PREFIX
+    # match, so it also opened /api/auth/google-account, its /connect-url and
+    # anything else anyone ever names with that stem. Those are the signed-in
+    # user's Google connection endpoints, and past the middleware
+    # get_current_user hands a request with no Authorization header a
+    # SYNTHETIC role="admin" user whenever BRIGHTBASE_API_KEY is set — so an
+    # unauthenticated caller reached them as an admin.
+    #
+    # Exactly the hazard _PUBLIC_EXACT below was invented for, one family up.
+    "/api/auth/google/",
     "/api/intake/submit",
     "/api/intake/webhook",
     "/api/comms/twilio/webhook",
@@ -86,6 +96,18 @@ _PUBLIC_PREFIXES = (
 # somebody later names with that stem — silently, with no test failing. The
 # public apply form is one POST and should stay one POST.
 _PUBLIC_EXACT = frozenset({
+    # Google sign-in's own bare path — the login page POSTs here before a JWT
+    # exists. EXACT, so it opens this endpoint and not the /google-account
+    # family that shares its stem.
+    "/api/auth/google",
+    # The per-user Google CONNECT redirect, open for the same reason
+    # /api/settings/google/callback is: Google sends the browser here with no
+    # Bearer header and the handler resolves the user from a one-time,
+    # 10-minute state nonce it then deletes. Listed EXACT rather than
+    # reopening the stem the fix above just closed — gating this one silently
+    # breaks connecting a Google account, and nothing fails until somebody
+    # tries it.
+    "/api/auth/google-account/callback",
     # Applying to join the bench (migration 102). Rate-limited, honeypotted and
     # length-capped in the handler; it can only ever write a `new` row to
     # sub_applications. It creates no login, reads nothing back, and never

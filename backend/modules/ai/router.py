@@ -29,7 +29,8 @@ from sqlalchemy.orm import Session, joinedload
 from database.db import get_db
 from database.models import (Client, Job, RecurringSchedule, Property, Invoice,
                              Quote, ProposedAction, User)
-from modules.auth.router import get_current_user, current_org_id, require_role
+from modules.auth.router import (get_current_user, current_org_id,
+                                 require_role, resolve_org_id)
 from ratelimit import rate_limit
 from services.proposals import (PROPOSAL_STATUSES, dismiss_proposal,
                                 execute_proposal, update_proposal_payload)
@@ -577,12 +578,23 @@ def _fact_line(pairs) -> str:
     return " · ".join(f"{k}: {v}" for k, v in pairs if v not in (None, "", []))
 
 
-def _gather_enrich_facts(entity_type: str, entity_id: int, db: Session):
+def _gather_enrich_facts(entity_type: str, entity_id: int, db: Session,
+                        org_id: int):
     """Return (facts_dict, human_title, fallback_action) for the record, or
-    (None, None, None) if it doesn't exist."""
+    (None, None, None) if it doesn't exist.
+
+    ORG-SCOPED, and it was not. Every lookup was `filter(Model.id == ...)`
+    with no tenant clause, so an id from another workspace resolved and its
+    contents went to the model and came back as a summary. RLS is no backstop:
+    with `app.current_org_id` unset the policy matches everything
+    (database/rls.py), and this endpoint had no dependency to set it.
+
+    Wrong-org and nonexistent both return (None, None, None), so a probing
+    caller cannot learn whether an id exists.
+    """
     if entity_type == "lead":
         from database.models import LeadIntake
-        o = db.query(LeadIntake).filter(LeadIntake.id == entity_id).first()
+        o = db.query(LeadIntake).filter(LeadIntake.id == entity_id, _org(LeadIntake, org_id)).first()
         if not o:
             return None, None, None
         where = ", ".join(x for x in [o.city, o.state] if x) or o.address
@@ -606,7 +618,7 @@ def _gather_enrich_facts(entity_type: str, entity_id: int, db: Session):
 
     if entity_type == "conversation":
         from database.models import Conversation, Message
-        o = db.query(Conversation).filter(Conversation.id == entity_id).first()
+        o = db.query(Conversation).filter(Conversation.id == entity_id, _org(Conversation, org_id)).first()
         if not o:
             return None, None, None
         msgs = (db.query(Message)
@@ -620,7 +632,7 @@ def _gather_enrich_facts(entity_type: str, entity_id: int, db: Session):
         return facts, f"{o.channel or 'Conversation'} thread", "Reply to this thread"
 
     if entity_type == "quote":
-        o = db.query(Quote).filter(Quote.id == entity_id).first()
+        o = db.query(Quote).filter(Quote.id == entity_id, _org(Quote, org_id)).first()
         if not o:
             return None, None, None
         items = ", ".join(i.get("name", "") for i in (o.items or []) if i.get("name"))[:300]
@@ -639,7 +651,7 @@ def _gather_enrich_facts(entity_type: str, entity_id: int, db: Session):
         return facts, o.title or f"Quote {o.quote_number or ''}".strip(), action
 
     if entity_type == "property":
-        o = db.query(Property).filter(Property.id == entity_id).first()
+        o = db.query(Property).filter(Property.id == entity_id, _org(Property, org_id)).first()
         if not o:
             return None, None, None
         specs = " ".join(x for x in [
@@ -650,8 +662,16 @@ def _gather_enrich_facts(entity_type: str, entity_id: int, db: Session):
         facts = {
             "name": o.name, "type": o.property_type, "specs": specs or None,
             "address": ", ".join(x for x in [o.address, o.city, o.state] if x) or None,
-            "access_notes": (o.access_notes or "").strip()[:300] or None,
-            "parking_notes": (o.parking_notes or "").strip()[:200] or None,
+            # access_notes AND parking_notes ARE NOT HERE, and must not come
+            # back. This file states the rule ~300 lines above — "property
+            # blocks NEVER include access details (house codes, lockbox
+            # locations in access_notes, wifi credentials) … they must not
+            # enter any AI prompt" — and then broke it: both were in this dict
+            # and `enrich_entity` json.dumps() the whole dict straight into
+            # the user message. The model cannot leak what it was never given.
+            #
+            # parking_notes goes too: it is where "key is in the lockbox by
+            # the side door, code 4412" actually gets typed in practice.
             "notes": (o.notes or "").strip()[:300] or None,
             "hours_of_operation": (o.hours_of_operation or "").strip()[:200] or None,
         }
@@ -678,15 +698,17 @@ def _deterministic_enrichment(entity_type, facts, title, action) -> dict:
     return {"summary": summary[:280], "next_action": action, "tags": tags, "ai": False}
 
 
-@router.post("/enrich/{entity_type}/{entity_id}")
+@router.post("/enrich/{entity_type}/{entity_id}", dependencies=[Depends(require_role("admin", "manager", "viewer"))])
 def enrich_entity(entity_type: str, entity_id: int, db: Session = Depends(get_db),
-                  user=Depends(get_current_user)):
+                  user=Depends(get_current_user),
+                  org_id: int = Depends(current_org_id)):
     """AI-enriched metadata for one record: {summary, next_action, tags, ai}.
     Cheap (haiku) and read-only — nothing is written."""
     et = (entity_type or "").lower()
     if et not in _ENRICH_TYPES:
         return {"error": f"Unknown type '{entity_type}'"}
-    facts, title, action = _gather_enrich_facts(et, entity_id, db)
+    facts, title, action = _gather_enrich_facts(et, entity_id, db,
+                                                resolve_org_id(org_id, db))
     if facts is None:
         return {"error": "Not found"}
 
@@ -1761,7 +1783,10 @@ def draft_crew_message(user_id: int,
 _BATCH_LIMIT = 20
 
 
-@router.get("/overdue-reminders")
+# Office only. Returns every client and every overdue invoice with names,
+# emails, phones and amounts — the whole receivables book — and took no
+# role check at all.
+@router.get("/overdue-reminders", dependencies=[Depends(require_role("admin", "manager", "viewer"))])
 def overdue_reminders(db: Session = Depends(get_db), user=Depends(get_current_user)):
     """Batch chaser: draft a reminder for every overdue invoice at once.
     Review-first — returns drafts only, sends nothing. Each item carries the
