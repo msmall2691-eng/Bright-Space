@@ -104,6 +104,14 @@ def test_portal_scopes_strictly_to_own_email():
         invs = client.get("/api/portal/invoices", headers=_auth(tok)).json()["invoices"]
         inums = [i["number"] for i in invs]
         assert "INV-MINE" in inums and "INV-THEIRS" not in inums
+        # NO PAY CREDENTIAL. This endpoint used to mint an HMAC `pay_token`
+        # per invoice on every request — a permanent bearer credential handed
+        # to the customer's browser for a payment page that never worked. The
+        # page is deleted and there is no customer payment flow, so a
+        # credential for one is only a way in.
+        for inv in invs:
+            assert "pay_token" not in inv, "the portal is still minting a pay credential"
+            assert "pay_id" not in inv
     finally:
         db = SessionLocal()
         db.query(Job).filter(Job.id.in_([ids["my_job"], ids["their_job"]])).delete(synchronize_session=False)
@@ -112,6 +120,31 @@ def test_portal_scopes_strictly_to_own_email():
         db.query(Property).filter(Property.id.in_([ids["mp"], ids["tp"]])).delete(synchronize_session=False)
         db.query(Client).filter(Client.id.in_([ids["mine"], ids["theirs"]])).delete(synchronize_session=False)
         db.commit(); db.close()
+
+
+def test_there_is_no_unauthenticated_invoice_endpoint():
+    """`GET /api/invoices/public/{id}/{token}` served an invoice — with the
+    customer's email and phone on it — to anyone holding an HMAC token, for a
+    public payment page that never worked: it called a URL that did not match
+    this route, so every visitor got "Invoice Not Found".
+
+    The owner decided to delete the page rather than finish it, so the route,
+    the token helper and the `/api/invoices/public/` exemption in the API-key
+    middleware all went with it. A capability URL that is logged on every
+    request and read by nothing is only a way in.
+
+    The office still marks an invoice paid through POST /api/invoices/{id}/pay,
+    which is admin/manager-gated and unaffected.
+    """
+    from main import app as _app
+    public_invoice_routes = [r.path for r in _app.routes
+                             if "invoices/public" in getattr(r, "path", "")]
+    assert public_invoice_routes == [], public_invoice_routes
+
+    # And the middleware no longer waves that prefix through.
+    import auth as auth_mw
+    exempt = getattr(auth_mw, "_PUBLIC_PREFIXES", ()) or ()
+    assert not any("invoices/public" in p for p in exempt), list(exempt)
 
 
 def test_portal_endpoints_require_a_session_token():

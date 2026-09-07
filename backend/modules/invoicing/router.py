@@ -1,5 +1,3 @@
-import hashlib
-import hmac
 import os
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import or_
@@ -15,10 +13,6 @@ from database.models import Invoice, Client, Message
 from modules.auth.router import require_role, current_org_id, resolve_org_id
 from utils.activity_logger import log_invoice_created, log_invoice_paid
 
-
-def _invoice_public_token(invoice_id: int) -> str:
-    secret = os.getenv("JWT_SECRET", "fallback-for-dev-only")
-    return hmac.new(secret.encode(), f"inv-{invoice_id}".encode(), hashlib.sha256).hexdigest()[:16]
 
 router = APIRouter()
 
@@ -385,40 +379,37 @@ def send_invoice(invoice_id: int, data: SendInvoiceRequest, db: Session = Depend
     return {"invoice_id": invoice_id, "results": results}
 
 
-@router.get("/public/{invoice_id}/{token}")
-def get_public_invoice(invoice_id: int, token: str, db: Session = Depends(get_db)):
-    """Get invoice details for public payment portal (via HMAC token)."""
-    expected = _invoice_public_token(invoice_id)
-    if not hmac.compare_digest(token, expected):
-        raise HTTPException(status_code=404, detail="Invalid invoice token")
-
-    inv = db.query(Invoice).filter(Invoice.id == invoice_id).first()
-    if not inv:
-        raise HTTPException(status_code=404, detail="Invoice not found")
-
-    client = db.query(Client).filter(Client.id == inv.client_id).first()
-    inv_dict = invoice_to_dict(inv)
-
-    return {
-        **inv_dict,
-        "client_email": client.email if client else None,
-        "client_phone": client.phone if client else None,
-    }
+# NO PUBLIC INVOICE ENDPOINT. `GET /public/{invoice_id}/{token}` served an
+# invoice — with the customer's email and phone on it — to anyone holding an
+# HMAC token, for a public payment page that never worked (it called a URL
+# that did not match this route, so every visitor got "Invoice Not Found")
+# and which the owner has since decided not to build. Both are gone, along
+# with the token: a capability URL logged on every request and read by
+# nothing is only a way in.
+#
+# The office marks an invoice paid through `process_payment` below, which is
+# admin/manager-gated and always was.
 
 
 @router.post("/{invoice_id}/pay", dependencies=[Depends(require_role("admin", "manager"))])
 def process_payment(invoice_id: int, data: dict, db: Session = Depends(get_db)):
-    """Record a payment for an invoice. Requires admin/manager auth.
+    """Record a payment the office has ALREADY RECEIVED. Admin/manager only.
 
-    In production, Stripe webhooks should confirm payment server-side.
+    This does not take money and never did — there is no card capture, no
+    payment intent and no webhook anywhere in this app. It is the office
+    writing down that a cheque cleared or a card went through a terminal.
+
+    The previous docstring's "in production, Stripe webhooks should confirm
+    payment server-side" described a flow that was never built and has now
+    been deliberately declined: the dead public payment page and its token
+    were deleted rather than finished. So the honest reading of a POST here is
+    "I got paid", not "pay me" — which is why it stays gated to admin/manager.
     """
     inv = db.query(Invoice).filter(Invoice.id == invoice_id).first()
     if not inv:
         raise HTTPException(status_code=404, detail="Invoice not found")
 
     was_paid = inv.status == "paid"
-    # In production, verify payment with Stripe API before marking as paid
-    # For now, accept the payment and mark invoice as paid
     inv.status = "paid"
     inv.paid_at = datetime.now(timezone.utc)
 

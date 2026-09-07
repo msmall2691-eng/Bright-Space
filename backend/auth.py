@@ -77,10 +77,11 @@ _PUBLIC_PREFIXES = (
     # (rate-limited); the data endpoints enforce a portal-session token in the
     # portal router's own dependency, not the staff API key.
     "/api/portal/",
-    # Customer-facing payment portal — the public invoice endpoints validate an
-    # HMAC token themselves, so they don't need (and must not require) the master
-    # key now that the SPA is JWT-only.
-    "/api/invoices/public/",
+    # `/api/invoices/public/` was here for a customer-facing payment portal
+    # that never worked and has been deleted rather than finished — see
+    # modules/invoicing/router.py. There is no unauthenticated invoice
+    # endpoint any more, so nothing needs the exemption, and leaving the
+    # prefix open would exempt whatever somebody mounts under it next.
     # Company logo image — loaded unauthenticated by the quote email (<img>),
     # the PDF generator, and the public quote page. Read-only; serves bytes only.
     "/api/settings/logo",
