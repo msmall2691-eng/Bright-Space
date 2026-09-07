@@ -1,0 +1,63 @@
+# BB-SEC-17 follow-up: keep dependencies moving in small, CI-tested PRs instead
+# of one manual leap. BrightBase shipped FastAPI 0.115.0 / Starlette 0.38.6 long
+# enough to accumulate seven CVEs before anyone noticed; the point of this file
+# is that the next drift surfaces as a reviewable PR while it is still one
+# version behind, not seven.
+#
+# Weekly, grouped, capped low so the queue never becomes noise a solo maintainer
+# tunes out. Security updates are NOT subject to the open-PR cap — Dependabot
+# always raises those.
+version: 2
+updates:
+  # Backend Python deps (requirements.txt + requirements-dev.txt).
+  - package-ecosystem: "pip"
+    directory: "/backend"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    open-pull-requests-limit: 5
+    groups:
+      # One PR for the web stack, since fastapi and starlette move together and
+      # a split bump is how the version cap got out of step in the first place.
+      web-framework:
+        patterns:
+          - "fastapi"
+          - "starlette"
+          - "uvicorn"
+          - "httpx"
+      # Everything else patch/minor in a single weekly PR; majors come alone.
+      backend-minor:
+        update-types:
+          - "minor"
+          - "patch"
+    labels:
+      - "dependencies"
+      - "backend"
+
+  # Frontend JS deps.
+  - package-ecosystem: "npm"
+    directory: "/frontend"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    open-pull-requests-limit: 5
+    groups:
+      frontend-minor:
+        update-types:
+          - "minor"
+          - "patch"
+    labels:
+      - "dependencies"
+      - "frontend"
+
+  # The CI workflow's own actions (checkout, setup-python, setup-node) — the
+  # Node 20 deprecation warning in the logs is exactly what this keeps current.
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    open-pull-requests-limit: 3
+    labels:
+      - "dependencies"
+      - "ci"
