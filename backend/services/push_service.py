@@ -118,6 +118,18 @@ def _send_one(subscription: dict, payload: str, ttl: int = 43200) -> int:
         return 0
 
 
+def category_enabled(prefs: Optional[dict], category: Optional[str]) -> bool:
+    """Public form of the opt-out gate.
+
+    Here so a NON-push channel can ask the same question. The open-job SMS
+    fallback has to know whether somebody muted open jobs before it texts
+    them, and a second copy of that rule is a second thing to keep in step —
+    the kind of drift where a person turns a category off, still gets texted,
+    and stops trusting the switch.
+    """
+    return _category_enabled(prefs, category)
+
+
 def notify_user(
     user_id: int,
     title: str,

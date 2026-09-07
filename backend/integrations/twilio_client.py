@@ -21,6 +21,18 @@ if not all([_TWILIO_ACCOUNT_SID, _TWILIO_AUTH_TOKEN, _TWILIO_PHONE_NUMBER]):
     )
 
 
+def configured() -> bool:
+    """True when an SID, token and from-number are all present.
+
+    The mirror of `push_service.push_enabled()`, and it exists for the same
+    reason: a caller that treats SMS as an optional channel needs to ask
+    before it tries. `send_sms` RAISES when unconfigured, which is right for a
+    deliberate send a human asked for and wrong for a best-effort fallback
+    that must never break the schedule write it hangs off.
+    """
+    return all([_TWILIO_ACCOUNT_SID, _TWILIO_AUTH_TOKEN, _TWILIO_PHONE_NUMBER])
+
+
 def _client() -> Client:
     if not _TWILIO_ACCOUNT_SID or not _TWILIO_AUTH_TOKEN:
         raise ValueError(
