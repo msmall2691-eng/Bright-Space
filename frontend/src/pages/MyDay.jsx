@@ -485,6 +485,13 @@ export default function MyDay({ previewUserId = null }) {
     })
   })()
 
+  // Does the Today section stand in for the open-jobs board? It does whenever
+  // nothing is booked and there IS something to offer — and when it does, the
+  // separate "Up for grabs today" section below must not render the same rows
+  // again. One flag, read in both places, so the two can't drift back apart.
+  const boardIsToday = !!data && (data.today || []).length === 0
+    && (data.open_jobs || []).length > 0
+
   return (
     <div className="min-h-screen bg-bg">
       {preview && (
@@ -600,7 +607,7 @@ export default function MyDay({ previewUserId = null }) {
 
             <section>
               <div className="flex items-center justify-between mb-2">
-                <SectionLabel>Today</SectionLabel>
+                <SectionLabel>{boardIsToday ? 'Up for grabs' : 'Today'}</SectionLabel>
               </div>
               {data.today.length === 0 ? (
                 /* NOTHING ON TODAY MEANS SHOW THEM WORK, NOT AN EMPTY BOX.
@@ -612,12 +619,10 @@ export default function MyDay({ previewUserId = null }) {
                    offer. */
                 (data.open_jobs || []).length > 0 ? (
                   <div className="space-y-3">
-                    <p className="flex items-center gap-1.5 text-[12px] text-ink-3">
-                      <span className="h-1.5 w-1.5 rounded-full bg-violet-500" aria-hidden="true" />
-                      Nothing booked today — here's what's up for grabs
-                    </p>
                     {(data.open_jobs || []).map(j => (
-                      <JobCard key={j.id} job={j} busy={actionBusy}
+                      /* showDate: this list is the whole board, not one day —
+                         without it every offer reads as today's. */
+                      <JobCard key={j.id} job={j} busy={actionBusy} showDate
                         onClaim={() => { setActionError(null); setClaimRate(j.my_claim_request?.requested_rate ?? ''); setClaimMessage(j.my_claim_request?.message || ''); setClaimJob(j) }} />
                     ))}
                   </div>
@@ -644,7 +649,11 @@ export default function MyDay({ previewUserId = null }) {
               )}
             </section>
 
-            {(data.open_jobs || []).filter(j => j.scheduled_date === data.as_of).length > 0 && (
+            {/* THE BOARD RENDERS IN EXACTLY ONE PLACE ON THIS TAB. When nothing
+                is booked the Today section IS the board (above), so repeating
+                today's offers here showed every one of them twice — a sub
+                scrolling a short board could not tell two jobs from one. */}
+            {!boardIsToday && (data.open_jobs || []).filter(j => j.scheduled_date === data.as_of).length > 0 && (
               <section>
                 <SectionLabel className="mb-2 flex items-center gap-1.5">
                   <Sparkles className="w-3.5 h-3.5" /> Up for grabs today
@@ -694,7 +703,7 @@ export default function MyDay({ previewUserId = null }) {
             </SectionLabel>
             <div className="space-y-3">
               {(data.open_jobs || []).map(j => (
-                <JobCard key={j.id} job={j} onClaim={() => { setActionError(null); setClaimRate(j.my_claim_request?.requested_rate ?? ''); setClaimMessage(j.my_claim_request?.message || ''); setClaimJob(j) }} busy={actionBusy} />
+                <JobCard key={j.id} job={j} showDate onClaim={() => { setActionError(null); setClaimRate(j.my_claim_request?.requested_rate ?? ''); setClaimMessage(j.my_claim_request?.message || ''); setClaimJob(j) }} busy={actionBusy} />
               ))}
             </div>
           </section>

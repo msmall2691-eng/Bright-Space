@@ -265,6 +265,18 @@ def _my_routes_summary(db: Session, current_user: User, oid: int) -> list:
              "status": r.status} for r in rows]
 
 
+def _offer_title(job, area) -> str:
+    """What an open offer is called: the kind of work, and the town.
+
+    Never the job's own `title` — those are generated from the property, and a
+    property is named after its address. See the caller.
+    """
+    kind = {"str_turnover": "Turnover", "deep_clean": "Deep clean",
+            "commercial": "Commercial clean"}.get(
+                getattr(job, "job_type", None), "Cleaning")
+    return f"{kind} — {area}" if area else kind
+
+
 @router.get("/my-day")
 def my_day(
     days: int = 7,
@@ -383,7 +395,15 @@ def my_day(
         prop = getattr(j, "property", None)
         area = " ".join(x for x in [getattr(prop, "city", None),
                                     getattr(prop, "state", None)] if x) or None
-        row.update({"open": True, "house_code": None, "access_notes": None,
+        # ...AND NOT THROUGH THE TITLE EITHER. Nulling `address` and
+        # `property_name` above missed the one field that is displayed:
+        # `integrations/ical_sync.py` titles a turnover "Turnover — {prop.name}"
+        # and a Property's `name` IS its street address ("4 Red Barn Circle" —
+        # the model says so). So every rental turnover on the open board was
+        # captioned with the customer's address while the fields beside it were
+        # carefully blanked. Rebuilt here from the two things an offer may say.
+        row.update({"title": _offer_title(j, area),
+                    "open": True, "house_code": None, "access_notes": None,
                     "parking_notes": None, "can_text_client": False,
                     "checklist_template": None, "turnover_line": "",
                     "notes": None, "wifi_ssid": None, "wifi_password": None,
