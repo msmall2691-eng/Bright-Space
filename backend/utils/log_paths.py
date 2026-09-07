@@ -54,20 +54,59 @@ def redact_unmatched(path: str) -> str:
     return "/".join(out)
 
 
-def loggable_path(request) -> str:
-    """The path as it should appear in a log line.
+def _template_from_params(scope) -> Optional[str]:
+    """Rebuild the route template by replacing each matched path-param VALUE in
+    the real path with its `{name}`.
 
-    Prefers the matched route's template, which contains parameter NAMES rather
-    than values, so no path parameter — token, id, or anything added later —
-    can reach the log. That is the property worth having: it holds for routes
-    that do not exist yet, without anyone remembering to add them to a list.
+    `scope["path"]` is the full path the request actually hit, values and all;
+    `scope["path_params"]` maps each param name to the value the router bound.
+    Substituting values for `{name}` reproduces `/api/quotes/public/{token}`
+    from `/api/quotes/public/9f3a…` — the full path, no values.
+
+    This is preferred over reading `scope["route"].path` because that changed
+    between Starlette versions: <0.40 it was the FULL template, but 1.x returns
+    the template RELATIVE to the router mount (`/public/{token}`), dropping the
+    `/api/quotes` prefix. Rebuilding from the real path is stable across both,
+    and still parameter-NAMES-only, so no token or id can leak whatever the
+    framework does with route objects.
+    """
+    path = scope.get("path")
+    params = scope.get("path_params")
+    if not path or not params:
+        return None
+    # Segment-wise, so a value that also appears as a literal elsewhere in the
+    # path is not blanked by accident. A `:path` converter value can itself
+    # contain slashes, so also try a whole-string replace as a fallback.
+    segments = path.split("/")
+    values = {str(v): "{%s}" % k for k, v in params.items() if v not in (None, "")}
+    out = [values.get(seg, seg) for seg in segments]
+    rebuilt = "/".join(out)
+    if rebuilt == path:
+        # Nothing matched segment-wise (e.g. a path-converter value with
+        # slashes). Fall back to replacing each value wherever it appears.
+        for val, name in values.items():
+            rebuilt = rebuilt.replace(val, name)
+    return rebuilt
+
+
+def loggable_path(request) -> str:
+    """The path as it should appear in a log line: the full route template, with
+    every path parameter as its `{name}` rather than its value, so no token or
+    id can reach the log — and it holds for routes that do not exist yet,
+    without anyone remembering to add them to a list.
     """
     try:
-        route = request.scope.get("route")
-        template = getattr(route, "path", None)
-        if template:
-            return template
-        return redact_unmatched(request.url.path)
+        scope = request.scope
+        rebuilt = _template_from_params(scope)
+        if rebuilt:
+            return rebuilt
+        # No path params bound → either a static route (safe to log as-is) or an
+        # unmatched path (redact the long opaque segments defensively).
+        raw = scope.get("path") or request.url.path
+        route = scope.get("route")
+        if route is not None:
+            return raw           # matched a param-less route: nothing to hide
+        return redact_unmatched(raw)
     except Exception:
         # Instrumentation must never break a response, and a logger that
         # cannot determine a safe path logs nothing identifying at all.

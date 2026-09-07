@@ -54,7 +54,7 @@ def test_docs_are_off_when_railway_is_running_us(monkeypatch):
     m = _fresh_app(monkeypatch, RAILWAY_DEPLOYMENT_ID="dep_123", ENABLE_API_DOCS=None)
     assert m.API_DOCS_ENABLED is False
 
-    paths = {r.path for r in m.app.routes}
+    paths = {getattr(r, "path", None) for r in m.app.routes}
     for route in DOC_ROUTES:
         assert route not in paths, f"{route} should not be routed in a deploy"
 
@@ -77,7 +77,9 @@ def test_docs_are_on_locally(monkeypatch):
     m = _fresh_app(monkeypatch, RAILWAY_DEPLOYMENT_ID=None, ENABLE_API_DOCS=None)
     assert m.API_DOCS_ENABLED is True
 
-    paths = {r.path for r in m.app.routes}
+    # Starlette 1.x nests some entries as _IncludedRouter wrappers with no
+    # `.path`; the docs routes we care about are still top-level APIRoutes.
+    paths = {getattr(r, "path", None) for r in m.app.routes}
     for route in DOC_ROUTES:
         assert route in paths, route
 

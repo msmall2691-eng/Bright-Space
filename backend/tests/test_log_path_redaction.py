@@ -125,16 +125,39 @@ def test_the_helper_never_raises():
     assert loggable_path(Broken()) == REDACTED
 
 
-def test_template_is_preferred_over_the_raw_path():
-    """The property worth having: parameter NAMES, not values — so a path
-    parameter added to some future route cannot leak without anyone
-    remembering to add it to a list."""
-    class Route:
-        path = "/api/quotes/public/{token}"
+def test_full_template_is_rebuilt_from_path_params():
+    """The property worth having: the FULL path with parameter NAMES, not
+    values — rebuilt from the real path and the router's bound params, so it is
+    stable whatever the framework does with route objects, and no value leaks.
+
+    Rebuilt from scope["path"] + scope["path_params"] rather than
+    scope["route"].path, because 1.x makes the latter mount-relative
+    (`/public/{token}`) and drops the prefix."""
+    class Route:  # a matched route exists; its .path is not read
+        pass
 
     class Req:
-        scope = {"route": Route()}
+        scope = {
+            "route": Route(),
+            "path": f"/api/quotes/public/{QUOTE_TOKEN}",
+            "path_params": {"token": QUOTE_TOKEN},
+        }
         class url:
             path = f"/api/quotes/public/{QUOTE_TOKEN}"
 
     assert loggable_path(Req()) == "/api/quotes/public/{token}"
+
+
+def test_a_numeric_id_param_is_also_named_not_valued():
+    """Consistent with the old template behaviour: `/api/clients/{client_id}`,
+    never the id. Not a secret, but it keeps the log grouped by endpoint."""
+    class Req:
+        scope = {
+            "route": object(),
+            "path": "/api/clients/12345",
+            "path_params": {"client_id": 12345},
+        }
+        class url:
+            path = "/api/clients/12345"
+
+    assert loggable_path(Req()) == "/api/clients/{client_id}"

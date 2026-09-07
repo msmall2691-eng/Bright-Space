@@ -8168,62 +8168,41 @@ export interface components {
         };
         /** Body_import_clients_api_admin_import_clients_post */
         Body_import_clients_api_admin_import_clients_post: {
-            /**
-             * File
-             * Format: binary
-             */
+            /** File */
             file: string;
         };
         /** Body_import_clients_xlsx_api_clients_import_xlsx_post */
         Body_import_clients_xlsx_api_clients_import_xlsx_post: {
-            /**
-             * File
-             * Format: binary
-             */
+            /** File */
             file: string;
         };
         /** Body_upload_company_logo_api_settings_general_logo_post */
         Body_upload_company_logo_api_settings_general_logo_post: {
-            /**
-             * File
-             * Format: binary
-             */
+            /** File */
             file: string;
         };
         /** Body_upload_job_photo_api_crew_jobs__job_id__photos_post */
         Body_upload_job_photo_api_crew_jobs__job_id__photos_post: {
-            /**
-             * File
-             * Format: binary
-             */
+            /** File */
             file: string;
             /** Kind */
             kind?: string;
         };
         /** Body_upload_my_document_api_crew_my_file__kind__post */
         Body_upload_my_document_api_crew_my_file__kind__post: {
-            /**
-             * File
-             * Format: binary
-             */
+            /** File */
             file: string;
             /** Expires At */
             expires_at?: string;
         };
         /** Body_upload_my_photo_api_crew_me_photo_post */
         Body_upload_my_photo_api_crew_me_photo_post: {
-            /**
-             * File
-             * Format: binary
-             */
+            /** File */
             file: string;
         };
         /** Body_upload_property_photo_api_crew_properties__property_id__photos_post */
         Body_upload_property_photo_api_crew_properties__property_id__photos_post: {
-            /**
-             * File
-             * Format: binary
-             */
+            /** File */
             file: string;
             /**
              * Caption
@@ -10329,6 +10308,10 @@ export interface components {
             msg: string;
             /** Error Type */
             type: string;
+            /** Input */
+            input?: unknown;
+            /** Context */
+            ctx?: Record<string, never>;
         };
         /** VerifyRequest */
         VerifyRequest: {
