@@ -61,7 +61,28 @@ def _send_booking_customer_confirmation(
         logger.warning("[booking] customer confirmation email failed for intake %s: %s", intake_id, e)
 
 
-def _send_booking_customer_sms(data: "BookingSubmit", intake_id: int) -> None:
+# Hosts a manage/cancel link in a customer SMS may point at. The URL arrives
+# in the public request body from the maineclean.co layer (outside this repo),
+# so from here it is untrusted input appended to a message sent from the
+# company's own number — an unchecked one is a phishing payload with our
+# sender ID on it. Derived from the CORS origins the lead pipeline already
+# treats as ours, plus wherever this app is deployed, so there is one list to
+# keep current rather than two.
+def _manage_url_hosts() -> tuple:
+    from urllib.parse import urlparse
+    from config import REQUIRED_CORS_ORIGINS, app_base_url
+    hosts = set()
+    for origin in (*REQUIRED_CORS_ORIGINS, app_base_url()):
+        try:
+            h = urlparse(origin).netloc.split(":")[0].lower()
+            if h:
+                hosts.add(h[4:] if h.startswith("www.") else h)
+        except Exception:
+            continue
+    return tuple(sorted(hosts))
+
+
+def _send_booking_customer_sms(db: Session, data: "BookingSubmit", intake_id: int) -> None:
     """Text the customer a confirmation as soon as their website booking lands.
 
     This is a transactional confirmation of the customer's OWN request (not
@@ -69,13 +90,26 @@ def _send_booking_customer_sms(data: "BookingSubmit", intake_id: int) -> None:
     only in Bright-Space (maineclean.co has no SMS), so this is the right home
     for it — same TWILIO_* config the owner SMS path already uses.
 
+    THIS ENDPOINT IS PUBLIC AND UNAUTHENTICATED, so every input below is
+    hostile until proved otherwise. It used to take the destination straight
+    off the request body and append `data.manageUrl` verbatim, which made it
+    an open SMS relay: anyone could send a text from the company's Twilio
+    number, to any number on earth, carrying their own link. `services/
+    sms_guard.py` holds the three limits and the reasoning; this function's
+    job is to apply all of them and to send nothing if any one refuses.
+
     Best-effort and self-contained: a missing phone, unconfigured Twilio, or a
     Twilio send failure all log and return without raising, so submit_booking's
     201 never depends on this path (same contract as the customer email above).
     """
-    to_number = (data.phone or "").strip()
+    from services import sms_guard
+    to_number = sms_guard.nanp_number(data.phone)
     if not to_number:
-        logger.info("[booking] customer SMS skipped — no phone on intake=%s", intake_id)
+        # Not an error: plenty of real bookings have no phone, and a foreign
+        # number is a refusal we make quietly rather than reporting back to a
+        # caller who may be probing for one.
+        logger.info("[booking] customer SMS skipped — no textable US number on intake=%s",
+                    intake_id)
         return
     try:
         from integrations import twilio_client
@@ -89,9 +123,21 @@ def _send_booking_customer_sms(data: "BookingSubmit", intake_id: int) -> None:
         ]):
             logger.info("[booking] customer SMS skipped — Twilio not configured (intake=%s)", intake_id)
             return
-        from services.booking_email_service import format_requested_date, service_label
-        first = (data.name or "").strip().split(" ")[0] or "there"
-        svc = service_label(data.serviceType)
+        allowed, why = sms_guard.may_send(db, to_number)
+        if not allowed:
+            # Logged loudly: hitting either cap means something is wrong, not
+            # busy. The caller is told nothing — a public endpoint must not
+            # report whether a number has hit its limit.
+            logger.warning("[booking] customer SMS refused (%s) intake=%s", why, intake_id)
+            return
+        from services.booking_email_service import format_requested_date
+        first = sms_guard.safe_first_name(data.name)
+        # Canonical map ONLY. `service_label` falls back to titlecasing an
+        # unknown key, which is caller-controlled free text in a message sent
+        # from our number.
+        from services.booking_email_service import _SERVICE_LABELS
+        key = str(data.serviceType or "").strip().lower()
+        svc = _SERVICE_LABELS.get(key, "cleaning")
         # STR/commercial and dateless contact-form inquiries legitimately carry
         # no date — say "your request" instead of pasting a fabricated/empty one.
         if data.requestedDate:
@@ -107,13 +153,21 @@ def _send_booking_customer_sms(data: "BookingSubmit", intake_id: int) -> None:
             )
         # Self-service edit/cancel link only when present. Appended after the
         # one-segment base so a no-manageUrl booking stays a single SMS segment.
-        if data.manageUrl:
-            body += f" Manage/cancel: {data.manageUrl}"
+        manage = sms_guard.allowed_manage_url(data.manageUrl, allowed_hosts=_manage_url_hosts())
+        if manage:
+            body += f" Manage/cancel: {manage}"
         # NEVER log `body` — it can carry the capability-token manage URL.
-        twilio_client.send_sms(to=to_number, body=body)
+        res = twilio_client.send_sms(to=to_number, body=body)
+        sms_guard.record_send(db, to_number=to_number, intake_id=intake_id,
+                              sid=(res or {}).get("sid"))
         logger.info("[booking] customer confirmation SMS sent for intake=%s", intake_id)
     except Exception as e:
         logger.warning("[booking] customer confirmation SMS failed for intake %s: %s", intake_id, e)
+        try:
+            sms_guard.record_send(db, to_number=to_number, intake_id=intake_id,
+                                  ok=False, error=str(e))
+        except Exception:
+            pass
 
 
 def _owner_notify_setting(db: Session, key: str, env_var: str) -> Optional[str]:
@@ -503,6 +557,22 @@ def submit_booking(request: Request, data: BookingSubmit, background_tasks: Back
         alert_estimate_min = payload.estimate_min if payload.estimate_min is not None else estimate_min
         alert_estimate_max = payload.estimate_max if payload.estimate_max is not None else estimate_max
 
+    # A DEDUPED SUBMISSION IS NOT A NEW LEAD. `build_intake` collapses repeat
+    # posts into one row — the same form double-tapped, a retry, a bot — but
+    # every notification below fired anyway, so 20 requests inside the hourly
+    # limit meant 20 pages to the owner's phone, 20 owner emails, and 20 texts
+    # to the customer, all for one lead that exists once in the database.
+    # The row is the record; the alerts follow the row.
+    if result.get("deduped"):
+        logger.info("[booking] deduped onto intake=%s — no alerts re-sent",
+                    result["intake_id"])
+        return BookingResponse(
+            success=True,
+            bookingId=result["intake_id"],
+            requestedDate=data.requestedDate,
+            message="Your booking request has been submitted! We'll review and confirm within 1 business day.",
+        )
+
     # Ping the owner by SMS as soon as a booking lands. Twilio-only; if the
     # env isn't configured or the send fails the booking still succeeds —
     # the customer-facing response must never depend on the alert path.
@@ -517,7 +587,7 @@ def submit_booking(request: Request, data: BookingSubmit, background_tasks: Back
     # SMS trims. Same best-effort contract.
     owner_email_sent = False
     try:
-        from services.booking_email_service import format_requested_date, service_label
+        from services.booking_email_service import format_requested_date
         est_line = None
         if alert_estimate_min is not None and alert_estimate_max is not None:
             est_line = f"Estimate: ${int(alert_estimate_min)}–${int(alert_estimate_max)}"
@@ -574,7 +644,7 @@ def submit_booking(request: Request, data: BookingSubmit, background_tasks: Back
     # helper swallows its own errors, and this guard is a belt-and-suspenders so
     # the 201 can never depend on the SMS path.
     try:
-        _send_booking_customer_sms(data, result["intake_id"])
+        _send_booking_customer_sms(db, data, result["intake_id"])
     except Exception as e:
         logger.warning("booking customer SMS failed: %s", e)
 
