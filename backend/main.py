@@ -159,6 +159,8 @@ async def sliding_session_refresh(request, call_next):
 import time as _time
 import logging as _logging
 
+from utils.log_paths import loggable_path as _loggable_path
+
 _perf_logger = _logging.getLogger("brightbase.perf")
 if not _perf_logger.handlers:
     _h = _logging.StreamHandler()
@@ -175,9 +177,16 @@ async def request_timing(request, call_next):
     try:
         response.headers["X-Process-Time-Ms"] = f"{duration_ms:.0f}"
         level = _logging.WARNING if duration_ms > 1000 else _logging.INFO
+        # BB-SEC-15: the ROUTE TEMPLATE, not the path. Fourteen public routes
+        # carry their credential in the path (/api/quotes/public/{token}), and
+        # this line put every one of them into Railway's log stream — retained
+        # under different access rules than the database, and for longer than
+        # the token stays valid. The template says which endpoint was hit
+        # without saying which customer's link, and groups the log by endpoint
+        # instead of scattering a line per token.
         _perf_logger.log(
             level, "%s %s %s %.0fms",
-            request.method, request.url.path, response.status_code, duration_ms,
+            request.method, _loggable_path(request), response.status_code, duration_ms,
         )
     except Exception:
         pass  # instrumentation must never break a response

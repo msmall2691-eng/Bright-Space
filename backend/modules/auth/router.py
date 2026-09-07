@@ -179,7 +179,12 @@ def get_current_user(
     import os as _os
     if _os.getenv("BRIGHTBASE_API_KEY", ""):
         try:
-            path = request.url.path
+            # BB-SEC-15: the route template, not the raw path. This line is a
+            # WARNING on every master-key call, and the key can reach a public
+            # capability route like any other caller — logging the token here
+            # would leak it just as surely as the perf logger did.
+            from utils.log_paths import loggable_path
+            path = loggable_path(request)
             client = request.client.host if request.client else "unknown"
         except Exception:
             path, client = "?", "?"
