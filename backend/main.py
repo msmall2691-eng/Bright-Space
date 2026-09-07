@@ -67,7 +67,34 @@ from modules.scheduling.router import schedule_router
 from modules.portal.router import router as portal_router
 from modules.push.router import router as push_router
 
-app = FastAPI(title="BrightBase API", version="1.0.0")
+# BB-SEC-14. /docs, /redoc and /openapi.json were served UNAUTHENTICATED in
+# production — all 200 to anyone who asked. That publishes the entire API
+# surface: every route, every parameter, every response shape, including the
+# admin, payroll and portal endpoints. None of it is a credential, but it is
+# the map you would want before probing for a missing role check, and it names
+# routes the UI never links to. It also turns an endpoint docstring into public
+# documentation, which is why BB-SEC-13's writeup had to move into a comment.
+#
+# On by default LOCALLY, because /docs is genuinely useful while building; off
+# wherever Railway is running us. RAILWAY_DEPLOYMENT_ID is injected by the
+# platform and is already how /api/version identifies a deploy. ENABLE_API_DOCS
+# overrides in either direction, so turning them back on is one Railway
+# variable and a redeploy — no code change, no branch.
+#
+# Note `npm run gen:types` is unaffected: it imports the app in-process and
+# calls app.openapi() directly, never the HTTP route.
+from config import env_flag as _env_flag
+
+_ON_RAILWAY = bool(os.getenv("RAILWAY_DEPLOYMENT_ID", ""))
+API_DOCS_ENABLED = _env_flag("ENABLE_API_DOCS", default=not _ON_RAILWAY)
+
+app = FastAPI(
+    title="BrightBase API",
+    version="1.0.0",
+    docs_url="/docs" if API_DOCS_ENABLED else None,
+    redoc_url="/redoc" if API_DOCS_ENABLED else None,
+    openapi_url="/openapi.json" if API_DOCS_ENABLED else None,
+)
 
 # BB-OPS-01: wire rate limiter so @limiter.limit() decorators fire.
 from slowapi import _rate_limit_exceeded_handler
