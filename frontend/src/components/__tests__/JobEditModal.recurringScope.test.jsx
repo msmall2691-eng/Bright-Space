@@ -27,7 +27,6 @@ const RECURRING_JOB = {
   recurring_schedule_id: 42,
   title: 'Original title',
   job_type: 'residential',
-  pay_mode: 'auto',
   status: 'scheduled',
   property_id: 2,
   address: '1 First St',

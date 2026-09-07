@@ -9071,10 +9071,6 @@ export interface components {
              * @default residential
              */
             job_type: string | null;
-            /** Pay Mode */
-            pay_mode?: string | null;
-            /** Pay Rate Bump */
-            pay_rate_bump?: number | null;
             /** Scheduled Date */
             scheduled_date: string;
             /** Start Time */
@@ -9141,10 +9137,6 @@ export interface components {
             } | null;
             /** Job Type */
             job_type?: string | null;
-            /** Pay Mode */
-            pay_mode?: string | null;
-            /** Pay Rate Bump */
-            pay_rate_bump?: number | null;
             /** Property Id */
             property_id?: number | null;
             /** Price */

@@ -115,18 +115,37 @@ def test_update_job_to_deep_clean_is_accepted(admin):
         db.commit(); db.close()
 
 
-def test_update_job_pay_mode_persists_and_validates(admin):
-    """The per-job native-payroll override saves, and a bogus value is rejected."""
+def test_a_job_cannot_be_priced_by_the_hour(admin):
+    """INVERTED, not deleted. This asserted that `pay_mode` saved and that a
+    bogus value was rejected — it pinned a per-job control that let the office
+    choose to "pay by the hour even on a weekend", and an "extra $/hr on top
+    of each cleaner's normal rate" beside it.
+
+    That is the employee model one level down from the per-cleaner hourly
+    wage removed in the commit before this one. A subcontractor is paid per
+    job and never per hour; #777 deleted the payroll engine that read these,
+    leaving a screen offering an hourly choice that decided nothing.
+
+    What a job pays is `posted_rate` (offered) and `agreed_rate` (settled) —
+    per job, both still here. The COLUMNS remain on `jobs` (additive-only);
+    what must stay gone is every way to write them.
+    """
     db = SessionLocal()
     c, p, j = _seed_oneoff(db)
     jid, cid, pid = j.id, c.id, p.id
     db.close()
     try:
-        assert client.patch(f"/api/jobs/{jid}", json={"pay_mode": "hourly"}).status_code == 200
+        r = client.patch(f"/api/jobs/{jid}",
+                         json={"pay_mode": "hourly", "pay_rate_bump": 5})
+        assert r.status_code in (200, 422), r.text
+        if r.status_code == 200:
+            body = r.json()
+            assert "pay_mode" not in body and "pay_rate_bump" not in body
         db = SessionLocal()
-        assert db.query(Job).filter(Job.id == jid).first().pay_mode == "hourly"
+        row = db.query(Job).filter(Job.id == jid).first()
+        stored = (row.pay_mode, row.pay_rate_bump)
         db.close()
-        assert client.patch(f"/api/jobs/{jid}", json={"pay_mode": "bogus"}).status_code == 400
+        assert stored == (None, None), f"an hourly pay setting was stored: {stored}"
     finally:
         db = SessionLocal()
         db.query(Job).filter(Job.id == jid).delete(synchronize_session=False)
