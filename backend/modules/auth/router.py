@@ -702,19 +702,24 @@ class AdminUserUpdate(BaseModel):
     # provided in this request", matching the rest of this endpoint's
     # partial-update convention).
     cleaner_id: Optional[str] = None
-    # Per-cleaner pay rate overrides ($/hr) for the native payroll source.
-    # Applied only when present in the request (via model_fields_set), so an
-    # explicit null clears the override while omitting the field leaves it
-    # untouched — a number sets it.
-    pay_rate_residential: Optional[float] = None
-    pay_rate_rental: Optional[float] = None
-    pay_rate_deep: Optional[float] = None
+    # NO HOURLY PAY RATE. The three `pay_rate_*` fields were removed here: a
+    # subcontractor is paid per job and never per hour, and the office had a
+    # form that recorded an hourly wage against a 1099 contractor, stored it,
+    # and derived nothing from it — #777 deleted the payroll engine that was
+    # the only consumer. Pure downside: no value produced, and a discoverable
+    # record saying the opposite of the classification the whole arrangement
+    # rests on. The COLUMNS stay (dropping them is destructive for history
+    # nobody can regenerate, and the discipline here is additive-only); what
+    # is gone is every way to write a new one.
     # Crew lead flag: this cleaner's app shows the WHOLE month schedule
     # (names/times only). Admin-set here only — never self-service.
     can_view_full_schedule: Optional[bool] = None
-    # Cleaner home address (migration 092) — start/end of the payroll mileage
-    # chain. "" clears it. Office-entered; the cached geocode (home_lat/lng)
-    # resets on change so the next mileage report re-geocodes lazily.
+    # Cleaner home address (migration 092). "" clears it. Office-entered and
+    # office-facing only — it never rides a crew or customer payload. It fed
+    # the payroll drive-mileage chain, which #777 deleted along with the rest
+    # of the employee model; it is kept because knowing roughly where somebody
+    # is based is ordinary operational information, and NOT relabelled as
+    # anything to do with pay.
     home_address: Optional[str] = None
 
 
@@ -735,9 +740,6 @@ def _user_row(db: Session, u: User) -> dict:
         "auth_provider": u.auth_provider,
         "google_connected": bool(u.google_sub) or has_google_grant,
         "cleaner_id": u.cleaner_id,
-        "pay_rate_residential": u.pay_rate_residential,
-        "pay_rate_rental": u.pay_rate_rental,
-        "pay_rate_deep": u.pay_rate_deep,
         "can_view_full_schedule": bool(getattr(u, "can_view_full_schedule", False)),
         "home_address": u.home_address,
         "last_login_at": u.last_login_at.isoformat() if u.last_login_at else None,
@@ -967,23 +969,16 @@ def update_workspace_user(user_id: int, data: AdminUserUpdate, db: Session = Dep
             raise HTTPException(status_code=409,
                                 detail=f"Crew ID '{new_cid}' already belongs to another user.")
         u.cleaner_id = new_cid
-    # Per-cleaner pay rates: applied only when present in the request (null
-    # clears, a number sets, omission leaves untouched).
-    _fields_set = data.model_fields_set
-    for _attr in ("pay_rate_residential", "pay_rate_rental", "pay_rate_deep"):
-        if _attr in _fields_set:
-            _val = getattr(data, _attr)
-            if _val is not None and _val < 0:
-                raise HTTPException(status_code=422, detail=f"{_attr} cannot be negative")
-            setattr(u, _attr, _val)
     if data.can_view_full_schedule is not None:
         u.can_view_full_schedule = data.can_view_full_schedule
     if data.home_address is not None:
         new_home = data.home_address.strip()[:400] or None
         if new_home != u.home_address:
             u.home_address = new_home
-            # Invalidate the cached geocode — the next payroll mileage report
-            # re-geocodes the new address lazily (services/geocoding.py).
+            # Invalidate the cached geocode. Nothing refills it today —
+            # services/geocoding.py is orphaned since the payroll mileage
+            # report was deleted — but a stale lat/lng pointing at somebody's
+            # PREVIOUS home is worse than an empty one, so the clear stays.
             u.home_lat = None
             u.home_lng = None
     db.commit()

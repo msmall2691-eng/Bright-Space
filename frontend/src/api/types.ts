@@ -8061,12 +8061,6 @@ export interface components {
             email?: string | null;
             /** Cleaner Id */
             cleaner_id?: string | null;
-            /** Pay Rate Residential */
-            pay_rate_residential?: number | null;
-            /** Pay Rate Rental */
-            pay_rate_rental?: number | null;
-            /** Pay Rate Deep */
-            pay_rate_deep?: number | null;
             /** Can View Full Schedule */
             can_view_full_schedule?: boolean | null;
             /** Home Address */
@@ -8553,7 +8547,22 @@ export interface components {
             /** Cleaner Ids */
             cleaner_ids?: unknown[] | null;
         };
-        /** CrewCreate */
+        /**
+         * CrewCreate
+         * @description Adding a cleaner. NOTE THE ABSENCE OF AN HOURLY RATE.
+         *
+         *     A subcontractor is paid per job and never per hour — one of the three
+         *     constraints the marketplace arrangement is built on, and a legal one
+         *     rather than a stylistic one. The three `pay_rate_*` fields lived here
+         *     until the office form that wrote them became a record of an hourly wage
+         *     against a 1099 contractor that nothing read: #777 deleted the payroll
+         *     engine, leaving write-only columns and a form saying the opposite of the
+         *     classification being defended.
+         *
+         *     The columns remain on `users` — dropping them is a destructive migration
+         *     for history nobody can regenerate, and the discipline here is
+         *     additive-only. What is gone is every way to write a new value.
+         */
         CrewCreate: {
             /** Full Name */
             full_name: string;
@@ -8561,12 +8570,6 @@ export interface components {
             email: string;
             /** Cleaner Id */
             cleaner_id?: string | null;
-            /** Pay Rate Residential */
-            pay_rate_residential?: number | null;
-            /** Pay Rate Rental */
-            pay_rate_rental?: number | null;
-            /** Pay Rate Deep */
-            pay_rate_deep?: number | null;
         };
         /** DocBody */
         DocBody: {

@@ -48,7 +48,7 @@ def test_add_crew_creates_invited_passwordless_cleaner(api):
     client, made = api
     email = _email()
     r = client.post("/api/crew", json={"full_name": "Sam Clean", "email": email,
-                                       "cleaner_id": "CT-77", "pay_rate_residential": 22.5})
+                                       "cleaner_id": "CT-77"})
     assert r.status_code == 200, r.text
     row = r.json()
     made["users"].append(row["id"])
@@ -56,7 +56,6 @@ def test_add_crew_creates_invited_passwordless_cleaner(api):
     assert row["cleaner_id"] == "CT-77"
     assert row["status"] == "invited"
     assert row["activated"] is False        # no password yet → invite not accepted
-    assert row["pay_rate_residential"] == 22.5
 
     db = SessionLocal()
     u = db.query(User).filter(User.id == row["id"]).first()
@@ -64,14 +63,59 @@ def test_add_crew_creates_invited_passwordless_cleaner(api):
     db.close()
 
 
-def test_add_crew_rejects_duplicate_email_and_negative_rate(api):
+def test_add_crew_rejects_duplicate_email(api):
     client, made = api
     email = _email()
     r1 = client.post("/api/crew", json={"full_name": "A", "email": email})
     made["users"].append(r1.json()["id"])
     assert client.post("/api/crew", json={"full_name": "B", "email": email}).status_code == 409
-    assert client.post("/api/crew", json={"full_name": "C", "email": _email(),
-                                          "pay_rate_deep": -5}).status_code == 422
+
+
+def test_an_hourly_wage_cannot_be_recorded_against_a_subcontractor(api):
+    """INVERTED, not deleted. This file used to assert that
+    `pay_rate_residential` round-tripped through the invite and that a
+    negative one was rejected — it pinned a feature that should not exist.
+
+    A sub is paid per job and never per hour: one of the three constraints
+    the marketplace arrangement rests on, and a legal one rather than a
+    stylistic one. The office nonetheless had a form that recorded an hourly
+    wage against a 1099 contractor and stored it, while #777 had already
+    deleted the only thing that read it. Pure downside — no value produced,
+    and a discoverable record contradicting the classification.
+
+    The COLUMNS remain on `users` (dropping them is a destructive migration
+    for history nobody can regenerate, and the discipline is additive-only).
+    What must stay gone is every way to write a new value, so this asserts the
+    absence on both the write and the read side.
+    """
+    client, made = api
+    r = client.post("/api/crew", json={
+        "full_name": "Sam Clean", "email": _email(),
+        "pay_rate_residential": 22.5, "pay_rate_rental": 30, "pay_rate_deep": 40,
+    })
+    assert r.status_code == 200, r.text
+    row = r.json()
+    made["users"].append(row["id"])
+
+    # Ignored on the way in — not stored, not echoed.
+    for field in ("pay_rate_residential", "pay_rate_rental", "pay_rate_deep"):
+        assert field not in row, f"{field} still on the crew payload"
+    db = SessionLocal()
+    u = db.query(User).filter(User.id == row["id"]).first()
+    stored = (u.pay_rate_residential, u.pay_rate_rental, u.pay_rate_deep)
+    db.close()
+    assert stored == (None, None, None), f"an hourly wage was stored: {stored}"
+
+    # ...and the office user PATCH cannot set one either.
+    p = client.patch(f"/api/auth/users/{row['id']}", json={"pay_rate_residential": 19})
+    assert p.status_code in (200, 422), p.text
+    if p.status_code == 200:
+        assert "pay_rate_residential" not in p.json()
+    db = SessionLocal()
+    u = db.query(User).filter(User.id == row["id"]).first()
+    again = u.pay_rate_residential
+    db.close()
+    assert again is None, f"the user PATCH stored an hourly wage: {again}"
 
 
 def test_accept_invite_sets_password_signs_in_and_is_single_use(api):
