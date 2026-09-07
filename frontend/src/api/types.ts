@@ -2638,6 +2638,31 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/payroll/subcontractors/rail": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Choose Rail
+         * @description Pick how subcontractors get paid.
+         *
+         *     Without this the Stripe rail could be built and never selected — the
+         *     setting had no writer anywhere in the app. Validated against the registry
+         *     rather than stored raw: `get_rail` falls back to manual on an unknown name,
+         *     which would mean saving a typo and quietly paying by CSV forever.
+         */
+        post: operations["choose_rail_api_payroll_subcontractors_rail_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/payroll/subcontractors/payouts/generate": {
         parameters: {
             query?: never;
@@ -9617,6 +9642,11 @@ export interface components {
                 [key: string]: unknown;
             } | null;
         };
+        /** RailBody */
+        RailBody: {
+            /** Name */
+            name: string;
+        };
         /**
          * RecurrenceExceptionRead
          * @description Phase 6 step 2: response model for the exception endpoints. Matches
@@ -14169,6 +14199,39 @@ export interface operations {
             cookie?: never;
         };
         requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    choose_rail_api_payroll_subcontractors_rail_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RailBody"];
+            };
+        };
         responses: {
             /** @description Successful Response */
             200: {

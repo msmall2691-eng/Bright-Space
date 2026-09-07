@@ -183,3 +183,98 @@ def summarize(account) -> dict:
         "payouts_enabled": bool(account.get("payouts_enabled")),
         "requirements": " · ".join(parts) or None,
     }
+
+
+# ── Moving money (part two) ─────────────────────────────────────────────────
+#
+# A transfer takes money from the PLATFORM's Stripe balance and puts it in a
+# connected account's. It is not a bank deposit — Stripe pays the sub's bank
+# out of their own balance on their own schedule. From TMCC's books the money
+# is gone the moment the transfer succeeds, which is what the ledger records.
+#
+# The platform balance is the constraint nobody expects: TMCC is paid by
+# clients through Square and invoices, not Stripe, so that balance starts at
+# zero and stays there until it is funded. `platform_balance` exists so the
+# office is told that in numbers before pressing a button, rather than by a
+# rejected transfer.
+
+
+def _definite(exc) -> bool:
+    """True when Stripe ANSWERED and said no.
+
+    This is the whole difference between a payout that is safe to retry and
+    one that must not be. `http_status` is set when a response came back — the
+    request reached Stripe, was rejected, and created nothing. A connection
+    error or a timeout leaves it None: the transfer may well exist, and trying
+    again is how somebody gets paid twice.
+    """
+    return getattr(exc, "http_status", None) is not None
+
+
+def _message(exc) -> str:
+    for attr in ("user_message", "_message"):
+        m = getattr(exc, attr, None)
+        if m:
+            return str(m)
+    return str(exc) or exc.__class__.__name__
+
+
+def transfer(*, account_id: str, amount_cents: int, idempotency_key: str,
+             description: Optional[str] = None,
+             metadata: Optional[dict] = None) -> dict:
+    """Send money to one connected account.
+
+    Returns `{"ok", "id", "error", "definite"}`. The caller decides what to
+    write down; this function never touches the ledger, for the same reason
+    the manual rail doesn't — a rail that records its own success can claim
+    money moved when it didn't.
+
+    IDEMPOTENCY KEY, and its limit. Replaying the same key inside 24 hours
+    returns the transfer Stripe already made, so a crash between "transfer
+    succeeded" and "ledger written" is recoverable. After 24 hours the key is
+    forgotten and the same key makes a SECOND transfer, which is why the rail
+    refuses to retry a row whose outcome it never learned rather than leaning
+    on this.
+    """
+    s = _client()
+    if s is None:
+        return {"ok": False, "id": None, "definite": True,
+                "error": "Stripe isn't connected."}
+    try:
+        tr = s.Transfer.create(
+            amount=int(amount_cents),
+            currency="usd",
+            destination=account_id,
+            description=(description or "")[:200] or None,
+            metadata=metadata or {},
+            idempotency_key=idempotency_key,
+        )
+        return {"ok": True, "id": tr.get("id"), "definite": True, "error": None}
+    except Exception as e:  # noqa: BLE001 - the branch on `definite` is the point
+        definite = _definite(e)
+        logger.warning("[stripe] transfer to %s failed (answered=%s): %s",
+                       account_id, definite, _message(e))
+        return {"ok": False, "id": None, "definite": definite, "error": _message(e)}
+
+
+def platform_balance() -> Optional[dict]:
+    """USD available and pending on the PLATFORM account, in cents.
+
+    None when Stripe isn't configured or the call failed — which the caller
+    must treat as "unknown", not "zero". Refusing to pay because a balance
+    read timed out would be the wrong failure.
+    """
+    s = _client()
+    if s is None:
+        return None
+    try:
+        bal = s.Balance.retrieve()
+    except Exception:
+        logger.exception("[stripe] could not read the platform balance")
+        return None
+
+    def _usd(bucket) -> int:
+        return sum(int(b.get("amount") or 0) for b in (bal.get(bucket) or [])
+                   if (b.get("currency") or "").lower() == "usd")
+
+    return {"available_cents": _usd("available"), "pending_cents": _usd("pending")}

@@ -226,7 +226,13 @@ def test_the_view_separates_earned_from_unrecorded(ids):
         assert before["earned_total"] == 200.0
         assert before["unrecorded_total"] == 200.0
         assert before["payouts"] == []
-        assert before["rail"] == {"name": "manual", "settles": False}
+        # The rail now says whether it can pay right now and what that means,
+        # so this checks the part that decides behaviour rather than the whole
+        # shape: `settles` False is why the Send button says SENT and not PAID.
+        assert before["rail"]["name"] == "manual"
+        assert before["rail"]["settles"] is False
+        assert before["rail"]["ready"] is True
+        assert {r["name"] for r in before["rails"]} >= {"manual", "stripe"}
 
         _generate(api)
         after = _view(api)

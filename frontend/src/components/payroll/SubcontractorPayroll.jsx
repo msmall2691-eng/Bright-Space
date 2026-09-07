@@ -13,10 +13,13 @@
  *      Creates `due` rows. Idempotent, so pressing it twice is safe; the
  *      screen shows "earned" and "not yet recorded" side by side so pressing
  *      it is a legible act rather than a leap.
- *   2. Send — hand payouts to the configured rail. The manual rail returns a
- *      CSV and marks them SENT.
- *   3. Mark paid — a person asserting money actually left. Nothing else in
- *      the system sets that, because nothing else knows.
+ *   2. Send — hand payouts to the configured rail. Which rail is chosen
+ *      changes what this step MEANS, so the button says which: the manual
+ *      rail downloads a list and marks them SENT; the Stripe rail moves the
+ *      money and marks them PAID.
+ *   3. Mark paid — a person asserting money actually left. Still here, and
+ *      still the only way a manual payout becomes paid, because nothing in
+ *      this code can know whether a cheque was written.
  *
  * REQUEST ECONOMY: one GET answers the whole screen (period totals, the
  * ledger, year-to-date, the rail). Every write returns enough to justify a
@@ -54,6 +57,84 @@ function Status({ status }) {
   )
 }
 
+/**
+ * How subcontractors get paid, and whether that way can pay right now.
+ *
+ * A picker rather than a settings page: the choice belongs next to the button
+ * it changes the meaning of. `detail` is the rail speaking for itself — the
+ * Stripe rail puts the available balance there, which is the one number that
+ * decides whether pressing Pay will do anything, and which nothing else in the
+ * app can tell you.
+ */
+function RailChoice({ rail, rails, isAdmin, busy, onChoose }) {
+  const options = rails?.length ? rails : [{ name: rail.name, label: rail.name }]
+  return (
+    <span className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[12px] text-ink-3">
+      <span>Paid by</span>
+      {isAdmin && options.length > 1 ? (
+        <select value={rail.name} disabled={busy}
+          onChange={(e) => onChoose(e.target.value)}
+          aria-label="How subcontractors get paid"
+          className="rounded-md border border-hairline bg-panel px-1.5 py-0.5 text-[12px] text-ink-2 disabled:opacity-50">
+          {options.map(o => (
+            <option key={o.name} value={o.name}>{o.label || o.name}</option>
+          ))}
+        </select>
+      ) : (
+        <span className="text-ink-2">
+          {options.find(o => o.name === rail.name)?.label || rail.name}
+        </span>
+      )}
+      {rail.detail && (
+        <span className="flex items-center gap-1.5">
+          <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${
+            rail.ready === false ? 'bg-amber-500' : 'bg-emerald-500'}`}
+            aria-hidden="true" />
+          {rail.detail}
+        </span>
+      )}
+    </span>
+  )
+}
+
+/**
+ * What the last send actually did, per person.
+ *
+ * Only rendered for a rail that settles, because only then can a batch come
+ * back half-done. Toasts are wrong for this: "8 paid, 3 skipped" is a list of
+ * three people to go and do something about, and it must still be on screen a
+ * minute later.
+ */
+function SendReport({ report }) {
+  const rows = [
+    ...(report.blocked || []).map(r => ({ ...r, tone: 'bg-amber-500' })),
+    ...(report.failed || []).map(r => ({ ...r, tone: 'bg-red-500' })),
+    // Never re-sent automatically. A previous attempt's outcome is unknown, so
+    // a person checks Stripe before anyone risks paying twice.
+    ...(report.needs_check || []).map(r => ({ ...r, tone: 'bg-red-500' })),
+  ]
+  if (!rows.length) return null
+  return (
+    <section>
+      <h2 className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-ink-3">
+        Didn’t go out
+      </h2>
+      <ul className="space-y-1.5">
+        {rows.map((r, i) => (
+          <li key={`${r.id}-${i}`} className="flex items-start gap-1.5 text-[13px] text-ink-2">
+            <span className={`mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full ${r.tone}`}
+              aria-hidden="true" />
+            <span>
+              <span className="text-ink">{r.name}</span>
+              {' · '}{money(r.amount)}{' — '}{r.reason}
+            </span>
+          </li>
+        ))}
+      </ul>
+    </section>
+  )
+}
+
 function Figure({ label, value, sub }) {
   return (
     <div className="px-4 py-3">
@@ -70,6 +151,10 @@ export default function SubcontractorPayroll({ startDate, endDate, isAdmin }) {
   const [error, setError] = useState('')
   const [busy, setBusy] = useState('')
   const [picked, setPicked] = useState(() => new Set())
+  // A settling rail can pay six people and skip three, each for a different
+  // reason. That is a list somebody acts on — a toast that vanishes in four
+  // seconds is the wrong place for it.
+  const [report, setReport] = useState(null)
 
   const load = useCallback(async () => {
     if (!startDate || !endDate) return
@@ -125,9 +210,24 @@ export default function SubcontractorPayroll({ startDate, endDate, isAdmin }) {
     const ids = pickedDue.map(p => p.id)
     const r = await post('/api/payroll/subcontractors/payouts/send', { payout_ids: ids })
     if (r.csv) downloadCsv(r.csv, `subcontractor_payouts_${startDate}_to_${endDate}.csv`)
-    // Says SENT, deliberately — the rail handed over a list, it did not pay
-    // anyone. "Mark paid" is where a person says the money left.
-    toast.success(`${r.count} marked sent · ${money(r.total)} · CSV downloaded`)
+    setReport(r.settled ? r : null)
+    if (r.settled) {
+      // PAID, and it means it — the money left the business. The word is
+      // earned by the rail, not by the button.
+      toast.success(r.count
+        ? `Paid ${r.count} · ${money(r.total)}`
+        : 'Nothing went out — see the reasons below')
+    } else {
+      // SENT, deliberately — the rail handed over a list, it did not pay
+      // anyone. "Mark paid" is where a person says the money left.
+      toast.success(`${r.count} marked sent · ${money(r.total)} · CSV downloaded`)
+    }
+    return r
+  })
+
+  const chooseRail = (name) => run('rail', async () => {
+    const r = await post('/api/payroll/subcontractors/rail', { name })
+    setReport(null)
     return r
   })
 
@@ -197,9 +297,14 @@ export default function SubcontractorPayroll({ startDate, endDate, isAdmin }) {
           </button>
         )}
         {isAdmin && pickedDue.length > 0 && (
-          <button type="button" onClick={send} disabled={busy === 'send'}
+          <button type="button" onClick={send}
+            disabled={busy === 'send' || data.rail?.ready === false}
             className="inline-flex items-center gap-1.5 rounded-lg border border-hairline bg-panel px-4 py-2 text-sm font-medium text-ink-2 transition-colors hover:bg-bg-2 disabled:opacity-50">
-            <Send className="h-4 w-4" /> Send {pickedDue.length} · {money(
+            <Send className="h-4 w-4" />
+            {/* PAY when the rail settles, SEND when it hands over a list. The
+                verb is the honest difference between the two and the only
+                warning anyone gets that this button moves real money. */}
+            {data.rail?.settles ? 'Pay' : 'Send'} {pickedDue.length} · {money(
               pickedDue.reduce((s, p) => s + p.amount, 0))}
           </button>
         )}
@@ -216,11 +321,12 @@ export default function SubcontractorPayroll({ startDate, endDate, isAdmin }) {
           </>
         )}
         {data.rail && (
-          <span className="text-[12px] text-ink-3">
-            Paid by {data.rail.name === 'manual' ? 'hand, from a CSV' : data.rail.name}
-          </span>
+          <RailChoice rail={data.rail} rails={data.rails} isAdmin={isAdmin}
+            busy={busy === 'rail'} onChoose={chooseRail} />
         )}
       </div>
+
+      {report && <SendReport report={report} />}
 
       {data.unrecorded.length > 0 && (
         <section>
@@ -276,7 +382,16 @@ export default function SubcontractorPayroll({ startDate, endDate, isAdmin }) {
                           className="h-3.5 w-3.5 rounded border-hairline-2" />
                       </td>
                     )}
-                    <td className="px-3 py-2 text-ink">{p.name || p.cleaner_id}</td>
+                    <td className="px-3 py-2 text-ink">
+                      {p.name || p.cleaner_id}
+                      {/* Only where it changes what the button will do. On the
+                          manual rail every row is payable by hand, so saying
+                          "no direct deposit" would be noise about nothing. */}
+                      {data.rail?.settles && !p.direct_deposit
+                        && p.status === 'due' && (
+                        <span className="ml-2 text-[11px] text-ink-3">no direct deposit</span>
+                      )}
+                    </td>
                     <td className="px-3 py-2 text-ink-3">{p.memo || '—'}</td>
                     <td className="px-3 py-2 text-ink-3">{fmtDate(p.earned_on)}</td>
                     <td className="px-3 py-2"><Status status={p.status} /></td>
@@ -330,8 +445,16 @@ export default function SubcontractorPayroll({ startDate, endDate, isAdmin }) {
         )}
         <p className="mt-2 text-[12px] text-ink-3">
           Grouped by when the work happened, not when the money moved — a
-          January payment for December work belongs to December. A “1099” mark
-          means that person has passed $600 this year.
+          January payment for December work belongs to December.
+          {ytd.threshold != null && (
+            /* The figure comes from the API, which is the same figure the flag
+               was measured against. Hard-coding "$600" here is exactly how
+               this sentence came to be wrong: the reporting threshold rose to
+               $2,000 for payments made after 31 December 2025, and a number
+               typed into prose cannot follow it. */
+            <> A “1099” mark means that person has passed{' '}
+              ${ytd.threshold.toLocaleString('en-US')} for {ytd.year}.</>
+          )}
         </p>
       </section>
     </div>
