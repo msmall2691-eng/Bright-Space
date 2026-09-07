@@ -2,6 +2,8 @@
 
 import logging
 from apscheduler.schedulers.background import BackgroundScheduler
+from apscheduler.events import (EVENT_JOB_ERROR, EVENT_JOB_EXECUTED,
+                                EVENT_JOB_MISSED)
 from apscheduler.triggers.interval import IntervalTrigger
 from apscheduler.triggers.cron import CronTrigger
 from sqlalchemy import or_, and_
@@ -733,6 +735,62 @@ def _claim_scheduler_singleton_lock() -> bool:
         return True
 
 
+def _record_tick_event(event) -> None:
+    """Feed every tick outcome to services.tick_health.
+
+    Must never raise: this runs inside APScheduler's executor callback, and an
+    exception here would be swallowed by the very machinery the module exists
+    to make visible.
+    """
+    try:
+        from services import tick_health
+
+        job_id = getattr(event, "job_id", None) or "unknown"
+
+        if event.code == EVENT_JOB_MISSED:
+            tick_health.record_missed(job_id)
+            log.warning("[tick] %s MISSED its scheduled run", job_id)
+            return
+
+        if event.code == EVENT_JOB_ERROR:
+            exc = getattr(event, "exception", None)
+            tick_health.record_error(job_id, f"{type(exc).__name__}: {exc}")
+            log.error("[tick] %s raised: %s", job_id, exc, exc_info=exc)
+            return
+
+        # Executed. A tick that handled its own exception reports it in the
+        # return value, by the convention all twelve of them already follow.
+        rv = getattr(event, "retval", None)
+        if isinstance(rv, dict) and rv.get("error"):
+            tick_health.record_error(job_id, str(rv["error"]))
+            log.error("[tick] %s returned an error: %s", job_id, rv["error"])
+        else:
+            tick_health.record_success(job_id, rv)
+    except Exception:
+        log.exception("[tick] failed to record a tick outcome")
+
+
+def registered_jobs() -> list[dict]:
+    """What the scheduler currently holds, shaped for tick_health.snapshot().
+
+    Empty when no scheduler runs in this process — which is the normal case in
+    every uvicorn worker but the one holding the singleton lock, and in tests.
+    """
+    if _scheduler is None:
+        return []
+    out = []
+    for job in _scheduler.get_jobs():
+        trigger = job.trigger
+        interval = getattr(trigger, "interval", None)
+        out.append({
+            "id": job.id,
+            "name": job.name or job.id,
+            "next_run_time": job.next_run_time.isoformat() if job.next_run_time else None,
+            "interval_seconds": interval.total_seconds() if interval else None,
+        })
+    return out
+
+
 def start_scheduler():
     """Start the background scheduler.
 
@@ -747,7 +805,31 @@ def start_scheduler():
         log.info("Scheduler already owned by another worker; skipping start in this process.")
         return None
 
-    _scheduler = BackgroundScheduler()
+    # BB-OPS-02. Two defaults, both about ticks that silently do not happen.
+    #
+    # misfire_grace_time: APScheduler's default is 1 SECOND. A tick whose turn
+    # comes up while the process is busy — a slow request holding the GIL, a
+    # container still warming after deploy — is not run late, it is DROPPED and
+    # counted as a misfire. At 1s that is easy to hit and impossible to notice.
+    # A generous window is right for every job here: they are idempotent, and
+    # running the iCal sync a minute late beats not running it at all.
+    #
+    # coalesce: if several runs came due while the process was down, run ONCE
+    # on recovery rather than replaying the backlog. That is APScheduler's
+    # default, and it is stated here because it is load-bearing rather than
+    # incidental — these ticks send customer SMS and dunning email, and a
+    # replayed backlog is a burst of duplicates at the worst moment.
+    _scheduler = BackgroundScheduler(job_defaults={
+        "misfire_grace_time": env_int("TICK_MISFIRE_GRACE_SECONDS", 300),
+        "coalesce": True,
+        "max_instances": 1,
+    })
+
+    # One listener for all thirteen. Twelve ticks catch Exception themselves and
+    # return {"error": ...}, so EVENT_JOB_ERROR alone would see one tick in
+    # thirteen — the return value has to be inspected too.
+    _scheduler.add_listener(_record_tick_event,
+                            EVENT_JOB_EXECUTED | EVENT_JOB_ERROR | EVENT_JOB_MISSED)
 
     # Sync reconcile: self-healing Google Calendar push for jobs whose inline
     # push failed or that predate the integration being connected. (The

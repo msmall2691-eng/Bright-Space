@@ -393,3 +393,39 @@ def get_settings(db: Session = Depends(get_db)):
     }
 
 
+
+
+# BB-OPS-02. Thirteen ticks run the automated half of the business —
+# recurring job generation, iCal turnover ingest, calendar push, SMS
+# reminders, invoice dunning, quote expiry. Twelve catch their own exceptions
+# and return {"error": ...}; one lets it propagate. Either way the only trace
+# was a log line, so a tick could fail every fifteen minutes for weeks and the
+# first person to notice would be a customer asking where their cleaner is.
+#
+# `running` separates the two silent states that look identical from outside:
+# the scheduler is up and its ticks are failing, versus no scheduler in this
+# process at all. The second is NORMAL — one uvicorn worker holds the singleton
+# flock and the others legitimately have none — but it is also what a stuck
+# lock or DISABLE_SCHEDULER=1 looks like, which is not.
+#
+# Counters are in-memory and reset on deploy, so after a release everything
+# reads "never run" until its first tick. That is honest rather than a
+# fabricated green.
+#
+# Kept out of the docstring (BB-SEC-14): FastAPI copies that into the OpenAPI
+# description, and a schema should read as documentation rather than as an
+# incident writeup naming env vars.
+@router.get("/scheduler", dependencies=[Depends(require_role("admin", "manager"))])
+def scheduler_health():
+    """Per-tick status for the background scheduler: last run, last error,
+    consecutive failures, missed runs and staleness. Admin/manager only."""
+    from services import tick_health
+    from scheduler import registered_jobs, _scheduler
+
+    jobs = registered_jobs()
+    detail = tick_health.snapshot(jobs)
+    return {
+        "running": _scheduler is not None,
+        "summary": tick_health.summary(jobs),
+        **detail,
+    }
