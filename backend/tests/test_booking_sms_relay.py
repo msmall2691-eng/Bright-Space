@@ -168,7 +168,7 @@ def test_one_number_cannot_be_texted_all_day():
     would pass without the cap existing at all.
     """
     db = SessionLocal()
-    to = "+12075550177"
+    to = "+12075550176"
     try:
         for i in range(sms_guard.DAILY_PER_NUMBER_CAP):
             assert sms_guard.may_send(db, to)[0] is True, f"refused at {i}"
@@ -176,7 +176,7 @@ def test_one_number_cannot_be_texted_all_day():
         allowed, why = sms_guard.may_send(db, to)
         assert allowed is False and why == "per-number cap"
         # A DIFFERENT number is unaffected — this is a per-destination cap.
-        assert sms_guard.may_send(db, "+12075550188")[0] is True
+        assert sms_guard.may_send(db, "+12075550175")[0] is True
     finally:
         db.close()
 
@@ -200,13 +200,13 @@ def test_the_account_has_a_daily_ceiling(monkeypatch):
 def test_every_send_is_recorded(_twilio):
     """The booking SMS was logged nowhere at all, so there was no record of
     what the number had sent and nothing to count a budget against."""
-    _submit(phone="207-555-0188")
+    _submit(phone="207-555-0143")
     db = SessionLocal()
     rows = db.query(IntegrationEvent).filter(
         IntegrationEvent.action == sms_guard.ACTION).all()
     payloads = [r.request_payload for r in rows]
     db.close()
-    assert payloads == ["to +12075550188"]
+    assert payloads == ["to +12075550143"]
 
 
 # ── the amplifier ──────────────────────────────────────────────────────────

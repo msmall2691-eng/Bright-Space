@@ -14,12 +14,10 @@ What these cover:
 - generate_jobs respects exceptions even when Visit is hard-deleted
 """
 import os
-import sys
 import pytest
 from datetime import date, time, timedelta
-from unittest.mock import MagicMock
+from unittest.mock import patch
 
-sys.modules.setdefault("integrations.google_calendar", MagicMock())
 
 from database.db import SessionLocal, engine
 from database.models import (
@@ -50,6 +48,30 @@ _REQUIRES_POSTGRES = pytest.mark.skipif(
         "SQLite does not perform; run against a Postgres DATABASE_URL."
     ),
 )
+
+
+@pytest.fixture(autouse=True)
+def _no_gcal_push():
+    """Stub the Google Calendar write for THIS MODULE ONLY, and put it back.
+
+    This file used to do `sys.modules.setdefault("integrations.google_calendar",
+    MagicMock())` at import time, which does not stub anything — it replaces the
+    module for the whole pytest process, permanently, for every test that
+    imports it afterwards. Unittest's patch restores; sys.modules does not.
+
+    It went unnoticed while the hand-maintained `testpaths` happened to collect
+    the poisoning files late. Globbing tests/ changed the order, and a bare
+    MagicMock's call result is a TRUTHY Mock rather than None — so the
+    free/busy guard started reporting "0 conflicting event(s)" and refusing
+    bookings, and unrelated files asserted on Mock objects. Fifteen tests in
+    five files, none of them about Google Calendar.
+
+    The real `create_event` already returns None when no credentials are
+    configured, so this is belt-and-braces rather than load-bearing — but it is
+    scoped, and it undoes itself.
+    """
+    with patch("integrations.google_calendar.create_event", return_value=None):
+        yield
 
 
 @pytest.fixture

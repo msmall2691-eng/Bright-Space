@@ -329,3 +329,30 @@ def test_sent_and_accepted_quotes_are_different_cards(client):
     assert by_id[f"quote-stranded:{accepted_id}"]["severity"] == "urgent"
     assert f"quote-stranded:{sent_id}" not in by_id
     assert f"quote:{accepted_id}" not in by_id
+
+
+def test_new_leads_tile_counts_past_the_display_cap(client):
+    """The "New leads" tile is an aggregate, not a length.
+
+    It used to be `sum(1 for ld in leads ...)` over the DISPLAY list, which
+    carries `.limit(10)` because it is a list of ten rows to render. So the
+    tile saturated at 10: identical whether eleven requests were waiting or
+    four hundred. The number stopped moving at exactly the point it starts
+    mattering. Seed past the cap and require the delta to be exact.
+    """
+    api, ids = client
+    before = api.get("/api/dashboard/board").json()
+
+    for _ in range(12):
+        _mk_new_lead(ids)
+
+    after = api.get("/api/dashboard/board").json()
+
+    def stat(payload, key):
+        return int(next(s["value"] for s in payload["stats"] if s["key"] == key))
+
+    assert stat(after, "leads") - stat(before, "leads") == 12
+    # And the list stays a list — capped, because ten rows is a screenful.
+    requests = next(s for s in after["sections"] if s["key"] == "requests")
+    assert len([i for i in requests["items"] if i["id"].startswith("lead:")]) <= 10
+

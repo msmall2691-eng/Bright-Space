@@ -141,27 +141,12 @@ def test_setting_date_respects_explicit_status(ctx):
     assert j.status == "in_progress"
 
 
-def test_status_change_propagates_to_active_visits(ctx):
-    """Codex P1 (#271): the schedule reads Visit.status — a job completed via
-    the edit modal must not leave its visits looking scheduled/actionable."""
-    from database.models import Visit
-    db, c, p1, p2, j = ctx
-    from datetime import date, time
-    v_active = Visit(job_id=j.id, scheduled_date=date(2026, 6, 20),
-                     start_time=time(9, 0), end_time=time(12, 0), status="scheduled")
-    v_done = Visit(job_id=j.id, scheduled_date=date(2026, 6, 13),
-                   start_time=time(9, 0), end_time=time(12, 0), status="cancelled")
-    db.add_all([v_active, v_done]); db.commit()
-    try:
-        update_job(j.id, JobUpdate(status="completed"), db=db)
-        db.refresh(v_active); db.refresh(v_done)
-        assert v_active.status == "completed"   # followed the job
-        assert v_done.status == "cancelled"     # terminal states untouched
-    finally:
-        db.query(Visit).filter(Visit.job_id == j.id).delete(synchronize_session=False)
-        from database.models import Invoice
-        db.query(Invoice).filter(Invoice.job_id == j.id).delete(synchronize_session=False)
-        db.commit()
+# `test_status_change_propagates_to_active_visits` lived here and was deleted
+# with the model it tested. The Visit table is gone — `database.models` has no
+# `Visit`, and the three test_visit_*.py files went with it (they are three of
+# the four `testpaths` entries that named files which no longer existed). This
+# test imported `Visit` INSIDE its body, so it collected fine and only failed
+# when actually run, which under the hand-maintained list it never was.
 
 
 def test_job_type_change_moves_the_calendar_event(ctx, monkeypatch):

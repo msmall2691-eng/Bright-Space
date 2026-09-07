@@ -18,11 +18,20 @@ client = TestClient(app)
 
 def _submit_booking(**overrides):
     key = str(uuid.uuid4())
+    # A DISTINCT PERSON each time. Intake dedups on name + service address
+    # within 24h, so a fixed "Update Tester" at a fixed Pine St collapsed onto
+    # whatever an earlier test in the same run had already submitted — and the
+    # update path, which finds the lead by ITS OWN idempotency key, then 404d
+    # on a row that had been merged away. Passed alone, failed in company.
+    tag = uuid.uuid4().hex[:8]
     payload = {
-        "name": "Update Tester",
-        "email": f"upd-{uuid.uuid4().hex[:8]}@example.com",
-        "phone": "+12075550188",
-        "address": "12 Pine St, Portland, ME 04101",
+        "name": f"Update Tester {tag}",
+        "email": f"upd-{tag}@example.com",
+        # Unique too: intake dedups on email OR PHONE within the recency
+        # window, so a hardcoded number is another way for a neighbouring
+        # test's submission to swallow this one's lead.
+        "phone": f"+1207555{int(tag, 16) % 10000:04d}",
+        "address": f"{tag} Pine St, Portland, ME 04101",
         "serviceType": "standard",
         "requestedDate": "2026-08-10",
         "squareFeet": 1500,
