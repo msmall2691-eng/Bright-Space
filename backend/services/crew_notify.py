@@ -1,4 +1,4 @@
-"""Crew push — "a job landed on your list", and "a job landed on the board."
+"""Telling the crew — "a job landed on your list", and "a job landed on the board."
 
 Called from the canonical assignment write sites (scheduling's create_job /
 update_job / auto-assign) AFTER the Job write commits, never from a background
@@ -6,6 +6,14 @@ tick (scheduling-invariants R1: event-driven, no polling). Delivery rides
 services.push_service.notify_user, which is best-effort, opens its own
 short-lived DB session, and is a silent no-op when VAPID keys aren't
 configured — so a push hiccup can never fail or roll back the schedule write.
+
+AN OFFER GOES OUT ON TWO CHANNELS. Push first; SMS to whoever push could not
+reach, and only to them. Web push requires the app installed to the home
+screen and notifications allowed — on an iPhone both, in that order — which is
+a chain a busy independent cleaner has no reason to have completed. Before
+this, posting a job to somebody who had not done it announced the work to
+nobody, silently, and the job sat there. Nobody gets both messages; a person
+who has muted open jobs gets neither.
 
 SECURITY: the payload carries only the day, time window, and property/job
 name. Door codes, access notes, and addresses NEVER ride a push — lock-screen
@@ -146,10 +154,13 @@ def notify_jobs_posted(db: Session, jobs, org_id=None) -> int:
     if not jobs:
         return 0
     try:
-        from services.push_service import notify_user, push_enabled
+        from services.push_service import notify_user
 
-        if not push_enabled():
-            return 0
+        # NOT gated on push_enabled() any more. This used to return 0 before it
+        # had even looked at the bench, which meant a deploy with no VAPID keys
+        # posted work that announced itself to nobody at all — and nothing said
+        # so. Push is now one channel of two; the function's job is to reach
+        # people, not to send a push.
         oid = org_id if org_id is not None else getattr(jobs[0], "org_id", None)
         people = _cleared_recipients(db, oid)
         if not people:
@@ -170,14 +181,99 @@ def notify_jobs_posted(db: Session, jobs, org_id=None) -> int:
             # One tag for the batch, so a re-post replaces rather than stacks.
             tag = f"jobs-open-{min(j.id for j in jobs)}-{len(jobs)}"
 
-        sent = 0
+        # Who has muted open jobs, and who can be texted — ONE query for the
+        # whole bench (brightbase-economy: no per-person round trip).
+        #
+        # The mute has to be read HERE rather than inferred from the push
+        # result. notify_user returns 0 both when it could not reach anybody
+        # and when the person opted out, so falling back on a zero would text
+        # exactly the people who asked not to hear about this.
+        contact = _contactable(db, [p["user_id"] for p in people])
+        people = [p for p in people if p["user_id"] in contact]
+
+        sent, unreached = 0, []
         for p in people:
-            sent += notify_user(p["user_id"], title, body, url="/my-day",
-                                tag=tag, category="open_jobs")
+            n = notify_user(p["user_id"], title, body, url="/my-day",
+                            tag=tag, category="open_jobs")
+            sent += n
+            if not n:
+                unreached.append(p["user_id"])
+
+        # SMS is the FALLBACK, never a second copy: only the people push could
+        # not reach. Web push needs the app installed to the home screen and
+        # notifications allowed — on an iPhone both, in that order — so on a
+        # bench of independent cleaners the set of people it silently fails to
+        # reach is large, and they are the ones who never hear about work.
+        sent += _sms_offer(unreached, contact, title, body)
         return sent
-    except Exception:  # pragma: no cover - push must never break scheduling
-        logger.warning("posted-job push failed", exc_info=True)
+    except Exception:  # pragma: no cover - notify must never break scheduling
+        logger.warning("posted-job announcement failed", exc_info=True)
         return 0
+
+
+def _contactable(db: Session, user_ids: list) -> dict:
+    """{user_id: e164 phone or None} for everyone who has NOT muted open jobs.
+
+    Absent from the map = muted. Present with None = wants to hear, but there
+    is no number on file, so push is their only channel.
+    """
+    from database.models import User
+    from services.push_service import category_enabled
+    from utils.phone import normalize_e164
+
+    if not user_ids:
+        return {}
+    rows = (db.query(User.id, User.notification_prefs, User.phone)
+            .filter(User.id.in_(user_ids)).all())
+    return {uid: normalize_e164(phone)
+            for uid, prefs, phone in rows
+            if category_enabled(prefs, "open_jobs")}
+
+
+def _sms_offer(user_ids: list, phones: dict, title: str, body: str) -> int:
+    """Text the offer to people push could not reach. Best-effort, per person.
+
+    The BODY IS THE PUSH BODY, deliberately — `_offer_line` / `_batch_line`,
+    which carry day, time, town and rate and never the property name or the
+    address. That withholding is the board's rule (whose house it is is not a
+    bidder's business until they have won it), and a text is if anything more
+    exposed than a push: it sits in a message thread forever and is readable
+    on a lock screen by anyone holding the phone.
+    """
+    if not user_ids:
+        return 0
+    from integrations.twilio_client import configured as sms_configured, send_sms
+
+    if not sms_configured():
+        # Same posture as push with no VAPID keys: quietly do nothing rather
+        # than raise into a schedule write. Logged so a deploy that has neither
+        # channel configured is findable rather than merely silent.
+        logger.info("[crew] %d cleared sub(s) unreachable by push and SMS is "
+                    "not configured — the board announced itself to nobody",
+                    len(user_ids))
+        return 0
+
+    from config import app_base_url
+
+    # One segment where it fits. A long link is what pushes this over 160
+    # characters, and a two-segment text costs double for the same sentence —
+    # worth knowing, not worth dropping the link for: without somewhere to tap,
+    # the message is a notification the person cannot act on.
+    text = f"{title}: {body}. Ask for it here: {app_base_url()}/my-day"
+
+    sent = 0
+    for uid in user_ids:
+        phone = phones.get(uid)
+        if not phone:
+            continue
+        try:
+            send_sms(to=phone, body=text)
+            sent += 1
+        except (ValueError, RuntimeError) as e:
+            # One bad number or a Twilio outage must not cost the rest of the
+            # bench their message. Matches the reminder service's posture.
+            logger.warning("[crew] open-job SMS to user %s failed: %s", uid, e)
+    return sent
 
 
 def _batch_line(jobs) -> str:
