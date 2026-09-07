@@ -206,7 +206,8 @@ Real, verified, unfixed. Do not rediscover them from scratch.
 - **W-9 scans contain SSNs.** The rule "never store SSNs or TINs" is honored in
   the schema and defeated by the file store: a sole proprietor's W-9 has one
   printed on it. Consider pushing W-9 collection to a payments rail that also
-  files the 1099-NECs you owe anyone paid $600+.
+  files the 1099-NECs you owe (the threshold is $2,000 from the 2026 tax year,
+  not the $600 everyone remembers — `services/bench.form_1099_threshold`).
 - **Posting a job notifies nobody.** No push, no SMS. The bench finds out by
   opening the app, and everyone sees the same unranked list.
 - **No service radius, rate floor, capability tags or reliability signals.**

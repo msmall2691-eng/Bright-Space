@@ -275,22 +275,85 @@ def test_ytd_groups_by_work_date_excludes_void_and_flags_the_threshold(ids):
         # 400 + 250. The void is not money and last year is not this year.
         assert row["total"] == 650.0
         assert row["paid"] == 400.0 and row["outstanding"] == 250.0
-        assert row["over_1099_threshold"] is True
+        # $650 in 2026 is UNDER the threshold. It was over the old $600 one,
+        # and this assertion said `is True` until the line below was fixed —
+        # the test had the bug written into it.
+        assert row["over_1099_threshold"] is False
     finally:
         _clear()
 
 
-def test_ytd_threshold_is_not_flagged_below_600(ids):
+# ── The threshold moved, and it moves again ────────────────────────────────
+#
+# The One Big Beautiful Bill Act raised the section 6041(a) threshold from $600
+# to $2,000 for payments made after 31 December 2025, indexed for inflation
+# after 2026. `services/bench.py` grew a year-aware helper for this; the payout
+# ledger kept a hard-coded 600.0 and was missed, so the bench roster and the
+# money screen answered the same question two different ways for a month.
+#
+# Pinned as a FUNCTION OF THE YEAR rather than against today's number, so the
+# next change (an inflation adjustment in 2027) fails here loudly instead of
+# quietly mis-flagging somebody's tax paperwork.
+
+def test_the_threshold_is_read_from_the_year_the_money_was_earned(ids):
+    uid, cid = _mk_sub(ids, name="Steady Sub")
+    api = _api()
+    try:
+        db = SessionLocal()
+        # The same $1,200 in each year. Over the line in 2025, under it in 2026.
+        db.add(SubPayout(org_id=1, user_id=uid, cleaner_id=cid, amount=1200.0,
+                         status="paid", earned_on=LAST_YEAR))
+        db.add(SubPayout(org_id=1, user_id=uid, cleaner_id=cid, amount=1200.0,
+                         status="paid", earned_on=IN_PERIOD))
+        db.commit(); db.close()
+
+        this_year = _view(api)["ytd"]
+        row = next(s for s in this_year["subs"] if s["user_id"] == uid)
+        assert this_year["year"] == 2026
+        assert row["total"] == 1200.0
+        assert row["over_1099_threshold"] is False, "flagged $1,200 in 2026 against the old $600 line"
+
+        from services.sub_payouts import year_to_date
+        db = SessionLocal()
+        try:
+            last_year = year_to_date(db, 1, year=2025)
+        finally:
+            db.close()
+        prior = next(s for s in last_year["subs"] if s["user_id"] == uid)
+        assert prior["total"] == 1200.0
+        assert prior["over_1099_threshold"] is True, "2025 money must still be measured against 2025's line"
+    finally:
+        _clear()
+
+
+def test_ytd_threshold_is_not_flagged_below_the_line(ids):
     uid, cid = _mk_sub(ids, name="Quiet Sub")
     api = _api()
     try:
         db = SessionLocal()
-        db.add(SubPayout(org_id=1, user_id=uid, cleaner_id=cid, amount=599.99,
+        db.add(SubPayout(org_id=1, user_id=uid, cleaner_id=cid, amount=1999.99,
                          status="due", earned_on=IN_PERIOD))
         db.commit(); db.close()
         ytd = _view(api)["ytd"]
         row = next(s for s in ytd["subs"] if s["user_id"] == uid)
         assert row["over_1099_threshold"] is False
+    finally:
+        _clear()
+
+
+def test_ytd_threshold_is_flagged_at_the_line(ids):
+    """The control: the flag still fires when it should. A threshold that never
+    trips is the same as no threshold, and it is the failure that looks fine."""
+    uid, cid = _mk_sub(ids, name="Busy Enough Sub")
+    api = _api()
+    try:
+        db = SessionLocal()
+        db.add(SubPayout(org_id=1, user_id=uid, cleaner_id=cid, amount=2000.0,
+                         status="due", earned_on=IN_PERIOD))
+        db.commit(); db.close()
+        ytd = _view(api)["ytd"]
+        row = next(s for s in ytd["subs"] if s["user_id"] == uid)
+        assert row["over_1099_threshold"] is True
     finally:
         _clear()
 
