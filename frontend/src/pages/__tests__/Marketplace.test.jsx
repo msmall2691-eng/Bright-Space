@@ -108,9 +108,49 @@ it('shows how much of the bench can actually take work', async () => {
 
 it('keeps owed and paid apart, because sent is not paid', async () => {
   await show()
-  expect(screen.getByText('$420.00')).toBeTruthy()
+  // Once. It was briefly in the header stats too, and the duplication is
+  // what made the case for dropping it: the Money section says the same
+  // number with the context that makes it mean something.
+  expect(screen.getAllByText('$420.00').length).toBe(1)
   expect(screen.getByText('$8,150.50')).toBeTruthy()
   expect(screen.getByText(/Owed to subcontractors/)).toBeTruthy()
+})
+
+it('opens with the three numbers PageHeader was silently eating', async () => {
+  await show()
+  // The page was built on PageHeader, a legacy alias that forwards
+  // title/subtitle/icon/actions/children and nothing else — `stats` went in
+  // and never came out, so the header rendered with no numbers at all and
+  // nothing failed. PageTitle takes them.
+  // Read each stat as label+value together — several of these numbers also
+  // appear further down the page, so a bare getByText('6') is ambiguous.
+  const stat = (label) => screen.getByText(label).textContent
+  expect(stat('On the bench')).toContain('6')
+  expect(stat('Cleared')).toContain('4')
+  expect(stat('Open jobs')).toContain('2')
+  // Three, not four. A fourth stat wrapped the line on a 390px phone, and
+  // "Owed" was the one with a whole section of its own below.
+  expect(screen.queryByText('Owed')).toBeNull()
+})
+
+it('pads its own body, because the header does not do it for you', async () => {
+  await show()
+  // A CLASS ASSERTION, which is a smell, and it is here anyway: jsdom has no
+  // layout, so nothing else in this suite can see a padding regression. The
+  // page shipped with no horizontal padding at all — PageTitle pads itself and
+  // the body underneath does not inherit it — and every row sat flush against
+  // the phone's screen edge. Measured in a real browser at 390px: gutter went
+  // 0px → 16px.
+  const body = screen.getByText('Waiting on you').closest('section').parentElement
+  expect(body.className).toMatch(/\bpx-4\b/)
+})
+
+it('makes the whole row one tap target, meta included', async () => {
+  await show()
+  // The date used to sit outside the link: half the row looked tappable and
+  // was not, which on a phone is just a row that does not work.
+  const link = screen.getByText(/asked for/).closest('a')
+  expect(link.textContent).toContain('Thu, Mar 12')
 })
 
 it('tells you an empty board is empty and how to fill it', async () => {

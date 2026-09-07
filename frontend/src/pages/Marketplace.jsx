@@ -27,7 +27,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { Store } from 'lucide-react'
 import { get } from '../api'
-import { PageHeader, ErrorState, Skeleton } from '../components/ui'
+import { PageTitle, ErrorState, Skeleton } from '../components/ui'
 
 const money = (n) => `$${(Number(n) || 0).toLocaleString('en-US', {
   minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
@@ -42,18 +42,23 @@ const fmtDate = (iso) => {
 const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`
 
 /** Section heading + an optional link to the screen that owns the actions. */
-function Section({ title, count, to, linkLabel, children }) {
+function Section({ title, count, to, linkLabel, shortLabel, children }) {
   return (
     <section>
-      <div className="mb-2 flex items-baseline justify-between gap-3">
+      <div className="mb-2 flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
         <h2 className="text-[11px] font-semibold uppercase tracking-wide text-ink-3">
           {title}
           {/* A plain ink-3 number, never a bubble. */}
           {count > 0 && <span className="ml-2 font-normal tabular-nums">{count}</span>}
         </h2>
         {to && (
-          <Link to={to} className="text-[12px] text-ink-3 no-underline hover:text-indigo-600">
-            {linkLabel}
+          <Link to={to}
+            className="shrink-0 text-[12px] text-ink-3 no-underline hover:text-indigo-600">
+            {/* Two lengths. On a phone the full sentence ran off the screen
+                edge and clipped mid-word; the short form says the same thing
+                in the space there is. */}
+            <span className="sm:hidden">{shortLabel || linkLabel}</span>
+            <span className="hidden sm:inline">{linkLabel}</span>
           </Link>
         )}
       </div>
@@ -64,20 +69,37 @@ function Section({ title, count, to, linkLabel, children }) {
 
 /** One line of the page: a dot, a sentence, and somewhere to go. */
 function Row({ dot = 'bg-ink-3/40', to, children, right }) {
+  // The meta used to sit OUTSIDE the link, which meant tapping the date on a
+  // phone did nothing — half the row looked tappable and wasn't. It is inside
+  // now, so the whole row is one target.
+  //
+  // And it stacks under the text below `sm`. Held on the right, a long title
+  // wrapped around it and left the date stranded on its own line beside a gap
+  // ("The Pier House · Old Orchard Beach ·" / "nobody yet").
   const body = (
-    <span className="flex min-w-0 flex-1 items-start gap-2">
-      <span className={`mt-[7px] h-1.5 w-1.5 shrink-0 rounded-full ${dot}`} aria-hidden="true" />
-      <span className="min-w-0">{children}</span>
+    <span className="flex w-full flex-col gap-x-3 gap-y-0.5 sm:flex-row sm:items-start sm:justify-between">
+      <span className="flex min-w-0 items-start gap-2">
+        <span className={`mt-[7px] h-1.5 w-1.5 shrink-0 rounded-full ${dot}`} aria-hidden="true" />
+        <span className="min-w-0 break-words">{children}</span>
+      </span>
+      {right && (
+        // pl-3.5 lines the meta up under the text, clear of the dot.
+        <span className="shrink-0 pl-3.5 text-[12px] text-ink-3 sm:pl-0 sm:text-right">
+          {right}
+        </span>
+      )}
     </span>
   )
   return (
-    <li className="flex items-start justify-between gap-3 border-b border-hairline/60 px-3 py-2 text-[13px] text-ink-2 last:border-0">
+    <li className="border-b border-hairline/60 text-[13px] text-ink-2 last:border-0">
       {to ? (
-        <Link to={to} className="flex min-w-0 flex-1 text-ink-2 no-underline hover:text-indigo-600">
+        <Link to={to}
+          className="flex px-3 py-2.5 text-ink-2 no-underline transition-colors hover:bg-bg-2 hover:text-indigo-600">
           {body}
         </Link>
-      ) : body}
-      {right && <span className="shrink-0 text-[12px] text-ink-3">{right}</span>}
+      ) : (
+        <span className="flex px-3 py-2.5">{body}</span>
+      )}
     </li>
   )
 }
@@ -110,14 +132,14 @@ export default function Marketplace() {
 
   if (error) {
     return (
-      <div className="max-w-4xl">
+      <div className="max-w-4xl px-4 sm:px-8">
         <ErrorState title="Couldn’t load the marketplace" description={error} onRetry={load} />
       </div>
     )
   }
   if (!data) {
     return (
-      <div className="max-w-4xl space-y-4">
+      <div className="max-w-4xl space-y-4 px-4 pt-4 sm:px-8">
         <Skeleton className="h-8 w-56" />
         <Skeleton className="h-32 w-full" />
         <Skeleton className="h-32 w-full" />
@@ -130,21 +152,26 @@ export default function Marketplace() {
 
   return (
     <div className="max-w-4xl">
-      <PageHeader
+      {/* PageTitle, not PageHeader. PageHeader is a legacy alias that forwards
+          title/subtitle/icon/actions/children and nothing else — `stats` went
+          in and never came out, so the four numbers this page opens with were
+          silently missing. It also means supplying the padding it used to. */}
+      <PageTitle
+        className="px-4 pt-4 pb-3 sm:px-8 sm:pt-5"
         title="Marketplace"
         subtitle="Who cleans for you, what work is open to them, and what they’re owed."
         icon={Store}
         stats={[
           { label: 'On the bench', value: bench.people },
-          { label: 'Cleared to work', value: bench.can_work,
+          { label: 'Cleared', value: bench.can_work,
             tone: bench.can_work ? undefined : 'warn' },
           { label: 'Open jobs', value: data.open_job_count },
-          { label: 'Owed', value: money(cash.owed),
-            tone: cash.owed > 0 ? 'warn' : undefined },
         ]}
       />
 
-      <div className="mt-5 space-y-6">
+      {/* px on the body too. Without it every row ran edge to edge and the
+          section links clipped mid-word on a phone. */}
+      <div className="space-y-6 px-4 pb-6 sm:px-8">
         <Section title="Waiting on you" count={waiting.application_count + waiting.people_waiting}>
           {nothingWaiting ? (
             <Quiet>Nobody’s waiting on an answer.</Quiet>
@@ -178,7 +205,7 @@ export default function Marketplace() {
         </Section>
 
         <Section title="Open to the bench" count={data.open_job_count}
-          to="/schedule" linkLabel="Post more on the schedule">
+          to="/schedule" linkLabel="Post more on the schedule" shortLabel="Schedule">
           {data.open_jobs.length === 0 ? (
             <Quiet>
               No jobs are open right now. Open one to the bench from the schedule
@@ -190,20 +217,24 @@ export default function Marketplace() {
                 <Row key={j.job_id} to={`/jobs/${j.job_id}`}
                   /* Violet is "open to crew" in the shared vocabulary. */
                   dot={j.asked ? 'bg-amber-500' : 'bg-violet-500'}
-                  right={[j.posted_rate ? money(j.posted_rate) : null, fmtDate(j.scheduled_date)]
-                    .filter(Boolean).join(' · ')}>
+                  right={[
+                    fmtDate(j.scheduled_date),
+                    j.posted_rate ? money(j.posted_rate) : null,
+                    j.asked ? `${plural(j.asked, 'person', 'people')} asked` : 'nobody yet',
+                  ].filter(Boolean).join(' · ')}>
+                  {/* Title line stays what and where. When, how much and who
+                      has asked are all the same kind of fact and belong
+                      together on the meta line. */}
                   <span className="text-ink">{j.title}</span>
                   {j.town ? ` · ${j.town}` : ''}
-                  {j.asked
-                    ? ` · ${plural(j.asked, 'person has', 'people have')} asked`
-                    : ' · nobody yet'}
                 </Row>
               ))}
             </List>
           )}
         </Section>
 
-        <Section title="The bench" count={bench.people} to="/crew" linkLabel="Manage on Crew">
+        <Section title="The bench" count={bench.people} to="/crew"
+          linkLabel="Manage on Crew" shortLabel="Crew">
           {bench.people === 0 ? (
             <Quiet>
               Nobody on the bench yet. Share the application link below and
@@ -239,7 +270,7 @@ export default function Marketplace() {
           )}
         </Section>
 
-        <Section title="Money" to="/payroll" linkLabel="Open Payouts">
+        <Section title="Money" to="/payroll" linkLabel="Open Payouts" shortLabel="Payouts">
           <List>
             <Row dot={cash.owed > 0 ? 'bg-amber-500' : 'bg-emerald-500'} to="/payroll"
               right={money(cash.owed)}>
@@ -293,13 +324,17 @@ function ApplyLink() {
       <p className="text-[13px] text-ink-2">
         Cleaners apply to join here. It needs no login — share it anywhere.
       </p>
-      <div className="mt-2 flex flex-wrap items-center gap-2">
+      <div className="mt-2 flex flex-col items-start gap-2 sm:flex-row sm:items-center">
+        {/* break-all, not truncate. A truncated URL on a phone shows half an
+            address and no way to read the rest — and this is the one string on
+            the page somebody might type out by hand. */}
         <a href="/apply" target="_blank" rel="noreferrer"
-          className="truncate text-[13px] text-ink no-underline hover:text-indigo-600">
+          className="min-w-0 break-all text-[13px] text-ink no-underline hover:text-indigo-600">
           {url}
         </a>
         <button type="button" onClick={copy}
-          className="rounded-md border border-hairline-2 bg-panel px-2 py-1 text-xs font-medium text-ink-2 transition-colors hover:bg-bg-2">
+          className="shrink-0 rounded-md border border-hairline-2 bg-panel px-2.5 py-1.5 text-xs font-medium text-ink-2 transition-colors hover:bg-bg-2"
+          aria-label={copied ? 'Application link copied' : 'Copy the application link'}>
           {copied ? 'Copied' : 'Copy link'}
         </button>
       </div>
