@@ -18,7 +18,15 @@ BRIGHTBASE_ROOT = Path(__file__).resolve().parent.parent.parent
 
 # ── Tool schemas ───────────────────────────────────────────────────────────────
 
-TOOLS_BUSINESS = [
+# BB-SEC-13. Split READ from OPERATE. `run_operation` triggers real side
+# effects — it generates Job rows for every active recurring schedule, and
+# pushes jobs to Google Calendar, which emails a real invite to the customer
+# on the job. It used to sit in the one list every caller got, so anything
+# holding an Anthropic client could fire it: the Cmd+K command bar, and the
+# six internal drafting helpers, one of which (services/inbox_triage) feeds
+# the model an INBOUND EMAIL's subject and snippet — attacker-controlled text
+# — with that tool in scope. Read tools are the default; operating is opt-in.
+TOOLS_BUSINESS_READONLY = [
     {
         "name": "get_business_snapshot",
         "description": "Live snapshot: client counts, today's jobs, upcoming jobs, active recurring schedules, outstanding invoices.",
@@ -57,6 +65,11 @@ TOOLS_BUSINESS = [
         "description": "Diagnose BrightBase configuration: Google Calendar auth, Twilio, database, unpushed jobs, missing data.",
         "input_schema": {"type": "object", "properties": {}},
     },
+]
+
+# Side-effecting. Only the agent WebSocket hands these out, and only to a role
+# that may write — see `get_tools_for_agent(allow_operations=...)`.
+TOOLS_BUSINESS_OPERATIONS = [
     {
         "name": "run_operation",
         "description": (
@@ -78,7 +91,10 @@ TOOLS_BUSINESS = [
     },
 ]
 
-TOOLS_PIXEL = TOOLS_BUSINESS + [
+# The full office set, still the name the agent WebSocket asks for.
+TOOLS_BUSINESS = TOOLS_BUSINESS_READONLY + TOOLS_BUSINESS_OPERATIONS
+
+_DEV_TOOLS = [
     {
         "name": "read_file",
         "description": "Read any file in the BrightBase codebase. Use paths like 'backend/main.py' or 'frontend/src/pages/Scheduling.jsx'.",
@@ -166,6 +182,11 @@ TOOLS_PIXEL = TOOLS_BUSINESS + [
 ]
 
 
+# Pixel's two variants compose from the same dev block, so the business
+# read/operate split stays orthogonal to the dev-tool env gate.
+TOOLS_PIXEL = TOOLS_BUSINESS + _DEV_TOOLS
+TOOLS_PIXEL_READONLY = TOOLS_BUSINESS_READONLY + _DEV_TOOLS
+
 # BB-SEC-08: previously this returned TOOLS_PIXEL (which includes write_file,
 # edit_file, and run_command with shell=True) for every agent, regardless of
 # name. Combined with the now-fixed BB-SEC-02, this gave anyone reaching the
@@ -183,21 +204,34 @@ TOOLS_PIXEL = TOOLS_BUSINESS + [
 # to run write_file/edit_file/run_command without the same env flag.
 _DEV_TOOL_NAMES = frozenset({"read_file", "write_file", "edit_file", "run_command", "list_files"})
 
+# BB-SEC-13. Same shape as _DEV_TOOL_NAMES above: the schema list is the first
+# gate, this is the second. A tool_use block naming an operation still cannot
+# run it unless the CALLER passed allow_operations — so a stale browser tab, a
+# replayed transcript, or a future caller that forgets the flag all fail closed.
+_OPERATION_TOOL_NAMES = frozenset({"run_operation"})
+
 
 def _dev_tools_enabled() -> bool:
     return os.getenv("BRIGHTBASE_AGENT_DEV_TOOLS", "").strip().lower() in ("1", "true", "yes")
 
 
-def get_tools_for_agent(agent_name: str) -> list:
+def get_tools_for_agent(agent_name: str, *, allow_operations: bool = False) -> list:
+    """Tools this caller may use. Read-only unless it asks otherwise.
+
+    BB-SEC-13. `allow_operations` defaults to FALSE so a new caller gets the
+    safe set by forgetting, not the side-effecting one. Only the agent
+    WebSocket passes True, and only for a role that may write.
+    """
     if _dev_tools_enabled() and agent_name == "pixel":
-        return TOOLS_PIXEL
-    return TOOLS_BUSINESS
+        return TOOLS_PIXEL if allow_operations else TOOLS_PIXEL_READONLY
+    return TOOLS_BUSINESS if allow_operations else TOOLS_BUSINESS_READONLY
 
 
 # ── Tool execution ─────────────────────────────────────────────────────────────
 
 def execute_tool(name: str, input_data: dict, agent_name: str = "",
-                 org_id: int | None = None) -> dict:
+                 org_id: int | None = None, *,
+                 allow_operations: bool = False) -> dict:
     """Run one agent tool.
 
     ORG SCOPE (MT-3). Every query in here used to be unscoped, and the session
@@ -231,6 +265,13 @@ def execute_tool(name: str, input_data: dict, agent_name: str = "",
     # and the calling agent is the engineering helper.
     if name in _DEV_TOOL_NAMES and not (_dev_tools_enabled() and agent_name == "pixel"):
         return {"error": f"Tool '{name}' is disabled in this environment."}
+
+    # BB-SEC-13, same reasoning one layer down: an operation is refused unless
+    # the caller explicitly asked for operations. `run_operation` creates Job
+    # rows and sends real Google Calendar invites to customers, so the default
+    # has to be the harmless one.
+    if name in _OPERATION_TOOL_NAMES and not allow_operations:
+        return {"error": f"Tool '{name}' is not available to this caller."}
 
     db = SessionLocal()
 
