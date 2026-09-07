@@ -229,3 +229,32 @@ def test_the_manual_rail_is_still_registered(sub):
     from services.sub_payouts import _RAILS, get_rail
     assert "manual" in _RAILS
     assert get_rail("manual").name == "manual"
+
+
+# ── BB-SEC-17 follow-up: request timeout ─────────────────────────────────────
+
+def test_stripe_client_carries_a_bounded_request_timeout(monkeypatch):
+    """A payout or balance call must not pin a worker for the SDK's default 80
+    seconds. The client `_client()` returns carries an explicit, overridable
+    timeout, so a hung Stripe edge frees the worker instead of holding it."""
+    import integrations.stripe_connect as sc
+
+    monkeypatch.setenv("STRIPE_SECRET_KEY", "sk_test_timeout")
+    monkeypatch.setenv("STRIPE_TIMEOUT_SECONDS", "17")
+    sc._HTTP_CLIENT = None  # cached across calls; clear for the assertion
+
+    s = sc._client()
+    assert s is not None
+    assert s.default_http_client is not None, "no bounded HTTP client was set"
+    assert getattr(s.default_http_client, "_timeout", None) == 17
+    assert s.default_http_client._timeout < 80, "still the SDK's 80s default"
+
+
+def test_a_missing_stripe_key_still_yields_no_client(monkeypatch):
+    """The timeout wiring must not resurrect the feature when it is off: no key
+    -> no client, exactly as before."""
+    import integrations.stripe_connect as sc
+
+    monkeypatch.delenv("STRIPE_SECRET_KEY", raising=False)
+    sc._HTTP_CLIENT = None
+    assert sc._client() is None

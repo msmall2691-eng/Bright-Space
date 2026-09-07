@@ -73,6 +73,35 @@ def webhook_secret() -> Optional[str]:
     return (os.getenv("STRIPE_WEBHOOK_SECRET") or "").strip() or None
 
 
+# A payout or balance call must not pin a worker for the SDK's default 80
+# seconds. STRIPE_TIMEOUT_SECONDS overrides; 30s is long enough for a slow-but-
+# real response and short enough that a hung Stripe edge frees the worker.
+_HTTP_CLIENT = None
+
+
+def _timed_http_client():
+    """A Stripe HTTP client with a bounded request timeout, built once.
+
+    Guarded because the constructor lives under stripe's private `_http_client`
+    module (it moved there in 15.x); if a future SDK relocates it, we fall back
+    to the SDK default rather than failing every Stripe call. The pin in
+    requirements plus dependabot are what keep that from going stale silently.
+    """
+    global _HTTP_CLIENT
+    if _HTTP_CLIENT is not None:
+        return _HTTP_CLIENT
+    try:
+        from stripe import _http_client as _hc
+        from config import env_int
+        _HTTP_CLIENT = _hc.new_default_http_client(
+            timeout=env_int("STRIPE_TIMEOUT_SECONDS", 30)
+        )
+    except Exception:  # pragma: no cover - SDK internals moved
+        logger.warning("[stripe] could not set a request timeout; using SDK default")
+        _HTTP_CLIENT = False  # sentinel: tried and failed, don't retry every call
+    return _HTTP_CLIENT or None
+
+
 def _client():
     """The SDK, configured, or None. Imported lazily: `stripe` is an optional
     dependency and importing it at module scope would make every process that
@@ -86,6 +115,9 @@ def _client():
         return None
     stripe.api_key = _key()
     stripe.api_version = API_VERSION
+    hc = _timed_http_client()
+    if hc is not None:
+        stripe.default_http_client = hc
     return stripe
 
 
