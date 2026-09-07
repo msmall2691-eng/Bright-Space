@@ -42,6 +42,7 @@ def _safe_greeting(override):
     if not o or _PLACEHOLDER_GREETING.match(o):
         return None
     return o
+from services.job_pricing import resolve_new_job_price
 from utils.dates import business_today
 
 logger = logging.getLogger(__name__)
@@ -1190,6 +1191,10 @@ def _convert_quote_to_job(
         # conversion then surfaced on EVERY workspace's board/brief via the
         # NULL-tolerant _org() filter, not just the quote's own org.
         org_id=quote.org_id,
+        # What the customer is billed: the total they accepted. The one rule
+        # for a new job's price (services/job_pricing.py) ranks an accepted
+        # quote above the house's usual number, which is exactly this case.
+        price=resolve_new_job_price(quote=quote, prop=prop),
     )
     db.add(job)
     quote.status = "converted"

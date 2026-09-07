@@ -16,6 +16,10 @@ So this returns the SOURCE alongside the amount, every time, and the UI says
 which one it used. In descending order of how much you should believe it:
 
   invoice   the invoice raised for this job. What was actually charged.
+  job       the price set on the job itself (migration 110). What somebody
+            said this visit bills, for this visit. Below the invoice — an
+            invoice is what actually went out — and above everything after
+            it, because the rest are inferred and this one was stated.
   quote     the accepted quote this job came from. What was agreed.
   history   the average of recent invoiced visits at the same property. What
             this house usually bills.
@@ -48,6 +52,7 @@ HISTORY_VISITS = 4
 
 SOURCE_LABELS = {
     "invoice": "this job's invoice",
+    "job": "the price set on this job",
     "quote": "the accepted quote",
     "history": "what this house usually bills",
     "none": None,
@@ -72,6 +77,16 @@ def billed_amount(db: Session, job, org_id: int) -> dict:
            .first())
     if inv is not None and inv.total:
         return {"amount": round(float(inv.total), 2), "source": "invoice", "detail": None}
+
+    # Somebody stated this visit's price. That beats every inference below it,
+    # including the quote — a quote can cover a scope this visit isn't, and a
+    # price typed onto the job is a person answering the exact question.
+    # `is not None` and not truthiness: a job deliberately billed 0 (a
+    # make-good, a warranty re-clean) is a real answer, and the one place
+    # `amount: 0.0` may legitimately come back.
+    own = getattr(job, "price", None)
+    if own is not None:
+        return {"amount": round(float(own), 2), "source": "job", "detail": None}
 
     quote_id = getattr(job, "quote_id", None)
     if quote_id:

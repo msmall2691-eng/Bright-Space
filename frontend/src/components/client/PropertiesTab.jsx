@@ -125,6 +125,26 @@ export default function PropertiesTab({
                     onChange={e => setPropForm(f => ({ ...f, default_duration_hours: parseFloat(e.target.value) }))}
                     className={INPUT_CLASS} />
                 </div>
+
+                <div>
+                  {/* The house's usual price. Seeds every visit booked here —
+                      including recurring occurrences and rental turnovers,
+                      which nobody types a price for by hand, and which is why
+                      they used to arrive unpriced and invoice at $0. Changing
+                      it never moves a visit already on the books. */}
+                  <label className="block text-xs text-ink-3 mb-1">Usual price per visit</label>
+                  <div className="relative">
+                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-ink-3">$</span>
+                    <input type="number" min="0" step="0.01" inputMode="decimal"
+                      value={propForm.default_price ?? ''}
+                      onChange={e => setPropForm(f => ({
+                        ...f,
+                        default_price: e.target.value === '' ? null : parseFloat(e.target.value),
+                      }))}
+                      placeholder="What we charge here"
+                      className={`${INPUT_CLASS} pl-7`} />
+                  </div>
+                </div>
               </div>
 
               {/* Multi-iCal feed management (Airbnb / VRBO / etc.) */}

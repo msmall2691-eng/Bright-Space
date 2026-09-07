@@ -9100,6 +9100,10 @@ export interface components {
             custom_fields: {
                 [key: string]: unknown;
             } | null;
+            /** Price */
+            price?: number | null;
+            /** Posted Rate */
+            posted_rate?: number | null;
             /**
              * Allow Conflicts
              * @default false
@@ -9140,6 +9144,8 @@ export interface components {
             pay_rate_bump?: number | null;
             /** Property Id */
             property_id?: number | null;
+            /** Price */
+            price?: number | null;
             /**
              * Allow Conflicts
              * @default false
@@ -9452,6 +9458,8 @@ export interface components {
             notes?: string | null;
             /** Turnover Rate */
             turnover_rate?: number | null;
+            /** Default Price */
+            default_price?: number | null;
             /** Bedrooms */
             bedrooms?: number | null;
             /** Bathrooms */
@@ -9547,6 +9555,8 @@ export interface components {
             notes?: string | null;
             /** Turnover Rate */
             turnover_rate?: number | null;
+            /** Default Price */
+            default_price?: number | null;
             /** Bedrooms */
             bedrooms?: number | null;
             /** Bathrooms */
@@ -10060,6 +10070,8 @@ export interface components {
              * @default 8
              */
             generate_weeks_ahead: number | null;
+            /** Price */
+            price?: number | null;
             /** Notes */
             notes?: string | null;
             /** Ends Mode */
@@ -10117,6 +10129,8 @@ export interface components {
             property_id?: number | null;
             /** Generate Weeks Ahead */
             generate_weeks_ahead?: number | null;
+            /** Price */
+            price?: number | null;
             /** Notes */
             notes?: string | null;
         };
@@ -10148,6 +10162,8 @@ export interface components {
             property_id?: number | null;
             /** Generate Weeks Ahead */
             generate_weeks_ahead?: number | null;
+            /** Price */
+            price?: number | null;
             /** Notes */
             notes?: string | null;
             /** Ends Mode */

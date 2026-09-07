@@ -25,6 +25,7 @@ from modules.auth.router import get_current_user, require_role, current_org_id, 
 from utils.activity_logger import (
     log_job_created, log_job_status_change, log_calendar_event, log_activity
 )
+from services.job_pricing import resolve_new_job_price
 from utils.integration_log import log_integration_event as _log_integration
 from utils.dates import business_today, coerce_time, coerce_date
 from ratelimit import rate_limit
@@ -49,6 +50,16 @@ class JobCreate(BaseModel):
     cleaner_ids: Optional[List[str]] = []
     notes: Optional[str] = None
     custom_fields: Optional[dict] = {}
+    # What the CUSTOMER is billed for this visit (migration 110) — not to be
+    # confused with posted_rate/agreed_rate, which are what a sub is paid.
+    # Omit it and `services/job_pricing.py` fills it from the accepted quote
+    # or the property's usual price, so nothing arrives blank by default.
+    price: Optional[float] = None
+    # The asking rate shown to subs, settable at creation rather than only
+    # from JobDetail after the fact. DECLARED, not just sent: an undeclared
+    # field is silently dropped by pydantic — the same way property_id was on
+    # JobUpdate for months (see the note below).
+    posted_rate: Optional[float] = None
     # When true, bypass the cleaner double-booking guard (intentional overlap).
     allow_conflicts: Optional[bool] = False
     # Set only when this Job is being PROMOTED from an already-existing Google
@@ -80,6 +91,10 @@ class JobUpdate(BaseModel):
     pay_mode: Optional[str] = None            # native-payroll override: auto | hourly | piece
     pay_rate_bump: Optional[float] = None     # extra $/hr on top of hourly rates for this job
     property_id: Optional[int] = None
+    # What the customer is billed. Editable after the fact — a job's scope
+    # changes — and settable back to nothing, which is why the update path
+    # distinguishes "field absent" from "field sent as null".
+    price: Optional[float] = None
     allow_conflicts: Optional[bool] = False
     # Per-move notification override for THIS edit (see update_job). None = fall
     # back to the Settings → Automation "email on move" toggle; True/False is an
@@ -669,6 +684,9 @@ def job_to_dict(j: Job, client: Client = None, effective_date=None,
         # final rate once a claim request is approved (agreed) — payroll
         # reads agreed_rate, never posted_rate.
         "posted_rate": j.posted_rate,
+        # What the customer is billed (migration 110) — never mixed with the
+        # rates above, which are what a sub is paid.
+        "price": j.price,
         "agreed_rate": j.agreed_rate,
         # How many subs are waiting on an answer for this job. The office was
         # told a request had arrived by web push and by NOTHING ELSE — no push
@@ -1163,6 +1181,14 @@ def create_job(data: JobCreate, db: Session = Depends(get_db), org_id: int = Dep
     payload["start_time"] = _to_time(payload.get("start_time"))
     payload["end_time"] = _to_time(payload.get("end_time"))
     job = Job(**payload)
+    # One rule for what a new job bills, shared with recurring generation and
+    # quote conversion (services/job_pricing.py). Seeded here so the office
+    # never has to type a price that was already agreed or already usual.
+    job.price = resolve_new_job_price(
+        explicit=payload.get("price"),
+        quote=source_quote,
+        prop=db.query(Property).filter(Property.id == resolved_property_id).first(),
+    )
     job.org_id = org_id  # MT-2: stamp the caller's workspace
     db.add(job)
     db.commit()
@@ -2966,6 +2992,9 @@ def list_claim_requests(job_id: int, db: Session = Depends(get_db), org_id: int 
     return {
         "job_id": job.id,
         "posted_rate": job.posted_rate,
+        # What the customer is billed (migration 110) — never mixed with the
+        # rates above, which are what a sub is paid.
+        "price": job.price,
         "requests": [_claim_request_row(r, names, heads_up) for r in rows],
     }
 

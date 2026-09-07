@@ -143,7 +143,7 @@ export default function ClientProfile() {
   const [propForm, setPropForm] = useState({})
   const [editingProp, setEditingProp] = useState(null)
   const [savingProp, setSavingProp] = useState(false)
-  const EMPTY_PROP = { name: '', address: '', city: '', state: 'ME', zip_code: '', property_type: 'residential', default_duration_hours: 3, notes: '' }
+  const EMPTY_PROP = { name: '', address: '', city: '', state: 'ME', zip_code: '', property_type: 'residential', default_duration_hours: 3, default_price: null, notes: '' }
 
   // iCal feed management (STR turnover automation).
   // EMPTY_ICAL lives in components/client/constants so PropertiesTab and

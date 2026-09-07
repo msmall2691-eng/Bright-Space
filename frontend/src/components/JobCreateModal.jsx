@@ -169,6 +169,8 @@ export default function JobCreateModal({
     end_time: addMinutes(_seedStart, JOB_DURATIONS[initialJobType || 'residential'] || 180),
     address: '',
     notes: '',
+    price: '',
+    posted_rate: '',
     property_id: initialPropertyId ? String(initialPropertyId) : '',
     // Recurring-only fields
     frequency: seedFreq,
@@ -542,6 +544,8 @@ export default function JobCreateModal({
           generate_weeks_ahead: parseInt(form.generate_weeks_ahead),
           cleaner_ids: cleanerIds,
           notes: form.notes || null,
+          // Set once on the series; every visit it generates inherits it.
+          price: form.price === '' ? null : Number(form.price),
           ends_mode: form.ends_mode || 'never',
           ends_on: form.ends_mode === 'on_date' ? (form.ends_on || null) : null,
           ends_after_count: form.ends_mode === 'after_count' ? parseInt(form.ends_after_count) || null : null,
@@ -571,6 +575,11 @@ export default function JobCreateModal({
         notes: form.notes || null,
         property_id: form.property_id ? parseInt(form.property_id) : null,
         cleaner_ids: cleanerIds,
+        // Blank means "don't override" — the backend then seeds the price from
+        // the quote or the house (services/job_pricing.py) rather than
+        // stamping a zero nobody typed.
+        price: form.price === '' ? null : Number(form.price),
+        posted_rate: form.posted_rate === '' ? null : Number(form.posted_rate),
         // When scheduling from an accepted quote, link the job back so the
         // backend converts the quote and revenue→job traceability is kept.
         quote_id: initialQuoteId ? parseInt(initialQuoteId) : null,
@@ -876,6 +885,42 @@ export default function JobCreateModal({
                     </button>
                   )
                 })}
+              </div>
+            )}
+          </div>
+
+          {/* MONEY, ON THE WAY IN. Both numbers, side by side and labelled for
+              what they are: an unpriced job is one nobody can invoice, and an
+              unpriced OPEN job is one no sub can answer. Leaving either blank
+              is fine and means "use the usual" — the backend fills the charge
+              from the quote or the house rather than stamping a zero. */}
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs text-ink-2 font-medium mb-1">
+                What we charge
+              </label>
+              <div className="relative">
+                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-ink-3">$</span>
+                <input type="number" min="0" step="0.01" inputMode="decimal"
+                  value={form.price}
+                  onChange={e => setForm(f => ({ ...f, price: e.target.value }))}
+                  placeholder={recurring ? 'Per visit' : 'Leave blank for usual'}
+                  className="w-full bg-panel border border-hairline rounded-lg pl-7 pr-3 py-2 text-sm focus:outline-none" />
+              </div>
+            </div>
+            {!recurring && (
+              <div>
+                <label className="block text-xs text-ink-2 font-medium mb-1">
+                  Asking rate for crew
+                </label>
+                <div className="relative">
+                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-ink-3">$</span>
+                  <input type="number" min="0" step="0.01" inputMode="decimal"
+                    value={form.posted_rate}
+                    onChange={e => setForm(f => ({ ...f, posted_rate: e.target.value }))}
+                    placeholder="If you post it"
+                    className="w-full bg-panel border border-hairline rounded-lg pl-7 pr-3 py-2 text-sm focus:outline-none" />
+                </div>
               </div>
             )}
           </div>

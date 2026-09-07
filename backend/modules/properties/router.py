@@ -46,6 +46,10 @@ class PropertyCreate(BaseModel):
     hours_of_operation: Optional[str] = None
     notes: Optional[str] = None
     turnover_rate: Optional[float] = None  # weekend piece rate per rental turnover ($)
+    # What a visit here usually BILLS the customer ($) — the opposite side
+    # of turnover_rate above, which is what a cleaner is PAID. Seeds
+    # Job.price on every visit created for this house (migration 110).
+    default_price: Optional[float] = None
     # Structured specs — pre-fillable from public property records via the
     # "look up specs" action, or entered by hand. NULL = unknown.
     bedrooms: Optional[int] = None
@@ -76,6 +80,10 @@ class PropertyUpdate(BaseModel):
     hours_of_operation: Optional[str] = None
     notes: Optional[str] = None
     turnover_rate: Optional[float] = None  # weekend piece rate per rental turnover ($)
+    # What a visit here usually BILLS the customer ($) — the opposite side
+    # of turnover_rate above, which is what a cleaner is PAID. Seeds
+    # Job.price on every visit created for this house (migration 110).
+    default_price: Optional[float] = None
     bedrooms: Optional[int] = None
     bathrooms: Optional[float] = None
     square_footage: Optional[int] = None
@@ -225,6 +233,7 @@ def prop_to_dict(p: Property, include_icals: bool = True, turnovers_next_30d: Op
         "business_name": getattr(p, 'business_name', None),
         "hours_of_operation": getattr(p, 'hours_of_operation', None),
         "turnover_rate": getattr(p, 'turnover_rate', None),
+        "default_price": getattr(p, 'default_price', None),
         "notes": p.notes,
         # Structured specs (enrichment Phase 1). Previously stored but never
         # surfaced — the columns existed since migration 025/056 yet the API
