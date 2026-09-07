@@ -596,7 +596,20 @@ def build_board(db: Session, oid: int, can_act: bool = True) -> dict:
 
     # --- Stat tiles ----------------------------------------------------------
     waiting_count = len(waiting)
-    new_leads_count = sum(1 for ld in leads if (ld.status or "new") == "new")
+    # COUNTED, not len()'d. `leads` above is the DISPLAY list and carries
+    # `.limit(10)`, so counting it made the "New leads" tile saturate at 10 —
+    # it read the same whether there were eleven requests waiting or four
+    # hundred, and the number stopped moving at exactly the point it starts
+    # mattering. A separate aggregate; the list stays capped because a list of
+    # ten rows is a screenful. (The replaced expression coalesced a NULL
+    # status to "new", but the display query it read from filters
+    # `status IN (...)`, which excludes NULL — so that branch never ran. The
+    # ORM default fills the column and nothing inserts outside it.)
+    new_leads_count = (
+        db.query(func.count(LeadIntake.id))
+        .filter(org(LeadIntake), LeadIntake.status == "new")
+        .scalar() or 0
+    )
     stats = [
         {"key": "unassigned", "label": "Unassigned jobs", "value": str(len(unassigned_week)),
          "sub": "next 7 days", "tone": "red" if unassigned_week else "neutral", "href": "/schedule?view=dispatch"},

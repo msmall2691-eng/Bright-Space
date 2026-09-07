@@ -3,7 +3,16 @@
 The logo is consumed unauthenticated by the quote email, PDF, and public quote
 page, so the bytes must be storable by an admin and servable without a session,
 with company_logo_url pointed at our served copy.
+
+These drive the async router functions through `asyncio.run` rather than
+`@pytest.mark.asyncio`. The marker needs pytest-asyncio, which this project
+does not install — so under the previous hand-maintained `testpaths` these
+four tests were listed nowhere and, had anyone listed them, would have errored
+with "async def functions are not natively supported" rather than running.
+A one-line helper is cheaper than a dependency for four direct calls.
 """
+import asyncio
+
 import pytest
 from unittest.mock import patch
 
@@ -26,6 +35,11 @@ class _FakeUpload:
         return self._data
 
 
+def _run(coro):
+    """Await one coroutine from a sync test."""
+    return asyncio.run(coro)
+
+
 @pytest.fixture
 def db():
     s = SessionLocal()
@@ -35,11 +49,10 @@ def db():
     s.commit(); s.close()
 
 
-@pytest.mark.asyncio
-async def test_upload_then_serve_logo(db):
+def test_upload_then_serve_logo(db):
     png = b"\x89PNG\r\n\x1a\nfakepngbytes"
     with patch("modules.settings.router.app_base_url", return_value="https://app.example.com"):
-        out = await upload_company_logo(file=_FakeUpload(png, "image/png"), db=db)
+        out = _run(upload_company_logo(file=_FakeUpload(png, "image/png"), db=db))
     # company_logo_url points at our served copy, cache-busted with a version.
     assert out["company_logo_url"].startswith("https://app.example.com/api/settings/logo?v=")
     assert get_setting(db, "company_logo_url") == out["company_logo_url"]
@@ -49,18 +62,16 @@ async def test_upload_then_serve_logo(db):
     assert resp.media_type == "image/png"
 
 
-@pytest.mark.asyncio
-async def test_reject_non_image(db):
+def test_reject_non_image(db):
     with pytest.raises(HTTPException) as ei:
-        await upload_company_logo(file=_FakeUpload(b"PK\x03\x04", "application/zip"), db=db)
+        _run(upload_company_logo(file=_FakeUpload(b"PK\x03\x04", "application/zip"), db=db))
     assert ei.value.status_code == 400
 
 
-@pytest.mark.asyncio
-async def test_reject_oversize(db):
+def test_reject_oversize(db):
     big = b"x" * (2 * 1024 * 1024 + 1)
     with pytest.raises(HTTPException) as ei:
-        await upload_company_logo(file=_FakeUpload(big, "image/png"), db=db)
+        _run(upload_company_logo(file=_FakeUpload(big, "image/png"), db=db))
     assert ei.value.status_code == 400
 
 
@@ -70,10 +81,9 @@ def test_serve_404_when_unset(db):
     assert ei.value.status_code == 404
 
 
-@pytest.mark.asyncio
-async def test_delete_clears_logo(db):
+def test_delete_clears_logo(db):
     with patch("modules.settings.router.app_base_url", return_value="https://app.example.com"):
-        await upload_company_logo(file=_FakeUpload(b"\x89PNGdata", "image/png"), db=db)
+        _run(upload_company_logo(file=_FakeUpload(b"\x89PNGdata", "image/png"), db=db))
     delete_company_logo(db=db)
     assert get_setting(db, "company_logo_url") in (None, "")
     with pytest.raises(HTTPException):

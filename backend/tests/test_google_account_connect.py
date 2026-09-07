@@ -65,10 +65,21 @@ def test_jwt_derived_key_is_stable_and_distinct(monkeypatch):
 
 
 def test_login_scopes_are_identity_only():
-    """Sign-in must never again silently capture calendar access."""
+    """Sign-in must never again silently capture calendar or mail access.
+
+    The load-bearing half is the first assertion: signing in asks for identity
+    and nothing else. The rest pins that the SPLIT is real — connecting an
+    account is what asks for mail and calendar — so narrowing login to nothing
+    by also dropping the connect scopes would still fail here.
+
+    Asserted as a property rather than an exact scope string: this used to
+    require `gmail.readonly`, which the app outgrew when it started sending
+    and filing mail (`gmail.modify` + `gmail.send`). The test then failed for
+    a legitimate upgrade — invisibly, because it was in no CI list.
+    """
     from integrations.google_oauth import LOGIN_SCOPES, CONNECT_SCOPES
     assert not any("calendar" in s or "gmail" in s for s in LOGIN_SCOPES)
-    assert any("gmail.readonly" in s for s in CONNECT_SCOPES)
+    assert any("gmail" in s for s in CONNECT_SCOPES)
     assert any(s.endswith("/calendar") for s in CONNECT_SCOPES)
 
 

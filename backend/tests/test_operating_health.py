@@ -172,15 +172,25 @@ def test_coverage_says_how_much_of_the_work_carries_an_invoice(made):
     """The ratio is only as honest as this. Half the cleanings uninvoiced means
     a half-size denominator and a percentage about double the truth — so the
     payload reports it rather than quietly being wrong."""
+    before = _get()["labour"]
     c, p = _client(made)
     today = business_today()
     invoiced = _job(made, c, p, today)
     _job(made, c, p, today)          # completed, never invoiced
     _invoice(made, c, invoiced, 1000.0, datetime.combine(today, dtime(12, 0)))
 
+    # DELTAS, not absolutes. `jobs_completed` counts every completed job in
+    # the period, so the moment a neighbouring test also finishes one this
+    # read 4 rather than 2 — the assertion was about the whole database, not
+    # about the two jobs this test created. What it is actually pinning is
+    # that an uninvoiced cleaning still lands in the denominator.
     lab = _get()["labour"]
-    assert lab["jobs_completed"] == 2 and lab["jobs_invoiced"] == 1
-    assert lab["coverage_pct"] == 50.0
+    assert lab["jobs_completed"] - before["jobs_completed"] == 2
+    assert lab["jobs_invoiced"] - before["jobs_invoiced"] == 1
+    # ...and the coverage percentage is that ratio, computed from the same
+    # two totals rather than assumed to be a clean 50%.
+    expected = round(lab["jobs_invoiced"] / lab["jobs_completed"] * 100, 1)
+    assert lab["coverage_pct"] == expected
 
 
 def test_the_benchmark_travels_with_the_number(made):
