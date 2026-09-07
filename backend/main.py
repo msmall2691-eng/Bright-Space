@@ -46,6 +46,7 @@ from modules.recurring.router import router as recurring_router
 from modules.routes.router import router as routes_router
 from modules.turnover_windows.router import router as turnover_windows_router
 from modules.apply.router import router as apply_router
+from modules.marketplace.router import router as marketplace_router
 from modules.reminders.router import router as reminders_router
 from modules.intake.router import router as intake_router
 from modules.booking.router import router as booking_router
@@ -176,6 +177,7 @@ app.include_router(turnover_windows_router, prefix="/api/turnover-windows",
 # _PUBLIC_PREFIXES entry and the module docstring for what that costs and
 # what guards it. Everything else on this router is office-only.
 app.include_router(apply_router, prefix="/api", tags=["apply"])
+app.include_router(marketplace_router, prefix="/api/marketplace", tags=["marketplace"])
 app.include_router(reminders_router, prefix="/api/reminders", tags=["reminders"])
 app.include_router(intake_router, prefix="/api/intake", tags=["intake"])
 app.include_router(booking_router, prefix="/api/booking", tags=["booking"])

@@ -185,6 +185,7 @@ const OwnerDashboard = lazy(() => import('./pages/OwnerDashboard'))
 const Cleanup = lazy(() => import('./pages/Cleanup'))
 const QuoteFunnel = lazy(() => import('./pages/QuoteFunnel'))
 const Crew = lazy(() => import('./pages/Crew'))
+const Marketplace = lazy(() => import('./pages/Marketplace'))
 const Settings = lazy(() => import('./pages/Settings'))
 const DesignSystem = lazy(() => import('./pages/DesignSystem'))
 
@@ -366,6 +367,11 @@ export default function App() {
               <Route path="/dispatch" element={<Navigate to="/schedule?view=dispatch" replace />} />
               <Route path="/payroll" element={<Payroll />} />
               <Route path="/crew" element={<Crew />} />
+              <Route path="/marketplace" element={<Marketplace />} />
+              {/* The bench had five entrances and no front door.
+                  These are the words somebody would actually type. */}
+              <Route path="/bench" element={<Navigate to="/marketplace" replace />} />
+              <Route path="/subcontractors" element={<Navigate to="/marketplace" replace />} />
               {/* Connecteam is gone — the crew is native (My Day + Crew page,
                   payroll reads the native time clock). Old bookmarks land on
                   the nearest native equivalent. */}

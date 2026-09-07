@@ -1,7 +1,7 @@
 import {
   LayoutDashboard, Sparkles, Users, Calendar, Receipt,
   DollarSign, MessageSquare, Home, Repeat, Settings, Inbox,
-  TrendingUp, Radar, Rows3, Filter, HardHat, CalendarDays, FileText, Star,
+  TrendingUp, Radar, Rows3, Filter, HardHat, Store, CalendarDays, FileText, Star,
   GitMerge, Route, CalendarClock,
 } from 'lucide-react'
 
@@ -75,6 +75,21 @@ export const NAV_SECTIONS = [
         ],
       },
       {
+        // THE BENCH GOT A FRONT DOOR. It had shipped as five surfaces bolted
+        // onto other pages — applicants and the roster on Crew, open jobs on
+        // Schedule, standing work on Routes, money on Payouts — and the first
+        // question the owner asked about it was where to find it. Crew and
+        // Payouts move here from Settings rather than being listed twice:
+        // with the employee model gone they are not "set up the people who
+        // work here" any more, they are how the bench is run day to day.
+        to: '/marketplace', icon: Store, label: 'Marketplace',
+        tabs: [
+          { to: '/marketplace', icon: Store,      label: 'Overview', roles: ['admin', 'manager'], keywords: 'bench subcontractors marketplace open jobs applicants apply' },
+          { to: '/crew',        icon: HardHat,    label: 'Crew', roles: ['admin', 'manager'], keywords: 'team cleaners subs bench roster invite applicants vetting documents insurance' },
+          { to: '/payroll',     icon: DollarSign, label: 'Payouts', roles: ['admin', 'manager'], keywords: 'pay subcontractors payouts ledger 1099 stripe direct deposit' },
+        ],
+      },
+      {
         to: '/clients', icon: Users, label: 'Clients',
         tabs: [
           { to: '/clients',    icon: Users, label: 'Clients', keywords: 'customers contacts' },
@@ -112,13 +127,12 @@ export const NAV_SECTIONS = [
  */
 export const SETTINGS_ITEM = {
   to: '/settings', icon: Settings, label: 'Settings',
-  tabs: [
-    { to: '/settings', icon: Settings,   label: 'Settings', keywords: 'account integrations users email fields' },
-    { to: '/crew',     icon: HardHat,    label: 'Crew', roles: ['admin', 'manager'], keywords: 'team cleaners rates invite' },
-    // Payroll reads (/rates, /summary, /mileage) are admin/manager-only.
-    // Renamed with the employee model: there is no payroll, there are payouts.
-    { to: '/payroll',  icon: DollarSign, label: 'Payouts', roles: ['admin', 'manager'], keywords: 'pay subcontractors payouts ledger 1099' },
-  ],
+  // A leaf now. Crew and Payouts used to hang here on the reasoning that both
+  // are "set up the people who work here" — true under the employee model,
+  // wrong under this one. They are the bench's day-to-day surfaces, so they
+  // moved to Marketplace. Listing them in both places would be worse than
+  // either: a nav where the same page appears twice teaches you to distrust
+  // the nav.
 }
 
 /** Every top-level sidebar destination (six rows + Settings in the footer). */

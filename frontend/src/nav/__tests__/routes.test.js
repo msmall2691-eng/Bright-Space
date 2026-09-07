@@ -90,13 +90,26 @@ describe('every page has a way in', () => {
 })
 
 describe('the nav stays small', () => {
-  it('is still six rows plus Settings', () => {
+  it('is seven rows plus Settings, and gained no new destinations', () => {
     // The owner's words were "not in love with nav bar menus and pages and
     // home it's all just chaos". It went 17 → 7; a regression here is how it
     // creeps back.
+    //
+    // Marketplace made it eight, and the row is only defensible because it
+    // ADDS NO PLACES TO LAND. Crew and Payouts moved into it out of Settings
+    // rather than being listed twice, and Settings became a leaf — so the
+    // count below is the one that actually guards against sprawl, and it is
+    // the bar the next row has to clear too: gather pages that already
+    // exist, don't invent them.
     const rows = NAV_SECTIONS.flatMap(s => s.items)
-    expect(rows).toHaveLength(6)
+    expect(rows).toHaveLength(7)
     expect(SETTINGS_ITEM.to).toBe('/settings')
+    expect(SETTINGS_ITEM.tabs).toBeUndefined()
+    // 19 before this change, and the one addition is /marketplace itself:
+    // Crew and Payouts are the same two destinations they always were, just
+    // reached from a row that makes sense now the employee model is gone.
+    expect(reachable().size).toBe(20)
+    expect(reachable().has('/marketplace')).toBe(true)
   })
 
   it('gives every destination a label and an icon', () => {

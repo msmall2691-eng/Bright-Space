@@ -4173,6 +4173,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/marketplace": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Overview
+         * @description Everything the Marketplace page draws, in ONE request.
+         *
+         *     Office roles only. The bench, who is waiting on an answer, and what is
+         *     owed are all internal operating facts — a cleaner sees their own side of
+         *     this on My Day, built from `/api/crew/*` with its own scoping.
+         */
+        get: operations["overview_api_marketplace_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/reminders/jobs/{job_id}/invite.ics": {
         parameters: {
             query?: never;
@@ -16610,6 +16634,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    overview_api_marketplace_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
                 };
             };
         };
