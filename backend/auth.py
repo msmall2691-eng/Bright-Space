@@ -132,7 +132,25 @@ def _is_public(path: str) -> bool:
 
 class APIKeyMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
-        if _is_public(request.url.path):
+        # BB-SEC-16: the RAW ASGI path, not request.url.path.
+        #
+        # request.url is REBUILT from the Host header, and Starlette < 0.47.2
+        # (we ship 0.38.6) does not validate that header before doing so
+        # (CVE-2026-48710). A request line of `GET /api/clients` with
+        # `Host: victim/abc?x=` reconstructs to `http://victim/abc?x=/api/clients`,
+        # whose parsed `.path` is `/abc` — which `_is_public` waves through as a
+        # non-/api/ SPA route, so this middleware skips auth entirely and the
+        # real /api/clients handler runs unauthenticated. Verified: a poisoned
+        # Host returns 200 and the client list where an honest one returns 401.
+        #
+        # `scope["path"]` is what the ROUTER dispatched on, so reading it here
+        # makes the auth decision and the routing decision agree on one path —
+        # which is the invariant the CVE is about. This closes the hole
+        # independently of the Starlette version; the dependency bump (the rest
+        # of the review's item) is still worth doing, but is not what stands
+        # between this bypass and production.
+        raw_path = request.scope.get("path") or request.url.path
+        if _is_public(raw_path):
             return await call_next(request)
 
         # Try JWT first (Authorization: Bearer <token>)
