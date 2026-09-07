@@ -101,9 +101,6 @@ export default function Crew() {
   const [fullName, setFullName] = useState('')
   const [email, setEmail] = useState('')
   const [crewId, setCrewId] = useState('')
-  const [res, setRes] = useState('')
-  const [rental, setRental] = useState('')
-  const [deep, setDeep] = useState('')
   const [adding, setAdding] = useState(false)
   const nameRef = useRef(null)
 
@@ -127,12 +124,9 @@ export default function Crew() {
         full_name: fullName.trim(),
         email: email.trim(),
         cleaner_id: crewId.trim() || null,
-        pay_rate_residential: numOrNull(res),
-        pay_rate_rental: numOrNull(rental),
-        pay_rate_deep: numOrNull(deep),
       })
       setRows(rs => [row, ...rs])
-      setFullName(''); setEmail(''); setCrewId(''); setRes(''); setRental(''); setDeep('')
+      setFullName(''); setEmail(''); setCrewId('')
       reloadUnclaimed()  // if this named a scheduled crew ID, it's no longer unclaimed
       pushToast(`Invite sent to ${row.email}`, 'success')
     } catch (err) {
@@ -192,23 +186,6 @@ export default function Crew() {
     nameRef.current?.focus()
   }
 
-  const rateInput = (row, field, value, placeholder) => (
-    <label className="block" title={isAdmin ? undefined : 'Admin only'}>
-      <span className="text-[11px] text-ink-3">{placeholder}</span>
-      <input
-        key={`${row.id}-${field}-${value ?? ''}`}
-        type="number" step="0.5" min="0"
-        defaultValue={value ?? ''}
-        placeholder="$/hr"
-        disabled={busyId === row.id || !isAdmin}
-        onBlur={(e) => {
-          const v = numOrNull(e.target.value)
-          if (v !== (value ?? null)) savePatch(row.id, { [field]: v })
-        }}
-        className="mt-0.5 w-full bg-panel border border-hairline rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 disabled:opacity-60 disabled:cursor-not-allowed"
-      />
-    </label>
-  )
 
   return (
     <div className="pb-10">
@@ -384,16 +361,15 @@ export default function Crew() {
                           className="mt-0.5 w-full bg-panel border border-hairline rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 disabled:opacity-60 disabled:cursor-not-allowed"
                         />
                       </label>
-                      {rateInput(row, 'pay_rate_residential', row.pay_rate_residential, 'Residential $/hr')}
-                      {rateInput(row, 'pay_rate_rental', row.pay_rate_rental, 'Rental $/hr')}
-                      {rateInput(row, 'pay_rate_deep', row.pay_rate_deep, 'Deep $/hr')}
                     </div>
-                    {/* Feeds Payroll's pre-calculated drive mileage (home → first
-                        job → between houses). Kept here too, not just in Settings
-                        → Users, so mileage isn't the one cleaner field that lives
-                        on a different page than everything else about them. */}
+                    {/* Office-facing only — it never rides a crew or customer
+                        payload. Kept here as well as in Settings → Users so it
+                        isn't the one cleaner field living on a different page
+                        from everything else about them. It fed the payroll
+                        drive-mileage report that #777 deleted; it is no longer
+                        labelled as anything to do with pay. */}
                     <label className="block mt-2.5" title={isAdmin ? undefined : 'Admin only'}>
-                      <span className="text-[11px] text-ink-3">Home address <span className="font-normal">(for payroll drive mileage)</span></span>
+                      <span className="text-[11px] text-ink-3">Home address <span className="font-normal">(optional)</span></span>
                       <input
                         key={`${row.id}-home-${row.home_address || ''}`}
                         defaultValue={row.home_address || ''}
@@ -440,24 +416,6 @@ export default function Crew() {
               <span className="text-[11px] text-ink-3">Crew ID <span className="text-ink-3">(optional — links them to jobs already assigned)</span></span>
               <input value={crewId} onChange={e => setCrewId(e.target.value)}
                 placeholder="e.g. 123" disabled={adding}
-                className="mt-0.5 w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" />
-            </label>
-            <label className="block">
-              <span className="text-[11px] text-ink-3">Residential $/hr</span>
-              <input type="number" step="0.5" min="0" value={res} onChange={e => setRes(e.target.value)}
-                placeholder="Blank = shop default" disabled={adding}
-                className="mt-0.5 w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" />
-            </label>
-            <label className="block">
-              <span className="text-[11px] text-ink-3">Rental (turnover) $/hr</span>
-              <input type="number" step="0.5" min="0" value={rental} onChange={e => setRental(e.target.value)}
-                placeholder="Blank = shop default" disabled={adding}
-                className="mt-0.5 w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" />
-            </label>
-            <label className="block">
-              <span className="text-[11px] text-ink-3">Deep-clean $/hr</span>
-              <input type="number" step="0.5" min="0" value={deep} onChange={e => setDeep(e.target.value)}
-                placeholder="Blank = shop default" disabled={adding}
                 className="mt-0.5 w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" />
             </label>
           </div>

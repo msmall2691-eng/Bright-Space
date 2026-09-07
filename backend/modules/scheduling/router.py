@@ -38,8 +38,6 @@ class JobCreate(BaseModel):
     client_id: int
     title: str
     job_type: Optional[str] = "residential"  # "residential" | "deep_clean" | "commercial" | "str_turnover"
-    pay_mode: Optional[str] = None            # native-payroll override: auto | hourly | piece
-    pay_rate_bump: Optional[float] = None     # extra $/hr on top of hourly rates for this job
     scheduled_date: str       # YYYY-MM-DD
     start_time: str           # HH:MM
     end_time: str             # HH:MM
@@ -88,8 +86,6 @@ class JobUpdate(BaseModel):
     # by the edit modal but never declared here, so pydantic silently dropped
     # it and property changes never saved.
     job_type: Optional[str] = None
-    pay_mode: Optional[str] = None            # native-payroll override: auto | hourly | piece
-    pay_rate_bump: Optional[float] = None     # extra $/hr on top of hourly rates for this job
     property_id: Optional[int] = None
     # What the customer is billed. Editable after the fact — a job's scope
     # changes — and settable back to nothing, which is why the update path
@@ -123,8 +119,19 @@ JOB_STATUSES = {"unscheduled", "scheduled", "in_progress", "completed", "cancell
 # Distinguishing the two cases needs pydantic's `model_fields_set`, not the
 # value: absent and null both arrive as None.
 CLEARABLE_FIELDS = frozenset({"posted_rate"})
-# Native-payroll per-job override (Job.pay_mode). "auto" = the automatic rule.
-PAY_MODES = {"auto", "hourly", "piece"}
+# NO PER-JOB PAY MODE, AND NO HOURLY BUMP. `Job.pay_mode` ("auto | hourly |
+# piece") and `Job.pay_rate_bump` ("extra $/hr on top of each cleaner's normal
+# rate") were the employee model one level down from the per-cleaner hourly
+# wage: an office control that priced a contractor's work by the hour, for a
+# workforce paid per job and never per hour. #777 deleted the payroll engine
+# that read them; what was left validated and stored a number nothing could
+# use, while the job edit screen offered "pay by the hour even on a weekend"
+# as a choice.
+#
+# The COLUMNS stay on `jobs` — dropping them is destructive for history nobody
+# can regenerate, and the discipline here is additive-only. What a job pays a
+# sub is `posted_rate` (offered) and `agreed_rate` (settled), per job, both of
+# which remain.
 
 
 class BookingInfo(BaseModel):
@@ -654,8 +661,6 @@ def job_to_dict(j: Job, client: Client = None, effective_date=None,
         "quote_id": j.quote_id,
         "opportunity_id": j.opportunity_id,
         "job_type": j.job_type or "residential",
-        "pay_mode": j.pay_mode or "auto",
-        "pay_rate_bump": j.pay_rate_bump,
         "property_id": j.property_id,
         "property_name": property_name,
         "recurring_schedule_id": j.recurring_schedule_id,
@@ -1042,8 +1047,6 @@ def create_job(data: JobCreate, db: Session = Depends(get_db), org_id: int = Dep
 
     # A negative hourly bump would silently dock pay — reject it here the same
     # way the PATCH path does.
-    if data.pay_rate_bump is not None and data.pay_rate_bump < 0:
-        raise HTTPException(status_code=400, detail="pay_rate_bump cannot be negative")
 
     # ── CONFLICT / DUPLICATE CHECK ──
     # Prevent creating duplicate jobs for the same property + date + time
@@ -3419,11 +3422,6 @@ def update_job(job_id: int, data: JobUpdate, db: Session = Depends(get_db), org_
     if "job_type" in updates and updates["job_type"] not in JOB_TYPES \
             and updates["job_type"] != job.job_type:
         raise HTTPException(status_code=400, detail=f"Unknown job_type '{updates['job_type']}'")
-    if "pay_mode" in updates and updates["pay_mode"] not in PAY_MODES \
-            and updates["pay_mode"] != job.pay_mode:
-        raise HTTPException(status_code=400, detail=f"Unknown pay_mode '{updates['pay_mode']}'")
-    if updates.get("pay_rate_bump") is not None and updates["pay_rate_bump"] < 0:
-        raise HTTPException(status_code=400, detail="pay_rate_bump cannot be negative")
     if updates.get("posted_rate") is not None and updates["posted_rate"] <= 0:
         raise HTTPException(status_code=400, detail="posted_rate must be positive")
 

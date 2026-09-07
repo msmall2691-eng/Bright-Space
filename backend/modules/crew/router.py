@@ -3178,13 +3178,11 @@ def _crew_row(u: User) -> dict:
         "full_name": u.full_name,
         "email": u.email,
         "cleaner_id": u.cleaner_id,
-        "pay_rate_residential": u.pay_rate_residential,
-        "pay_rate_rental": u.pay_rate_rental,
-        "pay_rate_deep": u.pay_rate_deep,
-        # Drive-mileage source for Payroll (home → first job → between houses).
-        # Editable from Settings → Users too (same PATCH /api/auth/users/{id}
-        # field) — surfaced here so it isn't the one cleaner field that's only
-        # reachable from a different page than the rest of their info.
+        # NO HOURLY PAY RATE — see CrewCreate below.
+        # Office-facing only; never rides a crew or customer payload. Editable
+        # from Settings → Users too (same PATCH /api/auth/users/{id} field),
+        # surfaced here so it isn't the one cleaner field reachable only from a
+        # different page than the rest of their info.
         "home_address": u.home_address,
         "status": u.status or "active",
         # True once they've set a password (accepted the invite) or logged in.
@@ -3266,12 +3264,23 @@ def unclaimed_crew_ids(db: Session = Depends(get_db), org_id: int = Depends(curr
 
 
 class CrewCreate(BaseModel):
+    """Adding a cleaner. NOTE THE ABSENCE OF AN HOURLY RATE.
+
+    A subcontractor is paid per job and never per hour — one of the three
+    constraints the marketplace arrangement is built on, and a legal one
+    rather than a stylistic one. The three `pay_rate_*` fields lived here
+    until the office form that wrote them became a record of an hourly wage
+    against a 1099 contractor that nothing read: #777 deleted the payroll
+    engine, leaving write-only columns and a form saying the opposite of the
+    classification being defended.
+
+    The columns remain on `users` — dropping them is a destructive migration
+    for history nobody can regenerate, and the discipline here is
+    additive-only. What is gone is every way to write a new value.
+    """
     full_name: str
     email: str
     cleaner_id: Optional[str] = None
-    pay_rate_residential: Optional[float] = None
-    pay_rate_rental: Optional[float] = None
-    pay_rate_deep: Optional[float] = None
 
 
 @router.post("/{user_id}/resend-invite", dependencies=[Depends(require_role("admin"))])
@@ -3305,10 +3314,6 @@ def add_crew(body: CrewCreate, db: Session = Depends(get_db),
         raise HTTPException(status_code=422, detail="A valid email is required to invite a cleaner.")
     if db.query(User).filter(func.lower(User.email) == email).first():
         raise HTTPException(status_code=409, detail="A user with that email already exists.")
-    for attr in ("pay_rate_residential", "pay_rate_rental", "pay_rate_deep"):
-        v = getattr(body, attr)
-        if v is not None and v < 0:
-            raise HTTPException(status_code=422, detail=f"{attr} cannot be negative.")
     cid = (body.cleaner_id or "").strip() or None
     if cid and db.query(User).filter(User.cleaner_id == cid).first():
         # One crew ID = one person. Two accounts sharing an ID would see the
@@ -3322,9 +3327,6 @@ def add_crew(body: CrewCreate, db: Session = Depends(get_db),
         role="cleaner", status="invited", active=True, org_id=oid,
         auth_provider="password",
         cleaner_id=cid,
-        pay_rate_residential=body.pay_rate_residential,
-        pay_rate_rental=body.pay_rate_rental,
-        pay_rate_deep=body.pay_rate_deep,
     )
     db.add(u)
     db.flush()  # assigns u.id so the auto crew ID can derive from it

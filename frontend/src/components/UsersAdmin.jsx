@@ -106,24 +106,6 @@ export default function UsersAdmin() {
     return Number.isNaN(n) ? null : n
   }
 
-  const rateField = (u, field, value, label) => (
-    <label className="block">
-      <span className={labelCls}>{label}</span>
-      <input
-        key={`${u.id}-${field}-${value ?? ''}`}
-        type="number" step="0.5" min="0" inputMode="decimal"
-        defaultValue={value ?? ''}
-        placeholder="Default"
-        disabled={busyId === u.id}
-        onBlur={e => {
-          const v = numOrNull(e.target.value)
-          if (v !== (value ?? null)) saveField(u, { [field]: v })
-        }}
-        className={inputCls}
-      />
-    </label>
-  )
-
   return (
     <div className="bg-panel border border-hairline rounded-xl p-5 sm:p-6">
       <div className="flex items-center justify-between mb-1">
@@ -262,14 +244,13 @@ export default function UsersAdmin() {
                           className={inputCls}
                         />
                       </label>
-                      {rateField(u, 'pay_rate_residential', u.pay_rate_residential, 'Residential $/hr')}
-                      {rateField(u, 'pay_rate_rental', u.pay_rate_rental, 'Rental $/hr')}
-                      {rateField(u, 'pay_rate_deep', u.pay_rate_deep, 'Deep $/hr')}
-                      {/* Home address feeds the Payroll page's pre-calculated
-                          drive mileage (home → first job → between houses).
-                          Office-only — never shown to crew or customers. */}
+                      {/* Office-only — never shown to crew or customers. It
+                          fed the Payroll page's drive-mileage calculation,
+                          which #777 deleted with the rest of the employee
+                          model; it is no longer labelled as anything to do
+                          with pay. */}
                       <label className="block col-span-2 sm:col-span-5">
-                        <span className={labelCls}>Home address <span className="font-normal">(for payroll drive mileage)</span></span>
+                        <span className={labelCls}>Home address <span className="font-normal">(optional)</span></span>
                         <input
                           key={`${u.id}-home-${u.home_address || ''}`}
                           type="text"

@@ -28,7 +28,7 @@ const STATUS_OPTIONS = [
 // backend/modules/recurring/router.py — scheduled_date is here because a day
 // move is expressed to the series as days_of_week/day_of_month.)
 //
-// Everything NOT in this set — status, pay_mode, pay_rate_bump, job_type —
+// Everything NOT in this set — status and job_type —
 // exists only on the Job row. The series has no column to write them to, so
 // asking "does this apply to all future visits?" for a status flip was a
 // question with no answer: picking "this and all future" ran a SPLIT (a new
@@ -49,8 +49,6 @@ const SERIES_FIELDS = new Set([
 const initialFieldValues = (j) => ({
   title: j?.title || '',
   job_type: j?.job_type || 'residential',
-  pay_mode: j?.pay_mode || 'auto',
-  pay_rate_bump: j?.pay_rate_bump ?? '',
   status: j?.status || 'scheduled',
   property_id: j?.property_id || '',
   address: j?.address || '',
@@ -228,8 +226,8 @@ export default function JobEditModal({ job, properties = [], clients = [], onClo
   //    formData keeps accumulating edits across dialog cancellations, so
   //    nothing is lost if they "Never mind" and keep editing before finally
   //    choosing a scope.
-  //  - Recurring job, per-visit-only field (status, pay_mode, pay_rate_bump,
-  //    job_type): falls through to the plain PATCH below. The series has no
+  //  - Recurring job, per-visit-only field (status, job_type): falls through
+  //    to the plain PATCH below. The series has no
   //    such column, so there is nothing for a scope to mean — and the old
   //    behavior of prompting anyway is how a status change ended up splitting
   //    a series in half. See SERIES_FIELDS.
@@ -421,9 +419,6 @@ export default function JobEditModal({ job, properties = [], clients = [], onClo
       const payload = {
         title: formData.title || (prop ? `Cleaning \u2014 ${prop.name}` : 'Cleaning'),
         job_type: formData.job_type || 'residential',
-        pay_mode: formData.pay_mode || 'auto',
-        pay_rate_bump: formData.pay_rate_bump === '' || formData.pay_rate_bump == null
-          ? null : Number(formData.pay_rate_bump) || 0,
         status: formData.status || 'scheduled',
         property_id: parseInt(formData.property_id),
         address: formData.address || prop?.address || '',
@@ -502,8 +497,8 @@ export default function JobEditModal({ job, properties = [], clients = [], onClo
       const timeChanged = (dirty('start_time') && formData.start_time !== originalStart)
         || (dirty('end_time') && formData.end_time !== originalEnd)
 
-      // Note there is no Job-only payload to assemble here: status, pay_mode,
-      // pay_rate_bump and job_type never reach this function any more — they
+      // Note there is no Job-only payload to assemble here: status and
+      // job_type never reach this function any more — they
       // auto-save through saveField() the moment they're changed, because they
       // have no series meaning to scope (see SERIES_FIELDS). Everything below
       // is series work.
@@ -961,53 +956,6 @@ export default function JobEditModal({ job, properties = [], clients = [], onClo
               </select>
             </div>
 
-            {/* Pay override — only for turnovers, where piece-vs-hourly is a real
-                choice (e.g. a weekend airbnb you'd rather pay hourly). */}
-            {formData.job_type === 'str_turnover' && (
-              <div>
-                <label className="block text-sm font-semibold text-ink-2 mb-2">Pay</label>
-                <select
-                  value={formData.pay_mode}
-                  onChange={e => {
-                    const v = e.target.value
-                    setFormData(f => ({ ...f, pay_mode: v }))
-                    if (isFieldChanged('pay_mode', v)) commitField({ pay_mode: v })
-                  }}
-                  className="w-full px-3 py-3 border border-hairline rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent text-base bg-panel"
-                >
-                  <option value="auto">Auto — weekend = piece rate, weekday = hourly</option>
-                  <option value="hourly">Hourly — pay by the hour even on a weekend</option>
-                  <option value="piece">Piece rate — per-property turnover rate</option>
-                </select>
-                <p className="text-xs text-ink-3 mt-1">Native payroll only — overrides how this turnover is paid.</p>
-              </div>
-            )}
-
-            {/* Hourly bump — the "+$1/hr" offer for a two-cleaner deep clean or a
-                weekday immediate turnover. Applies to hourly pay on this job for
-                every assigned cleaner; piece-rate pay ignores it. */}
-            <div>
-              <label className="block text-sm font-semibold text-ink-2 mb-2">Hourly bump ($/hr)</label>
-              <input
-                type="number"
-                min="0"
-                step="0.5"
-                value={formData.pay_rate_bump}
-                onChange={e => setFormData(f => ({ ...f, pay_rate_bump: e.target.value }))}
-                onBlur={() => {
-                  if (!isFieldChanged('pay_rate_bump', formData.pay_rate_bump)) return
-                  const v = formData.pay_rate_bump === '' || formData.pay_rate_bump == null
-                    ? null : Number(formData.pay_rate_bump) || 0
-                  commitField({ pay_rate_bump: v })
-                }}
-                placeholder="0 — no bump"
-                className="w-full px-3 py-3 border border-hairline rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent text-base"
-              />
-              <p className="text-xs text-ink-3 mt-1">
-                Extra dollars per hour on top of each cleaner's normal rate, for this job only —
-                e.g. +$1/hr for a two-cleaner deep clean. Doesn't apply to piece-rate turnovers.
-              </p>
-            </div>
 
             {/* Address — editable; pre-fills from the property when blank */}
             <div>
