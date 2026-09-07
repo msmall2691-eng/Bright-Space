@@ -123,6 +123,21 @@ class User(Base):
     # Google sign-in identity (stable subject id), bound on first Google login.
     google_sub = Column(String, nullable=True, unique=True, index=True)
     auth_provider = Column(String, nullable=True)  # 'password' | 'google' (informational)
+
+    # ── Stripe Connect payout account (migration 108) ──────────────────────
+    #
+    # `stripe_account_id` is the only fact here; the rest is a cache of what
+    # `account.updated` last told us, so a crew screen costs no Stripe call
+    # (brightbase-economy) and there is no polling tick (R1).
+    #
+    # NOT A GATE. Nothing here feeds `blocking_requirements` — "you must open
+    # a Stripe account to be eligible for work" is a condition of engagement
+    # the arrangement does not need. The manual rail stays registered.
+    stripe_account_id = Column(String(64), nullable=True, index=True)
+    stripe_payouts_enabled = Column(Boolean, nullable=False, default=False,
+                                    server_default="false")
+    stripe_requirements = Column(Text, nullable=True)
+    stripe_synced_at = Column(DateTime, nullable=True)
     full_name = Column(String, nullable=True)
     role = Column(String, nullable=False, default=UserRole.CLIENT)
     # admin | manager | member | viewer | cleaner | client

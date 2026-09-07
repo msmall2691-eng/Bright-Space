@@ -602,6 +602,87 @@ def mark_job_done(
     return _job_row(job, _names_by_cleaner_id(db, [job]), current_user.cleaner_id)
 
 
+# ── Getting paid: my Stripe payout account (migration 108) ──────────────────
+#
+# NOT A GATE, and that is the design. Nothing here touches
+# `blocking_requirements` — "you must open a Stripe account to be eligible for
+# work" is a condition of engagement the arrangement does not need, and the
+# manual rail stays registered so a sub mid-onboarding still gets paid. How
+# somebody is paid is a commercial detail between two businesses, not a
+# qualification to do the work.
+#
+# The sub does the identity step on STRIPE's page, never here: that is what
+# keeps their SSN out of this database, which is the whole reason for the
+# integration (see integrations/stripe_connect.py).
+
+
+def _stripe_state(u: User) -> dict:
+    return {
+        "connected": bool(u.stripe_account_id),
+        "payouts_enabled": bool(u.stripe_payouts_enabled),
+        "needs": u.stripe_requirements or None,
+        "checked_at": _iso_utc(u.stripe_synced_at) if u.stripe_synced_at else None,
+    }
+
+
+@router.get("/me/payouts")
+def my_payout_account(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_role("cleaner")),
+):
+    """Where my money goes, and what Stripe is still waiting for.
+
+    Reads the CACHED state written by the account.updated webhook — no Stripe
+    call to render a screen (brightbase-economy), and no polling tick (R1).
+    """
+    from integrations.stripe_connect import configured
+    return {**_stripe_state(current_user), "available": configured()}
+
+
+@router.post("/me/payouts/setup")
+def start_payout_setup(
+    db: Session = Depends(get_db),
+    org_id: int = Depends(current_org_id),
+    current_user: User = Depends(require_role("cleaner")),
+):
+    """Create my account if I haven't got one, and hand back a link to finish.
+
+    Idempotent on the account: the id is written once and reused. The LINK is
+    single-use and short-lived at Stripe's end, so it is minted per tap rather
+    than stored — and the refresh_url points back here so an expired link mints
+    a new one instead of showing a dead end.
+    """
+    _require_crew_id(current_user)
+    from integrations.stripe_connect import configured, create_account, onboarding_link
+    if not configured():
+        raise HTTPException(
+            status_code=503,
+            detail="Direct deposit isn't switched on yet — the office will let you know.")
+
+    u = db.query(User).filter(User.id == current_user.id).first()
+    if not u:
+        raise HTTPException(status_code=404, detail="Not found.")
+
+    if not u.stripe_account_id:
+        acct = create_account(email=u.email, name=u.full_name)
+        if not acct:
+            raise HTTPException(status_code=502,
+                                detail="Couldn't reach Stripe just now. Try again in a minute.")
+        u.stripe_account_id = acct
+        u.stripe_synced_at = _now_naive_utc()
+        db.commit(); db.refresh(u)
+
+    from config import app_base_url
+    base = app_base_url()
+    url = onboarding_link(u.stripe_account_id,
+                          return_url=f"{base}/my-day?payouts=done",
+                          refresh_url=f"{base}/my-day?payouts=retry")
+    if not url:
+        raise HTTPException(status_code=502,
+                            detail="Couldn't start the setup. Try again in a minute.")
+    return {"url": url, **_stripe_state(u)}
+
+
 # ── My own helper on a job (migration 107) ──────────────────────────────────
 #
 # ONE OF THE FIVE MAINE CRITERIA, not a convenience. Part 1 #4 is "hires, pays

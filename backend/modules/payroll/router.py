@@ -18,16 +18,20 @@ nobody can regenerate, and the migration discipline here is additive-only (R8).
 Unused columns cost nothing; a dropped table with history in it cannot be
 undone. That is a separate decision for when nobody wants the history.
 """
-from datetime import datetime
+import logging
+from datetime import datetime, timezone
 from typing import Optional
 
-from fastapi import APIRouter, HTTPException, Query, Depends
+from fastapi import APIRouter, HTTPException, Query, Depends, Request
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
 
 from database.db import get_db
+from database.models import User
 from modules.auth.router import require_role, current_org_id, resolve_org_id
 from modules.settings.router import get_setting, set_setting
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -178,3 +182,77 @@ def send_payouts(body: SendPayoutsBody, db: Session = Depends(get_db),
                             detail="Nothing to send — those payouts aren't due.")
     rail = sub_payouts.get_rail(get_setting(db, "sub_payout_rail"))
     return rail.send(db, oid, rows)
+
+
+# ── Stripe Connect webhook (migration 108) ──────────────────────────────────
+
+
+@router.post("/stripe/webhook")  # PUBLIC: Stripe posts here; the signature is verified inside
+async def stripe_webhook(request: Request, db: Session = Depends(get_db)):
+    """Keep the cached payout state true.
+
+    The ONLY writer of `stripe_payouts_enabled` / `stripe_requirements`. Every
+    other surface reads the cache, which is what keeps a crew screen render
+    free of a Stripe API call (brightbase-economy) and keeps this off a polling
+    tick (scheduling-invariants R1).
+
+    SIGNATURE FIRST, and refuse rather than trust when we cannot check. This
+    endpoint is public — it has to be, Stripe cannot send our API key — so the
+    signature is the only thing standing between a stranger and marking any
+    sub's payouts enabled. Same posture as the Twilio webhook (BB-SEC-06): no
+    secret configured means reject, not accept.
+
+    Always 200 on a well-formed, verified event, even one we ignore. Stripe
+    retries non-2xx for days, and retrying an event we deliberately do not
+    handle is noise for both sides.
+    """
+    from integrations.stripe_connect import summarize, webhook_secret
+
+    secret = webhook_secret()
+    if not secret:
+        logger.error("[stripe] rejecting webhook — STRIPE_WEBHOOK_SECRET not set, "
+                     "cannot verify the signature")
+        raise HTTPException(status_code=503, detail="Webhook not configured.")
+
+    payload = await request.body()
+    sig = request.headers.get("stripe-signature", "")
+    try:
+        import stripe
+        event = stripe.Webhook.construct_event(payload, sig, secret)
+    except Exception:
+        logger.warning("[stripe] rejected webhook with a bad signature")
+        raise HTTPException(status_code=400, detail="Bad signature.")
+
+    kind = event.get("type")
+    obj = (event.get("data") or {}).get("object") or {}
+
+    if kind == "account.updated":
+        acct_id = obj.get("id")
+        u = (db.query(User).filter(User.stripe_account_id == acct_id).first()
+             if acct_id else None)
+        if u is None:
+            # An account we do not know about. Not an error — the same Stripe
+            # account can serve more than one thing — but worth a line so a
+            # genuine mismatch is findable.
+            logger.info("[stripe] account.updated for an unknown account %s", acct_id)
+            return {"ok": True, "ignored": True}
+        state = summarize(obj)
+        was = bool(u.stripe_payouts_enabled)
+        u.stripe_payouts_enabled = state["payouts_enabled"]
+        u.stripe_requirements = state["requirements"]
+        u.stripe_synced_at = datetime.now(timezone.utc).replace(tzinfo=None)
+        db.commit()
+        if state["payouts_enabled"] and not was:
+            # Worth telling them: the setup they started is finished, and the
+            # next payout goes to their bank rather than onto a cheque list.
+            try:
+                from services.push_service import notify_user
+                notify_user(u.id, "Direct deposit is on",
+                            "Your details are verified — the next payout goes "
+                            "straight to your bank.",
+                            url="/my-day", category="job_assignments")
+            except Exception:
+                logger.warning("[stripe] payouts-enabled notification failed", exc_info=True)
+        return {"ok": True, "payouts_enabled": state["payouts_enabled"]}
+
+    return {"ok": True, "ignored": True}

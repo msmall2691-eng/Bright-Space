@@ -2709,6 +2709,41 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/payroll/stripe/webhook": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Stripe Webhook
+         * @description Keep the cached payout state true.
+         *
+         *     The ONLY writer of `stripe_payouts_enabled` / `stripe_requirements`. Every
+         *     other surface reads the cache, which is what keeps a crew screen render
+         *     free of a Stripe API call (brightbase-economy) and keeps this off a polling
+         *     tick (scheduling-invariants R1).
+         *
+         *     SIGNATURE FIRST, and refuse rather than trust when we cannot check. This
+         *     endpoint is public — it has to be, Stripe cannot send our API key — so the
+         *     signature is the only thing standing between a stranger and marking any
+         *     sub's payouts enabled. Same posture as the Twilio webhook (BB-SEC-06): no
+         *     secret configured means reject, not accept.
+         *
+         *     Always 200 on a well-formed, verified event, even one we ignore. Stripe
+         *     retries non-2xx for days, and retrying an event we deliberately do not
+         *     handle is noise for both sides.
+         */
+        post: operations["stripe_webhook_api_payroll_stripe_webhook_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/comms/conversations": {
         parameters: {
             query?: never;
@@ -6443,6 +6478,54 @@ export interface paths {
          *     (their "oops, forgot to mention" path); no duplicate activity or invoice.
          */
         post: operations["mark_job_done_api_crew_jobs__job_id__complete_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/crew/me/payouts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * My Payout Account
+         * @description Where my money goes, and what Stripe is still waiting for.
+         *
+         *     Reads the CACHED state written by the account.updated webhook — no Stripe
+         *     call to render a screen (brightbase-economy), and no polling tick (R1).
+         */
+        get: operations["my_payout_account_api_crew_me_payouts_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/crew/me/payouts/setup": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Start Payout Setup
+         * @description Create my account if I haven't got one, and hand back a link to finish.
+         *
+         *     Idempotent on the account: the id is written once and reused. The LINK is
+         *     single-use and short-lived at Stripe's end, so it is minted per tap rather
+         *     than stored — and the refresh_url points back here so an expired link mints
+         *     a new one instead of showing a dead end.
+         */
+        post: operations["start_payout_setup_api_crew_me_payouts_setup_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -14206,6 +14289,26 @@ export interface operations {
             };
         };
     };
+    stripe_webhook_api_payroll_stripe_webhook_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
     list_conversations_api_comms_conversations_get: {
         parameters: {
             query?: {
@@ -19898,6 +20001,46 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    my_payout_account_api_crew_me_payouts_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    start_payout_setup_api_crew_me_payouts_setup_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
                 };
             };
         };
