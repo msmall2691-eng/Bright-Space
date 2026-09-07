@@ -8,6 +8,8 @@ from pydantic import BaseModel
 from typing import Optional, List, Literal
 from datetime import datetime, date, timezone
 
+from utils.dates import business_tz
+
 from database.db import get_db
 from database.models import Invoice, Client, Message
 from modules.auth.router import require_role, current_org_id, resolve_org_id
@@ -115,24 +117,53 @@ def get_invoices(
     return [invoice_to_dict(i) for i in q.order_by(Invoice.created_at.desc()).offset(offset).limit(limit).all()]
 
 
+def _business_month_start_utc() -> datetime:
+    """00:00 on the 1st of the current month IN MAINE, as naive UTC.
+
+    `paid_at` is stored as naive UTC, and this was
+    `datetime.now().replace(day=1, …)` — the server's clock, which in the
+    container is UTC. So the month began at 00:00 UTC, which is 8pm on the LAST
+    day of the previous month in Maine, and every invoice paid in that evening
+    window landed in the wrong month: the month just ended lost revenue it had
+    earned, the new one gained revenue it had not. Four or five hours of wrong
+    numbers at every month boundary, on the figure the owner checks first.
+
+    Built the other way round now: take the business-local month start, then
+    convert to UTC to compare against what is stored.
+    """
+    tz = business_tz()
+    local_first = datetime.now(tz).replace(day=1, hour=0, minute=0, second=0,
+                                           microsecond=0)
+    return local_first.astimezone(timezone.utc).replace(tzinfo=None)
+
+
 @router.get("/summary/by-service", dependencies=[Depends(require_role("admin", "manager", "viewer"))])
 def invoice_summary_by_service(
     period: str = Query("mtd", pattern="^(mtd|all)$"),
     db: Session = Depends(get_db),
+    org_id: int = Depends(current_org_id),
 ):
     """Paid-revenue split by service type (residential/commercial/str_turnover),
     joined through the invoice's job. `period=mtd` (default) limits to this month
-    by paid_at; `all` is all-time. Powers the dashboard's revenue breakdown."""
+    by paid_at; `all` is all-time. Powers the dashboard's revenue breakdown.
+
+    ORG-SCOPED, and it was not: role-gated but with no tenant filter, so the
+    totals summed every workspace's paid invoices together. Latent with one
+    org and a wrong number with two — and revenue is the last figure anybody
+    would think to doubt.
+    """
     from sqlalchemy import func
     from database.models import Job
+
+    oid = resolve_org_id(org_id, db)
     q = (
         db.query(Job.job_type, func.count(Invoice.id), func.coalesce(func.sum(Invoice.total), 0.0))
         .join(Invoice, Invoice.job_id == Job.id)
-        .filter(Invoice.status == "paid")
+        .filter(Invoice.status == "paid",
+                or_(Invoice.org_id == oid, Invoice.org_id.is_(None)))
     )
     if period == "mtd":
-        month_start = datetime.now().replace(day=1, hour=0, minute=0, second=0, microsecond=0)
-        q = q.filter(Invoice.paid_at >= month_start)
+        q = q.filter(Invoice.paid_at >= _business_month_start_utc())
     rows = q.group_by(Job.job_type).all()
     return {
         "period": period,
