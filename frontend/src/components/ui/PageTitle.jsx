@@ -78,10 +78,17 @@ export default function PageTitle({
       {subtitle && <p className="mt-0.5 text-xs text-ink-3 sm:hidden">{subtitle}</p>}
       {stats.length > 0 && (
         <div className="mt-2 flex flex-wrap items-baseline gap-x-2 gap-y-1">
+          {/* The separator rides with the stat BEFORE it, not the one after.
+              Grouped forwards, a stats line that wrapped began the next line
+              with a dangling "· " — which reads as a rendering fault rather
+              than a separator. Trailing, the dot ends the line it belongs to
+              and the wrap starts on a word. */}
           {stats.map((s, i) => (
             <span key={i} className="flex items-baseline gap-x-2">
-              {i > 0 && <span className="text-ink-3/50" aria-hidden>·</span>}
               <Stat {...s} />
+              {i < stats.length - 1 && (
+                <span className="text-ink-3/50" aria-hidden>·</span>
+              )}
             </span>
           ))}
         </div>

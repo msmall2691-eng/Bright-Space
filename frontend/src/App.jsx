@@ -288,13 +288,15 @@ export default function App() {
   // every API call would 403 pending_approval, so show the waiting room only.
   if (user?.status === 'pending') {
     return (
-      <PendingApproval
-        user={user}
-        onApproved={(updated) => {
-          setUser(updated)
-          localStorage.setItem('brightbase_user', JSON.stringify(updated))
-        }}
-      />
+      <ErrorBoundary>
+        <PendingApproval
+          user={user}
+          onApproved={(updated) => {
+            setUser(updated)
+            localStorage.setItem('brightbase_user', JSON.stringify(updated))
+          }}
+        />
+      </ErrorBoundary>
     )
   }
 
@@ -302,8 +304,25 @@ export default function App() {
   // shell (Sidebar/Header/nav), regardless of which URL they land on. This
   // is the enforcement point, not just a route: a cleaner typing /clients
   // still gets My Day, not a 403'd blank CRM page.
+  //
+  // WRAPPED, and it was not. The only ErrorBoundary in this file sits inside
+  // the office shell's <main>, so these two branches — the crew app and the
+  // waiting room — had no boundary at all: any render error showed a cleaner
+  // a white screen with no message, no reload button, and no way to say what
+  // happened beyond "it just goes blank".
+  //
+  // It also cost them the chunk recovery. A deploy renames every content-
+  // hashed asset; a phone holding the old index.html (a home-screen PWA is
+  // exactly this) fails the import and throws. Inside a boundary that is a
+  // one-shot reload, handled in componentDidCatch. Outside one it is a dead
+  // screen — and the crew side is the half most likely to be a stale
+  // home-screen icon nobody has hard-reloaded in weeks.
   if (user?.role === 'cleaner') {
-    return <MyDay />
+    return (
+      <ErrorBoundary>
+        <MyDay />
+      </ErrorBoundary>
+    )
   }
 
   return (
