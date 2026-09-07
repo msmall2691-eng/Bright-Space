@@ -1,7 +1,7 @@
 import logging
 import os
 import secrets
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Response
 from sqlalchemy import or_, and_, func
 from sqlalchemy.orm import Session, joinedload
 from pydantic import BaseModel
@@ -2455,10 +2455,21 @@ def _apply_reschedule_move(db: Session, job: Job, d, start: str, end: str, scope
 
 def _public_job_dict(job: Job, db: Session) -> dict:
     """Client-facing serialization for the public confirm page — no internal
-    IDs/notes/cleaner assignments, just what the customer needs to recognize
-    and confirm (or move) their own visit."""
+    IDs and no notes, just what the customer needs to recognize and confirm
+    (or move) their own visit.
+
+    `crew` is the one exception to "no cleaner assignments", added
+    deliberately: a subcontractor is a stranger to the customer in a way an
+    employee of eight years is not, and the customer has no say in who comes,
+    because choosing would be assigning. Telling them WHO WON the job is the
+    one reassurance available that does not touch that — they see, they never
+    pick. `services/crew_intro` decides what a customer may know about a
+    person (a first name, a last initial, whether there is a face) and the
+    list is empty until somebody is actually on the job.
+    """
     from modules.quoting.router import _company_info
     from modules.settings.router import customer_self_reschedule_enabled
+    from services import crew_intro
     company = _company_info(db)
     prop = job.property
     return {
@@ -2491,6 +2502,11 @@ def _public_job_dict(job: Job, db: Session) -> dict:
             }
             if job.reschedule_requested_date else None
         ),
+        # Who is coming. Photo bytes are NOT inlined — each face is fetched
+        # from the endpoint below by its position in this list, so a customer
+        # who never scrolls to it never pays for the image, and the URL is
+        # meaningless without the job token that produced it.
+        "crew": crew_intro.for_job(db, job, org_id=job.org_id),
     }
 
 
@@ -2517,6 +2533,37 @@ def public_view_job(token: str, db: Session = Depends(get_db)):
     """Client-facing view of a single job via its confirm-link token."""
     job = _job_by_token(token, db)
     return _public_job_dict(job, db)
+
+
+@router.get("/public/{token}/crew/{index}/photo",
+            dependencies=[Depends(rate_limit(120, 3600, "job_crew_photo"))])
+def public_crew_photo(index: int, token: str, db: Session = Depends(get_db)):
+    """One crew member's headshot, addressed by POSITION in the list the
+    customer was just handed by the endpoint above.
+
+    A position, not a user id or a crew id: it cannot be walked to enumerate
+    the bench, it means nothing outside this one job's token, and it stops
+    being valid the moment the crew on the job changes. Missing photo, helper
+    row, cancelled visit, out-of-range index — all 404, so nothing here
+    distinguishes "no photo" from "no such person".
+    """
+    job = _job_by_token(token, db)
+    from services import crew_intro
+    from database.models import CrewPhoto
+    user_id = crew_intro.photo_user_id_at(db, job, index, org_id=job.org_id)
+    if user_id is None:
+        raise HTTPException(status_code=404, detail="Not found")
+    row = db.query(CrewPhoto).filter(CrewPhoto.user_id == user_id).first()
+    if not row:
+        raise HTTPException(status_code=404, detail="Not found")
+    return Response(
+        content=row.data,
+        media_type=row.content_type,
+        # Short, and never shared-cacheable: a person can take their face down,
+        # and this URL is served without authentication to whoever holds the
+        # link. A proxy holding it for a day would outlive the takedown.
+        headers={"Cache-Control": "private, max-age=300"},
+    )
 
 
 @router.post("/public/{token}/confirm", dependencies=[Depends(rate_limit(20, 3600, "job_confirm"))])

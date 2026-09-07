@@ -78,9 +78,18 @@ def _job_confirm_url(job: Job) -> str:
     return f"{app_base_url().rstrip('/')}/job/{job.public_token}"
 
 
-def build_reminder_body(job: Job, client: Client) -> str:
+def build_reminder_body(job: Job, client: Client, crew_name: str | None = None) -> str:
     """Compose the client-facing reminder text. Kept small + plain so it reads
-    well as a single SMS segment for the common case."""
+    well as a single SMS segment for the common case.
+
+    `crew_name` names the one person coming, when there is exactly one — the
+    text a stranger's arrival most needs, and the cheapest place to put it. It
+    folds into the existing sentence ("your cleaning tomorrow at 9am with
+    Amanda S.") rather than adding one, because a second sentence is what
+    tips a common-case reminder into a second billed segment. Two or more
+    people are left out on purpose: the names would do it, and the confirm
+    link one line down shows the whole list with faces.
+    """
     first = (client.first_name or client.name or "there").strip()
     when_time = _format_time(job.start_time)
     when = f"tomorrow at {when_time}" if when_time else "tomorrow"
@@ -89,11 +98,29 @@ def build_reminder_body(job: Job, client: Client) -> str:
         where = f" at {job.property.name}"
     elif job.address:
         where = f" at {job.address}"
+    who = f" with {crew_name}" if crew_name else ""
     link = _job_confirm_url(job)
     return (
-        f"Hi {first}, this is a reminder for your cleaning {when}{where}. "
+        f"Hi {first}, this is a reminder for your cleaning {when}{where}{who}. "
         f"Confirm or request a change: {link}"
     )
+
+
+def _solo_crew_names(db: Session, jobs: list) -> dict:
+    """{job_id: name} for jobs with exactly ONE person coming, batched.
+
+    Inside the reminder loop this would be a query per text. Here it is one
+    call for the whole tick (brightbase-economy), and a failure returns an
+    empty map rather than raising: a reminder that goes out without a name is
+    the reminder customers have always had, and is never worth losing.
+    """
+    try:
+        from services import crew_intro
+        by_job = crew_intro.for_jobs(db, jobs, org_id=jobs[0].org_id if jobs else None)
+    except Exception as e:  # pragma: no cover - defensive
+        logger.warning(f"[reminders] crew lookup skipped: {e}")
+        return {}
+    return {jid: people[0]["name"] for jid, people in by_job.items() if len(people) == 1}
 
 
 def _thread_outbound_reminder(db: Session, job: Job, client: Client, body: str, sid):
@@ -164,6 +191,8 @@ def send_due_reminders(db: Session, *, lead_hours: int | None = None, now: datet
         .all()
     )
 
+    crew_names = _solo_crew_names(db, candidates)
+
     sent = skipped_no_phone = failed = 0
     for job in candidates:
         client = job.client
@@ -173,7 +202,7 @@ def send_due_reminders(db: Session, *, lead_hours: int | None = None, now: datet
             skipped_no_phone += 1
             continue
 
-        body = build_reminder_body(job, client)
+        body = build_reminder_body(job, client, crew_names.get(job.id))
         try:
             result = send_sms(to=client.phone, body=body)
         except (ValueError, RuntimeError) as e:

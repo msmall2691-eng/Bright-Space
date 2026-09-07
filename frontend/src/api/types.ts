@@ -1852,6 +1852,33 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/jobs/public/{token}/crew/{index}/photo": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Public Crew Photo
+         * @description One crew member's headshot, addressed by POSITION in the list the
+         *     customer was just handed by the endpoint above.
+         *
+         *     A position, not a user id or a crew id: it cannot be walked to enumerate
+         *     the bench, it means nothing outside this one job's token, and it stops
+         *     being valid the moment the crew on the job changes. Missing photo, helper
+         *     row, cancelled visit, out-of-range index — all 404, so nothing here
+         *     distinguishes "no photo" from "no such person".
+         */
+        get: operations["public_crew_photo_api_jobs_public__token__crew__index__photo_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/jobs/public/{token}/confirm": {
         parameters: {
             query?: never;
@@ -6968,6 +6995,69 @@ export interface paths {
         patch: operations["update_me_api_crew_me_patch"];
         trace?: never;
     };
+    "/api/crew/me/photo": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Upload My Photo
+         * @description Replace the caller's own headshot. Cleaner-only and own-row-only: there
+         *     is deliberately no `user_id` in this path.
+         *
+         *     The frontend downscales before posting (utils/imageDownscale.js), so the
+         *     5MB cap is a backstop against a raw phone original rather than the normal
+         *     path, and the stored content type is sniffed from the bytes — never the
+         *     client's header, since this value is handed straight back to a browser.
+         */
+        post: operations["upload_my_photo_api_crew_me_photo_post"];
+        /**
+         * Delete My Photo
+         * @description Take your own face down. Idempotent — removing a photo that isn't there
+         *     is a success, not a 404, because the state the caller wanted is the state
+         *     they end up in.
+         */
+        delete: operations["delete_my_photo_api_crew_me_photo_delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/crew/photo/{user_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Crew Photo
+         * @description The bytes, for staff-side screens. A cleaner may only fetch their own
+         *     (404 otherwise, the same anti-probing shape as the rest of this module);
+         *     office roles may fetch anyone's in the org.
+         *
+         *     The CUSTOMER's copy of this image does not come through here — it comes
+         *     through the job's own public token, which is what scopes it to the one
+         *     visit that person is booked into.
+         */
+        get: operations["get_crew_photo_api_crew_photo__user_id__get"];
+        put?: never;
+        post?: never;
+        /**
+         * Delete Crew Photo
+         * @description Office takedown. Not an edit — there is no office path that PUTS a face
+         *     on somebody. Idempotent for the same reason as the self-serve delete.
+         */
+        delete: operations["delete_crew_photo_api_crew_photo__user_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/crew/jobs/{job_id}": {
         parameters: {
             query?: never;
@@ -8117,6 +8207,14 @@ export interface components {
             file: string;
             /** Expires At */
             expires_at?: string;
+        };
+        /** Body_upload_my_photo_api_crew_me_photo_post */
+        Body_upload_my_photo_api_crew_me_photo_post: {
+            /**
+             * File
+             * Format: binary
+             */
+            file: string;
         };
         /** Body_upload_property_photo_api_crew_properties__property_id__photos_post */
         Body_upload_property_photo_api_crew_properties__property_id__photos_post: {
@@ -13101,6 +13199,38 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
+                token: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    public_crew_photo_api_jobs_public__token__crew__index__photo_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                index: number;
                 token: string;
             };
             cookie?: never;
@@ -20909,6 +21039,121 @@ export interface operations {
                 "application/json": components["schemas"]["MeUpdate"];
             };
         };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    upload_my_photo_api_crew_me_photo_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": components["schemas"]["Body_upload_my_photo_api_crew_me_photo_post"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_my_photo_api_crew_me_photo_delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    get_crew_photo_api_crew_photo__user_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                user_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_crew_photo_api_crew_photo__user_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                user_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
         responses: {
             /** @description Successful Response */
             200: {

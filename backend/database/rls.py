@@ -78,6 +78,10 @@ TENANT_TABLES = [
     # row records who was in the customer's house and nothing else — no login,
     # no rate, no payout. Added with the table, not in a later audit.
     "job_helpers",
+    # A cleaner's headshot, shown to the customer whose house they are booked
+    # into (migration 109). Its own table so image bytes never ride along on
+    # the constant bulk `users` reads. Added with the table.
+    "crew_photos",
     # `users` is DELIBERATELY excluded — re-audited 2026-08-16, still not safe.
     # Re-read this whole comment before adding it; don't re-derive from scratch.
     #

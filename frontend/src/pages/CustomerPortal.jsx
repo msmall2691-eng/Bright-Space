@@ -4,6 +4,8 @@ import {
   LogOut, Mail, ArrowRight, ShieldCheck,
 } from 'lucide-react'
 
+import WhosComing from '../components/customer/WhosComing'
+
 /**
  * CustomerPortal — the customer's own passwordless home at /portal.
  *
@@ -207,6 +209,11 @@ function Dashboard({ onSignOut }) {
                             <MapPin className="w-3.5 h-3.5 shrink-0" /> {v.address}
                           </div>
                         )}
+                        {/* Faces come from the visit's own public token, the
+                            same one the Confirm link uses — the portal has no
+                            separate photo route to keep in step. */}
+                        <WhosComing crew={v.crew} className="mt-2.5 text-slate-900"
+                          photoBase={v.manage_token ? `/api/jobs/public/${v.manage_token}/crew` : null} />
                       </div>
                       {v.manage_token && (
                         <a href={`/job/${v.manage_token}`}
