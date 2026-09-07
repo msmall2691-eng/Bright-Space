@@ -220,9 +220,17 @@ def test_a_changeover_saturday_is_one_text_not_twelve(ids, monkeypatch):
     """Twelve messages in a row is how somebody turns texts off, and then they
     are off for the job that was already theirs."""
     uid, cid = _mk_sub(ids)
+    # ALL THREE READ THROUGH ONE SESSION. The first version discarded the
+    # session handle for jobs two and three (`_, second = _mk_job(...)`), so
+    # those Job rows detached as soon as their session was collected and
+    # `_batch_line` raised DetachedInstanceError reaching `job.property`. It
+    # passed alone and failed in the full run — the timing of a garbage
+    # collection is not a thing to write a test against.
     db, first = _mk_job(ids)
-    _, second = _mk_job(ids, town="Camden", rate=140.0)
-    _, third = _mk_job(ids, town="Wells", rate=160.0)
+    _, second_raw = _mk_job(ids, town="Camden", rate=140.0)
+    _, third_raw = _mk_job(ids, town="Wells", rate=160.0)
+    second = db.query(Job).filter(Job.id == second_raw.id).first()
+    third = db.query(Job).filter(Job.id == third_raw.id).first()
     sms, _ = _wire(monkeypatch, cleared=[{"user_id": uid, "cleaner_id": cid}],
                    push_returns=0)
     try:

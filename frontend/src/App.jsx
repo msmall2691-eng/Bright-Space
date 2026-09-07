@@ -186,6 +186,7 @@ const Cleanup = lazy(() => import('./pages/Cleanup'))
 const QuoteFunnel = lazy(() => import('./pages/QuoteFunnel'))
 const Crew = lazy(() => import('./pages/Crew'))
 const Marketplace = lazy(() => import('./pages/Marketplace'))
+const CrewAppPreview = lazy(() => import('./pages/CrewAppPreview'))
 const Settings = lazy(() => import('./pages/Settings'))
 const DesignSystem = lazy(() => import('./pages/DesignSystem'))
 
@@ -387,6 +388,12 @@ export default function App() {
               <Route path="/payroll" element={<Payroll />} />
               <Route path="/crew" element={<Crew />} />
               <Route path="/marketplace" element={<Marketplace />} />
+              {/* The office looking at one cleaner's app. Read-only: the
+                  backend refuses every crew mutation to a non-cleaner, and
+                  MyDay's preview mode blocks the writes locally so the
+                  screen says why. Inside the office shell on purpose —
+                  it is an office tool, not a second crew entrance. */}
+              <Route path="/crew/:userId/app" element={<CrewAppPreview />} />
               {/* The bench had five entrances and no front door.
                   These are the words somebody would actually type. */}
               <Route path="/bench" element={<Navigate to="/marketplace" replace />} />

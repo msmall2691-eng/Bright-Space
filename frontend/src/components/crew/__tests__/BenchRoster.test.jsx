@@ -14,7 +14,14 @@
  * and the office could not open a certificate to check its dates.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { render, screen, cleanup, fireEvent, waitFor } from '@testing-library/react'
+import { render as rtlRender, screen, cleanup, fireEvent, waitFor } from '@testing-library/react'
+import { MemoryRouter } from 'react-router-dom'
+
+// BenchRoster links to each person's crew app ("See their app"), so it needs a
+// router in scope. Wrapping here rather than swapping the <Link> for a plain
+// <a>: this component only ever renders inside the app's router, and a bare
+// anchor would full-page-reload out of the SPA.
+const render = (ui) => rtlRender(<MemoryRouter>{ui}</MemoryRouter>)
 
 vi.mock('../../../api', () => ({ get: vi.fn(), post: vi.fn(), download: vi.fn() }))
 vi.mock('../../../utils/toastBus', () => ({

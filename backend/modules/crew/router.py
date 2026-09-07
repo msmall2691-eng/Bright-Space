@@ -3344,3 +3344,73 @@ def decline_route(
     route.updated_at = _now_naive_utc()
     db.commit(); db.refresh(route)
     return routes_service.route_dict(db, route)
+
+
+# ── Seeing what a cleaner sees (office-only, read-only) ─────────────────────
+
+
+@router.get("/preview/{user_id}/my-day",
+            dependencies=[Depends(require_role("admin", "manager"))])
+def preview_my_day(
+    user_id: int,
+    days: int = 7,
+    db: Session = Depends(get_db),
+    org_id: int = Depends(current_org_id),
+    viewer: User = Depends(get_current_user),
+):
+    """The crew app's My Day payload, for a NAMED cleaner, to an office role.
+
+    WHY IT CALLS `my_day` RATHER THAN REBUILDING IT. The whole value of this
+    endpoint is that what the office sees is what the cleaner sees; a second
+    implementation would drift and then the preview would be reassuring about
+    a screen that no longer exists. FastAPI dependencies are ordinary default
+    arguments, so calling the function directly with an explicit `current_user`
+    runs exactly the same code the cleaner's own request runs, with none of
+    the DI.
+
+    READ-ONLY, AND NOT BY POLITENESS. Every mutating crew endpoint —
+    /complete, /claim, /respond, /helpers — is `Depends(require_role("cleaner"))`,
+    and `require_role` is a strict membership test with no admin bypass
+    (modules/auth/router.py). An office session therefore cannot accept,
+    decline, claim or complete anything on a cleaner's behalf: the API refuses
+    it, whatever the UI shows. That matters more than it sounds. An office user
+    tapping "Accept" for a subcontractor would be ASSIGNING them work, and a
+    sub requests or accepts and is never assigned — brightbase-marketplace
+    Rule 0, which is worker classification rather than etiquette.
+
+    LOGGED AT WARNING, on purpose, using the same idiom auth.py established for
+    the shared API key: one greppable line per view naming who looked at whom.
+    This is somebody reading another person's screen, including the customer
+    addresses and door codes on it. That is legitimate for an office role — the
+    same data is on the Schedule — but it should never be silent.
+
+    Not a durable audit table. If the office ever needs queryable history of
+    who previewed whom, that is a row and a migration, not a log line.
+    """
+    oid = resolve_org_id(org_id, db)
+    target = (db.query(User)
+              .filter(User.id == user_id,
+                      User.role == "cleaner",
+                      or_(User.org_id == oid, User.org_id.is_(None)))
+              .first())
+    if target is None:
+        # Wrong org, wrong role and nonexistent are one answer, so this cannot
+        # be used to enumerate who exists in another workspace.
+        raise HTTPException(status_code=404, detail="No such cleaner.")
+
+    log.warning(
+        "[crew] office preview: %s (id=%s, %s) viewed the crew app as %s (id=%s)",
+        getattr(viewer, "email", "?"), getattr(viewer, "id", "?"),
+        getattr(viewer, "role", "?"), target.email, target.id,
+    )
+
+    payload = my_day(days=days, db=db, org_id=oid, current_user=target)
+    # The screen renders this verbatim, so it says whose day it is and that
+    # nothing here can be acted on. Cheaper and harder to miss than expecting
+    # every caller to remember.
+    payload["preview"] = {
+        "read_only": True,
+        "cleaner_name": target.full_name or target.email,
+        "user_id": target.id,
+    }
+    return payload

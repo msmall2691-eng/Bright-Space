@@ -12,7 +12,7 @@
  */
 import { useCallback, useEffect, useState } from 'react'
 import { MapPin, LogOut, RefreshCw, CalendarDays, Clock, Car, DollarSign, CheckCircle2, CalendarRange, CircleUserRound, Sparkles, BookOpen, MessageSquare, Sun, CalendarClock, CalendarOff, Smartphone, CalendarPlus, ShieldCheck, Landmark } from 'lucide-react'
-import { get, post, patch, del, logout } from '../api'
+import { get, post as apiPost, patch as apiPatch, del as apiDel, logout } from '../api'
 import { toast } from '../utils/toastBus'
 import { EmptyState, ErrorState, Skeleton } from '../components/ui'
 import JobPhotoSheet from '../components/crew/JobPhotoSheet'
@@ -188,7 +188,37 @@ function CrewTabBar({ tab, setTab, chatUnread = 0 }) {
   )
 }
 
-export default function MyDay() {
+/** What a blocked write says. One sentence, no jargon. */
+const PREVIEW_BLOCKED =
+  'This is a preview of what they see — you can’t act on their behalf.'
+
+const previewBlocked = () => Promise.reject(new Error(PREVIEW_BLOCKED))
+
+export default function MyDay({ previewUserId = null }) {
+  // PREVIEW MODE: an office role looking at a named cleaner's screen.
+  //
+  // ONE CHOKE POINT instead of nine guards. Every write in this file goes
+  // through `post`, `patch` or `del`, so swapping them here covers mark-done,
+  // respond, decline, claim, notify-client, the text sheet and both helper
+  // calls at once — and any write somebody adds later, which is the part a
+  // per-button guard would miss.
+  //
+  // The API refuses these anyway: every mutating /api/crew route is
+  // Depends(require_role("cleaner")) and require_role has no admin bypass, so
+  // an office session gets a 403 whatever the screen renders. This layer
+  // exists so the screen says WHY instead of showing a failure.
+  //
+  // The buttons stay visible on purpose. The point of the preview is to see
+  // what the cleaner sees, and a screen with its buttons removed is not that.
+  //
+  // It matters more than tidiness: an office user tapping Accept for a
+  // subcontractor would be ASSIGNING them work, and a sub requests or accepts
+  // and is never assigned (brightbase-marketplace, Rule 0).
+  const preview = previewUserId != null
+  const post = preview ? previewBlocked : apiPost
+  const patch = preview ? previewBlocked : apiPatch
+  const del = preview ? previewBlocked : apiDel
+
   const [data, setData] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
@@ -260,12 +290,18 @@ export default function MyDay() {
   const fetchDay = useCallback((silent = false) => {
     if (!silent) { setLoading(true); setError(null) }
     // days=14 (the endpoint's max) so the Schedule tab shows two weeks out.
-    return get('/api/crew/my-day?days=14')
+    return get(preview
+      ? `/api/crew/preview/${previewUserId}/my-day?days=14`
+      : '/api/crew/my-day?days=14')
       .then(d => {
         setData(d); setStaleAt(null)
         // Offline resilience: keep the last good day on the device, so one
         // bar of service in a driveway still shows the schedule + door
         // codes (which matter most exactly where signal is worst).
+        // Not in preview: this cache is "my day, for when I have no signal",
+        // and writing another person's jobs into it would both mislead the
+        // office later and leave a cleaner's addresses on an office laptop.
+        if (preview) return
         try {
           localStorage.setItem('bb_myday_cache',
             JSON.stringify({ data: d, savedAt: Date.now() }))
@@ -275,7 +311,11 @@ export default function MyDay() {
         // Server unreachable → fall back to the cached copy instead of a
         // dead error screen. Actions still fail loudly; reading works.
         try {
-          const c = JSON.parse(localStorage.getItem('bb_myday_cache') || 'null')
+          // Same reason in reverse: a failed preview must not quietly show the
+          // viewer's own cached day under somebody else's name.
+          const c = preview
+            ? null
+            : JSON.parse(localStorage.getItem('bb_myday_cache') || 'null')
           if (c?.data) {
             setData(c.data); setStaleAt(c.savedAt); setError(null)
             return
@@ -293,6 +333,11 @@ export default function MyDay() {
   // tab refreshes it.
   useEffect(() => {
     if (tab !== 'me') return undefined
+    // /api/crew/my-week resolves from the CALLER, so in preview it would be
+    // the office user's own week shown under the cleaner's name — an empty
+    // pay card that looks like the cleaner earned nothing. Better to show
+    // nothing than a confident wrong number.
+    if (preview) return undefined
     let cancelled = false
     get('/api/crew/my-week').then(d => { if (!cancelled) setWeekPay(d) }).catch(() => {})
     return () => { cancelled = true }
@@ -418,8 +463,49 @@ export default function MyDay() {
 
   // Correct the miles on an already-closed punch (from the Today's punches list).
 
+  // THE HEADER DATE, and its absence is why this screen was blank.
+  //
+  // PR #777 ("Delete the employee model") removed the time-clock block this
+  // was declared beside, and left the `{longDate}` in the header below. A bare
+  // undefined identifier is not a build error — Vite has to assume it might be
+  // a browser global — so it shipped, and every cleaner opening My Day got
+  // `ReferenceError: longDate is not defined` at render. The crew branch had
+  // no ErrorBoundary either, so the result was a white page with nothing to
+  // report. "It just goes blank."
+  //
+  // Derived from the payload's own business date rather than the device clock:
+  // `as_of` is the day the schedule below is FOR, resolved in Maine time on
+  // the server. A phone in another timezone, or one whose clock is wrong,
+  // should not caption today's jobs with yesterday.
+  const longDate = (() => {
+    const iso = data?.as_of
+    const d = iso ? new Date(`${String(iso).slice(0, 10)}T00:00:00`) : now
+    return (Number.isNaN(d?.getTime?.()) ? now : d).toLocaleDateString(undefined, {
+      weekday: 'long', month: 'long', day: 'numeric',
+    })
+  })()
+
   return (
     <div className="min-h-screen bg-bg">
+      {preview && (
+        /* Whose day this is, and that it cannot be acted on. A quiet line
+           above the app rather than a tinted banner, and it stays put while
+           the screen scrolls so the answer to "wait, whose is this?" is
+           always on screen. */
+        <div className="sticky top-0 z-20 flex flex-wrap items-center justify-between gap-x-3 gap-y-1 border-b border-hairline bg-bg-2 px-4 py-2 text-[12px] text-ink-3">
+          <span className="flex items-center gap-1.5">
+            <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-violet-500" aria-hidden="true" />
+            Preview —{' '}
+            <span className="text-ink">
+              {data?.preview?.cleaner_name || 'this cleaner'}
+            </span>
+            ’s app
+          </span>
+          <a href="/crew" className="text-ink-3 underline underline-offset-2 hover:text-indigo-600">
+            Back to Crew
+          </a>
+        </div>
+      )}
       <div className="sticky top-0 z-10 safe-top bg-panel">
         <header className="bg-panel border-b border-hairline px-4 py-3 flex items-center justify-between">
           <div>

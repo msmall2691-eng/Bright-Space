@@ -36,7 +36,8 @@
  * refreshed file so a decision costs one call, not two.
  */
 import { useCallback, useEffect, useState } from 'react'
-import { Check, ExternalLink, FileCheck, X } from 'lucide-react'
+import { Check, ExternalLink, FileCheck, Smartphone, X } from 'lucide-react'
+import { Link } from 'react-router-dom'
 import { download, get, post } from '../../api'
 import { toast } from '../../utils/toastBus'
 
@@ -188,6 +189,15 @@ function Person({ person, busy, onAccept, onSendBack, onView }) {
       </div>
 
       <WorkLine person={person} />
+
+      {/* The office's way into this person's own screen. Here rather than on a
+          menu because "what is Dana actually seeing?" is a question you ask
+          while looking at Dana. Read-only — the API refuses every crew action
+          to an office role. */}
+      <Link to={`/crew/${person.user_id}/app`}
+        className="mt-1.5 inline-flex items-center gap-1 text-[12px] text-ink-3 no-underline hover:text-indigo-600">
+        <Smartphone className="h-3 w-3" /> See their app
+      </Link>
 
       {person.missing.length > 0 && (
         <ul className="mt-1 space-y-0.5">

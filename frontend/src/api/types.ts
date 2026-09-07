@@ -7606,6 +7606,53 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/crew/preview/{user_id}/my-day": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Preview My Day
+         * @description The crew app's My Day payload, for a NAMED cleaner, to an office role.
+         *
+         *     WHY IT CALLS `my_day` RATHER THAN REBUILDING IT. The whole value of this
+         *     endpoint is that what the office sees is what the cleaner sees; a second
+         *     implementation would drift and then the preview would be reassuring about
+         *     a screen that no longer exists. FastAPI dependencies are ordinary default
+         *     arguments, so calling the function directly with an explicit `current_user`
+         *     runs exactly the same code the cleaner's own request runs, with none of
+         *     the DI.
+         *
+         *     READ-ONLY, AND NOT BY POLITENESS. Every mutating crew endpoint —
+         *     /complete, /claim, /respond, /helpers — is `Depends(require_role("cleaner"))`,
+         *     and `require_role` is a strict membership test with no admin bypass
+         *     (modules/auth/router.py). An office session therefore cannot accept,
+         *     decline, claim or complete anything on a cleaner's behalf: the API refuses
+         *     it, whatever the UI shows. That matters more than it sounds. An office user
+         *     tapping "Accept" for a subcontractor would be ASSIGNING them work, and a
+         *     sub requests or accepts and is never assigned — brightbase-marketplace
+         *     Rule 0, which is worker classification rather than etiquette.
+         *
+         *     LOGGED AT WARNING, on purpose, using the same idiom auth.py established for
+         *     the shared API key: one greppable line per view naming who looked at whom.
+         *     This is somebody reading another person's screen, including the customer
+         *     addresses and door codes on it. That is legitimate for an office role — the
+         *     same data is on the Schedule — but it should never be silent.
+         *
+         *     Not a durable audit table. If the office ever needs queryable history of
+         *     who previewed whom, that is a row and a migration, not a log line.
+         */
+        get: operations["preview_my_day_api_crew_preview__user_id__my_day_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/crew-cal/{token}.ics": {
         parameters: {
             query?: never;
@@ -21782,6 +21829,39 @@ export interface operations {
             header?: never;
             path: {
                 route_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    preview_my_day_api_crew_preview__user_id__my_day_get: {
+        parameters: {
+            query?: {
+                days?: number;
+            };
+            header?: never;
+            path: {
+                user_id: number;
             };
             cookie?: never;
         };
