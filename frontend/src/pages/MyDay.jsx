@@ -11,7 +11,7 @@
  * week-pay summary), not four.
  */
 import { useCallback, useEffect, useState } from 'react'
-import { MapPin, LogOut, RefreshCw, CalendarDays, Clock, Car, DollarSign, CheckCircle2, CalendarRange, CircleUserRound, Sparkles, BookOpen, MessageSquare, Sun, CalendarClock, CalendarOff, Smartphone, CalendarPlus, ShieldCheck } from 'lucide-react'
+import { MapPin, LogOut, RefreshCw, CalendarDays, Clock, Car, DollarSign, CheckCircle2, CalendarRange, CircleUserRound, Sparkles, BookOpen, MessageSquare, Sun, CalendarClock, CalendarOff, Smartphone, CalendarPlus, ShieldCheck, Landmark } from 'lucide-react'
 import { get, post, patch, del, logout } from '../api'
 import { toast } from '../utils/toastBus'
 import { EmptyState, ErrorState, Skeleton } from '../components/ui'
@@ -30,6 +30,7 @@ import PropertySheet from '../components/crew/PropertySheet'
 // schedule list, month tap-through sheet) renders the SAME details.
 import JobCard, { fmtTimeRange } from '../components/crew/JobCard'
 import CrewJobSheet from '../components/crew/CrewJobSheet'
+import CrewPayoutSetup from '../components/crew/CrewPayoutSetup'
 import CrewSetupCard from '../components/crew/CrewSetupCard'
 import { SOFT, CrewCard, SectionLabel, ErrorNote, SettingRow, Sheet, SheetActions } from '../components/crew/primitives'
 // Photos captured on cellular wait on-device and send on WiFi — My Day owns
@@ -674,6 +675,12 @@ export default function MyDay() {
                 <SettingRow icon={ShieldCheck} label="My file"
                   summary="Agreement, W-9 and insurance — needed to ask for jobs">
                   <CrewMyFile bare />
+                </SettingRow>
+                {/* Sits right above "This week": the money screen is where
+                    somebody wonders how the money actually reaches them. */}
+                <SettingRow icon={Landmark} label="Direct deposit"
+                  summary="Get paid to your bank — optional">
+                  <CrewPayoutSetup />
                 </SettingRow>
                 <SettingRow icon={DollarSign} label="This week"
                   summary={weekPay

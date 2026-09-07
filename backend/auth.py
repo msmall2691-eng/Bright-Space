@@ -43,6 +43,12 @@ _PUBLIC_PREFIXES = (
     "/api/intake/submit",
     "/api/intake/webhook",
     "/api/comms/twilio/webhook",
+    # Stripe Connect account events. Stripe can't send our API key, so the
+    # handler verifies the webhook signature itself and REFUSES when
+    # STRIPE_WEBHOOK_SECRET is unset — same posture as Twilio above. It is the
+    # only writer of a sub's cached payout state, so an unsigned request here
+    # would let a stranger mark anyone's payouts enabled.
+    "/api/payroll/stripe/webhook",
     # Google Calendar push channel — authenticated by the per-channel token in
     # the handler (Google can't send our API key), not the master key.
     "/api/integrations/gcal/notifications",
