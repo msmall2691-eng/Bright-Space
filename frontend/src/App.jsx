@@ -13,7 +13,6 @@ import MyDay from './pages/MyDay'
 import Requests from './pages/Requests'
 import Deals from './pages/Deals'
 import PublicQuote from './pages/PublicQuote'
-import PublicPayment from './pages/PublicPayment'
 import PublicJobConfirm from './pages/PublicJobConfirm'
 import CustomerPortal from './pages/CustomerPortal'
 import PortalVerify from './pages/PortalVerify'
@@ -134,7 +133,7 @@ class ErrorBoundary extends Component {
 
 // Wraps Sidebar with the global unread poller. Lives inline in App so the
 // poll only runs when the user is actually inside the authenticated shell
-// (skipped on /login and public /quote/:token, /pay/:token, /job/:token routes).
+// (skipped on /login and public /quote/:token, /job/:token routes).
 function SidebarWithUnread(props) {
   const navigate = useNavigate()
   const { unreadConversations, crewUnreadThreads } = useUnreadCount({
@@ -249,7 +248,7 @@ export default function App() {
     return <div className="flex items-center justify-center h-screen bg-white">Loading...</div>
   }
 
-  const isPublicRoute = location.pathname.startsWith('/quote/') || location.pathname.startsWith('/pay/')
+  const isPublicRoute = location.pathname.startsWith('/quote/')
     || location.pathname.startsWith('/job/') || location.pathname.startsWith('/portal')
     || location.pathname.startsWith('/accept-invite')
     // Applying to join the bench. No token in the path — this one is meant to
@@ -267,7 +266,6 @@ export default function App() {
       <div className="public-surface">
       <Routes>
         <Route path="/quote/:token" element={<PublicQuote />} />
-        <Route path="/pay/:token" element={<PublicPayment />} />
         <Route path="/job/:token" element={<PublicJobConfirm />} />
         <Route path="/portal/verify" element={<PortalVerify />} />
         <Route path="/portal" element={<CustomerPortal />} />

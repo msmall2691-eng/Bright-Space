@@ -257,7 +257,6 @@ def quotes(ctx=Depends(portal_ctx), db: Session = Depends(get_db)):
 
 @router.get("/invoices")
 def invoices(ctx=Depends(portal_ctx), db: Session = Depends(get_db)):
-    from modules.invoicing.router import _invoice_public_token
     ids = ctx["client_ids"]
     if not ids:
         return {"invoices": []}
@@ -272,7 +271,10 @@ def invoices(ctx=Depends(portal_ctx), db: Session = Depends(get_db)):
         "due_date": str(inv.due_date) if inv.due_date else None,
         "paid": inv.status == "paid",
         "created_at": inv.created_at.isoformat() if inv.created_at else None,
-        # Deep-link to the existing public payment page.
-        "pay_id": inv.id,
-        "pay_token": _invoice_public_token(inv.id),
+        # NO PAY TOKEN. This used to mint one per invoice on every request —
+        # a permanent bearer credential handed to the customer's browser for a
+        # payment page that never worked and no longer exists. There is no
+        # customer payment flow in this app (see modules/invoicing/router.py's
+        # `process_payment`), so a credential for one was a live capability
+        # with nothing behind it but a way in.
     } for inv in rows]}

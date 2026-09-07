@@ -2571,26 +2571,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/invoices/public/{invoice_id}/{token}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Get Public Invoice
-         * @description Get invoice details for public payment portal (via HMAC token).
-         */
-        get: operations["get_public_invoice_api_invoices_public__invoice_id___token__get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/invoices/{invoice_id}/pay": {
         parameters: {
             query?: never;
@@ -2602,9 +2582,17 @@ export interface paths {
         put?: never;
         /**
          * Process Payment
-         * @description Record a payment for an invoice. Requires admin/manager auth.
+         * @description Record a payment the office has ALREADY RECEIVED. Admin/manager only.
          *
-         *     In production, Stripe webhooks should confirm payment server-side.
+         *     This does not take money and never did — there is no card capture, no
+         *     payment intent and no webhook anywhere in this app. It is the office
+         *     writing down that a cheque cleared or a card went through a terminal.
+         *
+         *     The previous docstring's "in production, Stripe webhooks should confirm
+         *     payment server-side" described a flow that was never built and has now
+         *     been deliberately declined: the dead public payment page and its token
+         *     were deleted rather than finished. So the honest reading of a POST here is
+         *     "I got paid", not "pay me" — which is why it stays gated to admin/manager.
          */
         post: operations["process_payment_api_invoices__invoice_id__pay_post"];
         delete?: never;
@@ -14296,38 +14284,6 @@ export interface operations {
                 "application/json": components["schemas"]["SendInvoiceRequest"];
             };
         };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    get_public_invoice_api_invoices_public__invoice_id___token__get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                invoice_id: number;
-                token: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
         responses: {
             /** @description Successful Response */
             200: {
