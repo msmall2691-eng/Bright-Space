@@ -1,7 +1,8 @@
 /**
  * Me tab — the cleaner's own profile (crew app Phase 1).
  *
- * Self-service contact info: name, phone, emergency contact. Explicit Save
+ * Self-service contact info: name, phone, emergency contact, and the photo
+ * customers see before a visit. Explicit Save
  * (not autosave) — on a phone with gloves, accidental edits are common and a
  * visible "Save" that appears only when something changed is the honest
  * contract. Email and crew ID are shown but not editable (the office owns
@@ -14,6 +15,7 @@ import { useEffect, useState } from 'react'
 import { BadgeCheck, IdCard, Mail } from 'lucide-react'
 import { get, patch } from '../../api'
 import { Skeleton } from '../ui'
+import CrewHeadshot from './CrewHeadshot'
 import { ErrorNote } from './primitives'
 
 const FIELDS = [
@@ -74,6 +76,16 @@ export default function CrewProfile({ bare = false }) {
           )}
         </div>
       </div>
+
+      <CrewHeadshot
+        photoUrl={form.photo_url}
+        onChange={url => {
+          // Both copies, or the next PATCH computes `dirty` against a stale
+          // server truth and the photo change looks like an unsaved edit.
+          setMe(prev => ({ ...prev, photo_url: url }))
+          setForm(prev => ({ ...prev, photo_url: url }))
+        }}
+      />
 
       <div className="space-y-3">
         {FIELDS.map(f => (

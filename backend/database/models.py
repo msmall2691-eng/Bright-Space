@@ -866,6 +866,34 @@ class JobPhoto(Base):
     job = relationship("Job")
 
 
+class CrewPhoto(Base):
+    """A cleaner's headshot — the face the customer sees before the visit.
+
+    Its own table for the same reason `job_photos` is: `User` rows are
+    bulk-fetched on nearly every screen (dispatch, the bench, every
+    `cleaner_ids` lookup), and image bytes on that row would ride along on all
+    of it. Bytes live in Postgres because Railway's disk is ephemeral and there
+    is no object store — same call, same reasoning.
+
+    `UNIQUE(user_id)`: one face per person. Re-uploading replaces.
+
+    CONSENT IS THE UPLOAD. There is no office upload path — a photo of somebody
+    put there by someone else is not consent — and the crew screen that posts
+    here says in plain words that customers see it. The office CAN delete one,
+    because "take that down" must not wait for the person who posted it.
+    """
+    __tablename__ = "crew_photos"
+    org_id = Column(Integer, ForeignKey("orgs.id"), nullable=True, index=True)  # tenant scope (MT-1)
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"),
+                     nullable=False, unique=True, index=True)
+    content_type = Column(String(64), nullable=False)  # image/jpeg | image/png | image/webp
+    size_bytes = Column(Integer, nullable=False)
+    data = Column(LargeBinary, nullable=False)
+    created_at = Column(DateTime, default=_utcnow)
+
+
 class JobResponse(Base):
     """A cleaner's answer to being put on a job — accepted, or declined with a
     reason. This is a STATUS, not a schedule write (crew-app plan decision #1):

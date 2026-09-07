@@ -36,7 +36,8 @@ from database.db import get_db
 from ratelimit import rate_limit
 from database.models import (
     CleanerAvailability, CleanerTimeOff, CleanerWeekAvailability, CrewDoc,
-    CrewMessage, Job, JobClaimRequest, JobHelper, JobPhoto, JobResponse, PropertyCrewNote,
+    CrewMessage, CrewPhoto, Job, JobClaimRequest, JobHelper, JobPhoto, JobResponse,
+    PropertyCrewNote,
     PropertyPhoto, SubAgreement, SubDocument, User,
 )
 from modules.auth.router import (
@@ -1710,7 +1711,7 @@ def _clean_profile_str(v):
     return v[:_PROFILE_FIELD_MAX] if v else None
 
 
-def _me_row(u: User) -> dict:
+def _me_row(u: User, db: Session) -> dict:
     return {
         "id": u.id,
         "email": u.email,
@@ -1720,6 +1721,11 @@ def _me_row(u: User) -> dict:
         "emergency_contact_phone": u.emergency_contact_phone,
         "cleaner_id": u.cleaner_id,
         "member_since": _iso_utc(u.created_at),
+        # Set only when a headshot is actually on file, so the Me tab can show
+        # the real thing without a second round trip to find out it is empty.
+        # One indexed lookup, and never the bytes.
+        "photo_url": (_headshot_url(u.id) if db.query(CrewPhoto.id)
+                      .filter(CrewPhoto.user_id == u.id).first() else None),
     }
 
 
@@ -1738,7 +1744,7 @@ def get_me(
     u = db.query(User).filter(User.id == current_user.id).first()
     if not u:
         raise HTTPException(status_code=404, detail="Account not found.")
-    return _me_row(u)
+    return _me_row(u, db)
 
 
 @router.patch("/me")
@@ -1767,7 +1773,125 @@ def update_me(
         u.emergency_contact_phone = _clean_profile_str(body.emergency_contact_phone)
 
     db.commit(); db.refresh(u)
-    return _me_row(u)
+    return _me_row(u, db)
+
+
+# ── Your photo: the face the customer sees ───────────────────────────────────
+# Self-service, and self-service only. There is no office upload path — a
+# photo of somebody put there by someone else is not consent — but the office
+# CAN delete one, because "take that down" must not wait for the person who
+# posted it. See the CrewPhoto model and migration 109.
+
+_MAX_HEADSHOT_BYTES = 5 * 1024 * 1024   # same backstop as job photos
+
+
+def _headshot_url(user_id: int) -> str:
+    return f"/api/crew/photo/{user_id}"
+
+
+@router.post("/me/photo")
+async def upload_my_photo(
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    org_id: int = Depends(current_org_id),
+    current_user: User = Depends(require_role("cleaner")),
+):
+    """Replace the caller's own headshot. Cleaner-only and own-row-only: there
+    is deliberately no `user_id` in this path.
+
+    The frontend downscales before posting (utils/imageDownscale.js), so the
+    5MB cap is a backstop against a raw phone original rather than the normal
+    path, and the stored content type is sniffed from the bytes — never the
+    client's header, since this value is handed straight back to a browser.
+    """
+    oid = resolve_org_id(org_id, db)
+    data = await file.read()
+    if not data:
+        raise HTTPException(status_code=400, detail="That file is empty.")
+    if len(data) > _MAX_HEADSHOT_BYTES:
+        raise HTTPException(
+            status_code=413,
+            detail="That photo is too large (over 5MB) — try again from the app, "
+                   "which resizes before uploading.")
+    mime = _sniff_image_mime(data)
+    if not mime:
+        raise HTTPException(status_code=400,
+                            detail="That file doesn't look like a photo (JPEG, PNG, or WebP).")
+
+    row = db.query(CrewPhoto).filter(CrewPhoto.user_id == current_user.id).first()
+    if row is None:
+        row = CrewPhoto(org_id=oid, user_id=current_user.id)
+        db.add(row)
+    row.org_id = oid
+    row.content_type, row.size_bytes, row.data = mime, len(data), data
+    row.created_at = _now_naive_utc()
+    db.commit()
+    return {"photo_url": _headshot_url(current_user.id), "size_bytes": len(data)}
+
+
+@router.delete("/me/photo")
+def delete_my_photo(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_role("cleaner")),
+):
+    """Take your own face down. Idempotent — removing a photo that isn't there
+    is a success, not a 404, because the state the caller wanted is the state
+    they end up in."""
+    (db.query(CrewPhoto).filter(CrewPhoto.user_id == current_user.id)
+     .delete(synchronize_session=False))
+    db.commit()
+    return {"ok": True}
+
+
+@router.get("/photo/{user_id}")
+def get_crew_photo(
+    user_id: int,
+    db: Session = Depends(get_db),
+    org_id: int = Depends(current_org_id),
+    current_user: User = Depends(require_role("cleaner", "admin", "manager", "viewer")),
+):
+    """The bytes, for staff-side screens. A cleaner may only fetch their own
+    (404 otherwise, the same anti-probing shape as the rest of this module);
+    office roles may fetch anyone's in the org.
+
+    The CUSTOMER's copy of this image does not come through here — it comes
+    through the job's own public token, which is what scopes it to the one
+    visit that person is booked into.
+    """
+    oid = resolve_org_id(org_id, db)
+    if current_user.role == "cleaner" and current_user.id != user_id:
+        raise HTTPException(status_code=404, detail="Photo not found.")
+    row = (db.query(CrewPhoto)
+           .filter(or_(CrewPhoto.org_id == oid, CrewPhoto.org_id.is_(None)),
+                   CrewPhoto.user_id == user_id)
+           .first())
+    if not row:
+        raise HTTPException(status_code=404, detail="Photo not found.")
+    return Response(
+        content=row.data,
+        media_type=row.content_type,
+        # Private and short: a headshot can be replaced or pulled down, and a
+        # face the owner deleted this morning must not sit in a cache all day.
+        headers={"Cache-Control": "private, max-age=300"},
+    )
+
+
+@router.delete("/photo/{user_id}")
+def delete_crew_photo(
+    user_id: int,
+    db: Session = Depends(get_db),
+    org_id: int = Depends(current_org_id),
+    current_user: User = Depends(require_role("admin", "manager")),
+):
+    """Office takedown. Not an edit — there is no office path that PUTS a face
+    on somebody. Idempotent for the same reason as the self-serve delete."""
+    oid = resolve_org_id(org_id, db)
+    (db.query(CrewPhoto)
+     .filter(or_(CrewPhoto.org_id == oid, CrewPhoto.org_id.is_(None)),
+             CrewPhoto.user_id == user_id)
+     .delete(synchronize_session=False))
+    db.commit()
+    return {"ok": True}
 
 
 # ── Single-job detail (assigned only) ────────────────────────────────────────

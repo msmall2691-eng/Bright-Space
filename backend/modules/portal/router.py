@@ -36,6 +36,7 @@ from config import app_base_url
 from database.db import get_db
 from database.models import Client, Job, Quote, Invoice
 from ratelimit import rate_limit
+from services import crew_intro
 from utils.dates import business_today
 
 logger = logging.getLogger(__name__)
@@ -173,7 +174,7 @@ def me(ctx=Depends(portal_ctx)):
     return {"email": ctx["email"], "name": name, "accounts": len(clients)}
 
 
-def _visit_dict(j: Job) -> dict:
+def _visit_dict(j: Job, crew: Optional[list] = None) -> dict:
     return {
         "id": j.id,
         "title": j.title,
@@ -186,6 +187,10 @@ def _visit_dict(j: Job) -> dict:
         "reschedule_pending": j.reschedule_requested_at is not None,
         # The confirm/reschedule page is the existing audited public flow.
         "manage_token": j.public_token,
+        # Who is coming — empty until somebody has actually won the job, and
+        # only ever filled in for upcoming visits (see `visits` below). Photo
+        # bytes ride the public job token, not this payload.
+        "crew": crew or [],
     }
 
 
@@ -213,7 +218,16 @@ def visits(ctx=Depends(portal_ctx), db: Session = Depends(get_db)):
             made = True
     if made:
         db.commit()
-    upcoming = [_visit_dict(j) for j in upcoming_rows]
+    # One batched lookup for the whole upcoming list rather than one per row
+    # (brightbase-economy). Past visits are deliberately left alone: "who is
+    # coming" is a question about a visit that has not happened, and a name on
+    # a finished job is a record of who was in the house — the office's to
+    # keep, not something to re-serve to the customer months later.
+    # First non-NULL org across the batch: a legacy row with no org must not
+    # drop the filter for everyone else in the list.
+    batch_org = next((j.org_id for j in upcoming_rows if j.org_id is not None), None)
+    crew_by_job = crew_intro.for_jobs(db, upcoming_rows, org_id=batch_org)
+    upcoming = [_visit_dict(j, crew_by_job.get(j.id)) for j in upcoming_rows]
     past = [_visit_dict(j) for j in reversed(rows) if j.scheduled_date and j.scheduled_date < today]
     return {"upcoming": upcoming, "past": past}
 

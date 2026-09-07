@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useParams } from 'react-router-dom'
 import { CheckCircle, AlertCircle, Clock, Calendar, MapPin } from 'lucide-react'
+import WhosComing from '../components/customer/WhosComing'
 
 function formatTime(t) {
   if (!t) return ''
@@ -239,6 +240,12 @@ export default function PublicJobConfirm() {
                     </div>
                   )}
                 </div>
+
+                {/* Above the confirm button on purpose: knowing who is coming
+                    is part of deciding whether to confirm, not a detail to
+                    find afterwards. */}
+                <WhosComing crew={job.crew} photoBase={`/api/jobs/public/${token}/crew`}
+                  className="pt-1 text-ink" />
 
                 {rescheduled ? (
                   rescheduled.pending ? (
