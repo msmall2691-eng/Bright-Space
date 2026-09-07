@@ -30,7 +30,7 @@ from database.db import get_db
 from database.models import (Client, Job, RecurringSchedule, Property, Invoice,
                              Quote, ProposedAction, User)
 from modules.auth.router import (get_current_user, current_org_id,
-                                 require_role, resolve_org_id)
+                                 require_role, resolve_org_id, AGENT_ROLES)
 from ratelimit import rate_limit
 from services.proposals import (PROPOSAL_STATUSES, dismiss_proposal,
                                 execute_proposal, update_proposal_payload)
@@ -88,10 +88,21 @@ def _anthropic_client():
 
 def _run_tool_loop(client, system: str, user_content: str, *, max_tokens: int = 1024,
                    org_id: int | None = None,
+                   allow_operations: bool = False,
                    max_iters: int = 5) -> str:
     """Run a bounded agentic loop: let the model call the read-only business
-    tools until it produces a final text answer. Returns the text."""
-    tools = get_tools_for_agent(_AGENT)
+    tools until it produces a final text answer. Returns the text.
+
+    BB-SEC-13. "read-only" is now true. It said this before while handing the
+    model `run_operation`, which generates Job rows and emails real Google
+    Calendar invites to customers. Every caller of this function is a drafting
+    or question-answering helper, and one of them (services/inbox_triage) puts
+    an INBOUND EMAIL's subject and snippet into `user_content` — so a crafted
+    subject line reached a tool that acts on the business. Note `max_iters=1`
+    is no protection: the loop executes the tool call and only then runs out
+    of iterations.
+    """
+    tools = get_tools_for_agent(_AGENT, allow_operations=allow_operations)
     messages = [{"role": "user", "content": user_content}]
     for _ in range(max_iters):
         resp = client.messages.create(
@@ -104,7 +115,8 @@ def _run_tool_loop(client, system: str, user_content: str, *, max_tokens: int = 
             for block in resp.content:
                 if block.type == "tool_use":
                     out = execute_tool(block.name, dict(block.input), _AGENT,
-                                       org_id=org_id)
+                                       org_id=org_id,
+                                       allow_operations=allow_operations)
                     results.append({
                         "type": "tool_result",
                         "tool_use_id": block.id,
@@ -504,13 +516,33 @@ def _age_days(ts) -> Optional[int]:
     return max((datetime.now(timezone.utc) - ts).days, 0)
 
 
-@router.post("/quick")
+# BB-SEC-13. The docstring below is deliberately terse: FastAPI copies it into
+# the OpenAPI description, and /openapi.json and /docs are served
+# UNAUTHENTICATED (both 200 in production), so anything written there is public
+# documentation — and a description of a hole is a map to it on any deployment
+# or fork still carrying it. The reasoning lives here, in a comment, which
+# never reaches the schema.
+#
+# This endpoint's docstring used to claim "owner-side only" and it was not.
+# `get_current_user` proves a login exists, not which one, so every role passed
+# — including the `cleaner` account the public apply form (#761) mints for
+# anyone who fills in a web form and picks a password. Through this door they
+# reached the same agent tool set that /ws/agent gates carefully (BB-SEC-11),
+# read the whole client list, and could call `run_operation` to generate Job
+# rows and email real Google Calendar invites to customers. The office shell
+# never renders the command bar for a cleaner, but a hidden button is not a
+# gate — the endpoint is.
+#
+# Two doors into one tool set, and the rule was written down in only one of
+# them. Both now read AGENT_ROLES from modules/auth/router.py. Operations are
+# withheld from every caller of this endpoint regardless of role (see
+# `_run_tool_loop`): the command bar answers questions, the Ops agent acts.
+@router.post("/quick", dependencies=[Depends(require_role(*AGENT_ROLES))])
 def quick_query(body: QuickQuery, db: Session = Depends(get_db),
                 user=Depends(get_current_user),
                 org_id: int = Depends(current_org_id)):
     """One-shot question answered with live business data. Returns {answer}.
-    Owner-side only: get_current_user gates it (JWT or master API key) and
-    current_org_id pins the tenant for the record-context lookups."""
+    Office roles only; answers from read-only business data."""
     client = _anthropic_client()
     if client is None:
         return {"answer": "The AI assistant isn't configured yet (missing "
@@ -555,7 +587,12 @@ def quick_query(body: QuickQuery, db: Session = Depends(get_db),
         if record_ctx:
             ctx += f"[Record context]\n{record_ctx}\n\n"
     try:
-        answer = _run_tool_loop(client, system, f"{ctx}{body.question.strip()}")
+        # org_id threaded: it was already resolved for the record-context
+        # lookup above, but not handed to the tools, which then fell back to
+        # the default workspace. Correct today (single-tenant) and wrong the
+        # day it is not.
+        answer = _run_tool_loop(client, system, f"{ctx}{body.question.strip()}",
+                                org_id=org_id)
         return {"answer": answer or "I couldn't find an answer to that.",
                 "error": False}
     except Exception as e:

@@ -5558,8 +5558,7 @@ export interface paths {
         /**
          * Quick Query
          * @description One-shot question answered with live business data. Returns {answer}.
-         *     Owner-side only: get_current_user gates it (JWT or master API key) and
-         *     current_org_id pins the tenant for the record-context lookups.
+         *     Office roles only; answers from read-only business data.
          */
         post: operations["quick_query_api_ai_quick_post"];
         delete?: never;

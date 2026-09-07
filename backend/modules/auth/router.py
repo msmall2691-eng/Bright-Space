@@ -274,6 +274,29 @@ def resolve_org_id(org_id, db: Session) -> int:
     return org_id if isinstance(org_id, int) else _default_org_id(db)
 
 
+# ── Who may reach an AI agent ──────────────────────────────────────────────
+#
+# BB-SEC-13. These live here, beside require_role, because the agent tool set
+# has TWO doors into it — the /ws/agent WebSocket and POST /api/ai/quick — and
+# only the WebSocket was gated. One door was locked and the other was not,
+# which is what happens when the rule is written down in one of them. A single
+# definition is the fix; the gate itself is applied at both doors.
+#
+# Deliberately NOT push_service.OFFICE_ROLES: that constant answers "which
+# notification categories does this role get", and a change made for
+# notifications must not silently widen who can read the client list.
+#
+# AGENT_ROLES — may talk to an agent and read business data through it.
+# AGENT_OPERATION_ROLES — may additionally trigger `run_operation`, which
+# generates Job rows and emails real Google Calendar invites to customers.
+# `viewer` is in the first and not the second on purpose: it is the read-only
+# office role everywhere else in the app (40 endpoints read
+# require_role("admin", "manager", "viewer")), and an agent must not be the
+# one place it can write.
+AGENT_ROLES = frozenset({"admin", "manager", "viewer", "member"})
+AGENT_OPERATION_ROLES = frozenset({"admin", "manager", "member"})
+
+
 def require_role(*allowed_roles):
     """
     Factory to create a dependency that requires specific roles.

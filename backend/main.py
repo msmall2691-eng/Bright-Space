@@ -350,11 +350,12 @@ async def list_agents():
     return load_agent_roster()
 
 
-# Who may talk to an AI agent. Deliberately spelled out here rather than reusing
-# push_service.OFFICE_ROLES: that constant answers "which notification
-# categories does this role get", and a change made for notifications must not
-# silently widen who can read the client list.
-_AGENT_ROLES = frozenset({"admin", "manager", "viewer", "member"})
+# Who may talk to an AI agent, and who may make one DO something. Both now live
+# in modules/auth/router.py beside require_role — BB-SEC-13: this set was
+# defined here and enforced here only, while POST /api/ai/quick reached the same
+# tool set through a different door with no role check at all. One definition,
+# both doors.
+from modules.auth.router import AGENT_ROLES as _AGENT_ROLES, AGENT_OPERATION_ROLES
 
 
 @app.websocket("/ws/agent/{agent_name}")
@@ -445,7 +446,14 @@ async def agent_websocket(websocket: WebSocket, agent_name: str):
 
     client = anthropic.Anthropic(api_key=api_key)
 
-    tools = get_tools_for_agent(agent_name)
+    # BB-SEC-13. `run_operation` generates Job rows for every active recurring
+    # schedule and pushes jobs to Google Calendar, which emails a real invite to
+    # the customer. A `viewer` is the read-only office role everywhere else in
+    # the app, so it talks to the agent but cannot make it act. The API-key path
+    # has no user; that key is the master credential and keeps full access.
+    _role = (claims or {}).get("role") if claims else None
+    allow_operations = (_role in AGENT_OPERATION_ROLES) if claims else True
+    tools = get_tools_for_agent(agent_name, allow_operations=allow_operations)
 
     try:
         while True:
@@ -516,7 +524,8 @@ async def agent_websocket(websocket: WebSocket, agent_name: str):
                         if block.type == "tool_use":
                             tools_used.append(block.name)
                             result = execute_tool(block.name, dict(block.input), agent_name,
-                                                  org_id=agent_org_id)
+                                                  org_id=agent_org_id,
+                                                  allow_operations=allow_operations)
                             result_text = json.dumps(result, default=str)
                             tool_results.append({
                                 "type": "tool_result",
