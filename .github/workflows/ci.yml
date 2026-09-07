@@ -21,7 +21,7 @@ jobs:
     env:
       JWT_SECRET: test-secret-ci
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
@@ -65,7 +65,7 @@ jobs:
       DATABASE_URL: sqlite:////tmp/rls_ci_sqlite.db
       RLS_TEST_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/brightspace_rls
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
@@ -89,7 +89,7 @@ jobs:
       run:
         working-directory: frontend
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: actions/setup-node@v4
         with:
           node-version: "20"
