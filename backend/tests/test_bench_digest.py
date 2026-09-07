@@ -190,13 +190,22 @@ def test_unanswered_route_offers_and_money_owed_both_appear(made):
     assert d["sections"]["payouts_due"] == {"count": 1, "total": 250.0}
 
 
-def test_a_sub_past_600_this_year_is_flagged_once(made):
+def test_a_sub_past_the_1099_line_this_year_is_flagged_once(made):
+    """The amounts here are deliberately read from the helper rather than typed
+    in. This test used to seed $750 against a hard-coded $600 line; when the
+    threshold moved to $2,000 it failed, which is the test doing its job — but
+    re-typing 2000 would only queue up the same failure for the 2027 inflation
+    adjustment."""
     db = SessionLocal()
     u = User(email=f"big-{uuid.uuid4().hex[:6]}@example.com", role="cleaner",
              full_name="Busy Sub", org_id=1, active=True, status="active",
              cleaner_id="CT-BIG")
     db.add(u); db.commit(); db.refresh(u); made["users"].append(u.id)
-    for amount in (400.0, 350.0):
+    from services.bench import form_1099_threshold
+    line_at = form_1099_threshold(business_today().year)
+    # Two payouts that clear the line together but not separately, so the test
+    # also pins that the year-to-date figure is a SUM.
+    for amount in (line_at * 0.6, line_at * 0.6):
         p = SubPayout(org_id=1, user_id=u.id, cleaner_id="CT-BIG", amount=amount,
                       status="paid", earned_on=business_today())
         db.add(p); db.commit(); db.refresh(p); made["payouts"].append(p.id)
@@ -204,7 +213,9 @@ def test_a_sub_past_600_this_year_is_flagged_once(made):
 
     d = _lines()
     assert len(d["sections"]["over_1099"]) == 1
-    assert "1 subcontractor past $600 this year" in " | ".join(d["lines"])
+    joined = " | ".join(d["lines"])
+    # The figure Meg reads in the email must be the figure the flag used.
+    assert f"1 subcontractor past ${line_at:,.0f} this year" in joined, joined
 
 
 # ── Scheduling ──────────────────────────────────────────────────────────────

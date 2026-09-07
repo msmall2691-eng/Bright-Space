@@ -14,7 +14,7 @@ This is the one message that asks for the week's decisions together:
   * files expiring within the month — an insurance certificate that lapses is
     a person who silently can't work;
   * payouts sitting due — money owed and not sent;
-  * subs approaching the $600 mark, once each per year.
+  * subs past the 1099 reporting threshold, once each per year.
 
 WHY WEDNESDAY. The Saturday windows open around ten days out and start climbing
 about four days out, so Wednesday is the last point where a gap can be fixed by
@@ -145,8 +145,15 @@ def build(db: Session, org_id: int, today: Optional[date] = None) -> dict:
     over = [s for s in ytd["subs"] if s["over_1099_threshold"]]
     sections["over_1099"] = over
     if over:
+        # The NUMBER comes from the same helper the flag does. This line read
+        # "past $600" as a literal, so when the threshold moved to $2,000 the
+        # digest kept telling Meg a figure that was no longer the law — while
+        # the flag beside it had already been recalculated. A number in prose
+        # is still a number, and this one arrives in her inbox every week.
+        from services.bench import form_1099_threshold
+        line_at = form_1099_threshold(today.year)
         lines.append(f"{len(over)} subcontractor{'' if len(over) == 1 else 's'} "
-                     f"past $600 this year — they'll need a 1099")
+                     f"past ${line_at:,.0f} this year — they'll need a 1099")
 
     return {"as_of": today.isoformat(), "lines": lines, "sections": sections,
             "empty": not lines}
