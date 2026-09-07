@@ -23,6 +23,7 @@ careful.
 from __future__ import annotations
 
 import csv
+import hashlib
 import io
 import logging
 from datetime import date, datetime, timezone
@@ -211,9 +212,16 @@ def generate(db: Session, org_id: int, start: date, end: date) -> dict:
 
 # ── Reading the ledger ──────────────────────────────────────────────────────
 
-def _payout_dict(p: SubPayout, name: Optional[str] = None) -> dict:
+def _payout_dict(p: SubPayout, name: Optional[str] = None, *,
+                 direct_deposit: bool = False) -> dict:
     return {
         "id": p.id,
+        # Whether THIS person can be paid electronically today. Carried on the
+        # row rather than looked up per render, so the office can see at a
+        # glance which half of a batch a bank rail can actually take — the
+        # answer differs per sub and changes whenever one of them finishes
+        # onboarding.
+        "direct_deposit": bool(direct_deposit),
         "user_id": p.user_id,
         "cleaner_id": p.cleaner_id,
         "name": name,
@@ -241,10 +249,19 @@ def list_payouts(db: Session, org_id: int, *, start: Optional[date] = None,
     if status:
         q = q.filter(SubPayout.status == status)
     rows = q.order_by(SubPayout.earned_on.desc(), SubPayout.id.desc()).all()
-    names = {u.id: (u.full_name or u.email)
-             for u in db.query(User).filter(
-                 User.id.in_([r.user_id for r in rows] or [0])).all()}
-    return [_payout_dict(r, names.get(r.user_id)) for r in rows]
+    people = {u.id: u for u in db.query(User).filter(
+        User.id.in_([r.user_id for r in rows] or [0])).all()}
+    out = []
+    for r in rows:
+        u = people.get(r.user_id)
+        out.append(_payout_dict(
+            r, (u.full_name or u.email) if u else None,
+            # The CACHED flag, written only by the Stripe webhook. Asking
+            # Stripe per row would be one API call per ledger line on a screen
+            # that lists a whole pay period (brightbase-economy).
+            direct_deposit=bool(u and u.stripe_account_id
+                                and u.stripe_payouts_enabled)))
+    return out
 
 
 def year_to_date(db: Session, org_id: int, year: Optional[int] = None) -> dict:
@@ -306,6 +323,11 @@ def year_to_date(db: Session, org_id: int, year: Optional[int] = None) -> dict:
     out.sort(key=lambda r: -r["total"])
     return {
         "year": year,
+        # The figure the flag was measured against, so the screen can say
+        # WHICH threshold it means instead of printing "$600" forever. That
+        # literal outlived its own truth in three places already; a number the
+        # caller is handed cannot drift from the number the caller compares.
+        "threshold": form_1099_threshold(year),
         "subs": out,
         "total": round(sum(e["total"] for e in out), 2),
         "outstanding": round(sum(e["outstanding"] for e in out), 2),
@@ -350,6 +372,16 @@ def mark(db: Session, org_id: int, payout_ids: list, status: str, *,
 # records it, so a rail that half-succeeds cannot leave the ledger claiming
 # money went out that didn't.
 
+class PayoutRailUnavailable(RuntimeError):
+    """The rail cannot pay right now, and no money moved.
+
+    Raised BEFORE anything is sent — an unconfigured rail, or a balance that
+    cannot cover the batch. A rail that has already moved some money never
+    raises; it reports per row, because a batch that half-worked is a fact the
+    caller has to be told, not an error to swallow.
+    """
+
+
 class PayoutRail:
     """How money actually reaches a subcontractor."""
 
@@ -358,6 +390,16 @@ class PayoutRail:
     #: produces the paperwork a human acts on, so its payouts become `sent`,
     #: never `paid`, until somebody confirms.
     settles = False
+
+    def status(self, db: Session, org_id: int) -> dict:
+        """Whether this rail can pay right now, in words for the office.
+
+        Called for the SELECTED rail only. A rail that has to ask a payments
+        API to answer this is one network round trip per screen load, which is
+        acceptable once and would not be acceptable per rail.
+        """
+        return {"name": self.name, "settles": self.settles,
+                "ready": True, "detail": None}
 
     def send(self, db: Session, org_id: int, payouts: list) -> dict:
         raise NotImplementedError
@@ -374,6 +416,12 @@ class ManualRail(PayoutRail):
 
     name = "manual"
     settles = False
+    label = "By hand, from a CSV"
+
+    def status(self, db: Session, org_id: int) -> dict:
+        return {"name": self.name, "settles": self.settles, "ready": True,
+                "detail": "Sending downloads a list. Pay from it, then mark "
+                          "them paid here."}
 
     COLUMNS = ("payout_id", "name", "cleaner_id", "earned_on", "job_id",
                "amount", "memo")
@@ -401,7 +449,198 @@ class ManualRail(PayoutRail):
         }
 
 
-_RAILS = {ManualRail.name: ManualRail}
+class StripeRail(PayoutRail):
+    """Money actually leaves, per payout row, into the sub's own account.
+
+    `settles = True` and payouts land on `paid`, and that word is doing precise
+    work. A successful transfer means the money left TMCC's Stripe balance and
+    belongs to the subcontractor — which is the fact this ledger records. It is
+    NOT the same instant it appears in their bank: Stripe deposits from their
+    balance to their bank on its own schedule. So "paid" here is true of the
+    business, and the crew screen says the other half out loud rather than
+    letting a sub read "paid" and go looking at their bank the same afternoon.
+
+    ONE TRANSFER PER PAYOUT ROW, never one per batch. A batched transfer saves
+    nothing (Stripe charges no per-transfer fee) and costs the only thing that
+    matters here: a $250 transfer covering four jobs cannot be traced back to
+    the job it paid for, reversed for one of them, or reconciled against the
+    ledger. Row-for-row means `external_ref` is a real answer to "which
+    payment was that".
+
+    THE THING THIS FILE IS MOST CAREFUL ABOUT is not paying twice.
+
+    Nothing that touched the network can be trusted to have failed. Before any
+    call, every row in the batch is stamped `method = "stripe"` in one commit.
+    A row that comes back `due`, stamped, with no `external_ref` is a row whose
+    outcome was never learned — the process died, or the connection did — and
+    it is refused on the next attempt and reported for a human to look up in
+    Stripe. Refusing to pay somebody until a person checks is recoverable in a
+    minute. Paying them twice is a phone call and a favour.
+
+    Stripe's idempotency key covers the narrow case where the crash happened
+    between the transfer and the ledger write: replaying inside 24 hours
+    returns the same transfer instead of making another. It is a second belt,
+    not the mechanism — the key is forgotten after a day, and a retry on day
+    two would pay again.
+    """
+
+    name = "stripe"
+    settles = True
+    label = "Stripe — straight to their bank"
+
+    def status(self, db: Session, org_id: int) -> dict:
+        from integrations import stripe_connect as sc
+
+        base = {"name": self.name, "settles": self.settles}
+        if not sc.configured():
+            return {**base, "ready": False,
+                    "detail": "Stripe isn't connected. Add STRIPE_SECRET_KEY "
+                              "and the account webhook, then this can pay."}
+        bal = sc.platform_balance()
+        if bal is None:
+            # UNKNOWN, not zero. A balance read that failed must not read as
+            # "you have no money" on a screen somebody makes decisions from.
+            return {**base, "ready": True,
+                    "detail": "Couldn't read your Stripe balance just now."}
+        avail = bal["available_cents"] / 100.0
+        pending = bal["pending_cents"] / 100.0
+        detail = f"${avail:,.2f} available to send"
+        if pending:
+            detail += f" · ${pending:,.2f} still clearing"
+        return {**base, "ready": True, "detail": detail,
+                "available": round(avail, 2), "pending": round(pending, 2)}
+
+    def _key(self, payout: SubPayout) -> str:
+        """Stable per payout, and different after a reversal.
+
+        A reversed transfer puts the row back to `due` and keeps the old
+        transfer id for the audit trail. Re-sending inside 24 hours with the
+        original key would hand back that same reversed transfer and mark the
+        row paid on money that came home, so the previous attempt's id is
+        folded into the key.
+        """
+        key = f"bb-payout-{payout.id}"
+        if payout.external_ref:
+            key += "-r" + hashlib.sha1(
+                payout.external_ref.encode("utf-8")).hexdigest()[:8]
+        return key
+
+    def send(self, db: Session, org_id: int, payouts: list) -> dict:
+        from integrations import stripe_connect as sc
+
+        if not sc.configured():
+            raise PayoutRailUnavailable(
+                "Stripe isn't connected yet, so nothing can be sent that way.")
+
+        ids = [p["id"] for p in payouts]
+        rows = (db.query(SubPayout)
+                .filter(SubPayout.id.in_(ids or [0]), _org_scope(SubPayout, org_id))
+                .all())
+        people = {u.id: u for u in db.query(User).filter(
+            User.id.in_([r.user_id for r in rows] or [0])).all()}
+        named = {p["id"]: (p.get("name") or p.get("cleaner_id") or "") for p in payouts}
+
+        sendable, blocked, unclear = [], [], []
+        for r in rows:
+            who = named.get(r.id) or str(r.user_id)
+            if r.method == self.name and not r.external_ref:
+                unclear.append({"id": r.id, "name": who, "amount": float(r.amount or 0),
+                                "reason": "A previous attempt never reported back. "
+                                          "Check Stripe for a transfer to this "
+                                          "person before sending it again."})
+                continue
+            u = people.get(r.user_id)
+            if u is None or not u.stripe_account_id:
+                blocked.append({"id": r.id, "name": who, "amount": float(r.amount or 0),
+                                "reason": "Hasn't set up direct deposit yet."})
+                continue
+            if not u.stripe_payouts_enabled:
+                blocked.append({"id": r.id, "name": who, "amount": float(r.amount or 0),
+                                "reason": u.stripe_requirements
+                                or "Their Stripe setup isn't finished."})
+                continue
+            sendable.append((r, u, who))
+
+        total_cents = sum(round(float(r.amount or 0) * 100) for r, _, _ in sendable)
+        bal = sc.platform_balance()
+        if bal is not None and total_cents > bal["available_cents"]:
+            # Checked once, up front, rather than discovered on the fourth of
+            # eleven transfers. The expected case for TMCC: clients pay through
+            # Square and invoices, so the Stripe balance is only ever what was
+            # deliberately put there.
+            raise PayoutRailUnavailable(
+                f"Your Stripe balance is ${bal['available_cents'] / 100:,.2f} and "
+                f"this batch is ${total_cents / 100:,.2f}. Nothing was sent — "
+                "add funds in Stripe, or send fewer.")
+
+        # THE STAMP. One commit, before any money moves, so a row whose result
+        # we never learn is identifiable afterwards. See the class docstring.
+        if sendable:
+            for r, _, _ in sendable:
+                r.method = self.name
+                r.updated_at = _now()
+            db.commit()
+
+        paid, failed = [], []
+        for r, u, who in sendable:
+            amount = float(r.amount or 0)
+            res = sc.transfer(
+                account_id=u.stripe_account_id,
+                amount_cents=round(amount * 100),
+                idempotency_key=self._key(r),
+                description=(r.memo or f"Job #{r.job_id}")[:200],
+                metadata={"brightbase_payout_id": str(r.id),
+                          "brightbase_job_id": str(r.job_id or ""),
+                          "brightbase_earned_on": r.earned_on.isoformat()
+                          if r.earned_on else ""},
+            )
+            if res["ok"]:
+                mark(db, org_id, [r.id], "paid", method=self.name,
+                     external_ref=res["id"])
+                paid.append({"id": r.id, "name": who, "amount": amount,
+                             "transfer": res["id"]})
+                continue
+            if res["definite"]:
+                # Stripe answered and refused, so no transfer exists. Take the
+                # stamp back off so the row is cleanly retryable once whatever
+                # it complained about is fixed.
+                r.method = None
+                db.commit()
+            failed.append({"id": r.id, "name": who, "amount": amount,
+                           "reason": res["error"],
+                           # False here means "we do not know" — the row stays
+                           # stamped and will be refused next time.
+                           "certain_nothing_sent": res["definite"]})
+
+        return {
+            "rail": self.name,
+            "settled": True,
+            "count": len(paid),
+            "total": round(sum(p["amount"] for p in paid), 2),
+            "paid": paid,
+            # Everything that did NOT go, each with a reason a person can act
+            # on. Returned rather than raised: eight subs getting paid must not
+            # be undone by the ninth not having finished onboarding.
+            "blocked": blocked,
+            "failed": failed,
+            "needs_check": unclear,
+        }
+
+
+_RAILS = {ManualRail.name: ManualRail, StripeRail.name: StripeRail}
+
+
+#: Valid setting values. The router validates against this rather than letting
+#: `get_rail` silently fall back, because saving a typo would mean paying by
+#: CSV forever while the screen says Stripe.
+RAIL_NAMES = tuple(_RAILS)
+
+
+def available_rails() -> list:
+    """What the office can choose between. Names and labels only — asking each
+    rail whether it is ready would mean a payments API call per dropdown."""
+    return [{"name": cls.name, "label": getattr(cls, "label", cls.name),
+             "settles": cls.settles} for cls in _RAILS.values()]
 
 
 def get_rail(name: Optional[str] = None) -> PayoutRail:

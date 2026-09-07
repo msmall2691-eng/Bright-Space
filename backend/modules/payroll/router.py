@@ -27,7 +27,7 @@ from sqlalchemy.orm import Session
 from pydantic import BaseModel
 
 from database.db import get_db
-from database.models import User
+from database.models import SubPayout, User
 from modules.auth.router import require_role, current_org_id, resolve_org_id
 from modules.settings.router import get_setting, set_setting
 
@@ -87,6 +87,10 @@ def subcontractor_summary(
     ledger = sub_payouts.list_payouts(db, oid, start=d0, end=d1)
     ytd = sub_payouts.year_to_date(db, oid)
     rail = sub_payouts.get_rail(get_setting(db, "sub_payout_rail"))
+    # Status is asked of the SELECTED rail only. Stripe answers it by reading
+    # the platform balance, which is a network round trip — one per screen
+    # load is the budget (brightbase-economy), one per available rail is not.
+    rail_status = rail.status(db, oid)
 
     live = [p for p in ledger if p["status"] in sub_payouts.LIVE_STATUSES]
     return {
@@ -108,8 +112,38 @@ def subcontractor_summary(
         "paid_total": round(sum(p["amount"] for p in live
                                 if p["status"] == "paid"), 2),
         "ytd": ytd,
-        "rail": {"name": rail.name, "settles": rail.settles},
+        "rail": rail_status,
+        # Names only. Switching is a deliberate act and the screen offers it;
+        # pricing out every rail's readiness to draw a dropdown is not.
+        "rails": sub_payouts.available_rails(),
     }
+
+
+class RailBody(BaseModel):
+    name: str
+
+
+@router.post("/subcontractors/rail",
+             dependencies=[Depends(require_role("admin"))])
+def choose_rail(body: RailBody, db: Session = Depends(get_db),
+                org_id: int = Depends(current_org_id)):
+    """Pick how subcontractors get paid.
+
+    Without this the Stripe rail could be built and never selected — the
+    setting had no writer anywhere in the app. Validated against the registry
+    rather than stored raw: `get_rail` falls back to manual on an unknown name,
+    which would mean saving a typo and quietly paying by CSV forever.
+    """
+    from services import sub_payouts
+
+    name = (body.name or "").strip().lower()
+    if name not in sub_payouts.RAIL_NAMES:
+        raise HTTPException(status_code=422,
+                            detail=f"Unknown payment method: {body.name}")
+    set_setting(db, "sub_payout_rail", name)
+    db.commit()
+    rail = sub_payouts.get_rail(name)
+    return rail.status(db, resolve_org_id(org_id, db))
 
 
 class GeneratePayoutsBody(BaseModel):
@@ -181,7 +215,13 @@ def send_payouts(body: SendPayoutsBody, db: Session = Depends(get_db),
         raise HTTPException(status_code=422,
                             detail="Nothing to send — those payouts aren't due.")
     rail = sub_payouts.get_rail(get_setting(db, "sub_payout_rail"))
-    return rail.send(db, oid, rows)
+    try:
+        return rail.send(db, oid, rows)
+    except sub_payouts.PayoutRailUnavailable as e:
+        # Nothing moved — the rail said so before trying. 422 because it is
+        # the request that cannot be honoured, and the message is written to
+        # be read by the person who pressed the button, not a log.
+        raise HTTPException(status_code=422, detail=str(e))
 
 
 # ── Stripe Connect webhook (migration 108) ──────────────────────────────────
@@ -254,5 +294,35 @@ async def stripe_webhook(request: Request, db: Session = Depends(get_db)):
             except Exception:
                 logger.warning("[stripe] payouts-enabled notification failed", exc_info=True)
         return {"ok": True, "payouts_enabled": state["payouts_enabled"]}
+
+    if kind == "transfer.reversed":
+        # The money came home. Leaving the row on `paid` would mean the ledger,
+        # the year-to-date total and the 1099 figure all state a payment that
+        # was undone — and nobody would ever notice, because the reversal
+        # happens in Stripe's dashboard, not here.
+        #
+        # Matched by transfer id, which is exactly what StripeRail wrote into
+        # `external_ref`, so this is one row and never a guess. The id STAYS on
+        # the row: it is the audit trail, and it is also what makes a re-send
+        # use a fresh idempotency key instead of replaying the reversed
+        # transfer (services/sub_payouts.StripeRail._key).
+        tr_id = obj.get("id")
+        p = (db.query(SubPayout).filter(SubPayout.external_ref == tr_id).first()
+             if tr_id else None)
+        if p is None:
+            logger.info("[stripe] transfer.reversed for an unknown transfer %s", tr_id)
+            return {"ok": True, "ignored": True}
+        if p.status != "paid":
+            return {"ok": True, "ignored": True}
+        p.status = "due"
+        # `mark` deliberately never re-stamps `paid_at`, so a row that goes
+        # back to paid later would keep the old date. Cleared here, where the
+        # payment is being un-made.
+        p.paid_at = None
+        p.updated_at = datetime.now(timezone.utc).replace(tzinfo=None)
+        db.commit()
+        logger.warning("[stripe] payout %s is owed again — transfer %s was reversed",
+                       p.id, tr_id)
+        return {"ok": True, "reopened": p.id}
 
     return {"ok": True, "ignored": True}
