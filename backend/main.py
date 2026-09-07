@@ -369,6 +369,21 @@ async def health():
             "error": drift.get("error"),
         },
     }
+    # BB-OPS-02: COUNTS ONLY. This route is public — Railway probes it with no
+    # credentials — so it carries no tick names, no error text and no next-run
+    # times. "3 of 13 failing" is enough to know something is wrong from a
+    # phone; GET /api/admin/scheduler says which and why, behind a role check.
+    #
+    # Not part of the 503 gate. A failing iCal feed does not mean the container
+    # should be pulled out of service, and making it do so would turn one
+    # broken integration into an outage.
+    try:
+        from services import tick_health
+        from scheduler import registered_jobs
+        body["scheduler"] = tick_health.summary(registered_jobs())
+    except Exception:
+        # Health must answer even if this does not.
+        body["scheduler"] = None
     return JSONResponse(body, status_code=503 if gate_fail else 200)
 
 
