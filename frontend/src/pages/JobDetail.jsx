@@ -405,7 +405,12 @@ export default function JobDetail() {
             qty: Number(i.qty) || 1,
             unit_price: Number(i.unit_price) || 0,
           }))
-        : [{ name: job.title || 'Cleaning', qty: 1, unit_price: 0 }]
+        // No quote — the case the comment above called rare and which is in
+        // fact every rental turnover and every job booked over the phone. The
+        // price on the job (migration 110) is what it bills; falling to $0
+        // here is what made "invoice this job" produce a $0.00 invoice.
+        : [{ name: job.title || 'Cleaning', qty: 1,
+             unit_price: job.price != null ? Number(job.price) : 0 }]
       const inv = await post('/api/invoices', {
         client_id: job.client_id, job_id: job.id,
         items,
@@ -619,6 +624,25 @@ export default function JobDetail() {
                     {job.open_for_claims ? 'On · tap to close' : 'Off'}
                   </span>
                 </button>
+              )}
+              {canEdit() && (
+                /* WHAT WE CHARGE. Above the crew rates and outside the
+                   open-to-crew branch, because it is true of every job whether
+                   or not one is posted — and because an unpriced job is one
+                   nobody can invoice. The rates below are what we PAY; these
+                   two numbers are never mixed. */
+                <div className="mt-2">
+                  <InlineEditField label="What we charge" type="number" value={job.price}
+                    placeholder="Set the price"
+                    format={(v) => money(v)}
+                    onSave={(v) => saveField({ price: v == null ? null : Number(v) })} />
+                  {job.price == null && (
+                    <p className="mt-1 flex items-start gap-1.5 text-[11px] text-ink-2">
+                      <span className="mt-1 h-1.5 w-1.5 shrink-0 rounded-full bg-amber-500" aria-hidden="true" />
+                      <span>No price yet — invoicing this job will start at $0.</span>
+                    </p>
+                  )}
+                </div>
               )}
               {canEdit() && job.open_for_claims && (
                 /* The asking price. Sits under the toggle because it only

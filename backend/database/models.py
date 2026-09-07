@@ -373,6 +373,14 @@ class Property(Base):
     # varies per property. Payroll reads this to price weekend str_turnover work.
     # NULL = not set yet (Payroll flags weekend turnovers it can't price).
     turnover_rate = Column(Float, nullable=True)
+    # What a visit to this house usually BILLS (migration 110) — the customer's
+    # side. `turnover_rate` directly above is what a cleaner is PAID for a
+    # weekend turnover here; these two are adjacent, opposite, and easy to
+    # confuse, which is exactly why they say so.
+    #
+    # Seeds `Job.price` at creation. NULL = never set, and a job created from
+    # such a property is simply unpriced rather than priced at zero.
+    default_price = Column(Float, nullable=True)
 
     # Onsite contact (different from billing client)
     site_contact_name = Column(String, nullable=True)
@@ -511,6 +519,12 @@ class RecurringSchedule(Base):
     property_id = Column(Integer, ForeignKey("properties.id"), nullable=True, index=True)
     active = Column(Boolean, default=True, nullable=False)
     generate_weeks_ahead = Column(Integer, default=8)
+    # What each visit on this series BILLS the customer (migration 110). Sits
+    # on the series rather than only the house because one house can carry a
+    # $150 weekly clean and a $400 quarterly deep clean; the series is the
+    # thing that has one price. Seeds Job.price at generation, overriding the
+    # property default. NULL = fall back to the house.
+    price = Column(Float, nullable=True)
     # Exclusive upper bound on generated dates — set when a "this and all
     # future" edit splits the series: this schedule stops here, and a new
     # RecurringSchedule picks up from the split date with the edited rule.
@@ -679,6 +693,22 @@ class Job(Base):
     # marketplace job should read agreed_rate, never posted_rate.
     posted_rate = Column(Float, nullable=True)
     agreed_rate = Column(Float, nullable=True)
+    # WHAT THE CUSTOMER IS BILLED for this visit (migration 110). The two rates
+    # above are what a SUBCONTRACTOR is offered and settled for; this is the
+    # other side of the same job, and the gap between them is the margin.
+    # Keeping them apart is not tidiness — a single "price" that sometimes
+    # meant pay and sometimes meant revenue would be wrong on one screen or
+    # the other every time.
+    #
+    # Inherited at creation from the accepted quote's total, else the
+    # property's `default_price`, so recurring occurrences and rental
+    # turnovers — the work nobody types by hand — arrive priced. A starting
+    # value, never a link: changing the house default does not reach back into
+    # a visit already booked.
+    #
+    # NULL means "we don't know", never "free". `services/job_margin.py` draws
+    # that distinction and this column keeps it.
+    price = Column(Float, nullable=True)
     # Migration 106: WHO agreed that rate. agreed_rate alone was paid to
     # everyone in cleaner_ids, so adding a helper to a $100 job paid $200; and
     # with nobody named on the row there was no way to tell that reassigning

@@ -11,7 +11,8 @@ logger = logging.getLogger(__name__)
 
 from database.db import get_db
 from modules.auth.router import require_role, current_org_id, resolve_org_id
-from database.models import RecurringSchedule, Job, RecurrenceException
+from database.models import RecurringSchedule, Job, RecurrenceException, Property
+from services.job_pricing import resolve_new_job_price
 from utils.activity_logger import log_job_created, log_calendar_event
 from utils.dates import business_today, coerce_date
 
@@ -104,6 +105,9 @@ class ScheduleCreate(BaseModel):
     quote_id: Optional[int] = None
     property_id: Optional[int] = None
     generate_weeks_ahead: Optional[int] = 8
+    # What each visit on this series bills the customer (migration 110).
+    # Seeds Job.price at generation; NULL falls back to the house.
+    price: Optional[float] = None
     notes: Optional[str] = None
     # "Ends" (Google-Calendar-style): 'never' | 'on_date' | 'after_count'.
     # Omitted/None on create means "never" (the historical default — every
@@ -186,6 +190,9 @@ class ScheduleUpdate(BaseModel):
     active: Optional[bool] = None
     property_id: Optional[int] = None
     generate_weeks_ahead: Optional[int] = None
+    # What each visit on this series bills the customer (migration 110).
+    # Seeds Job.price at generation; NULL falls back to the house.
+    price: Optional[float] = None
     notes: Optional[str] = None
     # "Ends" (see ScheduleCreate) — omitted entirely means "don't touch the
     # existing end setting" (this is a PATCH); the frontend always sends all
@@ -220,6 +227,9 @@ class ScheduleSplit(BaseModel):
     cleaner_ids: Optional[List[str]] = None
     property_id: Optional[int] = None
     generate_weeks_ahead: Optional[int] = None
+    # What each visit on this series bills the customer (migration 110).
+    # Seeds Job.price at generation; NULL falls back to the house.
+    price: Optional[float] = None
     notes: Optional[str] = None
 
 
@@ -284,6 +294,7 @@ def sched_to_dict(s: RecurringSchedule) -> dict:
         # NULL means paused (or never stopped) — see migration 096.
         "cancelled_at": s.cancelled_at.isoformat() if s.cancelled_at else None,
         "generate_weeks_ahead": s.generate_weeks_ahead,
+        "price": s.price,
         "series_end_date": s.series_end_date.isoformat() if s.series_end_date else None,
         "series_start_date": s.series_start_date.isoformat() if s.series_start_date else None,
         "anchor_date": s.anchor_date.isoformat() if s.anchor_date else None,
@@ -776,6 +787,12 @@ def generate_jobs(db: Session, sched: RecurringSchedule) -> int:
             return kept
         return crew
 
+    # The house this series runs at, loaded ONCE for the whole batch rather
+    # than per occurrence: one tick can create dozens of rows and the only
+    # thing needed from it is a number (brightbase-economy).
+    sched_property = (db.query(Property).filter(Property.id == sched.property_id).first()
+                      if sched.property_id else None)
+
     for d in dates:
         if d in cancelled_dates:
             # User cancelled this occurrence already; do not resurrect it.
@@ -800,6 +817,12 @@ def generate_jobs(db: Session, sched: RecurringSchedule) -> int:
             status="scheduled",
             notes=sched.notes,
             org_id=sched.org_id,  # MT-2: inherit the schedule's tenant
+            # What this visit bills. A recurring series is exactly the case
+            # nobody types a price for, so an occurrence that came out blank
+            # stayed blank forever. Same rule as every other creation path
+            # (services/job_pricing.py), seeded from the house — a starting
+            # value, not a link back to it.
+            price=resolve_new_job_price(explicit=sched.price, prop=sched_property),
         )
         # Routes (migration 100): a house inside an ACTIVE route belongs to that
         # route's owner at that route's price, so the occurrence is assigned and
@@ -1402,7 +1425,7 @@ def split_schedule(schedule_id: int, data: ScheduleSplit, db: Session = Depends(
     carry_over_fields = (
         "title", "address", "frequency", "interval_weeks", "days_of_week",
         "day_of_week", "day_of_month", "start_time", "end_time",
-        "cleaner_ids", "property_id", "generate_weeks_ahead", "notes",
+        "cleaner_ids", "property_id", "generate_weeks_ahead", "notes", "price",
     )
     overrides = data.model_dump(exclude_none=True, exclude={"split_date"})
     new_payload = {
@@ -1846,6 +1869,16 @@ def _reschedule_occurrence(db: Session, sched: RecurringSchedule, exception_date
             status="scheduled",
             notes=sched.notes,
             org_id=sched.org_id,  # MT-2: inherit the schedule's tenant
+            # CARRIED, not re-seeded. This row replaces an occurrence that was
+            # moved, and moving a visit must never silently reprice it — the
+            # house default may have changed since, and the customer agreed to
+            # the old number. Falls back to the SERIES price (not the house)
+            # only when the occurrence being replaced carried none: a lookup
+            # of the property here would be a second query on a path that
+            # already has the answer it needs.
+            price=(old_occurrence.price
+                   if old_occurrence is not None and old_occurrence.price is not None
+                   else sched.price),
         )
         db.add(rescheduled_job)
 
