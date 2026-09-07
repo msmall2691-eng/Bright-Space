@@ -5972,6 +5972,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/dashboard/operating-health": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Operating Health Endpoint
+         * @description Labour as a share of revenue, and whether customers come back.
+         *
+         *     The two numbers a managed home-services business lives or dies on — see
+         *     the long note in analytics.py for why these two and not others. Owner-level
+         *     financials, so admin/manager only; viewers do not see the cost side.
+         */
+        get: operations["operating_health_endpoint_api_dashboard_operating_health_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/dashboard/funnel": {
         parameters: {
             query?: never;
@@ -19288,6 +19312,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+        };
+    };
+    operating_health_endpoint_api_dashboard_operating_health_get: {
+        parameters: {
+            query?: {
+                months?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

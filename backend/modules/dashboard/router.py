@@ -424,6 +424,22 @@ def week_capacity_endpoint(
 # which the status-snapshot /summary can't, because it buckets each quote by
 # its *current* status only.
 
+@router.get("/operating-health", dependencies=[Depends(require_role("admin", "manager"))])
+def operating_health_endpoint(
+    months: int = Query(6, ge=1, le=24),
+    db: Session = Depends(get_db),
+    org_id: int = Depends(current_org_id),
+):
+    """Labour as a share of revenue, and whether customers come back.
+
+    The two numbers a managed home-services business lives or dies on — see
+    the long note in analytics.py for why these two and not others. Owner-level
+    financials, so admin/manager only; viewers do not see the cost side.
+    """
+    from modules.dashboard.analytics import operating_health
+    return operating_health(db, resolve_org_id(org_id, db), months=months)
+
+
 @router.get("/funnel", dependencies=[Depends(require_role("admin", "manager"))])
 def funnel_dashboard(
     days: int = Query(30, ge=1, le=3650),

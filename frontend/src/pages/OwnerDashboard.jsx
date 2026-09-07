@@ -32,6 +32,7 @@ import { fmtMoney } from '../components/dashboard/utils'
 import { KpiCard, Tile, TileLoading, BarTip } from '../components/dashboard/primitives'
 import { PropertyEconomicsTile } from '../components/dashboard/PropertyEconomicsTile'
 import { WeekCapacityTile } from '../components/dashboard/WeekCapacityTile'
+import { OperatingHealthTile } from '../components/dashboard/OperatingHealthTile'
 import { ErrorState, PageHeader, SubNav } from '../components/ui'
 
 // Human-facing labels for the API's job_type values. The backend returns
@@ -94,6 +95,7 @@ export default function OwnerDashboard() {
   const owner = useGet('/api/dashboard/owner')
   const economics = useGet('/api/dashboard/property-economics')
   const capacity = useGet('/api/dashboard/week-capacity')
+  const health = useGet('/api/dashboard/operating-health')
 
   if (owner.error) {
     return (
@@ -162,6 +164,7 @@ export default function OwnerDashboard() {
       </div>
 
       {/* "Am I making money on this house" — full width, it's the table */}
+      <OperatingHealthTile {...health} />
       <PropertyEconomicsTile {...economics} navigate={navigate} />
 
       <div className="grid grid-cols-1 shell:grid-cols-2 gap-5">
