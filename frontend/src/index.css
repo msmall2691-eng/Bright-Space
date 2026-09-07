@@ -322,6 +322,60 @@ body.accent-cyan {
 @tailwind utilities;
 
 @layer base {
+  /* PUBLIC SURFACES ALWAYS READ AS PAPER.
+     ---------------------------------------------------------------------
+     `body` above paints a hardcoded white ground for everyone, while the
+     theme blocks below redefine `--ink` per theme. The authenticated app
+     never notices because its shell paints `bg-bg` over that white; a public
+     route has no shell, so it took its TEXT colour from the viewer's theme
+     and its GROUND from the literal — and on the dark theme `--ink` is
+     #ededf0, which is white text on a white page.
+
+     The asymmetry is the dangerous part: a stranger arriving with no
+     localStorage gets the default paper theme and reads the page fine, while
+     the owner, the office, the crew and the office preview all have a theme
+     set — so it looked broken to exactly the people who check it and fine to
+     the people it is for.
+
+     Re-declaring the paper tokens here (rather than only fixing the
+     background) is the deliberate choice: a recruiting page, a quote and an
+     invoice should look the same to everyone who opens the link, and a
+     viewer's app theme has no business reaching them. */
+  .public-surface {
+    --bg: #f7f5ef;
+    --bg-2: #efece3;
+    --bg-3: #e8e4d7;
+    --panel: #fbf9f3;
+    --ink: #171512;
+    --ink-2: #4a4740;
+    --ink-3: #8a857a;
+    --hairline: #e4e0d4;
+    --hairline-2: #d4cfbe;
+    --frame: #e8e4d7;
+    --accent: oklch(0.62 0.14 55);
+    --accent-ink: #fff;
+    --c-residential: oklch(0.58 0.12 245);
+    --c-residential-bg: oklch(0.92 0.03 245);
+    --c-commercial: oklch(0.60 0.14 60);
+    --c-commercial-bg: oklch(0.93 0.04 60);
+    --c-str: oklch(0.50 0.12 155);
+    --c-str-bg: oklch(0.93 0.04 155);
+    --c-alert: oklch(0.55 0.18 25);
+    --c-alert-bg: oklch(0.93 0.05 25);
+    --c-ok: oklch(0.55 0.12 155);
+    --shadow-1: 0 1px 0 rgba(23,21,18,0.04), 0 2px 8px rgba(23,21,18,0.04);
+    --shadow-2: 0 1px 2px rgba(23,21,18,0.05), 0 2px 6px rgba(23,21,18,0.05);
+    /* Neon-only additions. Defined nowhere but that theme, so a public page
+       under it picked up a glow and a backdrop blur the paper design has no
+       concept of. Neutralised rather than left to inherit. */
+    --blur: 0px;
+    --glow-accent: var(--shadow-2);
+    --glow-cyan: var(--shadow-2);
+    background: var(--bg);
+    color: var(--ink);
+    min-height: 100vh;
+  }
+
   body {
     @apply bg-white text-neutral-900;
     font-family: 'Inter', system-ui, -apple-system, sans-serif;

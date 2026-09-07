@@ -32,6 +32,16 @@ export function fmtTimeRange(start, end) {
   return start || end
 }
 
+/** "Thu, Sep 10" — the day an offer is for, when the list it sits in spans
+ *  more than one. Parsed as a local midnight so a YYYY-MM-DD never slips a
+ *  day backwards the way `new Date('2026-09-10')` (UTC) does. */
+export function dayLabel(iso) {
+  if (!iso) return ''
+  const d = new Date(`${String(iso).slice(0, 10)}T00:00:00`)
+  if (Number.isNaN(d.getTime())) return ''
+  return d.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })
+}
+
 /** Directions deep-link for the phone's native maps app. iOS intercepts
  *  maps.apple.com into Apple Maps; everything else gets the Google Maps
  *  universal directions URL (opens the app on Android, the site on desktop). */
@@ -214,24 +224,43 @@ function RespondRow({ job, onRespond, onDecline, busy }) {
   )
 }
 
-export default function JobCard({ job, onMarkDone, onPhotos, onRespond, onDecline, onClaim, onTextClient, onHouseInfo, onHelpers, busy = false }) {
+export default function JobCard({ job, onMarkDone, onPhotos, onRespond, onDecline, onClaim, onTextClient, onHouseInfo, onHelpers, busy = false, showDate = false }) {
   const isTurnover = job.job_type === 'str_turnover'
   const done = job.status === 'completed'
   const houseLine = houseSpecsLine(job)
   const isActiveJob = false   // the time clock is gone (Sept 2026)
   const someoneElseActive = false
   const houseNoteCount = job.house_notes?.length || 0
-  const hasHouseSection = !!(houseLine || houseNoteCount > 0 || (!job.open && job.property_id && onHouseInfo))
+  // On an OPEN OFFER the reference tier is only ever the spec line — house
+  // notes are stripped from the payload and there is no gallery to open — so
+  // the expander was a tappable row that revealed two words ("Vacation
+  // rental"). Offers show that line inline; assigned jobs keep the expander,
+  // where it really is hiding notes and photos.
+  const offerSpecsInline = !!(job.open && houseLine)
+  const hasHouseSection = !offerSpecsInline
+    && !!(houseLine || houseNoteCount > 0 || (!job.open && job.property_id && onHouseInfo))
   return (
     <div className={`${SOFT} p-4 ${isActiveJob ? 'ring-2 ring-emerald-500/60' : ''}`}>
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
+          {/* WHICH DAY. The open board lists everything on offer, not just
+              today, and a card showing "09:00 – 13:00" under a heading that
+              says today reads as today. The caller says when it needs the
+              date; a job in its own dated group doesn't. */}
+          {showDate && job.scheduled_date && (
+            <div className="text-[11px] font-medium uppercase tracking-wide text-ink-3">
+              {dayLabel(job.scheduled_date)}
+            </div>
+          )}
           <div className="text-base font-bold text-ink tabular-nums">
             {fmtTimeRange(job.start_time, job.end_time) || 'Time TBD'}
           </div>
           <div className="text-sm font-semibold text-ink mt-0.5 truncate">
             {job.property_name || job.title}
           </div>
+          {offerSpecsInline && (
+            <div className="text-xs text-ink-3 mt-0.5 truncate">{houseLine}</div>
+          )}
           {job.address && (
             /* Tap → the phone's maps app with directions. Generous hit area on
                purpose: this is the most-used tap on the page from a car. */
@@ -419,42 +448,48 @@ export default function JobCard({ job, onMarkDone, onPhotos, onRespond, onDeclin
         const rate = job.posted_rate
         const asked = mine?.requested_rate
         return (
+          /* ONE ROW, not a stack. The board shows several of these at once,
+             and the old shape gave each offer a full-width blue slab — three
+             identical call-to-action bars down a phone screen, which is the
+             pattern the owner has vetoed three times. Same words, same
+             meaning: the money reads left, the action sits right at a
+             thumb-sized target, and the rule of the board stays on the card
+             (it is the one line that says asking is not getting, and the
+             Schedule board and the month-view sheet render this card too). */
           <div className="mt-3 border-t border-hairline pt-3">
-            {rate != null ? (
-              <p className="text-[13px] text-ink-2 mb-2 text-center">
-                Pays <span className="font-semibold text-ink">${Number(rate).toLocaleString(undefined, { maximumFractionDigits: 2 })}</span>
+            <div className="flex items-center justify-between gap-3">
+              <div className="min-w-0">
+                {rate != null ? (
+                  <p className="text-[13px] text-ink-2">
+                    Pays <span className="font-semibold text-ink">${Number(rate).toLocaleString(undefined, { maximumFractionDigits: 2 })}</span>
+                  </p>
+                ) : (
+                  /* The server refuses a request where neither side named a
+                     number, so without this the sub taps Ask, fills nothing
+                     in, and gets a 422 for a rule they were never told. */
+                  <p className="flex items-start gap-1.5 text-[13px] text-ink-2">
+                    <span className="mt-1.5 w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0" aria-hidden="true" />
+                    <span>No price set — name yours when you ask.</span>
+                  </p>
+                )}
+                {mine?.status === 'pending' && (
+                  <p className="flex items-center gap-1.5 text-[13px] text-ink-2 mt-0.5">
+                    <span className="w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0" aria-hidden="true" />
+                    You asked{asked != null ? ` for $${Number(asked).toLocaleString(undefined, { maximumFractionDigits: 2 })}` : ''} — waiting to hear back
+                  </p>
+                )}
+              </div>
+              <button onClick={onClaim} disabled={busy}
+                className="shrink-0 min-h-[44px] px-4 text-[13px] font-medium bg-panel border border-hairline-2 text-ink-2 hover:bg-bg-2 active:bg-bg-2 disabled:opacity-60 rounded-lg transition-colors inline-flex items-center gap-1.5">
+                {mine?.status === 'pending'
+                  ? 'Change what I asked for'
+                  : (<><Sparkles className="w-4 h-4" aria-hidden="true" /> Ask for this job</>)}
+              </button>
+            </div>
+            {mine?.status !== 'pending' && (
+              <p className="text-[10px] text-ink-3 mt-1.5">
+                The office picks who gets it{job.teammates?.length ? ` · you'd join ${job.teammates.join(', ')}` : ''}
               </p>
-            ) : (
-              /* The server refuses a request where neither side named a number,
-                 so without this the sub taps Ask, fills nothing in, and gets a
-                 422 for a rule they were never told. Say it on the card, where
-                 they decide whether to bother. */
-              <p className="flex items-start justify-center gap-1.5 text-[13px] text-ink-2 mb-2 text-center">
-                <span className="mt-1.5 w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0" aria-hidden="true" />
-                <span>No price set — name yours when you ask.</span>
-              </p>
-            )}
-            {mine?.status === 'pending' ? (
-              <>
-                <p className="flex items-center justify-center gap-1.5 text-[13px] text-ink-2">
-                  <span className="w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0" aria-hidden="true" />
-                  You asked{asked != null ? ` for $${Number(asked).toLocaleString(undefined, { maximumFractionDigits: 2 })}` : ''} — waiting to hear back
-                </p>
-                <button onClick={onClaim} disabled={busy}
-                  className="mt-2 w-full text-[13px] font-medium bg-panel border border-hairline-2 text-ink-2 hover:bg-bg-2 disabled:opacity-60 py-2.5 rounded-lg transition-colors">
-                  Change what I asked for
-                </button>
-              </>
-            ) : (
-              <>
-                <button onClick={onClaim} disabled={busy}
-                  className="w-full text-[13px] font-semibold bg-blue-600 hover:bg-blue-700 disabled:opacity-60 text-white py-2.5 rounded-lg transition-colors inline-flex items-center justify-center gap-1.5">
-                  <Sparkles className="w-4 h-4" /> Ask for this job
-                </button>
-                <p className="text-[10px] text-ink-3 mt-1.5 text-center">
-                  The office picks who gets it{job.teammates?.length ? ` · you'd join ${job.teammates.join(', ')}` : ''}
-                </p>
-              </>
             )}
           </div>
         )

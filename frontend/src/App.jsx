@@ -260,6 +260,11 @@ export default function App() {
 
   if (isPublicRoute) {
     return (
+      /* Paper, always — see `.public-surface` in index.css. A customer or an
+         applicant opening a link must not inherit whatever theme the office
+         happens to be running, and on the dark theme they inherited white
+         ink onto the body's hardcoded white ground. */
+      <div className="public-surface">
       <Routes>
         <Route path="/quote/:token" element={<PublicQuote />} />
         <Route path="/pay/:token" element={<PublicPayment />} />
@@ -270,6 +275,7 @@ export default function App() {
         <Route path="/apply" element={<Apply />} />
         <Route path="*" element={<Navigate to="/dashboard" replace />} />
       </Routes>
+      </div>
     )
   }
 

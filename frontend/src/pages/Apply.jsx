@@ -195,7 +195,11 @@ export default function Apply() {
           link, never a lookup: this page must not be able to answer "is this
           email one of yours?". Placed high because the person who needs it
           arrives having been sent the apply link twice. */}
-      <p className="mt-5 text-[13px] text-ink-3">
+      {/* ink-2, not ink-3: at 13px the tertiary ink measures 3.37:1 on paper,
+          under the 4.5:1 minimum, and this is the line that stops an existing
+          cleaner filling the form in again. (The app-wide ink-3 ramp is a
+          design-system question and is left alone.) */}
+      <p className="mt-5 text-[13px] text-ink-2">
         Already cleaning with us?{' '}
         <a href="/login" className="text-ink underline underline-offset-2 hover:text-indigo-600">
           Sign in
