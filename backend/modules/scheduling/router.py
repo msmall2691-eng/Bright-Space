@@ -632,6 +632,26 @@ def strip_office_only_for_crew(payload, role):
 strip_rates_for_crew = strip_office_only_for_crew
 
 
+def timeline_visible_to(role) -> bool:
+    """A job's activity/message timeline is office-only.
+
+    BB-SEC-18. `strip_office_only_for_crew` closes the RATE/HELPER side door,
+    but the crew-reachable job endpoints (GET /api/jobs/{id}/details and GET
+    /api/jobs/{id}/timeline both allow `cleaner`) also emit a `timeline`, and it
+    was never stripped. That feed carries invoice totals — the office's charge,
+    which is its margin over a sub's rate — the customer's email address, the
+    SMS/email conversation body, and integration error detail. None of it is a
+    cleaner's to enumerate.
+
+    An empty timeline (not a 403) closes the side door the same way the rate
+    strip does: the endpoint stays reachable and its shape is unchanged, it just
+    carries nothing office-only. The crew app never reads these — CrewJobSheet
+    opens jobs through /api/crew/*, not the office /details — so nothing a
+    cleaner uses is removed.
+    """
+    return role != "cleaner"
+
+
 def job_to_dict(j: Job, client: Client = None, effective_date=None,
                 booking_event: ICalEvent = None, next_arrival: ICalEvent = None,
                 property_name: Optional[str] = None, lead_buffer_hours: float = 3.0,
@@ -3225,11 +3245,14 @@ def get_job_details(job_id: int, db: Session = Depends(get_db), org_id: int = De
              "created_at": inv.created_at.isoformat() if inv.created_at else None}
             for inv in invoices
         ],
+        # BB-SEC-18: office-only. Activity summaries carry invoice totals and
+        # customer email — a cleaner sees an empty timeline here and reads their
+        # own job history from the crew app instead.
         "timeline": [
             {"id": a.id, "activity_type": a.activity_type, "summary": a.summary, "actor": a.actor,
              "created_at": a.created_at.isoformat() if a.created_at else None}
             for a in timeline
-        ],
+        ] if timeline_visible_to(getattr(current_user, "role", None)) else [],
     }
 
 
@@ -3240,6 +3263,7 @@ def get_job_timeline(
     limit: int = 150,
     offset: int = 0,
     db: Session = Depends(get_db),
+    current_user=Depends(get_current_user),
     org_id: int = Depends(current_org_id),
 ):
     """Unified, chronological activity timeline for a job — Pillar 3 connective
@@ -3263,6 +3287,13 @@ def get_job_timeline(
     ).first()
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
+
+    # BB-SEC-18: this whole feed is office-only — it merges invoice milestones,
+    # integration error detail, and the customer's SMS/email conversation body.
+    # There is no crew-safe subset, so a cleaner gets the empty shape. The crew
+    # app reads its own job history from /api/crew/*, not this office endpoint.
+    if not timeline_visible_to(getattr(current_user, "role", None)):
+        return {"job_id": job_id, "total": 0, "limit": limit, "offset": offset, "items": []}
 
     items: list[dict] = []
 
@@ -4486,11 +4517,20 @@ def schedule_week(
             "response may still be truncated; investigate job volume for org_id=%s",
             MAX_PAGES, scheduled_date_from, scheduled_date_to, org_id,
         )
+    # BB-SEC-18: strip BEFORE deriving visits. strip_office_only_for_crew
+    # mutates the job dicts in place, but _job_as_visit does `{**job}`, which
+    # snapshots posted_rate/agreed_rate and helpers (names + phone numbers) at
+    # copy time. Building `visits` first therefore captured them BEFORE the
+    # strip ran — so a cleaner got a stripped `jobs` and a fully un-stripped
+    # `visits`, the exact side door the strip closes, reopened through the
+    # compat shim. Stripping first means the copies never see the fields.
+    role = getattr(current_user, "role", None)
+    stripped_jobs = strip_office_only_for_crew(jobs, role)
     return {
         # Visits are derived from jobs post-unification; the shape mirrors what
         # /api/visits used to emit so the FE fallback keeps rendering unchanged.
-        "visits": [_job_as_visit(j) for j in (jobs or [])],
-        "jobs": strip_office_only_for_crew(jobs, getattr(current_user, "role", None)),
+        "visits": [_job_as_visit(j) for j in (stripped_jobs or [])],
+        "jobs": stripped_jobs,
         "properties": _get_properties(db=db, org_id=org_id),
         # limit/offset are Query() defaults — pass explicitly. 50 matches the
         # standalone /api/clients default the page used before.

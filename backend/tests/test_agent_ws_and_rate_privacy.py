@@ -172,3 +172,88 @@ def test_stripping_leaves_the_rest_of_the_job_intact(made):
     assert body["title"] == "Clean"
     assert body["scheduled_date"]
     assert "open_for_claims" in body
+
+
+# ── BB-SEC-18: the side doors the rate strip left open ───────────────────────
+
+def _seed_activity(job_id, summary):
+    """A job-scoped Activity carrying office-only content (an invoice total)."""
+    from database.models import Activity
+    db = SessionLocal()
+    a = Activity(job_id=job_id, org_id=1, activity_type="invoice_paid",
+                 summary=summary, actor="admin")
+    db.add(a); db.commit(); aid = a.id; db.close()
+    return aid
+
+
+def _del_activity(aid):
+    from database.models import Activity
+    db = SessionLocal()
+    db.query(Activity).filter(Activity.id == aid).delete(synchronize_session=False)
+    db.commit(); db.close()
+
+
+def test_schedule_week_visits_are_stripped_for_a_cleaner(made):
+    """/api/schedule/week returns BOTH `jobs` and `visits`. `visits` is a
+    {**job} copy built BEFORE the in-place strip ran, so it carried the full
+    posted_rate/agreed_rate a cleaner is stripped from `jobs`."""
+    job = _mk_job(made, posted=180.0, agreed=205.0)
+    today = business_today().isoformat()
+    body = _as(_Role("cleaner", uid=9971, cleaner_id="CT-X")).get(
+        f"/api/schedule/week?scheduled_date_from={today}&scheduled_date_to={today}").json()
+
+    for r in body.get("jobs", []):
+        assert "posted_rate" not in r and "agreed_rate" not in r
+    mine = [v for v in body.get("visits", []) if job in (v.get("job_id"), v.get("id"))]
+    assert mine, "the seeded job should appear as a visit"
+    for v in mine:
+        assert "posted_rate" not in v, "visits[] leaked posted_rate to a cleaner"
+        assert "agreed_rate" not in v, "visits[] leaked agreed_rate to a cleaner"
+        assert "helpers" not in v
+
+
+def test_the_office_still_gets_rates_on_schedule_week_visits(made):
+    """The control: stripping visits for everyone would break the Schedule grid
+    the office prices from."""
+    job = _mk_job(made, posted=180.0, agreed=205.0)
+    today = business_today().isoformat()
+    body = _as(_Role("admin", uid=9972)).get(
+        f"/api/schedule/week?scheduled_date_from={today}&scheduled_date_to={today}").json()
+    mine = [v for v in body.get("visits", []) if job in (v.get("job_id"), v.get("id"))]
+    assert mine and mine[0]["posted_rate"] == 180.0 and mine[0]["agreed_rate"] == 205.0
+
+
+def test_job_details_timeline_is_empty_for_a_cleaner(made):
+    """The `timeline` on /api/jobs/{id}/details carries invoice totals — the
+    office's charge, its margin over a sub's rate. A cleaner gets none of it."""
+    job = _mk_job(made, posted=180.0)
+    aid = _seed_activity(job, "Invoice INV-9001 paid — $450.00")
+    try:
+        cleaner = _as(_Role("cleaner", uid=9973, cleaner_id="CT-X")).get(
+            f"/api/jobs/{job}/details").json()
+        assert cleaner["timeline"] == [], "office-only timeline leaked to a cleaner"
+        assert "450.00" not in repr(cleaner["timeline"])
+
+        office = _as(_Role("admin", uid=9974)).get(f"/api/jobs/{job}/details").json()
+        assert any("INV-9001" in (e.get("summary") or "") for e in office["timeline"]), \
+            "the office must still see the timeline"
+    finally:
+        _del_activity(aid)
+
+
+def test_the_unified_timeline_endpoint_is_empty_for_a_cleaner(made):
+    """/api/jobs/{id}/timeline merges invoice milestones, integration errors AND
+    the customer's SMS/email conversation. It is entirely office-only."""
+    job = _mk_job(made, posted=180.0)
+    aid = _seed_activity(job, "Invoice INV-9002 paid — $600.00")
+    try:
+        cleaner = _as(_Role("cleaner", uid=9975, cleaner_id="CT-X")).get(
+            f"/api/jobs/{job}/timeline").json()
+        assert cleaner["items"] == [], "office-only timeline leaked to a cleaner"
+        assert cleaner["total"] == 0
+
+        office = _as(_Role("admin", uid=9976)).get(f"/api/jobs/{job}/timeline").json()
+        assert office["total"] >= 1
+        assert any("INV-9002" in (i.get("label") or "") for i in office["items"])
+    finally:
+        _del_activity(aid)
