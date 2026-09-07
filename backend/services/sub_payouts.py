@@ -12,7 +12,7 @@ gets chosen. The rail is deliberately an interface with one boring
 implementation (manual/CSV), because the record of what was owed is the part
 that must not be rewritten when the rail changes — and because a year-to-date
 1099 total should be one query that starts accruing today, not archaeology next
-January. The $600 threshold arrives mid-year.
+January. The reporting threshold arrives mid-year.
 
 IDEMPOTENCE IS THE SAFETY PROPERTY HERE. `generate` sits next to real money and
 will be pressed twice — the same period re-run after a correction, a double tap
@@ -260,6 +260,7 @@ def year_to_date(db: Session, org_id: int, year: Optional[int] = None) -> dict:
     accountant's, and this is here so nobody is surprised by it in January.
     """
     year = year or business_today().year
+    from services.bench import form_1099_threshold
     rows = (db.query(SubPayout)
             .filter(_org_scope(SubPayout, org_id),
                     SubPayout.status.in_(LIVE_STATUSES),
@@ -289,7 +290,18 @@ def year_to_date(db: Session, org_id: int, year: Optional[int] = None) -> dict:
         for k in ("total", "paid", "outstanding"):
             e[k] = round(e[k], 2)
         # 1099-NEC reporting threshold. Advisory only — see the docstring.
-        e["over_1099_threshold"] = e["total"] >= 600.0
+        #
+        # READ FROM THE YEAR, NOT A LITERAL. This was `>= 600.0`, which was
+        # right until the One Big Beautiful Bill Act raised section 6041(a) to
+        # $2,000 for payments made after 31 December 2025. `bench.py` already
+        # had the year-aware helper; this second call site was missed when it
+        # was written, so the bench roster and the payout ledger have been
+        # answering the same question differently — and this one has been
+        # flagging subs for 2026 who owe no form at all.
+        #
+        # Measured against the year the payouts are FOR, which is the `year`
+        # this function was asked about, not today's.
+        e["over_1099_threshold"] = e["total"] >= form_1099_threshold(year)
         out.append(e)
     out.sort(key=lambda r: -r["total"])
     return {
