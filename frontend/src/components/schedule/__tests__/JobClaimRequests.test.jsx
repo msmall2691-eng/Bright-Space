@@ -16,6 +16,10 @@ const toastSuccess = vi.fn()
 vi.mock('../../../utils/toastBus', () => ({
   toast: { success: (...a) => toastSuccess(...a), error: (...a) => toastError(...a), info: vi.fn() },
 }))
+// Awarding now asks for confirmation. Default it to "yes" so the existing
+// decision tests still exercise the endpoint; individual tests override it.
+const confirmDialog = vi.fn(() => Promise.resolve(true))
+vi.mock('../../../utils/confirmBus', () => ({ confirmDialog: (...a) => confirmDialog(...a) }))
 
 import { get, post } from '../../../api'
 import JobClaimRequests from '../JobClaimRequests'
@@ -35,7 +39,10 @@ const mount = (payload = REQS, props = {}) => {
   return render(<JobClaimRequests jobId={5} postedRate={payload.posted_rate} {...props} />)
 }
 
-beforeEach(() => { get.mockReset(); post.mockReset(); toastError.mockReset(); toastSuccess.mockReset() })
+beforeEach(() => {
+  get.mockReset(); post.mockReset(); toastError.mockReset(); toastSuccess.mockReset()
+  confirmDialog.mockReset(); confirmDialog.mockResolvedValue(true)
+})
 afterEach(cleanup)
 
 it('shows a counter-offer against the asking price, not as a bare number', async () => {
@@ -61,6 +68,29 @@ it('approves through the endpoint and tells the parent the job changed', async (
     '/api/jobs/5/claim-requests/2/approve', {}))
   await waitFor(() => expect(onDecided).toHaveBeenCalled())
   expect(toastSuccess).toHaveBeenCalledWith(expect.stringContaining('$95'))
+})
+
+it('confirms before awarding, and cancelling awards nothing', async () => {
+  // Awarding assigns the job, fixes the rate and turns down everyone else —
+  // irreversible from here, so it asks first. Say no and the money doesn't move.
+  confirmDialog.mockResolvedValue(false)
+  mount()
+  await screen.findByText('Rob')
+  fireEvent.click(screen.getAllByRole('button', { name: /Give it to them/ })[1])
+  await waitFor(() => expect(confirmDialog).toHaveBeenCalled())
+  // The prompt names who and how much, and warns about the others.
+  expect(confirmDialog.mock.calls[0][0]).toMatch(/Rob/)
+  expect(confirmDialog.mock.calls[0][0]).toMatch(/\$95/)
+  expect(post).not.toHaveBeenCalled()
+})
+
+it('shows the margin at THIS person’s countered price, not the asking rate', async () => {
+  // Rob countered $95 on an $80 job. The number that matters is what $95
+  // leaves, so the margin fetch is priced at 95 — not the office's 80.
+  mount()
+  await screen.findByText('Rob')
+  await waitFor(() => expect(get).toHaveBeenCalledWith(
+    expect.stringMatching(/\/api\/jobs\/5\/margin\?pay=95\b/)))
 })
 
 it('declining one person does not disturb the rest of the job', async () => {

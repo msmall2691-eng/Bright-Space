@@ -25,6 +25,8 @@ import { useCallback, useEffect, useState } from 'react'
 import { Check, X } from 'lucide-react'
 import { get, post } from '../../api'
 import { toast } from '../../utils/toastBus'
+import { confirmDialog } from '../../utils/confirmBus'
+import JobMargin from './JobMargin'
 
 const money = (n) => n == null || n === '' ? null :
   `$${Number(n).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`
@@ -51,6 +53,19 @@ export default function JobClaimRequests({ jobId, postedRate, onDecided }) {
   useEffect(() => { load() }, [load])
 
   const decide = async (req, action) => {
+    if (action === 'approve') {
+      // Awarding is irreversible from here — it assigns the job, fixes the
+      // rate, and turns down everyone else. The application-approval has a
+      // confirm; the one that commits money didn't. It does now.
+      const rate = req.requested_rate == null ? postedRate : req.requested_rate
+      const others = rows.filter(r => r.status === 'pending' && r.id !== req.id).length
+      const ok = await confirmDialog(
+        `Give ${req.cleaner_name} this job${rate != null ? ` at ${money(rate)}` : ''}?`
+        + (others ? `\n\nThis turns down ${others} other ${others === 1 ? 'person' : 'people'} who asked.` : '')
+        + '\n\nIt assigns the job and can’t be undone here.',
+        { title: 'Give it to them', confirmLabel: 'Give it to them' })
+      if (!ok) return
+    }
     setBusyId(req.id)
     try {
       const r = await post(`/api/jobs/${jobId}/claim-requests/${req.id}/${action}`, {})
@@ -171,6 +186,14 @@ export default function JobClaimRequests({ jobId, postedRate, onDecided }) {
                       <span>{note}</span>
                     </p>
                   ))}
+                  {/* The margin at THIS person's price, not the office's asking
+                      rate. When someone counters $95 on an $80 job, the number
+                      that matters is what $95 leaves — the old margin (keyed to
+                      the asking rate) answered a question nobody was deciding.
+                      Only on rows still to be decided, and only when priced. */}
+                  {req.status === 'pending' && wants != null && (
+                    <JobMargin jobId={jobId} pay={wants} />
+                  )}
                   {req.status !== 'pending' && (
                     <div className="text-[11px] text-ink-3 mt-1">{state.label}</div>
                   )}
