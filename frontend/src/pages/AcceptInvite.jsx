@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react'
 import { useSearchParams } from 'react-router-dom'
-import { Lock, AlertCircle, Zap, Loader, Eye, EyeOff, CheckCircle2 } from 'lucide-react'
+import { Lock, Zap, Loader, Eye, EyeOff, CheckCircle2 } from 'lucide-react'
 import { post, setJWT } from '../api'
+import { ErrorNote } from '../components/ui'
 
 /**
  * AcceptInvite — the set-your-password landing at /accept-invite?token=…
@@ -73,16 +74,11 @@ export default function AcceptInvite() {
             <>
               <h1 className="text-3xl font-bold text-ink text-center mb-2">Set your password</h1>
               <p className="text-center text-ink-3 mb-8">
-                Welcome to the crew at The Maine Cleaning Co. Choose a password to
-                see your schedule and clock in from your phone.
+                Welcome to The Maine Cleaning Co. Choose a password to sign in
+                and see your work from your phone.
               </p>
 
-              {error && (
-                <div className="mb-6 p-4 rounded-lg bg-red-50 border border-red-200 flex items-start gap-3">
-                  <AlertCircle className="w-5 h-5 text-red-600 flex-shrink-0 mt-0.5" />
-                  <p className="text-sm text-red-700 font-medium">{error}</p>
-                </div>
-              )}
+              {error && <div className="mb-6"><ErrorNote>{error}</ErrorNote></div>}
 
               <form onSubmit={submit} className="space-y-4">
                 <div>

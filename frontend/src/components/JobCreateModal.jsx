@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { X, Calendar, Clock, MapPin, AlertCircle, Repeat as RepeatIcon, Search, Loader, Check, Users } from 'lucide-react'
+import { X, Calendar, Clock, MapPin, Repeat as RepeatIcon, Search, Loader, Check, Users } from 'lucide-react'
 import { get, post } from '../api'
 import { toast } from '../utils/toastBus'
 import { parseSimilarSeriesConflict } from '../utils/recurringDuplicates'
@@ -8,6 +8,7 @@ import { toLocalYMD } from '../utils/format'
 import { useEmployees } from '../hooks/useEmployees'
 import { normalizeEmployee } from '../utils/employees'
 import EndsPicker from './schedule/EndsPicker'
+import { ErrorNote } from './ui'
 
 // Where an in-progress booking is parked if the session expires mid-submit, so
 // it can be restored after re-login instead of being silently lost.
@@ -947,11 +948,7 @@ export default function JobCreateModal({
             <span className={`transition-transform inline-block ${showMore ? 'rotate-180' : ''}`}>▾</span>
           </button>
 
-          {error && (
-            <div className="flex items-start gap-2 bg-red-50 border border-red-200 text-red-700 dark:bg-red-950 dark:border-red-800 dark:text-red-300 rounded-lg px-3 py-2.5 text-xs">
-              <AlertCircle className="w-3.5 h-3.5 mt-0.5 shrink-0" /> {error}
-            </div>
-          )}
+          {error && <ErrorNote>{error}</ErrorNote>}
           <ConflictPrompt conflict={conflict} saving={saving}
             onCancel={() => setConflict(null)} onOverride={() => save(true)} />
           <DuplicateSeriesPrompt matches={dupMatches} saving={saving}
