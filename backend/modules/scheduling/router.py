@@ -1223,6 +1223,17 @@ def create_job(data: JobCreate, db: Session = Depends(get_db), org_id: int = Dep
         source_quote.status = "converted"
         source_quote.converted_at = datetime.now()
         source_quote.updated_at = datetime.now()
+        # BB-PIPE-01: a booked job means the deal is WON — advance the linked
+        # opportunity too. create_job is the SCHEDULED-convert and public
+        # SELF-SCHEDULE quote→job path; both reached here, flipped the quote to
+        # "converted", and returned before any advance_for_quote, so the
+        # opportunity sat in its old stage — the deal was done but never showed
+        # as won on the pipeline. The unscheduled direct-insert path
+        # (quoting._convert_quote_to_job) already advances the opp; this brings
+        # the create_job paths to parity. advance_opportunity is idempotent and
+        # never regresses, so a quote whose opp is already won is a no-op.
+        from utils.opportunity_helper import advance_for_quote
+        advance_for_quote(db, source_quote, "won", close_date=str(business_today()))
         db.commit()
 
     # Log to unified activity timeline
