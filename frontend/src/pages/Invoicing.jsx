@@ -26,7 +26,7 @@ export default function Invoicing() {
   } = useInvoicing({ statusFilter, search })
   const [panel, setPanel]         = useState(null)   // null | 'edit' | 'send'
   const [selected, setSelected]   = useState(null)
-  const [form, setForm]           = useState({ client_id: '', items: [{ ...EMPTY_ITEM }], tax_rate: 0, due_date: '', notes: '', custom_fields: {} })
+  const [form, setForm]           = useState({ client_id: '', items: [{ ...EMPTY_ITEM }], tax_rate: 0, discount: 0, due_date: '', notes: '', custom_fields: {} })
   // Notes + custom fields fold behind this — the everyday invoice is client +
   // line items + total.
   const [showInvAdvanced, setShowInvAdvanced] = useState(false)
@@ -52,7 +52,7 @@ export default function Invoicing() {
 
   const openEdit = (inv) => {
     setSelected(inv)
-    setForm({ client_id: inv.client_id, items: inv.items, tax_rate: inv.tax_rate, due_date: inv.due_date || '', notes: inv.notes || '', custom_fields: inv.custom_fields || {} })
+    setForm({ client_id: inv.client_id, items: inv.items, tax_rate: inv.tax_rate, discount: inv.discount || 0, due_date: inv.due_date || '', notes: inv.notes || '', custom_fields: inv.custom_fields || {} })
     setShowInvAdvanced(Boolean(inv.notes) || Object.keys(inv.custom_fields || {}).length > 0)
     setPanel('edit')
   }
@@ -66,7 +66,7 @@ export default function Invoicing() {
 
   const openNew = (clientId = '') => {
     setSelected(null)
-    setForm({ client_id: clientId || '', items: [{ ...EMPTY_ITEM }], tax_rate: 0, due_date: '', notes: '', custom_fields: {} })
+    setForm({ client_id: clientId || '', items: [{ ...EMPTY_ITEM }], tax_rate: 0, discount: 0, due_date: '', notes: '', custom_fields: {} })
     setShowInvAdvanced(false)
     setPanel('edit')
   }

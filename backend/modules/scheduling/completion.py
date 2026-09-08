@@ -55,7 +55,12 @@ def auto_create_draft_invoice(db: Session, job) -> None:
         # falling back to 5.5% billed tax to customers who owe none.
         tax_rate = float(quote.tax_rate) if (quote and quote.tax_rate is not None) else 5.5
         tax = round(subtotal * (tax_rate / 100), 2)
-        total = round(subtotal + tax, 2)
+        # BB-INV-01: carry the quote's discount onto the invoice. It was dropped
+        # here — a customer promised money off the quote was billed the full
+        # amount because the auto-invoice recomputed total = subtotal + tax with
+        # no discount term. Flat $ off, after tax, matching the quote's own math.
+        discount = float(quote.discount or 0) if quote else 0.0
+        total = round(subtotal + tax - discount, 2)
         # Net 14 counted in business days-of-the-calendar, not UTC ones: from
         # 8pm here the UTC date is already tomorrow, so a job closed in the
         # evening quietly got net-15 while the same job closed at 2pm got
@@ -71,6 +76,7 @@ def auto_create_draft_invoice(db: Session, job) -> None:
             subtotal=round(subtotal, 2),
             tax_rate=tax_rate,
             tax=tax,
+            discount=discount,
             total=total,
             status="draft",
             due_date=due_date,

@@ -45,8 +45,11 @@ export const lbl = 'block text-[10px] font-semibold uppercase tracking-widest te
  *  don't NaN the total. */
 export const sub = (items) => items.reduce((s, i) => s + (parseFloat(i.qty) || 0) * (parseFloat(i.unit_price) || 0), 0)
 
-/** Grand total including tax as a percentage. */
-export const totalAmt = (items, tax) => sub(items) * (1 + (parseFloat(tax) || 0) / 100)
+/** Grand total: subtotal + tax (a percentage), less a flat dollar discount.
+ *  Discount is subtracted AFTER tax, matching the backend's calc_totals and the
+ *  quote's own math (BB-INV-01). */
+export const totalAmt = (items, tax, discount = 0) =>
+  sub(items) * (1 + (parseFloat(tax) || 0) / 100) - (parseFloat(discount) || 0)
 
 /** Days past the due date for an unpaid invoice; null if paid or
  *  the invoice isn't overdue yet (so callers can tri-state on

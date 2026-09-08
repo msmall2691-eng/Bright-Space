@@ -277,6 +277,17 @@ def build_invoice_email(invoice: dict, client_name: str, company_phone: str = ""
           <td style="padding:8px;text-align:right;color:#6b7280;">${float(invoice.get('tax', 0)):.2f}</td>
         </tr>"""
 
+    # BB-INV-01: show the discount as its own line when there is one, so the
+    # customer sees why Total Due is below Subtotal + Tax rather than reading a
+    # smaller number as a mistake. Hidden entirely at $0 (the common case).
+    discount_row = ""
+    if invoice.get("discount", 0) and float(invoice.get("discount", 0)) > 0:
+        discount_row = f"""
+        <tr>
+          <td colspan="3" style="padding:8px;text-align:right;color:#16a34a;font-size:14px;">Discount</td>
+          <td style="padding:8px;text-align:right;color:#16a34a;">-${float(invoice.get('discount', 0)):.2f}</td>
+        </tr>"""
+
     header_color = "#dc2626" if status == "overdue" else "#1d4ed8"
     label = "OVERDUE INVOICE" if status == "overdue" else "Invoice"
 
@@ -327,6 +338,7 @@ def build_invoice_email(invoice: dict, client_name: str, company_phone: str = ""
           <td style="padding:8px;text-align:right;color:#6b7280;">${float(invoice.get('subtotal', 0)):.2f}</td>
         </tr>
         {tax_row}
+        {discount_row}
         <tr style="background:#f0fdf4;border-radius:8px;">
           <td colspan="3" style="padding:12px 8px;text-align:right;font-size:18px;font-weight:700;color:#111;">Total Due</td>
           <td style="padding:12px 8px;text-align:right;font-size:20px;font-weight:700;color:#16a34a;">${float(invoice.get('total', 0)):.2f}</td>
@@ -366,6 +378,7 @@ Hi {client_name},
 
 Subtotal: ${float(invoice.get('subtotal',0)):.2f}
 {f"Tax: ${float(invoice.get('tax',0)):.2f}" if invoice.get('tax') else ''}
+{f"Discount: -${float(invoice.get('discount',0)):.2f}" if invoice.get('discount') else ''}
 TOTAL DUE: ${float(invoice.get('total',0)):.2f}
 
 Due by: {due_date}

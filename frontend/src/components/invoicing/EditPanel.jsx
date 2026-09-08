@@ -110,7 +110,7 @@ export function EditPanel({
           </div>
         </div>
 
-        {/* Tax + due date */}
+        {/* Tax + discount */}
         <div className="grid grid-cols-2 gap-3">
           <div>
             <label className={lbl}>Tax %</label>
@@ -118,10 +118,18 @@ export function EditPanel({
               className={inp + ' bg-bg'} />
           </div>
           <div>
-            <label className={lbl}>Due Date</label>
-            <input type="date" value={form.due_date} onChange={e => setForm(f => ({ ...f, due_date: e.target.value }))}
+            <label className={lbl}>Discount $</label>
+            <input type="number" value={form.discount} onChange={e => setForm(f => ({ ...f, discount: e.target.value }))}
+              onFocus={e => e.target.select()}
               className={inp + ' bg-bg'} />
           </div>
+        </div>
+
+        {/* Due date */}
+        <div>
+          <label className={lbl}>Due Date</label>
+          <input type="date" value={form.due_date} onChange={e => setForm(f => ({ ...f, due_date: e.target.value }))}
+            className={inp + ' bg-bg'} />
         </div>
 
         {/* Notes + custom fields — folded away from the everyday path. */}
@@ -157,9 +165,15 @@ export function EditPanel({
             <span className="text-xs text-ink-3">Tax ({form.tax_rate || 0}%)</span>
             <span className="text-xs text-ink-3">${(sub(form.items) * (parseFloat(form.tax_rate) || 0) / 100).toFixed(2)}</span>
           </div>
+          {(parseFloat(form.discount) || 0) > 0 && (
+            <div className="flex justify-between px-4 py-2.5 border-b border-hairline">
+              <span className="text-xs text-ink-3">Discount</span>
+              <span className="text-xs text-emerald-400">−${(parseFloat(form.discount) || 0).toFixed(2)}</span>
+            </div>
+          )}
           <div className="flex justify-between px-4 py-3">
             <span className="text-sm font-semibold text-ink">Total</span>
-            <span className="text-sm font-semibold text-ink">${totalAmt(form.items, form.tax_rate).toFixed(2)}</span>
+            <span className="text-sm font-semibold text-ink">${totalAmt(form.items, form.tax_rate, form.discount).toFixed(2)}</span>
           </div>
         </div>
       </div>

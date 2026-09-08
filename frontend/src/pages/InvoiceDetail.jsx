@@ -233,6 +233,9 @@ export default function InvoiceDetail() {
               <div className="border-t border-hairline px-3 py-2 space-y-1 text-[13px]">
                 <div className="flex justify-between text-ink-2"><span>Subtotal</span><span>{money(inv.subtotal)}</span></div>
                 <div className="flex justify-between text-ink-2"><span>Tax{inv.tax_rate ? ` (${inv.tax_rate}%)` : ''}</span><span>{money(inv.tax)}</span></div>
+                {inv.discount > 0 && (
+                  <div className="flex justify-between text-emerald-400"><span>Discount</span><span>−{money(inv.discount)}</span></div>
+                )}
                 <div className="flex justify-between font-semibold text-ink pt-1 border-t border-hairline"><span>Total</span><span>{money(inv.total)}</span></div>
               </div>
             </div>
