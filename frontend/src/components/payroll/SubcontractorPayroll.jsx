@@ -29,6 +29,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Download, Send, Check, Ban, RefreshCw } from 'lucide-react'
 import { get, post } from '../../api'
 import { toast } from '../../utils/toastBus'
+import { confirmDialog } from '../../utils/confirmBus'
 
 const money = (n) => `$${(Number(n) || 0).toFixed(2)}`
 
@@ -206,24 +207,47 @@ export default function SubcontractorPayroll({ startDate, endDate, isAdmin }) {
     return r
   })
 
-  const send = () => run('send', async () => {
-    const ids = pickedDue.map(p => p.id)
-    const r = await post('/api/payroll/subcontractors/payouts/send', { payout_ids: ids })
-    if (r.csv) downloadCsv(r.csv, `subcontractor_payouts_${startDate}_to_${endDate}.csv`)
-    setReport(r.settled ? r : null)
-    if (r.settled) {
-      // PAID, and it means it — the money left the business. The word is
-      // earned by the rail, not by the button.
-      toast.success(r.count
-        ? `Paid ${r.count} · ${money(r.total)}`
-        : 'Nothing went out — see the reasons below')
-    } else {
-      // SENT, deliberately — the rail handed over a list, it did not pay
-      // anyone. "Mark paid" is where a person says the money left.
-      toast.success(`${r.count} marked sent · ${money(r.total)} · CSV downloaded`)
-    }
-    return r
-  })
+  const send = async () => {
+    const n = pickedDue.length
+    if (!n) return
+    // The one action on this screen that moves money. A settling rail (Stripe)
+    // marks these PAID and the money leaves the business — irreversible from
+    // here — so it asks first, naming who and how much. The manual rail only
+    // hands over a CSV and marks them SENT; the confirm there is lighter, but a
+    // batch state change on a page full of money still earns a beat.
+    const total = pickedDue.reduce((s, p) => s + (p.amount || 0), 0)
+    const settles = data.rail?.settles
+    const railLabel = data.rails?.find(o => o.name === data.rail?.name)?.label
+      || data.rail?.name || 'the current rail'
+    const people = `${n} ${n === 1 ? 'person' : 'people'}`
+    const ok = await confirmDialog(
+      settles
+        ? `Pay ${people} ${money(total)} through ${railLabel}.\n\n`
+          + 'This moves the money out of the business now and can’t be undone here.'
+        : `Mark ${n} payout${n === 1 ? '' : 's'} as sent (${money(total)}) and `
+          + `download the CSV for ${railLabel}?`,
+      { title: settles ? 'Pay them now' : 'Send the batch',
+        confirmLabel: settles ? 'Pay them' : 'Send', danger: settles })
+    if (!ok) return
+    return run('send', async () => {
+      const ids = pickedDue.map(p => p.id)
+      const r = await post('/api/payroll/subcontractors/payouts/send', { payout_ids: ids })
+      if (r.csv) downloadCsv(r.csv, `subcontractor_payouts_${startDate}_to_${endDate}.csv`)
+      setReport(r.settled ? r : null)
+      if (r.settled) {
+        // PAID, and it means it — the money left the business. The word is
+        // earned by the rail, not by the button.
+        toast.success(r.count
+          ? `Paid ${r.count} · ${money(r.total)}`
+          : 'Nothing went out — see the reasons below')
+      } else {
+        // SENT, deliberately — the rail handed over a list, it did not pay
+        // anyone. "Mark paid" is where a person says the money left.
+        toast.success(`${r.count} marked sent · ${money(r.total)} · CSV downloaded`)
+      }
+      return r
+    })
+  }
 
   const chooseRail = (name) => run('rail', async () => {
     const r = await post('/api/payroll/subcontractors/rail', { name })

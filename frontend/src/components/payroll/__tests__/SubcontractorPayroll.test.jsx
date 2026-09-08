@@ -22,6 +22,11 @@ vi.mock('../../../api', () => ({ get: vi.fn(), post: vi.fn() }))
 vi.mock('../../../utils/toastBus', () => ({
   toast: { success: vi.fn(), error: vi.fn(), info: vi.fn() },
 }))
+// Send/Pay now confirms first — it's the one action that moves money. Default
+// the dialog to "yes" so the existing decision tests still exercise the POST;
+// individual tests override it to check the prompt and the cancel path.
+const confirmDialog = vi.fn(() => Promise.resolve(true))
+vi.mock('../../../utils/confirmBus', () => ({ confirmDialog: (...a) => confirmDialog(...a) }))
 
 import { get, post } from '../../../api'
 import SubcontractorPayroll from '../SubcontractorPayroll'
@@ -51,7 +56,10 @@ const STRIPE = {
           detail: '$1,000.00 available to send' },
 }
 
-beforeEach(() => { get.mockReset(); post.mockReset() })
+beforeEach(() => {
+  get.mockReset(); post.mockReset()
+  confirmDialog.mockReset(); confirmDialog.mockResolvedValue(true)
+})
 afterEach(cleanup)
 
 async function show(over = {}) {
@@ -157,6 +165,39 @@ it('says nothing about a manual send, which cannot half-work', async () => {
   await waitFor(() => expect(post).toHaveBeenCalled())
   expect(screen.queryByText('Didn’t go out')).toBeNull()
   URL.createObjectURL = click
+})
+
+// ── The one action that moves money asks first ──────────────────────────────
+
+it('confirms before a settling rail pays, naming who and how much', async () => {
+  // Paying through Stripe marks these PAID and the money leaves the business —
+  // irreversible from here. It didn't ask before; it does now.
+  await show(STRIPE)
+  selectTheRow()
+  fireEvent.click(screen.getByRole('button', { name: /^Pay 1/ }))
+  await waitFor(() => expect(confirmDialog).toHaveBeenCalled())
+  const msg = confirmDialog.mock.calls[0][0]
+  expect(msg).toMatch(/\$140\.00/)
+  expect(msg).toMatch(/can’t be undone/)
+})
+
+it('does not move the money when the confirm is cancelled', async () => {
+  confirmDialog.mockResolvedValue(false)
+  await show(STRIPE)
+  selectTheRow()
+  fireEvent.click(screen.getByRole('button', { name: /^Pay 1/ }))
+  await waitFor(() => expect(confirmDialog).toHaveBeenCalled())
+  expect(post).not.toHaveBeenCalled()
+})
+
+it('confirms a manual send too, but as a lighter question', async () => {
+  await show()                       // manual rail — settles: false
+  selectTheRow()
+  fireEvent.click(screen.getByRole('button', { name: /^Send 1/ }))
+  await waitFor(() => expect(confirmDialog).toHaveBeenCalled())
+  const msg = confirmDialog.mock.calls[0][0]
+  expect(msg).toMatch(/marked? as sent|marked sent|as sent/i)
+  expect(msg).not.toMatch(/can’t be undone/)   // no money moves on the CSV rail
 })
 
 // ── Who can actually receive ────────────────────────────────────────────────
