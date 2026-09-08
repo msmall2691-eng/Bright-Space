@@ -30,7 +30,7 @@ from utils.dates import business_date
 from sqlalchemy import or_
 from sqlalchemy.orm import Session, joinedload
 
-from database.models import Job, ProposedAction
+from database.models import Job, JobResponse, ProposedAction
 from services.proposals import create_proposal
 
 logger = logging.getLogger(__name__)
@@ -60,13 +60,24 @@ def _horizon(now: datetime, hours: int) -> tuple:
 
 def find_uncovered(db: Session, *, hours: int, now: datetime | None = None,
                    org_id: int | None = None) -> list[Job]:
-    """Scheduled jobs inside the window with nobody assigned and not already
-    open to the crew.
+    """Scheduled jobs inside the window that nobody is actually going to —
+    either nobody is assigned, or everybody assigned has DECLINED — and that
+    are not already open to the crew.
 
     `cleaner_ids` is a JSON list column, so "is it empty" can't be a reliable
     SQL predicate across SQLite and Postgres — the date/status/flag filters run
-    in SQL and the emptiness check runs in Python over what's left, which for a
-    window measured in days is a handful of rows."""
+    in SQL and the coverage check runs in Python over what's left, which for a
+    window measured in days is a handful of rows.
+
+    BB-CREW-01: a decline is a STATUS, not a schedule write — the crew's
+    `/jobs/{id}/respond` records a JobResponse and deliberately leaves
+    cleaner_ids alone, because the office keeps schedule authority and decides
+    the reassignment (see modules/crew/router.py). So a job every assigned
+    cleaner has declined still has a non-empty cleaner_ids and used to read as
+    covered here — the office got one push at decline time and then nothing
+    re-surfaced it. Now a job whose every assigned cleaner has declined counts
+    as uncovered, so the standing rule re-offers it (it only OPENS the job to
+    the bench — never assigns — so Rule 0 is intact)."""
     now = now or datetime.now(timezone.utc)
     start, end = _horizon(now, hours)
     q = (db.query(Job).options(joinedload(Job.client), joinedload(Job.property))
@@ -78,7 +89,26 @@ def find_uncovered(db: Session, *, hours: int, now: datetime | None = None,
     if org_id is not None:
         q = q.filter(or_(Job.org_id == org_id, Job.org_id.is_(None)))
     rows = q.order_by(Job.scheduled_date.asc()).limit(200).all()
-    return [j for j in rows if not (j.cleaner_ids or [])]
+
+    # Which assigned cleaners have declined, per job — batch-loaded to avoid an
+    # N+1 over the (few) candidate rows.
+    job_ids = [j.id for j in rows]
+    declined_by_job: dict[int, set] = {}
+    if job_ids:
+        for r in (db.query(JobResponse)
+                  .filter(JobResponse.job_id.in_(job_ids),
+                          JobResponse.response == "declined").all()):
+            declined_by_job.setdefault(r.job_id, set()).add(str(r.cleaner_id))
+
+    def _uncovered(j: Job) -> bool:
+        cids = [str(c) for c in (j.cleaner_ids or [])]
+        if not cids:
+            return True
+        # Covered unless EVERY assigned cleaner has declined — one cleaner who
+        # accepted or simply hasn't answered yet still counts as going.
+        return all(c in declined_by_job.get(j.id, ()) for c in cids)
+
+    return [j for j in rows if _uncovered(j)]
 
 
 def _where(job: Job) -> str:
