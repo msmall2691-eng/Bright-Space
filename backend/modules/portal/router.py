@@ -20,7 +20,9 @@ Security model / why this is safe:
     have no staff API key); the per-endpoint portal dependency here is the real
     gate on the data routes.
 """
+import hashlib
 import logging
+import secrets
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
@@ -29,12 +31,13 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from pydantic import BaseModel
 from sqlalchemy import func, or_
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, joinedload
 
 from auth_jwt import SECRET_KEY, ALGORITHM
 from config import app_base_url
 from database.db import get_db
-from database.models import Client, Job, Quote, Invoice
+from database.models import Client, Job, Quote, Invoice, UsedPortalMagicLink
 from ratelimit import rate_limit
 from services import crew_intro
 from utils.dates import business_today
@@ -55,19 +58,79 @@ def _make_token(email: str, typ: str, ttl: timedelta) -> str:
         "typ": typ,
         "exp": datetime.now(timezone.utc) + ttl,
     }
+    # A magic link must be single-use (BB-SEC-21). The jti is the id the
+    # redemption ledger records; a session token deliberately gets none, because
+    # a session is *meant* to be reused for its whole 14-day life.
+    if typ == "portal_magic":
+        payload["jti"] = secrets.token_urlsafe(16)
     return jwt.encode(payload, SECRET_KEY, algorithm=ALGORITHM)
 
 
-def _read_token(token: str, expected_typ: str) -> Optional[str]:
-    """Return the email a valid token of the expected type carries, else None."""
+def _decode(token: str, expected_typ: str) -> Optional[dict]:
+    """Return the full payload of a valid token of the expected type, else None."""
     try:
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
     except jwt.InvalidTokenError:
         return None
     if payload.get("typ") != expected_typ:
         return None
+    return payload
+
+
+def _read_token(token: str, expected_typ: str) -> Optional[str]:
+    """Return the email a valid token of the expected type carries, else None."""
+    payload = _decode(token, expected_typ)
+    if not payload:
+        return None
     email = (payload.get("email") or "").strip().lower()
     return email or None
+
+
+def _consume_magic_link(db: Session, payload: dict, token: str) -> bool:
+    """Record this magic link as used, returning True only on its FIRST redemption.
+
+    Single-use is enforced by the primary key of used_portal_magic_links, not by
+    a read-then-write: the INSERT is the lock, so two clicks racing on the same
+    link (a real double-tap, or a replayed leaked link hitting at once) both try
+    to write the same id and exactly one wins. The loser trips the unique
+    violation and gets False — refused, not a second session.
+
+    The id is the token's `jti`; a link minted before jti shipped has none, so
+    it falls back to a hash of the token itself. Either way one opaque id per
+    link, so even in-flight legacy links are single-use through the deploy.
+    """
+    key = payload.get("jti") or hashlib.sha256((token or "").encode()).hexdigest()
+    exp = payload.get("exp")
+    expires_at = (datetime.fromtimestamp(exp, tz=timezone.utc)
+                  if isinstance(exp, (int, float)) else None)
+    row = UsedPortalMagicLink(jti=key,
+                              used_at=datetime.now(timezone.utc),
+                              expires_at=expires_at)
+    try:
+        with db.begin_nested():          # SAVEPOINT: a collision unwinds only this
+            db.add(row)
+        db.commit()
+        return True
+    except IntegrityError:
+        # Already redeemed — the link was used once and is now spent.
+        return False
+
+
+def _prune_used_links(db: Session) -> None:
+    """Best-effort delete of ledger rows whose token could no longer be valid.
+
+    A spent link past its own expiry can't be replayed anyway, so its row is
+    dead weight. Pruned opportunistically here rather than on a background tick
+    (scheduling-invariants R1) — sign-ins are low-volume, so this stays cheap.
+    Never allowed to break a sign-in: any failure is swallowed."""
+    try:
+        db.query(UsedPortalMagicLink).filter(
+            UsedPortalMagicLink.expires_at.isnot(None),
+            UsedPortalMagicLink.expires_at < datetime.now(timezone.utc),
+        ).delete(synchronize_session=False)
+        db.commit()
+    except Exception:
+        db.rollback()
 
 
 # ── Email → the customer's own records ──────────────────────────────────────
@@ -152,14 +215,25 @@ class VerifyRequest(BaseModel):
 
 @router.post("/verify", dependencies=[Depends(rate_limit(20, 900, "portal-verify"))])
 def verify(body: VerifyRequest, db: Session = Depends(get_db)):
-    """Exchange a valid magic-link token for a portal session token."""
-    email = _read_token(body.token or "", "portal_magic")
+    """Exchange a valid, unused magic-link token for a portal session token.
+
+    The exchange is SINGLE-USE (BB-SEC-21): the link is spent the first time it
+    is redeemed, so a leaked or replayed link cannot mint a second session."""
+    payload = _decode(body.token or "", "portal_magic")
+    email = (payload.get("email") or "").strip().lower() if payload else ""
     if not email:
         raise HTTPException(status_code=400, detail="This sign-in link is invalid or expired.")
     clients = _clients_for_email(db, email)
     if not clients:
         # The client was removed between link issue and click.
         raise HTTPException(status_code=400, detail="We couldn't find your account.")
+    # Spend the link. First redemption wins; a replay (or a second click) loses
+    # the race on the primary key and is refused rather than handed a session.
+    if not _consume_magic_link(db, payload, body.token or ""):
+        raise HTTPException(
+            status_code=400,
+            detail="This sign-in link has already been used. Request a new one.")
+    _prune_used_links(db)
     session = _make_token(email, "portal_session", timedelta(days=_SESSION_TTL_DAYS))
     name = clients[0].name or email
     return {"token": session, "email": email, "name": name}

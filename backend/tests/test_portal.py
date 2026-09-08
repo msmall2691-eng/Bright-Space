@@ -65,6 +65,84 @@ def test_verify_rejects_bad_and_wrong_type_tokens():
     assert client.post("/api/portal/verify", json={"token": sess}).status_code == 400
 
 
+# ── The magic link is single-use (BB-SEC-21) ────────────────────────────────
+#
+# A magic link is a 30-minute bearer JWT. Before this, verify only checked the
+# signature and type, so the SAME link could be redeemed for a fresh 14-day
+# session over and over until it expired — a link that leaked (forwarded mail,
+# a shared inbox, proxy/browser history) was a repeatable way in, while the
+# email promised it "can only be used once". Now the first redemption spends it.
+
+def test_a_magic_link_can_only_be_redeemed_once():
+    db = SessionLocal()
+    c = _mk_client(db, "once@example.com")
+    cid = c.id
+    db.close()
+    try:
+        magic = _make_token("once@example.com", "portal_magic", timedelta(minutes=10))
+
+        first = client.post("/api/portal/verify", json={"token": magic})
+        assert first.status_code == 200, first.text
+        assert first.json()["token"]                      # a real session came back
+
+        # Same link, second time — refused, and told why.
+        second = client.post("/api/portal/verify", json={"token": magic})
+        assert second.status_code == 400, second.text
+        assert "already been used" in second.json()["detail"].lower()
+    finally:
+        db = SessionLocal()
+        db.query(Client).filter(Client.id == cid).delete(synchronize_session=False)
+        db.commit(); db.close()
+
+
+def test_two_different_links_are_independent():
+    # Spending one link must not spend another — the id is per-link, not per-email.
+    db = SessionLocal()
+    c = _mk_client(db, "two@example.com")
+    cid = c.id
+    db.close()
+    try:
+        a = _make_token("two@example.com", "portal_magic", timedelta(minutes=10))
+        b = _make_token("two@example.com", "portal_magic", timedelta(minutes=10))
+        assert client.post("/api/portal/verify", json={"token": a}).status_code == 200
+        assert client.post("/api/portal/verify", json={"token": b}).status_code == 200
+        # …and each is now individually spent.
+        assert client.post("/api/portal/verify", json={"token": a}).status_code == 400
+        assert client.post("/api/portal/verify", json={"token": b}).status_code == 400
+    finally:
+        db = SessionLocal()
+        db.query(Client).filter(Client.id == cid).delete(synchronize_session=False)
+        db.commit(); db.close()
+
+
+def test_a_link_with_no_jti_is_still_single_use():
+    """A link minted before the jti shipped (or any token without one) must not
+    escape single-use — the ledger falls back to a hash of the token itself, so
+    in-flight links are covered through the deploy."""
+    import jwt as _jwt
+    from datetime import datetime, timezone
+    from modules.portal.router import SECRET_KEY, ALGORITHM
+
+    db = SessionLocal()
+    c = _mk_client(db, "nojti@example.com")
+    cid = c.id
+    db.close()
+    try:
+        # A valid portal_magic token, but WITHOUT a jti claim (the old shape).
+        legacy = _jwt.encode(
+            {"email": "nojti@example.com", "typ": "portal_magic",
+             "exp": datetime.now(timezone.utc) + timedelta(minutes=10)},
+            SECRET_KEY, algorithm=ALGORITHM)
+        assert "jti" not in _jwt.decode(legacy, SECRET_KEY, algorithms=[ALGORITHM])
+
+        assert client.post("/api/portal/verify", json={"token": legacy}).status_code == 200
+        assert client.post("/api/portal/verify", json={"token": legacy}).status_code == 400
+    finally:
+        db = SessionLocal()
+        db.query(Client).filter(Client.id == cid).delete(synchronize_session=False)
+        db.commit(); db.close()
+
+
 def test_portal_scopes_strictly_to_own_email():
     db = SessionLocal()
     mine = _mk_client(db, "mine@example.com")
