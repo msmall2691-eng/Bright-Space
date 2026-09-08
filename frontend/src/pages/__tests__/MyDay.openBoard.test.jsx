@@ -65,7 +65,7 @@ it('lists an open job once on a day with nothing booked', async () => {
   await waitFor(() => expect(screen.queryAllByText(/Camden ME/).length)
     .toBeGreaterThan(0))
   // The board is the ONE place this job appears. Twice is the bug.
-  expect(screen.getAllByRole('button', { name: /ask for this job/i })).toHaveLength(1)
+  expect(screen.getAllByRole('button', { name: /claim this job/i })).toHaveLength(1)
 })
 
 it('still lists it once when the day does have work booked', async () => {
@@ -75,7 +75,7 @@ it('still lists it once when the day does have work booked', async () => {
     address: '9 Elm St, Portland ME',
   }
   await show({ ...DAY, today: [assigned] })
-  expect(screen.getAllByRole('button', { name: /ask for this job/i })).toHaveLength(1)
+  expect(screen.getAllByRole('button', { name: /claim this job/i })).toHaveLength(1)
 })
 
 it('says which day an offer is for', async () => {
@@ -95,10 +95,10 @@ it('asking for a job opens the sheet and files the request', async () => {
   post.mockResolvedValue({ auto_approved: false })
   await show()
 
-  fireEvent.click(screen.getByRole('button', { name: /ask for this job/i }))
+  fireEvent.click(screen.getByRole('button', { name: /claim this job/i }))
 
   // The sheet — the render that regressed — is what carries the confirm.
-  const send = await screen.findByRole('button', { name: /send my ask/i })
+  const send = await screen.findByRole('button', { name: /claim it/i })
   fireEvent.click(send)
 
   // Empty rate box means "your posted price is fine" — null, not 0.

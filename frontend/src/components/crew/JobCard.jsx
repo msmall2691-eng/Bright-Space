@@ -438,57 +438,60 @@ export default function JobCard({ job, onMarkDone, onPhotos, onRespond, onDeclin
       )}
 
       {onClaim && (() => {
-        /* Open-jobs board. Since the marketplace pivot (migration 097) this
-           is an ASK, not a claim: several people can want the same job and
-           the office picks, so the button can't promise "it's yours". A sub
-           who already asked sees their own standing request instead of a
-           button that looks like it never worked. Access details and the
-           customer's number still unlock only once it's actually theirs. */
+        /* Open-jobs board — a real marketplace (Turno-style, owner's call,
+           Sept 2026). Claiming a posted job at the posted price makes it YOURS
+           on the spot: first to claim wins, no office step. A pending request
+           only exists for the one case that still waits — a bid ABOVE the
+           posted price — so the pending copy is about an offer, not an ask.
+           Access details and the customer's number unlock once it's theirs. */
         const mine = job.my_claim_request
         const rate = job.posted_rate
         const asked = mine?.requested_rate
+        const claimable = rate != null
         return (
-          /* ONE ROW, not a stack. The board shows several of these at once,
-             and the old shape gave each offer a full-width blue slab — three
-             identical call-to-action bars down a phone screen, which is the
-             pattern the owner has vetoed three times. Same words, same
-             meaning: the money reads left, the action sits right at a
-             thumb-sized target, and the rule of the board stays on the card
-             (it is the one line that says asking is not getting, and the
-             Schedule board and the month-view sheet render this card too). */
+          /* ONE ROW, not a stack. The board shows several at once, and the old
+             shape gave each a full-width slab — the pattern the owner vetoed.
+             Money reads left, the action sits right at a thumb-sized target. */
           <div className="mt-3 border-t border-hairline pt-3">
             <div className="flex items-center justify-between gap-3">
               <div className="min-w-0">
-                {rate != null ? (
+                {claimable ? (
                   <p className="text-[13px] text-ink-2">
                     Pays <span className="font-semibold text-ink">${Number(rate).toLocaleString(undefined, { maximumFractionDigits: 2 })}</span>
                   </p>
                 ) : (
-                  /* The server refuses a request where neither side named a
-                     number, so without this the sub taps Ask, fills nothing
-                     in, and gets a 422 for a rule they were never told. */
+                  /* No posted price: claiming isn't instant (there's no anchor),
+                     so it becomes an offer the office prices. Say so up front
+                     rather than letting a blank field 422 at the server. */
                   <p className="flex items-start gap-1.5 text-[13px] text-ink-2">
                     <span className="mt-1.5 w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0" aria-hidden="true" />
-                    <span>No price set — name yours when you ask.</span>
+                    <span>No price set — name yours and the office will confirm.</span>
                   </p>
                 )}
                 {mine?.status === 'pending' && (
                   <p className="flex items-center gap-1.5 text-[13px] text-ink-2 mt-0.5">
                     <span className="w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0" aria-hidden="true" />
-                    You asked{asked != null ? ` for $${Number(asked).toLocaleString(undefined, { maximumFractionDigits: 2 })}` : ''} — waiting to hear back
+                    You offered{asked != null ? ` $${Number(asked).toLocaleString(undefined, { maximumFractionDigits: 2 })}` : ''} — waiting on the office
                   </p>
                 )}
               </div>
               <button onClick={onClaim} disabled={busy}
-                className="shrink-0 min-h-[44px] px-4 text-[13px] font-medium bg-panel border border-hairline-2 text-ink-2 hover:bg-bg-2 active:bg-bg-2 disabled:opacity-60 rounded-lg transition-colors inline-flex items-center gap-1.5">
+                className={`shrink-0 min-h-[44px] px-4 text-[13px] font-semibold rounded-lg transition-colors inline-flex items-center gap-1.5 disabled:opacity-60 ${
+                  mine?.status === 'pending'
+                    ? 'bg-panel border border-hairline-2 text-ink-2 hover:bg-bg-2 active:bg-bg-2 font-medium'
+                    : claimable
+                      ? 'bg-blue-600 hover:bg-blue-700 text-white'
+                      : 'bg-panel border border-hairline-2 text-ink-2 hover:bg-bg-2'}`}>
                 {mine?.status === 'pending'
-                  ? 'Change what I asked for'
-                  : (<><Sparkles className="w-4 h-4" aria-hidden="true" /> Ask for this job</>)}
+                  ? 'Change my offer'
+                  : claimable
+                    ? (<><Sparkles className="w-4 h-4" aria-hidden="true" /> Claim this job</>)
+                    : (<><Sparkles className="w-4 h-4" aria-hidden="true" /> Make an offer</>)}
               </button>
             </div>
-            {mine?.status !== 'pending' && (
+            {mine?.status !== 'pending' && claimable && (
               <p className="text-[10px] text-ink-3 mt-1.5">
-                The office picks who gets it{job.teammates?.length ? ` · you'd join ${job.teammates.join(', ')}` : ''}
+                Claim it and it's yours — first to claim gets it{job.teammates?.length ? ` · you'd join ${job.teammates.join(', ')}` : ''}
               </p>
             )}
           </div>

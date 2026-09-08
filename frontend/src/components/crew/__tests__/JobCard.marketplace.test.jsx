@@ -1,12 +1,12 @@
 /**
- * The crew's side of the marketplace (migration 097).
+ * The crew's side of the marketplace — Turno-style (owner's call, Sept 2026).
  *
- * An open job used to say "Claim this job — first come, first served", and
- * that promise is now false: several subs can want the same job and the
- * office picks. A button that claims to hand you the job and then doesn't is
- * worse than one that says what it does, so what's pinned here is that the
- * card describes the real mechanism — including to the person who already
- * asked, who otherwise sees a button that looks like it never worked.
+ * Claiming a posted job at the posted price makes it YOURS on the spot: first
+ * to claim wins, no office step. So the card says "Claim this job" and means
+ * it. The one case that still waits is a bid ABOVE the posted price, and only
+ * then does the card talk about the office confirming. What's pinned here is
+ * that the card describes the real mechanism — claim vs offer — including to
+ * the person whose above-posted offer is standing.
  */
 import { describe, it, expect, vi, afterEach } from 'vitest'
 import { render, screen, cleanup, fireEvent } from '@testing-library/react'
@@ -25,54 +25,47 @@ const OPEN_JOB = {
 const show = (job, props = {}) => render(
   <MemoryRouter><JobCard job={job} onClaim={() => {}} {...props} /></MemoryRouter>)
 
-it('asks for the job rather than promising it', async () => {
+it('offers to claim a posted job outright, first come first served', () => {
   show(OPEN_JOB)
-  expect(screen.getByRole('button', { name: /Ask for this job/ })).toBeTruthy()
-  expect(screen.getByText(/The office picks who gets it/)).toBeTruthy()
-  // The old promise must not survive anywhere on the card.
-  expect(screen.queryByText(/first come/i)).toBeNull()
-  expect(screen.queryByRole('button', { name: /Claim this job/ })).toBeNull()
+  expect(screen.getByRole('button', { name: /Claim this job/ })).toBeTruthy()
+  expect(screen.getByText(/first to claim gets it/i)).toBeTruthy()
+  // The old "the office picks / ask" framing must not survive.
+  expect(screen.queryByText(/office picks who gets it/i)).toBeNull()
+  expect(screen.queryByRole('button', { name: /Ask for this job/ })).toBeNull()
 })
 
-it('shows what the job pays, so an ask can be priced against it', () => {
+it('shows what the job pays, so a claim is priced against it', () => {
   show(OPEN_JOB)
   expect(screen.getByText('$80')).toBeTruthy()
 })
 
-it('shows a standing request instead of a button that looks unpressed', () => {
-  // Without this, a sub who already asked sees the same "Ask for this job"
-  // button and taps it again wondering why nothing happened.
+it('shows a standing OFFER (above posted) instead of an unpressed button', () => {
+  // A pending request only exists for a bid above the posted price now — an
+  // at-or-below claim is instant, so it never sits pending.
   show({ ...OPEN_JOB, my_claim_request: { status: 'pending', requested_rate: 95, message: null } })
-  expect(screen.getByText(/You asked for \$95 — waiting to hear back/)).toBeTruthy()
-  expect(screen.queryByRole('button', { name: /Ask for this job/ })).toBeNull()
-  // Still changeable — they can raise or drop their number.
-  expect(screen.getByRole('button', { name: /Change what I asked for/ })).toBeTruthy()
+  expect(screen.getByText(/You offered \$95 — waiting on the office/)).toBeTruthy()
+  expect(screen.queryByRole('button', { name: /Claim this job/ })).toBeNull()
+  expect(screen.getByRole('button', { name: /Change my offer/ })).toBeTruthy()
 })
 
-it('says "you asked" without a number when they took the posted rate', () => {
-  show({ ...OPEN_JOB, my_claim_request: { status: 'pending', requested_rate: null, message: null } })
-  expect(screen.getByText(/You asked — waiting to hear back/)).toBeTruthy()
-})
-
-it('a declined ask can be made again', () => {
+it('a declined ask can be claimed again', () => {
   // Not a dead end: the office may have picked someone who then fell through.
   show({ ...OPEN_JOB, my_claim_request: { status: 'declined', requested_rate: 95, message: null } })
-  expect(screen.getByRole('button', { name: /Ask for this job/ })).toBeTruthy()
+  expect(screen.getByRole('button', { name: /Claim this job/ })).toBeTruthy()
 })
 
-it('explains a rate-less job on the card instead of letting them tap into a 422', () => {
-  // The server refuses a request where neither side named a number. Without
-  // this the sub taps Ask, fills nothing in, and is refused for a rule nobody
-  // told them — so the card says it where they decide whether to bother.
+it('a rate-less job becomes an offer the office prices, said on the card', () => {
+  // No posted price is no anchor for an instant claim, so it's an offer. Say
+  // so up front instead of letting a blank field 422 at the server.
   show({ ...OPEN_JOB, posted_rate: null })
-  expect(screen.getByText(/No price set — name yours when you ask/)).toBeTruthy()
-  expect(screen.getByRole('button', { name: /Ask for this job/ })).toBeTruthy()
+  expect(screen.getByText(/No price set — name yours and the office will confirm/)).toBeTruthy()
+  expect(screen.getByRole('button', { name: /Make an offer/ })).toBeTruthy()
   expect(screen.queryByText(/Pays/)).toBeNull()
 })
 
-it('opens the sheet when asked', () => {
+it('opens the sheet when claimed', () => {
   const onClaim = vi.fn()
   show(OPEN_JOB, { onClaim })
-  fireEvent.click(screen.getByRole('button', { name: /Ask for this job/ }))
+  fireEvent.click(screen.getByRole('button', { name: /Claim this job/ }))
   expect(onClaim).toHaveBeenCalled()
 })
