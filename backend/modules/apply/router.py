@@ -31,6 +31,7 @@ the form; `ein` identifies a business and is optional. A sole proprietor should
 leave it blank rather than typing their social security number into it, and the
 form says exactly that.
 """
+import logging
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
@@ -49,6 +50,7 @@ from ratelimit import limiter
 from utils.contacts import normalize_phone
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 STATUSES = ("new", "reviewing", "approved", "declined")
 
@@ -83,6 +85,58 @@ def _clip(value: Optional[str], field: str) -> Optional[str]:
         else str(value).strip()
     text = text[:_CAPS[field]]
     return text or None
+
+
+def _applicant_email(to: str, name: Optional[str], *, kind: str) -> bool:
+    """Tell an applicant we got their form (kind="ack") or that it isn't a fit
+    right now (kind="decline") — the two things /apply promises ("we'll be in
+    touch", "if it isn't a fit, we'll tell you that too") and never delivered.
+
+    Best-effort, exactly like send_staff_invite: send_email raises when SMTP
+    isn't configured, so this is wrapped and a failure is logged and swallowed
+    — a mail outage must never fail the application or the office's decline. It
+    is no longer SILENT, which is the point. Internal office notes are never
+    sent; a decline says only that it isn't a fit, which is what the page
+    promised and all a stranger is owed.
+    """
+    first = (name or "there").split()[0] if name else "there"
+    try:
+        from integrations.email import send_email
+        if kind == "ack":
+            send_email(
+                to=to,
+                subject="Thanks for applying to the bench",
+                html_body=(
+                    f"<p>Hi {first},</p>"
+                    f"<p>Thanks for applying to clean with us — we've got your "
+                    f"application and someone will take a look. There's nothing "
+                    f"you need to do right now; we'll be in touch.</p>"
+                    f"<p style=\"color:#666;font-size:12px\">If you didn't apply, "
+                    f"you can ignore this.</p>"
+                ),
+                text_body=("Hi %s, thanks for applying to clean with us. We've "
+                           "got your application and we'll be in touch." % first),
+            )
+        else:  # decline
+            send_email(
+                to=to,
+                subject="About your application",
+                html_body=(
+                    f"<p>Hi {first},</p>"
+                    f"<p>Thanks for your interest in cleaning with us. We're not "
+                    f"able to move forward right now — it isn't a reflection of "
+                    f"your work, and you're welcome to apply again down the "
+                    f"line.</p>"
+                    f"<p>We appreciate you taking the time.</p>"
+                ),
+                text_body=("Hi %s, thanks for your interest in cleaning with us. "
+                           "We're not able to move forward right now — you're "
+                           "welcome to apply again down the line." % first),
+            )
+        return True
+    except Exception:
+        logger.exception("[apply] applicant %s email failed", kind)
+        return False
 
 
 class ApplyBody(BaseModel):
@@ -169,6 +223,13 @@ def apply(request: Request, body: ApplyBody, db: Session = Depends(get_db)):
     db.add(row)
     db.commit()
 
+    # A receipt, so closing the tab doesn't erase every trace that they applied
+    # — the page's on-screen "we'll be in touch" was the only confirmation, and
+    # a cleaner comparing three companies on a Sunday night picks the one that
+    # writes back. Best-effort; only on a NEW row, so a same-week resubmit
+    # (the update branch above) doesn't send a second one.
+    _applicant_email(email, name, kind="ack")
+
     try:
         from services.push_service import notify_staff
         notify_staff(db, "Someone applied to join the bench",
@@ -249,13 +310,22 @@ def review_application(app_id: int, body: ReviewBody, db: Session = Depends(get_
                 detail="Use Approve — it creates their crew account and sends the invite.")
         if body.status not in STATUSES:
             raise HTTPException(status_code=422, detail=f"Unknown status: {body.status}")
+        became_declined = (body.status == "declined" and row.status != "declined")
         row.status = body.status
         row.decided_at = _now() if body.status == "declined" else None
         row.decided_by = current_user.id if body.status == "declined" else None
+    else:
+        became_declined = False
     if body.notes is not None:
         row.notes = body.notes or None
     row.updated_at = _now()
     db.commit()
+    # "Not for us" was a silent write — /apply promised "if it isn't a fit,
+    # we'll tell you that too" and then told them nothing. Send the note once,
+    # only on the transition INTO declined (re-saving a declined row, or editing
+    # its office notes, must not re-mail the applicant). Best-effort.
+    if became_declined and row.email:
+        _applicant_email(row.email, row.name, kind="decline")
     return _row(row)
 
 

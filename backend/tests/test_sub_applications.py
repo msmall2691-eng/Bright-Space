@@ -267,6 +267,85 @@ def test_no_field_anywhere_invites_a_social_security_number():
     assert "ein" in columns and "ein" in accepted
 
 
+# ── The applicant hears back (was silent both ways) ─────────────────────────
+# /apply promised "we'll be in touch" and "if it isn't a fit, we'll tell you
+# that too". Both were on-screen text only — close the tab and there was no
+# artifact you ever applied, and "Not for us" was a silent status write.
+
+def test_applying_emails_an_acknowledgement(made):
+    email = _email(made)
+    with patch("integrations.email.send_email", return_value={"ok": True}) as mail:
+        assert _apply({"name": "Dana", "email": email}).status_code == 201
+    assert mail.call_count == 1
+    kw = mail.call_args.kwargs
+    assert kw["to"] == email and "applying" in kw["subject"].lower()
+
+
+def test_an_ack_mail_failure_never_fails_the_application(made):
+    email = _email(made)
+    with patch("integrations.email.send_email",
+               side_effect=ValueError("Email credentials missing.")):
+        r = _apply({"name": "Dana", "email": email})
+    assert r.status_code == 201, "a mail outage must not lose an application"
+    assert _rows(email)[0]["status"] == "new"
+
+
+def test_a_same_week_resubmit_does_not_send_a_second_ack(made):
+    """The update branch already acked the first time — a Wednesday resubmit of
+    Tuesday's form must not re-mail."""
+    email = _email(made)
+    with patch("integrations.email.send_email", return_value={"ok": True}) as mail:
+        _apply({"name": "Dana", "email": email})
+        _apply({"name": "Dana Applicant", "email": email, "towns": "Saco"})
+    assert mail.call_count == 1
+
+
+def test_declining_tells_the_applicant_it_isnt_a_fit(made):
+    email = _email(made)
+    _apply({"name": "Dana", "email": email})       # ack (unmocked → swallowed)
+    api = _api(_Admin())
+    try:
+        app_id = _rows(email)[0]["id"]
+        with patch("integrations.email.send_email", return_value={"ok": True}) as mail:
+            r = api.patch(f"/api/sub-applications/{app_id}", json={"status": "declined"})
+        assert r.status_code == 200, r.text
+        assert mail.call_count == 1 and mail.call_args.kwargs["to"] == email
+    finally:
+        _clear()
+
+
+def test_a_decline_is_mailed_once_not_on_every_later_save(made):
+    """Only the transition INTO declined mails. Editing office notes on an
+    already-declined row, or re-saving the same status, must not re-mail."""
+    email = _email(made)
+    _apply({"name": "Dana", "email": email})
+    api = _api(_Admin())
+    try:
+        app_id = _rows(email)[0]["id"]
+        with patch("integrations.email.send_email", return_value={"ok": True}) as mail:
+            api.patch(f"/api/sub-applications/{app_id}", json={"status": "declined"})
+            api.patch(f"/api/sub-applications/{app_id}", json={"notes": "called, no answer"})
+            api.patch(f"/api/sub-applications/{app_id}", json={"status": "declined"})
+        assert mail.call_count == 1
+    finally:
+        _clear()
+
+
+def test_a_decline_mail_failure_never_fails_the_decision(made):
+    email = _email(made)
+    _apply({"name": "Dana", "email": email})
+    api = _api(_Admin())
+    try:
+        app_id = _rows(email)[0]["id"]
+        with patch("integrations.email.send_email",
+                   side_effect=ValueError("Email credentials missing.")):
+            r = api.patch(f"/api/sub-applications/{app_id}", json={"status": "declined"})
+        assert r.status_code == 200, "a mail outage must not block the decision"
+        assert _rows(email)[0]["status"] == "declined"
+    finally:
+        _clear()
+
+
 # ── The office side ─────────────────────────────────────────────────────────
 
 def test_the_list_carries_its_counts_so_one_request_draws_the_screen(made):
