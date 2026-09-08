@@ -115,3 +115,28 @@ it('never puts the house on an offer', async () => {
   // What a bidder legitimately gets: the town and what it pays.
   expect(page).toMatch(/Camden/)
 })
+
+// ── The dedicated Jobs tab (the marketplace's real home) ────────────────────
+
+it('has a Jobs tab that lists every open job to claim', async () => {
+  // The board used to hide on Today-when-empty and inside Schedule. Now it has
+  // its own tap. A day WITH work booked still surfaces the whole board here.
+  const assigned = {
+    id: 7, title: 'Portland job', scheduled_date: TODAY, status: 'scheduled',
+    start_time: '09:00', end_time: '12:00', address: '9 Elm St, Portland ME',
+  }
+  await show({ ...DAY, today: [assigned] })
+  fireEvent.click(screen.getByRole('button', { name: 'Jobs' }))
+  expect(await screen.findByText('Open jobs')).toBeTruthy()      // the header
+  expect(screen.getByText(/Camden ME/)).toBeTruthy()             // the offer
+  expect(screen.getByRole('button', { name: /claim this job/i })).toBeTruthy()
+})
+
+it('the Jobs tab tells an uncleared sub why it is empty', async () => {
+  // Same anti-"dead market" rule as Today: an uncleared sub sees why, not a
+  // bare empty board.
+  await show({ ...DAY, open_jobs: [], cleared: false, missing: ['Upload your insurance'] })
+  fireEvent.click(screen.getByRole('button', { name: 'Jobs' }))
+  expect(await screen.findByText(/not cleared to take jobs yet/i)).toBeTruthy()
+  expect(screen.getByText('Upload your insurance')).toBeTruthy()
+})

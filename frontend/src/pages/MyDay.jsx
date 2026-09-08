@@ -153,6 +153,10 @@ function dayLabel(iso) {
 
 const TABS = [
   { key: 'today', label: 'Today', icon: Sun },
+  // The marketplace, given a real home. The open board used to hide on Today
+  // (only when nothing was booked) and inside Schedule > list — a free sub had
+  // to go looking for the one screen they most want. Now it's one tap.
+  { key: 'jobs', label: 'Jobs', icon: Sparkles },
   { key: 'schedule', label: 'Schedule', icon: CalendarRange },
   // Chat rides the bottom nav (owner: "chat more prominent") — one tap from
   // anywhere, with an unread badge fed by my-day's unread_messages count.
@@ -165,7 +169,7 @@ function CrewTabBar({ tab, setTab, chatUnread = 0 }) {
   return (
     <nav className="fixed bottom-0 inset-x-0 z-20 bg-panel/95 backdrop-blur border-t border-hairline"
       style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}>
-      <div className="max-w-lg mx-auto grid grid-cols-5">
+      <div className="max-w-lg mx-auto grid grid-cols-6">
         {TABS.map(({ key, label, icon: Icon }) => (
           <button key={key} onClick={() => setTab(key)}
             className={`py-2.5 flex flex-col items-center gap-0.5 text-[11px] font-semibold transition-colors ${
@@ -518,7 +522,7 @@ export default function MyDay({ previewUserId = null }) {
         <header className="bg-panel border-b border-hairline px-4 py-3 flex items-center justify-between">
           <div>
             <div className="text-sm font-bold text-ink">
-              {tab === 'schedule' ? 'My Schedule' : tab === 'me' ? 'Me' : tab === 'learn' ? 'Learn' : tab === 'chat' ? 'Chat' : 'My Day'}
+              {tab === 'jobs' ? 'Open jobs' : tab === 'schedule' ? 'My Schedule' : tab === 'me' ? 'Me' : tab === 'learn' ? 'Learn' : tab === 'chat' ? 'Chat' : 'My Day'}
             </div>
             <div className="text-[12px] text-ink-3">{longDate}</div>
           </div>
@@ -705,6 +709,67 @@ export default function MyDay({ previewUserId = null }) {
             <CrewSetupCard />
           </>
         )}
+
+        {/* THE MARKETPLACE, given a real home. Every open job on offer, grouped
+            by day, each one claimable right here — the discovery surface a free
+            sub actually wants. Same open_jobs the payload already carries (no
+            new fetch, no tick — brightbase-economy); identity stays stripped
+            server-side until a job is won (Rule 0). */}
+        {tab === 'jobs' && !loading && !error && data && (() => {
+          const open = [...(data.open_jobs || [])].sort(
+            (a, b) => String(a.scheduled_date || '').localeCompare(String(b.scheduled_date || '')))
+          if (data.cleared === false && (data.missing || []).length > 0) {
+            return (
+              <div className="rounded-xl border border-hairline bg-panel px-4 py-3">
+                <span className="flex items-center gap-1.5 text-[12px] text-ink-2">
+                  <span className="h-1.5 w-1.5 rounded-full bg-amber-500" aria-hidden="true" />
+                  You're not cleared to take jobs yet
+                </span>
+                <p className="mt-0.5 text-[13px] text-ink">
+                  Finish your file and the office clears you — then open jobs
+                  show up right here to claim.
+                </p>
+                <ul className="mt-2 space-y-1">
+                  {(data.missing || []).map((m, i) => (
+                    <li key={i} className="flex items-start gap-1.5 text-[12.5px] text-ink-2">
+                      <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-ink-3/50" aria-hidden="true" />
+                      <span>{m}</span>
+                    </li>
+                  ))}
+                </ul>
+                <button type="button" onClick={() => setTab('me')}
+                  className="mt-3 w-full rounded-lg border border-hairline bg-bg-2 py-2 text-[13px] font-semibold text-ink hover:bg-bg transition-colors">
+                  Go to my file
+                </button>
+              </div>
+            )
+          }
+          if (open.length === 0) {
+            return (
+              <EmptyState icon={Sparkles} compact
+                title="No open jobs right now"
+                description="When the office posts work to the bench it shows up here. Claim one and it's yours." />
+            )
+          }
+          return (
+            <>
+              <SectionLabel className="mb-1">
+                {open.length} open {open.length === 1 ? 'job' : 'jobs'}
+              </SectionLabel>
+              {groupByDate(open).map(g => (
+                <section key={g.date}>
+                  <SectionLabel className="mb-2">{dayLabel(g.date)}</SectionLabel>
+                  <div className="space-y-3">
+                    {g.jobs.map(j => (
+                      <JobCard key={j.id} job={j} busy={actionBusy}
+                        onClaim={() => { setActionError(null); setClaimRate(j.my_claim_request?.requested_rate ?? ''); setClaimMessage(j.my_claim_request?.message || ''); setClaimJob(j) }} />
+                    ))}
+                  </div>
+                </section>
+              ))}
+            </>
+          )
+        })()}
 
         {tab === 'schedule' && (
           /* Segmented control (hairline frame, solid active) — same pattern
