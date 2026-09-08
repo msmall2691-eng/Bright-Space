@@ -145,6 +145,43 @@ def test_crew_who_predate_the_cutoff_can_still_work(made):
     assert r.status_code == 200, r.text
 
 
+# ── my-day tells the app WHY the board is empty ─────────────────────────────
+
+def test_my_day_tells_an_uncleared_sub_why_the_board_is_empty(made):
+    """An empty board must not read as a dead market. my-day carries `cleared`
+    + `missing` so the Today tab can say "you're not cleared yet, here's what's
+    left" and point at the file, instead of "Nothing scheduled today" — the
+    biggest drop-off in a new sub's first week."""
+    _cutoff(None)                       # everyone is gated
+    who = _mk_crew(made, created_days_ago=200)
+    _mk_open_job(made)                  # there IS work on the board
+    api = _api(who)
+    try:
+        body = api.get("/api/crew/my-day").json()
+    finally:
+        _clear()
+    assert body["cleared"] is False
+    assert body["missing"], "an uncleared sub must be told what's left to do"
+    assert body["open_jobs"] == [], "the board stays gated — showing why, not what"
+
+
+def test_my_day_marks_a_cleared_sub_cleared_with_nothing_missing(made):
+    """The other side: a grandfathered sub is cleared, has nothing outstanding,
+    and sees the board. If this and the test above ever agree, the flag the app
+    keys its empty state on has stopped meaning anything."""
+    _cutoff((business_today() + timedelta(days=1)).isoformat())   # grandfathered
+    who = _mk_crew(made, created_days_ago=200)
+    jid = _mk_open_job(made)
+    api = _api(who)
+    try:
+        body = api.get("/api/crew/my-day").json()
+    finally:
+        _clear()
+    assert body["cleared"] is True
+    assert body["missing"] == []
+    assert jid in [j["id"] for j in body["open_jobs"]], "cleared subs see the board"
+
+
 def test_somebody_added_this_morning_is_still_existing_crew(made):
     """The off-by-one the migration exists to avoid.
 
