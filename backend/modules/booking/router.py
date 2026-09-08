@@ -587,7 +587,11 @@ def submit_booking(request: Request, data: BookingSubmit, background_tasks: Back
     # SMS trims. Same best-effort contract.
     owner_email_sent = False
     try:
-        from services.booking_email_service import format_requested_date
+        # service_label too, not just format_requested_date: the subject and the
+        # Service: line below both call it, and importing only the date helper
+        # made every owner email raise NameError — swallowed by the except, so
+        # the owner was silently never notified of a new booking (BB-BOOK-01).
+        from services.booking_email_service import format_requested_date, service_label
         est_line = None
         if alert_estimate_min is not None and alert_estimate_max is not None:
             est_line = f"Estimate: ${int(alert_estimate_min)}–${int(alert_estimate_max)}"
@@ -774,7 +778,7 @@ def update_booking(request: Request, data: BookingUpdate, db: Session = Depends(
     the customer-facing response never depends on the alert paths).
     """
     from database.models import Activity, LeadIntake
-    from services.booking_email_service import format_requested_date, service_label
+    from services.booking_email_service import format_requested_date
 
     key = (data.idempotencyKey or "").strip()
     lead = (
