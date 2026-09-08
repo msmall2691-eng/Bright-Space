@@ -115,25 +115,21 @@ RULES: list[dict[str, Any]] = [
     },
     {
         "key": "claim_auto_approve",
-        "title": "Approve a job request without asking me",
-        "summary": "Only when there's nothing to decide: their file is complete "
-                   "and current, they asked at or under the posted price, "
-                   "nobody else has asked for that job, and they're free that "
-                   "day. Anything else waits for you — a counter-offer above "
-                   "the posted price always does.",
+        "title": "Let cleared subs claim a posted job instantly",
+        "summary": "A real marketplace: a sub whose file is complete claims an "
+                   "open job at your posted price and it's theirs on the spot — "
+                   "first to claim wins, no approving each one. The only thing "
+                   "that still comes to you is a bid ABOVE the posted price, "
+                   "because that's you agreeing to pay more.",
         "fields": [
-            {"key": "claim_auto_approve_mode", "type": "choice", "default": "off",
-             "label": "When a sub asks for a posted job", "choices": [
+            {"key": "claim_auto_approve_mode", "type": "choice", "default": "auto",
+             "label": "When a cleared sub claims a posted job", "choices": [
+                 {"value": "auto", "label": "It's theirs instantly"},
                  {"value": "off", "label": "Ask me first"},
-                 {"value": "auto", "label": "Just do it"},
              ],
-             "help": "Turning this on is what stops you approving the same "
-                     "obvious request every week. It never picks between two "
-                     "people who both want the same job."},
-            {"key": "claim_auto_approve_max_rate", "type": "number", "default": 0,
-             "label": "Never above", "unit": "$", "min": 0, "max": 5000,
-             "help": "0 means no ceiling. Above this, the request waits for "
-                     "you however ordinary it looks."},
+             "help": "On by default. Turn it off to go back to approving every "
+                     "claim by hand. Either way a bid above the posted price "
+                     "always waits for you, and only cleared subs can claim."},
         ],
     },
     {

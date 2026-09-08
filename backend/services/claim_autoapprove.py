@@ -1,31 +1,41 @@
-"""Approving a claim without waiting for the office — and refusing to, mostly.
+"""Claiming a posted job instantly — the Turno-style marketplace — and the
+one case that still waits for the office.
 
-Routes took the recurring work off the approval queue (Phase 4). What's left is
-one-off jobs, and most of those are the same answer every time: a vetted sub
-asks for a posted job at the posted price, has no clash, and the office clicks
-approve. Making a person click that is the office-is-the-bottleneck problem in
-its smallest form — but it is also the last human check before somebody is
-scheduled and money is committed, so this refuses far more often than it acts.
+THE MODEL, chosen by the owner in writing (Sept 2026), replacing the earlier
+"the office picks who gets it" queue. A cleared sub who claims a posted job at
+(or below) the posted price gets it THE MOMENT THEY CLAIM — it is theirs, the
+offer closes, and nobody has to approve anything. This is legal because it is
+the sub ACCEPTING the office's offer at the office's price; Rule 0 forbids the
+office ASSIGNING, not the sub accepting (brightbase-marketplace). First to
+claim wins — the marketplace is a real marketplace now.
 
-WHAT IT WILL AUTO-APPROVE, all of which must hold:
-  * the rule is switched on (OFF by default — nothing here turns itself up);
-  * the requester's vetting file is complete and current;
-  * they asked at or below the posted rate. A counter-offer ABOVE the posted
-    price is a negotiation, and a negotiation is not a formality;
-  * the amount is at or under the ceiling the office set;
-  * they are the ONLY pending request on the job. Where two people want the
-    same work, picking a winner is a judgement about who — that is the
-    office's to make, and doing it on arrival time would quietly turn the
-    marketplace back into first-come-first-served;
-  * approving raises no conflict — checked by the real approval path, not
-    re-implemented here.
+WHAT IS INSTANT, all of which must hold:
+  * instant claiming is on (it is ON by default — the office can turn it off in
+    the standing rules and go back to approving each one by hand);
+  * the requester's vetting file is complete and current. THIS IS THE ONE
+    NON-NEGOTIABLE — an uninsured person in a customer's house is the risk the
+    whole vetting gate exists for, and it is checked here too, not just at the
+    /ask endpoint;
+  * the job carries a posted price. An unpriced job has no anchor to be "at or
+    below", so naming a price on one is a negotiation the office runs;
+  * they claimed at or below that posted price. A bid ABOVE the posted price is
+    the sub asking the office to pay MORE — the one thing that still comes to a
+    person, because it is the office agreeing to a number it did not set.
+
+FIRST COME, FIRST SERVED, and it is safe without picking a winner here. The
+first claim runs approve(), which closes the offer (open_for_claims = False);
+the /ask endpoint refuses a claim on a closed offer, so the second claimant
+gets "isn't open anymore" at the door. The FOR UPDATE lock in consider() covers
+the narrow simultaneous case: two claims in flight at once serialize, the first
+commits and closes, the second wakes under the lock and approve() refuses the
+closed job. So there is deliberately NO rival-count check — that check WAS the
+"office picks" design, and it is what the owner replaced.
 
 Approval itself goes through services/claim_approval.py, the same function the
 office endpoint calls. There is one implementation of "approve a claim"; this
-module only decides whether to call it.
-
-Refusing is not an error and is never shown to the sub as a rejection. Their
-request stands, pending, exactly as before — the office will get to it.
+module only decides whether to call it. A request that is NOT instant (a bid
+above posted, an unpriced job, instant turned off) stays pending exactly as
+before and the office gets to it — never shown to the sub as a rejection.
 """
 from __future__ import annotations
 
@@ -38,93 +48,75 @@ from database.models import JobClaimRequest
 
 logger = logging.getLogger(__name__)
 
-MODE_KEY = "claim_auto_approve_mode"          # off | auto
-CEILING_KEY = "claim_auto_approve_max_rate"   # dollars; 0 or unset = no ceiling
+# off | auto. Kept as the setting key the standing rule already writes, but the
+# DEFAULT is now ON: an unset value means instant claiming is live. The office
+# turns it OFF explicitly to go back to approving every request by hand.
+MODE_KEY = "claim_auto_approve_mode"
 
 
-def _mode(db: Session) -> str:
+def _instant_on(db: Session) -> bool:
     from modules.settings.router import get_setting
     val = (get_setting(db, MODE_KEY) or "").strip().lower()
-    return val if val in ("off", "auto") else "off"
-
-
-def _ceiling(db: Session) -> Optional[float]:
-    from modules.settings.router import get_setting
-    raw = get_setting(db, CEILING_KEY)
-    try:
-        val = float(raw)
-    except (TypeError, ValueError):
-        return None
-    return val if val > 0 else None
+    # ON unless the office has explicitly switched it off.
+    return val != "off"
 
 
 def why_not(db: Session, job, req: JobClaimRequest) -> Optional[str]:
-    """Why this request shouldn't be auto-approved, or None if it can be.
+    """Why this claim shouldn't be awarded instantly, or None if it can be.
 
     Returns a short machine-ish reason rather than a sentence: nothing here
-    reaches a person. It is logged, so "over_ceiling" appearing constantly is
-    the office finding out their ceiling is set too low.
+    reaches a person. It is logged, so "counter_above_posted" appearing on a
+    job is simply the trail of a bid the office was handed to decide.
     """
-    if _mode(db) != "auto":
-        return "rule_off"
+    if not _instant_on(db):
+        return "instant_off"
 
     from database.models import User
     from services.sub_vetting import blocking_requirements
     requester = (db.query(User).filter(User.id == req.user_id).first()
                  if req.user_id else None)
     if requester is None or blocking_requirements(db, requester):
-        # Belt and braces: the crew claim endpoint already refuses an
-        # incomplete file. This is the gate that must not be reachable around,
-        # so it is checked at the point of scheduling too.
+        # THE ONE NON-NEGOTIABLE. The /ask endpoint already refuses an
+        # incomplete file; this is the gate that must not be reachable around,
+        # so a claim is re-checked against it at the moment it would be awarded.
         return "not_vetted"
 
     posted = job.posted_rate
+    if posted is None:
+        # No posted price is no anchor — naming a number on an unpriced job is
+        # a negotiation the office runs, never an instant claim.
+        return "no_posted_rate"
     agreed = req.requested_rate if req.requested_rate is not None else posted
-    if agreed is None:
-        return "no_rate"
-    if posted is not None and float(agreed) > float(posted):
-        # Asking for more than the job was posted at is the sub opening a
-        # negotiation. A negotiation gets a person.
+    if float(agreed) > float(posted):
+        # A bid ABOVE the posted price is the sub asking to be paid more than
+        # the office offered. That is the office's yes to give, not this code's.
         return "counter_above_posted"
-
-    ceiling = _ceiling(db)
-    if ceiling is not None and float(agreed) > ceiling:
-        return "over_ceiling"
-
-    rivals = (db.query(JobClaimRequest)
-              .filter(JobClaimRequest.job_id == job.id,
-                      JobClaimRequest.status == "pending",
-                      JobClaimRequest.id != req.id)
-              .count())
-    if rivals:
-        # Two people want it. Choosing between them on arrival time would
-        # quietly restore first-come-first-served, which the marketplace pivot
-        # replaced on purpose.
-        return "competing_requests"
+    # Cleared, priced, at or below posted: theirs, now. First to claim wins;
+    # the offer-close + lock (see the module docstring) make that safe without
+    # choosing between rivals here.
     return None
 
 
 def consider(db: Session, job, req: JobClaimRequest, *, org_id: int) -> dict:
-    """Auto-approve this request if every condition holds; otherwise leave it.
+    """Award this claim instantly if every condition holds; otherwise leave it.
 
-    Never raises into the caller. A request that stays pending is the normal,
-    safe outcome and the crew endpoint's response is the same either way — the
-    sub is told their request is in, and if it was taken instantly the job
-    detail they land on says so.
+    Never raises into the caller. A claim that is NOT instant (a bid above
+    posted, an unpriced job, instant off) stays pending — the normal, safe
+    outcome — and the crew endpoint's response is the same either way: the sub
+    is told their claim is in, and if it was theirs instantly the job detail
+    they land on says so.
     """
     # CONCURRENCY (scheduling-invariants R5). approve()'s contract is that the
-    # caller holds `job` and `req` FOR UPDATE — the office endpoint has since
-    # Phase 4, and this caller was the one that did not. The /ask handler loads
-    # the job unlocked and commits the request, then hands both here; two subs
-    # asking near-simultaneously, or the office approving one while this
-    # approves the other, could each pass why_not()'s rival check (neither yet
-    # seeing the other's request) and both reach approve() — two subs on a
-    # one-person job, priced for one, two "You got the job!" pushes.
+    # caller holds `job` and `req` FOR UPDATE. The /ask handler loads the job
+    # unlocked and commits the request, then hands both here; two subs claiming
+    # the same job at the same instant could otherwise both reach approve() —
+    # two subs on a one-person job, both told "it's yours".
     #
-    # Re-reading both rows FOR UPDATE here serializes the whole decide-and-
-    # approve per job: the rival count, the open/scheduled checks and the write
-    # all happen under the lock, so the second caller blocks until the first
-    # commits and then sees a closed offer (or the rival) and refuses. Same
+    # Re-reading both rows FOR UPDATE serializes the whole decide-and-award per
+    # job: the open/scheduled checks and the write happen under the lock, so the
+    # second caller blocks until the first commits, then wakes to a closed offer
+    # (approve() sets open_for_claims = False) and refuses. That is what makes
+    # first-come-first-served safe without choosing a winner here. Same
     # identity-map objects the caller passed, now locked; on Postgres this is
     # SELECT ... FOR UPDATE, SQLite serializes writers.
     from database.models import Job

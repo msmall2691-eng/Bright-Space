@@ -102,8 +102,17 @@ public /apply  →  office approves  →  account + set-password invite
   hold one on the same job; the office picks. `services/claim_approval.py` is
   the single approve implementation, shared by the office endpoint and the
   auto-approver so they cannot drift.
-- **Auto-approve** — `services/claim_autoapprove.py`, **off by default**. It
-  refuses on `counter_above_posted`, `over_ceiling`, and `competing_requests`.
+- **Instant claim (Turno-style)** — `services/claim_autoapprove.py`, **ON by
+  default** (owner's decision, in writing, Sept 2026 — replaced the earlier
+  "office picks who gets it" queue).
+  A cleared sub who claims a posted job at or below the posted price gets it on
+  the spot, first-come-first-served; the offer closes. This is the sub
+  *accepting* the office's offer, so Rule 0 (office never assigns) is intact.
+  The one case that still waits for a person is a bid **above** the posted price
+  (`counter_above_posted`) — the office agreeing to pay more. There is
+  deliberately **no** `competing_requests` refusal any more: FCFS is the point,
+  and the offer-close + FOR UPDATE lock make it safe. The office can switch
+  instant claiming off in the standing rules to approve each claim by hand.
 - **Money** — `services/sub_payouts.py`. `UNIQUE(user_id, job_id)`, per-row
   savepoints, `void` instead of delete, and the manual rail marks **sent**,
   never **paid**.
@@ -126,13 +135,15 @@ public /apply  →  office approves  →  account + set-password invite
   the `time_entries` table and the `User.pay_rate_*` columns stay in the
   schema, because dropping them is a destructive migration for history nobody
   can regenerate and the discipline here is additive-only (R8).
-- **Auto-approve as a tiebreaker between competing requests.** `why_not()`
-  returns `competing_requests` on purpose; first-come-first-served was
-  considered and rejected. A match score here would be the system picking a
-  winner.
+- **A match score that picks the winner between competing bids.** Instant claim
+  is FCFS — the *sub* claims and wins by claiming; that is the sub choosing, not
+  the app choosing. A ranking that decided *for* the office which pending
+  above-posted bid to accept would be the system picking the person. Rank and
+  surface, never pick.
 
-Ranking and surfacing is fine. **Picking and booking is not.** If a change
-makes the app choose the person, stop.
+Ranking and surfacing is fine. The sub **claiming** is fine (they choose). The
+app **choosing the person for the office** is not. If a change makes the app
+pick a winner between bids, stop.
 
 ---
 

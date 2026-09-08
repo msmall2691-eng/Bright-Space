@@ -412,13 +412,13 @@ export default function MyDay({ previewUserId = null }) {
         message: claimMessage.trim() || null,
       })
       setClaimJob(null); setClaimRate(''); setClaimMessage('')
-      // When the office has auto-approval on and nothing needed deciding, the
-      // job is already theirs by the time this returns. Saying "we'll let you
-      // know" then would be false, and the version of false that makes someone
-      // ring the office to ask.
+      // Instant claim (Turno-style): at or below the posted price the job is
+      // already theirs by the time this returns, so "we'll let you know" would
+      // be false — the version of false that makes someone ring the office to
+      // ask. Only an above-posted offer actually waits for a person.
       toast.success(res?.auto_approved
         ? 'It’s yours — it’s on your schedule now.'
-        : 'Request sent. The office will get back to you.')
+        : 'Offer sent. The office will confirm this one.')
       await fetchDay(true)
     }
     catch (e) {
@@ -1025,27 +1025,38 @@ export default function MyDay({ previewUserId = null }) {
           setting state that nothing rendered: no sheet, no rate field, no
           feedback. This is the sheet that makes the sub side of the
           marketplace real. */}
-      {claimJob && (
+      {claimJob && (() => {
+        // Turno-style (owner's call, Sept 2026). Claiming a posted job at or
+        // below the posted price is INSTANT — it's theirs the moment they
+        // claim. Only a bid ABOVE the posted price becomes an offer the office
+        // confirms. The sheet reacts to what they type so the button never
+        // promises "instant" for something that will actually wait.
+        const posted = claimJob.posted_rate
+        const entered = String(claimRate).trim() === '' ? null : Number(String(claimRate).trim())
+        const isOffer = posted == null || (entered != null && entered > posted)
+        return (
         <Sheet onClose={() => setClaimJob(null)} busy={actionBusy}>
           <div>
-            <div className="text-base font-bold text-ink">Ask for this job?</div>
+            <div className="text-base font-bold text-ink">
+              {isOffer ? 'Make an offer' : 'Claim this job'}
+            </div>
             <div className="text-[13px] text-ink-3 mt-0.5 truncate">
               {claimJob.property_name || claimJob.title}
               {claimJob.scheduled_date ? ` · ${claimJob.scheduled_date === data?.as_of ? 'Today' : dayLabel(claimJob.scheduled_date)}` : ''}
               {claimJob.start_time ? ` · ${fmtTimeRange(claimJob.start_time, claimJob.end_time)}` : ''}
             </div>
           </div>
-          {claimJob.posted_rate != null ? (
+          {posted != null ? (
             <p className="text-[13px] text-ink-2">
-              The office is offering{' '}
+              Pays{' '}
               <span className="font-semibold text-ink">
-                ${Number(claimJob.posted_rate).toLocaleString(undefined, { maximumFractionDigits: 2 })}
-              </span>. Leave the box empty to take it.
+                ${Number(posted).toLocaleString(undefined, { maximumFractionDigits: 2 })}
+              </span>. Leave the box empty to claim it at that.
             </p>
           ) : (
-            /* No asking price: the server refuses a request with no number on
-               either side, so say what's needed instead of letting them tap
-               into a rejection. */
+            /* No posted price: there's no anchor for an instant claim, so it
+               becomes an offer the office prices. Say what's needed rather than
+               letting a blank field 422. */
             <p className="flex items-start gap-1.5 text-[13px] text-ink-2">
               <span className="mt-1.5 w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0" aria-hidden="true" />
               <span>No price on this one — say what you'd do it for.</span>
@@ -1053,14 +1064,13 @@ export default function MyDay({ previewUserId = null }) {
           )}
           <label className="block">
             <span className="text-[13px] font-medium text-ink-2">
-              {claimJob.posted_rate != null ? 'Want a different rate? (optional)' : 'Your rate'}
+              {posted != null ? 'Want a different rate? (optional)' : 'Your rate'}
             </span>
             <input
               type="number" inputMode="decimal" min="1" step="1"
               value={claimRate} onChange={e => setClaimRate(e.target.value)}
-              autoFocus={claimJob.posted_rate == null}
-              placeholder={claimJob.posted_rate != null
-                ? `${Number(claimJob.posted_rate)}` : 'e.g. 120'}
+              autoFocus={posted == null}
+              placeholder={posted != null ? `${Number(posted)}` : 'e.g. 120'}
               className="mt-1.5 w-full rounded-lg border border-hairline bg-bg px-3 py-2.5 text-base text-ink placeholder-ink-3 focus:outline-none focus:border-blue-400"
             />
           </label>
@@ -1073,18 +1083,28 @@ export default function MyDay({ previewUserId = null }) {
               className="mt-1.5 w-full rounded-lg border border-hairline bg-bg px-3 py-2.5 text-[13px] text-ink placeholder-ink-3 focus:outline-none focus:border-blue-400 resize-none"
             />
           </label>
-          <p className="text-[12px] text-ink-3">
-            Others can ask for this too — the office picks. Address details unlock
-            if it's yours.
-          </p>
+          {isOffer ? (
+            <p className="flex items-start gap-1.5 text-[12px] text-ink-3">
+              <span className="mt-1.5 w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0" aria-hidden="true" />
+              <span>{posted != null
+                ? "That's above the posted price, so the office confirms this one."
+                : 'The office will price it and confirm.'}</span>
+            </p>
+          ) : (
+            <p className="text-[12px] text-ink-3">
+              It's yours the moment you claim — first to claim gets it. Address
+              details unlock right after.
+            </p>
+          )}
           <ErrorNote>{actionError}</ErrorNote>
           <SheetActions onCancel={() => setClaimJob(null)} onConfirm={confirmClaim}
             busy={actionBusy}
-            confirmLabel={claimJob.my_claim_request?.status === 'pending' ? 'Update my ask' : 'Send my ask'}
-            busyLabel="Sending…"
+            confirmLabel={isOffer ? 'Send offer' : 'Claim it'}
+            busyLabel={isOffer ? 'Sending…' : 'Claiming…'}
             confirmIcon={<Sparkles className="w-4 h-4" />} />
         </Sheet>
-      )}
+        )
+      })()}
 
       {/* "Can't make it" on an assigned job. Records a declined status with an
           optional reason; the sub stays on the job until the office reassigns

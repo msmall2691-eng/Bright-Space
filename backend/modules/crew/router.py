@@ -1004,15 +1004,13 @@ def claim_job(
     db.commit()
     db.refresh(request)
 
-    # Auto-approval (Phase 6), OFF by default. Runs here rather than on a tick
-    # so the answer is instant — a sub who asks for a posted job at the posted
-    # price on a bench they're cleared for gets told it's theirs while they're
-    # still looking at the offer, instead of waiting for the office to click a
-    # button that was never going to say anything else.
-    #
-    # It refuses far more than it acts (see services/claim_autoapprove.py) and
-    # a refusal is not visible to the sub: their request simply stays pending,
-    # exactly as before, and the office looks at it.
+    # INSTANT CLAIM (Turno-style), ON by default. A cleared sub who claims a
+    # posted job at or below the posted price gets it the moment they claim —
+    # it's theirs, the offer closes, no office step. The one case that still
+    # waits for a person is a bid ABOVE the posted price (the office agreeing to
+    # pay more). Runs here, not on a tick, so the answer is instant while
+    # they're still looking at the offer. See services/claim_autoapprove.py for
+    # the policy and why first-come-first-served is safe here.
     auto = {"auto_approved": False}
     try:
         from services.claim_autoapprove import consider

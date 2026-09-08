@@ -1,28 +1,31 @@
-"""Auto-approving a claim, and — mostly — refusing to (Phase 6).
+"""Instant claim (Turno-style), and the one case that still waits.
 
-Routes took the recurring work off the approval queue. What's left is one-off
-jobs, and most of those are the same answer every time: a vetted sub asks for a
-posted job at the posted price, has no clash, the office clicks approve. Making
-a person click that is the bottleneck in its smallest form.
+The owner decided in writing (Sept 2026) to run the bench as a real
+marketplace: a cleared sub who claims a posted job at or below the posted price
+gets it on the spot, first to claim wins. This replaced the earlier "the office
+picks who gets it" queue. It stays legal because it is the sub ACCEPTING the
+office's offer at the office's price — Rule 0 forbids the office assigning, not
+the sub accepting (brightbase-marketplace).
 
-But it is also the last human check before somebody is scheduled and money is
-committed, so nearly every test here is about a refusal:
+What is pinned here:
 
-  * off by default — the rule never turns itself up;
+  * ON by default — a clean claim at the posted price is theirs on the spot,
+    with no setting turned on;
+  * the office can switch instant claiming OFF and go back to approving by hand;
+  * a claim BELOW the posted price is instant too, at what they asked (a
+    discount, not a negotiation);
+  * a bid ABOVE the posted price is the one thing that still waits for a
+    person — that is the office agreeing to pay more;
   * an incomplete file is refused at the point of SCHEDULING, not only at the
-    point of asking;
-  * a counter-offer above the posted price is a negotiation, and a negotiation
-    gets a person;
-  * a ceiling the office sets is obeyed;
-  * two people wanting the same job is a judgement about who — auto-approving
-    on arrival time would quietly restore first-come-first-served, which the
-    marketplace replaced on purpose;
+    point of asking — the one non-negotiable gate;
+  * first come, first served: once one sub claims, the offer closes and the
+    next claimant is turned away — no rival check picks a winner here;
   * a conflict leaves the request pending rather than half-approving anything.
 
-And the refactor underneath: approval moved into services/claim_approval.py so
+And the refactor underneath: approval lives in services/claim_approval.py so
 the auto-approver calls the SAME function the office endpoint does. The office
-path's own tests (test_marketplace_claim_requests.py) are what prove that move
-was faithful; these prove the two callers agree.
+path's own tests are what prove that move was faithful; these prove the two
+callers agree.
 """
 import uuid
 from datetime import time, timedelta
@@ -68,10 +71,11 @@ def _clear():
     app.dependency_overrides.pop(current_org_id, None)
 
 
-def _rule(mode="auto", ceiling=None):
+def _rule(mode="auto"):
+    # "auto" = instant claiming on, "off" = every claim waits for the office.
+    # Instant is the default now; tests still set it explicitly for clarity.
     db = SessionLocal()
     set_setting(db, "claim_auto_approve_mode", mode)
-    set_setting(db, "claim_auto_approve_max_rate", str(ceiling if ceiling else 0))
     db.commit(); db.close()
 
 
@@ -102,8 +106,10 @@ def world():
     db.query(User).filter(User.id.in_(made["users"] or [0])).delete(synchronize_session=False)
     db.query(Property).filter(Property.id.in_(made["properties"] or [0])).delete(synchronize_session=False)
     db.query(Client).filter(Client.id.in_(made["clients"] or [0])).delete(synchronize_session=False)
+    # Leave instant claiming OFF after each test so a leftover default-on value
+    # can't silently instant-approve a claim in an unrelated test that assumes
+    # a request stays pending.
     set_setting(db, "claim_auto_approve_mode", "off")
-    set_setting(db, "claim_auto_approve_max_rate", "0")
     db.commit(); db.close()
 
 
@@ -206,9 +212,31 @@ def test_asking_below_the_posted_price_is_still_approved_at_what_they_asked(worl
 
 # ── It refuses ──────────────────────────────────────────────────────────────
 
-def test_off_by_default_nothing_turns_itself_up(world):
+def _rule_unset():
+    from database.models import AppSetting
+    db = SessionLocal()
+    db.query(AppSetting).filter(
+        AppSetting.key == "claim_auto_approve_mode").delete(synchronize_session=False)
+    db.commit(); db.close()
+
+
+def test_instant_claiming_is_on_by_default(world):
+    """No setting touched at all — a clean claim at the posted price is theirs
+    on the spot. The owner's Turno-style default."""
+    _rule_unset()
     sub = _mk_sub(world)
-    jid = _mk_job(world)
+    jid = _mk_job(world, posted_rate=80.0)
+    assert _claim(sub, jid)["auto_approved"] is True
+    st = _state(jid)
+    assert st["cleaners"] == [sub.cleaner_id] and st["open"] is False
+    assert st["requests"][sub.cleaner_id][0] == "approved"
+
+
+def test_the_office_can_switch_instant_claiming_off(world):
+    """Turned off, a claim goes back to a request the office approves by hand."""
+    _rule("off")
+    sub = _mk_sub(world)
+    jid = _mk_job(world, posted_rate=80.0)
     assert _claim(sub, jid)["auto_approved"] is False
     st = _state(jid)
     assert st["cleaners"] == [] and st["open"] is True
@@ -224,28 +252,38 @@ def test_a_counter_offer_above_the_posted_price_waits_for_a_person(world):
     assert _state(jid)["requests"][sub.cleaner_id][0] == "pending"
 
 
-def test_the_ceiling_is_obeyed(world):
-    _rule("auto", ceiling=100.0)
+def test_an_unpriced_job_is_never_an_instant_claim(world):
+    """No posted price is no anchor for "at or below" — naming a number on an
+    unpriced job is a negotiation the office prices, so it waits."""
+    _rule("auto")
     sub = _mk_sub(world)
-    cheap = _mk_job(world, posted_rate=90.0)
-    dear = _mk_job(world, posted_rate=150.0, start=time(13, 0), end=time(15, 0))
-    assert _claim(sub, cheap)["auto_approved"] is True
-    assert _claim(sub, dear)["auto_approved"] is False
+    jid = _mk_job(world, posted_rate=None)
+    assert _claim(sub, jid, rate=120.0)["auto_approved"] is False
+    assert _state(jid)["requests"][sub.cleaner_id][0] == "pending"
 
 
-def test_two_people_wanting_the_same_job_is_the_offices_call(world):
-    """Choosing on arrival time would quietly restore first-come-first-served,
-    which the marketplace pivot replaced on purpose."""
-    _rule("off")                       # first request lands with the rule off
+def test_first_to_claim_wins_fcfs(world):
+    """The owner's marketplace: whoever claims a posted job first gets it, and
+    the offer closes — the second claimant is turned away at the door. No rival
+    check picks a winner; claiming IS the sub choosing."""
+    _rule("auto")
     a, b = _mk_sub(world), _mk_sub(world)
     jid = _mk_job(world, posted_rate=80.0)
-    _claim(a, jid)
-    _rule("auto")                      # rule on — but there's now a rival
 
-    assert _claim(b, jid)["auto_approved"] is False
+    # A claims first — instant, theirs, offer closed.
+    assert _claim(a, jid)["auto_approved"] is True
     st = _state(jid)
-    assert st["cleaners"] == []
-    assert {v[0] for v in st["requests"].values()} == {"pending"}
+    assert st["cleaners"] == [a.cleaner_id] and st["open"] is False
+
+    # B claims the same job — the offer is gone, so the endpoint refuses it
+    # outright (409), rather than filing a request against a closed job.
+    api = _api(b)
+    try:
+        r = api.post(f"/api/crew/jobs/{jid}/claim", json={})
+        assert r.status_code == 409, r.text
+    finally:
+        _clear()
+    assert _state(jid)["cleaners"] == [a.cleaner_id], "still A's — first wins"
 
 
 def test_an_unvetted_sub_is_refused_at_the_point_of_scheduling_too(world):
