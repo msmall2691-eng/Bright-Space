@@ -475,7 +475,17 @@ export default function JobDetail() {
           </div>
         )}
 
-        <div className="grid grid-cols-1 shell:grid-cols-[300px_minmax(0,1fr)_320px] gap-4">
+        {/* Responsive in three tiers, because the 300px + 320px fixed rails
+            only fit once the content area is genuinely wide:
+              < shell (900): one column, everything stacked.
+              shell–xl: TWO equal columns — fields + related stack in the left
+                one, notes/activity take the whole right one (it spans both
+                rows). Three fixed-ish columns at ~700px of content collapsed
+                the middle track to nothing and its timeline spilled over the
+                right rail; two columns is what actually fits that band.
+              xl (1280+): the intended three columns, where 300 + flex + 320
+                leaves the middle a real ~400px. */}
+        <div className="grid grid-cols-1 shell:grid-cols-2 xl:grid-cols-[300px_minmax(0,1fr)_320px] gap-4">
           {/* ── Left: fields ──────────────────────────────────────── */}
           <div className="bg-panel border border-hairline rounded-xl p-4 space-y-4 self-start">
             <div>
@@ -764,7 +774,10 @@ export default function JobDetail() {
           </div>
 
           {/* ── Center: notes + activity ──────────────────────────── */}
-          <div className="min-w-0 space-y-4">
+          {/* Spans both rows in the two-column (shell–xl) band so the related
+              rail can tuck under the fields on the left instead of leaving a
+              hole; back to a single row once it's its own column at xl. */}
+          <div className="min-w-0 space-y-4 shell:row-span-2 xl:row-span-1">
             {job.completion_note && (
               /* Field report left by the cleaner at mark-done. Internal-only —
                  stored on its own column so it can never ride onto an invoice. */
