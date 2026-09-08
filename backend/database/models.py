@@ -2163,3 +2163,32 @@ class ProposedAction(Base):
     __table_args__ = (
         Index("idx_proposed_actions_org_status", "org_id", "status"),
     )
+
+
+class UsedPortalMagicLink(Base):
+    """Single-use ledger for customer-portal magic-link sign-in tokens
+    (BB-SEC-21, migration 112).
+
+    A portal magic link is a bearer JWT good for 30 minutes. Nothing stopped it
+    being redeemed more than once inside that window, so a link that leaked —
+    forwarded mail, a shared inbox, a proxy or browser-history entry, a Referer
+    header — could be replayed into fresh 14-day portal sessions again and again
+    until it expired, while the email that carried it promised it "can only be
+    used once". This table records a link's id the FIRST time it is redeemed;
+    `jti` is the primary key, so that first redemption is atomic across workers
+    and a second redemption of the same link trips the unique violation and is
+    refused. That makes the promise true.
+
+    NOT tenant data, and deliberately not org-scoped: it holds no customer
+    record — only an opaque token id and two timestamps. It is an authentication
+    nonce ledger, the same shape as a token denylist, so it is not in
+    TENANT_TABLES and takes no RLS policy. `expires_at` (the token's own exp)
+    lets expired rows be pruned, since a link that can no longer be valid can no
+    longer be replayed either.
+    """
+    __tablename__ = "used_portal_magic_links"
+    # The token's `jti` claim, or — for a link issued before jti shipped — a
+    # hash of the token itself. Either way one opaque id per link.
+    jti = Column(String, primary_key=True)
+    used_at = Column(DateTime, default=_utcnow, nullable=False)
+    expires_at = Column(DateTime, nullable=True, index=True)
