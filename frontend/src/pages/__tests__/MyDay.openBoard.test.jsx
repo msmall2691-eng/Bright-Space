@@ -19,7 +19,7 @@
  *      screen that displays it.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { render, screen, cleanup, waitFor } from '@testing-library/react'
+import { render, screen, cleanup, waitFor, fireEvent } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 
 vi.mock('../../api', () => ({
@@ -31,7 +31,7 @@ vi.mock('../../utils/toastBus', () => ({
   pushToast: vi.fn(),
 }))
 
-import { get } from '../../api'
+import { get, post } from '../../api'
 import MyDay from '../MyDay'
 
 const TODAY = '2026-09-07'
@@ -86,6 +86,27 @@ it('says which day an offer is for', async () => {
   await waitFor(() => expect(document.body.textContent).toMatch(/Sep 10/))
 })
 
+
+it('asking for a job opens the sheet and files the request', async () => {
+  // The assertion that was missing. The other tests prove the BUTTON exists;
+  // #777 deleted the sheet it opens, so the button set state that nothing
+  // rendered — no sheet, no rate field, no POST, no feedback. A test that only
+  // finds the button passes on a dead button. This one clicks it.
+  post.mockResolvedValue({ auto_approved: false })
+  await show()
+
+  fireEvent.click(screen.getByRole('button', { name: /ask for this job/i }))
+
+  // The sheet — the render that regressed — is what carries the confirm.
+  const send = await screen.findByRole('button', { name: /send my ask/i })
+  fireEvent.click(send)
+
+  // Empty rate box means "your posted price is fine" — null, not 0.
+  await waitFor(() => expect(post).toHaveBeenCalledWith(
+    '/api/crew/jobs/41/claim',
+    { requested_rate: null, message: null },
+  ))
+})
 
 it('never puts the house on an offer', async () => {
   await show()
