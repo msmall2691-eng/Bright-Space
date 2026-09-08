@@ -2983,6 +2983,9 @@ def _claim_request_row(r: JobClaimRequest, names_by_cid: dict,
         "requested_rate": r.requested_rate,
         "message": r.message,
         "status": r.status,
+        # Why the office declined (migration 111) — shown back on the row, and
+        # carried through to the sub's "my asks".
+        "reason": r.reason,
         "created_at": r.created_at.isoformat() if r.created_at else None,
         "decided_at": r.decided_at.isoformat() if r.decided_at else None,
         # Things the office should weigh before handing this person the job.
@@ -3105,14 +3108,24 @@ def job_margin(job_id: int, pay: Optional[float] = None, db: Session = Depends(g
     return margin(db, job, oid, pay=pay)
 
 
+class DeclineClaimBody(BaseModel):
+    # A short reason the office types, so the sub learns why they lost and can
+    # bid better next time. Optional — a decline with no note is still allowed.
+    reason: Optional[str] = None
+
+
 @router.post("/{job_id}/claim-requests/{request_id}/decline",
              dependencies=[Depends(require_role("admin", "manager"))])
-def decline_claim_request(job_id: int, request_id: int, db: Session = Depends(get_db),
+def decline_claim_request(job_id: int, request_id: int,
+                          body: DeclineClaimBody = None,
+                          db: Session = Depends(get_db),
                           org_id: int = Depends(current_org_id),
                           current_user: User = Depends(require_role("admin", "manager"))):
     """Decline a single request without approving anyone — the job stays
     open for other pending requests (or new ones) unless the office also
-    turns off "Open to crew" separately."""
+    turns off "Open to crew" separately. An optional reason (migration 111)
+    is recorded and reaches the sub's "my asks" so a decline stops being
+    silent."""
     org_id = resolve_org_id(org_id, db)
     job = _get_owned_job(job_id, db, org_id)
     req = db.query(JobClaimRequest).filter(
@@ -3122,7 +3135,9 @@ def decline_claim_request(job_id: int, request_id: int, db: Session = Depends(ge
         raise HTTPException(status_code=404, detail="Request not found")
     if req.status != "pending":
         raise HTTPException(status_code=409, detail=f"This request is already {req.status}.")
+    reason = ((body.reason if body else None) or "").strip()[:280] or None
     req.status = "declined"
+    req.reason = reason
     req.decided_at = datetime.now(timezone.utc)
     req.decided_by = current_user.id
     db.commit()
@@ -3130,11 +3145,12 @@ def decline_claim_request(job_id: int, request_id: int, db: Session = Depends(ge
         from services.push_service import notify_user
         if req.user_id:
             notify_user(req.user_id, "Job request declined",
-                        f"Your request for {job.title} on {job.scheduled_date} was declined.",
+                        f"Your request for {job.title} on {job.scheduled_date} was declined"
+                        + (f" — {reason}" if reason else "") + ".",
                         url="/crew", category="crew")
     except Exception:
         pass
-    return {"status": "declined", "job_id": job.id, "request_id": req.id}
+    return {"status": "declined", "job_id": job.id, "request_id": req.id, "reason": reason}
 
 
 @router.get("/{job_id}", dependencies=[Depends(require_role("admin", "manager", "viewer", "cleaner"))])

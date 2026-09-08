@@ -450,3 +450,32 @@ def _req_id(jid, cleaner_id):
     out = r.id if r else None
     db.close()
     return out
+
+
+def test_a_decline_reason_reaches_the_subs_my_asks(ids):
+    """A decline used to be silent — status flipped, no words. The office's
+    short reason now travels to the sub's 'my asks' so they learn why they
+    lost (migration 111)."""
+    jid = _mk_job(ids, [], open_for_claims=True)
+    api = _as(_Cleaner(9990, "CT-990"))
+    try:
+        _claim(api, jid)
+    finally:
+        _clear()
+    rid = _req_id(jid, "CT-990")
+    admin = _as(_Admin())
+    try:
+        r = admin.post(f"/api/jobs/{jid}/claim-requests/{rid}/decline",
+                       json={"reason": "went with someone closer"})
+        assert r.status_code == 200, r.text
+        assert r.json()["reason"] == "went with someone closer"
+    finally:
+        _clear()
+    api = _as(_Cleaner(9990, "CT-990"))
+    try:
+        c = next(x for x in api.get("/api/crew/my-claims").json()["claims"]
+                 if x["job_id"] == jid)
+        assert c["status"] == "declined"
+        assert c["reason"] == "went with someone closer"
+    finally:
+        _clear()

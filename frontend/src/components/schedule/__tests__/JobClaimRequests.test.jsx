@@ -99,11 +99,30 @@ it('declining one person does not disturb the rest of the job', async () => {
   mount(REQS, { onDecided })
   await screen.findByText('Dana')
 
+  // Decline is now a two-step: the first click opens the optional "why?" field
+  // on that row; the second commits it. Skip the reason and just confirm.
   fireEvent.click(screen.getAllByRole('button', { name: /Decline/ })[0])
+  const field = await screen.findByPlaceholderText(/Why\?/)
+  fireEvent.click(field.parentElement.querySelector('button:last-child'))
   await waitFor(() => expect(post).toHaveBeenCalledWith(
     '/api/jobs/5/claim-requests/1/decline', {}))
   // No assignment happened, so nothing above needs refetching.
   expect(onDecided).not.toHaveBeenCalled()
+})
+
+it('sends the reason the office typed so the sub learns why they lost', async () => {
+  // The whole point of the field: a decline stops being a silent "someone else
+  // got it". What she types travels to the sub's "my asks" (migration 111).
+  post.mockResolvedValue({ status: 'declined', reason: 'went with someone closer' })
+  mount()
+  await screen.findByText('Dana')
+
+  fireEvent.click(screen.getAllByRole('button', { name: /Decline/ })[0])
+  const field = await screen.findByPlaceholderText(/Why\?/)
+  fireEvent.change(field, { target: { value: 'went with someone closer' } })
+  fireEvent.keyDown(field, { key: 'Enter' })
+  await waitFor(() => expect(post).toHaveBeenCalledWith(
+    '/api/jobs/5/claim-requests/1/decline', { reason: 'went with someone closer' }))
 })
 
 it('passes the server’s own refusal through', async () => {

@@ -1125,6 +1125,9 @@ def my_claims(db: Session = Depends(get_db),
         out.append({
             "job_id": r.job_id,
             "status": r.status,
+            # Why they lost, when the office said (migration 111) — so a decline
+            # stops being a silent "someone else got it".
+            "reason": r.reason,
             # What they asked (their counter, or None = the posted rate), what
             # was posted, and — once won — what was agreed and will be paid.
             "requested_rate": r.requested_rate,

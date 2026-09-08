@@ -369,6 +369,36 @@ def test_the_office_endpoint_and_the_auto_approver_reach_the_same_state(world):
     assert b["requests"][sub.cleaner_id][1] is None
 
 
+# ── The losers hear why ──────────────────────────────────────────────────────
+
+def test_an_instant_claim_gives_the_people_it_passes_over_a_reason(world):
+    """When a claim instant-approves, everyone still pending on that job is
+    auto-declined — and each of them gets a reason to read, not a bare
+    "someone else got it" (migration 111). The office typed nothing here, so
+    the default phrase stands in; a reason the office DID type is never
+    overwritten (that path is claim_approval's own tests)."""
+    _rule("auto")
+    a, b = _mk_sub(world), _mk_sub(world)
+    jid = _mk_job(world, posted_rate=80.0)
+
+    # A opens a negotiation above the posted price — it waits, staying pending
+    # and leaving the offer open.
+    assert _claim(a, jid, rate=120.0)["auto_approved"] is False
+    assert _state(jid)["open"] is True
+
+    # B claims at the posted price — instant, and that approval turns A down.
+    assert _claim(b, jid)["auto_approved"] is True
+
+    db = SessionLocal()
+    a_req = (db.query(JobClaimRequest)
+             .filter(JobClaimRequest.job_id == jid,
+                     JobClaimRequest.cleaner_id == a.cleaner_id).first())
+    status, reason = a_req.status, a_req.reason
+    db.close()
+    assert status == "declined"
+    assert reason and "picked" in reason.lower(), reason
+
+
 # ── The row lock (the fix) ───────────────────────────────────────────────────
 
 def test_consider_locks_both_the_job_and_the_request_for_update(world, monkeypatch):

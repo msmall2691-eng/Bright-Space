@@ -43,6 +43,10 @@ export default function JobClaimRequests({ jobId, postedRate, onDecided }) {
   const [rows, setRows] = useState(null)
   const [error, setError] = useState(false)
   const [busyId, setBusyId] = useState(null)
+  // Declining opens a small "why?" field on that row (optional). The reason
+  // reaches the sub's "my asks" so a decline stops being silent (migration 111).
+  const [decliningId, setDecliningId] = useState(null)
+  const [declineReason, setDeclineReason] = useState('')
 
   const load = useCallback(() => {
     get(`/api/jobs/${jobId}/claim-requests`)
@@ -68,10 +72,13 @@ export default function JobClaimRequests({ jobId, postedRate, onDecided }) {
     }
     setBusyId(req.id)
     try {
-      const r = await post(`/api/jobs/${jobId}/claim-requests/${req.id}/${action}`, {})
+      const body = action === 'decline' && declineReason.trim()
+        ? { reason: declineReason.trim() } : {}
+      const r = await post(`/api/jobs/${jobId}/claim-requests/${req.id}/${action}`, body)
       toast.success(action === 'approve'
         ? `${req.cleaner_name} has the job${r?.agreed_rate ? ` at ${money(r.agreed_rate)}` : ''}`
         : `Declined ${req.cleaner_name}`)
+      setDecliningId(null); setDeclineReason('')
       load()
       // Approving assigns the job and closes the offer, so the page around
       // this panel is now stale in ways this panel can't fix on its own.
@@ -195,14 +202,18 @@ export default function JobClaimRequests({ jobId, postedRate, onDecided }) {
                     <JobMargin jobId={jobId} pay={wants} />
                   )}
                   {req.status !== 'pending' && (
-                    <div className="text-[11px] text-ink-3 mt-1">{state.label}</div>
+                    <div className="text-[11px] text-ink-3 mt-1">
+                      {state.label}
+                      {req.status === 'declined' && req.reason
+                        ? <span> · “{req.reason}”</span> : null}
+                    </div>
                   )}
                 </div>
 
-                {req.status === 'pending' && (
+                {req.status === 'pending' && decliningId !== req.id && (
                   <div className="flex items-center gap-1.5 shrink-0">
                     <button type="button" disabled={busyId != null}
-                      onClick={() => decide(req, 'decline')}
+                      onClick={() => { setDeclineReason(''); setDecliningId(req.id) }}
                       className="inline-flex items-center gap-1 rounded-md border border-hairline-2 bg-panel px-2.5 py-1.5 text-xs font-medium text-ink-2 hover:bg-bg-2 disabled:opacity-50 transition-colors">
                       <X className="w-3.5 h-3.5" /> Decline
                     </button>
@@ -215,6 +226,30 @@ export default function JobClaimRequests({ jobId, postedRate, onDecided }) {
                   </div>
                 )}
               </div>
+
+              {/* The "why?" field, opened by Decline. Optional — Enter or the
+                  button declines; the reason travels to the sub's "my asks". */}
+              {req.status === 'pending' && decliningId === req.id && (
+                <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                  <input
+                    type="text" value={declineReason} autoFocus maxLength={280}
+                    onChange={e => setDeclineReason(e.target.value)}
+                    onKeyDown={e => { if (e.key === 'Enter' && busyId == null) decide(req, 'decline') }}
+                    placeholder="Why? (optional) — e.g. went with someone closer"
+                    className="min-w-0 flex-1 rounded-md border border-hairline bg-bg px-2.5 py-1.5 text-xs text-ink placeholder-ink-3 focus:outline-none focus:border-blue-400" />
+                  <button type="button" disabled={busyId != null}
+                    onClick={() => { setDecliningId(null); setDeclineReason('') }}
+                    className="rounded-md border border-hairline-2 bg-panel px-2.5 py-1.5 text-xs font-medium text-ink-2 hover:bg-bg-2 disabled:opacity-50 transition-colors">
+                    Cancel
+                  </button>
+                  <button type="button" disabled={busyId != null}
+                    onClick={() => decide(req, 'decline')}
+                    className="inline-flex items-center gap-1 rounded-md bg-panel border border-hairline-2 px-2.5 py-1.5 text-xs font-medium text-ink-2 hover:bg-bg-2 disabled:opacity-50 transition-colors">
+                    <X className="w-3.5 h-3.5" />
+                    {busyId === req.id ? 'Saving…' : 'Decline'}
+                  </button>
+                </div>
+              )}
             </div>
           )
         })}

@@ -96,6 +96,11 @@ export default function CrewMyAsks() {
                 {st.word}
               </span>
             </div>
+            {/* Why they lost, when the office said — so a decline isn't a
+                silent "someone else got it" (migration 111). */}
+            {c.status === 'declined' && c.reason && (
+              <p className="mt-1 text-[11.5px] text-ink-3">“{c.reason}”</p>
+            )}
             {c.status === 'pending' && (
               <div className="mt-2 flex justify-end">
                 <button type="button" onClick={() => withdraw(c.job_id)}
