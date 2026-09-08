@@ -112,6 +112,28 @@ def consider(db: Session, job, req: JobClaimRequest, *, org_id: int) -> dict:
     sub is told their request is in, and if it was taken instantly the job
     detail they land on says so.
     """
+    # CONCURRENCY (scheduling-invariants R5). approve()'s contract is that the
+    # caller holds `job` and `req` FOR UPDATE — the office endpoint has since
+    # Phase 4, and this caller was the one that did not. The /ask handler loads
+    # the job unlocked and commits the request, then hands both here; two subs
+    # asking near-simultaneously, or the office approving one while this
+    # approves the other, could each pass why_not()'s rival check (neither yet
+    # seeing the other's request) and both reach approve() — two subs on a
+    # one-person job, priced for one, two "You got the job!" pushes.
+    #
+    # Re-reading both rows FOR UPDATE here serializes the whole decide-and-
+    # approve per job: the rival count, the open/scheduled checks and the write
+    # all happen under the lock, so the second caller blocks until the first
+    # commits and then sees a closed offer (or the rival) and refuses. Same
+    # identity-map objects the caller passed, now locked; on Postgres this is
+    # SELECT ... FOR UPDATE, SQLite serializes writers.
+    from database.models import Job
+    job = db.query(Job).filter(Job.id == job.id).with_for_update().first()
+    req = (db.query(JobClaimRequest)
+           .filter(JobClaimRequest.id == req.id).with_for_update().first())
+    if job is None or req is None:
+        return {"auto_approved": False, "reason": "gone"}
+
     reason = why_not(db, job, req)
     if reason:
         return {"auto_approved": False, "reason": reason}
