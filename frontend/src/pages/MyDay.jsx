@@ -32,6 +32,7 @@ import PropertySheet from '../components/crew/PropertySheet'
 import JobCard, { fmtTimeRange } from '../components/crew/JobCard'
 import CrewJobSheet from '../components/crew/CrewJobSheet'
 import CrewPayoutSetup from '../components/crew/CrewPayoutSetup'
+import CrewEarnings from '../components/crew/CrewEarnings'
 import CrewSetupCard from '../components/crew/CrewSetupCard'
 import { SOFT, CrewCard, SectionLabel, ErrorNote, SettingRow, Sheet, SheetActions } from '../components/crew/primitives'
 // Photos captured on cellular wait on-device and send on WiFi — My Day owns
@@ -882,6 +883,12 @@ export default function MyDay({ previewUserId = null }) {
                 <SettingRow icon={Landmark} label="Direct deposit"
                   summary="Get paid to your bank — optional">
                   <CrewPayoutSetup />
+                </SettingRow>
+                {/* What the office has recorded owing you, per job (BB-PAY-01) —
+                    the ledger, distinct from where the money goes above. */}
+                <SettingRow icon={DollarSign} label="What you're owed"
+                  summary="Your payouts, per job — owed and paid">
+                  <CrewEarnings />
                 </SettingRow>
                 <SettingRow icon={DollarSign} label="This week"
                   summary={weekPay

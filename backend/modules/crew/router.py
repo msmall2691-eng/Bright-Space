@@ -688,6 +688,43 @@ def my_payout_account(
     return {**_stripe_state(current_user), "available": configured()}
 
 
+@router.get("/me/earnings")
+def my_earnings(
+    db: Session = Depends(get_db),
+    org_id: int = Depends(current_org_id),
+    current_user: User = Depends(require_role("cleaner")),
+):
+    """What I'm owed and what's been paid — per job, never by the hour.
+
+    BB-PAY-01: the payout ledger existed only on the office side; a sub could
+    set up where their money goes (/me/payouts) but never see what they had
+    coming. This reads their OWN rows from services/sub_payouts (scoped by
+    user_id, so no other sub's amounts are reachable) and returns a light list
+    plus two totals. Per-job amounts only — a subcontractor is paid per job,
+    never per hour (Rule 0), so nothing here derives or displays an hourly
+    figure. One query, no per-row Stripe calls (brightbase-economy).
+    """
+    from services.sub_payouts import list_payouts
+    oid = resolve_org_id(org_id, db)
+    # `void` is a cancelled line, not money owed — leave it off the sub's view.
+    rows = [r for r in list_payouts(db, oid, user_id=current_user.id)
+            if r.get("status") != "void"]
+    lines = [{
+        "job_id": r["job_id"],
+        "amount": r["amount"],
+        "status": r["status"],          # due | sent | paid
+        "earned_on": r["earned_on"],
+        "paid_at": r["paid_at"],
+        "memo": r["memo"],
+    } for r in rows]
+    paid = round(sum(l["amount"] for l in lines if l["status"] == "paid"), 2)
+    # "Pending" = agreed but not yet confirmed in their account: due (recorded,
+    # not sent) + sent (office sent it, e.g. a cheque, not yet confirmed paid).
+    pending = round(sum(l["amount"] for l in lines
+                        if l["status"] in ("due", "sent")), 2)
+    return {"lines": lines, "paid": paid, "pending": pending, "count": len(lines)}
+
+
 @router.post("/me/payouts/setup")
 def start_payout_setup(
     db: Session = Depends(get_db),
