@@ -3731,6 +3731,27 @@ def update_job(job_id: int, data: JobUpdate, db: Session = Depends(get_db), org_
         from services.crew_notify import notify_jobs_posted
         notify_jobs_posted(db, [job], org_id=job.org_id)
 
+    # Tell the assigned sub when THEIR job moves or is called off (BB-CREW-03).
+    # A reschedule or a cancel changed the job under whoever was on it and told
+    # them nothing — they found out by opening the app, or by driving to a house
+    # that was called off. Event-driven at the write, post-commit, push+SMS.
+    #
+    # RESCHEDULE goes only to cleaners already on the job: a newly-added cleaner
+    # just got "New job for you" above, so "a job of yours moved" in the same
+    # breath is noise. `moved` already excludes a cancel (a cancel isn't a move).
+    if moved:
+        continuing = [c for c in (job.cleaner_ids or [])
+                      if str(c) in set(prev_cleaner_ids)]
+        if continuing:
+            from services.crew_notify import notify_job_rescheduled
+            notify_job_rescheduled(db, job, continuing)
+    # CANCEL goes to whoever is currently on it. Distinct from close_offer above,
+    # which answers people still holding a PENDING request — the assigned sub is
+    # not one of them.
+    if job.status == "cancelled" and prev_status != "cancelled" and job.cleaner_ids:
+        from services.crew_notify import notify_job_cancelled
+        notify_job_cancelled(db, job, job.cleaner_ids)
+
     # Auto-create a draft Invoice the first time a job lands on "completed".
     # Shared with complete_job() below — both are real "mark complete" paths
     # (this one via the office-side status dropdown/edit modal, that one via
@@ -4408,6 +4429,15 @@ def skip_job(job_id: int, reason: Optional[str] = None,
 
     db.commit()
     db.refresh(job)
+
+    # Tell whoever was on this occurrence that it's off (BB-CREW-03). Skipping a
+    # single visit is cancelling it for the assigned sub; event-driven at the
+    # write, post-commit, push+SMS. Distinct from the close_offer above, which
+    # answers pending REQUESTERS.
+    if prev_status != "cancelled" and job.cleaner_ids:
+        from services.crew_notify import notify_job_cancelled
+        notify_job_cancelled(db, job, job.cleaner_ids)
+
     return {
         "id": job.id,
         "status": job.status,

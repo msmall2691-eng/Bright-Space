@@ -151,6 +151,63 @@ def notify_job_assigned(db: Session, job, cleaner_ids) -> int:
         return 0
 
 
+def _reach_assigned(db: Session, job, cleaner_ids, *, title: str, tag: str) -> int:
+    """Reach the cleaner(s) already on `job` on their own login — push, then
+    SMS to whoever push could not (notify_user_or_sms). Resolves cleaner_ids to
+    logins the same org-scoped way as notify_job_assigned. Best-effort; returns
+    channels delivered.
+
+    NOT gated on push_enabled(): SMS is a second channel, and a deploy with no
+    VAPID keys must still be able to reach a rescheduled/cancelled sub by text —
+    same reasoning notify_jobs_posted dropped that gate. The body is `_job_line`
+    (day · time · property): the recipient is already ON this job, so the
+    property name is theirs to see — the offer-board withholding does not apply.
+    """
+    ids = [str(c) for c in (cleaner_ids or []) if str(c).strip()]
+    if not ids:
+        return 0
+    try:
+        from database.models import User
+
+        oid = getattr(job, "org_id", None)
+        q = db.query(User).filter(User.cleaner_id.in_(ids), User.role == "cleaner")
+        if oid is not None:
+            q = q.filter(or_(User.org_id == oid, User.org_id.is_(None)))
+        sent = 0
+        for u in q.all():
+            sent += notify_user_or_sms(u.id, title, _job_line(job), url="/my-day",
+                                       tag=tag, category="job_assignments")
+        return sent
+    except Exception:  # pragma: no cover - defensive: notify must never break scheduling
+        logger.exception("crew %s notify failed (job %s)", tag, getattr(job, "id", "?"))
+        return 0
+
+
+def notify_job_rescheduled(db: Session, job, cleaner_ids) -> int:
+    """The office moved an assigned job to a new day/time — tell whoever is on it
+    (BB-CREW-03). Event-driven at the reschedule write, push+SMS.
+
+    Callers pass only cleaners who were ALREADY on the job: a newly-added cleaner
+    got "New job for you" at the same write, and telling them the same job
+    "moved" in the same breath is noise.
+    """
+    return _reach_assigned(db, job, cleaner_ids,
+                           title="A job of yours moved", tag=f"job-moved-{job.id}")
+
+
+def notify_job_cancelled(db: Session, job, cleaner_ids) -> int:
+    """The office called off an assigned job — tell whoever was on it
+    (BB-CREW-03). Event-driven at the cancel write, push+SMS.
+
+    This reaches the cleaner ASSIGNED to the job; it does not overlap
+    claim_approval.close_offer, which answers the people still holding a PENDING
+    request (they had not won it). Different people, different message.
+    """
+    return _reach_assigned(db, job, cleaner_ids,
+                           title="A job of yours was cancelled",
+                           tag=f"job-cancelled-{job.id}")
+
+
 def _offer_line(job) -> str:
     """"Sat, Sep 12 · 9 AM · Rockport, ME · $180" — town, never the house.
 
