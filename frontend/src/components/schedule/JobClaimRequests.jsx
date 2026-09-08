@@ -31,6 +31,29 @@ import JobMargin from './JobMargin'
 const money = (n) => n == null || n === '' ? null :
   `$${Number(n).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`
 
+const fmtDay = (iso) => {
+  if (!iso) return null
+  const d = new Date(`${iso}T12:00:00`)
+  return Number.isNaN(d.getTime()) ? iso
+    : d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
+}
+
+/** The requester's recent track record, in a plain line — never a badge row.
+    "Who is this, and have they done this before" for a person about to be
+    handed a customer's house. Zeros read as "New to the bench", not a blank. */
+function TrackRecord({ h }) {
+  if (!h) return null
+  if (!h.completed) {
+    return <p className="text-[11px] text-ink-3 mt-1">New to the bench — no finished jobs yet</p>
+  }
+  const bits = [
+    `${h.completed} done in ${h.history_days} days`,
+    h.on_day ? `${h.on_day} on the day` : null,
+    h.last_worked ? `last worked ${fmtDay(h.last_worked)}` : null,
+  ].filter(Boolean)
+  return <p className="text-[11px] text-ink-3 mt-1">{bits.join(' · ')}</p>
+}
+
 /** Dot + word, per the design language — never a filled pill. */
 const STATE = {
   pending: { dot: 'bg-amber-500', label: 'Waiting on you' },
@@ -175,6 +198,10 @@ export default function JobClaimRequests({ jobId, postedRate, onDecided }) {
                       “{req.message}”
                     </p>
                   )}
+                  {/* Who they are before she hands them the house — jobs
+                      finished, how many on the day, when they last worked.
+                      Pending rows only (the backend sends it only there). */}
+                  {req.status === 'pending' && <TrackRecord h={req.history} />}
                   {/* What the office should weigh before handing this person
                       the job — approved time off over the date, or another job
                       at the same hour. Backend sends it only on rows still to

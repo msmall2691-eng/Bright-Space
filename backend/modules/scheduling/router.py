@@ -2973,8 +2973,42 @@ def _claim_request_heads_up(db: Session, job, pending, org_id) -> dict:
     return out
 
 
+def _claim_request_history(db: Session, pending, org_id) -> dict:
+    """A one-line track record for each still-undecided requester, keyed by
+    cleaner_id: jobs finished in the last 90 days, how many landed on the day
+    they were booked, and when they last worked. The office is handing someone
+    a customer's house — "who is this person, and have they done this before"
+    is the question the row couldn't answer.
+
+    Shares services/bench.work_history with the bench screen, so the two can't
+    disagree about a sub's record, and it deliberately counts OUTCOMES only —
+    no decline rate, no punctuality from punches (see bench.py's docstring for
+    why those would be the app contradicting the signed agreement).
+
+    One bounded query for the whole pending set (brightbase-economy), and
+    pending only: a track record on a request decided last month is noise about
+    a decision nobody can take back.
+    """
+    if not pending:
+        return {}
+    from services.bench import work_history, HISTORY_DAYS
+    work = work_history(db, org_id, [r.cleaner_id for r in pending])
+    out: dict = {}
+    for cid, w in work.items():
+        lw = w.get("last_worked")
+        out[str(cid)] = {
+            "completed": w["completed"],
+            "on_day": w["on_day"],
+            "upcoming": w["upcoming"],
+            "last_worked": lw.isoformat() if lw else None,
+            "history_days": HISTORY_DAYS,
+        }
+    return out
+
+
 def _claim_request_row(r: JobClaimRequest, names_by_cid: dict,
-                       heads_up: dict | None = None) -> dict:
+                       heads_up: dict | None = None,
+                       history: dict | None = None) -> dict:
     return {
         "id": r.id,
         "job_id": r.job_id,
@@ -2986,6 +3020,11 @@ def _claim_request_row(r: JobClaimRequest, names_by_cid: dict,
         # Why the office declined (migration 111) — shown back on the row, and
         # carried through to the sub's "my asks".
         "reason": r.reason,
+        # The requester's recent track record — jobs finished, on-day, last
+        # worked. Only on pending rows (the caller computes it for those), for
+        # the same reason as heads_up: a record beside a decided request is
+        # about a decision nobody can take back.
+        "history": (history or {}).get(str(r.cleaner_id)),
         "created_at": r.created_at.isoformat() if r.created_at else None,
         "decided_at": r.decided_at.isoformat() if r.decided_at else None,
         # Things the office should weigh before handing this person the job.
@@ -3013,15 +3052,16 @@ def list_claim_requests(job_id: int, db: Session = Depends(get_db), org_id: int 
     if cleaner_ids:
         for u in db.query(User).filter(User.cleaner_id.in_(cleaner_ids)).all():
             names[u.cleaner_id] = u.full_name or u.email
-    heads_up = _claim_request_heads_up(
-        db, job, [r for r in rows if r.status == "pending"], org_id)
+    pending = [r for r in rows if r.status == "pending"]
+    heads_up = _claim_request_heads_up(db, job, pending, org_id)
+    history = _claim_request_history(db, pending, org_id)
     return {
         "job_id": job.id,
         "posted_rate": job.posted_rate,
         # What the customer is billed (migration 110) — never mixed with the
         # rates above, which are what a sub is paid.
         "price": job.price,
-        "requests": [_claim_request_row(r, names, heads_up) for r in rows],
+        "requests": [_claim_request_row(r, names, heads_up, history) for r in rows],
     }
 
 
@@ -3117,7 +3157,7 @@ class DeclineClaimBody(BaseModel):
 @router.post("/{job_id}/claim-requests/{request_id}/decline",
              dependencies=[Depends(require_role("admin", "manager"))])
 def decline_claim_request(job_id: int, request_id: int,
-                          body: DeclineClaimBody = None,
+                          body: Optional[DeclineClaimBody] = None,
                           db: Session = Depends(get_db),
                           org_id: int = Depends(current_org_id),
                           current_user: User = Depends(require_role("admin", "manager"))):

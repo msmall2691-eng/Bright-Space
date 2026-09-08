@@ -85,30 +85,36 @@ def _crew_key(job) -> list:
     return [str(c) for c in (job.cleaner_ids or []) if c]
 
 
-def build(db: Session, org_id: int) -> dict:
-    """Everything the bench screen needs, in one payload."""
+def work_history(db: Session, org_id: int, cleaner_ids) -> dict:
+    """Per-sub work OUTCOMES over the last HISTORY_DAYS, keyed by cleaner_id:
+    `completed`, `on_day`, `upcoming` (counts) and `last_worked` (a date, or
+    None). Outcomes only — the module docstring says what is deliberately NOT
+    counted here (declines, punctuality), and that reasoning holds wherever
+    this is read.
+
+    Shared by the bench screen and the office's claim-request row so the two
+    cannot drift into disagreeing about a sub's record. One bounded pass over
+    the org's jobs in the window, whatever the size of `cleaner_ids` — the
+    office's claim row passes just this job's few requesters, the bench passes
+    the whole roster, and both pay for one query (brightbase-economy).
+
+    completed_at is a UTC timestamp and scheduled_date is a business-local
+    date, so "did they finish it on the day it was booked" has to go through
+    business_date() before it means anything. Comparing them raw reads every
+    evening job as finished a day late.
+    """
+    cids = {str(c) for c in cleaner_ids if c}
+    work = {cid: {"completed": 0, "on_day": 0, "upcoming": 0, "last_worked": None}
+            for cid in cids}
+    if not cids:
+        return work
+
     today = business_today()
     since = today - timedelta(days=HISTORY_DAYS)
-
-    threshold = form_1099_threshold(today.year)
-    base = roster(db, org_id)
-    people = base["crew"]
-    by_crew = {p["cleaner_id"]: p for p in people if p.get("cleaner_id")}
-    by_user = {p["user_id"]: p for p in people}
-
-    # ── work, from jobs ────────────────────────────────────────────────────
-    #
-    # completed_at is a UTC timestamp and scheduled_date is a business-local
-    # date, so "did they finish it on the day it was booked" has to go through
-    # business_date() before it means anything. Comparing them raw reads every
-    # evening job as finished a day late.
     jobs = (db.query(Job)
             .filter(or_(Job.org_id == org_id, Job.org_id.is_(None)),
                     or_(Job.scheduled_date >= since, Job.completed_at.isnot(None)))
             .all())
-
-    work = {cid: {"completed": 0, "on_day": 0, "upcoming": 0, "last_worked": None}
-            for cid in by_crew}
     for j in jobs:
         finished = coerce_date(j.scheduled_date)
         for cid in _crew_key(j):
@@ -125,6 +131,20 @@ def build(db: Session, org_id: int) -> dict:
                     w["last_worked"] = done
             elif finished and finished >= today and j.status not in ("cancelled", "skipped"):
                 w["upcoming"] += 1
+    return work
+
+
+def build(db: Session, org_id: int) -> dict:
+    """Everything the bench screen needs, in one payload."""
+    today = business_today()
+
+    threshold = form_1099_threshold(today.year)
+    base = roster(db, org_id)
+    people = base["crew"]
+    by_crew = {p["cleaner_id"]: p for p in people if p.get("cleaner_id")}
+
+    # ── work, from jobs ────────────────────────────────────────────────────
+    work = work_history(db, org_id, by_crew.keys())
 
     # ── what they are already holding ──────────────────────────────────────
     holding: dict = {}
