@@ -2173,7 +2173,9 @@ export interface paths {
          * Decline Claim Request
          * @description Decline a single request without approving anyone — the job stays
          *     open for other pending requests (or new ones) unless the office also
-         *     turns off "Open to crew" separately.
+         *     turns off "Open to crew" separately. An optional reason (migration 111)
+         *     is recorded and reaches the sub's "my asks" so a decline stops being
+         *     silent.
          */
         post: operations["decline_claim_request_api_jobs__job_id__claim_requests__request_id__decline_post"];
         delete?: never;
@@ -6716,6 +6718,67 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/crew/jobs/{job_id}/claim/withdraw": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Withdraw Claim
+         * @description A sub pulls back their OWN pending request.
+         *
+         *     A sub who asked for Saturday and then booked a private client Friday night
+         *     had no way to take it back — the office's first signal was a no-show. This
+         *     is the retract. It is squarely Rule 0: a sub CHOOSES what work they ask for,
+         *     and un-asking is the same choice. Only their own row, and only while it is
+         *     still pending — an approved request is a commitment the office manages, and
+         *     a declined/withdrawn one is already closed. `withdrawn` (not `declined`):
+         *     the sub was not turned down, they stepped back, and the office screen has
+         *     rendered that status since the marketplace pivot.
+         */
+        post: operations["withdraw_claim_api_crew_jobs__job_id__claim_withdraw_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/crew/my-claims": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * My Claims
+         * @description Every job this sub has asked for, and what happened to each.
+         *
+         *     The gap this closes: once the office approves someone, the job leaves the
+         *     open board — so on the asking sub's phone the request simply vanished.
+         *     Somebody who asked for four jobs on Tuesday had nothing on Friday telling
+         *     them what became of any of them, so they couldn't learn to bid better and
+         *     couldn't tell whether they were being ignored. This is their side of the
+         *     ledger, decided rows included.
+         *
+         *     Identity stays stripped exactly as on the board: an offer they did NOT win
+         *     carries town, date and rate and no more — winning is what unlocks whose
+         *     house it is. So `title` is the real one only for an approved (won) request.
+         *     Light by design (rural cell data — brightbase-economy): no house internals.
+         */
+        get: operations["my_claims_api_crew_my_claims_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/crew/my-file": {
         parameters: {
             query?: never;
@@ -8557,6 +8620,11 @@ export interface components {
             email: string;
             /** Cleaner Id */
             cleaner_id?: string | null;
+        };
+        /** DeclineClaimBody */
+        DeclineClaimBody: {
+            /** Reason */
+            reason?: string | null;
         };
         /** DocBody */
         DocBody: {
@@ -13599,7 +13667,11 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["DeclineClaimBody"];
+            };
+        };
         responses: {
             /** @description Successful Response */
             200: {
@@ -20454,6 +20526,57 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    withdraw_claim_api_crew_jobs__job_id__claim_withdraw_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                job_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    my_claims_api_crew_my_claims_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
                 };
             };
         };

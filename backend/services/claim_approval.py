@@ -158,6 +158,9 @@ def approve(db: Session, job, req: JobClaimRequest, *, org_id: int,
               .all())
     for other in others:
         other.status, other.decided_at, other.decided_by = "declined", now, actor_user_id
+        # So the losers' "my asks" says why, not just "declined" (migration 111).
+        # Only fills an empty reason — never overwrites one the office typed.
+        other.reason = other.reason or "Someone else was picked for this one"
 
     log_activity(
         db, "job_claim_approved", job_id=job.id, client_id=job.client_id, actor=actor,

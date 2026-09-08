@@ -976,6 +976,9 @@ class JobClaimRequest(Base):
     requested_rate = Column(Float, nullable=True)  # NULL = accepting posted_rate
     message = Column(Text, nullable=True)
     status = Column(String(16), nullable=False, default="pending")  # pending|approved|declined|withdrawn
+    # Why the office declined (migration 111). A short phrase the office types,
+    # so the sub learns why they lost and can bid better — surfaced on "my asks".
+    reason = Column(String, nullable=True)
     created_at = Column(DateTime, default=_utcnow)
     updated_at = Column(DateTime, default=_utcnow, onupdate=_utcnow)
     decided_at = Column(DateTime, nullable=True)
