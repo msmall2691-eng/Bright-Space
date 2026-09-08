@@ -1076,8 +1076,31 @@ def _job_title_for_quote(db: Session, quote: Quote, prop: Property) -> str:
 
 
 def _resolve_property_for_quote(db: Session, quote: Quote, prop_type: str) -> Property:
-    """The client's existing property, or a new one created from the quote
-    address (every Job needs a Property)."""
+    """The property the quote was written against, else the client's first
+    existing property, else a new one from the quote address (every Job needs
+    a Property).
+
+    BB-QUOTE-01: honor ``quote.property_id`` first. A client with several
+    houses is quoted for ONE of them, and that choice is carried on the quote;
+    converting must land the Job on that property, not on whichever of the
+    client's properties happens to have the lowest id (the old behavior put
+    every such job on the wrong house). The named property is accepted only
+    when it still belongs to the quote's own client — the same client scope the
+    fallback lookup uses, which for well-formed data also keeps it in-org — so a
+    stale or cross-client id falls through to the by-client lookup rather than
+    placing the job on someone else's property.
+    """
+    if quote.property_id:
+        named = (
+            db.query(Property)
+            .filter(
+                Property.id == quote.property_id,
+                Property.client_id == quote.client_id,
+            )
+            .first()
+        )
+        if named:
+            return named
     prop = (
         db.query(Property)
         .filter(Property.client_id == quote.client_id)
