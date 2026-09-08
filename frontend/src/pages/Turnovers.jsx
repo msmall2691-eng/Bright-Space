@@ -58,11 +58,23 @@ function Coverage({ w }) {
   )
 }
 
+/** The next Saturday — the changeover day this screen exists for. */
+function nextSaturday() {
+  const d = new Date()
+  d.setDate(d.getDate() + ((6 - d.getDay() + 7) % 7 || 7))
+  return d.toISOString().slice(0, 10)
+}
+
 export default function Turnovers() {
   const [windows, setWindows] = useState(null)
   const [error, setError] = useState('')
   const [openId, setOpenId] = useState(null)
   const [busy, setBusy] = useState('')
+  // Planning a day opens a real date field, not a window.prompt — a JS prompt
+  // is a bare text box with no calendar, no validation, and it's blocked or
+  // ugly on the phones half the office uses.
+  const [planning, setPlanning] = useState(false)
+  const [planDate, setPlanDate] = useState('')
 
   const load = useCallback(async () => {
     try {
@@ -79,15 +91,13 @@ export default function Turnovers() {
     finally { setBusy('') }
   }
 
-  const create = async () => {
-    // Default to the next Saturday — the changeover day this exists for.
-    const d = new Date()
-    d.setDate(d.getDate() + ((6 - d.getDay() + 7) % 7 || 7))
-    const iso = window.prompt('Which day? (YYYY-MM-DD)', d.toISOString().slice(0, 10))
-    if (!iso) return
+  const submitPlan = async (e) => {
+    e.preventDefault()
+    if (!planDate) return
     await run('create', async () => {
-      const w = await post('/api/turnover-windows', { service_date: iso })
+      const w = await post('/api/turnover-windows', { service_date: planDate })
       setOpenId(w.id)
+      setPlanning(false)
     })
   }
 
@@ -100,10 +110,29 @@ export default function Turnovers() {
         iconColor="amber"
       >
         <SubNav className="mb-3" />
-        <button type="button" onClick={create} disabled={busy === 'create'}
-          className="inline-flex items-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-indigo-700 disabled:opacity-50">
-          <Plus className="h-4 w-4" /> Plan a day
-        </button>
+        {planning ? (
+          <form onSubmit={submitPlan} className="flex flex-wrap items-center gap-2">
+            <label className="flex items-center gap-2 text-sm text-ink-2">
+              Which day?
+              <input type="date" value={planDate} autoFocus
+                onChange={e => setPlanDate(e.target.value)}
+                className="rounded-lg border border-hairline bg-bg px-2.5 py-1.5 text-sm text-ink focus:outline-none focus:border-blue-400" />
+            </label>
+            <button type="submit" disabled={busy === 'create' || !planDate}
+              className="inline-flex items-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-indigo-700 disabled:opacity-50">
+              {busy === 'create' ? 'Planning…' : 'Plan it'}
+            </button>
+            <button type="button" onClick={() => setPlanning(false)} disabled={busy === 'create'}
+              className="rounded-lg px-3 py-2 text-sm font-medium text-ink-3 hover:bg-bg-2 disabled:opacity-50">
+              Cancel
+            </button>
+          </form>
+        ) : (
+          <button type="button" onClick={() => { setPlanDate(nextSaturday()); setPlanning(true) }}
+            className="inline-flex items-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-indigo-700 disabled:opacity-50">
+            <Plus className="h-4 w-4" /> Plan a day
+          </button>
+        )}
       </PageHeader>
 
       <div className="space-y-4 px-4 pb-6 sm:px-8">
