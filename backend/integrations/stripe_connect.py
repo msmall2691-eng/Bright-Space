@@ -232,15 +232,27 @@ def summarize(account) -> dict:
 
 
 def _definite(exc) -> bool:
-    """True when Stripe ANSWERED and said no.
+    """True when Stripe ANSWERED, said no, and created nothing — the only case
+    where retrying is safe.
 
-    This is the whole difference between a payout that is safe to retry and
-    one that must not be. `http_status` is set when a response came back — the
-    request reached Stripe, was rejected, and created nothing. A connection
-    error or a timeout leaves it None: the transfer may well exist, and trying
-    again is how somebody gets paid twice.
+    This is the whole difference between a payout that is safe to retry and one
+    that must not be. The caller strips the stamp and re-queues a `definite`
+    failure; it leaves an indefinite one alone, because the transfer may exist
+    and a second attempt is how somebody gets paid twice.
+
+    A 4xx is definite: Stripe validated the request, rejected it, and created
+    no transfer. A 5xx is NOT — the request reached Stripe and its server
+    failed, which can happen AFTER the transfer was created but before the
+    response came back, exactly like a timeout. Treating a 5xx as "nothing
+    sent" (the old `http_status is not None`) and re-queuing it is a
+    double-pay. A missing status (connection error / timeout) is indefinite for
+    the same reason.
     """
-    return getattr(exc, "http_status", None) is not None
+    status = getattr(exc, "http_status", None)
+    try:
+        return status is not None and 400 <= int(status) < 500
+    except (TypeError, ValueError):
+        return False
 
 
 def _message(exc) -> str:

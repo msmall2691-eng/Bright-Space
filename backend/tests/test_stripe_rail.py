@@ -462,6 +462,140 @@ def test_the_ledger_says_who_can_be_paid_electronically(ids):
     assert rows[b]["direct_deposit"] is False
 
 
+# ── mark(): the ledger's legal moves, and the ones that are money ───────────
+#
+# `mark()` is the only writer of status and paid_at. Before the transition table
+# it moved a row anywhere in STATUSES; each illegal move below is a real-money
+# error the table now refuses.
+
+
+def _status_of(pid):
+    db = SessionLocal()
+    r = db.query(SubPayout).filter(SubPayout.id == pid).first()
+    out = (r.status, r.paid_at)
+    db.close()
+    return out
+
+
+def test_mark_walks_a_payout_forward_through_its_life(ids):
+    uid, cid, _ = _mk_sub(ids)
+    pid = _mk_payout(ids, uid, cid, status="due")
+    db = SessionLocal()
+    sub_payouts.mark(db, 1, [pid], "sent")
+    assert _status_of(pid)[0] == "sent"
+    sub_payouts.mark(db, 1, [pid], "paid")
+    status, paid_at = _status_of(pid)
+    assert status == "paid" and paid_at is not None
+    db.close()
+
+
+def test_mark_can_void_an_unpaid_payout(ids):
+    """A payout for work that got cancelled. void is a fact, not a delete —
+    reachable from due or sent, never from paid."""
+    uid, cid, _ = _mk_sub(ids)
+    for start in ("due", "sent"):
+        pid = _mk_payout(ids, uid, cid, status=start)
+        db = SessionLocal()
+        sub_payouts.mark(db, 1, [pid], "void")
+        db.close()
+        assert _status_of(pid)[0] == "void"
+
+
+def test_mark_refuses_to_walk_paid_back_into_the_payable_batch(ids):
+    """paid -> due/sent re-enters the next send and pays somebody TWICE. The
+    paid_at guard kept the date but not the row out of the batch."""
+    uid, cid, _ = _mk_sub(ids)
+    for target in ("due", "sent"):
+        pid = _mk_payout(ids, uid, cid, status="paid")
+        db = SessionLocal()
+        with pytest.raises(ValueError) as e:
+            sub_payouts.mark(db, 1, [pid], target)
+        db.rollback(); db.close()
+        assert "illegal payout transition" in str(e.value)
+        assert _status_of(pid)[0] == "paid", "the row did not move"
+
+
+def test_mark_refuses_to_say_money_that_left_never_did(ids):
+    """paid -> void would make the 1099 and the reconciliation disagree. A
+    reversal is the real path back, and it goes through the webhook, not here."""
+    uid, cid, _ = _mk_sub(ids)
+    pid = _mk_payout(ids, uid, cid, status="paid")
+    db = SessionLocal()
+    with pytest.raises(ValueError):
+        sub_payouts.mark(db, 1, [pid], "void")
+    db.rollback(); db.close()
+    assert _status_of(pid)[0] == "paid"
+
+
+def test_mark_refuses_to_resurrect_a_voided_payout(ids):
+    """void is terminal — a payout for cancelled work stays cancelled."""
+    uid, cid, _ = _mk_sub(ids)
+    for target in ("due", "sent", "paid"):
+        pid = _mk_payout(ids, uid, cid, status="void")
+        db = SessionLocal()
+        with pytest.raises(ValueError):
+            sub_payouts.mark(db, 1, [pid], target)
+        db.rollback(); db.close()
+        assert _status_of(pid)[0] == "void"
+
+
+def test_mark_is_all_or_nothing_when_a_batch_mixes_legal_and_illegal(ids):
+    """One paid row in a batch of due rows must not let half the batch move and
+    half not — the office is told which row is wrong, and nothing changes."""
+    uid, cid, _ = _mk_sub(ids)
+    ok = _mk_payout(ids, uid, cid, status="due")
+    bad = _mk_payout(ids, uid, cid, status="paid")
+    db = SessionLocal()
+    with pytest.raises(ValueError) as e:
+        sub_payouts.mark(db, 1, [ok, bad], "sent")
+    db.rollback(); db.close()
+    assert f"#{bad}" in str(e.value)
+    assert _status_of(ok)[0] == "due", "the legal row did not move either"
+    assert _status_of(bad)[0] == "paid"
+
+
+def test_re_marking_a_paid_row_paid_is_an_idempotent_no_op(ids):
+    """The office clicking 'paid' twice, or correcting a reference. Same status
+    is a no-op, not a transition — and paid_at, the date money left, is never
+    re-stamped."""
+    uid, cid, _ = _mk_sub(ids)
+    pid = _mk_payout(ids, uid, cid, status="due")
+    db = SessionLocal()
+    sub_payouts.mark(db, 1, [pid], "paid")
+    _s, first_paid_at = _status_of(pid)
+    # Second click, later, with a corrected reference.
+    sub_payouts.mark(db, 1, [pid], "paid", external_ref="cheque-0042")
+    db.close()
+    status, second_paid_at = _status_of(pid)
+    assert status == "paid"
+    assert second_paid_at == first_paid_at, "paid_at is a fact, not re-stamped"
+    db = SessionLocal()
+    r = db.query(SubPayout).filter(SubPayout.id == pid).first()
+    assert r.external_ref == "cheque-0042", "but a correction still applies"
+    db.close()
+
+
+def test_mark_rejects_an_unknown_status_outright(ids):
+    uid, cid, _ = _mk_sub(ids)
+    pid = _mk_payout(ids, uid, cid, status="due")
+    db = SessionLocal()
+    with pytest.raises(ValueError) as e:
+        sub_payouts.mark(db, 1, [pid], "posted")
+    db.rollback(); db.close()
+    assert "unknown payout status" in str(e.value)
+
+
+def test_the_office_endpoint_turns_an_illegal_transition_into_a_422(ids):
+    """The ValueError reaches the office as a 422 it can read, not a 500."""
+    uid, cid, _ = _mk_sub(ids)
+    pid = _mk_payout(ids, uid, cid, status="paid")
+    r = _api().post("/api/payroll/subcontractors/payouts/mark",
+                    json={"payout_ids": [pid], "status": "due"})
+    assert r.status_code == 422, r.text
+    assert "illegal payout transition" in r.json()["detail"]
+    assert _status_of(pid)[0] == "paid"
+
+
 def test_year_to_date_hands_over_the_threshold_it_measured_against(ids):
     """The "$600" literal outlived its own truth in four places. A number the
     screen is handed cannot drift from the number the flag used."""
