@@ -748,7 +748,7 @@ export default function MyDay({ previewUserId = null }) {
             return (
               <EmptyState icon={Sparkles} compact
                 title="No open jobs right now"
-                description="When the office posts work to the bench it shows up here. Claim one and it's yours." />
+                description="When the office posts work to the bench it shows up here — ask for one and you'll hear back." />
             )
           }
           return (
@@ -1091,19 +1091,23 @@ export default function MyDay({ previewUserId = null }) {
           feedback. This is the sheet that makes the sub side of the
           marketplace real. */}
       {claimJob && (() => {
-        // Turno-style (owner's call, Sept 2026). Claiming a posted job at or
-        // below the posted price is INSTANT — it's theirs the moment they
-        // claim. Only a bid ABOVE the posted price becomes an offer the office
-        // confirms. The sheet reacts to what they type so the button never
+        // A claim is INSTANT ("it's yours the moment you claim") only when the
+        // office has instant claiming on (backend `instant_claim`, off by
+        // default), the job is priced, and they aren't bidding above the posted
+        // price. Otherwise it's a request the office decides. The sheet reacts
+        // to what they type AND to the office's setting, so the button never
         // promises "instant" for something that will actually wait.
         const posted = claimJob.posted_rate
         const entered = String(claimRate).trim() === '' ? null : Number(String(claimRate).trim())
-        const isOffer = posted == null || (entered != null && entered > posted)
+        const abovePosted = posted != null && entered != null && entered > posted
+        const willBeInstant = !!claimJob.instant_claim && !abovePosted
         return (
         <Sheet onClose={() => setClaimJob(null)} busy={actionBusy}>
           <div>
             <div className="text-base font-bold text-ink">
-              {isOffer ? 'Make an offer' : 'Claim this job'}
+              {willBeInstant ? 'Claim this job'
+                : posted == null || abovePosted ? 'Make an offer'
+                : 'Ask for this job'}
             </div>
             <div className="text-[13px] text-ink-3 mt-0.5 truncate">
               {claimJob.property_name || claimJob.title}
@@ -1116,7 +1120,7 @@ export default function MyDay({ previewUserId = null }) {
               Pays{' '}
               <span className="font-semibold text-ink">
                 ${Number(posted).toLocaleString(undefined, { maximumFractionDigits: 2 })}
-              </span>. Leave the box empty to claim it at that.
+              </span>. Leave the box empty to take it at that.
             </p>
           ) : (
             /* No posted price: there's no anchor for an instant claim, so it
@@ -1148,24 +1152,26 @@ export default function MyDay({ previewUserId = null }) {
               className="mt-1.5 w-full rounded-lg border border-hairline bg-bg px-3 py-2.5 text-[13px] text-ink placeholder-ink-3 focus:outline-none focus:border-blue-400 resize-none"
             />
           </label>
-          {isOffer ? (
-            <p className="flex items-start gap-1.5 text-[12px] text-ink-3">
-              <span className="mt-1.5 w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0" aria-hidden="true" />
-              <span>{posted != null
-                ? "That's above the posted price, so the office confirms this one."
-                : 'The office will price it and confirm.'}</span>
-            </p>
-          ) : (
+          {willBeInstant ? (
             <p className="text-[12px] text-ink-3">
               It's yours the moment you claim — first to claim gets it. Address
               details unlock right after.
+            </p>
+          ) : (
+            <p className="flex items-start gap-1.5 text-[12px] text-ink-3">
+              <span className="mt-1.5 w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0" aria-hidden="true" />
+              <span>{abovePosted
+                ? "That's above the posted price, so the office confirms this one."
+                : posted == null
+                  ? 'The office will price it and confirm.'
+                  : 'The office confirms who gets it — you’ll hear back.'}</span>
             </p>
           )}
           <ErrorNote>{actionError}</ErrorNote>
           <SheetActions onCancel={() => setClaimJob(null)} onConfirm={confirmClaim}
             busy={actionBusy}
-            confirmLabel={isOffer ? 'Send offer' : 'Claim it'}
-            busyLabel={isOffer ? 'Sending…' : 'Claiming…'}
+            confirmLabel={willBeInstant ? 'Claim it' : 'Send request'}
+            busyLabel={willBeInstant ? 'Claiming…' : 'Sending…'}
             confirmIcon={<Sparkles className="w-4 h-4" />} />
         </Sheet>
         )

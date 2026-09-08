@@ -118,18 +118,21 @@ RULES: list[dict[str, Any]] = [
         "title": "Let cleared subs claim a posted job instantly",
         "summary": "A real marketplace: a sub whose file is complete claims an "
                    "open job at your posted price and it's theirs on the spot — "
-                   "first to claim wins, no approving each one. The only thing "
-                   "that still comes to you is a bid ABOVE the posted price, "
-                   "because that's you agreeing to pay more.",
+                   "first to claim wins, no approving each one. OFF for now — "
+                   "turn it on once every sub's insurance and agreement are in, "
+                   "since with nobody approving each claim, an out-of-date file "
+                   "would otherwise go straight onto a job.",
         "fields": [
-            {"key": "claim_auto_approve_mode", "type": "choice", "default": "auto",
+            {"key": "claim_auto_approve_mode", "type": "choice", "default": "off",
              "label": "When a cleared sub claims a posted job", "choices": [
-                 {"value": "auto", "label": "It's theirs instantly"},
                  {"value": "off", "label": "Ask me first"},
+                 {"value": "auto", "label": "It's theirs instantly"},
              ],
-             "help": "On by default. Turn it off to go back to approving every "
-                     "claim by hand. Either way a bid above the posted price "
-                     "always waits for you, and only cleared subs can claim."},
+             "help": "Off by default: every claim comes to you to approve. Turn "
+                     "it on only once the whole bench's documents are current — "
+                     "instant claiming skips the approval where you'd catch a "
+                     "lapsed file. A bid above the posted price always waits for "
+                     "you, and only cleared subs can claim, either way."},
         ],
     },
     {

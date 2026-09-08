@@ -371,6 +371,14 @@ def my_day(
     missing = blocking_requirements(db, current_user)
     cleared = not missing
 
+    # Does a claim on a posted job land instantly, or come to the office to
+    # approve? The board's copy is driven by this so it can't promise "it's
+    # yours" and then hand back a pending request (instant claiming is OFF by
+    # default and fails closed — services/claim_autoapprove). One setting read
+    # for the whole board (brightbase-economy), stamped per job below.
+    from services.claim_autoapprove import instant_claims_on
+    instant_on = instant_claims_on(db)
+
     open_jobs = []
     open_job_ids = [j.id for j in jobs if cleared
                     and getattr(j, "open_for_claims", False)
@@ -419,7 +427,12 @@ def my_day(
                     "house_notes": [],
                     "address": None, "client_name": None,
                     "property_name": None, "teammates": [],
-                    "area": area})       # offers carry no house internals
+                    "area": area,        # offers carry no house internals
+                    # True only when a claim on THIS job would be awarded on the
+                    # spot: instant claiming on AND the job priced. The card
+                    # says "it's yours" only when this is true; otherwise it's
+                    # an ask the office confirms.
+                    "instant_claim": bool(instant_on and j.posted_rate is not None)})
         open_jobs.append(row)
 
     return {

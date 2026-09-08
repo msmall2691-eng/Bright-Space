@@ -140,6 +140,10 @@ def test_open_listing_hides_access_and_request_stays_open_for_others(ids):
         assert row["can_text_client"] is False    # offers can't text either
         assert row["open"] is True
         assert row["my_claim_request"] is None    # haven't asked yet
+        # Instant claiming is OFF by default, so even a priced open job is an
+        # ask the office approves — the board's copy is driven by this flag so
+        # it can't promise "it's yours" and hand back a pending request.
+        assert row["instant_claim"] is False
 
         r = api.post(f"/api/crew/jobs/{jid}/claim", json={"requested_rate": 90.0,
                                                          "message": "I can do this one"})
@@ -172,6 +176,37 @@ def test_open_listing_hides_access_and_request_stays_open_for_others(ids):
         assert r2.json()["requested_rate"] is None
         assert _job(jid)["open"] is True   # still open — office hasn't picked
     finally:
+        _clear()
+
+
+def test_the_board_marks_a_job_instant_only_when_the_office_turned_it_on(ids):
+    """`instant_claim` on the my-day payload is True only when instant claiming
+    is on AND the job is priced — the flag the card's copy follows. Default off;
+    turning it on flips the flag so "it's yours" appears only when it's true."""
+    from modules.settings.router import set_setting
+    jid = _mk_job(ids, [], open_for_claims=True, posted_rate=80.0)
+    unpriced = _mk_job(ids, [], open_for_claims=True, posted_rate=None)
+    try:
+        api = _as(_Cleaner(9940, "CT-940"))
+
+        # Off by default: priced job is NOT instant.
+        board = api.get("/api/crew/my-day").json()["open_jobs"]
+        assert next(j for j in board if j["id"] == jid)["instant_claim"] is False
+
+        # Office turns it on.
+        db = SessionLocal()
+        set_setting(db, "claim_auto_approve_mode", "auto")
+        db.commit(); db.close()
+
+        board = api.get("/api/crew/my-day").json()["open_jobs"]
+        assert next(j for j in board if j["id"] == jid)["instant_claim"] is True
+        # …but an unpriced job is still not instant — no anchor to claim "at".
+        assert next(j for j in board if j["id"] == unpriced)["instant_claim"] is False
+    finally:
+        # Leave instant claiming OFF for every other test.
+        db = SessionLocal()
+        set_setting(db, "claim_auto_approve_mode", "off")
+        db.commit(); db.close()
         _clear()
 
 
