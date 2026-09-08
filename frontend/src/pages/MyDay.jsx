@@ -18,6 +18,7 @@ import { EmptyState, ErrorState, Skeleton } from '../components/ui'
 import JobPhotoSheet from '../components/crew/JobPhotoSheet'
 import CrewProfile from '../components/crew/CrewProfile'
 import CrewMyFile from '../components/crew/CrewMyFile'
+import CrewMyAsks from '../components/crew/CrewMyAsks'
 import CrewMyRoutes from '../components/crew/CrewMyRoutes'
 import CrewAvailability from '../components/crew/CrewAvailability'
 import CrewLearn from '../components/crew/CrewLearn'
@@ -788,6 +789,14 @@ export default function MyDay({ previewUserId = null }) {
             <section>
               <SectionLabel className="mb-2">Work</SectionLabel>
               <CrewCard className="px-4 divide-y divide-hairline">
+                {/* The jobs this sub asked for and what happened to each —
+                    fetched once opened. Leads the section: it's the thing a
+                    free sub checks, and where a request goes after it leaves
+                    the board (once someone's picked). Withdraw lives here. */}
+                <SettingRow icon={Sparkles} label="My asks"
+                  summary="Jobs you've asked for, and what happened">
+                  <CrewMyAsks />
+                </SettingRow>
                 <SettingRow icon={CalendarClock} label="My availability"
                   summary="Set the weeks ahead — each week locks when it starts">
                   <CrewAvailability bare />

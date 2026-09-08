@@ -1045,6 +1045,108 @@ def claim_job(
             "auto_approved": bool(auto.get("auto_approved"))}
 
 
+@router.post("/jobs/{job_id}/claim/withdraw")
+def withdraw_claim(job_id: int, db: Session = Depends(get_db),
+                   org_id: int = Depends(current_org_id),
+                   current_user: User = Depends(require_role("cleaner"))):
+    """A sub pulls back their OWN pending request.
+
+    A sub who asked for Saturday and then booked a private client Friday night
+    had no way to take it back — the office's first signal was a no-show. This
+    is the retract. It is squarely Rule 0: a sub CHOOSES what work they ask for,
+    and un-asking is the same choice. Only their own row, and only while it is
+    still pending — an approved request is a commitment the office manages, and
+    a declined/withdrawn one is already closed. `withdrawn` (not `declined`):
+    the sub was not turned down, they stepped back, and the office screen has
+    rendered that status since the marketplace pivot.
+    """
+    _require_crew_id(current_user)
+    oid = resolve_org_id(org_id, db)
+    req = (db.query(JobClaimRequest)
+           .filter(JobClaimRequest.job_id == job_id,
+                   JobClaimRequest.cleaner_id == current_user.cleaner_id,
+                   or_(JobClaimRequest.org_id == oid, JobClaimRequest.org_id.is_(None)))
+           .first())
+    if req is None:
+        raise HTTPException(status_code=404, detail="You haven't asked for this job.")
+    if req.status != "pending":
+        raise HTTPException(status_code=409,
+                            detail=f"This request is already {req.status}.")
+    now = _now_naive_utc()
+    # decided_by stays NULL: nobody decided against them — they withdrew.
+    req.status, req.updated_at, req.decided_at = "withdrawn", now, now
+    db.commit()
+    try:
+        from utils.activity_logger import log_activity
+        who = getattr(current_user, "full_name", None) or current_user.email
+        log_activity(db, "crew_claim_withdraw", job_id=job_id, actor=who,
+                     summary=f"{who} withdrew their request",
+                     extra_data={"cleaner_id": current_user.cleaner_id})
+    except Exception:
+        log.exception("activity log failed on withdraw_claim")
+    return {"job_id": job_id, "status": "withdrawn"}
+
+
+@router.get("/my-claims")
+def my_claims(db: Session = Depends(get_db),
+              org_id: int = Depends(current_org_id),
+              current_user: User = Depends(require_role("cleaner"))):
+    """Every job this sub has asked for, and what happened to each.
+
+    The gap this closes: once the office approves someone, the job leaves the
+    open board — so on the asking sub's phone the request simply vanished.
+    Somebody who asked for four jobs on Tuesday had nothing on Friday telling
+    them what became of any of them, so they couldn't learn to bid better and
+    couldn't tell whether they were being ignored. This is their side of the
+    ledger, decided rows included.
+
+    Identity stays stripped exactly as on the board: an offer they did NOT win
+    carries town, date and rate and no more — winning is what unlocks whose
+    house it is. So `title` is the real one only for an approved (won) request.
+    Light by design (rural cell data — brightbase-economy): no house internals.
+    """
+    _require_crew_id(current_user)
+    oid = resolve_org_id(org_id, db)
+    rows = (db.query(JobClaimRequest)
+            .filter(JobClaimRequest.cleaner_id == current_user.cleaner_id,
+                    or_(JobClaimRequest.org_id == oid, JobClaimRequest.org_id.is_(None)))
+            .order_by(JobClaimRequest.updated_at.desc(), JobClaimRequest.id.desc())
+            .all())
+    job_ids = [r.job_id for r in rows]
+    jobs = {j.id: j for j in (db.query(Job).options(joinedload(Job.property))
+                              .filter(Job.id.in_(job_ids or [0]),
+                                      or_(Job.org_id == oid, Job.org_id.is_(None)))
+                              .all())}
+    out = []
+    for r in rows:
+        j = jobs.get(r.job_id)
+        won = r.status == "approved"
+        prop = getattr(j, "property", None) if j else None
+        area = " ".join(x for x in [getattr(prop, "city", None),
+                                    getattr(prop, "state", None)] if x) or None
+        out.append({
+            "job_id": r.job_id,
+            "status": r.status,
+            # What they asked (their counter, or None = the posted rate), what
+            # was posted, and — once won — what was agreed and will be paid.
+            "requested_rate": r.requested_rate,
+            "posted_rate": getattr(j, "posted_rate", None) if j else None,
+            "agreed_rate": getattr(j, "agreed_rate", None) if won else None,
+            "scheduled_date": (j.scheduled_date.isoformat()
+                               if j and j.scheduled_date else None),
+            "start_time": (j.start_time.strftime("%H:%M")
+                           if j and j.start_time else None),
+            "end_time": (j.end_time.strftime("%H:%M")
+                         if j and j.end_time else None),
+            "area": area,
+            # Real title only once won; otherwise the stripped offer title.
+            "title": (j.title if won else _offer_title(j, area)) if j else None,
+            "asked_at": r.created_at.isoformat() if r.created_at else None,
+            "decided_at": r.decided_at.isoformat() if r.decided_at else None,
+        })
+    return {"claims": out}
+
+
 # ── My file: the vetting documents (migration 098) ──────────────────────────
 #
 # A sub's own view of what's on record and what's still missing. The same
