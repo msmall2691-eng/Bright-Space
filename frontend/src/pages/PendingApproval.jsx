@@ -34,8 +34,8 @@ export default function PendingApproval({ user, onApproved }) {
 
   return (
     <div className="flex flex-col items-center justify-center min-h-screen bg-bg p-8 text-center">
-      <div className="w-14 h-14 rounded-2xl bg-amber-100 flex items-center justify-center mb-5">
-        <Clock className="w-7 h-7 text-amber-600" />
+      <div className="w-14 h-14 rounded-2xl bg-bg-2 border border-hairline flex items-center justify-center mb-5">
+        <Clock className="w-7 h-7 text-ink-2" />
       </div>
       <h1 className="text-xl font-semibold text-ink mb-2">Waiting for approval</h1>
       <p className="text-sm text-ink-3 max-w-sm mb-1">
@@ -43,7 +43,14 @@ export default function PendingApproval({ user, onApproved }) {
         and is waiting for an administrator to approve it.
       </p>
       <p className="text-xs text-ink-3 max-w-sm mb-6">You'll get access as soon as they do.</p>
-      {note && <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 mb-4 max-w-sm">{note}</p>}
+      {/* A quiet card with a dot, never a tinted fill (design language). Amber
+          because it wants a second's notice, not alarm. */}
+      {note && (
+        <div className="flex items-start gap-1.5 rounded-lg border border-hairline bg-panel px-3 py-2 mb-4 max-w-sm text-left text-xs text-ink-2">
+          <span className="mt-[5px] w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0" aria-hidden="true" />
+          <span className="min-w-0">{note}</span>
+        </div>
+      )}
       <div className="flex items-center gap-3">
         <button onClick={checkAgain} disabled={checking}
           className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-60 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors">
