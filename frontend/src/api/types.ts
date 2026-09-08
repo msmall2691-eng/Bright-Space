@@ -6604,6 +6604,34 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/crew/me/earnings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * My Earnings
+         * @description What I'm owed and what's been paid — per job, never by the hour.
+         *
+         *     BB-PAY-01: the payout ledger existed only on the office side; a sub could
+         *     set up where their money goes (/me/payouts) but never see what they had
+         *     coming. This reads their OWN rows from services/sub_payouts (scoped by
+         *     user_id, so no other sub's amounts are reachable) and returns a light list
+         *     plus two totals. Per-job amounts only — a subcontractor is paid per job,
+         *     never per hour (Rule 0), so nothing here derives or displays an hourly
+         *     figure. One query, no per-row Stripe calls (brightbase-economy).
+         */
+        get: operations["my_earnings_api_crew_me_earnings_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/crew/me/payouts/setup": {
         parameters: {
             query?: never;
@@ -20370,6 +20398,26 @@ export interface operations {
         };
     };
     my_payout_account_api_crew_me_payouts_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    my_earnings_api_crew_me_earnings_get: {
         parameters: {
             query?: never;
             header?: never;
