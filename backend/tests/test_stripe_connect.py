@@ -258,3 +258,48 @@ def test_a_missing_stripe_key_still_yields_no_client(monkeypatch):
     monkeypatch.delenv("STRIPE_SECRET_KEY", raising=False)
     sc._HTTP_CLIENT = None
     assert sc._client() is None
+
+
+# ── definite vs indefinite: the whole double-pay guard lives here ────────────
+#
+# `transfer()` hands the rail a `definite` flag, and the rail retries a definite
+# failure and refuses an indefinite one. So which HTTP outcomes are "definite"
+# IS the double-pay guard — a misclassified 5xx is somebody paid twice.
+
+
+class _StripeError(Exception):
+    """Shaped like a stripe.error with an http_status, which is all _definite reads."""
+
+    def __init__(self, status):
+        super().__init__("boom")
+        self.http_status = status
+
+
+def test_a_4xx_is_definite_stripe_answered_and_made_nothing():
+    """A validated rejection: Stripe looked at the request, said no, created no
+    transfer. Safe to strip the stamp and re-queue."""
+    from integrations.stripe_connect import _definite
+    for status in (400, 401, 402, 403, 404, 422, 429, 499):
+        assert _definite(_StripeError(status)) is True, status
+
+
+def test_a_5xx_is_not_definite_the_transfer_may_exist():
+    """The bug this fixes. Stripe's server failed AFTER possibly creating the
+    transfer, exactly like a timeout. The old `http_status is not None` classed
+    this as 'nothing sent' and re-queued it — a double-pay."""
+    from integrations.stripe_connect import _definite
+    for status in (500, 502, 503, 504):
+        assert _definite(_StripeError(status)) is False, status
+
+
+def test_a_missing_or_unparseable_status_is_not_definite():
+    """A connection error or timeout carries no status. The money may have
+    moved, so it must be treated as unknown, never as 'safe to retry'."""
+    from integrations.stripe_connect import _definite
+
+    class _NoStatus(Exception):
+        pass
+
+    assert _definite(_NoStatus()) is False
+    assert _definite(_StripeError(None)) is False
+    assert _definite(_StripeError("not-a-number")) is False

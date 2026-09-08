@@ -48,6 +48,25 @@ STATUSES = ("due", "sent", "paid", "void")
 # everywhere a total is computed — that is the only reason it exists.
 LIVE_STATUSES = ("due", "sent", "paid")
 
+# The ledger's legal moves. `mark()` is the only writer of status, and without
+# this it moved a row anywhere in STATUSES — which is money:
+#   * paid -> due/sent re-enters the payable batch and pays somebody TWICE
+#     (the paid_at guard kept the date but not the row out of the next send);
+#   * void -> anything resurrects a payout for work that was cancelled;
+#   * paid -> void says money that left the account never did, so the 1099 and
+#     the reconciliation disagree.
+# So the two settled/closed states are TERMINAL, and everything else moves
+# forward (a settling rail pays `due` straight to `paid`) or to `void`.
+# Re-marking a row to the status it already holds is an idempotent no-op — the
+# office clicking "paid" twice, or correcting a reference — not a transition,
+# and never re-stamps paid_at.
+_ALLOWED_TRANSITIONS = {
+    "due":  {"sent", "paid", "void"},
+    "sent": {"paid", "void"},
+    "paid": set(),   # money left — a fact, not a step to walk back
+    "void": set(),   # cancelled stays cancelled
+}
+
 # Jobs in these states have not been done, so there is nothing to pay for yet.
 _UNEARNED_JOB_STATUSES = ("cancelled", "unscheduled")
 
@@ -347,14 +366,33 @@ def mark(db: Session, org_id: int, payout_ids: list, status: str, *,
             .filter(SubPayout.id.in_(payout_ids or []),
                     _org_scope(SubPayout, org_id))
             .all())
+
+    # Validate every transition BEFORE writing anything: a batch that mixes a
+    # legal move with an illegal one is all-or-nothing, so the office is told
+    # which row is wrong rather than half the batch moving and half not. A row
+    # already in the target status is a no-op, not a transition, and is allowed.
+    illegal = [r for r in rows
+               if (r.status or "due") != status
+               and status not in _ALLOWED_TRANSITIONS.get(r.status or "due", set())]
+    if illegal:
+        raise ValueError(
+            "illegal payout transition(s): "
+            + ", ".join(f"#{r.id} {r.status}→{status}" for r in illegal))
+
     now = _now()
     for r in rows:
-        r.status = status
-        r.updated_at = now
+        # A reference or method can be corrected on a row that is already there
+        # (a fixed cheque number on a paid row), so those always apply.
         if method:
             r.method = method
         if external_ref:
             r.external_ref = external_ref
+        if (r.status or "due") == status:
+            # Idempotent: the status stands and paid_at — the date money left —
+            # is not re-stamped by a second click.
+            continue
+        r.status = status
+        r.updated_at = now
         if status == "paid" and r.paid_at is None:
             r.paid_at = now
     db.commit()
