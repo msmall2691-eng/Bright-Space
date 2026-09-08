@@ -114,9 +114,12 @@ export default function Turnovers() {
           </p>
         )}
 
-        {windows === null ? (
+        {windows === null && !error ? (
+          // Skeleton only while genuinely loading. A failed load leaves windows
+          // null too, and without the !error guard the skeleton pulsed forever
+          // underneath the error line above — the page looked hung.
           <div className="h-24 animate-pulse rounded-xl bg-bg-2" aria-hidden="true" />
-        ) : windows.length === 0 ? (
+        ) : windows === null ? null : windows.length === 0 ? (
           <div className="rounded-xl border border-hairline bg-panel p-6 text-[13px] text-ink-2">
             <p className="mb-1 font-medium text-ink">No windows planned.</p>
             <p className="text-ink-3">

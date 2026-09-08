@@ -144,3 +144,11 @@ it('degrades to a sentence rather than an empty page', async () => {
   render(<BenchRoster />)
   expect(await screen.findByText(/Couldn’t load crew files just now/)).toBeTruthy()
 })
+
+it('says the bench is empty rather than rendering a blank', async () => {
+  // A brand-new org, or one that hasn't approved its first applicant. Used to
+  // return null — a blank where an answer should be.
+  get.mockResolvedValue({ ...BENCH, people: [], totals: { ...BENCH.totals, people: 0, can_work: 0 } })
+  render(<BenchRoster />)
+  expect(await screen.findByText(/No one on the bench yet/)).toBeTruthy()
+})

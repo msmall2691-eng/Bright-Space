@@ -36,10 +36,11 @@
  * refreshed file so a decision costs one call, not two.
  */
 import { useCallback, useEffect, useState } from 'react'
-import { Check, ExternalLink, FileCheck, Smartphone, X } from 'lucide-react'
+import { Check, ExternalLink, FileCheck, Smartphone, Users, X } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { download, get, post } from '../../api'
 import { toast } from '../../utils/toastBus'
+import { EmptyState } from '../ui'
 
 const DOC = {
   accepted: { dot: 'bg-emerald-500', word: 'accepted' },
@@ -106,7 +107,16 @@ export default function CrewFiles() {
   }
   if (!data) return <div className="h-24 animate-pulse rounded-xl bg-bg-2" aria-hidden="true" />
   const people = data.people || []
-  if (!people.length) return null
+  // An empty bench is a real state, not a blank — a brand-new org, or one that
+  // hasn't approved its first applicant yet. Say so and point at where they
+  // start, rather than rendering nothing.
+  if (!people.length) {
+    return (
+      <EmptyState icon={Users} compact
+        title="No one on the bench yet"
+        description="Approved subcontractors show up here with their files and their record. Applications come in through your public apply page." />
+    )
+  }
 
   const t = data.totals || {}
   const waiting = people.filter(c => c.awaiting_review.length)
