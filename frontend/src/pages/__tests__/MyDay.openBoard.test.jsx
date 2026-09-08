@@ -65,7 +65,7 @@ it('lists an open job once on a day with nothing booked', async () => {
   await waitFor(() => expect(screen.queryAllByText(/Camden ME/).length)
     .toBeGreaterThan(0))
   // The board is the ONE place this job appears. Twice is the bug.
-  expect(screen.getAllByRole('button', { name: /claim this job/i })).toHaveLength(1)
+  expect(screen.getAllByRole('button', { name: /ask for this job/i })).toHaveLength(1)
 })
 
 it('still lists it once when the day does have work booked', async () => {
@@ -75,7 +75,7 @@ it('still lists it once when the day does have work booked', async () => {
     address: '9 Elm St, Portland ME',
   }
   await show({ ...DAY, today: [assigned] })
-  expect(screen.getAllByRole('button', { name: /claim this job/i })).toHaveLength(1)
+  expect(screen.getAllByRole('button', { name: /ask for this job/i })).toHaveLength(1)
 })
 
 it('says which day an offer is for', async () => {
@@ -95,10 +95,10 @@ it('asking for a job opens the sheet and files the request', async () => {
   post.mockResolvedValue({ auto_approved: false })
   await show()
 
-  fireEvent.click(screen.getByRole('button', { name: /claim this job/i }))
+  fireEvent.click(screen.getByRole('button', { name: /ask for this job/i }))
 
   // The sheet — the render that regressed — is what carries the confirm.
-  const send = await screen.findByRole('button', { name: /claim it/i })
+  const send = await screen.findByRole('button', { name: /send request/i })
   fireEvent.click(send)
 
   // Empty rate box means "your posted price is fine" — null, not 0.
@@ -106,6 +106,19 @@ it('asking for a job opens the sheet and files the request', async () => {
     '/api/crew/jobs/41/claim',
     { requested_rate: null, message: null },
   ))
+})
+
+it('claims instantly when the office has instant claiming on', async () => {
+  // The same board, but the office turned instant claiming on: the backend
+  // stamps instant_claim on the offer, and the copy follows it — "Claim this
+  // job" and "Claim it", not the ask wording. Proves the flag flows through.
+  post.mockResolvedValue({ auto_approved: true })
+  await show({ ...DAY, open_jobs: [{ ...OFFER, instant_claim: true }] })
+  fireEvent.click(screen.getByRole('button', { name: /claim this job/i }))
+  const send = await screen.findByRole('button', { name: /claim it/i })
+  fireEvent.click(send)
+  await waitFor(() => expect(post).toHaveBeenCalledWith(
+    '/api/crew/jobs/41/claim', { requested_rate: null, message: null }))
 })
 
 it('never puts the house on an offer', async () => {
@@ -129,7 +142,7 @@ it('has a Jobs tab that lists every open job to claim', async () => {
   fireEvent.click(screen.getByRole('button', { name: 'Jobs' }))
   expect(await screen.findByText('Open jobs')).toBeTruthy()      // the header
   expect(screen.getByText(/Camden ME/)).toBeTruthy()             // the offer
-  expect(screen.getByRole('button', { name: /claim this job/i })).toBeTruthy()
+  expect(screen.getByRole('button', { name: /ask for this job/i })).toBeTruthy()
 })
 
 it('the Jobs tab tells an uncleared sub why it is empty', async () => {

@@ -10,8 +10,10 @@ office ASSIGNING, not the sub accepting (brightbase-marketplace). First to
 claim wins — the marketplace is a real marketplace now.
 
 WHAT IS INSTANT, all of which must hold:
-  * instant claiming is on (it is ON by default — the office can turn it off in
-    the standing rules and go back to approving each one by hand);
+  * instant claiming is on. It is OFF by default and the switch FAILS CLOSED:
+    the office turns it on explicitly (standing rules) once its bench is vetted.
+    Switched off in writing (Sept 2026) — see `_instant_on` for why the missing
+    human-approval step made a grandfathered bench unsafe to auto-award to;
   * the requester's vetting file is complete and current. THIS IS THE ONE
     NON-NEGOTIABLE — an uninsured person in a customer's house is the risk the
     whole vetting gate exists for, and it is checked here too, not just at the
@@ -48,17 +50,35 @@ from database.models import JobClaimRequest
 
 logger = logging.getLogger(__name__)
 
-# off | auto. Kept as the setting key the standing rule already writes, but the
-# DEFAULT is now ON: an unset value means instant claiming is live. The office
-# turns it OFF explicitly to go back to approving every request by hand.
+# off | auto. The setting key the standing rule writes. The DEFAULT is OFF and
+# the gate FAILS CLOSED: instant claiming is live ONLY when the office has
+# explicitly set it to "auto". This was switched off in writing (Sept 2026)
+# because the compensating control instant claim removed — a human approving
+# each claim, and in doing so looking at the requester's file — is what made a
+# grandfathered bench safe. `services/sub_vetting.blocking_requirements` returns
+# nothing for every account that predates `crew_vetting_enforce_from`, so with
+# no human in the loop an out-of-date file (lapsed COI, unsigned agreement)
+# would sail through. Instant claim can go back on once the bench's documents
+# are actually in and that cutoff can be cleared — at which point the vetting
+# gate below becomes true again and the feature is safe on its own terms.
 MODE_KEY = "claim_auto_approve_mode"
 
 
 def _instant_on(db: Session) -> bool:
     from modules.settings.router import get_setting
     val = (get_setting(db, MODE_KEY) or "").strip().lower()
-    # ON unless the office has explicitly switched it off.
-    return val != "off"
+    # FAIL CLOSED: on only for the explicit "auto". Unset, "off", or any stray
+    # or corrupted value ("false", "0", "disabled", "") reads as OFF, so the
+    # office can never be instant-claiming a job without having chosen to.
+    return val == "auto"
+
+
+def instant_claims_on(db: Session) -> bool:
+    """Public read of the same decision `consider()` makes: is instant claiming
+    switched on right now? The crew board asks this so its copy tells the truth —
+    "claim it and it's yours" only when a claim really will be instant, not a
+    promise that resolves to a pending request when the office has it off."""
+    return _instant_on(db)
 
 
 def why_not(db: Session, job, req: JobClaimRequest) -> Optional[str]:

@@ -438,16 +438,19 @@ export default function JobCard({ job, onMarkDone, onPhotos, onRespond, onDeclin
       )}
 
       {onClaim && (() => {
-        /* Open-jobs board — a real marketplace (Turno-style, owner's call,
-           Sept 2026). Claiming a posted job at the posted price makes it YOURS
-           on the spot: first to claim wins, no office step. A pending request
-           only exists for the one case that still waits — a bid ABOVE the
-           posted price — so the pending copy is about an offer, not an ask.
+        /* Open-jobs board. Whether claiming a posted job is INSTANT ("it's
+           yours, first to claim wins") or an ASK the office approves depends on
+           the office's setting — instant claiming is off by default (owner's
+           call, Sept 2026). The backend sends `instant_claim` (true only when
+           the switch is on AND the job is priced) so this copy tells the truth
+           rather than promising instant and handing back a pending request.
            Access details and the customer's number unlock once it's theirs. */
         const mine = job.my_claim_request
         const rate = job.posted_rate
         const asked = mine?.requested_rate
-        const claimable = rate != null
+        const priced = rate != null
+        const instant = !!job.instant_claim   // priced AND office has it on
+        const claimable = priced              // can act on it (claim or ask)
         return (
           /* ONE ROW, not a stack. The board shows several at once, and the old
              shape gave each a full-width slab — the pattern the owner vetoed.
@@ -484,14 +487,19 @@ export default function JobCard({ job, onMarkDone, onPhotos, onRespond, onDeclin
                       : 'bg-panel border border-hairline-2 text-ink-2 hover:bg-bg-2'}`}>
                 {mine?.status === 'pending'
                   ? 'Change my offer'
-                  : claimable
-                    ? (<><Sparkles className="w-4 h-4" aria-hidden="true" /> Claim this job</>)
-                    : (<><Sparkles className="w-4 h-4" aria-hidden="true" /> Make an offer</>)}
+                  : !priced
+                    ? (<><Sparkles className="w-4 h-4" aria-hidden="true" /> Make an offer</>)
+                    : instant
+                      ? (<><Sparkles className="w-4 h-4" aria-hidden="true" /> Claim this job</>)
+                      : (<><Sparkles className="w-4 h-4" aria-hidden="true" /> Ask for this job</>)}
               </button>
             </div>
-            {mine?.status !== 'pending' && claimable && (
+            {mine?.status !== 'pending' && priced && (
               <p className="text-[10px] text-ink-3 mt-1.5">
-                Claim it and it's yours — first to claim gets it{job.teammates?.length ? ` · you'd join ${job.teammates.join(', ')}` : ''}
+                {instant
+                  ? "Claim it and it's yours — first to claim gets it"
+                  : 'The office confirms who gets it.'}
+                {job.teammates?.length ? ` · you'd join ${job.teammates.join(', ')}` : ''}
               </p>
             )}
           </div>

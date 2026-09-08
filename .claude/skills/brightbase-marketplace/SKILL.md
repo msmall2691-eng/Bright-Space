@@ -102,17 +102,35 @@ public /apply  →  office approves  →  account + set-password invite
   hold one on the same job; the office picks. `services/claim_approval.py` is
   the single approve implementation, shared by the office endpoint and the
   auto-approver so they cannot drift.
-- **Instant claim (Turno-style)** — `services/claim_autoapprove.py`, **ON by
-  default** (owner's decision, in writing, Sept 2026 — replaced the earlier
-  "office picks who gets it" queue).
-  A cleared sub who claims a posted job at or below the posted price gets it on
-  the spot, first-come-first-served; the offer closes. This is the sub
-  *accepting* the office's offer, so Rule 0 (office never assigns) is intact.
-  The one case that still waits for a person is a bid **above** the posted price
-  (`counter_above_posted`) — the office agreeing to pay more. There is
-  deliberately **no** `competing_requests` refusal any more: FCFS is the point,
-  and the offer-close + FOR UPDATE lock make it safe. The office can switch
-  instant claiming off in the standing rules to approve each claim by hand.
+- **Instant claim (Turno-style)** — `services/claim_autoapprove.py`, **OFF by
+  default and fail-closed** (owner's decision, in writing: on Sept 2026 it went
+  in ON by default; the owner switched it OFF shortly after — see below).
+  When on, a cleared sub who claims a posted job at or below the posted price
+  gets it on the spot, first-come-first-served; the offer closes. This is the
+  sub *accepting* the office's offer, so Rule 0 (office never assigns) is
+  intact. The one case that still waits for a person is a bid **above** the
+  posted price (`counter_above_posted`). There is deliberately **no**
+  `competing_requests` refusal — when it's on, FCFS is the point, and the
+  offer-close + FOR UPDATE lock make the concurrency safe.
+
+  **Why it's off by default now.** Instant claim removed the human-approval
+  step, and three controls were only safe *because* a person approved each
+  claim and, in doing so, looked at the requester's file:
+  (1) the gate `_instant_on` must **fail closed** — on only for an explicit
+  `"auto"`, so unset (every org today) and any stray/corrupted value read as
+  off; the first cut used `!= "off"`, which failed *open* and read a corrupted
+  `"false"`/`"0"` as enabled;
+  (2) the vetting gate it leans on, `sub_vetting.blocking_requirements`, returns
+  **nothing** for every account grandfathered by `crew_vetting_enforce_from` —
+  i.e. the whole current bench — so with no human in the loop a lapsed COI or
+  unsigned agreement would auto-award. `can_take_jobs`/`blocking_requirements`
+  is *derived* clearance, but the grandfather exemption empties it;
+  (3) an instant claim notified no one.
+  It goes back on once the bench's documents are actually in and
+  `crew_vetting_enforce_from` can be cleared — at which point (2) is true again
+  and the feature is safe on its own terms. The crew board's copy is driven by
+  the `instant_claim` flag `/api/crew/my-day` stamps per job, so with it off the
+  card says "ask for this job", not a false "it's yours".
 - **Money** — `services/sub_payouts.py`. `UNIQUE(user_id, job_id)`, per-row
   savepoints, `void` instead of delete, and the manual rail marks **sent**,
   never **paid**.

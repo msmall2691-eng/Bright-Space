@@ -7,10 +7,17 @@ picks who gets it" queue. It stays legal because it is the sub ACCEPTING the
 office's offer at the office's price — Rule 0 forbids the office assigning, not
 the sub accepting (brightbase-marketplace).
 
+Instant claiming was later switched OFF by default (Sept 2026, in writing): the
+gate fails closed and turns on only when the office explicitly sets it to
+"auto", because with no human approving each claim an out-of-date file on a
+grandfathered sub would auto-award. The behaviour below is what happens WHEN it
+is on (`_rule("auto")`), plus that off/unset/garbage all keep it off.
+
 What is pinned here:
 
-  * ON by default — a clean claim at the posted price is theirs on the spot,
-    with no setting turned on;
+  * OFF by default and fail-closed — an unset or stray value leaves a claim
+    waiting for the office; only "auto" turns it on;
+  * turned on, a clean claim at the posted price is theirs on the spot;
   * the office can switch instant claiming OFF and go back to approving by hand;
   * a claim BELOW the posted price is instant too, at what they asked (a
     discount, not a negotiation);
@@ -220,16 +227,34 @@ def _rule_unset():
     db.commit(); db.close()
 
 
-def test_instant_claiming_is_on_by_default(world):
-    """No setting touched at all — a clean claim at the posted price is theirs
-    on the spot. The owner's Turno-style default."""
+def test_instant_claiming_is_off_by_default_and_fails_closed(world):
+    """No setting touched at all — a clean claim at the posted price still
+    WAITS for the office. Switched off in writing (Sept 2026): the gate fails
+    closed, so an org that never chose instant claiming is never running it."""
     _rule_unset()
     sub = _mk_sub(world)
     jid = _mk_job(world, posted_rate=80.0)
-    assert _claim(sub, jid)["auto_approved"] is True
+    assert _claim(sub, jid)["auto_approved"] is False
     st = _state(jid)
-    assert st["cleaners"] == [sub.cleaner_id] and st["open"] is False
-    assert st["requests"][sub.cleaner_id][0] == "approved"
+    assert st["cleaners"] == [] and st["open"] is True
+    assert st["requests"][sub.cleaner_id][0] == "pending"
+
+
+def test_a_stray_or_corrupted_setting_reads_as_off(world):
+    """The old default was `!= "off"`, so a legacy or corrupted value like
+    "false" / "0" / "disabled" read as ON — a gate over money and who's in a
+    customer's house that failed OPEN. Only the explicit "auto" turns it on now."""
+    sub = _mk_sub(world)
+    jid = _mk_job(world, posted_rate=80.0)
+    for junk in ("false", "0", "disabled", "on", "yes", ""):
+        _rule(junk)
+        assert _claim(sub, jid)["auto_approved"] is False, junk
+        assert _state(jid)["requests"][sub.cleaner_id][0] == "pending"
+        # clear the request so the next junk value starts clean
+        db = SessionLocal()
+        db.query(JobClaimRequest).filter(JobClaimRequest.job_id == jid).delete(
+            synchronize_session=False)
+        db.commit(); db.close()
 
 
 def test_the_office_can_switch_instant_claiming_off(world):
