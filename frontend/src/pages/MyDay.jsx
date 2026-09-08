@@ -891,6 +891,191 @@ export default function MyDay({ previewUserId = null }) {
             confirmIcon={<CheckCircle2 className="w-4 h-4" />} />
         </Sheet>
       )}
+
+      {/* Photos after a clean — the sheet owns capture, the WiFi queue, and the
+          before/after toggle. Removed with the employee code in #777; the
+          Photos button on every job card had been dead ever since. */}
+      {photoJob && (
+        <JobPhotoSheet job={photoJob} onClose={() => setPhotoJob(null)} />
+      )}
+
+      {/* House photos & all notes — the access details a cleaner needs at the
+          door. Same #777 casualty as the photo sheet. */}
+      {houseJob && (
+        <PropertySheet propertyId={houseJob.property_id}
+          propertyName={houseJob.property_name}
+          onClose={() => setHouseJob(null)} />
+      )}
+
+      {/* Text the client from the company number. Templates unlock the day
+          before ("see you tomorrow") and the day of ("on the way"); their
+          number stays private and every send is logged for the office. */}
+      {textJob && (() => {
+        const tomorrow = (() => {
+          const d = new Date(`${data?.as_of}T12:00`); d.setDate(d.getDate() + 1)
+          return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+        })()
+        const canOnTheWay = textJob.scheduled_date === data?.as_of
+        const canTomorrow = textJob.scheduled_date === tomorrow
+        return (
+          <Sheet onClose={() => setTextJob(null)} busy={actionBusy}>
+            <div>
+              <div className="text-base font-bold text-ink">Text {textJob.client_name || 'the client'}</div>
+              <div className="text-[11px] text-ink-3 mt-0.5">
+                Sent from the company number and logged for the office — their
+                number stays private.
+              </div>
+            </div>
+            {textSent ? (
+              <>
+                <div className="text-[12.5px] text-ink-2 flex items-start gap-1.5">
+                  <span className="mt-[5px] w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" aria-hidden="true" />
+                  <span>Sent — “{textSent}”</span>
+                </div>
+                <button onClick={() => setTextJob(null)}
+                  className="w-full text-[13px] font-semibold bg-panel border border-hairline text-ink-2 py-2.5 rounded-lg hover:bg-bg-2 transition-colors">
+                  Done
+                </button>
+              </>
+            ) : (
+              <>
+                {!canOnTheWay && !canTomorrow ? (
+                  <p className="text-[12.5px] text-ink-3">
+                    Texts unlock the day before ("see you tomorrow") and the
+                    day of ("on the way").
+                  </p>
+                ) : (
+                  <>
+                    <label className="block">
+                      <span className="text-[12px] font-medium text-ink-2">Add a personal line (optional)</span>
+                      <input value={textNote} maxLength={160}
+                        onChange={e => setTextNote(e.target.value)}
+                        placeholder="e.g. It's Sarah and Meg today!"
+                        className="mt-1 w-full rounded-lg border border-hairline bg-bg px-3 py-2 text-[13px] text-ink focus:outline-none focus:border-blue-400" />
+                    </label>
+                    <div className="space-y-2">
+                      {canOnTheWay && (
+                        <button onClick={() => sendClientText(textJob, 'on_the_way', textNote.trim() || undefined)}
+                          disabled={actionBusy}
+                          className="w-full text-[13px] font-semibold bg-blue-600 hover:bg-blue-700 text-white py-2.5 rounded-lg disabled:opacity-60 transition-colors">
+                          {actionBusy ? 'Sending…' : "🚗 We're on the way"}
+                        </button>
+                      )}
+                      {canTomorrow && (
+                        <button onClick={() => sendClientText(textJob, 'tomorrow', textNote.trim() || undefined)}
+                          disabled={actionBusy}
+                          className="w-full text-[13px] font-semibold bg-blue-600 hover:bg-blue-700 text-white py-2.5 rounded-lg disabled:opacity-60 transition-colors">
+                          {actionBusy ? 'Sending…' : '👋 Looking forward to tomorrow'}
+                        </button>
+                      )}
+                    </div>
+                  </>
+                )}
+                <ErrorNote>{actionError}</ErrorNote>
+              </>
+            )}
+          </Sheet>
+        )
+      })()}
+
+      {/* THE MARKETPLACE. Asking for an open job files a request at the posted
+          rate or a counter — it never assigns (Rule 0). Removed with the
+          employee code in #777, which left every "Ask for this job" button
+          setting state that nothing rendered: no sheet, no rate field, no
+          feedback. This is the sheet that makes the sub side of the
+          marketplace real. */}
+      {claimJob && (
+        <Sheet onClose={() => setClaimJob(null)} busy={actionBusy}>
+          <div>
+            <div className="text-base font-bold text-ink">Ask for this job?</div>
+            <div className="text-[13px] text-ink-3 mt-0.5 truncate">
+              {claimJob.property_name || claimJob.title}
+              {claimJob.scheduled_date ? ` · ${claimJob.scheduled_date === data?.as_of ? 'Today' : dayLabel(claimJob.scheduled_date)}` : ''}
+              {claimJob.start_time ? ` · ${fmtTimeRange(claimJob.start_time, claimJob.end_time)}` : ''}
+            </div>
+          </div>
+          {claimJob.posted_rate != null ? (
+            <p className="text-[13px] text-ink-2">
+              The office is offering{' '}
+              <span className="font-semibold text-ink">
+                ${Number(claimJob.posted_rate).toLocaleString(undefined, { maximumFractionDigits: 2 })}
+              </span>. Leave the box empty to take it.
+            </p>
+          ) : (
+            /* No asking price: the server refuses a request with no number on
+               either side, so say what's needed instead of letting them tap
+               into a rejection. */
+            <p className="flex items-start gap-1.5 text-[13px] text-ink-2">
+              <span className="mt-1.5 w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0" aria-hidden="true" />
+              <span>No price on this one — say what you'd do it for.</span>
+            </p>
+          )}
+          <label className="block">
+            <span className="text-[13px] font-medium text-ink-2">
+              {claimJob.posted_rate != null ? 'Want a different rate? (optional)' : 'Your rate'}
+            </span>
+            <input
+              type="number" inputMode="decimal" min="1" step="1"
+              value={claimRate} onChange={e => setClaimRate(e.target.value)}
+              autoFocus={claimJob.posted_rate == null}
+              placeholder={claimJob.posted_rate != null
+                ? `${Number(claimJob.posted_rate)}` : 'e.g. 120'}
+              className="mt-1.5 w-full rounded-lg border border-hairline bg-bg px-3 py-2.5 text-base text-ink placeholder-ink-3 focus:outline-none focus:border-blue-400"
+            />
+          </label>
+          <label className="block">
+            <span className="text-[13px] font-medium text-ink-2">Anything to add? (optional)</span>
+            <textarea
+              value={claimMessage} onChange={e => setClaimMessage(e.target.value)}
+              rows={2} maxLength={2000}
+              placeholder="e.g. I'm five minutes away, I bring my own supplies…"
+              className="mt-1.5 w-full rounded-lg border border-hairline bg-bg px-3 py-2.5 text-[13px] text-ink placeholder-ink-3 focus:outline-none focus:border-blue-400 resize-none"
+            />
+          </label>
+          <p className="text-[12px] text-ink-3">
+            Others can ask for this too — the office picks. Address details unlock
+            if it's yours.
+          </p>
+          <ErrorNote>{actionError}</ErrorNote>
+          <SheetActions onCancel={() => setClaimJob(null)} onConfirm={confirmClaim}
+            busy={actionBusy}
+            confirmLabel={claimJob.my_claim_request?.status === 'pending' ? 'Update my ask' : 'Send my ask'}
+            busyLabel="Sending…"
+            confirmIcon={<Sparkles className="w-4 h-4" />} />
+        </Sheet>
+      )}
+
+      {/* "Can't make it" on an assigned job. Records a declined status with an
+          optional reason; the sub stays on the job until the office reassigns
+          it (Rule 0 — the office never silently moves the work). #777 casualty. */}
+      {declineJob && (
+        <Sheet onClose={() => setDeclineJob(null)} busy={actionBusy}>
+          <div>
+            <div className="text-base font-bold text-ink">Can't make it</div>
+            <div className="text-[13px] text-ink-3 mt-0.5 truncate">
+              {declineJob.property_name || declineJob.title}
+              {declineJob.scheduled_date ? ` · ${dayLabel(declineJob.scheduled_date)}` : ''}
+            </div>
+          </div>
+          <p className="text-[12px] text-ink-3">
+            You'll stay on the job until the office reassigns it — they get
+            notified right away.
+          </p>
+          <label className="block">
+            <span className="text-[13px] font-medium text-ink-2">Why not? (optional)</span>
+            <textarea
+              value={declineReason} onChange={e => setDeclineReason(e.target.value)}
+              rows={2} maxLength={2000} autoFocus
+              placeholder="e.g. doctor's appointment, car trouble…"
+              className="mt-1.5 w-full rounded-lg border border-hairline bg-bg px-3 py-2.5 text-[13px] text-ink placeholder-ink-3 focus:outline-none focus:border-blue-400 resize-none"
+            />
+          </label>
+          <ErrorNote>{actionError}</ErrorNote>
+          <SheetActions onCancel={() => setDeclineJob(null)}
+            onConfirm={() => respond(declineJob, 'declined', declineReason.trim() || undefined)}
+            busy={actionBusy} confirmLabel="Send" busyLabel="Sending…" tone="amber" />
+        </Sheet>
+      )}
     </div>
   )
 }
