@@ -49,6 +49,7 @@ function isAdmin() {
 
 export default function SubApplications() {
   const [data, setData] = useState(null)
+  const [error, setError] = useState(false)
   const [filter, setFilter] = useState('new')
   const [openId, setOpenId] = useState(null)
   const [busy, setBusy] = useState(null)
@@ -57,7 +58,9 @@ export default function SubApplications() {
   const load = useCallback(() => {
     // One request: the list plus every status count, so switching filters is
     // local rather than another round trip.
-    get('/api/sub-applications').then(setData).catch(() => setData(null))
+    get('/api/sub-applications')
+      .then(d => { setData(d); setError(false) })
+      .catch(() => setError(true))
   }, [])
   useEffect(() => { load() }, [load])
 
@@ -92,6 +95,24 @@ export default function SubApplications() {
     })
   }
 
+  // An error is NOT "nobody applied". Swallowing it as an empty panel meant a
+  // failed load looked exactly like zero applicants — the office would never
+  // know a real applicant was sitting behind a failed fetch. Say so, quietly,
+  // and only once we have no data to show (a background refetch that fails
+  // leaves the last good list up).
+  if (error && !data) {
+    return (
+      <div className="mt-5 rounded-xl border border-hairline bg-panel p-5 sm:p-6">
+        <h2 className="flex items-center gap-2 text-lg font-bold text-ink">
+          <UserPlus className="h-5 w-5 text-indigo-500" /> Applications
+        </h2>
+        <p className="mt-2 flex items-start gap-1.5 text-[13px] text-ink-3">
+          <span className="mt-[6px] h-1.5 w-1.5 shrink-0 rounded-full bg-red-500" aria-hidden="true" />
+          <span>Couldn’t load applications just now. Nothing has changed — reload to try again.</span>
+        </p>
+      </div>
+    )
+  }
   if (!data || !data.applications) return null
   const counts = data.counts || {}
   const total = Object.values(counts).reduce((s, n) => s + n, 0)

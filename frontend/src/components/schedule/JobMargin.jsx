@@ -29,17 +29,31 @@ const SOURCE = {
 
 export default function JobMargin({ jobId, pay }) {
   const [data, setData] = useState(null)
+  const [failed, setFailed] = useState(false)
 
   useEffect(() => {
     if (!jobId) return
     let alive = true
+    setFailed(false)
     const q = pay == null || pay === '' ? '' : `?pay=${encodeURIComponent(pay)}`
     get(`/api/jobs/${jobId}/margin${q}`)
-      .then(d => { if (alive) setData(d) })
-      .catch(() => { if (alive) setData(null) })
+      .then(d => { if (alive) { setData(d); setFailed(false) } })
+      .catch(() => { if (alive) { setData(null); setFailed(true) } })
     return () => { alive = false }
   }, [jobId, pay])
 
+  // A failed fetch is not the same as still loading. Silently rendering
+  // nothing on error means the office types a price and the margin just isn't
+  // there — no way to tell it errored rather than came back empty. Say so
+  // quietly; loading still renders nothing (data null, not failed).
+  if (failed) {
+    return (
+      <p className="mt-1 flex items-start gap-1.5 text-[11px] text-ink-3">
+        <span className="mt-1 h-1.5 w-1.5 shrink-0 rounded-full bg-ink-3/40" aria-hidden="true" />
+        <span>Couldn’t work out the margin just now — the price is still yours to set.</span>
+      </p>
+    )
+  }
   if (!data) return null
 
   if (data.billed == null) {
