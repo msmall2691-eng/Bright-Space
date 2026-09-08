@@ -260,7 +260,7 @@ def update_invoice(invoice_id: int, data: InvoiceUpdate, db: Session = Depends(g
     if not inv:
         raise HTTPException(status_code=404, detail="Invoice not found")
     was_paid = inv.status == "paid"
-    # BB-INV-01: any of items / tax_rate / discount changing repriecs the
+    # BB-INV-01: any of items / tax_rate / discount changing reprices the
     # invoice. It used to recompute only when `items` was supplied, so editing
     # just the tax rate or the discount left `total` stale — the number the
     # customer is billed diverging from the line items on the same invoice.
@@ -281,6 +281,15 @@ def update_invoice(invoice_id: int, data: InvoiceUpdate, db: Session = Depends(g
     if data.paid_at:
         inv.paid_at = datetime.fromisoformat(data.paid_at)
         inv.status = "paid"
+    # BB-INV-03: a status→paid edit must stamp the payment date even when the
+    # caller sent no paid_at (the "Mark paid" button does exactly this — it
+    # PATCHes status only). Revenue-by-month filters on paid_at, so a paid
+    # invoice with paid_at NULL reads as collected on the invoice yet never
+    # lands in ANY month's revenue — money that vanishes from the figure the
+    # owner checks first. Only fill an unset date; never move one the caller
+    # gave or the invoice already carried.
+    if inv.status == "paid" and inv.paid_at is None:
+        inv.paid_at = datetime.now(timezone.utc)
     db.commit()
     db.refresh(inv)
     # Timeline: log the paid transition once (whether it came via paid_at or a
@@ -425,7 +434,25 @@ def process_payment(invoice_id: int, data: dict, db: Session = Depends(get_db)):
     if not inv:
         raise HTTPException(status_code=404, detail="Invoice not found")
 
-    was_paid = inv.status == "paid"
+    # BB-INV-03: idempotent. Recording a payment on an ALREADY-paid invoice used
+    # to overwrite paid_at with a fresh now() — moving the real payment date, so
+    # a cheque banked last month could jump into this month's revenue — and to
+    # write a SECOND "payment received" message, double-recording money that came
+    # in once. A double-click or a retry did both. Recording a payment twice must
+    # change nothing; the only thing worth doing is healing a paid invoice whose
+    # date was never set (legacy status=paid, paid_at NULL), without a duplicate
+    # message.
+    if inv.status == "paid":
+        if inv.paid_at is None:
+            inv.paid_at = datetime.now(timezone.utc)
+            db.commit()
+        return {
+            "status": "success",
+            "message": "Invoice already recorded as paid",
+            "invoice_id": invoice_id,
+            "already_paid": True,
+        }
+
     inv.status = "paid"
     inv.paid_at = datetime.now(timezone.utc)
 
@@ -441,9 +468,9 @@ def process_payment(invoice_id: int, data: dict, db: Session = Depends(get_db)):
         org_id=inv.org_id,  # BB-MT-01
     )
     db.add(msg)
-    # Timeline: log the paid transition (once) alongside the payment message.
-    if not was_paid:
-        log_invoice_paid(db, inv)
+    # Timeline: log the paid transition alongside the payment message. The
+    # already-paid case returned above, so this is always the first time.
+    log_invoice_paid(db, inv)
     db.commit()
 
     return {
