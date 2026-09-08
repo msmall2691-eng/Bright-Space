@@ -64,9 +64,12 @@ function DocRow({ doc, busy, onUpload }) {
             <p className="text-[12px] text-ink-2 mt-1">“{doc.notes}”</p>
           )}
         </div>
+        {/* Disabled until the date is in. The reason used to live only in a
+            `title=` tooltip — dead on a phone, where nobody hovers — so a sub
+            saw a greyed-out button and no way to know why. The reason is a
+            visible line by the date field now (below). */}
         <button type="button" disabled={busy || needsExpiry}
           onClick={() => fileRef.current?.click()}
-          title={needsExpiry ? 'Add the expiry date first' : undefined}
           className="shrink-0 inline-flex items-center gap-1.5 rounded-md border border-hairline-2 bg-panel px-2.5 py-2 text-[13px] font-medium text-ink-2 hover:bg-bg-2 disabled:opacity-50 transition-colors">
           <FileUp className="w-3.5 h-3.5" />
           {doc.status === 'missing' ? 'Upload' : 'Replace'}
@@ -74,11 +77,19 @@ function DocRow({ doc, busy, onUpload }) {
       </div>
 
       {doc.expires && (
-        <label className="mt-2 flex items-center gap-2">
-          <span className="text-[12px] text-ink-3 shrink-0">Expires</span>
-          <input type="date" value={expiry} onChange={e => setExpiry(e.target.value)}
-            className="rounded-lg border border-hairline bg-bg px-2.5 py-1.5 text-[13px] text-ink focus:outline-none focus:border-blue-400" />
-        </label>
+        <div className="mt-2">
+          <label className="flex items-center gap-2">
+            <span className="text-[12px] text-ink-3 shrink-0">Expires</span>
+            <input type="date" value={expiry} onChange={e => setExpiry(e.target.value)}
+              className="rounded-lg border border-hairline bg-bg px-2.5 py-1.5 text-[13px] text-ink focus:outline-none focus:border-blue-400" />
+          </label>
+          {needsExpiry && (
+            <p className="mt-1 flex items-start gap-1.5 text-[11.5px] text-ink-3">
+              <span className="mt-[5px] w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0" aria-hidden="true" />
+              <span>Add the date first — the office uses it to know when to ask for a fresh one. Then Upload turns on.</span>
+            </p>
+          )}
+        </div>
       )}
 
       <input ref={fileRef} type="file" className="hidden"

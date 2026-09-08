@@ -112,10 +112,24 @@ it('will not let a certificate be uploaded before its expiry date is set', async
   // than surfacing as a failed upload.
   mount()
   await screen.findByText('Certificate of insurance')
-  const coiRow = screen.getByText('Certificate of insurance').closest('div').parentElement.parentElement
+  const coiRow = screen.getByText('Certificate of insurance').closest('.py-3')
   const upload = [...coiRow.querySelectorAll('button')].find(b => /Upload/.test(b.textContent))
   expect(upload.disabled).toBe(true)
-  expect(upload.getAttribute('title')).toMatch(/expiry date first/)
+  // The reason is a VISIBLE line on the row, not a hover-only title= (dead on
+  // a phone, where the whole crew works). The tooltip is gone on purpose.
+  expect(upload.getAttribute('title')).toBeNull()
+  expect(coiRow.textContent).toMatch(/Add the date first/)
+})
+
+it('drops the date hint once the expiry is filled in, so Upload turns on', async () => {
+  mount()
+  await screen.findByText('Certificate of insurance')
+  const coiRow = screen.getByText('Certificate of insurance').closest('.py-3')
+  const dateField = coiRow.querySelector('input[type="date"]')
+  fireEvent.change(dateField, { target: { value: '2027-01-01' } })
+  expect(coiRow.textContent).not.toMatch(/Add the date first/)
+  const upload = [...coiRow.querySelectorAll('button')].find(b => /Upload/.test(b.textContent))
+  expect(upload.disabled).toBe(false)
 })
 
 it('a document with no expiry can be uploaded straight away', async () => {
