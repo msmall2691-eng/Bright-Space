@@ -29,7 +29,7 @@ export function useInvoicingMutations({
     setSaving(true)
     try {
       const url  = selected ? `/api/invoices/${selected.id}` : '/api/invoices'
-      const body = { ...form, client_id: parseInt(form.client_id), tax_rate: parseFloat(form.tax_rate) || 0 }
+      const body = { ...form, client_id: parseInt(form.client_id), tax_rate: parseFloat(form.tax_rate) || 0, discount: parseFloat(form.discount) || 0 }
       selected ? await patch(url, body) : await post(url, body)
       await load(); toast(selected ? 'Invoice updated' : 'Invoice created'); setPanel(null)
     } catch (e) { toast(e.message || 'Failed to save invoice', 'error') }

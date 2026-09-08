@@ -30,6 +30,7 @@ class InvoiceCreate(BaseModel):
     opportunity_id: Optional[int] = None
     items: List[InvoiceItem]
     tax_rate: Optional[float] = 0
+    discount: Optional[float] = 0     # BB-INV-01: flat $ off, after tax
     due_date: Optional[str] = None
     notes: Optional[str] = None
     custom_fields: Optional[dict] = {}
@@ -38,6 +39,7 @@ class InvoiceCreate(BaseModel):
 class InvoiceUpdate(BaseModel):
     items: Optional[List[InvoiceItem]] = None
     tax_rate: Optional[float] = None
+    discount: Optional[float] = None  # BB-INV-01
     status: Optional[Literal["draft", "sent", "paid", "overdue", "void"]] = None
     due_date: Optional[str] = None
     notes: Optional[str] = None
@@ -65,10 +67,15 @@ def assign_invoice_number(db: Session, inv: Invoice) -> str:
     return inv.invoice_number
 
 
-def calc_totals(items: list, tax_rate: float) -> tuple:
+def calc_totals(items: list, tax_rate: float, discount: float = 0.0) -> tuple:
+    # BB-INV-01: tax is charged on the full subtotal; the discount is a flat
+    # dollar amount taken off AFTER tax — identical to the quote's
+    # `_compute_totals` (modules/quoting/router.py), so a quote and the invoice
+    # raised from it agree to the cent.
     subtotal = sum(i["qty"] * i["unit_price"] for i in items)
     tax = round(subtotal * (tax_rate / 100), 2)
-    return round(subtotal, 2), tax, round(subtotal + tax, 2)
+    total = round(subtotal + tax - float(discount or 0), 2)
+    return round(subtotal, 2), tax, total
 
 
 def invoice_to_dict(inv: Invoice) -> dict:
@@ -82,6 +89,7 @@ def invoice_to_dict(inv: Invoice) -> dict:
         "subtotal": inv.subtotal,
         "tax_rate": inv.tax_rate,
         "tax": inv.tax,
+        "discount": inv.discount or 0,
         "total": inv.total,
         "status": inv.status,
         "due_date": inv.due_date,
@@ -171,7 +179,8 @@ def invoice_summary_by_service(
 @router.post("", status_code=201, dependencies=[Depends(require_role("admin", "manager"))])
 def create_invoice(data: InvoiceCreate, db: Session = Depends(get_db), org_id: int = Depends(current_org_id)):
     items = [i.model_dump() for i in data.items]
-    subtotal, tax, total = calc_totals(items, data.tax_rate or 0)
+    discount = float(data.discount or 0)
+    subtotal, tax, total = calc_totals(items, data.tax_rate or 0, discount)
     inv = Invoice(
         client_id=data.client_id,
         job_id=data.job_id,
@@ -181,6 +190,7 @@ def create_invoice(data: InvoiceCreate, db: Session = Depends(get_db), org_id: i
         subtotal=subtotal,
         tax_rate=data.tax_rate or 0,
         tax=tax,
+        discount=discount,
         total=total,
         due_date=data.due_date,
         notes=data.notes,
@@ -250,13 +260,19 @@ def update_invoice(invoice_id: int, data: InvoiceUpdate, db: Session = Depends(g
     if not inv:
         raise HTTPException(status_code=404, detail="Invoice not found")
     was_paid = inv.status == "paid"
-    if data.items is not None:
-        items = [i.model_dump() for i in data.items]
+    # BB-INV-01: any of items / tax_rate / discount changing repriecs the
+    # invoice. It used to recompute only when `items` was supplied, so editing
+    # just the tax rate or the discount left `total` stale — the number the
+    # customer is billed diverging from the line items on the same invoice.
+    if any(v is not None for v in (data.items, data.tax_rate, data.discount)):
+        items = [i.model_dump() for i in data.items] if data.items is not None else (inv.items or [])
         tax_rate = data.tax_rate if data.tax_rate is not None else inv.tax_rate
-        subtotal, tax, total = calc_totals(items, tax_rate)
+        discount = data.discount if data.discount is not None else (inv.discount or 0)
+        subtotal, tax, total = calc_totals(items, tax_rate or 0, discount)
         inv.items = items
         inv.subtotal = subtotal
         inv.tax = tax
+        inv.discount = discount
         inv.total = total
     for field in ["tax_rate", "status", "due_date", "notes", "custom_fields"]:
         val = getattr(data, field)

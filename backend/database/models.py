@@ -1507,6 +1507,13 @@ class Invoice(Base):
     subtotal = Column(Float, default=0)
     tax_rate = Column(Float, default=0)
     tax = Column(Float, default=0)
+    # BB-INV-01: a discount the customer was promised on the quote. It was
+    # dropped at invoicing — Quote carried `discount` but Invoice had no column
+    # for it, so `total` was billed at the full pre-discount amount. Same shape
+    # and semantics as Quote.discount: a flat dollar amount subtracted after
+    # tax (total = subtotal + tax - discount). server_default keeps existing
+    # rows at 0 (no retroactive discount) rather than NULL.
+    discount = Column(Float, nullable=False, default=0.0, server_default="0")
     total = Column(Float, default=0)
     status = Column(String, default="draft")  # draft | sent | overdue | paid
     due_date = Column(String)

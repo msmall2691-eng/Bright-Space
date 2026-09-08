@@ -6404,7 +6404,10 @@ export interface paths {
         put?: never;
         /**
          * Verify
-         * @description Exchange a valid magic-link token for a portal session token.
+         * @description Exchange a valid, unused magic-link token for a portal session token.
+         *
+         *     The exchange is SINGLE-USE (BB-SEC-21): the link is spent the first time it
+         *     is redeemed, so a leaked or replayed link cannot mint a second session.
          */
         post: operations["verify_api_portal_verify_post"];
         delete?: never;
@@ -9047,6 +9050,11 @@ export interface components {
              * @default 0
              */
             tax_rate: number | null;
+            /**
+             * Discount
+             * @default 0
+             */
+            discount: number | null;
             /** Due Date */
             due_date?: string | null;
             /** Notes */
@@ -9082,6 +9090,8 @@ export interface components {
             items?: components["schemas"]["InvoiceItem"][] | null;
             /** Tax Rate */
             tax_rate?: number | null;
+            /** Discount */
+            discount?: number | null;
             /** Status */
             status?: ("draft" | "sent" | "paid" | "overdue" | "void") | null;
             /** Due Date */
@@ -13669,7 +13679,7 @@ export interface operations {
         };
         requestBody?: {
             content: {
-                "application/json": components["schemas"]["DeclineClaimBody"];
+                "application/json": components["schemas"]["DeclineClaimBody"] | null;
             };
         };
         responses: {
