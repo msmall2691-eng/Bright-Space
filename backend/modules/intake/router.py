@@ -285,6 +285,21 @@ def submit_intake(request: Request, data: IntakeSubmit, db: Session = Depends(ge
     return upsert_lead(db, payload)
 
 
+def _batch_quotes(db: Session, rows) -> dict:
+    """{quote_id: Quote} for the rows' `converted_quote_id`s, in one query.
+
+    Both the lead list and its display-status filter need each row's linked
+    quote (to open-receipt and to derive "converted"/"quoted"); loading them
+    once avoids an N+1.
+    """
+    quote_ids = {r.converted_quote_id for r in rows if getattr(r, "converted_quote_id", None)}
+    out: dict = {}
+    if quote_ids:
+        for qt in db.query(Quote).filter(Quote.id.in_(quote_ids)).all():
+            out[qt.id] = qt
+    return out
+
+
 @router.get("", dependencies=[Depends(require_role("admin", "manager"))])
 def get_intakes(
     status: Optional[str] = None,
@@ -308,10 +323,6 @@ def get_intakes(
     # MT-2: scope to the caller's workspace; tolerate legacy + public-submitted
     # NULL-org leads (the contact form has no logged-in user).
     q = db.query(LeadIntake).filter(or_(LeadIntake.org_id == resolve_org_id(org_id, db), LeadIntake.org_id.is_(None)))
-    if status:
-        q = q.filter(LeadIntake.status == status)
-    elif not include_archived:
-        q = q.filter(LeadIntake.status != "archived")
     if source:
         q = q.filter(LeadIntake.source == source)
     if service_type:
@@ -322,14 +333,36 @@ def get_intakes(
         # A client's origin request(s) — powers the "Requests" related-records
         # link on the client profile (converted leads point back at their Client).
         q = q.filter(LeadIntake.client_id == client_id)
+
+    # BB-FIND-02: new/reviewed/quoted/converted are DISPLAY statuses derived
+    # from the lead's quote/opportunity (utils.deal_stage.lead_display_status) —
+    # NOT the stored `status` column, which no code ever advances to
+    # "converted" (see intake_to_dict). Filtering the column by those values
+    # meant ?status=converted matched zero rows: every converted lead vanished
+    # from the Converted tab and sat mislabeled under Quoted. So filter on the
+    # DERIVED status, computed from the same batch-loaded quote the row renders
+    # with, and paginate AFTER the match so a page is never silently short.
+    # `archived` stays a stored-column filter — it is the one operator-set state
+    # and always wins in the derivation too.
+    if status and status != "archived":
+        candidates = (q.filter(LeadIntake.status != "archived")
+                      .order_by(LeadIntake.created_at.desc()).all())
+        quotes_by_id = _batch_quotes(db, candidates)
+        matching = [
+            r for r in candidates
+            if lead_display_status(r, quotes_by_id.get(getattr(r, "converted_quote_id", None))) == status
+        ]
+        page = matching[offset:offset + limit]
+        return [intake_to_dict(i, quotes_by_id.get(getattr(i, "converted_quote_id", None))) for i in page]
+
+    # `archived` filter, or no status → the stored column is authoritative and
+    # SQL-side pagination is exact.
+    if status:
+        q = q.filter(LeadIntake.status == status)
+    elif not include_archived:
+        q = q.filter(LeadIntake.status != "archived")
     rows = q.order_by(LeadIntake.created_at.desc()).offset(offset).limit(limit).all()
-    # Batch-load the linked quotes in one query (avoids an N+1) so each row can
-    # report whether the customer has opened its quote.
-    quote_ids = {r.converted_quote_id for r in rows if getattr(r, "converted_quote_id", None)}
-    quotes_by_id = {}
-    if quote_ids:
-        for qt in db.query(Quote).filter(Quote.id.in_(quote_ids)).all():
-            quotes_by_id[qt.id] = qt
+    quotes_by_id = _batch_quotes(db, rows)
     return [intake_to_dict(i, quotes_by_id.get(getattr(i, "converted_quote_id", None))) for i in rows]
 
 
