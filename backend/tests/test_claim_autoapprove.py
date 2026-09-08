@@ -329,3 +329,85 @@ def test_the_office_endpoint_and_the_auto_approver_reach_the_same_state(world):
     # the automatic one.
     assert a["requests"][sub.cleaner_id][1] == _Admin.id
     assert b["requests"][sub.cleaner_id][1] is None
+
+
+# ── The row lock (the fix) ───────────────────────────────────────────────────
+
+def test_consider_locks_both_the_job_and_the_request_for_update(world, monkeypatch):
+    """The lock is the fix. approve()'s contract is that the caller holds the
+    Job and the request FOR UPDATE; the office endpoint has since Phase 4, and
+    this caller did not. Without it, two subs asking at once — or the office
+    approving one while this approves the other — each pass why_not()'s rival
+    check (neither yet seeing the other's request) and both reach approve(),
+    putting two subs on a one-person job.
+
+    Asserted at the QUERY level, not by observing a double-book: SQLite renders
+    no FOR UPDATE and serializes writers, so a single-process test cannot stage
+    the race. What is dialect-independent — and what fails on the unfixed
+    consider() (zero locks) — is that consider ASKS the DB to lock both rows
+    before it decides. On Postgres that ask is what serializes the two callers.
+    """
+    from sqlalchemy.orm import Query
+    locked = []
+    orig = Query.with_for_update
+
+    def spy(self, *a, **k):
+        try:
+            locked.append(self.column_descriptions[0]["entity"].__name__)
+        except Exception:
+            locked.append("?")
+        return orig(self, *a, **k)
+
+    monkeypatch.setattr(Query, "with_for_update", spy)
+
+    from services.claim_autoapprove import consider
+    _rule("auto")
+    sub = _mk_sub(world)
+    jid = _mk_job(world, posted_rate=80.0)
+
+    db = SessionLocal()
+    job = db.query(Job).filter(Job.id == jid).first()
+    req = JobClaimRequest(org_id=1, job_id=jid, cleaner_id=sub.cleaner_id,
+                          user_id=sub.id, requested_rate=None, status="pending",
+                          created_at=business_today(), updated_at=business_today())
+    db.add(req); db.commit(); db.refresh(req)
+    locked.clear()  # ignore any locks taken during setup
+
+    out = consider(db, job, req, org_id=1)
+    db.close()
+
+    # It still approves the clean request — the lock did not change the outcome.
+    assert out["auto_approved"] is True, out
+    # And it locked BOTH rows on the way there.
+    assert "Job" in locked, "consider must lock the Job FOR UPDATE"
+    assert "JobClaimRequest" in locked, "consider must lock the request FOR UPDATE"
+
+    st = _state(jid)
+    assert st["cleaners"] == [sub.cleaner_id]
+    assert st["open"] is False
+
+
+def test_consider_refuses_if_the_row_vanished_under_the_lock(world):
+    """The re-read can come back empty — the request deleted, the job gone — in
+    which case there is nothing to approve. It must refuse, not raise."""
+    from services.claim_autoapprove import consider
+    _rule("auto")
+    sub = _mk_sub(world)
+    jid = _mk_job(world, posted_rate=80.0)
+
+    db = SessionLocal()
+    job = db.query(Job).filter(Job.id == jid).first()
+    req = JobClaimRequest(org_id=1, job_id=jid, cleaner_id=sub.cleaner_id,
+                          user_id=sub.id, requested_rate=None, status="pending",
+                          created_at=business_today(), updated_at=business_today())
+    db.add(req); db.commit(); db.refresh(req)
+    rid = req.id
+
+    # It's gone by the time consider re-reads it.
+    db.query(JobClaimRequest).filter(JobClaimRequest.id == rid).delete()
+    db.commit()
+
+    out = consider(db, job, req, org_id=1)
+    db.close()
+    assert out["auto_approved"] is False
+    assert out["reason"] == "gone"
