@@ -130,7 +130,7 @@ export default function OpportunityDetail() {
           <ArrowLeft className="w-4 h-4" /> Back to Deals
         </button>
 
-        <div className="grid grid-cols-1 lg:grid-cols-[300px_minmax(0,1fr)_320px] gap-4">
+        <div className="grid grid-cols-1 shell:grid-cols-[300px_minmax(0,1fr)_320px] gap-4">
           {/* ── Left: identity + fields ───────────────────────────── */}
           <div className="bg-panel border border-hairline rounded-xl p-4 space-y-4 self-start">
             <div>
