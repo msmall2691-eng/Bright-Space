@@ -603,34 +603,10 @@ export default function JobDetail() {
                 <InlineSelect value={job.job_type || 'residential'} options={JOB_TYPE_OPTIONS}
                   onSelect={(v) => saveField({ job_type: v })} />
               </div>
-              {canEdit() && job.status === 'scheduled' && (
-                /* Open-jobs board: flip to show this job on every cleaner's
-                   phone. Since the marketplace pivot (migration 097) they
-                   REQUEST it rather than claiming instantly — the copy says
-                   "ask for it" because that's what the button on their phone
-                   now does, and promising a claim it can't deliver is how the
-                   two screens end up describing different products. */
-                <button
-                  onClick={() => saveField({ open_for_claims: !job.open_for_claims })}
-                  className={`w-full flex items-center justify-between gap-2 rounded-lg border px-3 py-2 text-[12px] font-medium transition-colors ${
-                    job.open_for_claims
-                      ? 'border-hairline-2 bg-bg-2 text-ink hover:bg-bg-3'
-                      : 'border-hairline bg-panel text-ink-2 hover:bg-bg-2'}`}>
-                  <span className="inline-flex items-center gap-1.5">
-                    <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${job.open_for_claims ? 'bg-violet-500' : 'bg-ink-3/40'}`} aria-hidden="true" />
-                    {job.open_for_claims ? 'Open to crew — they can ask for it' : 'Open to crew'}
-                  </span>
-                  <span className="text-[10px] uppercase tracking-wide opacity-70">
-                    {job.open_for_claims ? 'On · tap to close' : 'Off'}
-                  </span>
-                </button>
-              )}
               {canEdit() && (
-                /* WHAT WE CHARGE. Above the crew rates and outside the
-                   open-to-crew branch, because it is true of every job whether
-                   or not one is posted — and because an unpriced job is one
-                   nobody can invoice. The rates below are what we PAY; these
-                   two numbers are never mixed. */
+                /* WHAT WE CHARGE. The invoice price, unconditional: an unpriced
+                   job is one nobody can invoice, posted or not. The rates below
+                   are what we PAY; these two numbers are never mixed. */
                 <div className="mt-2">
                   <InlineEditField label="What we charge" type="number" value={job.price}
                     placeholder="Set the price"
@@ -644,11 +620,14 @@ export default function JobDetail() {
                   )}
                 </div>
               )}
-              {canEdit() && job.open_for_claims && (
-                /* The asking price. Sits under the toggle because it only
-                   means anything while the job is posted, and a posted job
-                   with no number on it is one nobody can price their answer
-                   against — the crew app refuses a request against it. */
+              {canEdit() && (job.status === 'scheduled' || job.open_for_claims) && (
+                /* PRICE BEFORE POST. The asking rate is ABOVE the toggle and
+                   always editable for a schedulable job — set the price, see
+                   the margin, THEN open it. It used to appear only AFTER the
+                   toggle was flipped on, so the job went live on every phone
+                   reading "No price set" before a number existed. The crew app
+                   still lets a sub name their own price on an unpriced job, but
+                   the office pricing it first is the ordinary path. */
                 <div className="mt-2">
                   <InlineEditField label="Asking rate" type="number" value={job.posted_rate}
                     placeholder="Set what it pays"
@@ -657,13 +636,35 @@ export default function JobDetail() {
                   {job.posted_rate == null && (
                     <p className="mt-1 flex items-start gap-1.5 text-[11px] text-ink-2">
                       <span className="mt-1 h-1.5 w-1.5 shrink-0 rounded-full bg-amber-500" aria-hidden="true" />
-                      <span>Nobody can ask for this until it has a price, or names their own.</span>
+                      <span>Set a price before you open this — or a sub names their own when they ask.</span>
                     </p>
                   )}
                   {/* The margin, right beside the box the price goes in. Post a
                       job without seeing this and the margin is what you lose. */}
                   <JobMargin jobId={job.id} pay={job.posted_rate} />
                 </div>
+              )}
+              {canEdit() && (job.status === 'scheduled' || job.open_for_claims) && (
+                /* Open-jobs board: flip to show this job on every cleaner's
+                   phone. Since the marketplace pivot (migration 097) they
+                   REQUEST it rather than claiming instantly (Rule 0 — the
+                   office never assigns), and the copy says "ask for it" for the
+                   same reason. Sits BELOW the asking rate on purpose: price,
+                   then post. */
+                <button
+                  onClick={() => saveField({ open_for_claims: !job.open_for_claims })}
+                  className={`w-full flex items-center justify-between gap-2 rounded-lg border px-3 py-2 text-[12px] font-medium transition-colors mt-2 ${
+                    job.open_for_claims
+                      ? 'border-hairline-2 bg-bg-2 text-ink hover:bg-bg-3'
+                      : 'border-hairline bg-panel text-ink-2 hover:bg-bg-2'}`}>
+                  <span className="inline-flex items-center gap-1.5">
+                    <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${job.open_for_claims ? 'bg-violet-500' : 'bg-ink-3/40'}`} aria-hidden="true" />
+                    {job.open_for_claims ? 'Open to crew — they can ask for it' : 'Open to crew'}
+                  </span>
+                  <span className="text-[10px] uppercase tracking-wide opacity-70">
+                    {job.open_for_claims ? 'On · tap to close' : 'Off'}
+                  </span>
+                </button>
               )}
               {canEdit() && job.agreed_rate != null && (
                 /* What the job actually pays, once someone was approved. Kept

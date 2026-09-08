@@ -1,4 +1,5 @@
-import { X, Wand2, Clock } from 'lucide-react'
+import { useState, useEffect } from 'react'
+import { X, Wand2, Clock, Sparkles } from 'lucide-react'
 import Button from '../ui/Button'
 
 /** Two preview-then-confirm modals for the Tools menu. Both accept the
@@ -138,6 +139,79 @@ export function FixTimesModal({ state, onCancel, onRun }) {
           <Button variant="primary" size="sm" onClick={onRun}
             disabled={state.loading || state.running || !state.preview?.count}>
             {state.running ? 'Fixing…' : `Fix ${state.preview?.count || 0}`}
+          </Button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+
+/** PRICE BEFORE POST. Opening jobs to the bench used to fire immediately with
+ *  no rate, so six Saturday jobs landed on the crew's phones reading "No price
+ *  set". This asks for the rate first. It stays OPTIONAL — a sub may name their
+ *  own price on an unpriced job (Rule 0: the office offers, it doesn't assign)
+ *  — but the ask makes an unpriced post a choice, not a silent default. State
+ *  is parent-owned: null | { targets:[…] } | { targets, running }. */
+export function OpenToCrewModal({ state, onCancel, onConfirm }) {
+  const [rate, setRate] = useState('')
+  // Reset the box whenever a fresh batch opens the modal.
+  useEffect(() => { setRate('') }, [state?.targets])
+  if (!state) return null
+  const n = state.targets.length
+  const busy = !!state.running
+  const submit = () => {
+    const raw = String(rate).trim()
+    onConfirm(raw === '' ? null : Number(raw))
+  }
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4"
+      onClick={() => !busy && onCancel()}>
+      <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" />
+      <div className="relative w-full max-w-md bg-panel rounded-2xl shadow-2xl border border-hairline flex flex-col overflow-hidden"
+        onClick={e => e.stopPropagation()}>
+        <div className="flex items-start justify-between px-5 py-4 border-b border-hairline">
+          <div className="flex items-center gap-2.5 min-w-0">
+            <Sparkles className="w-5 h-5 text-indigo-600 shrink-0" />
+            <div className="min-w-0">
+              <h2 className="text-sm font-semibold text-ink">Open to the crew</h2>
+              <p className="text-[12px] text-ink-3 mt-0.5">
+                Set what it pays before it goes on the bench's phones.
+              </p>
+            </div>
+          </div>
+          <button onClick={() => !busy && onCancel()} className="p-1 text-ink-3 hover:text-ink-2 shrink-0">
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+
+        <div className="p-4 space-y-3">
+          <p className="text-[13px] text-ink-2">
+            {n} job{n > 1 ? 's' : ''} will go on the board. Subs ask for {n > 1 ? 'them' : 'it'} —
+            you pick who gets {n > 1 ? 'each' : 'it'}.
+          </p>
+          <label className="block">
+            <span className="text-[12px] font-medium text-ink-2">
+              What should it pay? <span className="text-ink-3 font-normal">· optional</span>
+            </span>
+            <input
+              type="number" inputMode="decimal" min="1" step="1" autoFocus
+              value={rate} onChange={e => setRate(e.target.value)}
+              onKeyDown={e => { if (e.key === 'Enter' && !busy) submit() }}
+              placeholder="e.g. 120"
+              className="mt-1 w-full rounded-lg border border-hairline bg-bg px-3 py-2.5 text-base text-ink placeholder-ink-3 focus:outline-none focus:border-blue-400" />
+          </label>
+          <p className="flex items-start gap-1.5 text-[11.5px] text-ink-3">
+            <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-ink-3/50" aria-hidden="true" />
+            <span>Jobs that already have an asking rate keep theirs. Leave this
+              blank and a sub names their own price when they ask.</span>
+          </p>
+        </div>
+
+        <div className="p-4 border-t border-hairline flex items-center justify-end gap-2">
+          <Button variant="secondary" size="sm" onClick={onCancel} disabled={busy}>Cancel</Button>
+          <Button variant="primary" size="sm" onClick={submit} disabled={busy}>
+            {busy ? 'Posting…' : `Put ${n > 1 ? `${n} ` : ''}on the board`}
           </Button>
         </div>
       </div>

@@ -83,7 +83,7 @@ vi.mock('../../components/schedule/ScheduleSkeleton', () => ({ default: () => nu
 vi.mock('../../components/schedule/CompleteVisitModal', () => ({ default: () => null }))
 vi.mock('../../components/schedule/VisitDetailsDrawer', () => ({ default: () => null }))
 vi.mock('../../components/schedule/ScheduleToolbar', () => ({ default: () => <div data-testid="schedule-toolbar" /> }))
-vi.mock('../../components/schedule/PowerToolModals', () => ({ AutoAssignModal: () => null, FixTimesModal: () => null }))
+vi.mock('../../components/schedule/PowerToolModals', () => ({ AutoAssignModal: () => null, FixTimesModal: () => null, OpenToCrewModal: () => null }))
 vi.mock('../../components/schedule/ScheduleSections', () => ({ ScheduleHealthStrip: () => null, ScheduleBulkBar: () => null }))
 vi.mock('../../components/schedule/ScheduleTabs', () => ({
   AvailabilityPanel: () => <div data-testid="availability-panel" />,

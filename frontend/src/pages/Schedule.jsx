@@ -22,7 +22,7 @@ import ScheduleToolbar from '../components/schedule/ScheduleToolbar'
 import SubNav from '../components/ui/SubNav'
 import GoogleCalendarView from '../components/schedule/GoogleCalendarView'
 import ScheduleSyncSettings from '../components/schedule/ScheduleSyncSettings'
-import { AutoAssignModal, FixTimesModal } from '../components/schedule/PowerToolModals'
+import { AutoAssignModal, FixTimesModal, OpenToCrewModal } from '../components/schedule/PowerToolModals'
 import { ScheduleHealthStrip, ScheduleBulkBar } from '../components/schedule/ScheduleSections'
 import { AvailabilityPanel } from '../components/schedule/ScheduleTabs'
 import { VISIT_STATUS_CONFIG, shortDate, cleanerInitials } from '../components/schedule/constants'
@@ -220,6 +220,8 @@ export default function Schedule() {
   // "Tools" dropdown (declutters the toolbar) — open/close is UI, so it
   // stays here; the actual actions live in useScheduleTools.
   const [toolsOpen, setToolsOpen] = useState(false)
+  // "Open to crew" rate prompt (price before post): null | {targets} | {targets, running}
+  const [openToCrewState, setOpenToCrewState] = useState(null)
   const [syncSettingsOpen, setSyncSettingsOpen] = useState(false)
 
   const {
@@ -269,22 +271,44 @@ export default function Schedule() {
   // once; what closes the offer is the office approving one of them, not the
   // first tap. This comment described the old first-come-first-served claim
   // for a year after it stopped existing.
-  const handleOpenToCrew = async (visitList) => {
+  // "Open to crew" no longer posts on the tap. It opens a modal that asks for
+  // the rate FIRST (price before post) — the bulk path used to fire immediately
+  // with posted_rate=null, so jobs landed on the bench's phones reading "No
+  // price set". Posting is still an OFFER, not a race: a sub asks, optionally
+  // at their own price, and several can wait at once; the office approving one
+  // closes the offer, not the first tap.
+  const handleOpenToCrew = (visitList) => {
     const targets = (visitList || []).filter(v => !v.open_for_claims)
     if (targets.length === 0) return
+    setOpenToCrewState({ targets })
+  }
+
+  const confirmOpenToCrew = async (rate) => {
+    const targets = openToCrewState?.targets || []
+    if (targets.length === 0) { setOpenToCrewState(null); return }
+    setOpenToCrewState(s => (s ? { ...s, running: true } : s))
+    // Never clobber a price a job already carries — the entered rate applies
+    // only to targets that are visibly unpriced. Blank leaves them unpriced,
+    // for a sub to name their own.
+    const rateFor = (v) =>
+      (rate != null && (v.posted_rate ?? v.job?.posted_rate) == null)
+        ? { posted_rate: rate } : {}
     try {
       await Promise.all(targets.map(v =>
-        patch(`/api/jobs/${v.job_id ?? v.id}`, { open_for_claims: true })
+        patch(`/api/jobs/${v.job_id ?? v.id}`, { open_for_claims: true, ...rateFor(v) })
       ))
-      targets.forEach(v => applyLocalMove(v.job_id ?? v.id, { open_for_claims: true }))
+      targets.forEach(v => applyLocalMove(v.job_id ?? v.id,
+        { open_for_claims: true, ...rateFor(v) }))
       // Says what actually happens next. "Cleaners can claim it" promised a
       // one-tap handover that stopped existing at the marketplace pivot; what
       // she needs to know is that the ball comes back to her.
       toast.success(targets.length === 1
         ? 'On the board — subs can ask for it, and you pick who gets it'
         : `${targets.length} jobs on the board — subs ask, you pick`)
+      setOpenToCrewState(null)
     } catch (err) {
       toast.error('Could not open to crew: ' + err.message)
+      setOpenToCrewState(null)
       refresh() // reconcile any partial success
     }
   }
@@ -766,6 +790,13 @@ export default function Schedule() {
         state={fixTimes}
         onCancel={() => setFixTimes(null)}
         onRun={runFixTimes}
+      />
+
+      {/* Open to crew — asks for the rate before posting (price before post) */}
+      <OpenToCrewModal
+        state={openToCrewState}
+        onCancel={() => setOpenToCrewState(null)}
+        onConfirm={confirmOpenToCrew}
       />
 
       {/* Complete Visit Modal */}
