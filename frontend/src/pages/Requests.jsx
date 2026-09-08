@@ -116,6 +116,56 @@ const isJunkMessage = (msg) => {
 // deliberately leaves for manual review).
 const normName = (s) => (s || '').toLowerCase().replace(/[^a-z0-9 ]/g, '').replace(/\s+/g, ' ').trim()
 const normAddr = (s) => (s || '').toLowerCase().replace(/\s+/g, ' ').trim()
+
+// BB-FIND-03: build the Requests feed WITHOUT collapsing by contact.
+//
+// The old feed keyed rows by normalized email+phone and kept only the newest
+// per person ("so the list reflects people, not raw submissions"). But inbound
+// intake is ALREADY deduped at write time — idempotency key + 5-minute window +
+// a Postgres advisory lock (backend modules/intake/normalize.upsert_lead) — so
+// an accidental double-submit is a single row before it ever reaches this page.
+// The client-side collapse then did something different and harmful: it hid
+// EVERY earlier request from a returning customer. A second, genuinely distinct
+// request months later (a different job, a different service) shares the same
+// email/phone, so it landed on the same key and one of the two vanished from
+// the list entirely — a record gone invisible.
+//
+// So show every request, newest first, and keep the possible-duplicate flag as
+// a soft signal (name/address look-alikes the server didn't auto-merge) that
+// powers the badge + the "Duplicates only" filter — flagging, never hiding.
+export function buildRequestFeed(requests, { searchTerm = '', showDuplicatesOnly = false } = {}) {
+  let items = [...(requests || [])].sort(
+    (a, b) => (b.created_at || '').localeCompare(a.created_at || '')
+  )
+
+  const nameCounts = new Map()
+  const addrCounts = new Map()
+  for (const r of items) {
+    const n = normName(r.name)
+    const a = normAddr(r.address)
+    if (n) nameCounts.set(n, (nameCounts.get(n) || 0) + 1)
+    if (a) addrCounts.set(a, (addrCounts.get(a) || 0) + 1)
+  }
+  const dupIds = new Set()
+  for (const r of items) {
+    const n = normName(r.name)
+    const a = normAddr(r.address)
+    if ((n && nameCounts.get(n) > 1) || (a && addrCounts.get(a) > 1)) dupIds.add(r.id)
+  }
+  items.forEach(r => { r._possibleDuplicate = dupIds.has(r.id) })
+
+  if (showDuplicatesOnly) items = items.filter(r => r._possibleDuplicate)
+
+  const q = searchTerm.trim().toLowerCase()
+  if (!q) return items
+  return items.filter(r => (
+    r.name?.toLowerCase().includes(q) ||
+    r.email?.toLowerCase().includes(q) ||
+    r.phone?.includes(q) ||
+    r.address?.toLowerCase().includes(q)
+  ))
+}
+
 function SourceChip({ source }) {
   const cfg = SOURCE_CONFIG[source] || SOURCE_CONFIG.website
   const Ic = cfg.icon
@@ -516,83 +566,20 @@ export default function Requests() {
     setCreatingRequest(false)
   }
 
-  // De-duplicate then search. The same person can submit the booking form
-  // twice (two near-identical leads); collapse by normalized email+phone and
-  // keep the most recent, so the list reflects people, not raw submissions.
-  const feed = useMemo(() => {
-    const keyOf = (r) => {
-      const email = (r.email || '').trim().toLowerCase()
-      const phone = (r.phone || '').replace(/\D/g, '')
-      return (email || phone) ? `${email}|${phone}` : `id-${r.id}`
-    }
-    const byKey = new Map()
-    for (const r of requests) {
-      const k = keyOf(r)
-      const existing = byKey.get(k)
-      // Keep the most recent submission for each person.
-      if (!existing || (r.created_at || '') > (existing.created_at || '')) byKey.set(k, r)
-    }
-    let items = Array.from(byKey.values())
-      .sort((a, b) => (b.created_at || '').localeCompare(a.created_at || ''))
+  // Search + possible-duplicate flags over EVERY request (no contact-collapse —
+  // see buildRequestFeed: the old collapse hid returning customers' earlier
+  // requests). Inbound intake is already deduped at write time.
+  const feed = useMemo(
+    () => buildRequestFeed(requests, { searchTerm, showDuplicatesOnly }),
+    [requests, searchTerm, showDuplicatesOnly]
+  )
 
-    // Flag possible duplicates: after the contact-collapse above, any lead
-    // that still shares a normalized NAME or ADDRESS with another card is a
-    // likely dup the auto-merge couldn't safely collapse (different contact,
-    // or older than the merge window). Count only non-trivial keys so blank
-    // addresses / one-word names don't group half the page together.
-    const nameCounts = new Map()
-    const addrCounts = new Map()
-    for (const r of items) {
-      const n = normName(r.name)
-      const a = normAddr(r.address)
-      if (n) nameCounts.set(n, (nameCounts.get(n) || 0) + 1)
-      if (a) addrCounts.set(a, (addrCounts.get(a) || 0) + 1)
-    }
-    const dupIds = new Set()
-    for (const r of items) {
-      const n = normName(r.name)
-      const a = normAddr(r.address)
-      if ((n && nameCounts.get(n) > 1) || (a && addrCounts.get(a) > 1)) dupIds.add(r.id)
-    }
-    items.forEach(r => { r._possibleDuplicate = dupIds.has(r.id) })
-
-    if (showDuplicatesOnly) items = items.filter(r => r._possibleDuplicate)
-
-    if (!searchTerm.trim()) return items
-    const q = searchTerm.toLowerCase()
-    return items.filter(r => (
-      r.name?.toLowerCase().includes(q) ||
-      r.email?.toLowerCase().includes(q) ||
-      r.phone?.includes(q) ||
-      r.address?.toLowerCase().includes(q)
-    ))
-  }, [requests, searchTerm, showDuplicatesOnly])
-
-  // Count of possible-duplicate cards regardless of the current toggle, for
-  // the filter button's badge. Cheap (runs over the same collapsed list).
-  const duplicateCount = useMemo(() => {
-    const nameCounts = new Map(); const addrCounts = new Map()
-    const byKey = new Map()
-    const keyOf = (r) => {
-      const email = (r.email || '').trim().toLowerCase()
-      const phone = (r.phone || '').replace(/\D/g, '')
-      return (email || phone) ? `${email}|${phone}` : `id-${r.id}`
-    }
-    for (const r of requests) {
-      const k = keyOf(r); const ex = byKey.get(k)
-      if (!ex || (r.created_at || '') > (ex.created_at || '')) byKey.set(k, r)
-    }
-    const items = Array.from(byKey.values())
-    for (const r of items) {
-      const n = normName(r.name); const a = normAddr(r.address)
-      if (n) nameCounts.set(n, (nameCounts.get(n) || 0) + 1)
-      if (a) addrCounts.set(a, (addrCounts.get(a) || 0) + 1)
-    }
-    return items.filter(r => {
-      const n = normName(r.name); const a = normAddr(r.address)
-      return (n && nameCounts.get(n) > 1) || (a && addrCounts.get(a) > 1)
-    }).length
-  }, [requests])
+  // Count of possible-duplicate cards regardless of the current toggle, for the
+  // filter button's badge — computed over the full (un-collapsed) list.
+  const duplicateCount = useMemo(
+    () => buildRequestFeed(requests).filter(r => r._possibleDuplicate).length,
+    [requests]
+  )
 
   const handleViewDetails = (intake) => {
     setSelectedRequest(intake)
