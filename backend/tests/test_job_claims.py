@@ -317,3 +317,136 @@ def test_an_offer_names_the_town_not_the_customer(ids):
         assert row["house_code"] is None and row["access_notes"] is None
     finally:
         _clear()
+
+
+# ── Withdrawing an ask, and seeing what happened to it (my-claims) ───────────
+
+def _claim(api, jid, **body):
+    return api.post(f"/api/crew/jobs/{jid}/claim", json=body or {})
+
+
+def _req_status(jid, cleaner_id):
+    db = SessionLocal()
+    r = (db.query(JobClaimRequest)
+         .filter(JobClaimRequest.job_id == jid,
+                 JobClaimRequest.cleaner_id == cleaner_id).first())
+    out = r.status if r else None
+    db.close()
+    return out
+
+
+def test_a_sub_can_withdraw_their_own_pending_request(ids):
+    """A sub who asked for Saturday and then booked a private client Friday
+    night had no way to take it back — the office's first signal was a no-show.
+    withdrawn, not declined: they stepped back, nobody turned them down."""
+    jid = _mk_job(ids, [], open_for_claims=True)
+    api = _as(_Cleaner(9980, "CT-980"))
+    try:
+        assert _claim(api, jid).status_code == 200
+        assert _req_status(jid, "CT-980") == "pending"
+        r = api.post(f"/api/crew/jobs/{jid}/claim/withdraw")
+        assert r.status_code == 200, r.text
+        assert r.json()["status"] == "withdrawn"
+        assert _req_status(jid, "CT-980") == "withdrawn"
+    finally:
+        _clear()
+
+
+def test_withdraw_refuses_a_request_that_is_no_longer_pending(ids):
+    """An approved request is a commitment the office manages, not something
+    the sub silently pulls."""
+    jid = _mk_job(ids, [], open_for_claims=True)
+    api = _as(_Cleaner(9981, "CT-981"))
+    try:
+        _claim(api, jid)
+    finally:
+        _clear()
+    # Office approves it.
+    admin = _as(_Admin())
+    try:
+        rid = _req_id(jid, "CT-981")
+        assert admin.post(
+            f"/api/jobs/{jid}/claim-requests/{rid}/approve").status_code == 200
+    finally:
+        _clear()
+    api = _as(_Cleaner(9981, "CT-981"))
+    try:
+        r = api.post(f"/api/crew/jobs/{jid}/claim/withdraw")
+        assert r.status_code == 409
+        assert "approved" in r.json()["detail"]
+        assert _req_status(jid, "CT-981") == "approved", "the row did not move"
+    finally:
+        _clear()
+
+
+def test_withdraw_needs_a_request_you_actually_made(ids):
+    jid = _mk_job(ids, [], open_for_claims=True)
+    api = _as(_Cleaner(9982, "CT-982"))      # never asked for this job
+    try:
+        assert api.post(f"/api/crew/jobs/{jid}/claim/withdraw").status_code == 404
+    finally:
+        _clear()
+
+
+def test_one_sub_cannot_withdraw_anothers_request(ids):
+    jid = _mk_job(ids, [], open_for_claims=True)
+    api_a = _as(_Cleaner(9983, "CT-983"))
+    try:
+        _claim(api_a, jid)
+    finally:
+        _clear()
+    # A different sub tries to pull A's ask by hitting the same job.
+    api_b = _as(_Cleaner(9984, "CT-984"))
+    try:
+        assert api_b.post(f"/api/crew/jobs/{jid}/claim/withdraw").status_code == 404
+    finally:
+        _clear()
+    assert _req_status(jid, "CT-983") == "pending", "A's request is untouched"
+
+
+def test_my_claims_is_the_subs_side_of_the_ledger(ids):
+    """Once someone's picked, the job leaves the board — so the asking sub's
+    request 'vanished'. my-claims keeps it: every ask and what became of it."""
+    a = _mk_job(ids, [], open_for_claims=True)
+    b = _mk_job(ids, [], open_for_claims=True)
+    api = _as(_Cleaner(9985, "CT-985"))
+    try:
+        _claim(api, a, requested_rate=95.0)
+        _claim(api, b)
+        # Pull one back so the ledger carries more than one state.
+        api.post(f"/api/crew/jobs/{b}/claim/withdraw")
+        claims = {c["job_id"]: c for c in api.get("/api/crew/my-claims").json()["claims"]}
+        assert claims[a]["status"] == "pending" and claims[a]["requested_rate"] == 95.0
+        assert claims[b]["status"] == "withdrawn"
+    finally:
+        _clear()
+
+
+def test_my_claims_strips_identity_on_an_ask_not_won(ids):
+    """Same rule as the board: an ask the sub hasn't won carries town, date and
+    rate — never the customer's name or street address."""
+    jid = _mk_job(ids, [], open_for_claims=True)
+    db = SessionLocal()
+    j = db.query(Job).filter(Job.id == jid).first()
+    p = db.query(Property).filter(Property.id == j.property_id).first()
+    p.city, p.state = "Saco", "ME"
+    db.commit(); db.close()
+    api = _as(_Cleaner(9986, "CT-986"))
+    try:
+        _claim(api, jid)
+        c = next(x for x in api.get("/api/crew/my-claims").json()["claims"]
+                 if x["job_id"] == jid)
+        assert c["area"] == "Saco ME"
+        assert "7 Elm" not in (c["title"] or ""), "the address must not leak via title"
+    finally:
+        _clear()
+
+
+def _req_id(jid, cleaner_id):
+    db = SessionLocal()
+    r = (db.query(JobClaimRequest)
+         .filter(JobClaimRequest.job_id == jid,
+                 JobClaimRequest.cleaner_id == cleaner_id).first())
+    out = r.id if r else None
+    db.close()
+    return out
