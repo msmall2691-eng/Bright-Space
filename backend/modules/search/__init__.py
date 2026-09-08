@@ -117,7 +117,15 @@ def global_search(
         results.append({
             "type": "job", "id": j.id, "title": j.title or "Job",
             "subtitle": f"{when} · {j.status or ''}".strip(" ·"),
-            "path": "/schedule",
+            # BB-FIND-01: link to the job's OWN detail page, not /schedule. The
+            # schedule is a calendar keyed by date, so a job with no
+            # scheduled_date (a quote converted without a date lands as
+            # "unscheduled") never appears on it — search found the job but the
+            # only way in led to a page it wasn't on, a dead end for exactly the
+            # records most at risk of being forgotten. /jobs/{id} renders any
+            # job regardless of schedule, and setting a date there auto-promotes
+            # it to "scheduled".
+            "path": f"/jobs/{j.id}",
         })
 
     return {"query": term, "count": len(results), "results": results}
