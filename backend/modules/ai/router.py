@@ -2045,14 +2045,23 @@ def _compute_followups(db: Session, org_id: int) -> dict:
     # been billed. ~3-day grace: completion auto-creates a draft invoice, so
     # anything older is a path that bypassed it (crash, legacy row, manual
     # status flip) and needs a human.
+    #
+    # BB-INV-02: "billed" means an invoice with a NON-ZERO total. A $0 draft is
+    # what the auto-invoice used to leave on a quote-less completed job (see
+    # completion.py) — a row exists, so the old `Invoice.id IS NULL` test read
+    # it as billed and the unbilled work vanished from this list. Count a job as
+    # unbilled when it has no invoice totalling more than $0, so a placeholder
+    # that never got a real amount still surfaces as money to chase.
     unbilled_cutoff = business_today() - timedelta(days=3)
+    billed_job_ids = (db.query(Invoice.job_id)
+                      .filter(Invoice.job_id.isnot(None), Invoice.total > 0)
+                      .subquery())
     unbilled = (db.query(func.count(Job.id))
-                .outerjoin(Invoice, Invoice.job_id == Job.id)
                 .filter(Job.status == "completed",
                         Job.scheduled_date.isnot(None),
                         Job.scheduled_date < unbilled_cutoff,
                         _org(Job, org_id),
-                        Invoice.id.is_(None))
+                        Job.id.notin_(db.query(billed_job_ids.c.job_id)))
                 .scalar() or 0)
     if unbilled:
         items.append({

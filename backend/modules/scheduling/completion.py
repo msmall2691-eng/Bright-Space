@@ -43,23 +43,37 @@ def auto_create_draft_invoice(db: Session, job) -> None:
             sched = db.query(RecurringSchedule).filter(RecurringSchedule.id == job.recurring_schedule_id).first()
             if sched and sched.quote_id:
                 quote = db.query(Quote).filter(Quote.id == sched.quote_id).first()
-        items = (quote.items if (quote and quote.items) else [{
-            "name": job.title or "Cleaning",
-            "qty": 1,
-            "unit_price": 0,
-            "description": "",
-        }])
+        have_quote_items = bool(quote and quote.items)
+        if have_quote_items:
+            items = quote.items
+        else:
+            # BB-INV-02: no quote to itemize from (a recurring visit whose series
+            # carried no quote, a manually-created job) — bill the price the JOB
+            # carries. Migration 110 stamps job.price at creation from the
+            # series / accepted quote / house default via resolve_new_job_price,
+            # so the number is already there; the auto-invoice just never read
+            # it and emitted a $0 placeholder instead, turning every quote-less
+            # completed visit into a $0 draft — silently unbilled work. Only fall
+            # to 0 when the job genuinely has no price (None → nobody set one).
+            unit_price = float(job.price) if getattr(job, "price", None) is not None else 0.0
+            items = [{
+                "name": job.title or "Cleaning",
+                "qty": 1,
+                "unit_price": unit_price,
+                "description": "",
+            }]
         subtotal = sum(float(i.get("qty", 1)) * float(i.get("unit_price", 0)) for i in items)
         # `is not None`, not truthiness: a quote with tax_rate=0 is explicitly
         # tax-exempt (0 is also the column default) — treating 0 as "unset" and
         # falling back to 5.5% billed tax to customers who owe none.
         tax_rate = float(quote.tax_rate) if (quote and quote.tax_rate is not None) else 5.5
         tax = round(subtotal * (tax_rate / 100), 2)
-        # BB-INV-01: carry the quote's discount onto the invoice. It was dropped
-        # here — a customer promised money off the quote was billed the full
-        # amount because the auto-invoice recomputed total = subtotal + tax with
-        # no discount term. Flat $ off, after tax, matching the quote's own math.
-        discount = float(quote.discount or 0) if quote else 0.0
+        # BB-INV-01: carry the quote's discount onto the invoice, but ONLY when we
+        # billed from the quote's own line items. When we fell back to job.price
+        # (BB-INV-02), that price is already a final agreed number —
+        # resolve_new_job_price may have derived it from the quote total, which
+        # had the discount taken off — so re-subtracting here would double-count.
+        discount = float(quote.discount or 0) if have_quote_items else 0.0
         total = round(subtotal + tax - discount, 2)
         # Net 14 counted in business days-of-the-calendar, not UTC ones: from
         # 8pm here the UTC date is already tomorrow, so a job closed in the
