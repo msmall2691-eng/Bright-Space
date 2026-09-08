@@ -587,6 +587,38 @@ export default function MyDay({ previewUserId = null }) {
           <>
             <GreetingHero firstName={data.first_name} jobCount={(data.today || []).length} />
 
+            {/* NOT CLEARED YET — the biggest drop-off in a new sub's first week.
+                Their board is empty by the vetting gate, and without this the
+                screen says "Nothing scheduled today" — identical to a dead
+                market. Says why, lists what's left (the office's own ordered
+                sentences), and points at the file. Explicit === false so a
+                stale cache or a non-sub (cleared undefined) never triggers it.
+                Quiet dot + card, not a tinted banner (design language). */}
+            {data.cleared === false && (data.missing || []).length > 0 && (
+              <div className="rounded-xl border border-hairline bg-panel px-4 py-3">
+                <span className="flex items-center gap-1.5 text-[12px] text-ink-2">
+                  <span className="h-1.5 w-1.5 rounded-full bg-amber-500" aria-hidden="true" />
+                  You're not cleared to take jobs yet
+                </span>
+                <p className="mt-0.5 text-[13px] text-ink">
+                  Finish your file and the office clears you — then open jobs
+                  show up right here.
+                </p>
+                <ul className="mt-2 space-y-1">
+                  {(data.missing || []).map((m, i) => (
+                    <li key={i} className="flex items-start gap-1.5 text-[12.5px] text-ink-2">
+                      <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-ink-3/50" aria-hidden="true" />
+                      <span>{m}</span>
+                    </li>
+                  ))}
+                </ul>
+                <button type="button" onClick={() => setTab('me')}
+                  className="mt-3 w-full rounded-lg border border-hairline bg-bg-2 py-2 text-[13px] font-semibold text-ink hover:bg-bg transition-colors">
+                  Go to my file
+                </button>
+              </div>
+            )}
+
             {(data.routes || []).some(r => r.status === 'offered') && (
               /* A standing offer is worth more than a shift and expires by
                  being ignored, so it leads rather than waiting behind a tab.

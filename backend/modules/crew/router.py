@@ -360,7 +360,16 @@ def my_day(
     # showing work somebody cannot legally take was only ever going to produce
     # a 403 anyway, and it did it after exposing the listing.
     from services.sub_vetting import blocking_requirements
-    cleared = not blocking_requirements(db, current_user)
+    # Same call as before, but the LIST is kept, not thrown away. A newly
+    # approved sub is a login without clearance, so their board is empty by
+    # this gate — and an empty board is indistinguishable from a dead market
+    # unless the screen is told WHY. `cleared` + `missing` ride the payload the
+    # app already fetches (no extra query — brightbase-economy), so the Today
+    # tab can say "you're not cleared yet, here's what's left" and point at the
+    # file instead of showing "Nothing scheduled today" to someone who has work
+    # waiting on the other side of their paperwork.
+    missing = blocking_requirements(db, current_user)
+    cleared = not missing
 
     open_jobs = []
     open_job_ids = [j.id for j in jobs if cleared
@@ -416,6 +425,12 @@ def my_day(
     return {
         "as_of": today.isoformat(),
         "crew_id": current_user.cleaner_id,
+        # Whether this sub can take work at all, and if not, the ordered,
+        # phone-ready sentences saying what's left (from blocking_requirements).
+        # The app surfaces these above the fold so "not cleared yet" never reads
+        # as "no work" — the biggest drop-off in a new sub's first week.
+        "cleared": cleared,
+        "missing": missing,
         # For the Today greeting ("Good morning, Sarah").
         "first_name": ((getattr(current_user, "full_name", None) or "").strip().split(" ")[0]
                        or (getattr(current_user, "email", "") or "").split("@")[0]),
