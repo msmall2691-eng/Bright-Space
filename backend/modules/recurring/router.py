@@ -64,8 +64,17 @@ def _cancel_side_effects(db: Session, job: Job, *, notify: bool = True) -> None:
     scheduled jobs) and still approvable by the office.
     """
     _release_sync_links(db, job, notify=notify)
-    from services.claim_approval import close_offer
+    from services.claim_approval import close_offer, release_if_displaced
     close_offer(db, job, reason="was cancelled")
+    # Clear a marketplace rate that outlived the sub who agreed it (BB-SCHED-04).
+    # A cancel that also drops the agreed cleaner from cleaner_ids used to leave
+    # `agreed_rate` behind — the same stale-rate hazard release_if_displaced
+    # closes at the scheduling write sites, reached here so the recurring resync
+    # paths (which cancel-and-regenerate) can't reprice a re-opened visit off a
+    # ghost rate. A no-op unless the agreed cleaner is actually gone from the
+    # row, so every one of the five callers can share it. `notify` is honoured:
+    # a silent reconciliation pass does not push "a job changed hands".
+    release_if_displaced(db, job, notify=notify)
 
 
 def _get_schedule_or_404(db: Session, schedule_id: int, org_id: int) -> RecurringSchedule:

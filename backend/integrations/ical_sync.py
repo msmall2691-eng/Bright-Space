@@ -1042,6 +1042,10 @@ def sync_property(db: Session, prop: Property, only_ical_id: int = None,
             ICalEvent.checkout_date >= today_iso_for_sweep,
             ICalEvent.event_type == "reservation",
         ).all()
+        # Assigned subs to tell AFTER the cancel commits — a push/SMS must never
+        # go out for a cancellation that then rolls back (event-driven at the
+        # write, but post-commit).
+        cancelled_for_notify = []
         for existing in existing_future_events:
             if existing.uid in all_feed_uids:
                 continue
@@ -1081,6 +1085,28 @@ def sync_property(db: Session, prop: Property, only_ical_id: int = None,
                                 f"{linked_job.gcal_event_id}) did not apply — keeping the id "
                                 f"so it can be retried instead of orphaning the calendar event."
                             )
+                    # The booking is gone, so the marketplace side of this job
+                    # has to unwind too (BB-SCHED-04). A cancelled turnover was
+                    # left ADVERTISED: if it had been posted to the board, the
+                    # offer stayed open and every sub still holding a request on
+                    # it sat pending forever — invisible in their app, and still
+                    # approvable by the office onto work that no longer exists.
+                    # And if a sub had agreed a rate that later got reassigned,
+                    # the stale rate rode along. close_offer answers the pending
+                    # requesters and takes it off the board; release_if_displaced
+                    # clears a rate whose sub has gone. Both are no-ops when
+                    # nothing was posted or agreed. The caller's commit below
+                    # covers these writes; the assigned sub is told after it.
+                    try:
+                        from services.claim_approval import (
+                            close_offer, release_if_displaced)
+                        close_offer(db, linked_job, reason="was cancelled")
+                        release_if_displaced(db, linked_job)
+                    except Exception as e:
+                        log.warning(
+                            f"marketplace unwind failed for cancelled turnover "
+                            f"{linked_job.id}: {e}")
+                    cancelled_for_notify.append(linked_job)
                 # Drop the link to the cancelled Job. Without this, if the same
                 # UID reappears (guest rebooks) the next sync sees event.job_id
                 # set and treats it as already-linked, leaving the cancelled Job
@@ -1088,6 +1114,17 @@ def sync_property(db: Session, prop: Property, only_ical_id: int = None,
                 existing.job_id = None
             existing.event_type = "cancelled"
         db.commit()
+        # Tell whoever was on a cancelled turnover that it's off (BB-SCHED-04),
+        # AFTER the commit so a rolled-back cancel never sends. A booking that
+        # vanished is a job the sub was going to drive to — event-driven at the
+        # write, push+SMS, no access detail. A no-op for an unassigned turnover.
+        if cancelled_for_notify:
+            try:
+                from services.crew_notify import notify_job_cancelled
+                for j in cancelled_for_notify:
+                    notify_job_cancelled(db, j, j.cleaner_ids)
+            except Exception as e:
+                log.warning(f"assigned-sub cancel notify failed: {e}")
     elif any_feed_unreliable and only_ical_id is None:
         log.warning(
             f"Skipping cancellation sweep for {prop.name} this tick — at least "

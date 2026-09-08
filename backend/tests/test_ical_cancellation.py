@@ -12,7 +12,8 @@ and is skipped entirely if any feed failed or looked like a partial read).
 import pytest
 from datetime import date, timedelta
 from unittest.mock import MagicMock, patch
-from database.models import Property, ICalEvent, Job, Client, PropertyIcal
+from database.models import (Property, ICalEvent, Job, Client, PropertyIcal,
+                             User, JobClaimRequest)
 from database.db import SessionLocal
 from integrations.ical_sync import _sync_ical_url, sync_property
 
@@ -473,5 +474,87 @@ class TestSyncIdempotency:
             assert stale_dupe.status == "cancelled", "the cancelled duplicate must NOT be reactivated"
             ev = db.query(ICalEvent).filter_by(property_id=prop.id, uid="live-booking@feed").first()
             assert ev.job_id == live_job.id
+        finally:
+            db.close()
+
+
+class TestMarketplaceUnwindOnCancellation:
+    """BB-SCHED-04: when a booking vanishes, the turnover's MARKETPLACE side has
+    to unwind too. A cancelled turnover used to stay ADVERTISED — the offer open,
+    every sub still holding a request on it pending forever and invisible — and
+    the assigned sub was never told the work they were driving to is off."""
+
+    def _sync_two_bookings_then_cancel_first(self, db, prop, url, *, prep):
+        """Create two turnovers, run `prep(job1)` on the first, then make the
+        first booking disappear so the sweep cancels job1. Returns job1."""
+        checkin = date.today() + timedelta(days=10)
+        checkout = date.today() + timedelta(days=12)
+        other_in = date.today() + timedelta(days=30)
+        other_out = date.today() + timedelta(days=32)
+        events = [
+            ("mkt-1@feed", checkin, checkout, "Reserved"),
+            ("mkt-1b@feed", other_in, other_out, "Reserved"),
+        ]
+        with _patch_feeds({url: _ics(events)}), \
+             patch("integrations.google_calendar.create_event", return_value=None):
+            sync_property(db, prop)
+        job1 = db.query(Job).filter_by(property_id=prop.id, scheduled_date=checkout).first()
+        prep(job1)
+        db.commit()
+        with _patch_feeds({url: _ics(events[1:])}), \
+             patch("integrations.google_calendar.delete_event", return_value=True):
+            sync_property(db, prop)
+        db.refresh(job1)
+        return job1
+
+    def test_cancelled_turnover_closes_its_offer(self):
+        import uuid
+        db = SessionLocal()
+        uid = uuid.uuid4().hex[:8]
+        u = None
+        try:
+            prop, (url,) = _seed_property(db)
+            u = User(email=f"sub-{uid}@example.com", role="cleaner",
+                     cleaner_id=f"mkt-{uid}", org_id=prop.org_id)
+            db.add(u); db.commit(); db.refresh(u)
+
+            def prep(job1):
+                job1.open_for_claims = True
+                db.add(JobClaimRequest(org_id=job1.org_id, job_id=job1.id,
+                                       cleaner_id=f"mkt-{uid}", user_id=u.id,
+                                       status="pending"))
+
+            with patch("services.crew_notify.notify_job_cancelled", return_value=0):
+                job1 = self._sync_two_bookings_then_cancel_first(db, prop, url, prep=prep)
+
+            assert job1.status == "cancelled"
+            assert job1.open_for_claims is False        # taken off the board
+            req = db.query(JobClaimRequest).filter_by(job_id=job1.id).first()
+            assert req.status == "withdrawn"            # the pending sub was answered
+        finally:
+            db.rollback()
+            if u is not None:
+                db.query(JobClaimRequest).filter_by(user_id=u.id).delete(synchronize_session=False)
+                db.query(User).filter_by(id=u.id).delete(synchronize_session=False)
+                db.commit()
+            db.close()
+
+    def test_assigned_sub_is_told_after_the_commit(self):
+        db = SessionLocal()
+        try:
+            prop, (url,) = _seed_property(db)
+
+            def prep(job1):
+                job1.cleaner_ids = ["mkt-sub"]
+
+            with patch("services.crew_notify.notify_job_cancelled", return_value=1) as m:
+                job1 = self._sync_two_bookings_then_cancel_first(db, prop, url, prep=prep)
+
+            assert job1.status == "cancelled"
+            # Notified exactly once, for the job that was cancelled, with its
+            # assigned cleaner — and only after the sweep committed.
+            calls = [c for c in m.call_args_list if c.args[1].id == job1.id]
+            assert len(calls) == 1
+            assert calls[0].args[2] == ["mkt-sub"]
         finally:
             db.close()
