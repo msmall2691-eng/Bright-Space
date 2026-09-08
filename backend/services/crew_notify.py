@@ -62,6 +62,59 @@ def _job_line(job) -> str:
     return " · ".join(p for p in parts if p)
 
 
+def notify_user_or_sms(user_id, title: str, body: str, *, category: str,
+                       url: str = "/", tag=None, sms_body: str = None) -> int:
+    """Reach ONE person: push first, then SMS to them only if push could not.
+
+    BB-CREW-02: the marketplace's own messages — you won the job, someone else
+    got it, a job you'd agreed changed hands, the job you asked for came off the
+    board — went out on push ONLY. Web push needs the app installed to the home
+    screen and notifications allowed (on an iPhone both, in that order), a chain
+    a busy independent cleaner has little reason to have finished, so the person
+    a decision most affects was often the one who never heard it. This is the
+    single-recipient twin of `notify_jobs_posted`'s two-channel offer.
+
+    SMS is a FALLBACK, never a second copy: it goes only when push delivered to
+    nobody. And it honours the SAME mute push does — `notify_user` returns 0
+    both when it reached no device AND when the category is opted out, so we
+    re-check the category before texting, or we'd SMS exactly the people who
+    asked not to hear this. Best-effort, event-driven (no tick,
+    scheduling-invariants R1); the message carries no access details, same as
+    the push. Returns how many channels delivered.
+    """
+    from services.push_service import notify_user
+    sent = notify_user(user_id, title, body, url=url, tag=tag, category=category)
+    if sent:
+        return sent
+    try:
+        from integrations.twilio_client import configured as sms_configured, send_sms
+        if not sms_configured():
+            return 0
+        from database.db import SessionLocal
+        from database.models import User
+        from services.push_service import category_enabled
+        from utils.phone import normalize_e164
+        s = SessionLocal()
+        try:
+            row = (s.query(User.notification_prefs, User.phone)
+                   .filter(User.id == user_id).first())
+        finally:
+            s.close()
+        if row is None:
+            return 0
+        prefs, phone = row
+        if not category_enabled(prefs, category):
+            return 0            # muted — the fallback must not defeat the opt-out
+        e164 = normalize_e164(phone)
+        if not e164:
+            return 0
+        send_sms(to=e164, body=(sms_body or f"{title} {body}").strip())
+        return 1
+    except Exception:  # pragma: no cover - a text must never break the caller
+        logger.warning("SMS fallback failed for user %s", user_id, exc_info=True)
+        return 0
+
+
 def notify_job_assigned(db: Session, job, cleaner_ids) -> int:
     """Push "New job for you" to each cleaner in `cleaner_ids` who has a linked
     login. Callers pass only the NEWLY-assigned IDs (create: all; update: the

@@ -201,14 +201,21 @@ def notify(job, req, others) -> None:
     subscription row, a malformed endpoint — meant the loop telling everyone
     else never ran, and nothing was logged to say why they heard nothing. Each
     recipient now stands alone and a failure is written down.
+
+    ONE CHANNEL (BB-CREW-02). Both messages went out on push only, and web push
+    on a bench of independent cleaners is the channel most of them never
+    finished setting up — so the winner could be told they got the job by a
+    notification they had no way to receive. `notify_user_or_sms` texts whoever
+    push could not reach (and only them, and only if they have not muted the
+    category), which is exactly the two-channel rule an offer already follows.
     """
-    from services import push_service
+    from services.crew_notify import notify_user_or_sms
 
     def _tell(user_id, title, body, *, url, category):
         if not user_id:
             return
         try:
-            push_service.notify_user(user_id, title, body, url=url, category=category)
+            notify_user_or_sms(user_id, title, body, url=url, category=category)
         except Exception:
             # Per recipient, deliberately: one unreachable phone is one person
             # who missed a message, not everybody.
@@ -309,17 +316,21 @@ def release_if_displaced(db, job, *, notify=True) -> bool:
         # money field got cleared.
         try:
             from database.models import User
-            from services.push_service import notify_user
+            from services.crew_notify import notify_user_or_sms
 
             u = (db.query(User)
                  .filter(User.cleaner_id == str(named), User.role == "cleaner")
                  .first())
             if u is not None:
-                notify_user(u.id, "A job changed hands",
-                            "The office has given a job you'd agreed to someone "
-                            "else. Nothing else of yours is affected.",
-                            url="/my-day", tag=f"job-released-{job.id}",
-                            category="open_jobs")
+                # Push first, SMS to them only if push could not reach them
+                # (BB-CREW-02). A job changing hands under someone is the kind
+                # of thing they should not have to open the app to discover.
+                notify_user_or_sms(u.id, "A job changed hands",
+                                   "The office has given a job you'd agreed to "
+                                   "someone else. Nothing else of yours is "
+                                   "affected.",
+                                   url="/my-day", tag=f"job-released-{job.id}",
+                                   category="open_jobs")
         except Exception:
             logger.warning("release notification failed", exc_info=True)
     return True
@@ -380,15 +391,19 @@ def close_offer(db, job, *, reason: str, notify: bool = True) -> int:
         # Best-effort and last: a push outage must never be what decides
         # whether the job came off the board.
         try:
-            from services.push_service import notify_user
+            from services.crew_notify import notify_user_or_sms
             when = f" on {job.scheduled_date}" if job.scheduled_date else ""
             for req in pending:
                 if req.user_id:
-                    notify_user(req.user_id, "That job is off the board",
-                                f"{job.title}{when} {reason}. Your request is "
-                                f"closed — nothing else of yours is affected.",
-                                url="/my-day", tag=f"offer-closed-{job.id}",
-                                category="open_jobs")
+                    # Push first, SMS to them only if push could not reach them
+                    # (BB-CREW-02). The title and body already carry no address
+                    # or access detail — same as the offer that opened it.
+                    notify_user_or_sms(req.user_id, "That job is off the board",
+                                       f"{job.title}{when} {reason}. Your request "
+                                       f"is closed — nothing else of yours is "
+                                       f"affected.",
+                                       url="/my-day", tag=f"offer-closed-{job.id}",
+                                       category="open_jobs")
         except Exception:
             logger.warning("offer-closed notification failed", exc_info=True)
     return len(pending)
