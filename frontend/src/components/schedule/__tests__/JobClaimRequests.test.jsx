@@ -159,6 +159,45 @@ it('says nothing changed when the list cannot be loaded', async () => {
   expect(await screen.findByText(/Nothing has changed/)).toBeTruthy()
 })
 
+// ── the requester's track record (review finding 7) ───────────────────────
+//
+// The office is handing someone a customer's house. "Who is this, and have
+// they done this before" was a question the row couldn't answer.
+
+it('shows the requester’s recent track record on a pending row', async () => {
+  mount({
+    job_id: 5, posted_rate: 80,
+    requests: [{ id: 1, cleaner_id: 'CT-1', cleaner_name: 'Annie', requested_rate: null,
+      message: null, status: 'pending',
+      history: { completed: 6, on_day: 5, upcoming: 1, last_worked: '2026-09-02', history_days: 90 } }],
+  })
+  expect(await screen.findByText(/6 done in 90 days/)).toBeTruthy()
+  expect(screen.getByText(/5 on the day/)).toBeTruthy()
+})
+
+it('reads a first-timer as new to the bench, not a blank', async () => {
+  mount({
+    job_id: 5, posted_rate: 80,
+    requests: [{ id: 1, cleaner_id: 'CT-1', cleaner_name: 'Newbie', requested_rate: null,
+      message: null, status: 'pending',
+      history: { completed: 0, on_day: 0, upcoming: 0, last_worked: null, history_days: 90 } }],
+  })
+  expect(await screen.findByText(/New to the bench/)).toBeTruthy()
+})
+
+it('shows no track record on a decided row', async () => {
+  // History rides pending rows only — a record beside a decision nobody can
+  // take back is noise, and the backend omits it there.
+  mount({
+    job_id: 5, posted_rate: 80,
+    requests: [{ id: 1, cleaner_id: 'CT-1', cleaner_name: 'Annie', requested_rate: null,
+      message: null, status: 'approved', history: null }],
+  })
+  await screen.findByText('Annie')
+  expect(screen.queryByText(/done in 90 days/)).toBeNull()
+  expect(screen.queryByText(/New to the bench/)).toBeNull()
+})
+
 // ── the heads-up line (review finding 7) ──────────────────────────────────
 //
 // Approval never checked whether the requester had booked the day off, and

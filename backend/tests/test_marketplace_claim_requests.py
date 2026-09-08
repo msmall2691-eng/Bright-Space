@@ -348,6 +348,87 @@ def _responses(jid):
     return out
 
 
+# ── the requester's track record ────────────────────────────────────────────
+#
+# The office is handing someone a customer's house. "Who is this, and have they
+# done this before" was a question the review row could not answer, so #7 on the
+# 8 Sep walk asked for it. It shares services/bench.work_history with the bench
+# screen, counts OUTCOMES only, and rides pending rows only.
+
+def _mk_completed_job(ids, cleaner_id, days_ago, org_id=1):
+    """A finished job in this sub's recent history, on the day it was booked."""
+    from datetime import datetime, timedelta, timezone
+    db = SessionLocal()
+    tag = uuid.uuid4().hex[:6]
+    c = Client(name=f"Past {tag}", status="active", org_id=org_id)
+    db.add(c); db.commit(); db.refresh(c)
+    p = Property(client_id=c.id, name=f"9 Oak {tag}", address=f"9 Oak {tag}", org_id=org_id)
+    db.add(p); db.commit(); db.refresh(p)
+    day = business_today() - timedelta(days=days_ago)
+    j = Job(client_id=c.id, property_id=p.id, job_type="residential", title=f"Done {tag}",
+            scheduled_date=day, start_time=time(9, 0), end_time=time(11, 0),
+            cleaner_ids=[cleaner_id], status="completed", org_id=org_id,
+            completed_at=datetime.now(timezone.utc) - timedelta(days=days_ago))
+    db.add(j); db.commit(); db.refresh(j)
+    ids["clients"].append(c.id); ids["properties"].append(p.id); ids["jobs"].append(j.id)
+    db.close()
+
+
+def test_a_pending_request_carries_the_requesters_recent_track_record(ids):
+    # CT-941 finished a job five days ago; now they ask for another. The office
+    # row should show that record, so a stranger and a known quantity don't look
+    # identical.
+    _mk_completed_job(ids, "CT-941", days_ago=5)
+    jid = _mk_open_job(ids, posted_rate=80.0)
+    try:
+        api = _as(_Cleaner(9941, "CT-941")); api.post(f"/api/crew/jobs/{jid}/claim")
+        _clear()
+
+        office = _as(_Admin())
+        row = office.get(f"/api/jobs/{jid}/claim-requests").json()["requests"][0]
+        h = row["history"]
+        assert h is not None
+        assert h["completed"] == 1
+        assert h["on_day"] == 1          # finished on the day it was booked
+        assert h["last_worked"] is not None
+        assert h["history_days"] == 90
+    finally:
+        _clear()
+
+
+def test_a_first_timer_reads_as_a_clean_record_not_a_missing_one(ids):
+    # A sub who has done nothing yet still gets a history object of zeros, not a
+    # null — the row should say "new", not fail to render.
+    jid = _mk_open_job(ids, posted_rate=80.0)
+    try:
+        api = _as(_Cleaner(9942, "CT-942")); api.post(f"/api/crew/jobs/{jid}/claim")
+        _clear()
+        office = _as(_Admin())
+        row = office.get(f"/api/jobs/{jid}/claim-requests").json()["requests"][0]
+        assert row["history"] == {"completed": 0, "on_day": 0, "upcoming": 0,
+                                  "last_worked": None, "history_days": 90}
+    finally:
+        _clear()
+
+
+def test_a_decided_request_carries_no_track_record(ids):
+    # Same reason as heads_up: a record beside a request nobody can take back is
+    # noise. History rides pending rows only.
+    _mk_completed_job(ids, "CT-943", days_ago=3)
+    jid = _mk_open_job(ids, posted_rate=80.0)
+    try:
+        api = _as(_Cleaner(9943, "CT-943")); api.post(f"/api/crew/jobs/{jid}/claim")
+        _clear()
+        office = _as(_Admin())
+        req_id = office.get(f"/api/jobs/{jid}/claim-requests").json()["requests"][0]["id"]
+        office.post(f"/api/jobs/{jid}/claim-requests/{req_id}/approve")
+        row = office.get(f"/api/jobs/{jid}/claim-requests").json()["requests"][0]
+        assert row["status"] == "approved"
+        assert row["history"] is None
+    finally:
+        _clear()
+
+
 def test_approving_marks_the_winner_as_accepted(ids):
     jid = _mk_open_job(ids, posted_rate=80.0)
     try:
