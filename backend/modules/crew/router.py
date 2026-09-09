@@ -1054,13 +1054,16 @@ def claim_job(
     db.commit()
     db.refresh(request)
 
-    # INSTANT CLAIM (Turno-style), ON by default. A cleared sub who claims a
-    # posted job at or below the posted price gets it the moment they claim —
-    # it's theirs, the offer closes, no office step. The one case that still
-    # waits for a person is a bid ABOVE the posted price (the office agreeing to
-    # pay more). Runs here, not on a tick, so the answer is instant while
-    # they're still looking at the offer. See services/claim_autoapprove.py for
-    # the policy and why first-come-first-served is safe here.
+    # INSTANT CLAIM (Turno-style). OFF by default and fail-closed — live only
+    # when the office sets claim_auto_approve_mode to "auto" (Settings → Rules);
+    # `consider` no-ops otherwise. When on, a sub whose vetting file is genuinely
+    # current who claims a posted job at or below the posted price gets it the
+    # moment they claim — it's theirs, the offer closes, no office step. The
+    # cases that still wait for a person: a bid ABOVE the posted price (the
+    # office agreeing to pay more), and a sub whose file has any gap (they fall
+    # through to manual approval — see claim_autoapprove.why_not, BB-CLAIM-01).
+    # Runs here, not on a tick, so the answer is instant while they're still
+    # looking at the offer. See services/claim_autoapprove.py for the policy.
     auto = {"auto_approved": False}
     try:
         from services.claim_autoapprove import consider

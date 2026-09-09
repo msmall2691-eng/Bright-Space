@@ -330,6 +330,43 @@ def test_an_unvetted_sub_is_refused_at_the_point_of_scheduling_too(world):
     assert reason == "not_vetted"
 
 
+def test_a_grandfathered_sub_with_a_gap_is_not_auto_awarded(world):
+    """BB-CLAIM-01: instant claim uses the STRICT vetting answer, not the
+    grandfathered one. A sub who predates crew_vetting_enforce_from passes the
+    /ask gate (blocking_requirements is empty for them), but an incomplete file
+    must NOT auto-award — it falls through to the office. This is what makes
+    instant claim safe to turn on over a bench that still has grandfathered
+    accounts."""
+    from services.claim_autoapprove import why_not
+    from services.sub_vetting import blocking_requirements
+    from database.models import AppSetting, User
+
+    _rule("auto")
+    sub = _mk_sub(world, complete=False)          # a real gap in the file
+    jid = _mk_job(world)
+
+    db = SessionLocal()
+    # Grandfather them in: enforce-from is AFTER their creation, so the /ask
+    # gate would let them work.
+    set_setting(db, "crew_vetting_enforce_from",
+                (business_today() + timedelta(days=1)).isoformat())
+    db.commit()
+    try:
+        user = db.query(User).filter(User.id == sub.id).first()
+        # The leak this closes: the /ask gate sees nothing owing...
+        assert blocking_requirements(db, user) == []
+        # ...but the instant-award gate still refuses the incomplete file.
+        job = db.query(Job).filter(Job.id == jid).first()
+        req = JobClaimRequest(org_id=1, job_id=jid, cleaner_id=sub.cleaner_id,
+                              user_id=sub.id, requested_rate=None, status="pending")
+        db.add(req); db.commit(); db.refresh(req)
+        assert why_not(db, job, req) == "not_vetted"
+    finally:
+        db.query(AppSetting).filter(AppSetting.key == "crew_vetting_enforce_from")\
+            .delete(synchronize_session=False)
+        db.commit(); db.close()
+
+
 def test_a_double_booking_leaves_the_request_pending_and_the_job_untouched(world):
     _rule("auto")
     sub = _mk_sub(world)
