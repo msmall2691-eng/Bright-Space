@@ -116,23 +116,24 @@ RULES: list[dict[str, Any]] = [
     {
         "key": "claim_auto_approve",
         "title": "Let cleared subs claim a posted job instantly",
-        "summary": "A real marketplace: a sub whose file is complete claims an "
-                   "open job at your posted price and it's theirs on the spot — "
-                   "first to claim wins, no approving each one. OFF for now — "
-                   "turn it on once every sub's insurance and agreement are in, "
-                   "since with nobody approving each claim, an out-of-date file "
-                   "would otherwise go straight onto a job.",
+        "summary": "A real marketplace: a sub whose insurance and agreement are "
+                   "current claims an open job at your posted price and it's "
+                   "theirs on the spot — first to claim wins, no approving each "
+                   "one. Safe to turn on: anyone whose file has a gap still comes "
+                   "to you to approve by hand, and a bid above your price always "
+                   "does. Off until you switch it on.",
         "fields": [
             {"key": "claim_auto_approve_mode", "type": "choice", "default": "off",
              "label": "When a cleared sub claims a posted job", "choices": [
                  {"value": "off", "label": "Ask me first"},
                  {"value": "auto", "label": "It's theirs instantly"},
              ],
-             "help": "Off by default: every claim comes to you to approve. Turn "
-                     "it on only once the whole bench's documents are current — "
-                     "instant claiming skips the approval where you'd catch a "
-                     "lapsed file. A bid above the posted price always waits for "
-                     "you, and only cleared subs can claim, either way."},
+             "help": "Only a sub whose file is genuinely current auto-claims — a "
+                     "lapsed or missing document drops the claim back to you to "
+                     "approve by hand, so turning this on can't put an uninsured "
+                     "person on a job. A bid above your posted price always waits "
+                     "for you too. You can turn it on now; it only fast-tracks "
+                     "the subs who are actually cleared."},
         ],
     },
     {

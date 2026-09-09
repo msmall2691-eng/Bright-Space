@@ -52,15 +52,21 @@ logger = logging.getLogger(__name__)
 
 # off | auto. The setting key the standing rule writes. The DEFAULT is OFF and
 # the gate FAILS CLOSED: instant claiming is live ONLY when the office has
-# explicitly set it to "auto". This was switched off in writing (Sept 2026)
-# because the compensating control instant claim removed — a human approving
-# each claim, and in doing so looking at the requester's file — is what made a
-# grandfathered bench safe. `services/sub_vetting.blocking_requirements` returns
-# nothing for every account that predates `crew_vetting_enforce_from`, so with
-# no human in the loop an out-of-date file (lapsed COI, unsigned agreement)
-# would sail through. Instant claim can go back on once the bench's documents
-# are actually in and that cutoff can be cleared — at which point the vetting
-# gate below becomes true again and the feature is safe on its own terms.
+# explicitly set it to "auto".
+#
+# HISTORY, and why it is now safe to turn on (BB-CLAIM-01). It was switched off
+# in writing (Sept 2026) because the compensating control instant claim removed
+# — a human approving each claim, and in doing so looking at the requester's
+# file — is what had made a GRANDFATHERED bench safe:
+# `sub_vetting.blocking_requirements` returns nothing for every account that
+# predates `crew_vetting_enforce_from`, so with no human in the loop an
+# out-of-date file (lapsed COI, unsigned agreement) would have sailed through.
+# The instant-award vetting gate in `why_not` now uses the STRICT
+# `can_take_jobs` (no grandfather exemption), so an incomplete file can no
+# longer auto-award — it falls through to the office's manual approval instead.
+# That closes the danger at the gate: the office can turn instant claim on now
+# without waiting to clear the cutoff, and only genuinely-current files are
+# ever awarded on the spot.
 MODE_KEY = "claim_auto_approve_mode"
 
 
@@ -92,13 +98,26 @@ def why_not(db: Session, job, req: JobClaimRequest) -> Optional[str]:
         return "instant_off"
 
     from database.models import User
-    from services.sub_vetting import blocking_requirements
+    from services.sub_vetting import can_take_jobs
     requester = (db.query(User).filter(User.id == req.user_id).first()
                  if req.user_id else None)
-    if requester is None or blocking_requirements(db, requester):
-        # THE ONE NON-NEGOTIABLE. The /ask endpoint already refuses an
-        # incomplete file; this is the gate that must not be reachable around,
-        # so a claim is re-checked against it at the moment it would be awarded.
+    if requester is None or not can_take_jobs(db, requester.id):
+        # THE ONE NON-NEGOTIABLE, and STRICTER here than at the /ask door.
+        #
+        # /ask lets a GRANDFATHERED sub (one who predates
+        # `crew_vetting_enforce_from`) claim with gaps in their file, because a
+        # person was going to approve it and look at the file first. Instant
+        # claim removed that person — so `blocking_requirements`, which returns
+        # nothing for a grandfathered account, would auto-award a lapsed COI.
+        # That is the exact danger the whole feature was switched off for.
+        #
+        # `can_take_jobs` is the file's HONEST answer — the agreement signed,
+        # the W-9 and the COI present and unexpired — with NO grandfather
+        # exemption. So an instant award needs a genuinely current file, and a
+        # grandfathered-but-incomplete sub simply falls through to a pending
+        # request the office approves by hand, exactly as before. This is what
+        # makes instant claim safe to turn on over a bench that still carries
+        # grandfathered accounts: it can never auto-award an uninsured person.
         return "not_vetted"
 
     posted = job.posted_rate
