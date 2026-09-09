@@ -47,6 +47,7 @@ import AgentHelp from '../components/board/AgentHelp'
 import { MoneyToday, CrewToday, FeedHealth, RecurringHealth } from '../components/board/SnapshotBoxes'
 import { MoneyTrend, LeadFunnel } from '../components/board/Charts'
 import BenchDigest from '../components/BenchDigest'
+import MarketplaceBoard from '../components/board/MarketplaceBoard'
 import SubNav from '../components/ui/SubNav'
 import { useUnreadCount } from '../hooks/useUnreadCount'
 import { currentRole } from '../nav/routes'
@@ -435,7 +436,9 @@ const PRIMARY_SECTIONS = new Set(['messages', 'requests', 'needs_cleaner'])
 const SECTION_LINKS = {
   messages: { label: 'Inbox', to: '/comms' },
   requests: { label: 'Requests', to: '/requests' },
-  needs_cleaner: { label: 'Dispatch', to: '/schedule?view=dispatch' },
+  // The office doesn't dispatch — a job with nobody on it gets OPENED to the
+  // bench for a cleaner to claim. The label says the action she actually takes.
+  needs_cleaner: { label: 'Open to crew', to: '/schedule' },
   money: { label: 'Billing', to: '/billing' },
 }
 // Every primary section shows at most this many rows on Home before folding
@@ -673,6 +676,14 @@ export default function OpsBoard() {
         </div>
 
         <DailyBrief />
+
+        {/* The marketplace, led. The office runs on the bench claiming work and
+            her saying yes, so the home opens with who's waiting on that yes and
+            what's still open to nobody — links to the Marketplace hub to act,
+            never approves here. Draws nothing when nothing's waiting. */}
+        <div className="mt-3">
+          <MarketplaceBoard />
+        </div>
 
         {/* The bench, once a week's worth of decisions have accumulated. Draws
             nothing at all in a quiet week — an owner scanning this page should
