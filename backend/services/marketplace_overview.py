@@ -51,6 +51,19 @@ def _iso(d) -> Optional[str]:
     return d.isoformat() if d else None
 
 
+def _is_high_bid(requested_rate, posted_rate, flag_over_pct) -> bool:
+    """Whether an ask is far enough over the posted price to flag it for the
+    office (BB-CLAIM-02) — the same rule the claim-review row uses, kept here
+    as a tiny local so this hub service never imports the scheduling router. A
+    bid at or below posted, or an unpriced job, is never flagged."""
+    if requested_rate is None or not posted_rate or flag_over_pct is None:
+        return False
+    try:
+        return float(requested_rate) > float(posted_rate) * (1 + float(flag_over_pct) / 100.0)
+    except (TypeError, ValueError):
+        return False
+
+
 def build(db: Session, org_id: int, *, today: Optional[date] = None) -> dict:
     from services import bench
 
@@ -74,13 +87,39 @@ def build(db: Session, org_id: int, *, today: Optional[date] = None) -> dict:
 
     job_ids = [j.id for j in open_jobs]
     asked: dict = {}
+    # Who asked for each job, and at what price — so "Waiting on you" can be
+    # triaged at a glance (name, ask, and a flag on a pushy one) without opening
+    # every job. The hub still LINKS to the job to decide; it never approves
+    # here (Rule 0: one approve path, the office never assigns).
+    askers: dict = {}
     if job_ids:
-        for r in (db.query(JobClaimRequest)
-                  .filter(_scope(JobClaimRequest, org_id),
-                          JobClaimRequest.job_id.in_(job_ids),
-                          JobClaimRequest.status == "pending")
-                  .all()):
+        from services.standing_rules import claim_high_bid_flag_pct
+        flag_pct = claim_high_bid_flag_pct(db)
+        posted_by_id = {j.id: j.posted_rate for j in open_jobs}
+        reqs = (db.query(JobClaimRequest)
+                .filter(_scope(JobClaimRequest, org_id),
+                        JobClaimRequest.job_id.in_(job_ids),
+                        JobClaimRequest.status == "pending")
+                .order_by(JobClaimRequest.created_at)
+                .all())
+        # One query for the requester names rather than a lazy load each.
+        cids = {r.cleaner_id for r in reqs if r.cleaner_id}
+        cnames: dict = {}
+        if cids:
+            for u in db.query(User).filter(User.cleaner_id.in_(cids)).all():
+                cnames[u.cleaner_id] = u.full_name or u.email
+        for r in reqs:
             asked[r.job_id] = asked.get(r.job_id, 0) + 1
+            pr = posted_by_id.get(r.job_id)
+            # A null counter means "I'll take your price" — surface the posted
+            # rate as what they'd be paid, same as the office review row.
+            rate = r.requested_rate if r.requested_rate is not None else pr
+            askers.setdefault(r.job_id, []).append({
+                "name": cnames.get(r.cleaner_id, r.cleaner_id),
+                "rate": round(float(rate), 2) if rate is not None else None,
+                "countered": r.requested_rate is not None,
+                "high_bid": _is_high_bid(r.requested_rate, pr, flag_pct),
+            })
 
     # One query for the names rather than a lazy load per job.
     names: dict = {}
@@ -103,6 +142,9 @@ def build(db: Session, org_id: int, *, today: Optional[date] = None) -> dict:
         "scheduled_date": _iso(j.scheduled_date),
         "posted_rate": round(float(j.posted_rate), 2) if j.posted_rate else None,
         "asked": asked.get(j.id, 0),
+        # The people waiting on this one, so the office can size it up before
+        # tapping through. Empty on a job nobody has asked for yet.
+        "askers": askers.get(j.id, []),
     } for j in open_jobs]
 
     # Somebody has asked and is waiting on an answer. Sorted to the front of

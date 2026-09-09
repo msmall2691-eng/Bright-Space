@@ -183,9 +183,36 @@ export default function Marketplace() {
                    this page never approves anything. */
                 <Row key={`job-${j.job_id}`} dot="bg-amber-500" to={`/jobs/${j.job_id}`}
                   right={fmtDate(j.scheduled_date)}>
-                  <span className="text-ink">{plural(j.asked, 'person', 'people')}</span>
-                  {' asked for '}{j.title}
-                  {j.client ? ` · ${j.client}` : ''}
+                  <span className="flex flex-col gap-1">
+                    <span>
+                      <span className="text-ink">{plural(j.asked, 'person', 'people')}</span>
+                      {' asked for '}{j.title}
+                      {j.client ? ` · ${j.client}` : ''}
+                    </span>
+                    {/* Who asked and at what price, so a job can be sized up
+                        without opening it. A pushy ask (BB-CLAIM-02) carries the
+                        same amber dot + word as the office review — never a
+                        pill or a tinted bar. Tapping still goes to the job to
+                        decide; the office never approves from here. */}
+                    {j.askers?.length > 0 && (
+                      <span className="flex flex-col gap-0.5">
+                        {j.askers.map((a, i) => (
+                          <span key={i} className="flex flex-wrap items-center gap-x-1.5 text-[12px] text-ink-3">
+                            <span className="text-ink-2">{a.name}</span>
+                            {a.rate != null && (
+                              <span>· {money(a.rate)}{a.countered ? '' : ' · your price'}</span>
+                            )}
+                            {a.high_bid && (
+                              <span className="flex items-center gap-1 text-ink-2">
+                                <span className="h-1.5 w-1.5 rounded-full bg-amber-500" aria-hidden="true" />
+                                over asking
+                              </span>
+                            )}
+                          </span>
+                        ))}
+                      </span>
+                    )}
+                  </span>
                 </Row>
               ))}
               {waiting.applications.map(a => (

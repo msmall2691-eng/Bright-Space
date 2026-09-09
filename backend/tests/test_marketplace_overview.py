@@ -114,6 +114,44 @@ def _api(user=None):
     return TestClient(app)
 
 
+# ── Waiting on you, triageable at a glance (BB-MKT-01) ──────────────────────
+#
+# "2 people asked for X" made the office open every job to see who and at what
+# price. The waiting rows now carry the askers so the page can be triaged.
+
+def test_waiting_jobs_carry_who_asked_and_at_what_price(ids):
+    jid = _mk_job(ids, posted_rate=100.0)
+    db = SessionLocal()
+    u = User(email="amy-mk@example.com", role="cleaner", full_name="Amy Stone",
+             org_id=1, active=True, status="active", cleaner_id="CT-AMY")
+    db.add(u); db.commit(); ids["users"].append(u.id)
+    # Amy takes the posted price (no counter); Bob bids well over it.
+    db.add(JobClaimRequest(org_id=1, job_id=jid, cleaner_id="CT-AMY", status="pending"))
+    db.add(JobClaimRequest(org_id=1, job_id=jid, cleaner_id="CT-BOB", status="pending",
+                           requested_rate=200.0))
+    db.commit(); db.close()
+
+    out = _build()
+    job = next(j for j in out["waiting"]["jobs"] if j["job_id"] == jid)
+    by_name = {a["name"]: a for a in job["askers"]}
+
+    assert by_name["Amy Stone"]["rate"] == 100.0        # the posted price
+    assert by_name["Amy Stone"]["countered"] is False
+    assert by_name["Amy Stone"]["high_bid"] is False
+    # Bob bid 200 on a 100 job — 100% over the default 20% line → flagged.
+    assert by_name["CT-BOB"]["rate"] == 200.0
+    assert by_name["CT-BOB"]["countered"] is True
+    assert by_name["CT-BOB"]["high_bid"] is True
+
+
+def test_an_open_job_nobody_asked_for_has_no_askers(ids):
+    jid = _mk_job(ids, posted_rate=120.0)
+    out = _build()
+    job = next(j for j in out["open_jobs"] if j["job_id"] == jid)
+    assert job["askers"] == []
+    assert job["asked"] == 0
+
+
 # ── Open means open ─────────────────────────────────────────────────────────
 
 def test_a_job_somebody_already_has_is_not_open(ids):

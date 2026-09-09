@@ -30,15 +30,23 @@ const payload = (over = {}) => ({
                      created_at: '2026-03-09T12:00:00' }],
     application_count: 1,
     jobs: [{ job_id: 91, title: 'Weekly clean', client: 'The Bergs', town: 'Rockport',
-             scheduled_date: '2026-03-12', posted_rate: 140, asked: 2 }],
+             scheduled_date: '2026-03-12', posted_rate: 140, asked: 2,
+             askers: [
+               { name: 'Amy Stone', rate: 140, countered: false, high_bid: false },
+               { name: 'Bob Reed', rate: 300, countered: true, high_bid: true },
+             ] }],
     job_count: 1,
     people_waiting: 2,
   },
   open_jobs: [
     { job_id: 91, title: 'Weekly clean', client: 'The Bergs', town: 'Rockport',
-      scheduled_date: '2026-03-12', posted_rate: 140, asked: 2 },
+      scheduled_date: '2026-03-12', posted_rate: 140, asked: 2,
+      askers: [
+        { name: 'Amy Stone', rate: 140, countered: false, high_bid: false },
+        { name: 'Bob Reed', rate: 300, countered: true, high_bid: true },
+      ] },
     { job_id: 92, title: 'Turnover', client: 'Shore House', town: 'Owls Head',
-      scheduled_date: '2026-03-14', posted_rate: 95, asked: 0 },
+      scheduled_date: '2026-03-14', posted_rate: 95, asked: 0, askers: [] },
   ],
   open_job_count: 2,
   bench: { people: 6, can_work: 4, awaiting_review: 1, blocked: 1, direct_deposit: 2 },
@@ -89,6 +97,27 @@ it('leads with the people who are blocked on you', async () => {
   // the office. A plain number beside the heading, never a red bubble.
   expect(headings[0]).toMatch(/3/)
   expect(screen.getAllByText(/2 people/).length).toBeGreaterThan(0)
+})
+
+it('shows who asked and at what price so a job can be triaged at a glance', async () => {
+  await show()
+  // The names and their asks are on the page — no need to open the job to see
+  // who wants it and for how much.
+  expect(screen.getByText('Amy Stone')).toBeTruthy()
+  expect(screen.getByText('Bob Reed')).toBeTruthy()
+  // Amy took the posted price; that reads as words, not a bare repeat of $140.
+  expect(screen.getByText(/your price/)).toBeTruthy()
+  // Bob bid $300 on a $140 job — flagged with the same dot+word as the review.
+  expect(screen.getByText(/over asking/)).toBeTruthy()
+})
+
+it('flags the pushy ask as a dot and words, never a tinted banner', async () => {
+  get.mockResolvedValue(payload())
+  const { container } = render(<MemoryRouter><Marketplace /></MemoryRouter>)
+  await screen.findByText('Bob Reed')
+  // The owner has vetoed tinted warning fills. A resting bg-*-50/100/200 is the
+  // vetoed pattern; the 1.5×1.5 dot is the required one.
+  expect(container.innerHTML).not.toMatch(/\bbg-\w+-(50|100|200)(?!\d)/)
 })
 
 it('says plainly when nobody is waiting, rather than looking busy', async () => {
