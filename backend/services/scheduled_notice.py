@@ -99,15 +99,26 @@ def _thread_outbound(db: Session, job, client, body: str, sid) -> None:
     _apply_outbound(conv, msg)
 
 
-def _send_sms(db: Session, job, client, when: str, link: str) -> None:
+def _first_name(client) -> str:
+    return (getattr(client, "first_name", None) or client.name or "there").strip()
+
+
+def _resolve_client(db: Session, job):
+    client = getattr(job, "client", None)
+    if client is None and getattr(job, "client_id", None):
+        from database.models import Client
+        client = db.query(Client).filter(Client.id == job.client_id).first()
+    return client
+
+
+def _deliver_sms(db: Session, job, client, body: str) -> None:
+    """Send `body` and thread it into the customer's SMS conversation. Shared
+    by every notice here; best-effort — an unconfigured Twilio or bad number
+    just logs, and a failed inbox thread never loses the send."""
     from integrations.twilio_client import send_sms
-    first = (getattr(client, "first_name", None) or client.name or "there").strip()
-    body = (f"Hi {first}, you're booked in for a cleaning on {when}. "
-            f"See details or request a change: {link} — The Maine Cleaning Co.")
     try:
         result = send_sms(to=client.phone, body=body)
     except (ValueError, RuntimeError) as e:
-        # Unconfigured Twilio or a bad number is environmental — log and move on.
         logger.info("[scheduled-notice] SMS skipped for job %s: %s", job.id, e)
         return
     try:
@@ -117,28 +128,21 @@ def _send_sms(db: Session, job, client, when: str, link: str) -> None:
         logger.warning("[scheduled-notice] inbox-thread failed for job %s: %s", job.id, e)
 
 
-def _send_email(job, client, when: str, link: str) -> None:
-    from html import escape as esc
+def _deliver_email(job, client, subject: str, text_body: str, html_body: str) -> None:
     from integrations.email import send_email
-    first = (getattr(client, "first_name", None) or client.name or "there").strip()
-    subject = f"You're booked in — {when}"
-    text_body = (
-        f"Hi {first},\n\n"
-        f"Your cleaning is on the calendar for {when}.\n\n"
-        f"See the details, meet who's coming, or request a change here:\n{link}\n\n"
-        f"— The Maine Cleaning Co."
-    )
-    html_body = (
-        f"<p>Hi {esc(first)},</p>"
-        f"<p>Your cleaning is on the calendar for <strong>{esc(when)}</strong>.</p>"
-        f"<p><a href=\"{esc(link)}\">See the details, meet who's coming, or "
-        f"request a change</a>.</p>"
-        f"<p>— The Maine Cleaning Co.</p>"
-    )
     try:
         send_email(to=client.email, subject=subject, html_body=html_body, text_body=text_body)
     except (ValueError, RuntimeError) as e:
         logger.info("[scheduled-notice] email skipped for job %s: %s", job.id, e)
+
+
+def _send_both(db: Session, job, client, *, sms_body: str,
+               subject: str, text_body: str, html_body: str) -> None:
+    if (getattr(client, "phone", None) or "").strip():
+        _deliver_sms(db, job, client, sms_body)
+    email = (getattr(client, "email", None) or "").strip()
+    if email and "@" in email:
+        _deliver_email(job, client, subject, text_body, html_body)
 
 
 def notify_customer_scheduled(db: Session, job) -> None:
@@ -146,24 +150,63 @@ def notify_customer_scheduled(db: Session, job) -> None:
     scheduled. Gated OFF by default; best-effort on both channels; carries no
     access details. Safe to call post-commit from any schedule write site."""
     try:
+        from html import escape as esc
         from services.standing_rules import customer_scheduled_notice_enabled
         if not customer_scheduled_notice_enabled(db):
             return
         if getattr(job, "status", None) != "scheduled" or not getattr(job, "scheduled_date", None):
             return
-        client = getattr(job, "client", None)
-        if client is None and getattr(job, "client_id", None):
-            from database.models import Client
-            client = db.query(Client).filter(Client.id == job.client_id).first()
+        client = _resolve_client(db, job)
         if client is None:
             return
 
-        when = _when_phrase(job)
-        link = _confirm_url(db, job)
-        if (getattr(client, "phone", None) or "").strip():
-            _send_sms(db, job, client, when, link)
-        email = (getattr(client, "email", None) or "").strip()
-        if email and "@" in email:
-            _send_email(job, client, when, link)
+        when, first, link = _when_phrase(job), _first_name(client), _confirm_url(db, job)
+        _send_both(
+            db, job, client,
+            sms_body=(f"Hi {first}, you're booked in for a cleaning on {when}. "
+                      f"See details or request a change: {link} — The Maine Cleaning Co."),
+            subject=f"You're booked in — {when}",
+            text_body=(f"Hi {first},\n\nYour cleaning is on the calendar for {when}.\n\n"
+                       f"See the details, meet who's coming, or request a change here:\n"
+                       f"{link}\n\n— The Maine Cleaning Co."),
+            html_body=(f"<p>Hi {esc(first)},</p>"
+                       f"<p>Your cleaning is on the calendar for <strong>{esc(when)}</strong>.</p>"
+                       f"<p><a href=\"{esc(link)}\">See the details, meet who's coming, or "
+                       f"request a change</a>.</p><p>— The Maine Cleaning Co.</p>"))
     except Exception:  # pragma: no cover - a customer notice must never break a schedule write
         logger.warning("[scheduled-notice] failed for job %s", getattr(job, "id", "?"), exc_info=True)
+
+
+def notify_customer_crew_changed(db: Session, job) -> None:
+    """Tell the customer who's coming has CHANGED since they were booked in
+    (BB-CUST-04). Gated OFF by its own standing rule; best-effort SMS + email;
+    no access details, and no crew names inlined — the confirm link shows the
+    new crew (who's-coming) and is the one source of truth. Callers fire this
+    only on a genuine crew change to an already-scheduled future visit."""
+    try:
+        from html import escape as esc
+        from services.standing_rules import customer_crew_change_notice_enabled
+        if not customer_crew_change_notice_enabled(db):
+            return
+        if getattr(job, "status", None) != "scheduled" or not getattr(job, "scheduled_date", None):
+            return
+        client = _resolve_client(db, job)
+        if client is None:
+            return
+
+        when, first, link = _when_phrase(job), _first_name(client), _confirm_url(db, job)
+        _send_both(
+            db, job, client,
+            sms_body=(f"Hi {first}, there's an update to who's coming for your cleaning "
+                      f"{when}. See who and confirm: {link} — The Maine Cleaning Co."),
+            subject=f"An update to your cleaning — {when}",
+            text_body=(f"Hi {first},\n\nThere's a change to who's coming for your cleaning "
+                       f"on {when}.\n\nSee who's coming now and confirm here:\n{link}\n\n"
+                       f"— The Maine Cleaning Co."),
+            html_body=(f"<p>Hi {esc(first)},</p>"
+                       f"<p>There's a change to who's coming for your cleaning on "
+                       f"<strong>{esc(when)}</strong>.</p>"
+                       f"<p><a href=\"{esc(link)}\">See who's coming now and confirm</a>.</p>"
+                       f"<p>— The Maine Cleaning Co.</p>"))
+    except Exception:  # pragma: no cover - a customer notice must never break a schedule write
+        logger.warning("[crew-change-notice] failed for job %s", getattr(job, "id", "?"), exc_info=True)
