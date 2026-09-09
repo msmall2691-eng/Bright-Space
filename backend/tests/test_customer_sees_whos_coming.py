@@ -196,6 +196,36 @@ def test_the_portal_shows_it_on_upcoming_visits(made):
     assert body["upcoming"][0]["crew"][0]["has_photo"] is True
 
 
+def test_the_portal_shows_who_cleaned_on_past_visits(made):
+    """Extra 3 (BB-CUST-03): the recent-visits list now credits who cleaned —
+    the same safe disclosure crew_intro makes for an upcoming visit (a first
+    name and a last initial, never a phone or a stable id)."""
+    _give_amy_a_photo()
+    email = f"portal-past-{uuid.uuid4().hex[:6]}@example.com"
+    tag = uuid.uuid4().hex[:6]
+    db = SessionLocal()
+    c = Client(name=f"Past {tag}", status="active", org_id=1, email=email)
+    db.add(c); db.commit(); db.refresh(c); made["clients"].append(c.id)
+    p = Property(client_id=c.id, org_id=1, name=f"{tag} House",
+                 address=f"{tag} Harbor Rd", city="Camden", state="ME")
+    db.add(p); db.commit(); db.refresh(p); made["properties"].append(p.id)
+    j = Job(client_id=c.id, property_id=p.id, org_id=1, title="Deep clean",
+            scheduled_date=business_today() - timedelta(days=7),   # finished, in window
+            start_time=dtime(9, 0), end_time=dtime(14, 0), status="completed",
+            cleaner_ids=[AMY], agreed_rate=180.0, public_token=f"tok-past-{tag}")
+    db.add(j); db.commit(); db.refresh(j); made["jobs"].append(j.id)
+    db.close()
+
+    api = _anon()
+    session = api.post("/api/portal/verify",
+                       json={"token": _portal_token(email)}).json()["token"]
+    body = api.get("/api/portal/visits",
+                   headers={"Authorization": f"Bearer {session}"}).json()
+    assert body["upcoming"] == []
+    assert [pp["name"] for pp in body["past"][0]["crew"]] == ["Amy S."]
+    assert body["past"][0]["crew"][0]["has_photo"] is True
+
+
 def _portal_token(email: str) -> str:
     from modules.portal.router import _make_token
     from datetime import timedelta as td

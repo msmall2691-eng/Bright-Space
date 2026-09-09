@@ -51,6 +51,14 @@ describe('WhosComing', () => {
     expect(container.textContent).toContain('A')
   })
 
+  it('labels the block by tense — "Who\'s coming" by default, overridable', () => {
+    const up = render(<WhosComing crew={[AMY]} photoBase="/p" />)
+    expect(up.container.textContent).toContain("Who's coming")
+    const past = render(<WhosComing crew={[AMY]} photoBase="/p" label="Who cleaned" />)
+    expect(past.container.textContent).toContain('Who cleaned')
+    expect(past.container.textContent).not.toContain("Who's coming")
+  })
+
   it('offers the customer no way to act on a person', () => {
     const { container } = render(
       <WhosComing crew={[AMY, SAM]} photoBase="/api/jobs/public/tok/crew" />)

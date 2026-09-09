@@ -261,9 +261,9 @@ def _visit_dict(j: Job, crew: Optional[list] = None) -> dict:
         "reschedule_pending": j.reschedule_requested_at is not None,
         # The confirm/reschedule page is the existing audited public flow.
         "manage_token": j.public_token,
-        # Who is coming — empty until somebody has actually won the job, and
-        # only ever filled in for upcoming visits (see `visits` below). Photo
-        # bytes ride the public job token, not this payload.
+        # Who is (or was) coming — empty until somebody has actually won the
+        # job; filled for upcoming AND past visits (BB-CUST-03, see `visits`
+        # below). Photo bytes ride the public job token, not this payload.
         "crew": crew or [],
     }
 
@@ -292,17 +292,20 @@ def visits(ctx=Depends(portal_ctx), db: Session = Depends(get_db)):
             made = True
     if made:
         db.commit()
-    # One batched lookup for the whole upcoming list rather than one per row
-    # (brightbase-economy). Past visits are deliberately left alone: "who is
-    # coming" is a question about a visit that has not happened, and a name on
-    # a finished job is a record of who was in the house — the office's to
-    # keep, not something to re-serve to the customer months later.
+    # One batched lookup for the WHOLE list — upcoming and past — rather than
+    # one per row (brightbase-economy). Past visits now carry the crew too
+    # (BB-CUST-03): the customer can see who cleaned last time. It is the same
+    # safe disclosure crew_intro already makes for an upcoming visit — a first
+    # name and last initial, and whether a photo exists — never a phone, an
+    # email, or the stable crew id, so a finished job says "Amanda S. came"
+    # and nothing a stranger could act on.
     # First non-NULL org across the batch: a legacy row with no org must not
     # drop the filter for everyone else in the list.
-    batch_org = next((j.org_id for j in upcoming_rows if j.org_id is not None), None)
-    crew_by_job = crew_intro.for_jobs(db, upcoming_rows, org_id=batch_org)
+    batch_org = next((j.org_id for j in rows if j.org_id is not None), None)
+    crew_by_job = crew_intro.for_jobs(db, rows, org_id=batch_org)
     upcoming = [_visit_dict(j, crew_by_job.get(j.id)) for j in upcoming_rows]
-    past = [_visit_dict(j) for j in reversed(rows) if j.scheduled_date and j.scheduled_date < today]
+    past = [_visit_dict(j, crew_by_job.get(j.id))
+            for j in reversed(rows) if j.scheduled_date and j.scheduled_date < today]
     return {"upcoming": upcoming, "past": past}
 
 
