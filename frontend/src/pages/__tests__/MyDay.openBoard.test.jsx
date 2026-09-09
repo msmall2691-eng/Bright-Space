@@ -78,6 +78,38 @@ it('still lists it once when the day does have work booked', async () => {
   expect(screen.getAllByRole('button', { name: /ask for this job/i })).toHaveLength(1)
 })
 
+// ── The day-at-a-glance dashboard (what makes home more than a jobs list) ────
+
+it('leads the home with a glance: this week, up for grabs, messages', async () => {
+  await show({ ...DAY, week: { week_total: 430, earned_total: 120 },
+               open_jobs: [OFFER], unread_messages: 2 })
+  expect(await screen.findByText('this week')).toBeTruthy()
+  expect(screen.getByText('$430.00')).toBeTruthy()   // rides the payload, no extra fetch
+  expect(screen.getByText('up for grabs')).toBeTruthy()
+  expect(screen.getByText('messages')).toBeTruthy()
+})
+
+it('the "up for grabs" tile jumps to the Open jobs tab', async () => {
+  await show({ ...DAY, week: { week_total: 430 }, open_jobs: [OFFER], unread_messages: 0 })
+  fireEvent.click(screen.getByText('up for grabs').closest('button'))
+  // The header only says "Open jobs" on the Jobs tab, so this proves the jump.
+  expect(await screen.findByText('Open jobs')).toBeTruthy()
+})
+
+it('shows the glance no money yet as a dash, not a crash', async () => {
+  await show({ ...DAY, week: null, open_jobs: [], unread_messages: 0 })
+  expect(await screen.findByText('this week')).toBeTruthy()
+  expect(screen.getByText('—')).toBeTruthy()
+})
+
+it('hides the glance from a sub who is not cleared yet', async () => {
+  // A row of zeros under "you're not cleared" is noise; the file card carries
+  // the message instead.
+  await show({ ...DAY, cleared: false, missing: ['Upload your insurance'], week: null })
+  expect(await screen.findByText(/not cleared to take jobs yet/i)).toBeTruthy()
+  expect(screen.queryByText('up for grabs')).toBeNull()
+})
+
 it('says which day an offer is for', async () => {
   // The board spans dates. "09:00 – 13:00" under a heading about today reads
   // as today, and a sub who drives out on the wrong morning has been misled
