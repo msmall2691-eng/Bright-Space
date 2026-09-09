@@ -24,6 +24,7 @@ import { Link } from 'react-router-dom'
 import { get } from '../../api'
 
 const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`
+const money = (n) => `$${(Number(n) || 0).toLocaleString('en-US', { maximumFractionDigits: 0 })}`
 
 export default function MarketplaceBoard() {
   const [data, setData] = useState(null)
@@ -38,10 +39,15 @@ export default function MarketplaceBoard() {
   const waiting = data?.waiting || {}
   const peopleWaiting = waiting.people_waiting || 0
   const jobsWaiting = waiting.job_count || 0
+  const applications = waiting.application_count || 0
+  const owed = data?.money?.owed || 0
   // Open offers with nobody on them yet = every open job minus the ones that
   // already have someone waiting. Those are the ones that quietly go uncovered.
   const openNoTaker = Math.max(0, (data?.open_job_count || 0) - jobsWaiting)
 
+  // Ordered by who is blocked on the office: claims and applications are people
+  // sitting waiting on a yes; an open job with no taker is at risk; money owed
+  // is an ongoing fact, so it sits last.
   const lines = []
   if (peopleWaiting > 0) {
     lines.push({
@@ -54,10 +60,22 @@ export default function MarketplaceBoard() {
       ),
     })
   }
+  if (applications > 0) {
+    lines.push({
+      key: 'apps', dot: 'bg-amber-500', to: '/crew', label: 'Review',
+      text: <>{plural(applications, 'cleaner', 'cleaners')} applied to join</>,
+    })
+  }
   if (openNoTaker > 0) {
     lines.push({
       key: 'open', dot: 'bg-violet-500', to: '/marketplace', label: 'Open jobs',
       text: <>{plural(openNoTaker, 'job', 'jobs')} open to the bench with nobody yet</>,
+    })
+  }
+  if (owed > 0) {
+    lines.push({
+      key: 'owed', dot: 'bg-ink-3/50', to: '/payroll', label: 'Payouts',
+      text: <>{money(owed)} owed to your cleaners <span className="text-ink-3">· on the ledger, not yet paid</span></>,
     })
   }
 
