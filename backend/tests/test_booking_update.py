@@ -29,8 +29,13 @@ def _submit_booking(**overrides):
         "email": f"upd-{tag}@example.com",
         # Unique too: intake dedups on email OR PHONE within the recency
         # window, so a hardcoded number is another way for a neighbouring
-        # test's submission to swallow this one's lead.
-        "phone": f"+1207555{int(tag, 16) % 10000:04d}",
+        # test's submission to swallow this one's lead. The old form kept only
+        # 4 digits of entropy (a 555-XXXX line number), so across a full run
+        # two tags collided onto one phone often enough to flake on CI — the
+        # submit deduped away and the update then 404'd "No matching booking".
+        # A 7-digit subscriber number derived from the same tag gives a 10M
+        # space, matching the email's uniqueness.
+        "phone": f"+1207{int(tag, 16) % 10_000_000:07d}",
         "address": f"{tag} Pine St, Portland, ME 04101",
         "serviceType": "standard",
         "requestedDate": "2026-08-10",
