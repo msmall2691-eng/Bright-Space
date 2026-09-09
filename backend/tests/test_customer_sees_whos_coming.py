@@ -345,20 +345,32 @@ def test_the_reminder_names_the_one_person_coming(made):
     db = SessionLocal()
     job = db.query(Job).filter(Job.id == _job(made)[0]).first()
     client = db.query(Client).filter(Client.id == job.client_id).first()
-    with_name = build_reminder_body(job, client, "Amy S.")
+    with_name = build_reminder_body(job, client, ["Amy S."])
     without = build_reminder_body(job, client, None)
     db.close()
     assert "with Amy S." in with_name
-    # One sentence, not two — a second sentence is what tips a common-case
-    # reminder into a second billed segment.
+    # One sentence, not two — the crew phrase folds into the existing sentence,
+    # so naming people never tips a reminder into a second billed segment.
     assert with_name.count(". ") == without.count(". ")
 
 
-def test_two_people_are_left_out_of_the_reminder(made):
-    """Names would do it. The confirm link one line down shows the whole list."""
-    from services.reminder_service import _solo_crew_names
+def test_the_reminder_names_everyone_coming(made):
+    """All crew are credited now (BB-CUST-02), not just a solo cleaner — the
+    whole list folds into the one sentence; the confirm link still shows faces."""
+    from services.reminder_service import build_reminder_body, _crew_names_by_job
     job_id, _, _ = _job(made, cleaners=(AMY, BEN))
     db = SessionLocal()
-    jobs = db.query(Job).filter(Job.id == job_id).all()
-    assert _solo_crew_names(db, jobs) == {}
+    job = db.query(Job).filter(Job.id == job_id).first()
+    client = db.query(Client).filter(Client.id == job.client_id).first()
+    names = _crew_names_by_job(db, [job]).get(job.id) or []
+    body = build_reminder_body(job, client, names)
+    without = build_reminder_body(job, client, None)
     db.close()
+    assert len(names) == 2
+    for n in names:
+        assert n in body
+    assert " and " in body                      # "with Amy S. and Ben T."
+    # Still one sentence: the crew phrase folds in, it does not append a new
+    # "Confirm..." clause (the confirm line appears exactly once, as always).
+    assert body.count("Confirm or request a change") == 1
+    assert without.count("Confirm or request a change") == 1
