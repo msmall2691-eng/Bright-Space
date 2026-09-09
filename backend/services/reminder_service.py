@@ -78,17 +78,38 @@ def _job_confirm_url(job: Job) -> str:
     return f"{app_base_url().rstrip('/')}/job/{job.public_token}"
 
 
-def build_reminder_body(job: Job, client: Client, crew_name: str | None = None) -> str:
+def _crew_phrase(names: list | None) -> str:
+    """" with Amanda S. and Ben T." — a leading space, everyone who's coming.
+
+    Names up to three, then "and N more", so the common one-to-three-person
+    changeover reads every name while a pathological crew can't blow the text
+    into several billed segments. The confirm link one line down carries the
+    full list with faces either way. Empty string when nobody is assigned yet.
+    """
+    names = [n for n in (names or []) if n]
+    if not names:
+        return ""
+    if len(names) == 1:
+        joined = names[0]
+    elif len(names) == 2:
+        joined = f"{names[0]} and {names[1]}"
+    elif len(names) == 3:
+        joined = f"{names[0]}, {names[1]} and {names[2]}"
+    else:
+        joined = f"{names[0]}, {names[1]}, {names[2]} and {len(names) - 3} more"
+    return f" with {joined}"
+
+
+def build_reminder_body(job: Job, client: Client, crew_names: list | None = None) -> str:
     """Compose the client-facing reminder text. Kept small + plain so it reads
     well as a single SMS segment for the common case.
 
-    `crew_name` names the one person coming, when there is exactly one — the
-    text a stranger's arrival most needs, and the cheapest place to put it. It
-    folds into the existing sentence ("your cleaning tomorrow at 9am with
-    Amanda S.") rather than adding one, because a second sentence is what
-    tips a common-case reminder into a second billed segment. Two or more
-    people are left out on purpose: the names would do it, and the confirm
-    link one line down shows the whole list with faces.
+    `crew_names` is everyone coming, as their public display names ("Amanda S.").
+    It folds into the existing sentence ("your cleaning tomorrow at 9am with
+    Amanda S. and Ben T.") rather than adding one, because a second sentence is
+    what tips a common-case reminder into a second billed segment. `_crew_phrase`
+    names up to three and summarises the rest so the whole crew is credited
+    without an unbounded list; the confirm link below shows every face.
     """
     first = (client.first_name or client.name or "there").strip()
     when_time = _format_time(job.start_time)
@@ -98,7 +119,7 @@ def build_reminder_body(job: Job, client: Client, crew_name: str | None = None) 
         where = f" at {job.property.name}"
     elif job.address:
         where = f" at {job.address}"
-    who = f" with {crew_name}" if crew_name else ""
+    who = _crew_phrase(crew_names)
     link = _job_confirm_url(job)
     return (
         f"Hi {first}, this is a reminder for your cleaning {when}{where}{who}. "
@@ -106,12 +127,12 @@ def build_reminder_body(job: Job, client: Client, crew_name: str | None = None) 
     )
 
 
-def _solo_crew_names(db: Session, jobs: list) -> dict:
-    """{job_id: name} for jobs with exactly ONE person coming, batched.
+def _crew_names_by_job(db: Session, jobs: list) -> dict:
+    """{job_id: [display names]} for everyone coming, batched.
 
     Inside the reminder loop this would be a query per text. Here it is one
     call for the whole tick (brightbase-economy), and a failure returns an
-    empty map rather than raising: a reminder that goes out without a name is
+    empty map rather than raising: a reminder that goes out without names is
     the reminder customers have always had, and is never worth losing.
     """
     try:
@@ -120,7 +141,7 @@ def _solo_crew_names(db: Session, jobs: list) -> dict:
     except Exception as e:  # pragma: no cover - defensive
         logger.warning(f"[reminders] crew lookup skipped: {e}")
         return {}
-    return {jid: people[0]["name"] for jid, people in by_job.items() if len(people) == 1}
+    return {jid: [p["name"] for p in people] for jid, people in by_job.items() if people}
 
 
 def _thread_outbound_reminder(db: Session, job: Job, client: Client, body: str, sid):
@@ -191,7 +212,7 @@ def send_due_reminders(db: Session, *, lead_hours: int | None = None, now: datet
         .all()
     )
 
-    crew_names = _solo_crew_names(db, candidates)
+    crew_names = _crew_names_by_job(db, candidates)
 
     sent = skipped_no_phone = failed = 0
     for job in candidates:
