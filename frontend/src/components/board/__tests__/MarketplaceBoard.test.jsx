@@ -39,6 +39,18 @@ it('reads a single waiting cleaner in the singular', async () => {
   expect(await screen.findByText(/1 cleaner waiting on your yes/)).toBeTruthy()
 })
 
+it('surfaces cleaners applying to join and links to Crew to review them', async () => {
+  mount({ waiting: { people_waiting: 0, job_count: 0, application_count: 2 }, open_job_count: 0 })
+  expect(await screen.findByText(/2 cleaners applied to join/)).toBeTruthy()
+  expect(screen.getByText('Review').closest('a').getAttribute('href')).toBe('/crew')
+})
+
+it('shows money owed to cleaners and links to Payouts', async () => {
+  mount({ waiting: { people_waiting: 0, job_count: 0 }, open_job_count: 0, money: { owed: 1240 } })
+  expect(await screen.findByText(/\$1,240 owed to your cleaners/)).toBeTruthy()
+  expect(screen.getByText('Payouts').closest('a').getAttribute('href')).toBe('/payroll')
+})
+
 it('renders nothing when nothing is waiting and nothing is uncovered', async () => {
   const { container } = (() => {
     get.mockResolvedValue({ waiting: { people_waiting: 0, job_count: 0 }, open_job_count: 0 })
