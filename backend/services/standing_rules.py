@@ -184,6 +184,25 @@ RULES: list[dict[str, Any]] = [
         ],
     },
     {
+        "key": "claim_high_bid",
+        "title": "Flag a sub who asks for well over your price",
+        "summary": "A sub can ask for more than you posted, but you always "
+                   "decide — nobody is paid a penny over your price without your "
+                   "yes. This just MARKS the pushy asks in your review so they're "
+                   "obvious at a glance; it never blocks a request or accepts one "
+                   "for you.",
+        "fields": [
+            {"key": "claim_high_bid_flag_pct", "type": "number", "default": 20,
+             "label": "Flag asks more than this % over posted", "unit": "%",
+             "min": 0, "max": 500,
+             "help": "20 means a request more than 20% above your posted price "
+                     "gets a flag in your review. Set it to 0 to flag anything "
+                     "over your price at all, or high to rarely flag. It's a "
+                     "heads-up only — you still approve or decline every request "
+                     "yourself, and a bid above your price already waits for you."},
+        ],
+    },
+    {
         "key": "customer_scheduled_notice",
         "title": "Tell the customer once their cleaning is booked in",
         "summary": "When a job goes on the calendar, the customer gets a text and "
@@ -360,6 +379,12 @@ def customer_crew_change_notice_enabled(db: Session) -> bool:
     """Whether to text + email the customer when who's coming changes after
     they were booked in. OFF by default — it reaches a real customer."""
     return _read_field(db, _FIELDS["customer_crew_change_notice_enabled"])
+
+
+def claim_high_bid_flag_pct(db: Session) -> int:
+    """How far over the posted price a request has to be to get flagged in the
+    office's review. A heads-up threshold only — it never blocks or accepts."""
+    return _read_field(db, _FIELDS["claim_high_bid_flag_pct"])
 
 
 def crew_escalation_mode(db: Session) -> str:

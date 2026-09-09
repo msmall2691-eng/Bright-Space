@@ -229,6 +229,28 @@ it('never lets the heads-up stand in the way of approving', async () => {
   expect(approve.disabled).toBe(false)
 })
 
+it('flags a pushy ask well over the posted price, but never blocks it', async () => {
+  mount({
+    job_id: 5, posted_rate: 80,
+    requests: [{ id: 1, cleaner_id: 'CT-1', cleaner_name: 'Pat', requested_rate: 140,
+      message: null, status: 'pending', high_bid: true }],
+  })
+  expect(await screen.findByText(/well over your asking price/i)).toBeTruthy()
+  // A flag, not a gate — Approve stays live.
+  const approve = await screen.findByRole('button', { name: /give it to them/i })
+  expect(approve.disabled).toBe(false)
+})
+
+it('does not flag an ordinary counter that is within the line', async () => {
+  mount({
+    job_id: 5, posted_rate: 80,
+    requests: [{ id: 2, cleaner_id: 'CT-2', cleaner_name: 'Rob', requested_rate: 95,
+      message: null, status: 'pending', high_bid: false }],
+  })
+  expect(await screen.findByText('Rob')).toBeTruthy()
+  expect(screen.queryByText(/well over your asking price/i)).toBeNull()
+})
+
 it('says nothing when there is nothing to say', async () => {
   // A warning on every row is furniture; she stops reading it.
   mount()

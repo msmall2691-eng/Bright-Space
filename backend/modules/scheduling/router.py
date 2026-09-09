@@ -3028,15 +3028,32 @@ def _claim_request_history(db: Session, pending, org_id) -> dict:
     return out
 
 
+def _is_high_bid(requested_rate, posted_rate, flag_over_pct) -> bool:
+    """Whether this request is far enough over the posted price to flag it for
+    the office (BB-CLAIM-02). A heads-up only — nothing here blocks or ranks.
+    A bid at or below posted is never flagged; an unpriced job has no line to
+    be over."""
+    if requested_rate is None or not posted_rate or flag_over_pct is None:
+        return False
+    try:
+        return float(requested_rate) > float(posted_rate) * (1 + float(flag_over_pct) / 100.0)
+    except (TypeError, ValueError):
+        return False
+
+
 def _claim_request_row(r: JobClaimRequest, names_by_cid: dict,
                        heads_up: dict | None = None,
-                       history: dict | None = None) -> dict:
+                       history: dict | None = None,
+                       posted_rate=None, flag_over_pct=None) -> dict:
     return {
         "id": r.id,
         "job_id": r.job_id,
         "cleaner_id": r.cleaner_id,
         "cleaner_name": names_by_cid.get(r.cleaner_id, r.cleaner_id),
         "requested_rate": r.requested_rate,
+        # A request well over the posted price, so the office can spot a pushy
+        # ask at a glance. Advisory only — the office still approves/declines.
+        "high_bid": _is_high_bid(r.requested_rate, posted_rate, flag_over_pct),
         "message": r.message,
         "status": r.status,
         # Why the office declined (migration 111) — shown back on the row, and
@@ -3077,13 +3094,21 @@ def list_claim_requests(job_id: int, db: Session = Depends(get_db), org_id: int 
     pending = [r for r in rows if r.status == "pending"]
     heads_up = _claim_request_heads_up(db, job, pending, org_id)
     history = _claim_request_history(db, pending, org_id)
+    from services.standing_rules import claim_high_bid_flag_pct
+    flag_pct = claim_high_bid_flag_pct(db)
     return {
         "job_id": job.id,
         "posted_rate": job.posted_rate,
         # What the customer is billed (migration 110) — never mixed with the
         # rates above, which are what a sub is paid.
         "price": job.price,
-        "requests": [_claim_request_row(r, names, heads_up, history) for r in rows],
+        # The line over which a request reads as a pushy ask (BB-CLAIM-02), so
+        # the frontend can label the flag ("18% over") without recomputing it.
+        "high_bid_flag_pct": flag_pct,
+        "requests": [_claim_request_row(r, names, heads_up, history,
+                                        posted_rate=job.posted_rate,
+                                        flag_over_pct=flag_pct)
+                     for r in rows],
     }
 
 

@@ -193,6 +193,16 @@ export default function JobClaimRequests({ jobId, postedRate, onDecided }) {
                       <span className="text-ink-3">No rate named</span>
                     )}
                   </div>
+                  {/* A pushy ask, flagged at a glance (BB-CLAIM-02). Advisory
+                      only — same amber dot+word as the notes below, never a
+                      banner, and it never disables Approve. You set the line in
+                      Settings → Rules. */}
+                  {req.high_bid && (
+                    <p className="flex items-start gap-1.5 text-[11px] text-ink-2 mt-1">
+                      <span className="mt-1 h-1.5 w-1.5 shrink-0 rounded-full bg-amber-500" aria-hidden="true" />
+                      <span>Well over your asking price</span>
+                    </p>
+                  )}
                   {req.message && (
                     <p className="text-[12px] text-ink-3 mt-1 whitespace-pre-line break-words">
                       “{req.message}”
