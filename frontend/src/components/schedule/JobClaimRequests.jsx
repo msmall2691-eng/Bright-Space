@@ -66,6 +66,10 @@ export default function JobClaimRequests({ jobId, postedRate, onDecided }) {
   const [rows, setRows] = useState(null)
   const [error, setError] = useState(false)
   const [busyId, setBusyId] = useState(null)
+  // What this job bills, resolved by the backend (invoice/quote/house history).
+  // Lets the decision moment say what the office KEEPS, not just what the sub
+  // is paid (BB-CLAIM-03). Null when there's nothing to measure against.
+  const [billed, setBilled] = useState(null)
   // Declining opens a small "why?" field on that row (optional). The reason
   // reaches the sub's "my asks" so a decline stops being silent (migration 111).
   const [decliningId, setDecliningId] = useState(null)
@@ -73,11 +77,21 @@ export default function JobClaimRequests({ jobId, postedRate, onDecided }) {
 
   const load = useCallback(() => {
     get(`/api/jobs/${jobId}/claim-requests`)
-      .then(r => { setRows(r?.requests || []); setError(false) })
+      .then(r => {
+        setRows(r?.requests || [])
+        setBilled(r?.billed ?? null)
+        setError(false)
+      })
       .catch(() => setError(true))
   }, [jobId])
 
   useEffect(() => { load() }, [load])
+
+  // What the office keeps if this request is approved at `rate`: the job's
+  // billed amount minus the payout. Null when either side is unknown, so the
+  // copy can stay silent rather than show a made-up number.
+  const keptAt = (rate) =>
+    billed != null && rate != null ? Number(billed) - Number(rate) : null
 
   const decide = async (req, action) => {
     if (action === 'approve') {
@@ -85,9 +99,14 @@ export default function JobClaimRequests({ jobId, postedRate, onDecided }) {
       // rate, and turns down everyone else. The application-approval has a
       // confirm; the one that commits money didn't. It does now.
       const rate = req.requested_rate == null ? postedRate : req.requested_rate
+      const kept = keptAt(rate)
       const others = rows.filter(r => r.status === 'pending' && r.id !== req.id).length
       const ok = await confirmDialog(
         `Give ${req.cleaner_name} this job${rate != null ? ` at ${money(rate)}` : ''}?`
+        // What she keeps, right where she commits — the number the payout alone
+        // never answers (BB-CLAIM-03). Silent when the job's billed amount isn't
+        // known, rather than implying a margin from nothing.
+        + (kept != null ? `\n\nYou keep ${money(kept)}.` : '')
         + (others ? `\n\nThis turns down ${others} other ${others === 1 ? 'person' : 'people'} who asked.` : '')
         + '\n\nIt assigns the job and can’t be undone here.',
         { title: 'Give it to them', confirmLabel: 'Give it to them' })
@@ -98,8 +117,10 @@ export default function JobClaimRequests({ jobId, postedRate, onDecided }) {
       const body = action === 'decline' && declineReason.trim()
         ? { reason: declineReason.trim() } : {}
       const r = await post(`/api/jobs/${jobId}/claim-requests/${req.id}/${action}`, body)
+      const keptNow = action === 'approve' ? keptAt(r?.agreed_rate) : null
       toast.success(action === 'approve'
         ? `${req.cleaner_name} has the job${r?.agreed_rate ? ` at ${money(r.agreed_rate)}` : ''}`
+          + (keptNow != null ? ` — you keep ${money(keptNow)}` : '')
         : `Declined ${req.cleaner_name}`)
       setDecliningId(null); setDeclineReason('')
       load()

@@ -3096,12 +3096,25 @@ def list_claim_requests(job_id: int, db: Session = Depends(get_db), org_id: int 
     history = _claim_request_history(db, pending, org_id)
     from services.standing_rules import claim_high_bid_flag_pct
     flag_pct = claim_high_bid_flag_pct(db)
+    # What this job bills, resolved the same way the margin calculator does
+    # (invoice → job price → quote → house history) so the office can see WHAT
+    # THEY KEEP at the moment they hand the job over — not just what the sub is
+    # paid (BB-CLAIM-03). One computation here, so the panel and its confirm can
+    # show "you keep $X" without a per-row fetch. `amount` is None when there's
+    # genuinely nothing to measure against — never 0.
+    from services.job_margin import billed_amount
+    billed = billed_amount(db, job, org_id)
     return {
         "job_id": job.id,
         "posted_rate": job.posted_rate,
         # What the customer is billed (migration 110) — never mixed with the
         # rates above, which are what a sub is paid.
         "price": job.price,
+        # The resolved billed figure and where it came from, for the office's
+        # margin-at-the-decision (BB-CLAIM-03). `billed` can be known from a
+        # quote or house history even when `price` above is unset.
+        "billed": billed["amount"],
+        "billed_source": billed["source"],
         # The line over which a request reads as a pushy ask (BB-CLAIM-02), so
         # the frontend can label the flag ("18% over") without recomputing it.
         "high_bid_flag_pct": flag_pct,

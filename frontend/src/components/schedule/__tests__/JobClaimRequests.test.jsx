@@ -84,6 +84,36 @@ it('confirms before awarding, and cancelling awards nothing', async () => {
   expect(post).not.toHaveBeenCalled()
 })
 
+it('tells her what she keeps, right in the award confirm (BB-CLAIM-03)', async () => {
+  // "What do I make" is the question the payout alone never answers. With the
+  // job's billed figure on the list, the confirm says it where she commits.
+  mount({ ...REQS, billed: 200 })
+  await screen.findByText('Rob')
+  fireEvent.click(screen.getAllByRole('button', { name: /Give it to them/ })[1])
+  await waitFor(() => expect(confirmDialog).toHaveBeenCalled())
+  // Rob countered $95 against a $200 bill → she keeps $105.
+  expect(confirmDialog.mock.calls[0][0]).toMatch(/You keep \$105/)
+})
+
+it('echoes what she keeps in the success toast', async () => {
+  post.mockResolvedValue({ status: 'approved', agreed_rate: 95 })
+  mount({ ...REQS, billed: 200 })
+  await screen.findByText('Rob')
+  fireEvent.click(screen.getAllByRole('button', { name: /Give it to them/ })[1])
+  await waitFor(() => expect(toastSuccess).toHaveBeenCalledWith(
+    expect.stringMatching(/you keep \$105/)))
+})
+
+it('stays silent about margin when the job’s billed amount is unknown', async () => {
+  // No invoice, quote or house history → billed is null. Better to say the
+  // payout and nothing else than to imply a margin from a number we don't have.
+  mount(REQS)   // no `billed` key → treated as unknown
+  await screen.findByText('Rob')
+  fireEvent.click(screen.getAllByRole('button', { name: /Give it to them/ })[1])
+  await waitFor(() => expect(confirmDialog).toHaveBeenCalled())
+  expect(confirmDialog.mock.calls[0][0]).not.toMatch(/You keep/)
+})
+
 it('shows the margin at THIS person’s countered price, not the asking rate', async () => {
   // Rob countered $95 on an $80 job. The number that matters is what $95
   // leaves, so the margin fetch is priced at 95 — not the office's 80.

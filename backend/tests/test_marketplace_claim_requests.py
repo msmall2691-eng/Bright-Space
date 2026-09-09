@@ -429,6 +429,47 @@ def test_a_decided_request_carries_no_track_record(ids):
         _clear()
 
 
+# ── what the office keeps, at the moment they decide (BB-CLAIM-03) ───────────
+#
+# The review row and its approve confirm show what the SUB is paid; "what do I
+# make" was the question the payout alone never answered. The list now carries
+# the resolved billed figure so the frontend can show "you keep $X" at the
+# decision without a per-row fetch.
+
+def test_claim_requests_carry_the_billed_figure_for_the_margin(ids):
+    jid = _mk_open_job(ids, posted_rate=80.0)
+    db = SessionLocal()                        # the office priced the visit at $200
+    db.query(Job).filter(Job.id == jid).update({"price": 200.0})
+    db.commit(); db.close()
+    try:
+        api = _as(_Cleaner(9950, "CT-950")); api.post(f"/api/crew/jobs/{jid}/claim")
+        _clear()
+
+        office = _as(_Admin())
+        body = office.get(f"/api/jobs/{jid}/claim-requests").json()
+        assert body["billed"] == 200.0
+        assert body["billed_source"] == "job"   # the price set on the job itself
+        # posted 80 against a 200 bill → the office keeps 120 if approved at posted.
+        assert body["posted_rate"] == 80.0
+    finally:
+        _clear()
+
+
+def test_billed_is_null_not_zero_when_there_is_nothing_to_measure(ids):
+    # An unpriced job with no quote and no house history: billed is honestly
+    # unknown, not a cheerful $0 that would imply a 100% margin.
+    jid = _mk_open_job(ids, posted_rate=80.0)
+    try:
+        api = _as(_Cleaner(9951, "CT-951")); api.post(f"/api/crew/jobs/{jid}/claim")
+        _clear()
+        office = _as(_Admin())
+        body = office.get(f"/api/jobs/{jid}/claim-requests").json()
+        assert body["billed"] is None
+        assert body["billed_source"] == "none"
+    finally:
+        _clear()
+
+
 def test_approving_marks_the_winner_as_accepted(ids):
     jid = _mk_open_job(ids, posted_rate=80.0)
     try:
