@@ -3774,6 +3774,22 @@ def update_job(job_id: int, data: JobUpdate, db: Session = Depends(get_db), org_
         from services.scheduled_notice import notify_customer_scheduled
         notify_customer_scheduled(db, job)
 
+    # Tell the CUSTOMER when who's coming CHANGES after they were booked in
+    # (BB-CUST-04) — the office swaps the crew on an already-scheduled future
+    # visit. Distinct from the booked-in notice above (that fires on the
+    # transition INTO scheduled; this requires the job was ALREADY scheduled),
+    # and from the sub-facing notices (those tell the cleaner). Fires only on a
+    # genuine change to the crew SET that leaves somebody on it, and never when
+    # the operator unticked "notify customer". Gated OFF by default; post-commit.
+    if ("cleaner_ids" in updates and prev_status == "scheduled"
+            and job.status == "scheduled" and job.scheduled_date
+            and job.scheduled_date >= business_today()
+            and set(prev_cleaner_ids) != {str(c) for c in (job.cleaner_ids or [])}
+            and any(str(c).strip() for c in (job.cleaner_ids or []))
+            and data.notify_customer is not False):
+        from services.scheduled_notice import notify_customer_crew_changed
+        notify_customer_crew_changed(db, job)
+
     # Auto-create a draft Invoice the first time a job lands on "completed".
     # Shared with complete_job() below — both are real "mark complete" paths
     # (this one via the office-side status dropdown/edit modal, that one via

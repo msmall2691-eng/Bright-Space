@@ -196,6 +196,18 @@ RULES: list[dict[str, Any]] = [
         ],
     },
     {
+        "key": "customer_crew_change_notice",
+        "title": "Tell the customer if their cleaner changes",
+        "summary": "After a customer is booked in, if who's coming changes, they "
+                   "get a text and an email with a link to see the new crew and "
+                   "confirm. Never for the first assignment, never for a job you "
+                   "chose not to notify.",
+        "fields": [
+            {"key": "customer_crew_change_notice_enabled", "type": "bool", "default": False,
+             "label": "Send the update"},
+        ],
+    },
+    {
         "key": "quote_expiry",
         "title": "Expire quotes that ran out",
         "summary": "A sent quote past its valid-until date is marked expired, so it "
@@ -341,6 +353,12 @@ def customer_scheduled_notice_enabled(db: Session) -> bool:
     """Whether to text + email the customer when their job becomes scheduled.
     OFF by default — it reaches a real customer (see the module docstring)."""
     return _read_field(db, _FIELDS["customer_scheduled_notice_enabled"])
+
+
+def customer_crew_change_notice_enabled(db: Session) -> bool:
+    """Whether to text + email the customer when who's coming changes after
+    they were booked in. OFF by default — it reaches a real customer."""
+    return _read_field(db, _FIELDS["customer_crew_change_notice_enabled"])
 
 
 def crew_escalation_mode(db: Session) -> str:
