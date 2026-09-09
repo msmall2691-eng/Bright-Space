@@ -1326,6 +1326,17 @@ def create_job(data: JobCreate, db: Session = Depends(get_db), org_id: int = Dep
     # shift to Connecteam — the crew sees new work on their native My Day
     # schedule the moment it's assigned. The response key stays as an explicit
     # retirement marker (not a silently vanished field).
+    # Tell the CUSTOMER their cleaning is booked in (BB-CUST-01) when the office
+    # creates a scheduled job directly for them. Skipped for a quote-sourced job
+    # (source_quote): accepting the quote already sent the customer a receipt, so
+    # a second "you're scheduled" would double up. Also honours an explicit
+    # notify_customer=False. Gated OFF by default; best-effort, post-commit.
+    if (job.status == "scheduled" and job.scheduled_date and job.client_id
+            and source_quote is None
+            and getattr(data, "notify_customer", None) is not False):
+        from services.scheduled_notice import notify_customer_scheduled
+        notify_customer_scheduled(db, job)
+
     result = _job_to_dict_enriched(db, job)
     result["gcal"] = gcal_status
     result["connecteam"] = {"dispatched": False, "reason": "retired"}
@@ -3751,6 +3762,17 @@ def update_job(job_id: int, data: JobUpdate, db: Session = Depends(get_db), org_
     if job.status == "cancelled" and prev_status != "cancelled" and job.cleaner_ids:
         from services.crew_notify import notify_job_cancelled
         notify_job_cancelled(db, job, job.cleaner_ids)
+
+    # Tell the CUSTOMER their cleaning is now on the calendar (BB-CUST-01) — the
+    # moment a requested/unscheduled job becomes scheduled (the office puts a
+    # date on it). Event-driven at the write, post-commit; gated OFF by default.
+    # Only on the transition INTO scheduled, so an ordinary edit of an already-
+    # scheduled job doesn't re-notify; and never when the operator explicitly
+    # unticked "notify customer" for this save.
+    if (job.status == "scheduled" and prev_status != "scheduled"
+            and job.scheduled_date and data.notify_customer is not False):
+        from services.scheduled_notice import notify_customer_scheduled
+        notify_customer_scheduled(db, job)
 
     # Auto-create a draft Invoice the first time a job lands on "completed".
     # Shared with complete_job() below — both are real "mark complete" paths
