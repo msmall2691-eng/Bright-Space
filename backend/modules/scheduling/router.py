@@ -3686,6 +3686,30 @@ def update_job(job_id: int, data: JobUpdate, db: Session = Depends(get_db), org_
         and updates.get("status", prev_status) == prev_status
     ):
         updates["status"] = "scheduled"
+
+    # BB-CLAIM-04: default the offer rate to a share of what the job bills.
+    # When a job is being posted to the bench (false→true) with no rate named —
+    # not in this edit, and none already on the job — fill posted_rate from the
+    # billed amount × the owner's "default pay %" (Settings → Rules; off by
+    # default). So an offer never lands on the crew's phones reading "no price",
+    # and the office isn't hand-pricing every post — including the ones the
+    # crew-escalation rule opens on its own, which come through this same path.
+    #
+    # Still a per-job dollar figure (marketplace Rule 0: never per-hour). The
+    # office can type any rate to override (a typed rate is non-None here and
+    # skips this), and any counter ABOVE the offer still comes to them. Silent
+    # when the job has nothing to price against — better an unpriced offer the
+    # sub names than a number invented from no billing.
+    if (updates.get("open_for_claims") is True and not prev_open_for_claims
+            and updates.get("posted_rate") is None and job.posted_rate is None):
+        from services.standing_rules import claim_default_pay_pct
+        from services.job_margin import billed_amount
+        pct = claim_default_pay_pct(db)
+        if pct:
+            billed = billed_amount(db, job, org_id)["amount"]
+            if billed:
+                updates["posted_rate"] = round(float(billed) * pct / 100.0, 2)
+
     prev_cleaner_ids = [str(c) for c in (job.cleaner_ids or [])]
     # Economy audit H3 / scheduling-invariants R4: capture, BEFORE the edit is
     # applied, exactly the fields the Google Calendar event serializes (the
