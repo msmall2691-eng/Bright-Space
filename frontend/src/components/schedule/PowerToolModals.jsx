@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { X, Wand2, Clock, Sparkles } from 'lucide-react'
 import Button from '../ui/Button'
+import { get } from '../../api'
 
 /** Two preview-then-confirm modals for the Tools menu. Both accept the
  *  parent-owned FSM state (null | {loading} | {preview:…} | {running})
@@ -155,8 +156,26 @@ export function FixTimesModal({ state, onCancel, onRun }) {
  *  is parent-owned: null | { targets:[…] } | { targets, running }. */
 export function OpenToCrewModal({ state, onCancel, onConfirm }) {
   const [rate, setRate] = useState('')
+  // The owner's "default pay %" (Settings → Rules, BB-CLAIM-04). When set, a
+  // blank box no longer means "the sub names their price" — it means "offer it
+  // at this share of the job price" — so the hint has to say the true thing.
+  // One fetch when the modal opens (it opens rarely; brightbase-economy).
+  const [defaultPct, setDefaultPct] = useState(null)
   // Reset the box whenever a fresh batch opens the modal.
   useEffect(() => { setRate('') }, [state?.targets])
+  useEffect(() => {
+    if (!state) return
+    let alive = true
+    get('/api/settings/rules')
+      .then(r => {
+        if (!alive) return
+        const rule = (r?.rules || []).find(x => x.key === 'claim_default_pay')
+        const f = rule?.fields?.find(x => x.key === 'claim_default_pay_pct')
+        setDefaultPct(f?.value ?? null)
+      })
+      .catch(() => { if (alive) setDefaultPct(null) })
+    return () => { alive = false }
+  }, [state?.targets])
   if (!state) return null
   const n = state.targets.length
   const busy = !!state.running
@@ -203,8 +222,12 @@ export function OpenToCrewModal({ state, onCancel, onConfirm }) {
           </label>
           <p className="flex items-start gap-1.5 text-[11.5px] text-ink-3">
             <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-ink-3/50" aria-hidden="true" />
-            <span>Jobs that already have an asking rate keep theirs. Leave this
-              blank and a sub names their own price when they ask.</span>
+            {/* When a default pay % is set (BB-CLAIM-04), a blank box is priced
+                automatically — say so instead of the old "the sub names it". */}
+            <span>Jobs that already have an asking rate keep theirs.{' '}
+              {defaultPct
+                ? `Leave this blank and each is offered at your default — ${defaultPct}% of what it bills. Type a rate to override.`
+                : 'Leave this blank and a sub names their own price when they ask.'}</span>
           </p>
         </div>
 

@@ -137,6 +137,26 @@ RULES: list[dict[str, Any]] = [
         ],
     },
     {
+        "key": "claim_default_pay",
+        "title": "Set the cleaner's pay from the job price",
+        "summary": "When you open a job to the crew without typing a rate, it's "
+                   "offered at this share of what the job bills — so an offer is "
+                   "never posted with no price, and you're not hand-pricing every "
+                   "one. You can still type any rate to override, and a cleaner "
+                   "can still ask for more (you decide). Off until you set a "
+                   "percentage.",
+        "fields": [
+            {"key": "claim_default_pay_pct", "type": "number", "default": 0,
+             "label": "Offer this % of the job price", "unit": "%",
+             "min": 0, "max": 100,
+             "help": "55 means a $200 job is offered at $110 and you keep $90. "
+                     "Leave it at 0 to keep setting each rate yourself. It only "
+                     "fills a rate you didn't type, on jobs that have a price to "
+                     "measure from; you can always override, and any counter "
+                     "above it still comes to you."},
+        ],
+    },
+    {
         "key": "bench_digest",
         "title": "Send me one round-up of the bench each week",
         "summary": "Turnovers nobody has taken, routes offered and unanswered, "
@@ -385,6 +405,13 @@ def claim_high_bid_flag_pct(db: Session) -> int:
     """How far over the posted price a request has to be to get flagged in the
     office's review. A heads-up threshold only — it never blocks or accepts."""
     return _read_field(db, _FIELDS["claim_high_bid_flag_pct"])
+
+
+def claim_default_pay_pct(db: Session) -> int:
+    """The share of a job's billed amount to offer a sub when the office opens
+    it to the crew without naming a rate (BB-CLAIM-04). 0 = off — the office
+    sets each rate itself, and nothing is derived."""
+    return _read_field(db, _FIELDS["claim_default_pay_pct"])
 
 
 def crew_escalation_mode(db: Session) -> str:
