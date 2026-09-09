@@ -183,6 +183,19 @@ RULES: list[dict[str, Any]] = [
         ],
     },
     {
+        "key": "customer_scheduled_notice",
+        "title": "Tell the customer once their cleaning is booked in",
+        "summary": "When a job goes on the calendar, the customer gets a text and "
+                   "an email with the date, the time, and a link to see who's "
+                   "coming and confirm. One message per visit — never for a job "
+                   "that was already scheduled, and never for one you chose not "
+                   "to notify.",
+        "fields": [
+            {"key": "customer_scheduled_notice_enabled", "type": "bool", "default": False,
+             "label": "Send the heads-up"},
+        ],
+    },
+    {
         "key": "quote_expiry",
         "title": "Expire quotes that ran out",
         "summary": "A sent quote past its valid-until date is marked expired, so it "
@@ -322,6 +335,12 @@ def reminder_lead_hours(db: Session) -> int:
     except (TypeError, ValueError):
         return field["default"]
     return hours if field["min"] <= hours <= field["max"] else field["default"]
+
+
+def customer_scheduled_notice_enabled(db: Session) -> bool:
+    """Whether to text + email the customer when their job becomes scheduled.
+    OFF by default — it reaches a real customer (see the module docstring)."""
+    return _read_field(db, _FIELDS["customer_scheduled_notice_enabled"])
 
 
 def crew_escalation_mode(db: Session) -> str:
