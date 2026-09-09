@@ -285,6 +285,43 @@ def test_my_week_is_the_jobs_they_agreed_a_price_on(ids):
         app.dependency_overrides.pop(current_org_id, None)
 
 
+def test_my_day_carries_the_week_totals_for_the_home_glance(ids):
+    """The Today home shows what this week is worth without a second fetch, so
+    the totals ride the my-day payload — and are the SAME computation as
+    /my-week, so the home number can't disagree with the Me tab."""
+    cid = _mk_client(ids)
+    crew = f"CT-{uuid.uuid4().hex[:5]}"
+    done = _mk_job(ids, cid, _mk_str_property(ids, cid), [crew], offset_days=0)
+    booked = _mk_job(ids, cid, _mk_str_property(ids, cid), [crew], offset_days=0)
+
+    db = SessionLocal()
+    db.query(Job).filter(Job.id == done).update(
+        {"status": "completed", "agreed_rate": 120.0, "agreed_cleaner_id": crew})
+    db.query(Job).filter(Job.id == booked).update(
+        {"agreed_rate": 95.0, "agreed_cleaner_id": crew})
+    db.commit(); db.close()
+
+    app.dependency_overrides[get_current_user] = lambda: _Cleaner(9006, crew)
+    app.dependency_overrides[current_org_id] = lambda: 1
+    api = TestClient(app)
+    try:
+        day = api.get("/api/crew/my-day").json()
+        assert day["week"]["earned_total"] == 120.0
+        assert day["week"]["week_total"] == 215.0
+        # The my-day glance is light: totals only, no per-job rows (those stay
+        # on /my-week for the Me tab).
+        assert "earned" not in day["week"]
+        assert "upcoming" not in day["week"]
+
+        # Same numbers the Me tab shows — one computation, no drift.
+        week = api.get("/api/crew/my-week").json()
+        assert day["week"]["week_total"] == week["week_total"]
+        assert day["week"]["earned_total"] == week["earned_total"]
+    finally:
+        app.dependency_overrides.pop(get_current_user, None)
+        app.dependency_overrides.pop(current_org_id, None)
+
+
 # ── Mark done (Phase 2c): POST /api/crew/jobs/{id}/complete ──────────────────
 
 def _as_cleaner(uid, crew_id):

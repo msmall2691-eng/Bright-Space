@@ -480,7 +480,87 @@ def my_day(
                     CrewMessage.read_at.is_(None))
             .scalar() or 0
         ),
+        # This week in money — just the totals (earned so far + still booked),
+        # so the home can show a sub what their week is worth without a second
+        # fetch on a rural connection (brightbase-economy). The full per-job
+        # ledger stays on GET /my-week; this is the same computation, so the
+        # home number can't disagree with the Me tab. None when the account
+        # isn't linked to a crew ID yet (nothing to total).
+        "week": (_week_earnings(db, oid, current_user.cleaner_id, today)
+                 if current_user.cleaner_id else None),
     }
+
+
+def _week_earnings(db: Session, oid: int, cleaner_id: str, today, *,
+                   with_rows: bool = False) -> dict:
+    """What this week is worth to one subcontractor — the ONE computation.
+
+    A sub's week is the jobs they agreed a price on: earned is what is
+    finished, upcoming is what is booked, both at the amount both sides shook
+    on. No hours, no mileage, no prediction from a rate card — predicting
+    somebody's pay from a rate they never agreed is how an estimate becomes an
+    argument. `agreed_cleaner_id` (migration 106) is what makes it honest:
+    being listed on a job is not the same as being the person it is priced for.
+
+    Shared by /my-week (with_rows=True, the full ledger) and the /my-day home
+    glance (with_rows=False, just the totals — money on the crew home must ride
+    the my-day payload, never a second fetch on a rural connection). One
+    implementation so the number on the home can never disagree with the Me
+    tab. `with_rows` also skips the property joinedload when the caller only
+    needs totals, so the home glance stays cheap.
+    """
+    from services.claim_approval import agreed_with
+
+    org_scope = lambda model: or_(model.org_id == oid, model.org_id.is_(None))  # noqa: E731
+    week_start = week_monday(today)
+    week_end = week_start + timedelta(days=6)
+
+    q = db.query(Job)
+    if with_rows:
+        q = q.options(joinedload(Job.property))
+    jobs = (q.filter(org_scope(Job),
+                     Job.scheduled_date >= week_start,
+                     Job.scheduled_date <= week_end,
+                     Job.status.notin_(("cancelled", "skipped")))
+            .order_by(Job.scheduled_date, Job.start_time)
+            .all())
+
+    earned_total, upcoming_total = 0.0, 0.0
+    earned, upcoming = [], []
+    for j in jobs:
+        if not agreed_with(j, cleaner_id):
+            continue
+        amount = float(j.agreed_rate or 0.0)
+        if not amount:
+            continue
+        if with_rows:
+            prop = j.property
+            row = {
+                "id": j.id,
+                "date": j.scheduled_date.isoformat(),
+                "title": j.title,
+                "property_name": prop.name if prop is not None else None,
+                "amount": round(amount, 2),
+            }
+        if j.status == "completed":
+            earned_total += amount
+            if with_rows:
+                earned.append(row)
+        else:
+            upcoming_total += amount
+            if with_rows:
+                upcoming.append(row)
+
+    out = {
+        "week_start": week_start.isoformat(),
+        "week_end": week_end.isoformat(),
+        "earned_total": round(earned_total, 2),
+        "upcoming_total": round(upcoming_total, 2),
+        "week_total": round(earned_total + upcoming_total, 2),
+    }
+    if with_rows:
+        out["earned"], out["upcoming"] = earned, upcoming
+    return out
 
 
 @router.get("/my-week")
@@ -489,24 +569,11 @@ def my_week(
     org_id: int = Depends(current_org_id),
     current_user: User = Depends(get_current_user),
 ):
-    """What this week is worth to a subcontractor.
+    """What this week is worth to a subcontractor — the full ledger.
 
-    REWRITTEN, not deleted. The old version asked the payroll summary for hours
-    and reimbursements and predicted the rest from hourly rates, per-cleaner
-    overrides and weekend piece rates. Every input to that was the employee
-    model, and it is gone.
-
-    A sub's week is simpler and truer: the jobs they agreed a price on. Earned
-    is what is finished, upcoming is what is booked, and both are the amounts
-    both sides actually shook on. No hours, no mileage, no prediction from a
-    rate card — predicting somebody's pay from a rate they never agreed is how
-    an estimate becomes an argument.
-
-    One query. `agreed_cleaner_id` (migration 106) is what makes it honest:
-    being listed on a job is not the same as being the person it is priced for.
+    Delegates the money to `_week_earnings` so the Me tab and the Today home
+    glance can never show two different totals.
     """
-    from services.claim_approval import agreed_with
-
     # Kept from the old version: this is one person's money, and it is theirs.
     if current_user.role != "cleaner":
         raise HTTPException(status_code=403, detail="Crew only.")
@@ -516,56 +583,8 @@ def my_week(
             detail="Your account isn't linked to a crew ID yet — ask the office.")
 
     oid = resolve_org_id(org_id, db)
-    org_scope = lambda model: or_(model.org_id == oid, model.org_id.is_(None))  # noqa: E731
-    today = business_today()
-    week_start = week_monday(today)
-    week_end = week_start + timedelta(days=6)
-
-    jobs = (
-        db.query(Job)
-        .options(joinedload(Job.property))
-        .filter(
-            org_scope(Job),
-            Job.scheduled_date >= week_start,
-            Job.scheduled_date <= week_end,
-            Job.status.notin_(("cancelled", "skipped")),
-        )
-        .order_by(Job.scheduled_date, Job.start_time)
-        .all()
-    )
-
-    earned_total, upcoming_total = 0.0, 0.0
-    earned, upcoming = [], []
-    for j in jobs:
-        if not agreed_with(j, current_user.cleaner_id):
-            continue
-        amount = float(j.agreed_rate or 0.0)
-        if not amount:
-            continue
-        prop = j.property
-        row = {
-            "id": j.id,
-            "date": j.scheduled_date.isoformat(),
-            "title": j.title,
-            "property_name": prop.name if prop is not None else None,
-            "amount": round(amount, 2),
-        }
-        if j.status == "completed":
-            earned_total += amount
-            earned.append(row)
-        else:
-            upcoming_total += amount
-            upcoming.append(row)
-
-    return {
-        "week_start": week_start.isoformat(),
-        "week_end": week_end.isoformat(),
-        "earned_total": round(earned_total, 2),
-        "upcoming_total": round(upcoming_total, 2),
-        "week_total": round(earned_total + upcoming_total, 2),
-        "earned": earned,
-        "upcoming": upcoming,
-    }
+    return _week_earnings(db, oid, current_user.cleaner_id, business_today(),
+                          with_rows=True)
 
 
 

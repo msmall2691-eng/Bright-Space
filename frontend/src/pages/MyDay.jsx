@@ -132,6 +132,39 @@ function GreetingHero({ firstName, jobCount }) {
 }
 
 
+/** The day at a glance — the quiet dashboard strip that makes the home more
+ *  than a second jobs list. Three things a subcontractor actually opens the
+ *  app to check: what this week is worth, how many jobs are up for grabs, and
+ *  whether the office messaged them — each a tap to the tab that owns it. All
+ *  three numbers ride the my-day payload (brightbase-economy: no extra fetch).
+ *  Plain ink numbers with 11px ink-3 labels, dots only where they carry
+ *  meaning (violet = open to crew, amber = unread) — never a count bubble. */
+function DayGlance({ week, openCount, unread, onTab }) {
+  const cells = [
+    { key: 'week', to: 'me', label: 'this week',
+      value: week?.week_total != null ? fmtMoney(week.week_total) : '—' },
+    { key: 'open', to: 'jobs', label: 'up for grabs', value: openCount,
+      dot: openCount > 0 ? 'bg-violet-500' : null },
+    { key: 'chat', to: 'chat', label: unread === 1 ? 'message' : 'messages', value: unread,
+      dot: unread > 0 ? 'bg-amber-500' : null },
+  ]
+  return (
+    <div className="grid grid-cols-3 divide-x divide-hairline rounded-xl border border-hairline bg-panel">
+      {cells.map(c => (
+        <button key={c.key} type="button" onClick={() => onTab(c.to)}
+          className="min-h-[58px] px-2.5 py-2.5 text-left transition-colors hover:bg-bg-2 active:bg-bg-2 first:rounded-l-xl last:rounded-r-xl">
+          <span className="flex items-center gap-1.5">
+            {c.dot && <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${c.dot}`} aria-hidden="true" />}
+            <span className="text-[18px] font-bold text-ink tabular-nums leading-none">{c.value}</span>
+          </span>
+          <span className="mt-1 block text-[11px] leading-tight text-ink-3">{c.label}</span>
+        </button>
+      ))}
+    </div>
+  )
+}
+
+
 /** Upcoming jobs grouped by day with a friendly header — the Schedule tab. */
 function groupByDate(jobs) {
   const groups = []
@@ -592,6 +625,18 @@ export default function MyDay({ previewUserId = null }) {
         {tab === 'today' && !loading && !error && data && (
           <>
             <GreetingHero firstName={data.first_name} jobCount={(data.today || []).length} />
+
+            {/* The day at a glance — what makes this a home and not the jobs
+                list. Only for a sub who can actually take work; a not-cleared
+                sub gets the file card below instead of a row of zeros. */}
+            {data.cleared !== false && (
+              <DayGlance
+                week={data.week}
+                openCount={(data.open_jobs || []).length}
+                unread={data.unread_messages || 0}
+                onTab={setTab}
+              />
+            )}
 
             {/* NOT CLEARED YET — the biggest drop-off in a new sub's first week.
                 Their board is empty by the vetting gate, and without this the
