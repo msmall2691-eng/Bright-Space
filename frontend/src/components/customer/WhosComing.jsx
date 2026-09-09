@@ -27,6 +27,9 @@
  * — and a component that picked one would be invisible on the other the first
  * time a customer's browser was in dark mode. The caller passes its own text
  * color in `className`; everything secondary is an opacity of it.
+ *
+ * `label` lets the tense fit the surface — "Who's coming" for an upcoming
+ * visit, "Who cleaned" for a finished one in the portal's recent list.
  */
 import { useState } from 'react'
 
@@ -49,14 +52,14 @@ function Face({ person, src }) {
   )
 }
 
-export default function WhosComing({ crew, photoBase, className = '' }) {
+export default function WhosComing({ crew, photoBase, className = '', label = "Who's coming" }) {
   const people = Array.isArray(crew) ? crew : []
   if (!people.length) return null
 
   return (
     <div className={className}>
       <p className="text-[11px] font-medium uppercase tracking-wide opacity-50 mb-2">
-        Who's coming
+        {label}
       </p>
       <div className="flex flex-wrap gap-x-5 gap-y-3">
         {people.map((p, i) => (

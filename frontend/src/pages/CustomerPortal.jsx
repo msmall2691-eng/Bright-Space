@@ -268,10 +268,19 @@ function Dashboard({ onSignOut }) {
               <Section icon={Clock} title="Recent visits" count={visits.past.length}>
                 <div className="divide-y divide-slate-100">
                   {visits.past.slice(0, 8).map(v => (
-                    <div key={v.id} className="px-5 py-3 flex items-center gap-3">
-                      <CheckCircle className="w-4 h-4 text-slate-300 shrink-0" />
-                      <span className="text-[13px] text-slate-600">{fmtDate(v.date)}</span>
-                      {v.address && <span className="text-[12px] text-slate-400 truncate">{v.address}</span>}
+                    <div key={v.id} className="px-5 py-3 flex items-start gap-3">
+                      <CheckCircle className="w-4 h-4 text-slate-300 shrink-0 mt-0.5" />
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="text-[13px] text-slate-600">{fmtDate(v.date)}</span>
+                          {v.address && <span className="text-[12px] text-slate-400 truncate">{v.address}</span>}
+                        </div>
+                        {/* Who cleaned last time — same safe disclosure as the
+                            upcoming list (name + face, nothing tappable). */}
+                        <WhosComing crew={v.crew} label="Who cleaned"
+                          className="mt-2 text-slate-500"
+                          photoBase={v.manage_token ? `/api/jobs/public/${v.manage_token}/crew` : null} />
+                      </div>
                     </div>
                   ))}
                 </div>
