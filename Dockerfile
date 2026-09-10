@@ -1,5 +1,5 @@
 # ── Stage 1: Build React frontend ─────────────────────────────────────────────
-FROM node:20-alpine AS frontend-build
+FROM node:22-alpine AS frontend-build
 # Cache buster: force rebuild on every commit
 ARG BUILD_ID=default
 RUN echo "Building with ID: $BUILD_ID"
