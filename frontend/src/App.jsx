@@ -383,12 +383,10 @@ export default function App() {
               <Route path="/sync" element={<SyncCenter />} />
               {/* Calendar dropped — native Schedule covers it (and syncs to GCal). */}
               <Route path="/calendar" element={<Navigate to="/schedule" replace />} />
-              {/* Schedule reads the view mode from ?view=, not ?tab= (?tab=
-                  is reserved for recurring/availability) — this redirect
-                  used to send ?tab=dispatch, which Schedule.jsx silently
-                  ignored (it happened to still land on the dispatch board
-                  on desktop only because that's the default view there). */}
-              <Route path="/dispatch" element={<Navigate to="/schedule?view=dispatch" replace />} />
+              {/* Legacy /dispatch → the schedule. The dispatch board was
+                  retired (marketplace pivot: the office doesn't assign), so
+                  this lands on the Day view rather than a gone surface. */}
+              <Route path="/dispatch" element={<Navigate to="/schedule" replace />} />
               <Route path="/payroll" element={<Payroll />} />
               <Route path="/crew" element={<Crew />} />
               <Route path="/marketplace" element={<Marketplace />} />

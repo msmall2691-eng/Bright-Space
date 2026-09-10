@@ -1,6 +1,6 @@
 /**
- * Center column of the dispatch board — a vertical hour-scale timeline
- * with today's jobs positioned by start_time and sized by duration.
+ * A vertical hour-scale timeline of a day's jobs, positioned by start_time
+ * and sized by duration. Used by the read-only Day view (DayBoard).
  *
  * Uses absolute positioning inside a lane column so overlapping jobs
  * split into left/right halves. Three or more overlapping visits pack
@@ -11,10 +11,13 @@
  * without a crew get a dashed border in the job's type color and a plain
  * panel background instead of a filled color — the "Needs crew" line reads
  * in amber text so the cue doesn't rely on a tinted block, matching the
- * quiet hairline-card treatment UnassignedQueue uses for the same state.
+ * quiet hairline-card treatment used elsewhere for the same state.
  *
- * Each block is draggable — drop it on a crew card in CrewUtilization to
- * (re)assign that visit (see DispatchBoard's commitAssign).
+ * Drag-to-assign is gone with the old dispatch board (a sub is never
+ * assigned — see the marketplace skill's Rule 0). The drag props are
+ * retained but optional: pass none and blocks are static; tapping a block
+ * opens the job. The component stays drag-capable only so a future
+ * non-assigning reorder could reuse it.
  */
 import { useEffect, useRef } from 'react'
 import { Check } from 'lucide-react'

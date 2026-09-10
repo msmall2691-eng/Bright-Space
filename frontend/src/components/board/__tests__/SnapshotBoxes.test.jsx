@@ -90,7 +90,7 @@ describe('CrewToday', () => {
   it('links unassigned work to dispatch and time-off requests to the decision screen', () => {
     draw(<CrewToday snap={CREW} />)
     expect(screen.getByText('2 visits with nobody on it').closest('a').getAttribute('href'))
-      .toBe('/schedule?view=dispatch')
+      .toBe('/schedule')
     expect(screen.getByText('1 time-off request to decide').closest('a').getAttribute('href'))
       .toBe('/schedule?tab=availability')
   })

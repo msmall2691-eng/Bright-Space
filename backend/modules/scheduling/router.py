@@ -4590,48 +4590,19 @@ def get_job_crew_suggestions(job_id: int, db: Session = Depends(get_db), org_id:
     }
 
 
-@router.post("/{job_id}/auto-assign", dependencies=[Depends(require_role("admin", "manager"))])
-def auto_assign_job_crew(job_id: int, db: Session = Depends(get_db), org_id: int = Depends(current_org_id)):
-    """Assign the most-frequent cleaner at this property to the job.
-
-    Mirrors /api/visits/{id}/auto-assign — no history means the job is
-    unassigned (cleaner_ids cleared), matching the old semantics."""
-    oid = resolve_org_id(org_id, db)
-    job = _get_job_or_404(db, job_id, oid)
-    if not job.property_id:
-        return {"status": "no_property", "message": "Job has no associated property"}
-
-    recent_jobs = db.query(Job).filter(
-        Job.property_id == job.property_id,
-        Job.cleaner_ids.isnot(None),
-        or_(Job.org_id == oid, Job.org_id.is_(None)),  # MT-2 tenant scope
-    ).limit(30).all()
-
-    crew_freq: dict = {}
-    for j in recent_jobs:
-        for cleaner_id in (j.cleaner_ids or []):
-            crew_freq[cleaner_id] = crew_freq.get(cleaner_id, 0) + 1
-
-    if not crew_freq:
-        job.cleaner_ids = []
-        db.commit()
-        return {"status": "no_history", "message": "No crew history for this property"}
-
-    top_cleaner = max(crew_freq.items(), key=lambda x: x[1])[0]
-    job.cleaner_ids = [top_cleaner]
-    # This REPLACES the list, so it is the other path that can take a job off
-    # the sub who agreed its rate (see release_if_displaced).
-    from services.claim_approval import release_if_displaced
-    release_if_displaced(db, job)
-    db.commit()
-    db.refresh(job)
-    return {
-        "status": "assigned",
-        "job_id": job.id,
-        "assigned_cleaner_id": top_cleaner,
-        "message": f"Auto-assigned based on property history (appeared {crew_freq[top_cleaner]} times)",
-    }
-
+# RETIRED: POST /api/jobs/{job_id}/auto-assign.
+#
+# This picked the most-frequent cleaner at a property and wrote them onto the
+# job — the office assigning a sub to work they never asked for, which is the
+# exact employee-path marketplace Rule 0 forbids ("a sub requests or accepts,
+# the office never assigns"). It was only reachable from the dispatch board and
+# the board's "Auto-assign" action, both removed in the marketplace pivot. A
+# job with nobody on it now goes to the bench to be CLAIMED (open-to-crew), not
+# auto-filled. Manual assignment via PATCH /api/jobs/{id} (the job editor) is
+# unchanged — that records a person the office and sub have agreed on.
+#
+# The crew-suggestions read (GET /{job_id}/crew-suggestions) above is kept: it
+# only SUGGESTS names in the editor, it doesn't assign.
 
 
 # ── Schedule week aggregate ────────────────────────────────────────────────

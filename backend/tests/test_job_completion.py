@@ -7,7 +7,6 @@ Covers:
 - POST /api/jobs/{id}/skip cancels the job and records a RecurrenceException
   when the job is on a recurring schedule; is idempotent.
 - GET /api/jobs/{id}/crew-suggestions returns top cleaners by property frequency.
-- POST /api/jobs/{id}/auto-assign applies the top suggestion.
 
 See docs/job-visit-unification.md.
 """
@@ -21,7 +20,7 @@ from database.models import (
     Client, Property, Job, RecurringSchedule, RecurrenceException, Invoice, User,
 )
 from modules.scheduling.router import (
-    complete_job, skip_job, get_job_crew_suggestions, auto_assign_job_crew,
+    complete_job, skip_job, get_job_crew_suggestions,
     update_job, JobCompleteRequest, JobUpdate,
 )
 from fastapi import HTTPException
@@ -286,25 +285,7 @@ def test_crew_suggestions_prefers_recent_over_ancient(ctx):
     assert 7 in cleaner_ids
 
 
-def test_auto_assign_applies_top_suggestion(ctx):
-    db, c, p, j = ctx
-    for cleaner_ids in ([7], [7, 9], [7]):
-        db.add(Job(client_id=c.id, property_id=p.id, title="Prior",
-                   job_type="residential",
-                   scheduled_date=date.today(),
-                   start_time=time(9, 0), end_time=time(12, 0),
-                   status="scheduled", cleaner_ids=cleaner_ids))
-    db.commit()
-
-    out = auto_assign_job_crew(j.id, db=db)
-    assert out["status"] == "assigned"
-    assert out["assigned_cleaner_id"] == 7
-    db.refresh(j)
-    assert j.cleaner_ids == [7]
-
-
-def test_auto_assign_no_history_returns_no_history(ctx):
-    db, _c, _p, j = ctx
-    # No other jobs at this property carry cleaner_ids; the fixture's j has [].
-    out = auto_assign_job_crew(j.id, db=db)
-    assert out["status"] == "no_history"
+# RETIRED with the dispatch board: POST /api/jobs/{id}/auto-assign (the office
+# picking a cleaner and writing them onto a job) was the employee path
+# marketplace Rule 0 forbids. The read-only GET crew-suggestions above stays —
+# it only suggests names in the editor; it never assigns.

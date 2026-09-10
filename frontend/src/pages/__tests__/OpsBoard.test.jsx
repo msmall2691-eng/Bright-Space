@@ -31,16 +31,21 @@ const PAYLOAD = {
   filters: { all: 4, urgent: 1, watch: 2, info: 1, good: 0, recurring: 0 },
   sections: [
     { key: 'needs_cleaner', title: 'Needs a cleaner', icon: '🧹', items: [
+      // The dispatch board + "Auto-assign" were retired (marketplace pivot:
+      // the office doesn't assign). The row now just links to the job, where
+      // it can be opened to the crew.
       { id: 'job:1', severity: 'urgent', title: 'No cleaner assigned', body: 'Denmark Rental', meta: 'today',
         tags: [{ label: 'TURNO', tone: 'blue' }],
         actions: [
-          { label: 'Auto-assign', kind: 'api', method: 'POST', endpoint: '/api/jobs/1/auto-assign', done: 'Assigned', clears: true },
-          { label: 'Dispatch', kind: 'link', href: '/schedule?view=dispatch' },
+          { label: 'Open', kind: 'link', href: '/jobs/1' },
         ] },
     ] },
     { key: 'requests', title: 'Requests & quotes', icon: '📋', items: [
       { id: 'quote:2', severity: 'watch', title: 'Wells rental', body: 'Jess Racco', meta: 'Sat',
-        tags: [{ label: 'QUOTE', tone: 'indigo' }], actions: [{ label: 'View', kind: 'link', href: '/quotes/2' }] },
+        tags: [{ label: 'QUOTE', tone: 'indigo' }],
+        actions: [
+          { label: 'Draft quote', kind: 'api', method: 'POST', endpoint: '/api/ai/quote-from-lead/2', done: 'Draft ready', clears: true },
+        ] },
     ] },
     { key: 'money', title: 'Money', icon: '💵', items: [
       { id: 'money:outstanding', severity: 'info', title: '$250 outstanding', body: 'across 1 invoice', meta: '',
@@ -177,10 +182,10 @@ describe('OpsBoard', () => {
 
   it('runs an inline API action and clears the card', async () => {
     renderBoard()
-    await screen.findByText('No cleaner assigned')
-    fireEvent.click(screen.getByRole('button', { name: /auto-assign/i }))
-    expect(post).toHaveBeenCalledWith('/api/jobs/1/auto-assign', {})
-    expect(await screen.findByText(/Assigned — No cleaner assigned/i)).toBeTruthy()
+    await screen.findByText('Wells rental')
+    fireEvent.click(screen.getByRole('button', { name: /draft quote/i }))
+    expect(post).toHaveBeenCalledWith('/api/ai/quote-from-lead/2', {})
+    expect(await screen.findByText(/Draft ready — Wells rental/i)).toBeTruthy()
     expect(screen.getByText('1 of 4 cleared')).toBeTruthy()
   })
 
@@ -318,9 +323,9 @@ describe('OpsBoard', () => {
 
   it('leaves the board in place for api actions with no href', async () => {
     renderBoard()
-    await screen.findByText('No cleaner assigned')
-    fireEvent.click(screen.getByRole('button', { name: /auto-assign/i }))
-    expect(await screen.findByText(/Assigned — No cleaner assigned/i)).toBeTruthy()
+    await screen.findByText('Wells rental')
+    fireEvent.click(screen.getByRole('button', { name: /draft quote/i }))
+    expect(await screen.findByText(/Draft ready — Wells rental/i)).toBeTruthy()
     expect(screen.getByTestId('loc').textContent).toBe('/')
   })
 
