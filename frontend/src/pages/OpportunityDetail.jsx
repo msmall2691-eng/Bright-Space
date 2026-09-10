@@ -196,7 +196,7 @@ export default function OpportunityDetail() {
                 placeholder="Add a note to this deal…"
                 rows={2}
                 onKeyDown={e => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) addNote() }}
-                className="w-full bg-bg border border-hairline rounded-lg px-3 py-2 text-[13px] text-ink placeholder-ink-3 focus:outline-none focus:border-blue-400 resize-y"
+                className="w-full bg-bg border border-hairline rounded-lg px-3 py-2 text-[13px] text-ink placeholder-ink-3 focus:outline-hidden focus:border-blue-400 resize-y"
               />
               <div className="flex justify-end mt-2">
                 <button onClick={addNote} disabled={savingNote || !note.trim()}

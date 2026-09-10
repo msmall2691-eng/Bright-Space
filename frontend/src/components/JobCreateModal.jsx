@@ -685,7 +685,7 @@ export default function JobCreateModal({
                         onChange={e => setClientQuery(e.target.value)}
                         placeholder="Search clients by name, email, or phone…"
                         data-testid="job-create-client-search"
-                        className="w-full bg-panel border border-hairline rounded-lg pl-9 pr-3 py-2 text-sm focus:outline-none focus:border-blue-400"
+                        className="w-full bg-panel border border-hairline rounded-lg pl-9 pr-3 py-2 text-sm focus:outline-hidden focus:border-blue-400"
                       />
                     </div>
                     <div className="mt-1 max-h-52 overflow-y-auto rounded-lg border border-hairline divide-y divide-hairline scrollbar-thin">
@@ -755,14 +755,14 @@ export default function JobCreateModal({
                 <div className="rounded-lg border border-blue-200 bg-blue-50/50 p-2.5 space-y-2">
                   <input autoFocus value={newClient.name} onChange={e => setNewClient(n => ({ ...n, name: e.target.value }))}
                     placeholder="Client name *"
-                    className="w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-400" />
+                    className="w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-hidden focus:border-blue-400" />
                   <div className="grid grid-cols-2 gap-2">
                     <input value={newClient.phone} onChange={e => setNewClient(n => ({ ...n, phone: e.target.value }))}
                       placeholder="Phone"
-                      className="w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-400" />
+                      className="w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-hidden focus:border-blue-400" />
                     <input value={newClient.email} onChange={e => setNewClient(n => ({ ...n, email: e.target.value }))}
                       placeholder="Email"
-                      className="w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-400" />
+                      className="w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-hidden focus:border-blue-400" />
                   </div>
                   {clientErr && <div className="text-xs text-red-600">{clientErr}</div>}
                   <button type="button" onClick={createInlineClient} disabled={creatingClient || !newClient.name.trim()}
@@ -798,7 +798,7 @@ export default function JobCreateModal({
             <div>
               <label className="block text-xs text-ink-2 font-medium mb-1"><Calendar className="w-3 h-3 inline mr-1" /> Date *</label>
               <input type="date" value={form.scheduled_date} onChange={e => setForm(f => ({ ...f, scheduled_date: e.target.value }))}
-                className="w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-400" />
+                className="w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-hidden focus:border-blue-400" />
             </div>
           )}
           {/* Repeat — ALWAYS VISIBLE, directly under Date, because it decides
@@ -846,12 +846,12 @@ export default function JobCreateModal({
             <div className="flex-1">
               <label className="block text-xs text-ink-2 font-medium mb-1"><Clock className="w-3 h-3 inline mr-1" /> Start *</label>
               <input type="time" value={form.start_time} onChange={e => setStartTime(e.target.value)}
-                className="w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-none" />
+                className="w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-hidden" />
             </div>
             <div className="flex-1">
               <label className="block text-xs text-ink-2 font-medium mb-1">End *</label>
               <input type="time" value={form.end_time} onChange={e => setEndTime(e.target.value)}
-                className="w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-none" />
+                className="w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-hidden" />
             </div>
           </div>
 
@@ -906,7 +906,7 @@ export default function JobCreateModal({
                   value={form.price}
                   onChange={e => setForm(f => ({ ...f, price: e.target.value }))}
                   placeholder={recurring ? 'Per visit' : 'Leave blank for usual'}
-                  className="w-full bg-panel border border-hairline rounded-lg pl-7 pr-3 py-2 text-sm focus:outline-none" />
+                  className="w-full bg-panel border border-hairline rounded-lg pl-7 pr-3 py-2 text-sm focus:outline-hidden" />
               </div>
             </div>
             {!recurring && (
@@ -920,7 +920,7 @@ export default function JobCreateModal({
                     value={form.posted_rate}
                     onChange={e => setForm(f => ({ ...f, posted_rate: e.target.value }))}
                     placeholder="If you post it"
-                    className="w-full bg-panel border border-hairline rounded-lg pl-7 pr-3 py-2 text-sm focus:outline-none" />
+                    className="w-full bg-panel border border-hairline rounded-lg pl-7 pr-3 py-2 text-sm focus:outline-hidden" />
                 </div>
               </div>
             )}
@@ -931,7 +931,7 @@ export default function JobCreateModal({
               <label className="block text-xs text-ink-2 font-medium mb-1">Notes</label>
               <textarea value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} rows={2}
                 placeholder="Special instructions, access codes, etc."
-                className="w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-none resize-none" />
+                className="w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-hidden resize-none" />
             </div>
           ) : (
             <button type="button" onClick={() => setShowNotes(true)}
@@ -970,7 +970,7 @@ export default function JobCreateModal({
                 value={form.property_id}
                 onChange={onPropertyChange}
                 data-testid="job-create-property-select"
-                className="w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-400 disabled:bg-bg-2 disabled:text-ink-3"
+                className="w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-hidden focus:border-blue-400 disabled:bg-bg-2 disabled:text-ink-3"
                 disabled={loadingProps || !activeClientId}
               >
                 <option value="">
@@ -1000,13 +1000,13 @@ export default function JobCreateModal({
               <div className="rounded-lg border border-blue-200 bg-blue-50/50 p-2.5 space-y-2">
                 <input autoFocus value={newProp.name} onChange={e => setNewProp(n => ({ ...n, name: e.target.value }))}
                   placeholder="Property name * (e.g. 4 Red Barn Circle)"
-                  className="w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-400" />
+                  className="w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-hidden focus:border-blue-400" />
                 <AddressAutocomplete
                   value={newProp.address}
                   onChange={v => setNewProp(n => ({ ...n, address: v }))}
                   onSelect={p => setNewProp(n => ({ ...n, address: p.address || n.address }))}
                   placeholder="Address"
-                  className="w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-400" />
+                  className="w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-hidden focus:border-blue-400" />
                 {propErr && <div className="text-xs text-red-600">{propErr}</div>}
                 <button type="button" onClick={createInlineProperty} disabled={creatingProp || !newProp.name.trim()}
                   className="w-full bg-indigo-600 hover:bg-indigo-700 text-white disabled:bg-bg-2 disabled:text-ink-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors">
@@ -1025,7 +1025,7 @@ export default function JobCreateModal({
               value={form.title}
               onChange={e => setForm(f => ({ ...f, title: e.target.value }))}
               placeholder={recurring ? 'e.g. Biweekly Home Clean' : 'e.g. Smith Residence — Deep Clean'}
-              className="w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-400"
+              className="w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-hidden focus:border-blue-400"
             />
           </div>
 
@@ -1044,7 +1044,7 @@ export default function JobCreateModal({
                 value={icalUrl}
                 onChange={e => setIcalUrl(e.target.value)}
                 placeholder="Paste the calendar export URL from Airbnb or VRBO"
-                className="w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-400"
+                className="w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-hidden focus:border-blue-400"
               />
               <p className="text-[11px] text-ink-3 mt-1">
                 Keeps future bookings in sync automatically — add it now or later from the property.
@@ -1094,7 +1094,7 @@ export default function JobCreateModal({
                     max="28"
                     value={form.day_of_month || 1}
                     onChange={e => setForm(f => ({ ...f, day_of_month: parseInt(e.target.value) }))}
-                    className="w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-none"
+                    className="w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-hidden"
                   />
                   <p className="text-[10px] text-ink-3 mt-1">1-28; months without a 29th/30th/31st are skipped automatically.</p>
                 </div>
@@ -1144,7 +1144,7 @@ export default function JobCreateModal({
               value={form.address}
               onChange={e => setForm(f => ({ ...f, address: e.target.value }))}
               placeholder="123 Main St, Portland, ME"
-              className="w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-400"
+              className="w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-hidden focus:border-blue-400"
             />
           </div>
 
@@ -1161,7 +1161,7 @@ export default function JobCreateModal({
               <select
                 value={form.generate_weeks_ahead}
                 onChange={e => setForm(f => ({ ...f, generate_weeks_ahead: parseInt(e.target.value) }))}
-                className="w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-none"
+                className="w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-hidden"
               >
                 {[4, 6, 8, 12, 16, 26].map(w => <option key={w} value={w}>{w} weeks</option>)}
               </select>

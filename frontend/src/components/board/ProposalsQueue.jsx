@@ -132,7 +132,7 @@ function ProposalRow({ p, busy, error, onApprove, onDismiss }) {
             disabled={!!busy}
             rows={3}
             data-testid={`proposal-body-${p.id}`}
-            className="w-full resize-y rounded-lg border border-hairline bg-bg px-2.5 py-2 text-[13px] leading-snug text-ink-2 outline-none transition-colors focus:border-hairline-2 disabled:opacity-60"
+            className="w-full resize-y rounded-lg border border-hairline bg-bg px-2.5 py-2 text-[13px] leading-snug text-ink-2 outline-hidden transition-colors focus:border-hairline-2 disabled:opacity-60"
           />
         </label>
       )}

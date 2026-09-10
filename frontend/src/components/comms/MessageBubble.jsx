@@ -38,7 +38,7 @@ export function MessageBubble({ m, isFirst, showTime, contactName }) {
             {m.author && <span className="font-normal text-ink-3">— {m.author}</span>}
             <span className="ml-auto font-normal text-ink-3">{fullTime(m.created_at)}</span>
           </div>
-          <div className="whitespace-pre-wrap break-words leading-relaxed">{htmlToText(m.body)}</div>
+          <div className="whitespace-pre-wrap wrap-break-word leading-relaxed">{htmlToText(m.body)}</div>
         </div>
       </div>
     )
@@ -69,8 +69,8 @@ export function MessageBubble({ m, isFirst, showTime, contactName }) {
         )}
         <div className={`px-4 py-2.5 text-[13px] leading-relaxed ${
           outbound
-            ? 'bg-indigo-600 text-white rounded-2xl rounded-br-lg shadow-sm'
-            : 'bg-panel text-ink rounded-2xl rounded-bl-lg shadow-sm border border-hairline'
+            ? 'bg-indigo-600 text-white rounded-2xl rounded-br-lg shadow-xs'
+            : 'bg-panel text-ink rounded-2xl rounded-bl-lg shadow-xs border border-hairline'
         }`}>
           {m.subject && (
             <div className={`text-[11px] font-semibold mb-1 pb-1 border-b ${
@@ -80,7 +80,7 @@ export function MessageBubble({ m, isFirst, showTime, contactName }) {
               {m.subject}
             </div>
           )}
-          <div className="whitespace-pre-wrap break-words">{body}</div>
+          <div className="whitespace-pre-wrap wrap-break-word">{body}</div>
           {/* Quoted reply history / signature — collapsed by default so each
               email shows just the new content. One tap reveals the full chain. */}
           {quoted && (
@@ -93,7 +93,7 @@ export function MessageBubble({ m, isFirst, showTime, contactName }) {
                 {showQuoted ? 'Hide quoted text' : 'Show quoted text'}
               </button>
               {showQuoted && (
-                <div className={`mt-1 pl-2 border-l-2 whitespace-pre-wrap break-words text-[12px] ${
+                <div className={`mt-1 pl-2 border-l-2 whitespace-pre-wrap wrap-break-word text-[12px] ${
                   outbound ? 'border-white/25 text-indigo-100/80' : 'border-hairline text-ink-3'
                 }`}>
                   {quoted}

@@ -62,7 +62,7 @@ function EditableRow({ icon: Icon, value, displayValue, placeholder = 'Add', typ
             if (e.key === 'Enter') commit()
             else if (e.key === 'Escape') { setDraft(value || ''); setEditing(false) }
           }}
-          className="min-w-0 flex-1 rounded-sm border border-indigo-400 bg-panel px-1.5 py-0.5 text-[13px] text-ink focus:outline-none focus:ring-1 focus:ring-indigo-400/30"
+          className="min-w-0 flex-1 rounded-sm border border-indigo-400 bg-panel px-1.5 py-0.5 text-[13px] text-ink focus:outline-hidden focus:ring-1 focus:ring-indigo-400/30"
         />
       ) : (
         <button

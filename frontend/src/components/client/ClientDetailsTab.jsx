@@ -27,7 +27,7 @@ export default function ClientDetailsTab({
               const textColor = j.job_type === 'str_turnover' ? 'text-orange-600' : j.job_type === 'commercial' ? 'text-green-600' : 'text-indigo-600'
               return (
                 <Link key={j.id} to={`/jobs/${j.id}`}
-                  className={`flex-shrink-0 ${typeColor} border rounded-lg px-3 py-2 min-w-[130px] no-underline hover:brightness-95 transition-[filter]`}>
+                  className={`shrink-0 ${typeColor} border rounded-lg px-3 py-2 min-w-[130px] no-underline hover:brightness-95 transition-[filter]`}>
                   <div className={`text-xs font-semibold ${textColor}`}>
                     {new Date(j.scheduled_date + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}
                   </div>
@@ -46,12 +46,12 @@ export default function ClientDetailsTab({
           <div className="flex-1">
             <label className="block text-xs text-ink-3 mb-1">First Name</label>
             <input value={form.first_name || ''} onChange={e => setForm(f => ({ ...f, first_name: e.target.value }))}
-              className="w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm text-ink focus:outline-none focus:border-blue-400" />
+              className="w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm text-ink focus:outline-hidden focus:border-blue-400" />
           </div>
           <div className="flex-1">
             <label className="block text-xs text-ink-3 mb-1">Last Name</label>
             <input value={form.last_name || ''} onChange={e => setForm(f => ({ ...f, last_name: e.target.value }))}
-              className="w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm text-ink focus:outline-none focus:border-blue-400" />
+              className="w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm text-ink focus:outline-hidden focus:border-blue-400" />
           </div>
         </div>
 
@@ -59,27 +59,27 @@ export default function ClientDetailsTab({
           <label className="block text-xs text-ink-3 mb-1">Phone</label>
           <input type="tel" value={form.phone || ''} onChange={e => setForm(f => ({ ...f, phone: e.target.value }))}
             placeholder="+1 (555) 123-4567"
-            className="w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm text-ink focus:outline-none focus:border-blue-400" />
+            className="w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm text-ink focus:outline-hidden focus:border-blue-400" />
         </div>
 
         <div>
           <label className="block text-xs text-ink-3 mb-1">Email</label>
           <input type="email" value={form.email || ''} onChange={e => setForm(f => ({ ...f, email: e.target.value }))}
             placeholder="client@example.com"
-            className="w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm text-ink focus:outline-none focus:border-blue-400" />
+            className="w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm text-ink focus:outline-hidden focus:border-blue-400" />
         </div>
 
         <div>
           <label className="block text-xs text-ink-3 mb-1">Lead Source</label>
           <input value={form.source || ''} onChange={e => setForm(f => ({ ...f, source: e.target.value }))}
             placeholder="e.g., Google, Referral, Facebook"
-            className="w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm text-ink focus:outline-none focus:border-blue-400" />
+            className="w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm text-ink focus:outline-hidden focus:border-blue-400" />
         </div>
 
         <div>
           <label className="block text-xs text-ink-3 mb-1">Status</label>
           <select value={form.status || 'lead'} onChange={e => setForm(f => ({ ...f, status: e.target.value }))}
-            className="w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm text-ink focus:outline-none focus:border-blue-400">
+            className="w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm text-ink focus:outline-hidden focus:border-blue-400">
             <option value="lead">Lead</option>
             <option value="active">Active</option>
             <option value="inactive">Inactive</option>
@@ -90,7 +90,7 @@ export default function ClientDetailsTab({
           <label className="block text-xs text-ink-3 mb-1">Notes</label>
           <textarea value={form.notes || ''} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} rows={3}
             placeholder="Any special notes about this client"
-            className="w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm text-ink focus:outline-none focus:border-blue-400 resize-none" />
+            className="w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm text-ink focus:outline-hidden focus:border-blue-400 resize-none" />
         </div>
       </div>
 
@@ -106,7 +106,7 @@ export default function ClientDetailsTab({
           <div key={key} className="flex flex-col sm:flex-row sm:items-center sm:gap-4">
             <span className="text-xs text-ink-3 sm:w-24 sm:shrink-0 mb-1 sm:mb-0">{label}</span>
             <input value={form[key] || ''} onChange={e => setForm(f => ({ ...f, [key]: e.target.value }))}
-              className="flex-1 bg-panel border border-hairline rounded-lg px-3 py-2 sm:py-1.5 text-sm text-ink focus:outline-none focus:border-blue-400" />
+              className="flex-1 bg-panel border border-hairline rounded-lg px-3 py-2 sm:py-1.5 text-sm text-ink focus:outline-hidden focus:border-blue-400" />
           </div>
         ))}
       </div>
@@ -138,7 +138,7 @@ export default function ClientDetailsTab({
               <div key={key} className="flex flex-col sm:flex-row sm:items-center sm:gap-4">
                 <span className="text-xs text-ink-3 sm:w-24 sm:shrink-0 mb-1 sm:mb-0">{label}</span>
                 <input value={form[key] || ''} onChange={e => setForm(f => ({ ...f, [key]: e.target.value }))}
-                  className="flex-1 bg-panel border border-hairline rounded-lg px-3 py-2 sm:py-1.5 text-sm text-ink focus:outline-none focus:border-blue-400" />
+                  className="flex-1 bg-panel border border-hairline rounded-lg px-3 py-2 sm:py-1.5 text-sm text-ink focus:outline-hidden focus:border-blue-400" />
               </div>
             ))}
           </div>

@@ -180,7 +180,7 @@ export default function IntegrationsTab({ toast, active }) {
                 onChange={e => setGcalEmbed(e.target.value)}
                 rows={2}
                 placeholder='https://calendar.google.com/calendar/embed?src=…   (or paste the whole <iframe …></iframe>)'
-                className="w-full bg-bg border border-hairline rounded-lg px-3 py-2 text-xs text-ink placeholder-ink-3 font-mono focus:outline-none focus:border-blue-400 resize-none"
+                className="w-full bg-bg border border-hairline rounded-lg px-3 py-2 text-xs text-ink placeholder-ink-3 font-mono focus:outline-hidden focus:border-blue-400 resize-none"
               />
               <div className="flex items-center justify-between gap-2 mt-2">
                 <span className="text-[11px] text-ink-3">Leave blank to auto-build from your configured calendar IDs. Only Google Calendar embed URLs are accepted.</span>
@@ -342,27 +342,27 @@ function SquareCard({ toast, active }) {
             <input type="password" autoComplete="off" value={form.access_token}
               onChange={e => setForm(f => ({ ...f, access_token: e.target.value }))}
               placeholder={st.has_token ? 'Enter a new token to replace the saved one' : 'Paste your Square access token'}
-              className="w-full bg-bg border border-hairline rounded-lg px-3 py-2 text-sm text-ink placeholder-ink-3 font-mono focus:outline-none focus:border-blue-400" />
+              className="w-full bg-bg border border-hairline rounded-lg px-3 py-2 text-sm text-ink placeholder-ink-3 font-mono focus:outline-hidden focus:border-blue-400" />
           </div>
           <div className="flex gap-3">
             <div className="flex-1">
               <label className="block text-xs font-medium text-ink-2 mb-1">Location</label>
               {locations.length > 0 ? (
                 <select value={form.location_id} onChange={e => setForm(f => ({ ...f, location_id: e.target.value }))}
-                  className="w-full bg-bg border border-hairline rounded-lg px-3 py-2 text-sm text-ink focus:outline-none focus:border-blue-400">
+                  className="w-full bg-bg border border-hairline rounded-lg px-3 py-2 text-sm text-ink focus:outline-hidden focus:border-blue-400">
                   <option value="">— pick a location —</option>
                   {locations.map(l => <option key={l.id} value={l.id}>{l.name} ({l.id})</option>)}
                 </select>
               ) : (
                 <input type="text" value={form.location_id} onChange={e => setForm(f => ({ ...f, location_id: e.target.value }))}
                   placeholder="location id — or hit Test to load a picker"
-                  className="w-full bg-bg border border-hairline rounded-lg px-3 py-2 text-sm text-ink placeholder-ink-3 font-mono focus:outline-none focus:border-blue-400" />
+                  className="w-full bg-bg border border-hairline rounded-lg px-3 py-2 text-sm text-ink placeholder-ink-3 font-mono focus:outline-hidden focus:border-blue-400" />
               )}
             </div>
             <div>
               <label className="block text-xs font-medium text-ink-2 mb-1">Environment</label>
               <select value={form.environment} onChange={e => setForm(f => ({ ...f, environment: e.target.value }))}
-                className="bg-bg border border-hairline rounded-lg px-3 py-2 text-sm text-ink focus:outline-none focus:border-blue-400">
+                className="bg-bg border border-hairline rounded-lg px-3 py-2 text-sm text-ink focus:outline-hidden focus:border-blue-400">
                 <option value="production">Production</option>
                 <option value="sandbox">Sandbox</option>
               </select>
@@ -380,7 +380,7 @@ function SquareCard({ toast, active }) {
                   <div className="text-[10.5px] text-ink-3 mb-0.5">{lbl}</div>
                   <input type="text" list="square-job-titles" value={form[key]}
                     onChange={e => setForm(f => ({ ...f, [key]: e.target.value }))}
-                    className="w-full bg-bg border border-hairline rounded-lg px-2.5 py-1.5 text-sm text-ink focus:outline-none focus:border-blue-400" />
+                    className="w-full bg-bg border border-hairline rounded-lg px-2.5 py-1.5 text-sm text-ink focus:outline-hidden focus:border-blue-400" />
                 </div>
               ))}
             </div>

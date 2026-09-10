@@ -80,7 +80,7 @@ function Row({ dot = 'bg-ink-3/40', to, children, right }) {
     <span className="flex w-full flex-col gap-x-3 gap-y-0.5 sm:flex-row sm:items-start sm:justify-between">
       <span className="flex min-w-0 items-start gap-2">
         <span className={`mt-[7px] h-1.5 w-1.5 shrink-0 rounded-full ${dot}`} aria-hidden="true" />
-        <span className="min-w-0 break-words">{children}</span>
+        <span className="min-w-0 wrap-break-word">{children}</span>
       </span>
       {right && (
         // pl-3.5 lines the meta up under the text, clear of the dot.

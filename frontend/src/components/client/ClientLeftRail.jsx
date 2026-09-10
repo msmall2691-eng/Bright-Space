@@ -31,7 +31,7 @@ function EditableField({ icon: Icon, label, value, placeholder = 'Add', type = '
               if (e.key === 'Enter') commit()
               else if (e.key === 'Escape') { setDraft(value || ''); setEditing(false) }
             }}
-            className="w-full bg-panel border border-indigo-400 rounded px-1.5 py-0.5 text-xs text-ink focus:outline-none focus:ring-1 focus:ring-indigo-400/30"
+            className="w-full bg-panel border border-indigo-400 rounded px-1.5 py-0.5 text-xs text-ink focus:outline-hidden focus:ring-1 focus:ring-indigo-400/30"
           />
         ) : (
           <button
@@ -73,7 +73,7 @@ export default function ClientLeftRail({
             <select
               value={client.status || 'lead'}
               onChange={e => saveField('status', e.target.value)}
-              className="mt-1 text-[10px] px-2 py-0.5 rounded-sm border border-hairline-2 bg-panel text-ink-2 capitalize cursor-pointer focus:outline-none"
+              className="mt-1 text-[10px] px-2 py-0.5 rounded-sm border border-hairline-2 bg-panel text-ink-2 capitalize cursor-pointer focus:outline-hidden"
               title="Change status"
             >
               <option value="lead">lead</option>

@@ -699,7 +699,7 @@ const VisitBlock = memo(function VisitBlock({
         onDragStart(visit)
       } : undefined}
       onDragEnd={canDrag ? () => onDragEnd && onDragEnd() : undefined}
-      className={`absolute rounded-md border border-hairline bg-panel text-ink shadow-sm text-left overflow-hidden transition-shadow hover:shadow-md focus:outline-none focus:ring-2 focus:ring-indigo-500 ${isCancelled ? 'opacity-50 line-through' : ''} ${canDrag ? 'cursor-grab active:cursor-grabbing' : ''}`}
+      className={`absolute rounded-md border border-hairline bg-panel text-ink shadow-xs text-left overflow-hidden transition-shadow hover:shadow-md focus:outline-hidden focus:ring-2 focus:ring-indigo-500 ${isCancelled ? 'opacity-50 line-through' : ''} ${canDrag ? 'cursor-grab active:cursor-grabbing' : ''}`}
       style={{ ...style, borderLeft: `3px solid ${cfg.hex}` }}
       onClick={(e) => {
         // Stop the click bubbling into the day-column's empty-slot handler.

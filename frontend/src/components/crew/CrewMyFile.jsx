@@ -81,7 +81,7 @@ function DocRow({ doc, busy, onUpload }) {
           <label className="flex items-center gap-2">
             <span className="text-[12px] text-ink-3 shrink-0">Expires</span>
             <input type="date" value={expiry} onChange={e => setExpiry(e.target.value)}
-              className="rounded-lg border border-hairline bg-bg px-2.5 py-1.5 text-[13px] text-ink focus:outline-none focus:border-blue-400" />
+              className="rounded-lg border border-hairline bg-bg px-2.5 py-1.5 text-[13px] text-ink focus:outline-hidden focus:border-blue-400" />
           </label>
           {needsExpiry && (
             <p className="mt-1 flex items-start gap-1.5 text-[11.5px] text-ink-3">

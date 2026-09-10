@@ -192,7 +192,7 @@ export default function QuoteEditPanel({
             <label className="block text-xs text-ink-3 mb-1">Quote title <span className="text-ink-3/70">· shown to the customer</span></label>
             <input value={form.title} onChange={e => setForm(f => ({ ...f, title: e.target.value }))}
               placeholder="e.g. Biweekly Cleaning — 12 Pier Rd"
-              className="w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-400" />
+              className="w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-hidden focus:border-blue-400" />
           </div>
 
           {/* Client */}
@@ -209,14 +209,14 @@ export default function QuoteEditPanel({
               <div className="rounded-lg border border-blue-200 bg-blue-50/50 p-2.5 space-y-2 mb-2">
                 <input autoFocus value={newClient.name} onChange={e => setNewClient(n => ({ ...n, name: e.target.value }))}
                   placeholder="Client name *"
-                  className="w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-400" />
+                  className="w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-hidden focus:border-blue-400" />
                 <div className="grid grid-cols-2 gap-2">
                   <input value={newClient.phone} onChange={e => setNewClient(n => ({ ...n, phone: e.target.value }))}
                     placeholder="Phone"
-                    className="w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-400" />
+                    className="w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-hidden focus:border-blue-400" />
                   <input value={newClient.email} onChange={e => setNewClient(n => ({ ...n, email: e.target.value }))}
                     placeholder="Email"
-                    className="w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-400" />
+                    className="w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-hidden focus:border-blue-400" />
                 </div>
                 {clientErr && <div className="text-xs text-red-600">{clientErr}</div>}
                 <button type="button" onClick={handleCreateClient} disabled={creatingClient || !newClient.name.trim()}
@@ -226,7 +226,7 @@ export default function QuoteEditPanel({
               </div>
             )}
             <select value={form.client_id} onChange={e => selectClient(e.target.value)}
-              className="w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-400">
+              className="w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-hidden focus:border-blue-400">
               <option value="">Select client...</option>
               {(() => {
                 // Dedupe + sort: real names first, placeholders last w/ marker.
@@ -295,7 +295,7 @@ export default function QuoteEditPanel({
               onSelect={p => { setForm(f => ({ ...f, address: p.address || f.address })); lookupSpecs(p.address) }}
               selectOnFocus
               placeholder="123 Main St, Portland, ME 04101"
-              className="w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-400" />
+              className="w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-hidden focus:border-blue-400" />
             {/* Street View of the property — the same photo the customer sees on
                 the quote, so you can eyeball the home while pricing. */}
             <PropertyPhoto address={form.address}
@@ -367,20 +367,20 @@ export default function QuoteEditPanel({
                   <div className="flex gap-2">
                     <input value={item.name} onChange={e => updateItem(i, 'name', e.target.value)}
                       placeholder="e.g. Standard Home Clean"
-                      className="flex-1 bg-bg-2 border border-hairline rounded px-2 py-2.5 sm:py-1.5 text-base sm:text-sm focus:outline-none focus:border-blue-400" />
+                      className="flex-1 bg-bg-2 border border-hairline rounded px-2 py-2.5 sm:py-1.5 text-base sm:text-sm focus:outline-hidden focus:border-blue-400" />
                     <button onClick={() => setForm(f => ({ ...f, items: f.items.filter((_, j) => j !== i) }))}
                       className="text-ink-3 hover:text-red-400 shrink-0"><Trash2 className="w-4 h-4" /></button>
                   </div>
                   <input value={item.description} onChange={e => updateItem(i, 'description', e.target.value)}
                     placeholder="Description (optional)"
-                    className="w-full bg-bg-2 border border-hairline rounded px-2 py-1.5 text-xs text-ink-3 focus:outline-none" />
+                    className="w-full bg-bg-2 border border-hairline rounded px-2 py-1.5 text-xs text-ink-3 focus:outline-hidden" />
                   <div className="flex gap-2">
                     <div className="w-20">
                       <label className="text-xs text-ink-3">Qty</label>
                       <input type="number" inputMode="decimal" min="0" step="0.5" value={item.qty}
                         onChange={e => updateItem(i, 'qty', e.target.value)}
                         onFocus={e => e.target.select()}
-                        className="w-full bg-bg-2 border border-hairline rounded px-2 py-2.5 sm:py-1.5 text-base sm:text-sm focus:outline-none mt-0.5" />
+                        className="w-full bg-bg-2 border border-hairline rounded px-2 py-2.5 sm:py-1.5 text-base sm:text-sm focus:outline-hidden mt-0.5" />
                     </div>
                     <div className="flex-1">
                       <label className="text-xs text-ink-3">Unit Price ($)</label>
@@ -389,7 +389,7 @@ export default function QuoteEditPanel({
                       <input type="number" inputMode="decimal" min="0" step="5" value={item.unit_price}
                         onChange={e => updateItem(i, 'unit_price', e.target.value)}
                         onFocus={e => e.target.select()}
-                        className="w-full bg-bg-2 border border-hairline rounded px-2 py-2.5 sm:py-1.5 text-base sm:text-sm focus:outline-none mt-0.5" />
+                        className="w-full bg-bg-2 border border-hairline rounded px-2 py-2.5 sm:py-1.5 text-base sm:text-sm focus:outline-hidden mt-0.5" />
                     </div>
                     <div className="flex-1 flex flex-col justify-end">
                       <label className="text-xs text-ink-3">Line Total</label>
@@ -406,12 +406,12 @@ export default function QuoteEditPanel({
             <div className="w-28">
               <label className="block text-xs text-ink-3 mb-1">Tax (%)</label>
               <input type="number" min="0" max="100" value={form.tax_rate} onChange={e => setForm(f => ({ ...f, tax_rate: e.target.value }))}
-                className="w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-none" />
+                className="w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-hidden" />
             </div>
             <div className="flex-1">
               <label className="block text-xs text-ink-3 mb-1">Valid Until <span className="text-ink-3/70">(30 days default)</span></label>
               <input type="date" value={form.valid_until} onChange={e => setForm(f => ({ ...f, valid_until: e.target.value }))}
-                className="w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-none" />
+                className="w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-hidden" />
             </div>
           </div>
 
@@ -446,21 +446,21 @@ export default function QuoteEditPanel({
                 <label className="block text-xs text-ink-3 mb-1">Scope / Notes <span className="text-amber-600 font-medium">(customer sees this)</span></label>
                 <textarea value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} rows={3}
                   placeholder="What's included / excluded — shown on the quote the customer opens."
-                  className="w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-none resize-none" />
+                  className="w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-hidden resize-none" />
               </div>
 
               <div>
                 <label className="block text-xs text-ink-3 mb-1">Internal Notes <span className="text-ink-3">(never shown to the customer)</span></label>
                 <textarea value={form.internal_notes} onChange={e => setForm(f => ({ ...f, internal_notes: e.target.value }))} rows={2}
                   placeholder="Lead context, access details, reminders — stays in the app."
-                  className="w-full bg-bg-2 border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-none resize-none" />
+                  className="w-full bg-bg-2 border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-hidden resize-none" />
               </div>
 
               <div>
                 <label className="block text-xs text-ink-3 mb-1">Message to Customer</label>
                 <textarea value={form.customer_message} onChange={e => setForm(f => ({ ...f, customer_message: e.target.value }))} rows={3}
                   placeholder="Hi! Thanks for reaching out — here's the quote we discussed. Looking forward to working with you."
-                  className="w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-none resize-none" />
+                  className="w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-hidden resize-none" />
                 <p className="text-[11px] text-ink-3 mt-1">Shown at the top of the emailed quote and the online quote page.</p>
               </div>
             </>

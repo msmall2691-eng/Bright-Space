@@ -218,7 +218,7 @@ export function OpenToCrewModal({ state, onCancel, onConfirm }) {
               value={rate} onChange={e => setRate(e.target.value)}
               onKeyDown={e => { if (e.key === 'Enter' && !busy) submit() }}
               placeholder="e.g. 120"
-              className="mt-1 w-full rounded-lg border border-hairline bg-bg px-3 py-2.5 text-base text-ink placeholder-ink-3 focus:outline-none focus:border-blue-400" />
+              className="mt-1 w-full rounded-lg border border-hairline bg-bg px-3 py-2.5 text-base text-ink placeholder-ink-3 focus:outline-hidden focus:border-blue-400" />
           </label>
           <p className="flex items-start gap-1.5 text-[11.5px] text-ink-3">
             <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-ink-3/50" aria-hidden="true" />

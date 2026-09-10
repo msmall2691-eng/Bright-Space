@@ -239,19 +239,19 @@ const RequestCard = ({ intake, onViewDetails, onCreateQuote, onConvertToClient, 
             <div className="space-y-1 mb-2">
               {intake.email && (
                 <div className="flex items-center gap-1.5 text-xs text-ink-2">
-                  <Mail className="w-3.5 h-3.5 flex-shrink-0" />
+                  <Mail className="w-3.5 h-3.5 shrink-0" />
                   <span className="truncate">{intake.email}</span>
                 </div>
               )}
               {intake.phone && (
                 <div className="flex items-center gap-1.5 text-xs text-ink-2">
-                  <Phone className="w-3.5 h-3.5 flex-shrink-0" />
+                  <Phone className="w-3.5 h-3.5 shrink-0" />
                   <span>{intake.phone}</span>
                 </div>
               )}
               {intake.address && (
                 <div className="flex items-center gap-1.5 text-xs text-ink-2">
-                  <MapPin className="w-3.5 h-3.5 flex-shrink-0" />
+                  <MapPin className="w-3.5 h-3.5 shrink-0" />
                   <span className="truncate">{intake.address}</span>
                 </div>
               )}

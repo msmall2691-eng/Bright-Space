@@ -66,7 +66,7 @@ export default function RecurrenceScopeDialog({
   const scopes = mode === 'delete' ? SCOPES.slice(0, 1) : SCOPES
 
   return (
-    <div className="fixed inset-0 z-[60] flex items-end sm:items-center justify-center sm:p-4">
+    <div className="fixed inset-0 z-60 flex items-end sm:items-center justify-center sm:p-4">
       <div className="absolute inset-0 bg-black/50" onClick={busy ? undefined : onCancel} />
       <div className="relative w-full sm:max-w-sm bg-panel border border-hairline rounded-t-2xl sm:rounded-2xl shadow-2xl p-5 pb-[max(1.25rem,env(safe-area-inset-bottom))] max-h-[90dvh] overflow-y-auto overscroll-contain">
         {/* Grab handle — reads as a bottom sheet on mobile; hidden on desktop. */}

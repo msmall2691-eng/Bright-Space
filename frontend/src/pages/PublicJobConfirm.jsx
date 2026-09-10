@@ -165,7 +165,7 @@ export default function PublicJobConfirm() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-50 flex items-center justify-center p-4">
+      <div className="min-h-screen bg-linear-to-br from-blue-50 to-indigo-50 flex items-center justify-center p-4">
         <div className="text-center">
           <Clock className="w-12 h-12 text-blue-300 mx-auto mb-4 animate-spin" />
           <p className="text-ink-2 font-medium">Loading your visit...</p>
@@ -176,7 +176,7 @@ export default function PublicJobConfirm() {
 
   if (error && !job) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-red-50 to-orange-50 flex items-center justify-center p-4">
+      <div className="min-h-screen bg-linear-to-br from-red-50 to-orange-50 flex items-center justify-center p-4">
         <div className="text-center max-w-sm">
           <AlertCircle className="w-16 h-16 text-red-300 mx-auto mb-4" />
           <h1 className="text-xl font-bold text-ink mb-2">Unable to Load Visit</h1>
@@ -205,7 +205,7 @@ export default function PublicJobConfirm() {
           </div>
         )}
 
-        <div className="bg-panel rounded-2xl border border-hairline shadow-sm overflow-hidden">
+        <div className="bg-panel rounded-2xl border border-hairline shadow-xs overflow-hidden">
           <div className="px-6 py-5 text-white" style={{ backgroundColor: brandColor }}>
             {job.company_logo_url ? (
               <img src={job.company_logo_url} alt={job.company_name} className="h-8 mb-2 object-contain" />
@@ -343,7 +343,7 @@ export default function PublicJobConfirm() {
                         <button
                           onClick={handleReschedule}
                           disabled={rescheduling || !reschedDate}
-                          className="w-full bg-indigo-600 hover:bg-indigo-700 disabled:bg-bg-2 text-white font-semibold py-4 sm:py-3 text-base rounded-xl min-h-[52px] transition-colors disabled:cursor-not-allowed shadow-sm"
+                          className="w-full bg-indigo-600 hover:bg-indigo-700 disabled:bg-bg-2 text-white font-semibold py-4 sm:py-3 text-base rounded-xl min-h-[52px] transition-colors disabled:cursor-not-allowed shadow-xs"
                         >
                           {rescheduling ? 'Sending…' : selectedBusy() ? 'Request this time' : 'Reschedule to this time'}
                         </button>
@@ -385,7 +385,7 @@ export default function PublicJobConfirm() {
                     <button
                       onClick={handleConfirm}
                       disabled={confirming}
-                      className="w-full bg-emerald-600 hover:bg-emerald-700 disabled:bg-bg-2 text-white font-semibold py-4 sm:py-3 text-base rounded-xl min-h-[52px] transition-colors disabled:cursor-not-allowed shadow-sm"
+                      className="w-full bg-emerald-600 hover:bg-emerald-700 disabled:bg-bg-2 text-white font-semibold py-4 sm:py-3 text-base rounded-xl min-h-[52px] transition-colors disabled:cursor-not-allowed shadow-xs"
                     >
                       {confirming ? 'Confirming...' : "I'll be ready"}
                     </button>

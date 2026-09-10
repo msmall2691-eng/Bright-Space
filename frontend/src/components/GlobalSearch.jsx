@@ -159,7 +159,7 @@ export default function GlobalSearch() {
             onChange={e => setQuery(e.target.value)}
             onKeyDown={onKeyDown}
             placeholder="Search records, jump to a page, or create…"
-            className="flex-1 bg-transparent text-sm text-ink outline-none placeholder:text-ink-3"
+            className="flex-1 bg-transparent text-sm text-ink outline-hidden placeholder:text-ink-3"
           />
           {loading && <Loader2 className="h-4 w-4 animate-spin text-ink-3" />}
           <button onClick={() => setOpen(false)} className="min-h-0 p-1 text-ink-3 hover:text-ink-2">

@@ -81,7 +81,7 @@ export function EditPanel({
                 <div className="flex gap-2 items-center">
                   <input value={item.name} onChange={e => updateItem(i, 'name', e.target.value)}
                     placeholder="Description"
-                    className="flex-1 bg-transparent border-none text-sm text-ink placeholder-ink-3 focus:outline-none" />
+                    className="flex-1 bg-transparent border-none text-sm text-ink placeholder-ink-3 focus:outline-hidden" />
                   <button onClick={() => setForm(f => ({ ...f, items: f.items.filter((_, j) => j !== i) }))}
                     className="text-ink-2 hover:text-red-400 transition-colors shrink-0">
                     <Trash2 className="w-3.5 h-3.5" />
@@ -92,14 +92,14 @@ export function EditPanel({
                     <span className="text-[10px] text-ink-3 w-6">Qty</span>
                     <input type="number" value={item.qty} onChange={e => updateItem(i, 'qty', e.target.value)}
                       onFocus={e => e.target.select()}
-                      className="w-14 bg-transparent text-xs text-ink-3 focus:outline-none text-center border border-hairline rounded px-1 py-0.5" />
+                      className="w-14 bg-transparent text-xs text-ink-3 focus:outline-hidden text-center border border-hairline rounded px-1 py-0.5" />
                   </div>
                   <span className="text-ink-2">×</span>
                   <div className="flex items-center gap-1 flex-1">
                     <span className="text-[10px] text-ink-3">$</span>
                     <input type="number" value={item.unit_price} onChange={e => updateItem(i, 'unit_price', e.target.value)}
                       onFocus={e => e.target.select()}
-                      className="flex-1 bg-transparent text-xs text-ink-3 focus:outline-none border border-hairline rounded px-2 py-0.5" />
+                      className="flex-1 bg-transparent text-xs text-ink-3 focus:outline-hidden border border-hairline rounded px-2 py-0.5" />
                   </div>
                   <span className="text-xs font-medium text-ink w-16 text-right">
                     ${((parseFloat(item.qty) || 0) * (parseFloat(item.unit_price) || 0)).toFixed(2)}
@@ -186,7 +186,7 @@ export function EditPanel({
         </button>
         {selected && (
           <button onClick={deleteInvoice} disabled={deleting}
-            className="w-full flex items-center justify-center gap-2 text-red-500/70 hover:text-red-400 hover:bg-red-500/[0.08] px-4 py-2 rounded-lg text-xs transition-colors">
+            className="w-full flex items-center justify-center gap-2 text-red-500/70 hover:text-red-400 hover:bg-red-500/8 px-4 py-2 rounded-lg text-xs transition-colors">
             <Trash2 className="w-3.5 h-3.5" />
             {deleting ? 'Deleting…' : 'Delete invoice'}
           </button>

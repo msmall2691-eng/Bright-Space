@@ -1,65 +1,664 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap')
+layer(base);
 
-:root {
-  --font-ui: 'Inter', system-ui, sans-serif;
-  --font-mono: 'JetBrains Mono', ui-monospace, monospace;
+@import 'tailwindcss';
 
-  /* Paper (light) — default */
-  --bg: #f7f5ef;
-  --bg-2: #efece3;
-  --bg-3: #e8e4d7;
-  --panel: #fbf9f3;
-  --ink: #171512;
-  --ink-2: #4a4740;
-  --ink-3: #8a857a;
-  --hairline: #e4e0d4;
-  --hairline-2: #d4cfbe;
-  --accent: oklch(0.62 0.14 55);
-  --accent-ink: #fff;
+@custom-variant dark (&:where(.theme-console, .theme-console *));
 
-  --c-residential: oklch(0.58 0.12 245);
-  --c-residential-bg: oklch(0.92 0.03 245);
-  --c-commercial: oklch(0.60 0.14 60);
-  --c-commercial-bg: oklch(0.93 0.04 60);
-  --c-str: oklch(0.50 0.12 155);
-  --c-str-bg: oklch(0.93 0.04 155);
-  --c-alert: oklch(0.55 0.18 25);
-  --c-alert-bg: oklch(0.93 0.05 25);
-  --c-ok: oklch(0.55 0.12 155);
+@theme {
+  --breakpoint-shell: 900px;
 
-  --shadow-1: 0 1px 0 rgba(23,21,18,0.04), 0 2px 8px rgba(23,21,18,0.04);
-  --shadow-2: 0 1px 2px rgba(23,21,18,0.05), 0 2px 6px rgba(23,21,18,0.05);
+  --color-frame: var(--frame, var(--bg-2));
+  --color-bg: var(--bg);
+  --color-bg-2: var(--bg-2);
+  --color-bg-3: var(--bg-3);
+  --color-panel: var(--panel);
+  --color-ink: var(--ink);
+  --color-ink-2: var(--ink-2);
+  --color-ink-3: var(--ink-3);
+  --color-hairline: var(--hairline);
+  --color-hairline-2: var(--hairline-2);
+  --color-accent: var(--accent);
+  --color-accent-ink: var(--accent-ink);
 
-  /* App frame behind the sidebar + content sheet (see body.mode-clean).
+  --color-indigo-50: rgb(var(--accent-50));
+  --color-indigo-100: rgb(var(--accent-100));
+  --color-indigo-200: rgb(var(--accent-200));
+  --color-indigo-300: rgb(var(--accent-300));
+  --color-indigo-400: rgb(var(--accent-400));
+  --color-indigo-500: rgb(var(--accent-500));
+  --color-indigo-600: rgb(var(--accent-600));
+  --color-indigo-700: rgb(var(--accent-700));
+  --color-indigo-800: rgb(var(--accent-800));
+  --color-indigo-900: rgb(var(--accent-900));
+  --color-indigo-950: rgb(var(--accent-950));
+
+  --color-brand-50: #f0f9ff;
+  --color-brand-100: #e0f2fe;
+  --color-brand-200: #bae6fd;
+  --color-brand-300: #7dd3fc;
+  --color-brand-400: #38bdf8;
+  --color-brand-500: #0ea5e9;
+  --color-brand-600: #0284c7;
+  --color-brand-700: #0369a1;
+  --color-brand-800: #075985;
+  --color-brand-900: #0c3d66;
+
+  --shadow-glass:
+    0 1px 2px rgba(15, 23, 42, 0.04), 0 8px 24px -16px rgba(15, 23, 42, 0.12);
+  --shadow-glass-lg:
+    0 1px 2px rgba(15, 23, 42, 0.04), 0 18px 40px -20px rgba(15, 23, 42, 0.18);
+  --shadow-glass-sm: 0 1px 2px rgba(15, 23, 42, 0.04);
+
+  --backdrop-blur-xs: 4px;
+  --backdrop-blur-sm: 8px;
+  --backdrop-blur-md: 12px;
+  --backdrop-blur-lg: 16px;
+  --backdrop-blur-xl: 20px;
+
+  --background-image-gradient-hero: linear-gradient(
+    135deg,
+    #4f46e5 0%,
+    #7c3aed 100%
+  );
+  --background-image-gradient-glass: linear-gradient(
+    135deg,
+    rgba(255, 255, 255, 0.8),
+    rgba(255, 255, 255, 0.4)
+  );
+  --background-image-gradient-subtle: linear-gradient(
+    135deg,
+    rgba(79, 70, 229, 0.06) 0%,
+    rgba(124, 58, 237, 0.05) 100%
+  );
+
+  --font-sans: Inter, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif;
+
+  --text-xs: 11px;
+  --text-xs--line-height: 1.4;
+  --text-xs--letter-spacing: 0.01em;
+  --text-sm: 12px;
+  --text-sm--line-height: 1.4;
+  --text-sm--letter-spacing: 0.02em;
+  --text-base: 14px;
+  --text-base--line-height: 1.5;
+  --text-lg: 16px;
+  --text-lg--line-height: 1.5;
+  --text-xl: 18px;
+  --text-xl--line-height: 1.4;
+  --text-2xl: 24px;
+  --text-2xl--line-height: 1.3;
+  --text-2xl--letter-spacing: -0.005em;
+  --text-3xl: 32px;
+  --text-3xl--line-height: 1.2;
+  --text-3xl--letter-spacing: -0.01em;
+
+  --radius-xs: 4px;
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 10px;
+  --radius-xl: 14px;
+  --radius-2xl: 18px;
+  --radius-3xl: 24px;
+}
+
+/*
+  The default border color has changed to `currentcolor` in Tailwind CSS v4,
+  so we've added these compatibility styles to make sure everything still
+  looks the same as it did with Tailwind CSS v3.
+
+  If we ever want to remove these styles, we need to add an explicit border
+  color utility to any element that depends on these defaults.
+*/
+@layer base {
+  *,
+  ::after,
+  ::before,
+  ::backdrop,
+  ::file-selector-button {
+    border-color: var(--color-gray-200, currentcolor);
+  }
+}
+
+@utility btn {
+  /* Button Base */
+  @apply inline-flex items-center justify-center font-medium rounded-lg transition-all duration-200 focus:outline-hidden focus:ring-2 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed;
+}
+
+@utility btn-primary {
+  @apply btn bg-indigo-600 hover:bg-indigo-700 text-white shadow-xs focus:ring-indigo-500;
+}
+
+@utility btn-secondary {
+  @apply btn bg-neutral-200 hover:bg-neutral-300 text-neutral-900 focus:ring-neutral-500;
+}
+
+@utility btn-tertiary {
+  @apply btn text-indigo-600 hover:text-indigo-700 hover:bg-blue-50 focus:ring-indigo-500;
+}
+
+@utility btn-danger {
+  @apply btn bg-red-600 hover:bg-red-700 text-white shadow-xs focus:ring-red-500;
+}
+
+@utility btn-lg {
+  /* Button Sizes */
+  @apply px-6 py-2.5 text-base font-semibold;
+}
+
+@utility btn-md {
+  @apply px-4 py-2 text-sm font-medium;
+}
+
+@utility btn-sm {
+  @apply px-3 py-1.5 text-xs font-medium;
+}
+
+@utility card {
+  /* Card Components */
+  @apply bg-white border border-neutral-200/60 rounded-xl shadow-xs;
+}
+
+@utility card-glass {
+  @apply bg-white/70 backdrop-blur-lg border border-white/20 rounded-xl shadow-glass;
+}
+
+@utility card-hover {
+  @apply transition-all duration-200 hover:shadow-md hover:border-neutral-300/60;
+}
+
+@utility input {
+  /* Form Components */
+  @apply w-full px-3 py-2 border border-neutral-300 rounded-lg focus:outline-hidden focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-colors duration-200;
+
+  &:disabled {
+    @apply bg-neutral-100 text-neutral-500 cursor-not-allowed;
+  }
+}
+
+@utility label {
+  @apply block text-xs font-semibold text-neutral-700 uppercase tracking-wide mb-2;
+}
+
+@utility section {
+  /* (Legacy .badge / .badge-* tinted pill classes removed — nothing in
+     src/ referenced them after the bubble sweep; status now renders via
+     components/ui StatusBadge's dot+word treatment.) */
+
+  /* Section Container */
+  @apply rounded-xl border border-neutral-200/60 bg-white shadow-xs overflow-hidden;
+}
+
+@utility section-header {
+  @apply px-6 py-4 border-b border-neutral-200/40 bg-neutral-50/50;
+}
+
+@utility section-title {
+  @apply text-lg font-semibold text-neutral-900;
+}
+
+@utility section-content {
+  @apply p-6;
+}
+
+@utility table-wrapper {
+  /* Table Components */
+  @apply w-full text-sm;
+}
+
+@utility table-header {
+  @apply text-xs font-semibold text-neutral-600 uppercase tracking-wide;
+}
+
+@utility table-header-cell {
+  @apply px-6 py-3 text-left bg-neutral-50/80 border-b border-neutral-200/40;
+}
+
+@utility table-body-row {
+  @apply border-b border-neutral-200/40 hover:bg-blue-50/50 transition-colors duration-150;
+}
+
+@utility table-body-cell {
+  @apply px-6 py-3 text-neutral-700;
+}
+
+@utility touch-sm {
+  /* Touch helpers */
+  min-height: 32px;
+}
+
+@utility touch-none {
+  min-height: unset;
+}
+
+@utility scrollbar-thin {
+  /* Scrollbar Styling */
+  scrollbar-width: thin;
+  scrollbar-color: #e5e7eb transparent;
+
+  &::-webkit-scrollbar {
+    width: 4px;
+  }
+
+  &::-webkit-scrollbar-thumb {
+    background-color: #e5e7eb;
+    border-radius: 4px;
+  }
+}
+
+@utility pb-safe {
+  /* Safe Area Utilities */
+  padding-bottom: max(env(safe-area-inset-bottom), 16px);
+}
+
+@utility mb-safe {
+  margin-bottom: max(env(safe-area-inset-bottom), 16px);
+}
+
+@utility pb-bottomnav {
+  padding-bottom: calc(64px + env(safe-area-inset-bottom, 0px));
+}
+
+@utility safe-top {
+  /* The `html`-level inset below covers normal document flow, but every
+     sticky/fixed top-0 header on a full-bleed mobile screen (the crew app,
+     CustomerPortal, full-screen modals) needs its OWN top inset too —
+     sticky/fixed positioning doesn't reliably inherit an ancestor's padding
+     the way flow content does, and on an installed iOS PWA that gap renders
+     as page content sitting behind the status bar. Apply directly to the
+     header element. (ScheduleToolbar.jsx already referenced this class name
+     before it existed here — this makes that reference real.) */
+  padding-top: env(safe-area-inset-top);
+}
+
+@utility scroll-smooth-mobile {
+  /* Smooth Scrolling */
+  -webkit-overflow-scrolling: touch;
+  scroll-behavior: smooth;
+}
+
+@utility select-none-interactive {
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+@utility glass-effect {
+  /* Glass Effect Utilities */
+  @apply bg-white/70 backdrop-blur-lg border border-white/20;
+}
+
+@utility glass-light {
+  @apply bg-white/80 backdrop-blur-xl border border-white/20;
+}
+
+@utility gradient-hero {
+  /* Gradient Utilities */
+  @apply bg-linear-to-r from-indigo-600 to-violet-600;
+}
+
+@utility gradient-subtle {
+  @apply bg-linear-to-br from-blue-50/50 to-violet-50/30;
+}
+
+@utility transition-all-200 {
+  /* Transitions */
+  @apply transition-all duration-200;
+}
+
+@utility transition-colors-150 {
+  @apply transition-colors duration-150;
+}
+
+@utility transition-transform-300 {
+  @apply transition-transform duration-300;
+}
+
+@utility shadow-glass {
+  /* Shadows */
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+}
+
+@utility shadow-glass-lg {
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.15);
+}
+
+@utility shadow-glass-sm {
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.08);
+}
+
+@layer base {
+  :root {
+    --font-ui: 'Inter', system-ui, sans-serif;
+    --font-mono: 'JetBrains Mono', ui-monospace, monospace;
+
+    /* Paper (light) — default */
+    --bg: #f7f5ef;
+    --bg-2: #efece3;
+    --bg-3: #e8e4d7;
+    --panel: #fbf9f3;
+    --ink: #171512;
+    --ink-2: #4a4740;
+    --ink-3: #8a857a;
+    --hairline: #e4e0d4;
+    --hairline-2: #d4cfbe;
+    --accent: oklch(0.62 0.14 55);
+    --accent-ink: #fff;
+
+    --c-residential: oklch(0.58 0.12 245);
+    --c-residential-bg: oklch(0.92 0.03 245);
+    --c-commercial: oklch(0.6 0.14 60);
+    --c-commercial-bg: oklch(0.93 0.04 60);
+    --c-str: oklch(0.5 0.12 155);
+    --c-str-bg: oklch(0.93 0.04 155);
+    --c-alert: oklch(0.55 0.18 25);
+    --c-alert-bg: oklch(0.93 0.05 25);
+    --c-ok: oklch(0.55 0.12 155);
+
+    --shadow-1:
+      0 1px 0 rgba(23, 21, 18, 0.04), 0 2px 8px rgba(23, 21, 18, 0.04);
+    --shadow-2:
+      0 1px 2px rgba(23, 21, 18, 0.05), 0 2px 6px rgba(23, 21, 18, 0.05);
+
+    /* App frame behind the sidebar + content sheet (see body.mode-clean).
      Defined per-theme; defaults to the deepest bg step. */
-  --frame: #e8e4d7;
+    --frame: #e8e4d7;
+  }
+  body.theme-console {
+    --frame: #060708;
+    --bg: #0c0d0f;
+    --bg-2: #111317;
+    --bg-3: #171a20;
+    --panel: #111317;
+    --ink: #e8e6e0;
+    --ink-2: #a5a297;
+    --ink-3: #6b6860;
+    --hairline: #20232a;
+    --hairline-2: #2a2e37;
+    --accent: oklch(0.72 0.14 200);
+    --accent-ink: #0c0d0f;
+    --c-residential: oklch(0.72 0.14 245);
+    --c-residential-bg: oklch(0.28 0.08 245);
+    --c-commercial: oklch(0.75 0.14 75);
+    --c-commercial-bg: oklch(0.28 0.08 75);
+    --c-str: oklch(0.72 0.14 155);
+    --c-str-bg: oklch(0.28 0.08 155);
+    --c-alert: oklch(0.7 0.18 25);
+    --c-alert-bg: oklch(0.3 0.1 25);
+    --shadow-1: 0 1px 0 rgba(0, 0, 0, 0.4), 0 2px 8px rgba(0, 0, 0, 0.3);
+    --shadow-2: 0 1px 2px rgba(0, 0, 0, 0.4), 0 2px 6px rgba(0, 0, 0, 0.4);
+  }
+  body.mode-clean {
+    --frame: #ececee;
+    --bg: #f7f7f8;
+    --bg-2: #f0f0f2;
+    --bg-3: #e7e7ea;
+    --panel: #ffffff;
+    --ink: #191a1f;
+    --ink-2: #52545e;
+    --ink-3: #8b8e99;
+    --hairline: #ececee;
+    --hairline-2: #dfe0e4;
+    --accent: oklch(0.55 0.2 264);
+    --accent-ink: #ffffff;
+    --shadow-1: 0 1px 2px rgba(25, 26, 31, 0.04);
+    --shadow-2:
+      0 1px 2px rgba(25, 26, 31, 0.04), 0 12px 28px -14px rgba(25, 26, 31, 0.14);
+    font-size: 13px;
+  }
+
+  body.mode-clean.theme-console {
+    --frame: #0b0b0d;
+    --bg: #151518;
+    --bg-2: #1c1c20;
+    --bg-3: #242429;
+    --panel: #1a1a1e;
+    --ink: #ededf0;
+    --ink-2: #a4a6b0;
+    --ink-3: #686b76;
+    --hairline: #26262b;
+    --hairline-2: #313138;
+    --accent: oklch(0.72 0.16 264);
+    --accent-ink: #0b0b0d;
+    --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.4);
+    --shadow-2:
+      0 1px 2px rgba(0, 0, 0, 0.4), 0 16px 40px -18px rgba(0, 0, 0, 0.6);
+  }
+  body.theme-neon {
+    --frame: #0b0d13;
+    --bg: #101219;
+    --bg-2: #171a23;
+    --bg-3: #1f2430;
+    --panel: #1b1f2a;
+    --ink: #f4f6fb;
+    --ink-2: #b6bccb;
+    --ink-3: #7c8397;
+    --hairline: rgba(255, 255, 255, 0.08);
+    --hairline-2: rgba(255, 255, 255, 0.14);
+    --accent: #7c5cff;
+    --accent-ink: #ffffff;
+
+    --c-residential: #f6b73c;
+    --c-residential-bg: rgba(246, 183, 60, 0.16);
+    --c-commercial: #60a5fa;
+    --c-commercial-bg: rgba(96, 165, 250, 0.16);
+    --c-str: #22d3ee;
+    --c-str-bg: rgba(34, 211, 238, 0.16);
+    --c-alert: #f2555a;
+    --c-alert-bg: rgba(242, 85, 90, 0.16);
+    --c-ok: #34d399;
+
+    --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.4);
+    --shadow-2: 0 8px 24px rgba(0, 0, 0, 0.45);
+
+    /* Neon-only extras: glow + glass, consumed by the .bb-* primitives below. */
+    --blur: 14px;
+    --glow-accent:
+      0 0 0 1px rgba(124, 92, 255, 0.45), 0 8px 28px rgba(124, 92, 255, 0.35);
+    --glow-cyan:
+      0 0 0 1px rgba(34, 211, 238, 0.4), 0 8px 28px rgba(34, 211, 238, 0.3);
+  }
+  .bb-glass {
+    background: var(--panel);
+    backdrop-filter: blur(var(--blur, 0));
+    -webkit-backdrop-filter: blur(var(--blur, 0));
+    border: 1px solid var(--hairline);
+    box-shadow: var(--shadow-2);
+  }
+  .bb-glow-accent {
+    box-shadow: var(--glow-accent, var(--shadow-2));
+  }
+  .bb-glow-cyan {
+    box-shadow: var(--glow-cyan, var(--shadow-2));
+  }
+  .bb-surface {
+    box-shadow: 0 1px 2px rgba(15, 23, 42, 0.05);
+  }
+  body.theme-console .bb-surface {
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.4);
+  }
+  .bb-surface-hover {
+    transition:
+      box-shadow 0.15s ease,
+      border-color 0.15s ease;
+  }
+  .bb-surface-hover:hover {
+    box-shadow:
+      0 1px 2px rgba(15, 23, 42, 0.06),
+      0 10px 24px -18px rgba(15, 23, 42, 0.18);
+  }
+  body.theme-console .bb-surface-hover:hover {
+    box-shadow:
+      0 1px 2px rgba(0, 0, 0, 0.5),
+      0 12px 28px -18px rgba(0, 0, 0, 0.6);
+  }
+  .bb-nav-active {
+    box-shadow: inset 0 0 0 1px rgba(99, 102, 241, 0.22);
+  }
+  .bb-table {
+    width: 100%;
+    text-align: left;
+    border-collapse: collapse;
+  }
+  .bb-th {
+    height: 32px;
+    padding: 0 12px;
+    font-size: 11px;
+    font-weight: 500;
+    color: var(--ink-3);
+    white-space: nowrap;
+    border-bottom: 1px solid var(--hairline-2);
+  }
+  .bb-td {
+    height: 36px;
+    padding: 4px 12px;
+    font-size: 13px;
+    color: var(--ink-2);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 320px;
+  }
+  .bb-td-primary {
+    color: var(--ink);
+    font-weight: 500;
+  }
+  .bb-row {
+    border-bottom: 1px solid var(--hairline);
+    cursor: pointer;
+  }
+  .bb-row:hover {
+    background: color-mix(in srgb, var(--bg-2) 60%, transparent);
+  }
+  .bb-row-selected {
+    background: var(--bg-2);
+  }
+  .bb-table-foot {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    height: 32px;
+    padding: 0 12px;
+    font-size: 11px;
+    color: var(--ink-3);
+    border-top: 1px solid var(--hairline);
+  }
+  .bb-check {
+    width: 14px;
+    height: 14px;
+    border-radius: 4px;
+    cursor: pointer;
+    accent-color: rgb(var(--accent-600));
+  }
+  .bb-app-canvas {
+    background-image: none;
+  }
+  body.theme-neon .bb-icon-chip {
+    box-shadow: var(--glow-accent);
+    background: rgba(124, 92, 255, 0.16) !important;
+    color: #cdbfff !important;
+  }
+  body.theme-neon [data-testid='week-grid-now-line'],
+  body.theme-neon [data-testid='week-grid-now-line'] > div {
+    background-color: var(--accent) !important;
+    box-shadow: 0 0 6px var(--accent);
+  }
+  body.theme-neon .bb-today-badge {
+    box-shadow: var(--glow-accent);
+  }
+  :root {
+    --accent-50: 238 242 255;
+    --accent-100: 224 231 255;
+    --accent-200: 199 210 254;
+    --accent-300: 165 180 252;
+    --accent-400: 129 140 248;
+    --accent-500: 99 102 241;
+    --accent-600: 79 70 229;
+    --accent-700: 67 56 202;
+    --accent-800: 55 48 163;
+    --accent-900: 49 46 129;
+    --accent-950: 30 27 75;
+  }
+  body.accent-violet {
+    --accent-50: 245 243 255;
+    --accent-100: 237 233 254;
+    --accent-200: 221 214 254;
+    --accent-300: 196 181 253;
+    --accent-400: 167 139 250;
+    --accent-500: 139 92 246;
+    --accent-600: 124 58 237;
+    --accent-700: 109 40 217;
+    --accent-800: 91 33 182;
+    --accent-900: 76 29 149;
+    --accent-950: 46 16 101;
+  }
+  body.accent-blue {
+    --accent-50: 239 246 255;
+    --accent-100: 219 234 254;
+    --accent-200: 191 219 254;
+    --accent-300: 147 197 253;
+    --accent-400: 96 165 250;
+    --accent-500: 59 130 246;
+    --accent-600: 37 99 235;
+    --accent-700: 29 78 216;
+    --accent-800: 30 64 175;
+    --accent-900: 30 58 138;
+    --accent-950: 23 37 84;
+  }
+  body.accent-emerald {
+    --accent-50: 236 253 245;
+    --accent-100: 209 250 229;
+    --accent-200: 167 243 208;
+    --accent-300: 110 231 183;
+    --accent-400: 52 211 153;
+    --accent-500: 16 185 129;
+    --accent-600: 5 150 105;
+    --accent-700: 4 120 87;
+    --accent-800: 6 95 70;
+    --accent-900: 6 78 59;
+    --accent-950: 2 44 34;
+  }
+  body.accent-rose {
+    --accent-50: 255 241 242;
+    --accent-100: 255 228 230;
+    --accent-200: 254 205 211;
+    --accent-300: 253 164 175;
+    --accent-400: 251 113 133;
+    --accent-500: 244 63 94;
+    --accent-600: 225 29 72;
+    --accent-700: 190 18 60;
+    --accent-800: 159 18 57;
+    --accent-900: 136 19 55;
+    --accent-950: 76 5 25;
+  }
+  body.accent-amber {
+    --accent-50: 255 251 235;
+    --accent-100: 254 243 199;
+    --accent-200: 253 230 138;
+    --accent-300: 252 211 77;
+    --accent-400: 251 191 36;
+    --accent-500: 245 158 11;
+    --accent-600: 217 119 6;
+    --accent-700: 180 83 9;
+    --accent-800: 146 64 14;
+    --accent-900: 120 53 15;
+    --accent-950: 69 26 3;
+  }
+  body.accent-cyan {
+    --accent-50: 236 254 255;
+    --accent-100: 207 250 254;
+    --accent-200: 165 243 252;
+    --accent-300: 103 232 249;
+    --accent-400: 34 211 238;
+    --accent-500: 6 182 212;
+    --accent-600: 8 145 178;
+    --accent-700: 14 116 144;
+    --accent-800: 21 94 117;
+    --accent-900: 22 78 99;
+    --accent-950: 8 51 68;
+  }
 }
 
 /* Dark theme — toggled with body.theme-console */
-body.theme-console {
-  --frame: #060708;
-  --bg: #0c0d0f;
-  --bg-2: #111317;
-  --bg-3: #171a20;
-  --panel: #111317;
-  --ink: #e8e6e0;
-  --ink-2: #a5a297;
-  --ink-3: #6b6860;
-  --hairline: #20232a;
-  --hairline-2: #2a2e37;
-  --accent: oklch(0.72 0.14 200);
-  --accent-ink: #0c0d0f;
-  --c-residential: oklch(0.72 0.14 245);
-  --c-residential-bg: oklch(0.28 0.08 245);
-  --c-commercial: oklch(0.75 0.14 75);
-  --c-commercial-bg: oklch(0.28 0.08 75);
-  --c-str: oklch(0.72 0.14 155);
-  --c-str-bg: oklch(0.28 0.08 155);
-  --c-alert: oklch(0.70 0.18 25);
-  --c-alert-bg: oklch(0.30 0.10 25);
-  --shadow-1: 0 1px 0 rgba(0,0,0,0.4), 0 2px 8px rgba(0,0,0,0.3);
-  --shadow-2: 0 1px 2px rgba(0,0,0,0.4), 0 2px 6px rgba(0,0,0,0.4);
-}
 
 /* Clean mode — the app's default skin. Retuned to the quiet neutral family
    BrightBase's references live in (Notion / Attio / Twenty): near-grayscale
@@ -68,40 +667,6 @@ body.theme-console {
    `--frame` is the app frame behind the sidebar and content sheet (the
    Twenty "gray frame / white sheet" look) — slightly deeper than --bg so the
    sheet reads as a surface sitting on it. Toggled with body.mode-clean. */
-body.mode-clean {
-  --frame: #ececee;
-  --bg: #f7f7f8;
-  --bg-2: #f0f0f2;
-  --bg-3: #e7e7ea;
-  --panel: #ffffff;
-  --ink: #191a1f;
-  --ink-2: #52545e;
-  --ink-3: #8b8e99;
-  --hairline: #ececee;
-  --hairline-2: #dfe0e4;
-  --accent: oklch(0.55 0.20 264);
-  --accent-ink: #ffffff;
-  --shadow-1: 0 1px 2px rgba(25,26,31,0.04);
-  --shadow-2: 0 1px 2px rgba(25,26,31,0.04), 0 12px 28px -14px rgba(25,26,31,0.14);
-  font-size: 13px;
-}
-
-body.mode-clean.theme-console {
-  --frame: #0b0b0d;
-  --bg: #151518;
-  --bg-2: #1c1c20;
-  --bg-3: #242429;
-  --panel: #1a1a1e;
-  --ink: #ededf0;
-  --ink-2: #a4a6b0;
-  --ink-3: #686b76;
-  --hairline: #26262b;
-  --hairline-2: #313138;
-  --accent: oklch(0.72 0.16 264);
-  --accent-ink: #0b0b0d;
-  --shadow-1: 0 1px 2px rgba(0,0,0,0.4);
-  --shadow-2: 0 1px 2px rgba(0,0,0,0.4), 0 16px 40px -18px rgba(0,0,0,0.6);
-}
 
 /* ----------------------------------------------------------------------
    Neon theme — dark / glass / electric-violet. A third selectable option
@@ -112,47 +677,10 @@ body.mode-clean.theme-console {
    (--glow-*, --blur) are additive and only meaningful under this theme —
    .bb-* primitives degrade to a plain subtle look everywhere else.
    ---------------------------------------------------------------------- */
-body.theme-neon {
-  --frame: #0b0d13;
-  --bg: #101219;
-  --bg-2: #171a23;
-  --bg-3: #1f2430;
-  --panel: #1b1f2a;
-  --ink: #f4f6fb;
-  --ink-2: #b6bccb;
-  --ink-3: #7c8397;
-  --hairline: rgba(255, 255, 255, 0.08);
-  --hairline-2: rgba(255, 255, 255, 0.14);
-  --accent: #7c5cff;
-  --accent-ink: #ffffff;
-
-  --c-residential: #f6b73c;   --c-residential-bg: rgba(246, 183, 60, 0.16);
-  --c-commercial:  #60a5fa;   --c-commercial-bg:  rgba(96, 165, 250, 0.16);
-  --c-str:         #22d3ee;   --c-str-bg:          rgba(34, 211, 238, 0.16);
-  --c-alert:       #f2555a;   --c-alert-bg:        rgba(242, 85, 90, 0.16);
-  --c-ok:          #34d399;
-
-  --shadow-1: 0 1px 2px rgba(0,0,0,0.4);
-  --shadow-2: 0 8px 24px rgba(0,0,0,0.45);
-
-  /* Neon-only extras: glow + glass, consumed by the .bb-* primitives below. */
-  --blur: 14px;
-  --glow-accent: 0 0 0 1px rgba(124,92,255,0.45), 0 8px 28px rgba(124,92,255,0.35);
-  --glow-cyan:   0 0 0 1px rgba(34,211,238,0.40), 0 8px 28px rgba(34,211,238,0.30);
-}
 
 /* Reusable primitives — safe to use in any theme (neutral by default), but
    only "light up" with glass blur / neon glow while body.theme-neon is
    active, since --blur/--glow-* are only ever defined there. */
-.bb-glass {
-  background: var(--panel);
-  backdrop-filter: blur(var(--blur, 0));
-  -webkit-backdrop-filter: blur(var(--blur, 0));
-  border: 1px solid var(--hairline);
-  box-shadow: var(--shadow-2);
-}
-.bb-glow-accent { box-shadow: var(--glow-accent, var(--shadow-2)); }
-.bb-glow-cyan { box-shadow: var(--glow-cyan, var(--shadow-2)); }
 
 /* ----------------------------------------------------------------------
    Flat surface system (Twenty-CRM style) — applied to the shared card/panel
@@ -161,24 +689,8 @@ body.theme-neon {
    content is the focus, not the chrome. (Was the "futuristic" glass+glow
    treatment; flattened app-wide.)
    ---------------------------------------------------------------------- */
-.bb-surface {
-  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.05);
-}
-body.theme-console .bb-surface {
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.4);
-}
-.bb-surface-hover { transition: box-shadow .15s ease, border-color .15s ease; }
-.bb-surface-hover:hover {
-  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.06), 0 10px 24px -18px rgba(15, 23, 42, 0.18);
-}
-body.theme-console .bb-surface-hover:hover {
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.5), 0 12px 28px -18px rgba(0, 0, 0, 0.6);
-}
 
 /* Active-nav highlight — a calm inset accent ring, no outer bloom. */
-.bb-nav-active {
-  box-shadow: inset 0 0 0 1px rgba(99, 102, 241, 0.22);
-}
 
 /* ----------------------------------------------------------------------
    List tables (Attio/Twenty-grade) — the shared vocabulary every list page's
@@ -194,79 +706,24 @@ body.theme-console .bb-surface-hover:hover {
      </table>
      <div class="bb-table-foot">128 clients</div>
    ---------------------------------------------------------------------- */
-.bb-table { width: 100%; text-align: left; border-collapse: collapse; }
-.bb-th {
-  height: 32px;
-  padding: 0 12px;
-  font-size: 11px;
-  font-weight: 500;
-  color: var(--ink-3);
-  white-space: nowrap;
-  border-bottom: 1px solid var(--hairline-2);
-}
-.bb-td {
-  height: 36px;
-  padding: 4px 12px;
-  font-size: 13px;
-  color: var(--ink-2);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  max-width: 320px;
-}
 /* Primary cell (the record's name) reads as the row's anchor. */
-.bb-td-primary { color: var(--ink); font-weight: 500; }
-.bb-row { border-bottom: 1px solid var(--hairline); cursor: pointer; }
-.bb-row:hover { background: color-mix(in srgb, var(--bg-2) 60%, transparent); }
-.bb-row-selected { background: var(--bg-2); }
-.bb-table-foot {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  height: 32px;
-  padding: 0 12px;
-  font-size: 11px;
-  color: var(--ink-3);
-  border-top: 1px solid var(--hairline);
-}
-.bb-check {
-  width: 14px;
-  height: 14px;
-  border-radius: 4px;
-  cursor: pointer;
-  accent-color: rgb(var(--accent-600));
-}
 
 /* App canvas — flat. The gaps between panels are plain surface (bg-bg), the
    Twenty way. The aurora + dot-grid are gone; only the Neon theme (below)
    still paints anything here. */
-.bb-app-canvas { background-image: none; }
 
 /* Icon chips (PageHeader, KpiCard, Sidebar logo) — plain tinted box in
    light/dark; under Neon they pick up the accent glow too, so the "colored
    icon everywhere" pattern reads as futuristic instead of just flat color. */
-body.theme-neon .bb-icon-chip {
-  box-shadow: var(--glow-accent);
-  background: rgba(124, 92, 255, 0.16) !important;
-  color: #cdbfff !important;
-}
 
 /* Week view's current-time line (WeekGrid.jsx) — plain red elsewhere;
    under Neon it's the accent color with a glow, per the roadmap's "current-
    time line" ask. Pure CSS override via the existing data-testid, so the
    component itself needs no theme-awareness. */
-body.theme-neon [data-testid="week-grid-now-line"],
-body.theme-neon [data-testid="week-grid-now-line"] > div {
-  background-color: var(--accent) !important;
-  box-shadow: 0 0 6px var(--accent);
-}
 
 /* "Today" glow (month grid's date-circle badge) — plain flat accent fill
    elsewhere; under Neon it gets the violet glow, per the roadmap's "today
    glow" ask. */
-body.theme-neon .bb-today-badge {
-  box-shadow: var(--glow-accent);
-}
 
 /* ----------------------------------------------------------------------
    Accent palette — the `indigo-*` Tailwind scale is remapped (tailwind.config)
@@ -274,52 +731,6 @@ body.theme-neon .bb-today-badge {
    button, active-nav item, link and focus ring across the whole app at once.
    Default (no class) is Indigo. Channels are space-separated RGB.
    ---------------------------------------------------------------------- */
-:root {
-  --accent-50: 238 242 255;  --accent-100: 224 231 255; --accent-200: 199 210 254;
-  --accent-300: 165 180 252; --accent-400: 129 140 248; --accent-500: 99 102 241;
-  --accent-600: 79 70 229;   --accent-700: 67 56 202;   --accent-800: 55 48 163;
-  --accent-900: 49 46 129;   --accent-950: 30 27 75;
-}
-body.accent-violet {
-  --accent-50: 245 243 255;  --accent-100: 237 233 254; --accent-200: 221 214 254;
-  --accent-300: 196 181 253; --accent-400: 167 139 250; --accent-500: 139 92 246;
-  --accent-600: 124 58 237;  --accent-700: 109 40 217;  --accent-800: 91 33 182;
-  --accent-900: 76 29 149;   --accent-950: 46 16 101;
-}
-body.accent-blue {
-  --accent-50: 239 246 255;  --accent-100: 219 234 254; --accent-200: 191 219 254;
-  --accent-300: 147 197 253; --accent-400: 96 165 250;  --accent-500: 59 130 246;
-  --accent-600: 37 99 235;   --accent-700: 29 78 216;   --accent-800: 30 64 175;
-  --accent-900: 30 58 138;   --accent-950: 23 37 84;
-}
-body.accent-emerald {
-  --accent-50: 236 253 245;  --accent-100: 209 250 229; --accent-200: 167 243 208;
-  --accent-300: 110 231 183; --accent-400: 52 211 153;  --accent-500: 16 185 129;
-  --accent-600: 5 150 105;   --accent-700: 4 120 87;    --accent-800: 6 95 70;
-  --accent-900: 6 78 59;     --accent-950: 2 44 34;
-}
-body.accent-rose {
-  --accent-50: 255 241 242;  --accent-100: 255 228 230; --accent-200: 254 205 211;
-  --accent-300: 253 164 175; --accent-400: 251 113 133; --accent-500: 244 63 94;
-  --accent-600: 225 29 72;   --accent-700: 190 18 60;   --accent-800: 159 18 57;
-  --accent-900: 136 19 55;   --accent-950: 76 5 25;
-}
-body.accent-amber {
-  --accent-50: 255 251 235;  --accent-100: 254 243 199; --accent-200: 253 230 138;
-  --accent-300: 252 211 77;  --accent-400: 251 191 36;  --accent-500: 245 158 11;
-  --accent-600: 217 119 6;   --accent-700: 180 83 9;    --accent-800: 146 64 14;
-  --accent-900: 120 53 15;   --accent-950: 69 26 3;
-}
-body.accent-cyan {
-  --accent-50: 236 254 255;  --accent-100: 207 250 254; --accent-200: 165 243 252;
-  --accent-300: 103 232 249; --accent-400: 34 211 238;  --accent-500: 6 182 212;
-  --accent-600: 8 145 178;   --accent-700: 14 116 144;  --accent-800: 21 94 117;
-  --accent-900: 22 78 99;    --accent-950: 8 51 68;
-}
-
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
 
 @layer base {
   /* PUBLIC SURFACES ALWAYS READ AS PAPER.
@@ -413,162 +824,6 @@ body.accent-cyan {
   p { @apply text-sm text-neutral-600 leading-relaxed; }
   a { @apply text-indigo-600 hover:text-indigo-700 underline; }
   strong { @apply font-semibold; }
-}
-
-@layer components {
-  /* Button Base */
-  .btn {
-    @apply inline-flex items-center justify-center font-medium rounded-lg transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed;
-  }
-
-  .btn-primary {
-    @apply btn bg-indigo-600 hover:bg-indigo-700 text-white shadow-sm focus:ring-indigo-500;
-  }
-
-  .btn-secondary {
-    @apply btn bg-neutral-200 hover:bg-neutral-300 text-neutral-900 focus:ring-neutral-500;
-  }
-
-  .btn-tertiary {
-    @apply btn text-indigo-600 hover:text-indigo-700 hover:bg-blue-50 focus:ring-indigo-500;
-  }
-
-  .btn-danger {
-    @apply btn bg-red-600 hover:bg-red-700 text-white shadow-sm focus:ring-red-500;
-  }
-
-  /* Button Sizes */
-  .btn-lg { @apply px-6 py-2.5 text-base font-semibold; }
-  .btn-md { @apply px-4 py-2 text-sm font-medium; }
-  .btn-sm { @apply px-3 py-1.5 text-xs font-medium; }
-
-  /* Card Components */
-  .card {
-    @apply bg-white border border-neutral-200/60 rounded-xl shadow-sm;
-  }
-
-  .card-glass {
-    @apply bg-white/70 backdrop-blur-lg border border-white/20 rounded-xl shadow-glass;
-  }
-
-  .card-hover {
-    @apply transition-all duration-200 hover:shadow-md hover:border-neutral-300/60;
-  }
-
-  /* Form Components */
-  .input {
-    @apply w-full px-3 py-2 border border-neutral-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-colors duration-200;
-  }
-
-  .input:disabled {
-    @apply bg-neutral-100 text-neutral-500 cursor-not-allowed;
-  }
-
-  .label {
-    @apply block text-xs font-semibold text-neutral-700 uppercase tracking-wide mb-2;
-  }
-
-  /* (Legacy .badge / .badge-* tinted pill classes removed — nothing in
-     src/ referenced them after the bubble sweep; status now renders via
-     components/ui StatusBadge's dot+word treatment.) */
-
-  /* Section Container */
-  .section {
-    @apply rounded-xl border border-neutral-200/60 bg-white shadow-sm overflow-hidden;
-  }
-
-  .section-header {
-    @apply px-6 py-4 border-b border-neutral-200/40 bg-neutral-50/50;
-  }
-
-  .section-title {
-    @apply text-lg font-semibold text-neutral-900;
-  }
-
-  .section-content {
-    @apply p-6;
-  }
-
-  /* Table Components */
-  .table-wrapper { @apply w-full text-sm; }
-  .table-header { @apply text-xs font-semibold text-neutral-600 uppercase tracking-wide; }
-  .table-header-cell { @apply px-6 py-3 text-left bg-neutral-50/80 border-b border-neutral-200/40; }
-  .table-body-row { @apply border-b border-neutral-200/40 hover:bg-blue-50/50 transition-colors duration-150; }
-  .table-body-cell { @apply px-6 py-3 text-neutral-700; }
-
-  /* Touch helpers */
-  .touch-sm { min-height: 32px; }
-  .touch-none { min-height: unset; }
-}
-
-@layer utilities {
-  /* Scrollbar Styling */
-  .scrollbar-thin {
-    scrollbar-width: thin;
-    scrollbar-color: #e5e7eb transparent;
-  }
-
-  .scrollbar-thin::-webkit-scrollbar {
-    width: 4px;
-  }
-
-  .scrollbar-thin::-webkit-scrollbar-thumb {
-    background-color: #e5e7eb;
-    border-radius: 4px;
-  }
-
-  /* Safe Area Utilities */
-  .pb-safe { padding-bottom: max(env(safe-area-inset-bottom), 16px); }
-  .mb-safe { margin-bottom: max(env(safe-area-inset-bottom), 16px); }
-  .pb-bottomnav { padding-bottom: calc(64px + env(safe-area-inset-bottom, 0px)); }
-  /* The `html`-level inset below covers normal document flow, but every
-     sticky/fixed top-0 header on a full-bleed mobile screen (the crew app,
-     CustomerPortal, full-screen modals) needs its OWN top inset too —
-     sticky/fixed positioning doesn't reliably inherit an ancestor's padding
-     the way flow content does, and on an installed iOS PWA that gap renders
-     as page content sitting behind the status bar. Apply directly to the
-     header element. (ScheduleToolbar.jsx already referenced this class name
-     before it existed here — this makes that reference real.) */
-  .safe-top { padding-top: env(safe-area-inset-top); }
-
-  /* Smooth Scrolling */
-  .scroll-smooth-mobile {
-    -webkit-overflow-scrolling: touch;
-    scroll-behavior: smooth;
-  }
-
-  .select-none-interactive {
-    -webkit-user-select: none;
-    user-select: none;
-  }
-
-  /* Glass Effect Utilities */
-  .glass-effect {
-    @apply bg-white/70 backdrop-blur-lg border border-white/20;
-  }
-
-  .glass-light {
-    @apply bg-white/80 backdrop-blur-xl border border-white/20;
-  }
-
-  /* Gradient Utilities */
-  .gradient-hero {
-    @apply bg-gradient-to-r from-indigo-600 to-violet-600;
-  }
-
-  .gradient-subtle {
-    @apply bg-gradient-to-br from-blue-50/50 to-violet-50/30;
-  }
-
-  /* Transitions */
-  .transition-all-200 { @apply transition-all duration-200; }
-  .transition-colors-150 { @apply transition-colors duration-150; }
-  .transition-transform-300 { @apply transition-transform duration-300; }
-
-  /* Shadows */
-  .shadow-glass { box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1); }
-  .shadow-glass-lg { box-shadow: 0 20px 40px rgba(0, 0, 0, 0.15); }
-  .shadow-glass-sm { box-shadow: 0 4px 16px rgba(0, 0, 0, 0.08); }
 }
 
 /* Print: clean one-pager for the public quote (window.print / Save as PDF).

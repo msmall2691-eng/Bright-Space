@@ -142,7 +142,7 @@ export default function SavedViewsBar({ entityType, currentConfig, onApply, defa
             <input autoFocus value={name} onChange={e => setName(e.target.value)}
               onKeyDown={e => { if (e.key === 'Enter') saveNew(); if (e.key === 'Escape') { setNaming(false); setName('') } }}
               placeholder="View name…"
-              className="w-36 bg-bg border border-hairline rounded-md px-2 py-1 text-[12px] text-ink placeholder-ink-3 focus:outline-none focus:border-blue-400" />
+              className="w-36 bg-bg border border-hairline rounded-md px-2 py-1 text-[12px] text-ink placeholder-ink-3 focus:outline-hidden focus:border-blue-400" />
             <button type="button" onClick={saveNew}
               className="min-h-0 px-2 py-1 rounded-md bg-indigo-600 hover:bg-indigo-700 text-white text-[11px] font-medium">Save</button>
           </span>

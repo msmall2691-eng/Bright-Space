@@ -54,7 +54,7 @@ export default function PeekPanel({
         tabIndex={-1}
         role="dialog"
         aria-modal="false"
-        className="fixed inset-y-0 right-0 z-50 flex w-full max-w-[420px] flex-col border-l border-hairline-2 bg-panel shadow-glass-lg outline-none lg:inset-y-2 lg:right-2 lg:rounded-lg lg:border"
+        className="fixed inset-y-0 right-0 z-50 flex w-full max-w-[420px] flex-col border-l border-hairline-2 bg-panel shadow-glass-lg outline-hidden lg:inset-y-2 lg:right-2 lg:rounded-lg lg:border"
       >
         <header className="flex h-11 shrink-0 items-center gap-1 border-b border-hairline pl-4 pr-2">
           <div className="min-w-0 flex-1">{title}</div>

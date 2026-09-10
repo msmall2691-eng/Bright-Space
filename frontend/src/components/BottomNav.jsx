@@ -60,7 +60,7 @@ export default function BottomNav() {
         {tabs.map(tab => (
           <NavLink key={tab.to} to={tab.to}
             className={({ isActive }) =>
-              `relative flex flex-col items-center justify-center gap-1 py-2 px-2 flex-1 min-h-[3.5rem] no-underline transition-colors ${
+              `relative flex flex-col items-center justify-center gap-1 py-2 px-2 flex-1 min-h-14 no-underline transition-colors ${
                 isActive ? 'text-indigo-600' : 'text-ink-3 active:text-ink'}`}>
             {({ isActive }) => (
               <>
@@ -73,7 +73,7 @@ export default function BottomNav() {
         ))}
         {/* "More" opens the full menu (drawer). App listens for bb:open-menu. */}
         <button onClick={openMenu}
-          className="relative flex flex-col items-center justify-center gap-1 py-2 px-2 flex-1 min-h-[3.5rem] text-ink-3 active:text-ink transition-colors">
+          className="relative flex flex-col items-center justify-center gap-1 py-2 px-2 flex-1 min-h-14 text-ink-3 active:text-ink transition-colors">
           <Menu className="w-[22px] h-[22px] stroke-[1.6px]" />
           <span className="text-[10px] leading-tight font-medium">More</span>
         </button>

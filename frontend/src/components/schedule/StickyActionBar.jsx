@@ -5,7 +5,7 @@
  * covered the last card's content and the assistant button rode on top of
  * it (owner: "hate these big bubbles"). Now a compact pill in the
  * bottom-right, stacked ABOVE the PageAssistant/Ask-AI button (which sits
- * at bottom-[4.75rem] below lg) so the two never overlap, and narrow
+ * at bottom-19 below lg) so the two never overlap, and narrow
  * enough that cards scroll past beside it.
  *
  * md:hidden — from tablet width up the toolbar's own "New Job" button is

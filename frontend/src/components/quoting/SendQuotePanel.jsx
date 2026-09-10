@@ -110,7 +110,7 @@ export default function SendQuotePanel({
             <label className="block text-xs text-ink-3 mb-1">Email Address</label>
             <input type="email" value={sendForm.email} onChange={e => setSendForm(f => ({ ...f, email: e.target.value }))}
               placeholder="client@example.com"
-              className="w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-400" />
+              className="w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-hidden focus:border-blue-400" />
           </div>
         )}
 
@@ -120,20 +120,20 @@ export default function SendQuotePanel({
             <div>
               <label className="block text-xs text-ink-3 mb-1">Email Subject</label>
               <input value={sendForm.subject} onChange={e => setSendForm(f => ({ ...f, subject: e.target.value }))}
-                className="w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-400" />
+                className="w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-hidden focus:border-blue-400" />
             </div>
             <div>
               <label className="block text-xs text-ink-3 mb-1">Greeting Name</label>
               <input value={sendForm.greeting} onChange={e => setSendForm(f => ({ ...f, greeting: e.target.value }))}
                 placeholder="Leave blank for a plain “Hello,”"
-                className="w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-400" />
+                className="w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-hidden focus:border-blue-400" />
               <p className="text-[11px] text-ink-3 mt-1">The email opens with “Hello {sendForm.greeting.trim() || '…'},”</p>
             </div>
             <div>
               <label className="block text-xs text-ink-3 mb-1">Send a copy to me</label>
               <input type="email" value={sendForm.copy_to} onChange={e => setSendForm(f => ({ ...f, copy_to: e.target.value }))}
                 placeholder="you@yourcompany.com"
-                className="w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-400" />
+                className="w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-hidden focus:border-blue-400" />
               <p className="text-[11px] text-ink-3 mt-1">You'll get a blind copy of the quote email. Leave blank to use your company email.</p>
             </div>
           </div>
@@ -156,7 +156,7 @@ export default function SendQuotePanel({
                 inputMode="tel"
                 autoComplete="tel-national"
                 aria-invalid={hasDigits && !phoneOk}
-                className={`w-full bg-panel border rounded-lg px-3 py-2 text-sm focus:outline-none ${
+                className={`w-full bg-panel border rounded-lg px-3 py-2 text-sm focus:outline-hidden ${
                   hasDigits && !phoneOk
                     ? 'border-red-400 focus:border-red-500'
                     : 'border-hairline focus:border-blue-400'
@@ -204,7 +204,7 @@ export default function SendQuotePanel({
           <label className="block text-xs text-ink-3 mb-1">Personal note (optional)</label>
           <textarea value={sendForm.custom_message} onChange={e => setSendForm(f => ({ ...f, custom_message: e.target.value }))}
             rows={3} placeholder="Hi! Great talking with you — here's the quote we discussed..."
-            className="w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-none resize-none" />
+            className="w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-hidden resize-none" />
           <p className="text-xs text-ink-3 mt-1">Included at the top of the email and prepended to the SMS. If blank, the quote's "Message to Customer" is used.</p>
         </div>
 

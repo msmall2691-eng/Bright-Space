@@ -52,7 +52,7 @@ export default function VisitCard({ v, jobs, properties, clients, onSelect, empN
       className={`group w-full text-left flex items-stretch rounded-2xl border bg-panel overflow-hidden transition-all active:scale-[0.99] ${
         isCancelled
           ? 'border-hairline opacity-60'
-          : 'border-hairline hover:border-hairline hover:shadow-sm'
+          : 'border-hairline hover:border-hairline hover:shadow-xs'
       }`}
     >
       {/* Color bar — job type signal */}

@@ -69,7 +69,7 @@ function ThemeSwitcher() {
               key={t.key}
               onClick={() => setTheme(t.key)}
               className={`px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
-                theme === t.key ? 'bg-panel text-ink shadow-sm' : 'text-ink-3 hover:text-ink-2'
+                theme === t.key ? 'bg-panel text-ink shadow-xs' : 'text-ink-3 hover:text-ink-2'
               }`}
             >
               {t.label}
@@ -85,7 +85,7 @@ function ThemeSwitcher() {
               key={d.key}
               onClick={() => setDensity(d.key)}
               className={`px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
-                density === d.key ? 'bg-panel text-ink shadow-sm' : 'text-ink-3 hover:text-ink-2'
+                density === d.key ? 'bg-panel text-ink shadow-xs' : 'text-ink-3 hover:text-ink-2'
               }`}
             >
               {d.label}
@@ -247,7 +247,7 @@ export default function DesignSystem() {
           </div>
         </Section>
 
-        <Section icon={Layers} title="Radius, shadow &amp; motion"
+        <Section icon={Layers} title="Radius, shadow-sm &amp; motion"
           description="4px base grid. Two glass elevation levels. 150ms ease-out is the standard transition.">
           <SubLabel>Border radius</SubLabel>
           <div className="grid grid-cols-3 sm:grid-cols-6 gap-3 mb-6">

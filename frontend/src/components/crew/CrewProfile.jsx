@@ -94,7 +94,7 @@ export default function CrewProfile({ bare = false }) {
             <input
               type={f.type} autoComplete={f.autoComplete} value={form[f.key] || ''}
               onChange={e => setForm(prev => ({ ...prev, [f.key]: e.target.value }))}
-              className="mt-1 w-full rounded-lg border border-hairline bg-bg px-3 py-2.5 text-[14px] text-ink placeholder-ink-3 focus:outline-none focus:border-blue-400"
+              className="mt-1 w-full rounded-lg border border-hairline bg-bg px-3 py-2.5 text-[14px] text-ink placeholder-ink-3 focus:outline-hidden focus:border-blue-400"
             />
           </label>
         ))}

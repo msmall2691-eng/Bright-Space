@@ -116,7 +116,7 @@ export default function Turnovers() {
               Which day?
               <input type="date" value={planDate} autoFocus
                 onChange={e => setPlanDate(e.target.value)}
-                className="rounded-lg border border-hairline bg-bg px-2.5 py-1.5 text-sm text-ink focus:outline-none focus:border-blue-400" />
+                className="rounded-lg border border-hairline bg-bg px-2.5 py-1.5 text-sm text-ink focus:outline-hidden focus:border-blue-400" />
             </label>
             <button type="submit" disabled={busy === 'create' || !planDate}
               className="inline-flex items-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-indigo-700 disabled:opacity-50">
@@ -341,19 +341,19 @@ function Ladder({ w, onRun }) {
           <span className="mb-1 block text-[10px] uppercase tracking-wide text-ink-3">Starts at</span>
           <input type="number" step="any" value={base} onChange={e => setBase(e.target.value)}
             onBlur={commit}
-            className="w-full rounded-lg border border-hairline bg-panel px-3 py-1.5 text-right text-[13px] text-ink focus:outline-none focus:ring-1 focus:ring-blue-400/30" />
+            className="w-full rounded-lg border border-hairline bg-panel px-3 py-1.5 text-right text-[13px] text-ink focus:outline-hidden focus:ring-1 focus:ring-blue-400/30" />
         </label>
         <label className="w-24">
           <span className="mb-1 block text-[10px] uppercase tracking-wide text-ink-3">Step %</span>
           <input type="number" step="any" value={pct} onChange={e => setPct(e.target.value)}
             onBlur={commit}
-            className="w-full rounded-lg border border-hairline bg-panel px-3 py-1.5 text-right text-[13px] text-ink focus:outline-none focus:ring-1 focus:ring-blue-400/30" />
+            className="w-full rounded-lg border border-hairline bg-panel px-3 py-1.5 text-right text-[13px] text-ink focus:outline-hidden focus:ring-1 focus:ring-blue-400/30" />
         </label>
         <label className="w-20">
           <span className="mb-1 block text-[10px] uppercase tracking-wide text-ink-3">Max steps</span>
           <input type="number" value={cap} onChange={e => setCap(e.target.value)}
             onBlur={commit}
-            className="w-full rounded-lg border border-hairline bg-panel px-3 py-1.5 text-right text-[13px] text-ink focus:outline-none focus:ring-1 focus:ring-blue-400/30" />
+            className="w-full rounded-lg border border-hairline bg-panel px-3 py-1.5 text-right text-[13px] text-ink focus:outline-hidden focus:ring-1 focus:ring-blue-400/30" />
         </label>
       </div>
 

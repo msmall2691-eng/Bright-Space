@@ -94,7 +94,7 @@ describe('JobEditModal — per-field auto-save (existing, non-recurring job)', (
     expect(screen.queryByRole('button', { name: 'Save Changes' })).toBeNull()
   })
 
-  it('does not re-PATCH on blur when the field was not actually changed', async () => {
+  it('does not re-PATCH on blur-sm when the field was not actually changed', async () => {
     mockFetch([['/api/jobs/5', 'PATCH', { status: 200, body: { id: 5 } }]])
     render(<JobEditModal job={JOB} properties={PROPERTIES} onClose={() => {}} onSave={() => {}} />)
 

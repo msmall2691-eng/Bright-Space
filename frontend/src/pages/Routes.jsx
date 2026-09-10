@@ -268,13 +268,13 @@ function RouteDetail({ detail, busy, onSave, onOffer, onEnd, onDelete }) {
           <span className="mb-1 block text-[10px] uppercase tracking-wide text-ink-3">Name</span>
           <input value={name} onChange={e => setName(e.target.value)} onBlur={commit}
             disabled={!editable}
-            className="w-full rounded-lg border border-hairline bg-panel px-3 py-1.5 text-[13px] text-ink focus:outline-none focus:ring-1 focus:ring-blue-400/30 disabled:opacity-60" />
+            className="w-full rounded-lg border border-hairline bg-panel px-3 py-1.5 text-[13px] text-ink focus:outline-hidden focus:ring-1 focus:ring-blue-400/30 disabled:opacity-60" />
         </label>
         <label>
           <span className="mb-1 block text-[10px] uppercase tracking-wide text-ink-3">Day</span>
           <select value={day} onChange={e => setDay(e.target.value)} onBlur={commit}
             disabled={!editable}
-            className="rounded-lg border border-hairline bg-panel px-3 py-1.5 text-[13px] text-ink focus:outline-none disabled:opacity-60">
+            className="rounded-lg border border-hairline bg-panel px-3 py-1.5 text-[13px] text-ink focus:outline-hidden disabled:opacity-60">
             {DAYS.map((d, i) => <option key={d} value={i}>{d}</option>)}
           </select>
         </label>
@@ -284,7 +284,7 @@ function RouteDetail({ detail, busy, onSave, onOffer, onEnd, onDelete }) {
           </span>
           <input type="number" step="any" value={rate} onChange={e => setRate(e.target.value)}
             onBlur={commit} disabled={!editable}
-            className="w-full rounded-lg border border-hairline bg-panel px-3 py-1.5 text-right text-[13px] text-ink focus:outline-none focus:ring-1 focus:ring-blue-400/30 disabled:opacity-60" />
+            className="w-full rounded-lg border border-hairline bg-panel px-3 py-1.5 text-right text-[13px] text-ink focus:outline-hidden focus:ring-1 focus:ring-blue-400/30 disabled:opacity-60" />
         </label>
       </div>
 

@@ -18,7 +18,7 @@ export default function GlobalConfirmDialog() {
   const choose = (answer) => resolveConfirm(id, answer)
 
   return (
-    <div className="fixed inset-0 z-[150] flex items-center justify-center p-4">
+    <div className="fixed inset-0 z-150 flex items-center justify-center p-4">
       <div className="absolute inset-0 bg-black/50" onClick={() => choose(false)} />
       <div
         role="alertdialog"

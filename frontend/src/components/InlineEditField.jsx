@@ -40,7 +40,7 @@ export default function InlineEditField({
             if (e.key === 'Enter') commit()
             else if (e.key === 'Escape') { setDraft(value ?? ''); setEditing(false) }
           }}
-          className="w-full bg-panel border border-blue-400 rounded px-1.5 py-1 text-[13px] text-ink focus:outline-none focus:ring-1 focus:ring-blue-400/30"
+          className="w-full bg-panel border border-blue-400 rounded px-1.5 py-1 text-[13px] text-ink focus:outline-hidden focus:ring-1 focus:ring-blue-400/30"
         />
       ) : (
         <button

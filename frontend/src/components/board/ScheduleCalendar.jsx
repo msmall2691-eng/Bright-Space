@@ -165,7 +165,7 @@ export default function ScheduleCalendar({ navigate }) {
             <button key={m} onClick={() => setModeSticky(m)}
               aria-pressed={mode === m}
               className={`rounded px-2 py-0.5 text-[11px] font-medium capitalize transition-colors ${
-                mode === m ? 'bg-panel text-ink shadow-sm' : 'text-ink-3 hover:text-ink-2'}`}>
+                mode === m ? 'bg-panel text-ink shadow-xs' : 'text-ink-3 hover:text-ink-2'}`}>
               {m}
             </button>
           ))}

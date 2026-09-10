@@ -191,9 +191,9 @@ export function PropertyRow({
                 <div className="bg-panel border border-hairline rounded-lg p-3 space-y-2">
                   <input value={icalForm.url} onChange={e => setIcalForm(f => ({ ...f, url: e.target.value }))}
                     placeholder="https://www.airbnb.com/calendar/ical/..."
-                    className="w-full bg-panel border border-hairline rounded px-2 py-1.5 text-xs focus:outline-none" />
+                    className="w-full bg-panel border border-hairline rounded px-2 py-1.5 text-xs focus:outline-hidden" />
                   <select value={icalForm.source} onChange={e => setIcalForm(f => ({ ...f, source: e.target.value }))}
-                    className="w-full bg-panel border border-hairline rounded px-2 py-1.5 text-xs focus:outline-none">
+                    className="w-full bg-panel border border-hairline rounded px-2 py-1.5 text-xs focus:outline-hidden">
                     <option value="">Source (Airbnb / VRBO / …)</option>
                     {ICAL_SOURCES.map(s => (
                       <option key={s.value} value={s.value}>{s.label}</option>

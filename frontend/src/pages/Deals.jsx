@@ -237,11 +237,11 @@ export default function Deals() {
             <div className="relative">
               <Search className="w-3.5 h-3.5 text-ink-3 absolute left-2.5 top-1/2 -translate-y-1/2" />
               <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search deals…"
-                className="bg-bg-2 border border-hairline rounded-lg pl-8 pr-3 py-2 text-[12px] text-ink placeholder-ink-3 focus:outline-none focus:border-indigo-400 w-40 sm:w-52" />
+                className="bg-bg-2 border border-hairline rounded-lg pl-8 pr-3 py-2 text-[12px] text-ink placeholder-ink-3 focus:outline-hidden focus:border-indigo-400 w-40 sm:w-52" />
             </div>
             {view === 'board' && owners.length > 0 && (
               <select value={owner} onChange={e => setOwner(e.target.value)}
-                className="bg-bg-2 border border-hairline rounded-lg px-3 py-2 text-[12px] text-ink-2 focus:outline-none focus:border-indigo-400">
+                className="bg-bg-2 border border-hairline rounded-lg px-3 py-2 text-[12px] text-ink-2 focus:outline-hidden focus:border-indigo-400">
                 <option value="">All owners</option>
                 {owners.map(o => <option key={o} value={o}>{o}</option>)}
               </select>
@@ -282,12 +282,12 @@ export default function Deals() {
           <div className="flex items-center gap-0.5 bg-bg-2 rounded-lg p-0.5 shrink-0">
             <button onClick={() => setView('table')} aria-pressed={view === 'table'}
               className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium transition-colors ${
-                view === 'table' ? 'bg-panel text-ink shadow-sm' : 'text-ink-3 hover:text-ink-2'}`}>
+                view === 'table' ? 'bg-panel text-ink shadow-xs' : 'text-ink-3 hover:text-ink-2'}`}>
               <Rows3 className="w-3.5 h-3.5" /> Table
             </button>
             <button onClick={() => setView('board')} aria-pressed={view === 'board'}
               className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium transition-colors ${
-                view === 'board' ? 'bg-panel text-ink shadow-sm' : 'text-ink-3 hover:text-ink-2'}`}>
+                view === 'board' ? 'bg-panel text-ink shadow-xs' : 'text-ink-3 hover:text-ink-2'}`}>
               <Columns3 className="w-3.5 h-3.5" /> Board
             </button>
           </div>
@@ -373,7 +373,7 @@ export default function Deals() {
                               <>
                                 <select value={d.stage} onChange={e => moveStage(d, e.target.value)} disabled={busyId === d.id || deletingId === d.id}
                                   aria-label="Move deal to stage"
-                                  className="text-[12px] bg-bg-2 border border-hairline rounded-md px-2 py-1 text-ink-2 focus:outline-none focus:border-indigo-400">
+                                  className="text-[12px] bg-bg-2 border border-hairline rounded-md px-2 py-1 text-ink-2 focus:outline-hidden focus:border-indigo-400">
                                   {MOVE_STAGES.map(s => (
                                     <option key={s.key} value={s.key}>{s.key === d.stage ? `● ${s.label}` : `Move to ${s.label}`}</option>
                                   ))}
@@ -483,7 +483,7 @@ export default function Deals() {
                           onChange={e => moveStage(d, e.target.value)}
                           onClick={e => e.stopPropagation()}
                           disabled={busyId === d.id}
-                          className="sm:hidden mt-2 w-full text-[12px] bg-bg-2 border border-hairline rounded-md px-2 py-2 text-ink-2 focus:outline-none focus:border-indigo-400"
+                          className="sm:hidden mt-2 w-full text-[12px] bg-bg-2 border border-hairline rounded-md px-2 py-2 text-ink-2 focus:outline-hidden focus:border-indigo-400"
                           aria-label="Move deal to stage"
                         >
                           {MOVE_STAGES.map(s => (

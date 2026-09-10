@@ -110,7 +110,7 @@ export default function VisitDetailsDrawer({
                 return (
                   <div>
                     <p className="text-xs font-semibold text-ink-2 uppercase mb-1">Address</p>
-                    <p className="text-sm sm:text-base break-words">{asPropertyLink(addr, '')}</p>
+                    <p className="text-sm sm:text-base wrap-break-word">{asPropertyLink(addr, '')}</p>
                   </div>
                 )
               }
@@ -122,7 +122,7 @@ export default function VisitDetailsDrawer({
                   </div>
                   <div>
                     <p className="text-xs font-semibold text-ink-2 uppercase mb-1">Address</p>
-                    <p className="text-sm sm:text-base text-ink break-words">{addr}</p>
+                    <p className="text-sm sm:text-base text-ink wrap-break-word">{addr}</p>
                   </div>
                 </>
               )
@@ -138,7 +138,7 @@ export default function VisitDetailsDrawer({
                   <p className="text-xs font-semibold text-ink-2 uppercase mb-1">Access</p>
                   <div className="text-sm text-ink space-y-0.5">
                     {p.house_code && <p>Code <span className="font-semibold">{p.house_code}</span></p>}
-                    {p.access_notes && <p className="break-words">{p.access_notes}</p>}
+                    {p.access_notes && <p className="wrap-break-word">{p.access_notes}</p>}
                     {p.parking_notes && <p className="text-ink-2">Parking: {p.parking_notes}</p>}
                     {(p.site_contact_name || p.site_contact_phone) && (
                       <p>Site contact: {p.site_contact_name || ''}{p.site_contact_phone ? ` · ${p.site_contact_phone}` : ''}</p>
@@ -277,7 +277,7 @@ export default function VisitDetailsDrawer({
                   )
                 })()}
                 {jobEvents[0]?.status === 'failed' && jobEvents[0]?.error_message && (
-                  <p className="text-[11px] text-red-600 mt-1 break-words">{String(jobEvents[0].error_message).slice(0, 200)}</p>
+                  <p className="text-[11px] text-red-600 mt-1 wrap-break-word">{String(jobEvents[0].error_message).slice(0, 200)}</p>
                 )}
               </div>
             )}

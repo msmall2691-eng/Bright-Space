@@ -94,7 +94,7 @@ export default function AcceptInvite() {
                       value={password}
                       onChange={(e) => setPassword(e.target.value)}
                       disabled={loading || !token}
-                      className="w-full pl-10 pr-12 py-3 rounded-lg border border-hairline/50 bg-panel/50 hover:bg-panel/70 focus:bg-panel focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-all disabled:opacity-50"
+                      className="w-full pl-10 pr-12 py-3 rounded-lg border border-hairline/50 bg-panel/50 hover:bg-panel/70 focus:bg-panel focus:outline-hidden focus:ring-2 focus:ring-indigo-500 transition-all disabled:opacity-50"
                     />
                     <button
                       type="button"
@@ -119,7 +119,7 @@ export default function AcceptInvite() {
                       value={confirm}
                       onChange={(e) => setConfirm(e.target.value)}
                       disabled={loading || !token}
-                      className="w-full pl-10 pr-4 py-3 rounded-lg border border-hairline/50 bg-panel/50 hover:bg-panel/70 focus:bg-panel focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-all disabled:opacity-50"
+                      className="w-full pl-10 pr-4 py-3 rounded-lg border border-hairline/50 bg-panel/50 hover:bg-panel/70 focus:bg-panel focus:outline-hidden focus:ring-2 focus:ring-indigo-500 transition-all disabled:opacity-50"
                     />
                   </div>
                 </div>
@@ -127,7 +127,7 @@ export default function AcceptInvite() {
                 <button
                   type="submit"
                   disabled={loading || !token}
-                  className="w-full mt-6 px-4 py-3 bg-indigo-600 hover:bg-indigo-700 text-white font-semibold rounded-lg transition-colors shadow-sm disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                  className="w-full mt-6 px-4 py-3 bg-indigo-600 hover:bg-indigo-700 text-white font-semibold rounded-lg transition-colors shadow-xs disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
                 >
                   {loading ? (
                     <><Loader className="w-4 h-4 animate-spin" /><span>Setting up…</span></>

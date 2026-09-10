@@ -1693,7 +1693,7 @@ export default function Recurring() {
                 onClick={() => setFilterStatus(o.v)}
                 aria-pressed={filterStatus === o.v}
                 className={`px-3 py-1.5 text-xs font-medium rounded-md transition ${
-                  filterStatus === o.v ? 'bg-bg-2 text-ink shadow-sm' : 'text-ink-3 hover:text-ink'
+                  filterStatus === o.v ? 'bg-bg-2 text-ink shadow-xs' : 'text-ink-3 hover:text-ink'
                 }`}>
                 {o.label}
               </button>

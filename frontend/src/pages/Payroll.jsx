@@ -42,12 +42,12 @@ export default function Payroll({ role }) {
           <div>
             <label className="block text-xs text-ink-3 mb-1">Start Date</label>
             <input type="date" value={startDate} onChange={e => setStartDate(e.target.value)}
-              className="bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-none" />
+              className="bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-hidden" />
           </div>
           <div>
             <label className="block text-xs text-ink-3 mb-1">End Date</label>
             <input type="date" value={endDate} onChange={e => setEndDate(e.target.value)}
-              className="bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-none" />
+              className="bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-hidden" />
           </div>
         </div>
       </PageHeader>

@@ -229,7 +229,7 @@ export default function ClientCRMSummary({ clientId }) {
           <div className="space-y-3">
             {crm.recent_activity.map((activity) => (
               <div key={activity.id} className="flex gap-3 pb-3 border-b border-hairline last:border-0 last:pb-0">
-                <div className="w-8 h-8 rounded-full bg-bg-2 flex items-center justify-center flex-shrink-0 text-xs font-semibold text-ink-2">
+                <div className="w-8 h-8 rounded-full bg-bg-2 flex items-center justify-center shrink-0 text-xs font-semibold text-ink-2">
                   {activity.activity_type.charAt(0).toUpperCase()}
                 </div>
                 <div className="flex-1 min-w-0">

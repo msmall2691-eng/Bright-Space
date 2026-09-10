@@ -165,7 +165,7 @@ export default function GeneralTab({ toast, active, automation, dangerZone }) {
                     onClick={() => setAccentChoice(applyAccent(name))}
                     title={name.charAt(0).toUpperCase() + name.slice(1)}
                     aria-label={`Accent ${name}`}
-                    className={`w-8 h-8 rounded-full transition-transform hover:scale-110 focus:outline-none ${
+                    className={`w-8 h-8 rounded-full transition-transform hover:scale-110 focus:outline-hidden ${
                       accentChoice === name ? 'ring-2 ring-offset-2 ring-offset-panel ring-ink-3 scale-110' : ''
                     }`}
                     style={{ backgroundColor: ACCENT_SWATCH[name] }}>
@@ -292,7 +292,7 @@ export default function GeneralTab({ toast, active, automation, dangerZone }) {
             <div>
               <label className="flex items-center justify-between gap-3 cursor-pointer">
                 <span>
-                  <span className={lbl + ' !mb-0'}>Front-of-house photo (Google Street View)</span>
+                  <span className={lbl + ' mb-0!'}>Front-of-house photo (Google Street View)</span>
                   <span className="block text-xs text-ink-3 mt-0.5">Shows a photo of the property address on the quote page, email, and PDF.</span>
                 </span>
                 <input type="checkbox" checked={!!propertyMedia.property_photo_enabled}
@@ -313,7 +313,7 @@ export default function GeneralTab({ toast, active, automation, dangerZone }) {
             <div>
               <label className="flex items-center justify-between gap-3 cursor-pointer">
                 <span>
-                  <span className={lbl + ' !mb-0'}>Auto-fill property specs (RentCast)</span>
+                  <span className={lbl + ' mb-0!'}>Auto-fill property specs (RentCast)</span>
                   <span className="block text-xs text-ink-3 mt-0.5">Looks up square footage, beds, and baths by address to pre-fill the quote.</span>
                 </span>
                 <input type="checkbox" checked={!!propertyMedia.property_enrichment_enabled}

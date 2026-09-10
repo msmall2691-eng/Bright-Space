@@ -327,7 +327,7 @@ export default function Crew() {
                             const v = e.target.value.trim()
                             if (v !== (row.full_name || '')) savePatch(row.id, { full_name: v })
                           }}
-                          className="mt-0.5 w-full bg-panel border border-hairline rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 disabled:opacity-60 disabled:cursor-not-allowed"
+                          className="mt-0.5 w-full bg-panel border border-hairline rounded-lg px-2 py-1.5 text-sm focus:outline-hidden focus:ring-2 focus:ring-indigo-500 disabled:opacity-60 disabled:cursor-not-allowed"
                         />
                       </label>
                       <label className="block" title={isAdmin ? undefined : 'Admin only'}>
@@ -342,7 +342,7 @@ export default function Crew() {
                             const v = e.target.value.trim()
                             if (v !== (row.email || '')) savePatch(row.id, { email: v })
                           }}
-                          className="mt-0.5 w-full bg-panel border border-hairline rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 disabled:opacity-60 disabled:cursor-not-allowed"
+                          className="mt-0.5 w-full bg-panel border border-hairline rounded-lg px-2 py-1.5 text-sm focus:outline-hidden focus:ring-2 focus:ring-indigo-500 disabled:opacity-60 disabled:cursor-not-allowed"
                         />
                       </label>
                     </div>
@@ -358,7 +358,7 @@ export default function Crew() {
                             const v = e.target.value.trim()
                             if (v !== (row.cleaner_id || '')) savePatch(row.id, { cleaner_id: v })
                           }}
-                          className="mt-0.5 w-full bg-panel border border-hairline rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 disabled:opacity-60 disabled:cursor-not-allowed"
+                          className="mt-0.5 w-full bg-panel border border-hairline rounded-lg px-2 py-1.5 text-sm focus:outline-hidden focus:ring-2 focus:ring-indigo-500 disabled:opacity-60 disabled:cursor-not-allowed"
                         />
                       </label>
                     </div>
@@ -379,7 +379,7 @@ export default function Crew() {
                           const v = e.target.value.trim()
                           if (v !== (row.home_address || '')) savePatch(row.id, { home_address: v })
                         }}
-                        className="mt-0.5 w-full bg-panel border border-hairline rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 disabled:opacity-60 disabled:cursor-not-allowed"
+                        className="mt-0.5 w-full bg-panel border border-hairline rounded-lg px-2 py-1.5 text-sm focus:outline-hidden focus:ring-2 focus:ring-indigo-500 disabled:opacity-60 disabled:cursor-not-allowed"
                       />
                     </label>
                   </div>
@@ -404,19 +404,19 @@ export default function Crew() {
               <span className="text-[11px] text-ink-3">Name</span>
               <input ref={nameRef} value={fullName} onChange={e => setFullName(e.target.value)}
                 placeholder="Full name" disabled={adding}
-                className="mt-0.5 w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+                className="mt-0.5 w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-hidden focus:ring-2 focus:ring-indigo-500" />
             </label>
             <label className="block">
               <span className="text-[11px] text-ink-3">Email <span className="text-red-500">*</span></span>
               <input type="email" value={email} onChange={e => setEmail(e.target.value)}
                 placeholder="cleaner@email.com" disabled={adding}
-                className="mt-0.5 w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+                className="mt-0.5 w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-hidden focus:ring-2 focus:ring-indigo-500" />
             </label>
             <label className="block sm:col-span-2">
               <span className="text-[11px] text-ink-3">Crew ID <span className="text-ink-3">(optional — links them to jobs already assigned)</span></span>
               <input value={crewId} onChange={e => setCrewId(e.target.value)}
                 placeholder="e.g. 123" disabled={adding}
-                className="mt-0.5 w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+                className="mt-0.5 w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-hidden focus:ring-2 focus:ring-indigo-500" />
             </label>
           </div>
           <div className="flex items-center gap-2 mt-3">

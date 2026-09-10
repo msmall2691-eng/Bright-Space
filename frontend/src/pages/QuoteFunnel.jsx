@@ -153,7 +153,7 @@ export default function QuoteFunnel() {
                 aria-pressed={days === r.days}
                 className={`px-3 py-1 text-xs font-semibold rounded-md transition-colors ${
                   days === r.days
-                    ? 'bg-bg-2 text-ink shadow-sm'
+                    ? 'bg-bg-2 text-ink shadow-xs'
                     : 'text-ink-3 hover:text-ink-2'
                 }`}
               >

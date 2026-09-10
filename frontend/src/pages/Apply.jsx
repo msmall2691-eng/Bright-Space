@@ -57,7 +57,7 @@ function Field({ label, hint, children }) {
 
 const inputClass =
   'w-full rounded-lg border border-hairline bg-panel px-3 py-2.5 text-[15px] text-ink ' +
-  'focus:outline-none focus:ring-1 focus:ring-blue-400/30'
+  'focus:outline-hidden focus:ring-1 focus:ring-blue-400/30'
 
 function Check2({ checked, onChange, children }) {
   return (

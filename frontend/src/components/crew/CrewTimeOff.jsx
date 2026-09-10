@@ -82,19 +82,19 @@ export default function CrewTimeOff({ bare = false }) {
               <span className="text-[11px] text-ink-3">First day off</span>
               <input type="date" value={form.start_date}
                 onChange={e => setForm(f => ({ ...f, start_date: e.target.value }))}
-                className="mt-0.5 w-full rounded-lg border border-hairline bg-panel px-2 py-1.5 text-[13px] text-ink focus:outline-none" />
+                className="mt-0.5 w-full rounded-lg border border-hairline bg-panel px-2 py-1.5 text-[13px] text-ink focus:outline-hidden" />
             </label>
             <label className="block">
               <span className="text-[11px] text-ink-3">Last day (optional)</span>
               <input type="date" value={form.end_date} min={form.start_date}
                 onChange={e => setForm(f => ({ ...f, end_date: e.target.value }))}
-                className="mt-0.5 w-full rounded-lg border border-hairline bg-panel px-2 py-1.5 text-[13px] text-ink focus:outline-none" />
+                className="mt-0.5 w-full rounded-lg border border-hairline bg-panel px-2 py-1.5 text-[13px] text-ink focus:outline-hidden" />
             </label>
           </div>
           <input value={form.reason} maxLength={200}
             onChange={e => setForm(f => ({ ...f, reason: e.target.value }))}
             placeholder="Reason (optional) — e.g. family trip"
-            className="w-full rounded-lg border border-hairline bg-panel px-2.5 py-1.5 text-[13px] text-ink focus:outline-none" />
+            className="w-full rounded-lg border border-hairline bg-panel px-2.5 py-1.5 text-[13px] text-ink focus:outline-hidden" />
           <div className="flex gap-2">
             <button onClick={() => setOpen(false)} disabled={busy}
               className="flex-1 text-[12.5px] font-semibold bg-panel border border-hairline text-ink-2 py-2 rounded-lg hover:bg-bg-2 disabled:opacity-60 transition-colors">

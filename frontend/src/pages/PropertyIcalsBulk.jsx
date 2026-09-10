@@ -28,7 +28,7 @@ function normalizeUrl(raw) {
   return u
 }
 
-const INPUT = 'w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-400'
+const INPUT = 'w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-hidden focus:border-blue-400'
 
 export default function PropertyIcalsBulk() {
   const { propertyId } = useParams()
@@ -423,7 +423,7 @@ export default function PropertyIcalsBulk() {
                   <div className="flex items-center gap-2 mb-1.5 flex-wrap">
                     <select value={row.source}
                       onChange={e => setPerRowSource(s => ({ ...s, [row.idx]: e.target.value }))}
-                      className="text-[11px] bg-panel border border-hairline rounded px-2 py-1 focus:outline-none">
+                      className="text-[11px] bg-panel border border-hairline rounded px-2 py-1 focus:outline-hidden">
                       {SOURCES.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
                     </select>
                     {row.duplicate && (

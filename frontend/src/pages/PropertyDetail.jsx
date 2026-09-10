@@ -280,7 +280,7 @@ function ChecklistEditor({ template, onSave }) {
               onChange={e => setNewTasks(prev => ({ ...prev, [ai]: e.target.value }))}
               onKeyDown={e => e.key === 'Enter' && addTask(ai)}
               placeholder="Add task..."
-              className="flex-1 bg-panel border border-hairline rounded px-2 py-1 text-xs focus:outline-none focus:border-blue-400"
+              className="flex-1 bg-panel border border-hairline rounded px-2 py-1 text-xs focus:outline-hidden focus:border-blue-400"
             />
             <button onClick={() => addTask(ai)} className="text-xs text-indigo-600 font-semibold px-2">Add</button>
           </div>
@@ -293,7 +293,7 @@ function ChecklistEditor({ template, onSave }) {
           onChange={e => setNewArea(e.target.value)}
           onKeyDown={e => e.key === 'Enter' && addArea()}
           placeholder="New area (e.g. Kitchen, Bathrooms)..."
-          className="flex-1 bg-panel border border-hairline rounded px-2 py-1.5 text-xs focus:outline-none focus:border-blue-400"
+          className="flex-1 bg-panel border border-hairline rounded px-2 py-1.5 text-xs focus:outline-hidden focus:border-blue-400"
         />
         <button onClick={addArea} className="text-xs text-indigo-600 font-semibold px-2 shrink-0">+ Area</button>
       </div>
@@ -570,7 +570,7 @@ export default function PropertyDetail() {
                 )}
               </div>
               <div className="flex items-center gap-1.5 text-sm text-ink-2 mt-1">
-                <MapPin className="w-4 h-4 flex-shrink-0" />
+                <MapPin className="w-4 h-4 shrink-0" />
                 <span>{property.address}</span>
               </div>
               {property.client_id && (
@@ -578,7 +578,7 @@ export default function PropertyDetail() {
                   onClick={() => navigate(`/clients/${property.client_id}`)}
                   className="flex items-center gap-1.5 text-sm text-blue-500 hover:underline mt-1"
                 >
-                  <Building2 className="w-4 h-4 flex-shrink-0" />
+                  <Building2 className="w-4 h-4 shrink-0" />
                   <span>View client</span>
                 </button>
               )}
@@ -704,7 +704,7 @@ export default function PropertyDetail() {
 
                         {/* Date + Time — one compact line */}
                         <div className="flex items-center gap-1.5 text-sm text-ink-2 mb-2">
-                          <Calendar className="w-4 h-4 flex-shrink-0" />
+                          <Calendar className="w-4 h-4 shrink-0" />
                           <span>{job.scheduled_date} · {job.start_time?.slice(0, 5)} - {job.end_time?.slice(0, 5)}</span>
                         </div>
 
@@ -712,13 +712,13 @@ export default function PropertyDetail() {
                         <div className="flex items-center gap-3 text-xs text-ink-3">
                           {hasCleaners && (
                             <div className="flex items-center gap-1">
-                              <Users className="w-3 h-3 flex-shrink-0" />
+                              <Users className="w-3 h-3 shrink-0" />
                               <span>{job.cleaner_ids.length} cleaner{job.cleaner_ids.length !== 1 ? 's' : ''}</span>
                             </div>
                           )}
                           {jobVisits.length > 0 && (
                             <div className="flex items-center gap-1">
-                              <Navigation2 className="w-3 h-3 flex-shrink-0" />
+                              <Navigation2 className="w-3 h-3 shrink-0" />
                               <span>{jobVisits.length} visit{jobVisits.length !== 1 ? 's' : ''}</span>
                             </div>
                           )}
@@ -726,7 +726,7 @@ export default function PropertyDetail() {
                       </div>
 
                       {/* Status Indicator */}
-                      <div className={`w-3 h-3 rounded-full flex-shrink-0 ${statusConfig.dot}`} />
+                      <div className={`w-3 h-3 rounded-full shrink-0 ${statusConfig.dot}`} />
                     </div>
 
                     {/* Job Notes (if any) */}

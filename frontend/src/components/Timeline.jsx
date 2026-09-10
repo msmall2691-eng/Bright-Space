@@ -81,7 +81,7 @@ function TimelineItem({ item, isLast }) {
     <div className="relative">
       {!isLast && <div className="absolute left-5 top-12 bottom-0 w-0.5 bg-bg-2" />}
       <div className="flex gap-3">
-        <div className={`w-10 h-10 rounded-full ${bg} ${fg} flex items-center justify-center flex-shrink-0 mt-0.5 relative z-10`}>
+        <div className={`w-10 h-10 rounded-full ${bg} ${fg} flex items-center justify-center shrink-0 mt-0.5 relative z-10`}>
           <Icon className="w-4.5 h-4.5" />
         </div>
         <div className="flex-1 pb-5 min-w-0">
@@ -89,7 +89,7 @@ function TimelineItem({ item, isLast }) {
             <div className="flex items-start justify-between gap-2">
               <div className="min-w-0">
                 <div className="font-medium text-ink text-[13px]">{item.label}</div>
-                {item.sub && <div className="text-[12px] text-ink-3 mt-0.5 break-words">{item.sub}</div>}
+                {item.sub && <div className="text-[12px] text-ink-3 mt-0.5 wrap-break-word">{item.sub}</div>}
               </div>
               {item.actor && <div className="text-[11px] text-ink-3 font-medium shrink-0">{item.actor}</div>}
             </div>

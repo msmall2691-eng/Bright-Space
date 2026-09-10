@@ -87,7 +87,7 @@ export default function Thread({
             ? (e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send() } })
             : undefined}
           placeholder={placeholder}
-          className="flex-1 resize-none rounded-xl border border-hairline bg-bg px-3 py-2.5 text-[14px] text-ink focus:outline-none focus:border-blue-400" />
+          className="flex-1 resize-none rounded-xl border border-hairline bg-bg px-3 py-2.5 text-[14px] text-ink focus:outline-hidden focus:border-blue-400" />
         <button onClick={send} disabled={sending || pending || !draft.trim()} aria-label="Send"
           className="grid place-items-center w-11 h-11 rounded-xl bg-blue-600 hover:bg-blue-700 text-white disabled:opacity-50 transition-colors">
           <Send className="w-5 h-5" />

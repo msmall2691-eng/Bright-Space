@@ -32,7 +32,7 @@ export function ClientTableView({
       <table className="bb-table">
         <thead className="sticky top-0 bg-panel z-10">
           <tr>
-            <th className="bb-th w-8 !px-3">
+            <th className="bb-th w-8 px-3!">
               <input
                 type="checkbox"
                 checked={filtered.length > 0 && filtered.every(c => selectedIds.has(c.id))}
@@ -44,14 +44,14 @@ export function ClientTableView({
             {visibleColumns.map(col => (
               <th key={col.id} className="bb-th">{col.label}</th>
             ))}
-            <th className="bb-th w-16 !px-2"><span className="sr-only">Actions</span></th>
+            <th className="bb-th w-16 px-2!"><span className="sr-only">Actions</span></th>
           </tr>
         </thead>
         <tbody>
           {filtered.map(c => (
             <tr key={c.id} onClick={() => openRow(c)}
               className={`bb-row ${selectedIds.has(c.id) || peekId === c.id ? 'bb-row-selected' : ''}`}>
-              <td className="bb-td !px-3" onClick={(e) => e.stopPropagation()}>
+              <td className="bb-td px-3!" onClick={(e) => e.stopPropagation()}>
                 <input
                   type="checkbox"
                   checked={selectedIds.has(c.id)}
@@ -68,7 +68,7 @@ export function ClientTableView({
               {/* Row actions — edit opens the slide-in form; delete confirms
                   through the global dialog (the backend hard-deletes with all
                   linked history, so the confirm carries the warning). */}
-              <td className="bb-td !px-2" onClick={(e) => e.stopPropagation()}>
+              <td className="bb-td px-2!" onClick={(e) => e.stopPropagation()}>
                 <div className="flex items-center justify-end gap-0.5">
                   <button onClick={() => openEdit(c)} title={`Edit ${c.name}`} aria-label={`Edit ${c.name}`}
                     className="inline-flex items-center justify-center w-6 h-6 rounded text-ink-3 hover:text-ink hover:bg-bg-2 transition-colors">

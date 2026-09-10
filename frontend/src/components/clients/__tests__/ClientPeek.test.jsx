@@ -45,7 +45,7 @@ beforeEach(() => {
 afterEach(() => cleanup())
 
 describe('ClientPeek — inline edit', () => {
-  it('edits phone in place: click to edit, blur saves via PATCH, no profile refetch', async () => {
+  it('edits phone in place: click to edit, blur-sm saves via PATCH, no profile refetch', async () => {
     patch.mockResolvedValue({ id: 7, phone: '+12075559999' })
     renderPeek()
 

@@ -83,7 +83,7 @@ export default function JobPhotosCard({ jobId, legacy = [] }) {
               <Badge kind={p.kind} />
               {canEdit() && (
                 <button onClick={() => remove(p.id)} aria-label="Delete photo"
-                  className="absolute -top-1.5 -right-1.5 hidden group-hover:grid place-items-center w-5 h-5 rounded-full bg-ink text-bg shadow">
+                  className="absolute -top-1.5 -right-1.5 hidden group-hover:grid place-items-center w-5 h-5 rounded-full bg-ink text-bg shadow-sm">
                   <X className="w-3 h-3" />
                 </button>
               )}

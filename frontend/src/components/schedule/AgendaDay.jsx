@@ -43,7 +43,7 @@ export default function AgendaDay({
             Hidden when the parent AgendaHero is already rendering the
             weekday hierarchy above. */}
         {!hideHeader && (
-          <div className="sticky top-0 z-[5] -mx-3 px-3 pt-3 pb-2 mb-2 bg-bg border-b border-hairline/50 flex items-start justify-between gap-2">
+          <div className="sticky top-0 z-5 -mx-3 px-3 pt-3 pb-2 mb-2 bg-bg border-b border-hairline/50 flex items-start justify-between gap-2">
             <div>
               <div className="text-[11px] font-semibold uppercase tracking-wider text-ink-3">
                 {isToday ? 'Today' : ''}

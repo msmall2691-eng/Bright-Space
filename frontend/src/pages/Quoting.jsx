@@ -702,10 +702,10 @@ export default function Quoting() {
               <div className="relative flex-1 max-w-xs">
                 <Search className="w-3.5 h-3.5 text-ink-3 absolute left-2.5 top-1/2 -translate-y-1/2" />
                 <input value={quoteSearch} onChange={e => setQuoteSearch(e.target.value)} placeholder="Search quotes…"
-                  className="w-full bg-bg-2 border border-hairline rounded-lg pl-8 pr-3 py-2 text-[12px] text-ink placeholder-ink-3 focus:outline-none focus:border-blue-400" />
+                  className="w-full bg-bg-2 border border-hairline rounded-lg pl-8 pr-3 py-2 text-[12px] text-ink placeholder-ink-3 focus:outline-hidden focus:border-blue-400" />
               </div>
               <select value={quoteStatusFilter} onChange={e => setQuoteStatusFilter(e.target.value)}
-                className="bg-bg-2 border border-hairline rounded-lg px-3 py-2 text-[12px] text-ink-2 focus:outline-none focus:border-blue-400">
+                className="bg-bg-2 border border-hairline rounded-lg px-3 py-2 text-[12px] text-ink-2 focus:outline-hidden focus:border-blue-400">
                 <option value="">All statuses</option>
                 {['draft', 'sent', 'viewed', 'accepted', 'declined', 'converted'].map(s =>
                   <option key={s} value={s}>{s[0].toUpperCase() + s.slice(1)}</option>)}

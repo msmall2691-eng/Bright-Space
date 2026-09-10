@@ -45,7 +45,7 @@ export function LinkClientControl({ onLink, linking }) {
         <input
           autoFocus value={q} onChange={e => setQ(e.target.value)}
           placeholder="Search clients…"
-          className="w-full bg-panel border border-hairline rounded-lg pl-8 pr-2 py-1.5 text-[12px] focus:outline-none focus:border-indigo-400"
+          className="w-full bg-panel border border-hairline rounded-lg pl-8 pr-2 py-1.5 text-[12px] focus:outline-hidden focus:border-indigo-400"
         />
       </div>
       <div className="max-h-44 overflow-y-auto rounded-lg border border-hairline divide-y divide-hairline bg-panel">

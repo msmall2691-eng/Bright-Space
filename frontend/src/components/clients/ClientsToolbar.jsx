@@ -27,7 +27,7 @@ export function ClientsToolbar({
       <div className="relative w-full sm:flex-1 sm:min-w-[180px] sm:max-w-sm">
         <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-ink-3" />
         <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search clients..."
-          className="w-full bg-bg border border-hairline rounded-lg pl-9 pr-4 py-2 text-[13px] text-ink placeholder-ink-3 focus:outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-400/20 transition-colors" />
+          className="w-full bg-bg border border-hairline rounded-lg pl-9 pr-4 py-2 text-[13px] text-ink placeholder-ink-3 focus:outline-hidden focus:border-blue-400 focus:ring-1 focus:ring-blue-400/20 transition-colors" />
       </div>
 
       {/* Saved views switcher (Twenty-style) */}
@@ -42,7 +42,7 @@ export function ClientsToolbar({
           <button key={s.key} onClick={() => setStatusFilter(s.key)}
             className={`px-3 py-1.5 rounded-md text-[12px] font-medium transition-colors ${
               statusFilter === s.key
-                ? 'bg-panel text-ink shadow-sm'
+                ? 'bg-panel text-ink shadow-xs'
                 : 'text-ink-3 hover:text-ink-2'
             }`}>
             {s.label}
@@ -59,12 +59,12 @@ export function ClientsToolbar({
       {/* View toggle (Twenty CRM-style) */}
       <div className="hidden sm:flex items-center bg-bg-2 rounded-lg p-0.5">
         <button onClick={() => setViewMode('cards')}
-          className={`p-1.5 rounded-md transition-colors ${viewMode === 'cards' ? 'bg-panel shadow-sm text-ink-2' : 'text-ink-3 hover:text-ink-2'}`}
+          className={`p-1.5 rounded-md transition-colors ${viewMode === 'cards' ? 'bg-panel shadow-xs text-ink-2' : 'text-ink-3 hover:text-ink-2'}`}
           title="Card view">
           <LayoutGrid className="w-3.5 h-3.5" />
         </button>
         <button onClick={() => setViewMode('table')}
-          className={`p-1.5 rounded-md transition-colors ${viewMode === 'table' ? 'bg-panel shadow-sm text-ink-2' : 'text-ink-3 hover:text-ink-2'}`}
+          className={`p-1.5 rounded-md transition-colors ${viewMode === 'table' ? 'bg-panel shadow-xs text-ink-2' : 'text-ink-3 hover:text-ink-2'}`}
           title="Table view">
           <TableProperties className="w-3.5 h-3.5" />
         </button>

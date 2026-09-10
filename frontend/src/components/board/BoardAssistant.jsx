@@ -219,7 +219,7 @@ export default function BoardAssistant({ open, onClose, sections, navigate, onAc
               ref={inputRef} value={query} onChange={e => setQuery(e.target.value)}
               onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); ask() } }}
               rows={1} placeholder="Ask about your board…"
-              className="max-h-24 flex-1 resize-none rounded-lg border border-hairline bg-bg px-3 py-2 text-[13px] text-ink placeholder:text-ink-3 focus:border-indigo-400 focus:outline-none" />
+              className="max-h-24 flex-1 resize-none rounded-lg border border-hairline bg-bg px-3 py-2 text-[13px] text-ink placeholder:text-ink-3 focus:border-indigo-400 focus:outline-hidden" />
             <button onClick={() => ask()} disabled={!query.trim() || asking}
               className="shrink-0 rounded-lg bg-indigo-600 p-2 text-white hover:bg-indigo-500 disabled:opacity-40">
               {asking ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}

@@ -127,14 +127,14 @@ export default function CrewDocsAdmin() {
               <input value={form.title} maxLength={200} autoFocus
                 onChange={e => setForm(f => ({ ...f, title: e.target.value }))}
                 placeholder="e.g. Bathroom standard, step by step"
-                className="mt-1 w-full rounded-lg border border-hairline bg-bg px-3 py-2 text-sm text-ink focus:outline-none focus:border-indigo-400" />
+                className="mt-1 w-full rounded-lg border border-hairline bg-bg px-3 py-2 text-sm text-ink focus:outline-hidden focus:border-indigo-400" />
             </label>
             <div className="flex items-center gap-2">
               <label className="block flex-1">
                 <span className="text-[12px] font-medium text-ink-2">Category</span>
                 <select value={form.category}
                   onChange={e => setForm(f => ({ ...f, category: e.target.value }))}
-                  className="mt-1 w-full rounded-lg border border-hairline bg-bg px-2.5 py-2 text-sm text-ink focus:outline-none">
+                  className="mt-1 w-full rounded-lg border border-hairline bg-bg px-2.5 py-2 text-sm text-ink focus:outline-hidden">
                   {CATEGORIES.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
                 </select>
               </label>
@@ -154,14 +154,14 @@ export default function CrewDocsAdmin() {
               <input value={form.url} maxLength={500} type="url"
                 onChange={e => setForm(f => ({ ...f, url: e.target.value }))}
                 placeholder="https:// — a training video or manufacturer guide"
-                className="mt-1 w-full rounded-lg border border-hairline bg-bg px-3 py-2 text-sm text-ink focus:outline-none focus:border-indigo-400" />
+                className="mt-1 w-full rounded-lg border border-hairline bg-bg px-3 py-2 text-sm text-ink focus:outline-hidden focus:border-indigo-400" />
             </label>
             <label className="block">
               <span className="text-[12px] font-medium text-ink-2">Body</span>
               <textarea value={form.body} rows={10} maxLength={20000}
                 onChange={e => setForm(f => ({ ...f, body: e.target.value }))}
                 placeholder={'Plain text. Blank lines make paragraphs; lines starting with "- " read as steps on the phone.'}
-                className="mt-1 w-full rounded-lg border border-hairline bg-bg px-3 py-2 text-[13px] text-ink leading-relaxed focus:outline-none focus:border-indigo-400 resize-y" />
+                className="mt-1 w-full rounded-lg border border-hairline bg-bg px-3 py-2 text-[13px] text-ink leading-relaxed focus:outline-hidden focus:border-indigo-400 resize-y" />
             </label>
             <div className="flex items-center justify-between gap-2 pt-1">
               {editing !== 'new' ? (

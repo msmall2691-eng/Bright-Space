@@ -95,7 +95,7 @@ function PropertyAccessCard({ property, canEdit: editable }) {
               onChange={e => setVals(s => ({ ...s, [field]: e.target.value }))}
               onBlur={() => save(field)}
               onKeyDown={e => { if (e.key === 'Enter') e.target.blur() }}
-              className="mt-0.5 w-full bg-bg border border-hairline rounded-lg px-2 py-1.5 text-[12.5px] text-ink focus:outline-none focus:border-amber-400" />
+              className="mt-0.5 w-full bg-bg border border-hairline rounded-lg px-2 py-1.5 text-[12.5px] text-ink focus:outline-hidden focus:border-amber-400" />
           ) : (
             <div className="text-[12.5px] text-ink">{saved[field] || '—'}</div>
           )}
@@ -222,7 +222,7 @@ function ReviewDraftModal({ draft, onClose }) {
         </div>
         <div className="p-4">
           <textarea value={text} onChange={e => setText(e.target.value)} rows={5}
-            className="w-full bg-bg border border-hairline rounded-lg px-3 py-2 text-base sm:text-[13px] text-ink focus:outline-none focus:border-indigo-400 resize-none" />
+            className="w-full bg-bg border border-hairline rounded-lg px-3 py-2 text-base sm:text-[13px] text-ink focus:outline-hidden focus:border-indigo-400 resize-none" />
           <div className="flex justify-end mt-2">
             <button onClick={copy}
               className="inline-flex min-h-11 sm:min-h-0 items-center gap-1.5 bg-panel border border-hairline-2 text-ink-2 hover:bg-bg-2 rounded-md text-xs font-medium px-3 py-1.5 transition-colors">
@@ -795,7 +795,7 @@ export default function JobDetail() {
                 value={note} onChange={e => setNote(e.target.value)}
                 placeholder="Add a note to this job…" rows={2}
                 onKeyDown={e => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) addNote() }}
-                className="w-full bg-bg border border-hairline rounded-lg px-3 py-2 text-[13px] text-ink placeholder-ink-3 focus:outline-none focus:border-blue-400 resize-y"
+                className="w-full bg-bg border border-hairline rounded-lg px-3 py-2 text-[13px] text-ink placeholder-ink-3 focus:outline-hidden focus:border-blue-400 resize-y"
               />
               <div className="flex justify-end mt-2">
                 <button onClick={addNote} disabled={savingNote || !note.trim()}

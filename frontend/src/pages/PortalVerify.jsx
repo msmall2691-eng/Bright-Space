@@ -37,7 +37,7 @@ export default function PortalVerify() {
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-slate-50 px-4">
-      <div className="w-full max-w-md bg-white rounded-2xl shadow-sm border border-slate-200 p-7 text-center">
+      <div className="w-full max-w-md bg-white rounded-2xl shadow-xs border border-slate-200 p-7 text-center">
         {error ? (
           <>
             <span className="grid place-items-center w-12 h-12 rounded-2xl bg-red-50 text-red-500 mx-auto mb-3">

@@ -3,7 +3,7 @@ import { get } from "../api"
 
 
 const lbl = 'block text-[10px] font-semibold uppercase tracking-widest text-ink-3 mb-1.5'
-const inp = 'w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm text-ink placeholder-ink-3 focus:outline-none focus:border-hairline transition-colors'
+const inp = 'w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm text-ink placeholder-ink-3 focus:outline-hidden focus:border-hairline transition-colors'
 
 // ── CustomFieldsForm ──────────────────────────────────────────────────────────
 // Renders editable inputs for custom fields in a form panel.

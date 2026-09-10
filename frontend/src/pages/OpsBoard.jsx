@@ -739,7 +739,7 @@ export default function OpsBoard() {
                 value={query}
                 onChange={e => setQuery(e.target.value)}
                 placeholder="Search everything…  (press /)"
-                className="w-full rounded-lg border border-hairline bg-bg py-2 pl-9 pr-3 text-[13px] text-ink placeholder:text-ink-3 focus:border-indigo-500 focus:outline-none" />
+                className="w-full rounded-lg border border-hairline bg-bg py-2 pl-9 pr-3 text-[13px] text-ink placeholder:text-ink-3 focus:border-indigo-500 focus:outline-hidden" />
             </div>
             {/* Zero-count severities are noise ("Good 0") — only offered while active. */}
             <div className="flex flex-wrap gap-1.5">
