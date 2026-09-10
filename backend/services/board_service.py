@@ -410,9 +410,13 @@ def build_board(db: Session, oid: int, can_act: bool = True) -> dict:
             # Just the type tag — the row's TITLE is already 'No cleaner
             # assigned'; a second UNASSIGNED chip said it twice (owner veto).
             tags=[_job_type_tag(j)],
+            # The office doesn't assign — a job with nobody on it goes to the
+            # bench to be claimed. The old "Auto-assign" action (office picks a
+            # cleaner — Rule 0's employee path) and the "Dispatch" link (to the
+            # retired dispatch board) are gone; the row links to the job, where
+            # it can be opened to the crew.
             actions=[
-                _api("Auto-assign", f"/api/jobs/{j.id}/auto-assign", done="Assigned"),
-                _link("Dispatch", "/schedule?view=dispatch"),
+                _link("Open", f"/jobs/{j.id}"),
             ],
         ))
 

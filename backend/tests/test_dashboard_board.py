@@ -194,12 +194,13 @@ def test_leads_and_quotes_share_one_box_apart_from_messages(client):
 
 def test_viewer_board_strips_one_click_api_actions(client):
     """A read-only role sees the board but not the one-click write actions — the
-    api actions (auto-assign, mark paid, resolve) are dropped server-side so the
-    endpoint, not the UI, is the enforcement point. link (navigation) stays."""
+    api actions (mark paid, resolve) are dropped server-side so the endpoint,
+    not the UI, is the enforcement point. link (navigation) stays."""
     api, ids = client
 
-    # Seed signals that generate api actions (auto-assign an unassigned job,
-    # mark an overdue invoice paid).
+    # Seed signals that populate the board: an unassigned job today (a
+    # needs_cleaner item, which now offers only a navigation link — the office
+    # never assigns) and an overdue invoice (whose "mark paid" is an api action).
     cid = _mk_client(ids)
     pid = _mk_property(ids, cid)
     _mk_unassigned_job_today(ids, cid, pid)

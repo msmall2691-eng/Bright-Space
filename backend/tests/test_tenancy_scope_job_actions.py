@@ -87,15 +87,6 @@ def test_cross_org_crew_suggestions_returns_404():
         _cleanup(db, c, p, j)
 
 
-def test_cross_org_auto_assign_returns_404():
-    db = SessionLocal()
-    c, p, j = _seed(db, OTHER_ORG)
-    try:
-        assert client.post(f"/api/jobs/{j.id}/auto-assign").status_code == 404
-    finally:
-        _cleanup(db, c, p, j)
-
-
 def test_cross_org_reminder_settings_returns_404():
     db = SessionLocal()
     c, p, j = _seed(db, OTHER_ORG)

@@ -11,7 +11,7 @@ import { confirmDialog } from '../utils/confirmBus'
 import AgendaDay from '../components/schedule/AgendaDay'
 import AgendaUpcoming from '../components/schedule/AgendaUpcoming'
 import AgendaHero from '../components/schedule/AgendaHero'
-import DispatchBoard from '../components/schedule/DispatchBoard'
+import DayBoard from '../components/schedule/DayBoard'
 import StickyActionBar from '../components/schedule/StickyActionBar'
 import WeekGrid from '../components/schedule/WeekGrid'
 import ScheduleSkeleton from '../components/schedule/ScheduleSkeleton'
@@ -62,10 +62,10 @@ export default function Schedule() {
   const normalizeView = (v) => (v === 'agenda' || v === 'dispatch') ? 'day' : v
   const rawView = normalizeView(searchParams.get('view'))
   const isMobile = useIsMobile(768)
-  // Half-screen fix: below this width the dispatch board's three columns
-  // stop earning their keep, so Day renders the agenda (card) layout — the
-  // same one phones get. A half-snapped 1440p window (~960-1280px) lands
-  // here, which is exactly the "can't see who's scheduled" complaint.
+  // Half-screen fix: below this width the wide Day timeline stops earning
+  // its keep, so Day renders the agenda (card) layout — the same one phones
+  // get. A half-snapped 1440p window (~960-1280px) lands here, which is
+  // exactly the "can't see who's scheduled" complaint.
   const isNarrowBoard = useIsMobile(1100)
   // Remember the last view the operator chose so it sticks between visits —
   // a month-first admin lands back on month — rather than always resetting.
@@ -75,7 +75,9 @@ export default function Schedule() {
     ? rawView
     : (VALID_VIEWS.includes(remembered) ? remembered : 'day')
   // What actually renders: 'day' resolves to the agenda layout (narrow) or
-  // the dispatch board (wide); every other view is itself.
+  // the read-only Day timeline (wide); every other view is itself. The
+  // 'dispatch' marker is kept as the internal wide-day token only — there
+  // is no standalone dispatch URL any more.
   const effectiveView = viewMode === 'day' ? (isNarrowBoard ? 'agenda' : 'dispatch') : viewMode
   const setViewMode = (next) => {
     try { localStorage.setItem('bb_schedule_view', next) } catch { /* ignore */ }
@@ -128,7 +130,7 @@ export default function Schedule() {
   // reads visits/jobs, not the filtered subset.
   const {
     weekDates, loadByDate, todayVisits, todayStats,
-    crewLoad, unassignedToday,
+    unassignedToday,
   } = useScheduleAnalytics({ visits, currentDate, employees })
 
   // Posted jobs with somebody waiting on an answer, across the WHOLE loaded
@@ -145,25 +147,10 @@ export default function Schedule() {
     [visits],
   )
   const [showFilters, setShowFilters] = useState(false)  // filters hidden by default; most days show everything
-  // Crew availability signals for the board's date (crew app Phase 4):
-  // { [cleaner_id]: {status, detail} } from /api/jobs/cleaner-availability —
-  // time off, weekly usually-off patterns. Day-board only; a failed fetch
-  // just means no chips (never blocks the schedule).
-  const [crewAvailability, setCrewAvailability] = useState({})
-  useEffect(() => {
-    if (effectiveView !== 'dispatch') return undefined
-    let cancelled = false
-    const d = toLocalYMD(currentDate)
-    get(`/api/jobs/cleaner-availability?date=${d}`)
-      .then(rows => {
-        if (cancelled) return
-        const map = {}
-        for (const r of (Array.isArray(rows) ? rows : [])) map[String(r.cleaner_id)] = r
-        setCrewAvailability(map)
-      })
-      .catch(() => { if (!cancelled) setCrewAvailability({}) })
-    return () => { cancelled = true }
-  }, [effectiveView, currentDate])
+  // (The day view's crew-availability fetch was removed with the dispatch
+  // board — those chips lived on the crew-capacity column, which is gone now
+  // that the office doesn't assign. One fewer request per wide-day load.)
+
   // Guest-stay (Airbnb/VRBO iCal) overlay on the month calendar — off by
   // default; it tinted nearly every cell and crowded out the actual jobs.
   // Persisted (unlike the other filter chips) because it's a display
@@ -246,11 +233,8 @@ export default function Schedule() {
   }
 
   // Optimistic sync into the parent's visit/job state so subsequent renders
-  // keep a dragged block (WeekGrid) or a dragged-to-assign visit
-  // (DispatchBoard) showing the new value without waiting for a full
-  // refetch. Shared by both since both patch a Job's fields locally the
-  // same way — WeekGrid passes {scheduled_date, start_time, end_time},
-  // DispatchBoard passes {cleaner_ids}.
+  // keep a dragged block (WeekGrid) showing the new value without waiting for
+  // a full refetch. WeekGrid passes {scheduled_date, start_time, end_time}.
   const applyLocalMove = (jobId, next) => {
     setVisits(prev => prev.map(v =>
       v.job_id === jobId || v.id === jobId ? { ...v, ...next } : v
@@ -632,21 +616,18 @@ export default function Schedule() {
           />
         </div>
       ) : effectiveView === 'dispatch' ? (
-        <DispatchBoard
+        /* 'dispatch' is the internal marker for the wide-screen Day view; it
+           now renders a READ-ONLY day timeline (the drag-to-assign dispatch
+           board was retired with the marketplace pivot). */
+        <DayBoard
           currentDate={currentDate}
           todayVisits={todayVisits}
           todayStats={todayStats}
-          unassignedToday={unassignedToday}
-          crewLoad={crewLoad}
-          crewAvailability={crewAvailability}
           jobs={jobs}
           properties={properties}
           clients={clients}
           empName={empName}
           onOpen={handleEdit}
-          onLocalMove={applyLocalMove}
-          onOpenToCrew={handleOpenToCrew}
-          toast={toast}
         />
       ) : viewMode === 'week' ? (
         <WeekGrid

@@ -158,7 +158,7 @@ export function CrewToday({ snap }) {
       {(unassigned_today > 0 || pending_requests > 0) && (
         <Foot>
           {unassigned_today > 0 && (
-            <FootLink to="/schedule?view=dispatch">
+            <FootLink to="/schedule">
               {unassigned_today} {unassigned_today === 1 ? 'visit' : 'visits'} with nobody on it
             </FootLink>
           )}

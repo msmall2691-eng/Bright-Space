@@ -2437,29 +2437,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/jobs/{job_id}/auto-assign": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Auto Assign Job Crew
-         * @description Assign the most-frequent cleaner at this property to the job.
-         *
-         *     Mirrors /api/visits/{id}/auto-assign — no history means the job is
-         *     unassigned (cleaner_ids cleared), matching the old semantics.
-         */
-        post: operations["auto_assign_job_crew_api_jobs__job_id__auto_assign_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/invoices": {
         parameters: {
             query?: never;
@@ -6522,21 +6499,10 @@ export interface paths {
         };
         /**
          * My Week
-         * @description What this week is worth to a subcontractor.
+         * @description What this week is worth to a subcontractor — the full ledger.
          *
-         *     REWRITTEN, not deleted. The old version asked the payroll summary for hours
-         *     and reimbursements and predicted the rest from hourly rates, per-cleaner
-         *     overrides and weekend piece rates. Every input to that was the employee
-         *     model, and it is gone.
-         *
-         *     A sub's week is simpler and truer: the jobs they agreed a price on. Earned
-         *     is what is finished, upcoming is what is booked, and both are the amounts
-         *     both sides actually shook on. No hours, no mileage, no prediction from a
-         *     rate card — predicting somebody's pay from a rate they never agreed is how
-         *     an estimate becomes an argument.
-         *
-         *     One query. `agreed_cleaner_id` (migration 106) is what makes it honest:
-         *     being listed on a job is not the same as being the person it is priced for.
+         *     Delegates the money to `_week_earnings` so the Me tab and the Today home
+         *     glance can never show two different totals.
          */
         get: operations["my_week_api_crew_my_week_get"];
         put?: never;
@@ -14096,37 +14062,6 @@ export interface operations {
         };
     };
     get_job_crew_suggestions_api_jobs__job_id__crew_suggestions_get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                job_id: number;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    auto_assign_job_crew_api_jobs__job_id__auto_assign_post: {
         parameters: {
             query?: never;
             header?: never;
