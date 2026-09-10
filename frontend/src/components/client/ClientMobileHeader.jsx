@@ -109,7 +109,7 @@ export default function ClientMobileHeader({
                     onChange={e => setQuickContact(q => ({ ...q, phone: e.target.value }))}
                     placeholder="+1 (555) 123-4567"
                     data-testid="missing-contact-phone"
-                    className="w-full bg-panel border border-hairline rounded-lg px-3 py-2.5 text-sm text-ink focus:outline-none focus:border-indigo-400 focus:ring-1 focus:ring-indigo-400/30" />
+                    className="w-full bg-panel border border-hairline rounded-lg px-3 py-2.5 text-sm text-ink focus:outline-hidden focus:border-indigo-400 focus:ring-1 focus:ring-indigo-400/30" />
                 </div>
               )}
               {!client.email && (
@@ -123,7 +123,7 @@ export default function ClientMobileHeader({
                     onChange={e => setQuickContact(q => ({ ...q, email: e.target.value }))}
                     placeholder="client@example.com"
                     data-testid="missing-contact-email"
-                    className="w-full bg-panel border border-hairline rounded-lg px-3 py-2.5 text-sm text-ink focus:outline-none focus:border-indigo-400 focus:ring-1 focus:ring-indigo-400/30" />
+                    className="w-full bg-panel border border-hairline rounded-lg px-3 py-2.5 text-sm text-ink focus:outline-hidden focus:border-indigo-400 focus:ring-1 focus:ring-indigo-400/30" />
                 </div>
               )}
               <div className="flex gap-2 pt-1">

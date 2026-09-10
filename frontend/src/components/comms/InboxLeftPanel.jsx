@@ -71,7 +71,7 @@ export function InboxLeftPanel({
         return (
           <button key={ch.key} onClick={() => setChannelFilter(ch.key)}
             className={`flex-1 flex items-center justify-center gap-1 text-[12px] font-semibold px-2 py-2 rounded-md transition-all ${
-              channelFilter === ch.key ? 'bg-panel text-ink shadow-sm' : 'text-ink-3 hover:text-ink-2'
+              channelFilter === ch.key ? 'bg-panel text-ink shadow-xs' : 'text-ink-3 hover:text-ink-2'
             }`}>
             {Icon && <Icon className="w-3.5 h-3.5" />}
             {ch.label}
@@ -137,7 +137,7 @@ export function InboxLeftPanel({
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-ink-3" />
           <input value={search} onChange={e => setSearch(e.target.value)}
             placeholder="Search conversations…"
-            className="w-full bg-bg border border-hairline rounded-xl pl-9 pr-3 py-2.5 text-base sm:text-[13px] placeholder-ink-3 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-400 focus:bg-panel transition-all" />
+            className="w-full bg-bg border border-hairline rounded-xl pl-9 pr-3 py-2.5 text-base sm:text-[13px] placeholder-ink-3 focus:outline-hidden focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-400 focus:bg-panel transition-all" />
         </div>
       </div>
 
@@ -147,7 +147,7 @@ export function InboxLeftPanel({
           {FOLDERS.map(f => (
             <button key={f.key} onClick={() => setFolder(f.key)}
               className={`flex-1 flex items-center justify-center gap-1.5 text-[12px] font-semibold px-2 py-2 rounded-md transition-all ${
-                folder === f.key ? 'bg-panel text-ink shadow-sm' : 'text-ink-3 hover:text-ink-2'
+                folder === f.key ? 'bg-panel text-ink shadow-xs' : 'text-ink-3 hover:text-ink-2'
               }`}>
               <span>{f.label}</span>
               {f.count != null && f.count > 0 && (

@@ -113,7 +113,7 @@ export default function ScheduleToolbar({
             </div>
 
             <button onClick={onNewJob} aria-label="New job"
-              className="shrink-0 grid place-items-center w-9 h-9 rounded-lg bg-indigo-600 text-white shadow-sm active:scale-95 transition-transform">
+              className="shrink-0 grid place-items-center w-9 h-9 rounded-lg bg-indigo-600 text-white shadow-xs active:scale-95 transition-transform">
               <Plus className="w-5 h-5" />
             </button>
           </div>
@@ -125,7 +125,7 @@ export default function ScheduleToolbar({
               <button key={v} onClick={() => onViewChange(v)}
                 aria-pressed={viewMode === v}
                 className={`flex-1 min-w-0 py-2 rounded-lg text-[13px] font-semibold transition-colors ${
-                  viewMode === v ? 'bg-panel text-ink shadow-sm' : 'text-ink-3 active:bg-panel/60'}`}>
+                  viewMode === v ? 'bg-panel text-ink shadow-xs' : 'text-ink-3 active:bg-panel/60'}`}>
                 {short}
               </button>
             ))}
@@ -161,7 +161,7 @@ export default function ScheduleToolbar({
           <div className="flex items-center gap-0.5 bg-bg-2 rounded-lg p-0.5 shrink-0">
             {VIEWS.map(([v, label]) => (
               <button key={v} onClick={() => onViewChange(v)}
-                className={`px-2.5 py-1 rounded-md text-xs font-medium transition-colors ${viewMode === v ? 'bg-panel text-ink shadow-sm' : 'text-ink-3 hover:text-ink-2'}`}>
+                className={`px-2.5 py-1 rounded-md text-xs font-medium transition-colors ${viewMode === v ? 'bg-panel text-ink shadow-xs' : 'text-ink-3 hover:text-ink-2'}`}>
                 {label}
               </button>
             ))}

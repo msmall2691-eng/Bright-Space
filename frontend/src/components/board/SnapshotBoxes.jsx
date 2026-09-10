@@ -132,7 +132,7 @@ export function CrewToday({ snap }) {
       <div className="divide-y divide-hairline">
         {working.map(c => (
           <Row key={`on-${c.cleaner_id}`}>
-            <span className="h-1.5 w-1.5 shrink-0 translate-y-[-1px] rounded-full bg-emerald-500" />
+            <span className="h-1.5 w-1.5 shrink-0 -translate-y-px rounded-full bg-emerald-500" />
             <span className="min-w-0 flex-1 truncate text-[13px] text-ink">{c.name}</span>
             <span className="shrink-0 text-[11px] tabular-nums text-ink-3">
               {c.done ? `${c.done}/${c.jobs} done` : `${c.jobs} ${c.jobs === 1 ? 'job' : 'jobs'}`}
@@ -141,7 +141,7 @@ export function CrewToday({ snap }) {
         ))}
         {off.map(c => (
           <Row key={`off-${c.cleaner_id}`}>
-            <span className="h-1.5 w-1.5 shrink-0 translate-y-[-1px] rounded-full bg-amber-500" />
+            <span className="h-1.5 w-1.5 shrink-0 -translate-y-px rounded-full bg-amber-500" />
             <span className="min-w-0 flex-1 truncate text-[13px] text-ink-2">{c.name}</span>
             <span className="shrink-0 truncate text-[11px] text-ink-3">{c.reason}</span>
           </Row>
@@ -196,7 +196,7 @@ export function FeedHealth({ snap }) {
           {problems.map(p => (
             <div key={p.id} className="px-3.5 py-2">
               <div className="flex items-baseline gap-2">
-                <span className={`h-1.5 w-1.5 shrink-0 translate-y-[-1px] rounded-full ${FEED_DOT[p.state] || 'bg-ink-3'}`} />
+                <span className={`h-1.5 w-1.5 shrink-0 -translate-y-px rounded-full ${FEED_DOT[p.state] || 'bg-ink-3'}`} />
                 {/* Straight to that house's feed list — the place the fix is. */}
                 <Link to={`/properties/${p.property_id}/icals`} className={`${RECORD_LINK} flex-1`}>
                   {p.property_name}
@@ -236,7 +236,7 @@ export function RecurringHealth({ snap }) {
           {stalled.map(s => (
             <div key={s.schedule_id} className="px-3.5 py-2">
               <div className="flex items-baseline gap-2">
-                <span className="h-1.5 w-1.5 shrink-0 translate-y-[-1px] rounded-full bg-amber-500" />
+                <span className="h-1.5 w-1.5 shrink-0 -translate-y-px rounded-full bg-amber-500" />
                 <Link to="/recurring" className={`${RECORD_LINK} flex-1`}>{s.title}</Link>
                 {s.client_id ? (
                   <Link to={`/clients/${s.client_id}`} className={META_LINK}>

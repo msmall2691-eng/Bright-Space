@@ -111,7 +111,7 @@ export default function AgendaUpcoming({
     <div className="flex-1 overflow-auto">
       <div className="max-w-2xl mx-auto px-3 pb-24 sm:pb-6">
         {/* Header band: what range you're looking at + total. */}
-        <div className="sticky top-0 z-[6] -mx-3 px-3 pt-3 pb-2 mb-1 bg-bg border-b border-hairline/50 flex items-center gap-2">
+        <div className="sticky top-0 z-6 -mx-3 px-3 pt-3 pb-2 mb-1 bg-bg border-b border-hairline/50 flex items-center gap-2">
           <span className="grid place-items-center w-8 h-8 shrink-0 text-indigo-600 dark:text-indigo-300">
             <CalendarRange className="w-4 h-4" />
           </span>
@@ -141,7 +141,7 @@ export default function AgendaUpcoming({
               <section key={g.date}>
                 {/* Day sub-header — sticks just under the page band while its
                     group scrolls, so you always know which day you're reading. */}
-                <div className="sticky top-[3.25rem] z-[5] -mx-3 px-3 py-1.5 bg-bg/95 backdrop-blur-sm flex items-center gap-2">
+                <div className="sticky top-13 z-5 -mx-3 px-3 py-1.5 bg-bg/95 backdrop-blur-sm flex items-center gap-2">
                   <h3 className="text-[13px] font-bold text-ink">
                     {fmtDay(g.date)}
                     {relLabel(g.date) && (

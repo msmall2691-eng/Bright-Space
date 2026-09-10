@@ -25,7 +25,7 @@ export function BarTip({ value, label, align = 'center', wrap = false, focusable
   return (
     <span
       {...(focusable ? { tabIndex: 0 } : {})}
-      className={`relative inline-flex outline-none rounded focus-visible:ring-2 focus-visible:ring-indigo-500/40 ${className}`}
+      className={`relative inline-flex outline-hidden rounded focus-visible:ring-2 focus-visible:ring-indigo-500/40 ${className}`}
       onMouseEnter={() => setOpen(true)}
       onMouseLeave={() => setOpen(false)}
       onFocus={() => setOpen(true)}
@@ -37,7 +37,7 @@ export function BarTip({ value, label, align = 'center', wrap = false, focusable
           role="tooltip"
           aria-hidden="true"
           className={`pointer-events-none absolute bottom-full mb-1.5 z-20 rounded-md border border-hairline bg-panel px-2 py-1 text-[11px] shadow-glass-sm ${
-            wrap ? 'max-w-[10rem] whitespace-normal' : 'whitespace-nowrap'} ${alignClass}`}
+            wrap ? 'max-w-40 whitespace-normal' : 'whitespace-nowrap'} ${alignClass}`}
         >
           <span className="font-semibold text-ink tabular-nums">{value}</span>
           {label && <span className="ml-1 text-ink-3">{label}</span>}

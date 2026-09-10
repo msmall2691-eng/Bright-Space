@@ -270,7 +270,7 @@ export function OpportunitiesTab({ opportunities, navigate }) {
       </div>
       {opportunities.length === 0 && <p className="text-ink-3 text-sm text-center py-10">No opportunities yet</p>}
       {opportunities.map(opp => (
-        <div key={opp.id} className="bg-panel border border-hairline rounded-xl p-4 hover:shadow-sm transition-all">
+        <div key={opp.id} className="bg-panel border border-hairline rounded-xl p-4 hover:shadow-xs transition-all">
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0 flex-1">
               <div className="flex items-center gap-2 mb-1">

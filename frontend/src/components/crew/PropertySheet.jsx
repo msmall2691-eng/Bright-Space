@@ -136,7 +136,7 @@ export default function PropertySheet({ propertyId, propertyName, onClose }) {
               <textarea value={noteDraft} rows={3} maxLength={2000} autoFocus
                 onChange={e => setNoteDraft(e.target.value)}
                 placeholder="e.g. Upstairs shower drain clogs — check before leaving."
-                className="w-full rounded-lg border border-hairline bg-panel px-3 py-2 text-[13px] text-ink focus:outline-none focus:border-blue-400 resize-none" />
+                className="w-full rounded-lg border border-hairline bg-panel px-3 py-2 text-[13px] text-ink focus:outline-hidden focus:border-blue-400 resize-none" />
               <div className="flex items-center justify-between gap-2">
                 <span className="text-[10.5px] text-ink-3">
                   Goes to the office first — they share it with the whole crew.

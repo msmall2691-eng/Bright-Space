@@ -51,7 +51,7 @@ function GcalEventRow({ ev }) {
       href={ev.html_link || undefined}
       target="_blank"
       rel="noopener noreferrer"
-      className={`block bg-panel border border-hairline rounded-xl p-4 flex items-start gap-3 transition-colors hover:border-indigo-300 hover:shadow-sm ${isPast ? 'opacity-60' : ''}`}
+      className={`block bg-panel border border-hairline rounded-xl p-4 flex items-start gap-3 transition-colors hover:border-indigo-300 hover:shadow-xs ${isPast ? 'opacity-60' : ''}`}
       title="Open in Google Calendar"
     >
       <div className={`w-1 self-stretch rounded-full shrink-0 ${dotColor}`} />
@@ -394,7 +394,7 @@ export default function ClientCalendarTab({ jobs, upcomingJobs, pastJobs, naviga
 
               return (
                 <div key={j.id} onClick={() => onEditJob?.(j)}
-                  className={`bg-panel border border-hairline rounded-xl p-4 flex items-start gap-3 transition-colors hover:border-blue-300 hover:shadow-sm cursor-pointer ${isPast ? 'opacity-60' : ''}`}
+                  className={`bg-panel border border-hairline rounded-xl p-4 flex items-start gap-3 transition-colors hover:border-blue-300 hover:shadow-xs cursor-pointer ${isPast ? 'opacity-60' : ''}`}
                   title="Click to edit / reschedule / cancel">
                   {/* Color bar */}
                   <div className={`w-1 self-stretch rounded-full shrink-0 ${dotColor}`} />

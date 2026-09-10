@@ -155,7 +155,7 @@ export default function Login({ onLoginSuccess }) {
           {/* Session-timeout notice — friendlier than the gateway error it replaces */}
           {sessionExpired && !error && (
             <div className="mb-6 p-4 rounded-lg bg-amber-50 border border-amber-200 flex items-start gap-3">
-              <AlertCircle className="w-5 h-5 text-amber-600 flex-shrink-0 mt-0.5" />
+              <AlertCircle className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
               <p className="text-sm text-amber-700 font-medium">Your session timed out. Sign back in and we’ll restore anything you were working on.</p>
             </div>
           )}
@@ -163,7 +163,7 @@ export default function Login({ onLoginSuccess }) {
           {/* Error Alert */}
           {error && (
             <div className="mb-6 p-4 rounded-lg bg-red-50 border border-red-200 flex items-start gap-3">
-              <AlertCircle className="w-5 h-5 text-red-600 flex-shrink-0 mt-0.5" />
+              <AlertCircle className="w-5 h-5 text-red-600 shrink-0 mt-0.5" />
               <p className="text-sm text-red-700 font-medium">{error}</p>
             </div>
           )}
@@ -185,7 +185,7 @@ export default function Login({ onLoginSuccess }) {
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   disabled={loading}
-                  className="w-full pl-10 pr-4 py-3 rounded-lg border border-hairline/50 bg-panel/50 hover:bg-panel/70 focus:bg-panel focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-all disabled:opacity-50"
+                  className="w-full pl-10 pr-4 py-3 rounded-lg border border-hairline/50 bg-panel/50 hover:bg-panel/70 focus:bg-panel focus:outline-hidden focus:ring-2 focus:ring-indigo-500 transition-all disabled:opacity-50"
                 />
               </div>
             </div>
@@ -205,7 +205,7 @@ export default function Login({ onLoginSuccess }) {
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   disabled={loading}
-                  className="w-full pl-10 pr-12 py-3 rounded-lg border border-hairline/50 bg-panel/50 hover:bg-panel/70 focus:bg-panel focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-all disabled:opacity-50"
+                  className="w-full pl-10 pr-12 py-3 rounded-lg border border-hairline/50 bg-panel/50 hover:bg-panel/70 focus:bg-panel focus:outline-hidden focus:ring-2 focus:ring-indigo-500 transition-all disabled:opacity-50"
                 />
                 <button
                   type="button"
@@ -258,7 +258,7 @@ export default function Login({ onLoginSuccess }) {
                     value={confirmPassword}
                     onChange={(e) => setConfirmPassword(e.target.value)}
                     disabled={loading}
-                    className="w-full pl-10 pr-4 py-3 rounded-lg border border-hairline/50 bg-panel/50 hover:bg-panel/70 focus:bg-panel focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-all disabled:opacity-50"
+                    className="w-full pl-10 pr-4 py-3 rounded-lg border border-hairline/50 bg-panel/50 hover:bg-panel/70 focus:bg-panel focus:outline-hidden focus:ring-2 focus:ring-indigo-500 transition-all disabled:opacity-50"
                   />
                 </div>
               </div>
@@ -268,7 +268,7 @@ export default function Login({ onLoginSuccess }) {
             <button
               type="submit"
               disabled={loading}
-              className="w-full mt-6 px-4 py-3 bg-indigo-600 hover:bg-indigo-700 text-white font-semibold rounded-lg transition-colors shadow-sm disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+              className="w-full mt-6 px-4 py-3 bg-indigo-600 hover:bg-indigo-700 text-white font-semibold rounded-lg transition-colors shadow-xs disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
             >
               {loading ? (
                 <>

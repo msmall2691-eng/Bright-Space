@@ -67,14 +67,14 @@ export function InvoicingHeader({
           <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-ink-3 pointer-events-none" />
           <input value={search} onChange={e => setSearch(e.target.value)}
             placeholder="Search…"
-            className="bg-panel border border-hairline text-sm text-ink placeholder-ink-3 rounded-lg pl-8 pr-3 py-1.5 focus:outline-none focus:border-hairline w-44 transition-colors" />
+            className="bg-panel border border-hairline text-sm text-ink placeholder-ink-3 rounded-lg pl-8 pr-3 py-1.5 focus:outline-hidden focus:border-hairline w-44 transition-colors" />
         </div>
 
         <div className="flex items-center gap-1 bg-panel border border-hairline rounded-lg p-1 overflow-x-auto">
           {STATUS_FILTERS.map(s => (
             <button key={s} onClick={() => setStatusFilter(s)}
               className={`px-2.5 py-1 rounded-md text-xs font-medium transition-colors
-                ${statusFilter === s ? 'bg-bg-2 text-ink shadow-sm' : 'text-ink-3 hover:text-ink-2'}`}>
+                ${statusFilter === s ? 'bg-bg-2 text-ink shadow-xs' : 'text-ink-3 hover:text-ink-2'}`}>
               {s === '' ? 'All' : s.charAt(0).toUpperCase() + s.slice(1)}
             </button>
           ))}

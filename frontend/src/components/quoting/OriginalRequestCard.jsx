@@ -62,11 +62,11 @@ export default function OriginalRequestCard({ intake, defaultOpen = false, class
             </div>
           )}
           {rows.length > 0 && (
-            <dl className="grid grid-cols-[auto,1fr] gap-x-3 gap-y-1 text-[12px]">
+            <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-[12px]">
               {rows.map(([label, value]) => (
                 <div key={label} className="contents">
                   <dt className="text-ink-3">{label}</dt>
-                  <dd className="text-ink-2 break-words">{value}</dd>
+                  <dd className="text-ink-2 wrap-break-word">{value}</dd>
                 </div>
               ))}
             </dl>

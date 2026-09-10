@@ -34,4 +34,4 @@ export const EMPTY_FORM = { name: '', field_type: 'text', options: '', required:
 
 // Field-panel label + input classNames — used by the custom-fields tab.
 export const lbl = 'block text-[10px] font-semibold uppercase tracking-widest text-ink-3 mb-1.5'
-export const inp = 'w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm text-ink placeholder-ink-3 focus:outline-none focus:border-blue-400 transition-colors'
+export const inp = 'w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm text-ink placeholder-ink-3 focus:outline-hidden focus:border-blue-400 transition-colors'

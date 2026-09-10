@@ -115,7 +115,7 @@ function AgentBubble({ msg, agent }) {
           {agent?.role && <span className="text-[11px] text-ink-3 truncate">{agent.role}</span>}
         </div>
         <div
-          className="px-3.5 py-2.5 rounded-2xl rounded-tl-md bg-panel border border-hairline break-words"
+          className="px-3.5 py-2.5 rounded-2xl rounded-tl-md bg-panel border border-hairline wrap-break-word"
           style={agent?.color ? { borderLeftColor: agent.color, borderLeftWidth: '3px', backgroundColor: `${agent.color}0a` } : undefined}
         >
           {msg.text ? <MarkdownContent text={msg.text} /> : (msg.streaming ? <span className="text-ink-3">…</span> : null)}
@@ -130,7 +130,7 @@ function AgentBubble({ msg, agent }) {
 function UserBubble({ text }) {
   return (
     <div className="flex justify-end mt-3">
-      <div className="max-w-[85%] sm:max-w-[70%] px-3.5 py-2.5 rounded-2xl rounded-br-md bg-indigo-600 text-white text-[13px] leading-relaxed whitespace-pre-wrap break-words">
+      <div className="max-w-[85%] sm:max-w-[70%] px-3.5 py-2.5 rounded-2xl rounded-br-md bg-indigo-600 text-white text-[13px] leading-relaxed whitespace-pre-wrap wrap-break-word">
         {text}
       </div>
     </div>
@@ -470,7 +470,7 @@ export default function Workspace() {
 
         {/* Input bar */}
         <div className="shrink-0 pt-3 pb-safe">
-          <div className="flex items-end gap-2 bg-panel border border-hairline rounded-2xl p-2 shadow-sm">
+          <div className="flex items-end gap-2 bg-panel border border-hairline rounded-2xl p-2 shadow-xs">
             <textarea
               ref={textareaRef}
               value={input}
@@ -478,7 +478,7 @@ export default function Workspace() {
               onKeyDown={onKeyDown}
               placeholder={selectedAgentId ? `Message ${agentById(selectedAgentId)?.name || 'agent'}…` : 'Ask your team anything…'}
               rows={1}
-              className="flex-1 resize-none bg-transparent px-2 py-1.5 text-[13px] text-ink placeholder:text-ink-3 focus:outline-none max-h-32 overflow-y-auto"
+              className="flex-1 resize-none bg-transparent px-2 py-1.5 text-[13px] text-ink placeholder:text-ink-3 focus:outline-hidden max-h-32 overflow-y-auto"
             />
             <button
               onClick={() => handleSend()}

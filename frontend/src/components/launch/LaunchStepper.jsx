@@ -63,11 +63,11 @@ function ScheduleForm({ busy, onSchedule }) {
       <div className="grid grid-cols-3 gap-2">
         <label className="text-[11px] text-ink-3 col-span-3 -mb-1">Date &amp; time (optional)</label>
         <input type="date" value={date} onChange={e => setDate(e.target.value)}
-          className="col-span-3 sm:col-span-1 bg-bg-2 border border-hairline rounded-lg px-2 py-1.5 text-[13px] text-ink focus:outline-none focus:border-indigo-400" />
+          className="col-span-3 sm:col-span-1 bg-bg-2 border border-hairline rounded-lg px-2 py-1.5 text-[13px] text-ink focus:outline-hidden focus:border-indigo-400" />
         <input type="time" value={start} onChange={e => setStart(e.target.value)} disabled={!date}
-          className="bg-bg-2 border border-hairline rounded-lg px-2 py-1.5 text-[13px] text-ink disabled:opacity-50 focus:outline-none focus:border-indigo-400" />
+          className="bg-bg-2 border border-hairline rounded-lg px-2 py-1.5 text-[13px] text-ink disabled:opacity-50 focus:outline-hidden focus:border-indigo-400" />
         <input type="time" value={end} onChange={e => setEnd(e.target.value)} disabled={!date}
-          className="bg-bg-2 border border-hairline rounded-lg px-2 py-1.5 text-[13px] text-ink disabled:opacity-50 focus:outline-none focus:border-indigo-400" />
+          className="bg-bg-2 border border-hairline rounded-lg px-2 py-1.5 text-[13px] text-ink disabled:opacity-50 focus:outline-hidden focus:border-indigo-400" />
       </div>
       <button onClick={submit} disabled={busy}
         className="inline-flex items-center gap-1.5 text-[13px] font-semibold px-3 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white">

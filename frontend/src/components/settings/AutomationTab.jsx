@@ -143,7 +143,7 @@ export function AutomationSection({ state, toast, active }) {
             </div>
             <select value={s.calendar_source_of_truth}
               onChange={e => setAutomationSettings(x => ({ ...x, calendar_source_of_truth: e.target.value }))}
-              className="w-full sm:w-96 bg-bg-2 border border-hairline rounded-lg px-3 py-2 text-sm text-ink focus:outline-none focus:border-blue-400">
+              className="w-full sm:w-96 bg-bg-2 border border-hairline rounded-lg px-3 py-2 text-sm text-ink focus:outline-hidden focus:border-blue-400">
               <option value="brightbase">BrightBase is the master (recommended) — edits made in Google are re-asserted</option>
               <option value="google">Two-way (disabled) — a time/title edit made in Google would sync back into BrightBase</option>
             </select>
@@ -281,7 +281,7 @@ export function AutomationSection({ state, toast, active }) {
             </div>
             <select value={s.gcal_reminders_mode}
               onChange={e => setAutomationSettings(x => ({ ...x, gcal_reminders_mode: e.target.value }))}
-              className="w-full sm:w-80 bg-bg-2 border border-hairline rounded-lg px-3 py-2 text-sm text-ink focus:outline-none focus:border-blue-400">
+              className="w-full sm:w-80 bg-bg-2 border border-hairline rounded-lg px-3 py-2 text-sm text-ink focus:outline-hidden focus:border-blue-400">
               <option value="google_default">Use Google Calendar's settings (recommended)</option>
               <option value="off">No reminders</option>
               <option value="email_popup">Email 24h + popup 1h before</option>

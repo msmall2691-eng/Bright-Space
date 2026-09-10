@@ -334,7 +334,7 @@ export default function App() {
     // The app frame (Twenty-style): a quiet gray ground holding the sidebar
     // and one rounded white-ish "sheet" per page. The sheet — not the frame —
     // scrolls, so the sidebar and gutter stay put.
-    <div className="flex h-[100dvh] overflow-hidden bg-frame">
+    <div className="flex h-dvh overflow-hidden bg-frame">
       <SidebarWithUnread
         open={sidebarOpen}
         onClose={closeSidebar}

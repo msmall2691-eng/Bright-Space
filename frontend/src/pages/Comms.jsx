@@ -398,7 +398,7 @@ export default function Comms() {
           /* Empty state */
           <div className="flex-1 flex items-center justify-center bg-bg/50">
             <div className="text-center max-w-xs">
-              <div className="w-20 h-20 rounded-3xl bg-panel border border-hairline flex items-center justify-center mx-auto mb-5 shadow-sm">
+              <div className="w-20 h-20 rounded-3xl bg-panel border border-hairline flex items-center justify-center mx-auto mb-5 shadow-xs">
                 <MessageSquare className="w-10 h-10 text-ink-3" />
               </div>
               <h2 className="text-base font-bold text-ink-2 mb-2">Select a conversation</h2>
@@ -446,7 +446,7 @@ export default function Comms() {
                 })}
                 {(!detail.messages || detail.messages.length === 0) && !loadingDetail && (
                   <div className="flex flex-col items-center justify-center py-8">
-                    <div className="w-12 h-12 rounded-2xl bg-panel border border-hairline flex items-center justify-center mb-3 shadow-sm">
+                    <div className="w-12 h-12 rounded-2xl bg-panel border border-hairline flex items-center justify-center mb-3 shadow-xs">
                       <MessageCircle className="w-6 h-6 text-ink-3" />
                     </div>
                     <p className="text-[13px] text-ink-3">No messages yet. Start the conversation below.</p>
@@ -540,7 +540,7 @@ export default function Comms() {
       {/* ═══ Agent Widget ═══ */}
 
       {toast && (
-        <div className={`fixed bottom-6 right-6 z-[60] flex items-center gap-2 px-4 py-3 rounded-xl shadow-lg border text-sm ${
+        <div className={`fixed bottom-6 right-6 z-60 flex items-center gap-2 px-4 py-3 rounded-xl shadow-lg border text-sm ${
           toast.ok
             ? 'bg-panel border-hairline text-ink'
             : 'bg-panel border-hairline text-ink-2'

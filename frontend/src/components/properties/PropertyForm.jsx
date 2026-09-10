@@ -127,7 +127,7 @@ export function PropertyForm({
           </div>
           {!addingClient ? (
             <select value={form.client_id} onChange={e => selectClient(e.target.value)}
-              className="w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-none">
+              className="w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-hidden">
               <option value="">Select client...</option>
               {clients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
             </select>
@@ -135,14 +135,14 @@ export function PropertyForm({
             <div className="rounded-lg border border-hairline-2 bg-bg p-2.5 space-y-2">
               <input autoFocus value={newClient.name} onChange={e => setNewClient(n => ({ ...n, name: e.target.value }))}
                 placeholder="Client name *"
-                className="w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-indigo-400" />
+                className="w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-hidden focus:border-indigo-400" />
               <div className="grid grid-cols-2 gap-2">
                 <input value={newClient.phone} onChange={e => setNewClient(n => ({ ...n, phone: e.target.value }))}
                   placeholder="Phone"
-                  className="w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-indigo-400" />
+                  className="w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-hidden focus:border-indigo-400" />
                 <input value={newClient.email} onChange={e => setNewClient(n => ({ ...n, email: e.target.value }))}
                   placeholder="Email"
-                  className="w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-indigo-400" />
+                  className="w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-hidden focus:border-indigo-400" />
               </div>
               {clientErr && <div className="text-xs text-red-600">{clientErr}</div>}
               <button type="button" onClick={createInlineClient} disabled={creatingClient || !newClient.name.trim()}
@@ -159,7 +159,7 @@ export function PropertyForm({
             <label className="block text-xs text-ink-3 mb-1">{label}</label>
             <input value={form[key] || ''} onChange={e => setForm(f => ({ ...f, [key]: e.target.value }))}
               placeholder={placeholder}
-              className="w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-400" />
+              className="w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-hidden focus:border-blue-400" />
           </div>
         ))}
 
@@ -168,14 +168,14 @@ export function PropertyForm({
           <label className="block text-xs text-ink-3 mb-1">Access Notes</label>
           <textarea value={form.access_notes || ''} onChange={e => setForm(f => ({ ...f, access_notes: e.target.value }))} rows={2}
             placeholder="e.g. Side door, lockbox 4251"
-            className="w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-none resize-none" />
+            className="w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-hidden resize-none" />
         </div>
 
         <div>
           <label className="block text-xs text-ink-3 mb-1">Parking Notes</label>
           <input value={form.parking_notes || ''} onChange={e => setForm(f => ({ ...f, parking_notes: e.target.value }))}
             placeholder="Where to park"
-            className="w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-400" />
+            className="w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-hidden focus:border-blue-400" />
         </div>
 
         <div className="grid grid-cols-2 gap-3">
@@ -183,13 +183,13 @@ export function PropertyForm({
             <label className="block text-xs text-ink-3 mb-1">Default Duration (hrs)</label>
             <input type="number" step="0.5" value={form.default_duration_hours || 3}
               onChange={e => setForm(f => ({ ...f, default_duration_hours: e.target.value }))}
-              className="w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-none" />
+              className="w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-hidden" />
           </div>
           <div>
             <label className="block text-xs text-ink-3 mb-1">Crew Size</label>
             <input type="number" value={form.default_crew_size || ''}
               onChange={e => setForm(f => ({ ...f, default_crew_size: e.target.value }))}
-              className="w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-none" />
+              className="w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-hidden" />
           </div>
         </div>
 
@@ -212,25 +212,25 @@ export function PropertyForm({
               <label className="block text-xs text-ink-3 mb-1">Bedrooms</label>
               <input type="number" min="0" value={form.bedrooms ?? ''}
                 onChange={e => setForm(f => ({ ...f, bedrooms: e.target.value }))}
-                className="w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-400" />
+                className="w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-hidden focus:border-blue-400" />
             </div>
             <div>
               <label className="block text-xs text-ink-3 mb-1">Bathrooms</label>
               <input type="number" min="0" step="0.5" value={form.bathrooms ?? ''}
                 onChange={e => setForm(f => ({ ...f, bathrooms: e.target.value }))}
-                className="w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-400" />
+                className="w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-hidden focus:border-blue-400" />
             </div>
             <div>
               <label className="block text-xs text-ink-3 mb-1">Square Footage</label>
               <input type="number" min="0" value={form.square_footage ?? ''}
                 onChange={e => setForm(f => ({ ...f, square_footage: e.target.value }))}
-                className="w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-400" />
+                className="w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-hidden focus:border-blue-400" />
             </div>
             <div>
               <label className="block text-xs text-ink-3 mb-1">Year Built</label>
               <input type="number" min="1800" max="2100" value={form.year_built ?? ''}
                 onChange={e => setForm(f => ({ ...f, year_built: e.target.value }))}
-                className="w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-400" />
+                className="w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-hidden focus:border-blue-400" />
             </div>
           </div>
 
@@ -250,12 +250,12 @@ export function PropertyForm({
               <div>
                 <label className="block text-xs text-ink-3 mb-1">Check-in Time</label>
                 <input type="time" value={form.check_in_time || '14:00'} onChange={e => setForm(f => ({ ...f, check_in_time: e.target.value }))}
-                  className="w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-none" />
+                  className="w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-hidden" />
               </div>
               <div>
                 <label className="block text-xs text-ink-3 mb-1">Check-out Time</label>
                 <input type="time" value={form.check_out_time || '10:00'} onChange={e => setForm(f => ({ ...f, check_out_time: e.target.value }))}
-                  className="w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-none" />
+                  className="w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-hidden" />
               </div>
             </div>
 
@@ -263,7 +263,7 @@ export function PropertyForm({
               <label className="block text-xs text-ink-3 mb-1">House Code</label>
               <input value={form.house_code || ''} onChange={e => setForm(f => ({ ...f, house_code: e.target.value }))}
                 placeholder="e.g. 1234 or Front door code"
-                className="w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-400" />
+                className="w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-hidden focus:border-blue-400" />
             </div>
           </div>
         )}
@@ -277,14 +277,14 @@ export function PropertyForm({
               <label className="block text-xs text-ink-3 mb-1">Business Name</label>
               <input value={form.business_name || ''} onChange={e => setForm(f => ({ ...f, business_name: e.target.value }))}
                 placeholder="If different from Client name"
-                className="w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-400" />
+                className="w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-hidden focus:border-blue-400" />
             </div>
 
             <div className="mt-3">
               <label className="block text-xs text-ink-3 mb-1">Hours of Operation</label>
               <input value={form.hours_of_operation || ''} onChange={e => setForm(f => ({ ...f, hours_of_operation: e.target.value }))}
                 placeholder="e.g. Mon-Fri 9am-5pm"
-                className="w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-400" />
+                className="w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-hidden focus:border-blue-400" />
             </div>
           </div>
         )}
@@ -292,7 +292,7 @@ export function PropertyForm({
         <div>
           <label className="block text-xs text-ink-3 mb-1">Notes</label>
           <textarea value={form.notes || ''} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} rows={3}
-            className="w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-none resize-none" />
+            className="w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-hidden resize-none" />
         </div>
 
         {/* Admin-defined custom fields (Settings → Custom Fields → Properties) */}

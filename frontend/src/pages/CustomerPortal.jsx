@@ -58,7 +58,7 @@ function SignIn() {
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-slate-50 px-4">
-      <div className="w-full max-w-md bg-white rounded-2xl shadow-sm border border-slate-200 p-7">
+      <div className="w-full max-w-md bg-white rounded-2xl shadow-xs border border-slate-200 p-7">
         <div className="flex items-center gap-2 mb-1">
           <span className="grid place-items-center w-9 h-9 rounded-xl bg-violet-600 text-white">
             <Sparkles className="w-5 h-5" />
@@ -89,7 +89,7 @@ function SignIn() {
             <form onSubmit={submit} className="mt-5 space-y-3">
               <input type="email" required value={email} onChange={e => setEmail(e.target.value)}
                 placeholder="you@example.com" autoFocus
-                className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-violet-500 focus:border-violet-500" />
+                className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 text-slate-900 placeholder-slate-400 focus:outline-hidden focus:ring-2 focus:ring-violet-500 focus:border-violet-500" />
               <button type="submit" disabled={busy}
                 className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl bg-violet-600 hover:bg-violet-700 disabled:opacity-60 text-white font-semibold">
                 {busy ? 'Sending…' : <>Email me a sign-in link <ArrowRight className="w-4 h-4" /></>}

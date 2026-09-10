@@ -157,7 +157,7 @@ export default function PageAssistant() {
       <button
         onClick={() => setOpen(true)}
         title={`${agent.name} · your ${agent.role} for this page (⌘K)`}
-        className="no-print flex fixed bottom-[4.75rem] right-4 lg:bottom-6 lg:right-6 z-40 items-center gap-2 pl-2 pr-2 lg:pr-3.5 py-2 bg-panel rounded-full shadow-lg border border-hairline hover:border-hairline-2 hover:shadow-xl transition-all group"
+        className="no-print flex fixed bottom-19 right-4 lg:bottom-6 lg:right-6 z-40 items-center gap-2 pl-2 pr-2 lg:pr-3.5 py-2 bg-panel rounded-full shadow-lg border border-hairline hover:border-hairline-2 hover:shadow-xl transition-all group"
       >
         <AgentAvatar agent={agent} size="sm" />
         <span className="hidden lg:block text-left leading-tight">
@@ -278,7 +278,7 @@ export default function PageAssistant() {
             onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); ask() } }}
             rows={1}
             placeholder={`Ask ${agent.name} about this page…`}
-            className="flex-1 resize-none bg-bg border border-hairline rounded-lg px-3 py-2 text-[13px] text-ink placeholder:text-ink-3 focus:outline-none focus:border-blue-400 max-h-24"
+            className="flex-1 resize-none bg-bg border border-hairline rounded-lg px-3 py-2 text-[13px] text-ink placeholder:text-ink-3 focus:outline-hidden focus:border-blue-400 max-h-24"
           />
           <button onClick={() => ask()} disabled={!query.trim() || asking}
             className="p-2 rounded-lg bg-indigo-600 hover:bg-blue-500 disabled:opacity-40 disabled:cursor-not-allowed text-white shrink-0">

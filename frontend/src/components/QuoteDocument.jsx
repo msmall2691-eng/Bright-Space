@@ -61,7 +61,7 @@ export default function QuoteDocument({ quote, actions = null, toolbar = null, b
       </div>
 
       {/* Document body */}
-      <div className="bg-panel border border-hairline border-t-0 rounded-b-2xl shadow-sm">
+      <div className="bg-panel border border-hairline border-t-0 rounded-b-2xl shadow-xs">
         {/* Front-of-house photo (Street View) — hides itself if it can't load,
             so a missing photo never leaves a broken image. */}
         {quote.property_photo_url && (

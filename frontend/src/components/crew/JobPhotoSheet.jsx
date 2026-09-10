@@ -193,7 +193,7 @@ export default function JobPhotoSheet({ job, onClose }) {
                 {p.mine && (
                   <button onClick={() => removePhoto(p.id)} disabled={busy}
                     aria-label="Remove photo"
-                    className="absolute -top-1.5 -right-1.5 grid place-items-center w-6 h-6 rounded-full bg-ink text-bg shadow">
+                    className="absolute -top-1.5 -right-1.5 grid place-items-center w-6 h-6 rounded-full bg-ink text-bg shadow-sm">
                     <X className="w-3.5 h-3.5" />
                   </button>
                 )}

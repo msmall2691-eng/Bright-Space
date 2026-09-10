@@ -64,7 +64,7 @@ export const PROPERTY_TYPE_LABELS = {
   str: 'STR'
 }
 
-export const INPUT_CLASS = 'w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-none'
+export const INPUT_CLASS = 'w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-hidden'
 
 /* ─── ClientCalendarTab-adjacent constants ─── */
 

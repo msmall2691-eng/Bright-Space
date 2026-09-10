@@ -78,9 +78,9 @@ export default function TemplateManagerModal({ initial, templatesLoaded, onClose
               <div className="flex items-center gap-2">
                 <input value={t.label} onChange={e => updateTemplate(ti, { label: e.target.value })}
                   placeholder="Template name (e.g. Biweekly Residential)"
-                  className="flex-1 bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-400" />
+                  className="flex-1 bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-hidden focus:border-blue-400" />
                 <select value={t.service_type} onChange={e => updateTemplate(ti, { service_type: e.target.value })}
-                  className="bg-panel border border-hairline rounded-lg px-2 py-2 text-sm focus:outline-none">
+                  className="bg-panel border border-hairline rounded-lg px-2 py-2 text-sm focus:outline-hidden">
                   {SERVICE_TYPES.map(s => <option key={s} value={s}>{s}</option>)}
                 </select>
                 <button onClick={() => removeTemplate(ti)} title="Delete template"
@@ -91,22 +91,22 @@ export default function TemplateManagerModal({ initial, templatesLoaded, onClose
                   when the template is picked (existing quotes untouched). */}
               <input value={t.title || ''} onChange={e => updateTemplate(ti, { title: e.target.value })}
                 placeholder="Default quote title (optional — e.g. Biweekly cleaning)"
-                className="w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-xs focus:outline-none focus:border-blue-400" />
+                className="w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-xs focus:outline-hidden focus:border-blue-400" />
               <textarea value={t.customer_message || ''} onChange={e => updateTemplate(ti, { customer_message: e.target.value })}
                 placeholder="Default message to customer (optional)" rows={2}
-                className="w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-xs focus:outline-none focus:border-blue-400 resize-none" />
+                className="w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-xs focus:outline-hidden focus:border-blue-400 resize-none" />
               <div className="space-y-1.5">
                 {(t.items || []).map((it, ii) => (
                   <div key={ii} className="flex items-center gap-1.5">
                     <input value={it.name} onChange={e => updateTplItem(ti, ii, { name: e.target.value })}
                       placeholder="Line item"
-                      className="flex-1 bg-panel border border-hairline rounded-lg px-2.5 py-1.5 text-xs focus:outline-none focus:border-blue-400" />
+                      className="flex-1 bg-panel border border-hairline rounded-lg px-2.5 py-1.5 text-xs focus:outline-hidden focus:border-blue-400" />
                     <input type="number" value={it.qty} onChange={e => updateTplItem(ti, ii, { qty: e.target.value })}
                       onFocus={e => e.target.select()}
-                      title="Qty" className="w-14 bg-panel border border-hairline rounded-lg px-2 py-1.5 text-xs focus:outline-none" />
+                      title="Qty" className="w-14 bg-panel border border-hairline rounded-lg px-2 py-1.5 text-xs focus:outline-hidden" />
                     <input type="number" value={it.unit_price} onChange={e => updateTplItem(ti, ii, { unit_price: e.target.value })}
                       onFocus={e => e.target.select()}
-                      title="Unit price" className="w-20 bg-panel border border-hairline rounded-lg px-2 py-1.5 text-xs focus:outline-none" />
+                      title="Unit price" className="w-20 bg-panel border border-hairline rounded-lg px-2 py-1.5 text-xs focus:outline-hidden" />
                     <button onClick={() => removeTplItem(ti, ii)} className="p-1.5 text-ink-3 hover:text-red-600"><X className="w-3.5 h-3.5" /></button>
                   </div>
                 ))}

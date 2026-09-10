@@ -986,7 +986,7 @@ export default function MyDay({ previewUserId = null }) {
               value={doneNote} onChange={e => setDoneNote(e.target.value)}
               rows={3} maxLength={2000} autoFocus
               placeholder="Optional — e.g. lockbox was empty, we're low on towels…"
-              className="mt-1.5 w-full rounded-lg border border-hairline bg-bg px-3 py-2.5 text-[13px] text-ink placeholder-ink-3 focus:outline-none focus:border-blue-400 resize-none"
+              className="mt-1.5 w-full rounded-lg border border-hairline bg-bg px-3 py-2.5 text-[13px] text-ink placeholder-ink-3 focus:outline-hidden focus:border-blue-400 resize-none"
             />
           </label>
           <ErrorNote>{actionError}</ErrorNote>
@@ -1034,13 +1034,13 @@ export default function MyDay({ previewUserId = null }) {
             <span className="text-[13px] font-medium text-ink-2">Their name</span>
             <input value={helperName} onChange={e => setHelperName(e.target.value)}
               maxLength={120} autoFocus placeholder="e.g. Sam Reed"
-              className="mt-1.5 w-full rounded-lg border border-hairline bg-bg px-3 py-2.5 text-[13px] text-ink placeholder-ink-3 focus:outline-none focus:border-blue-400" />
+              className="mt-1.5 w-full rounded-lg border border-hairline bg-bg px-3 py-2.5 text-[13px] text-ink placeholder-ink-3 focus:outline-hidden focus:border-blue-400" />
           </label>
           <label className="block">
             <span className="text-[13px] font-medium text-ink-2">Their number <span className="text-ink-3 font-normal">· optional</span></span>
             <input value={helperPhone} onChange={e => setHelperPhone(e.target.value)}
               type="tel" maxLength={32} placeholder="If the office needs to reach the house"
-              className="mt-1.5 w-full rounded-lg border border-hairline bg-bg px-3 py-2.5 text-[13px] text-ink placeholder-ink-3 focus:outline-none focus:border-blue-400" />
+              className="mt-1.5 w-full rounded-lg border border-hairline bg-bg px-3 py-2.5 text-[13px] text-ink placeholder-ink-3 focus:outline-hidden focus:border-blue-400" />
           </label>
           <ErrorNote>{actionError}</ErrorNote>
           <SheetActions onCancel={() => { setHelperJob(null); setActionError(null) }}
@@ -1109,7 +1109,7 @@ export default function MyDay({ previewUserId = null }) {
                       <input value={textNote} maxLength={160}
                         onChange={e => setTextNote(e.target.value)}
                         placeholder="e.g. It's Sarah and Meg today!"
-                        className="mt-1 w-full rounded-lg border border-hairline bg-bg px-3 py-2 text-[13px] text-ink focus:outline-none focus:border-blue-400" />
+                        className="mt-1 w-full rounded-lg border border-hairline bg-bg px-3 py-2 text-[13px] text-ink focus:outline-hidden focus:border-blue-400" />
                     </label>
                     <div className="space-y-2">
                       {canOnTheWay && (
@@ -1192,7 +1192,7 @@ export default function MyDay({ previewUserId = null }) {
               value={claimRate} onChange={e => setClaimRate(e.target.value)}
               autoFocus={posted == null}
               placeholder={posted != null ? `${Number(posted)}` : 'e.g. 120'}
-              className="mt-1.5 w-full rounded-lg border border-hairline bg-bg px-3 py-2.5 text-base text-ink placeholder-ink-3 focus:outline-none focus:border-blue-400"
+              className="mt-1.5 w-full rounded-lg border border-hairline bg-bg px-3 py-2.5 text-base text-ink placeholder-ink-3 focus:outline-hidden focus:border-blue-400"
             />
           </label>
           <label className="block">
@@ -1201,7 +1201,7 @@ export default function MyDay({ previewUserId = null }) {
               value={claimMessage} onChange={e => setClaimMessage(e.target.value)}
               rows={2} maxLength={2000}
               placeholder="e.g. I'm five minutes away, I bring my own supplies…"
-              className="mt-1.5 w-full rounded-lg border border-hairline bg-bg px-3 py-2.5 text-[13px] text-ink placeholder-ink-3 focus:outline-none focus:border-blue-400 resize-none"
+              className="mt-1.5 w-full rounded-lg border border-hairline bg-bg px-3 py-2.5 text-[13px] text-ink placeholder-ink-3 focus:outline-hidden focus:border-blue-400 resize-none"
             />
           </label>
           {willBeInstant ? (
@@ -1251,7 +1251,7 @@ export default function MyDay({ previewUserId = null }) {
               value={declineReason} onChange={e => setDeclineReason(e.target.value)}
               rows={2} maxLength={2000} autoFocus
               placeholder="e.g. doctor's appointment, car trouble…"
-              className="mt-1.5 w-full rounded-lg border border-hairline bg-bg px-3 py-2.5 text-[13px] text-ink placeholder-ink-3 focus:outline-none focus:border-blue-400 resize-none"
+              className="mt-1.5 w-full rounded-lg border border-hairline bg-bg px-3 py-2.5 text-[13px] text-ink placeholder-ink-3 focus:outline-hidden focus:border-blue-400 resize-none"
             />
           </label>
           <ErrorNote>{actionError}</ErrorNote>

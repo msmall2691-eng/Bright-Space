@@ -57,26 +57,26 @@ export function ClientForm({
           <div className="flex-1">
             <label className="block text-[11px] text-ink-3 mb-1 font-medium">First Name *</label>
             <input value={form.first_name || ''} onChange={e => setForm(f => ({ ...f, first_name: e.target.value }))}
-              className="w-full bg-bg border border-hairline rounded-lg px-3 py-2 text-[13px] text-ink focus:outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-400/20" />
+              className="w-full bg-bg border border-hairline rounded-lg px-3 py-2 text-[13px] text-ink focus:outline-hidden focus:border-blue-400 focus:ring-1 focus:ring-blue-400/20" />
           </div>
           <div className="flex-1">
             <label className="block text-[11px] text-ink-3 mb-1 font-medium">Last Name</label>
             <input value={form.last_name || ''} onChange={e => setForm(f => ({ ...f, last_name: e.target.value }))}
-              className="w-full bg-bg border border-hairline rounded-lg px-3 py-2 text-[13px] text-ink focus:outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-400/20" />
+              className="w-full bg-bg border border-hairline rounded-lg px-3 py-2 text-[13px] text-ink focus:outline-hidden focus:border-blue-400 focus:ring-1 focus:ring-blue-400/20" />
           </div>
         </div>
         {CONTACT_FIELDS.map(({ label, key }) => (
           <div key={key}>
             <label className="block text-[11px] text-ink-3 mb-1 font-medium">{label}</label>
             <input value={form[key] || ''} onChange={e => setForm(f => ({ ...f, [key]: e.target.value }))}
-              className="w-full bg-bg border border-hairline rounded-lg px-3 py-2 text-[13px] text-ink focus:outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-400/20" />
+              className="w-full bg-bg border border-hairline rounded-lg px-3 py-2 text-[13px] text-ink focus:outline-hidden focus:border-blue-400 focus:ring-1 focus:ring-blue-400/20" />
           </div>
         ))}
 
         {/* Phone Numbers Management */}
         {selected && (
           <div className="pt-2">
-            <div className="text-[10px] font-semibold uppercase tracking-[0.1em] text-ink-3 mb-2 flex items-center gap-2">
+            <div className="text-[10px] font-semibold uppercase tracking-widest text-ink-3 mb-2 flex items-center gap-2">
               <div className="h-px flex-1 bg-bg-2" /><span>Phone Numbers</span><div className="h-px flex-1 bg-bg-2" />
             </div>
 
@@ -113,9 +113,9 @@ export function ClientForm({
             {/* Add new phone */}
             <div className="space-y-2">
               <input value={newPhoneNumber} onChange={e => setNewPhoneNumber(e.target.value)} placeholder="Add phone number"
-                className="w-full bg-bg border border-hairline rounded-lg px-3 py-2 text-[13px] text-ink placeholder-ink-3 focus:outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-400/20" />
+                className="w-full bg-bg border border-hairline rounded-lg px-3 py-2 text-[13px] text-ink placeholder-ink-3 focus:outline-hidden focus:border-blue-400 focus:ring-1 focus:ring-blue-400/20" />
               <select value={newPhoneType} onChange={e => setNewPhoneType(e.target.value)}
-                className="w-full bg-bg border border-hairline rounded-lg px-3 py-2 text-[13px] text-ink focus:outline-none focus:border-blue-400">
+                className="w-full bg-bg border border-hairline rounded-lg px-3 py-2 text-[13px] text-ink focus:outline-hidden focus:border-blue-400">
                 <option value="mobile">Mobile</option>
                 <option value="office">Office</option>
                 <option value="home">Home</option>
@@ -128,7 +128,7 @@ export function ClientForm({
           </div>
         )}
         <div className="pt-1">
-          <div className="text-[10px] font-semibold uppercase tracking-[0.1em] text-ink-3 mb-3 flex items-center gap-2">
+          <div className="text-[10px] font-semibold uppercase tracking-widest text-ink-3 mb-3 flex items-center gap-2">
             <div className="h-px flex-1 bg-bg-2" /><span>Service Address</span><div className="h-px flex-1 bg-bg-2" />
           </div>
           {ADDRESS_FIELDS.map(({ label, key }) => (
@@ -140,11 +140,11 @@ export function ClientForm({
                   onChange={v => setForm(f => ({ ...f, address: v }))}
                   onSelect={p => setForm(f => ({ ...f, address: p.address || f.address, city: p.city || f.city, state: p.state || f.state, zip_code: p.zip_code || f.zip_code }))}
                   placeholder="Start typing an address…"
-                  className="w-full bg-bg border border-hairline rounded-lg px-3 py-2 text-[13px] text-ink focus:outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-400/20"
+                  className="w-full bg-bg border border-hairline rounded-lg px-3 py-2 text-[13px] text-ink focus:outline-hidden focus:border-blue-400 focus:ring-1 focus:ring-blue-400/20"
                 />
               ) : (
                 <input value={form[key] || ''} onChange={e => setForm(f => ({ ...f, [key]: e.target.value }))}
-                  className="w-full bg-bg border border-hairline rounded-lg px-3 py-2 text-[13px] text-ink focus:outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-400/20" />
+                  className="w-full bg-bg border border-hairline rounded-lg px-3 py-2 text-[13px] text-ink focus:outline-hidden focus:border-blue-400 focus:ring-1 focus:ring-blue-400/20" />
               )}
             </div>
           ))}
@@ -156,14 +156,14 @@ export function ClientForm({
               + Add separate billing address
             </button>
           ) : (<>
-            <div className="text-[10px] font-semibold uppercase tracking-[0.1em] text-ink-3 mb-3 flex items-center gap-2">
+            <div className="text-[10px] font-semibold uppercase tracking-widest text-ink-3 mb-3 flex items-center gap-2">
               <div className="h-px flex-1 bg-bg-2" /><span>Billing Address</span><div className="h-px flex-1 bg-bg-2" />
             </div>
             {BILLING_FIELDS.map(({ label, key }) => (
               <div key={key} className="mb-3">
                 <label className="block text-[11px] text-ink-3 mb-1 font-medium">{label}</label>
                 <input value={form[key] || ''} onChange={e => setForm(f => ({ ...f, [key]: e.target.value }))}
-                  className="w-full bg-bg border border-hairline rounded-lg px-3 py-2 text-[13px] text-ink focus:outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-400/20" />
+                  className="w-full bg-bg border border-hairline rounded-lg px-3 py-2 text-[13px] text-ink focus:outline-hidden focus:border-blue-400 focus:ring-1 focus:ring-blue-400/20" />
               </div>
             ))}
           </>)}
@@ -171,7 +171,7 @@ export function ClientForm({
         <div>
           <label className="block text-[11px] text-ink-3 mb-1 font-medium">Status</label>
           <select value={form.status} onChange={e => setForm(f => ({ ...f, status: e.target.value }))}
-            className="w-full bg-bg border border-hairline rounded-lg px-3 py-2 text-[13px] text-ink focus:outline-none focus:border-blue-400">
+            className="w-full bg-bg border border-hairline rounded-lg px-3 py-2 text-[13px] text-ink focus:outline-hidden focus:border-blue-400">
             <option value="lead">Lead</option>
             <option value="active">Active</option>
             <option value="inactive">Inactive</option>
@@ -180,7 +180,7 @@ export function ClientForm({
         <div>
           <label className="block text-[11px] text-ink-3 mb-1 font-medium">Notes</label>
           <textarea value={form.notes || ''} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} rows={3}
-            className="w-full bg-bg border border-hairline rounded-lg px-3 py-2 text-[13px] text-ink focus:outline-none focus:border-blue-400 resize-none" />
+            className="w-full bg-bg border border-hairline rounded-lg px-3 py-2 text-[13px] text-ink focus:outline-hidden focus:border-blue-400 resize-none" />
         </div>
         <CustomFieldsForm
           entityType="client"

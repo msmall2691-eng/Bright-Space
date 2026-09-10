@@ -37,7 +37,7 @@ export const EMPTY_ITEM = { name: '', description: '', qty: 1, unit_price: 0 }
 /** Shared input / label className strings — every invoice-form
  *  field reuses these so tweaking the focus ring or spacing lands
  *  in one place. */
-export const inp = 'w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm text-ink placeholder-ink-3 focus:outline-none focus:border-blue-400 transition-colors'
+export const inp = 'w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm text-ink placeholder-ink-3 focus:outline-hidden focus:border-blue-400 transition-colors'
 export const lbl = 'block text-[10px] font-semibold uppercase tracking-widest text-ink-3 mb-1.5'
 
 /** Line-item subtotal — sum of qty × unit_price with defensive

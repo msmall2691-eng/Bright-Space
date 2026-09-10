@@ -180,7 +180,7 @@ export default function PublicQuote() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-50 flex items-center justify-center p-4">
+      <div className="min-h-screen bg-linear-to-br from-blue-50 to-indigo-50 flex items-center justify-center p-4">
         <div className="text-center">
           <Clock className="w-12 h-12 text-blue-300 mx-auto mb-4 animate-spin" />
           <p className="text-ink-2 font-medium">Loading quote...</p>
@@ -191,7 +191,7 @@ export default function PublicQuote() {
 
   if (error && !quote) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-red-50 to-orange-50 flex items-center justify-center p-4">
+      <div className="min-h-screen bg-linear-to-br from-red-50 to-orange-50 flex items-center justify-center p-4">
         <div className="text-center max-w-sm">
           <AlertCircle className="w-16 h-16 text-red-300 mx-auto mb-4" />
           <h1 className="text-xl font-bold text-ink mb-2">Unable to Load Quote</h1>
@@ -227,7 +227,7 @@ export default function PublicQuote() {
   )
 
   const banner = scheduled ? (
-    <div className="no-print mb-3 rounded-2xl bg-emerald-50 border border-emerald-200 px-5 py-6 text-center shadow-sm">
+    <div className="no-print mb-3 rounded-2xl bg-emerald-50 border border-emerald-200 px-5 py-6 text-center shadow-xs">
       <div className="w-14 h-14 rounded-full bg-emerald-100 flex items-center justify-center mx-auto mb-3">
         <CheckCircle className="w-8 h-8 text-emerald-600" />
       </div>
@@ -237,7 +237,7 @@ export default function PublicQuote() {
       </p>
     </div>
   ) : isAccepted ? (
-    <div className="no-print mb-3 rounded-2xl bg-emerald-50 border border-emerald-200 px-5 py-6 text-center shadow-sm">
+    <div className="no-print mb-3 rounded-2xl bg-emerald-50 border border-emerald-200 px-5 py-6 text-center shadow-xs">
       <div className="w-14 h-14 rounded-full bg-emerald-100 flex items-center justify-center mx-auto mb-3">
         <CheckCircle className="w-8 h-8 text-emerald-600" />
       </div>
@@ -355,7 +355,7 @@ export default function PublicQuote() {
               <button
                 onClick={handleSchedule}
                 disabled={scheduling || !schedDate}
-                className="w-full bg-emerald-600 hover:bg-emerald-700 disabled:bg-bg-2 text-white font-semibold py-4 sm:py-3 text-base rounded-xl min-h-[52px] transition-colors disabled:cursor-not-allowed shadow-sm"
+                className="w-full bg-emerald-600 hover:bg-emerald-700 disabled:bg-bg-2 text-white font-semibold py-4 sm:py-3 text-base rounded-xl min-h-[52px] transition-colors disabled:cursor-not-allowed shadow-xs"
               >
                 {scheduling ? 'Booking…' : 'Accept & book this time'}
               </button>
@@ -369,7 +369,7 @@ export default function PublicQuote() {
         <>
           <button
             onClick={openScheduler}
-            className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-semibold py-4 sm:py-3 text-base rounded-xl min-h-[52px] transition-colors shadow-sm"
+            className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-semibold py-4 sm:py-3 text-base rounded-xl min-h-[52px] transition-colors shadow-xs"
           >
             Accept &amp; schedule
           </button>

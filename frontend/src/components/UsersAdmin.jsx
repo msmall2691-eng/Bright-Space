@@ -30,7 +30,7 @@ function rowState(u) {
   return { key: 'active', label: 'Active', Icon: CheckCircle2, dot: 'bg-emerald-500' }
 }
 
-const inputCls = 'mt-0.5 w-full bg-panel border border-hairline rounded-lg px-2.5 py-2 text-base sm:text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500'
+const inputCls = 'mt-0.5 w-full bg-panel border border-hairline rounded-lg px-2.5 py-2 text-base sm:text-sm focus:outline-hidden focus:ring-2 focus:ring-indigo-500'
 const labelCls = 'text-[11px] font-medium text-ink-3'
 
 export default function UsersAdmin() {

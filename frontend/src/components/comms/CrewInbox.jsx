@@ -126,7 +126,7 @@ export function CrewInbox({ viewToggle }) {
         {!selected ? (
           <div className="flex-1 flex items-center justify-center bg-bg/50">
             <div className="text-center max-w-xs">
-              <div className="w-20 h-20 rounded-3xl bg-panel border border-hairline flex items-center justify-center mx-auto mb-5 shadow-sm">
+              <div className="w-20 h-20 rounded-3xl bg-panel border border-hairline flex items-center justify-center mx-auto mb-5 shadow-xs">
                 <HardHat className="w-10 h-10 text-ink-3" />
               </div>
               <h2 className="text-base font-bold text-ink-2 mb-2">Pick a cleaner</h2>
@@ -219,7 +219,7 @@ function BroadcastModal({ threads, onClose, onSent }) {
           <textarea value={body} rows={3} maxLength={2000} autoFocus
             onChange={e => setBody(e.target.value)}
             placeholder="e.g. Park behind the shop today — the lot is being paved."
-            className="w-full resize-none rounded-xl border border-hairline bg-bg px-3 py-2.5 text-[14px] text-ink focus:outline-none focus:border-indigo-400" />
+            className="w-full resize-none rounded-xl border border-hairline bg-bg px-3 py-2.5 text-[14px] text-ink focus:outline-hidden focus:border-indigo-400" />
           <div>
             <div className="flex items-center justify-between mb-1.5">
               <span className="text-[11px] font-medium text-ink-3">To ({picked.size} of {eligible.length})</span>

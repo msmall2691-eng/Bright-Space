@@ -68,7 +68,7 @@ function Cell({ value, onCommit, type = 'text', align = 'left', placeholder, edi
           else if (e.key === 'Escape') setEditing(false)
         }}
         className={`w-full bg-panel border border-blue-400 rounded px-1.5 py-0.5 text-[13px] text-ink
-          focus:outline-none focus:ring-1 focus:ring-blue-400/30 ${align === 'right' ? 'text-right' : ''} ${className}`}
+          focus:outline-hidden focus:ring-1 focus:ring-blue-400/30 ${align === 'right' ? 'text-right' : ''} ${className}`}
       />
     )
   }

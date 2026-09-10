@@ -107,7 +107,7 @@ export function RequestThreadPanel({ intake }) {
                   onClick={() => setChannel(ch.key)}
                   title={ch.enabled ? undefined : `No ${ch.label.toLowerCase()} on file for this lead`}
                   className={`flex items-center justify-center gap-1.5 text-[12px] font-medium px-3 py-1.5 rounded-lg transition-all disabled:opacity-40 disabled:cursor-not-allowed ${
-                    channel === ch.key ? 'bg-panel text-ink shadow-sm' : 'text-ink-3 hover:text-ink-2'
+                    channel === ch.key ? 'bg-panel text-ink shadow-xs' : 'text-ink-3 hover:text-ink-2'
                   }`}
                 >
                   <Icon className="w-3.5 h-3.5" /> {ch.label}
@@ -143,7 +143,7 @@ export function RequestThreadPanel({ intake }) {
         ))}
         {!loading && groupedMessages.length === 0 && (
           <div className="flex flex-col items-center justify-center py-10 text-center">
-            <div className="w-10 h-10 rounded-2xl bg-panel border border-hairline flex items-center justify-center mb-2 shadow-sm">
+            <div className="w-10 h-10 rounded-2xl bg-panel border border-hairline flex items-center justify-center mb-2 shadow-xs">
               <MessageCircle className="w-5 h-5 text-ink-3" />
             </div>
             <p className="text-[12px] text-ink-3 max-w-[220px]">

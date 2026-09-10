@@ -31,7 +31,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { get, post } from '../../api'
 
-const inputCls = 'w-24 rounded-md border border-hairline bg-bg px-2 py-1 text-sm text-ink outline-none focus:border-hairline-2'
+const inputCls = 'w-24 rounded-md border border-hairline bg-bg px-2 py-1 text-sm text-ink outline-hidden focus:border-hairline-2'
 
 /** Segmented three-way control — the shape the STR auto-assign dial already
  *  used, kept so the rule that moved in here doesn't change under her. */
@@ -43,7 +43,7 @@ function Choice({ field, disabled, onPick }) {
           onClick={() => onPick(c.value)}
           aria-pressed={field.value === c.value}
           className={`rounded-md px-2.5 py-1 text-xs font-medium transition-colors disabled:opacity-50 ${
-            field.value === c.value ? 'bg-panel text-ink shadow-sm' : 'text-ink-3 hover:text-ink-2'}`}>
+            field.value === c.value ? 'bg-panel text-ink shadow-xs' : 'text-ink-3 hover:text-ink-2'}`}>
           {c.label}
         </button>
       ))}

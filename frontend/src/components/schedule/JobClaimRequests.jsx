@@ -225,7 +225,7 @@ export default function JobClaimRequests({ jobId, postedRate, onDecided }) {
                     </p>
                   )}
                   {req.message && (
-                    <p className="text-[12px] text-ink-3 mt-1 whitespace-pre-line break-words">
+                    <p className="text-[12px] text-ink-3 mt-1 whitespace-pre-line wrap-break-word">
                       “{req.message}”
                     </p>
                   )}
@@ -294,7 +294,7 @@ export default function JobClaimRequests({ jobId, postedRate, onDecided }) {
                     onChange={e => setDeclineReason(e.target.value)}
                     onKeyDown={e => { if (e.key === 'Enter' && busyId == null) decide(req, 'decline') }}
                     placeholder="Why? (optional) — e.g. went with someone closer"
-                    className="min-w-0 flex-1 rounded-md border border-hairline bg-bg px-2.5 py-1.5 text-xs text-ink placeholder-ink-3 focus:outline-none focus:border-blue-400" />
+                    className="min-w-0 flex-1 rounded-md border border-hairline bg-bg px-2.5 py-1.5 text-xs text-ink placeholder-ink-3 focus:outline-hidden focus:border-blue-400" />
                   <button type="button" disabled={busyId != null}
                     onClick={() => { setDecliningId(null); setDeclineReason('') }}
                     className="rounded-md border border-hairline-2 bg-panel px-2.5 py-1.5 text-xs font-medium text-ink-2 hover:bg-bg-2 disabled:opacity-50 transition-colors">

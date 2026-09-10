@@ -75,11 +75,11 @@ function MyNotes() {
           <input value={form.title} maxLength={200} autoFocus
             onChange={e => setForm(f => ({ ...f, title: e.target.value }))}
             placeholder="Title"
-            className="w-full rounded-lg border border-hairline bg-bg px-3 py-2 text-[14px] font-semibold text-ink focus:outline-none focus:border-blue-400" />
+            className="w-full rounded-lg border border-hairline bg-bg px-3 py-2 text-[14px] font-semibold text-ink focus:outline-hidden focus:border-blue-400" />
           <textarea value={form.body} rows={6} maxLength={20000}
             onChange={e => setForm(f => ({ ...f, body: e.target.value }))}
             placeholder="Your note — private to you."
-            className="w-full rounded-lg border border-hairline bg-bg px-3 py-2 text-[13px] text-ink leading-relaxed focus:outline-none focus:border-blue-400 resize-none" />
+            className="w-full rounded-lg border border-hairline bg-bg px-3 py-2 text-[13px] text-ink leading-relaxed focus:outline-hidden focus:border-blue-400 resize-none" />
           <div className="flex items-center justify-between gap-2">
             {editing !== 'new' ? (
               <button onClick={() => remove(editing.id)} disabled={busy}
@@ -130,7 +130,7 @@ function DocReader({ doc, onClose }) {
               <ul key={i} className="space-y-1.5">
                 {lines.map((l, j) => (
                   <li key={j} className="flex gap-2 text-[14px] text-ink-2 leading-relaxed">
-                    <span className="text-ink-3 mt-[1px]">•</span>
+                    <span className="text-ink-3 mt-px">•</span>
                     <span className="min-w-0">{l.trim().slice(2)}</span>
                   </li>
                 ))}

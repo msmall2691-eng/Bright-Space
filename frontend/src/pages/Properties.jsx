@@ -169,7 +169,7 @@ export default function Properties() {
             <div className="relative">
               <Search className="w-3.5 h-3.5 text-ink-3 absolute left-2.5 top-1/2 -translate-y-1/2" />
               <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search properties…"
-                className="bg-bg-2 border border-hairline rounded-lg pl-8 pr-3 py-2 text-[12px] text-ink placeholder-ink-3 focus:outline-none focus:border-blue-400 w-40 sm:w-52" />
+                className="bg-bg-2 border border-hairline rounded-lg pl-8 pr-3 py-2 text-[12px] text-ink placeholder-ink-3 focus:outline-hidden focus:border-blue-400 w-40 sm:w-52" />
             </div>
             <SavedViewsBar entityType="property" currentConfig={viewConfig} onApply={applyView} defaultLabel="All properties" />
           </div>

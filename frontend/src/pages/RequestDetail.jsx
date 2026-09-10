@@ -28,7 +28,7 @@ function Field({ label, value, icon: Icon }) {
       {Icon && <Icon className="w-3.5 h-3.5 text-ink-3 mt-0.5 shrink-0" />}
       <div className="min-w-0">
         <div className="text-[11px] uppercase tracking-wide text-ink-3">{label}</div>
-        <div className="text-sm text-ink break-words">{value}</div>
+        <div className="text-sm text-ink wrap-break-word">{value}</div>
       </div>
     </div>
   )
@@ -255,7 +255,7 @@ export default function RequestDetail() {
             onChange={(e) => setNotes(e.target.value)}
             rows={3}
             placeholder="Notes for your team (not shown to the customer)…"
-            className="w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-400 resize-none"
+            className="w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-hidden focus:border-blue-400 resize-none"
           />
           <div className="flex justify-end">
             <Button variant="secondary" onClick={saveNotes}

@@ -96,13 +96,13 @@ function ComposeBar({
             <button onClick={() => setChannel('sms')}
               aria-pressed={channel === 'sms'}
               className={`px-2.5 py-1 text-[11px] font-medium rounded-md transition-colors ${
-                channel === 'sms' ? 'bg-panel text-ink shadow-sm' : 'text-ink-3 hover:text-ink-2'}`}>
+                channel === 'sms' ? 'bg-panel text-ink shadow-xs' : 'text-ink-3 hover:text-ink-2'}`}>
               SMS
             </button>
             <button onClick={() => setChannel('email')}
               aria-pressed={channel === 'email'}
               className={`px-2.5 py-1 text-[11px] font-medium rounded-md transition-colors ${
-                channel === 'email' ? 'bg-panel text-ink shadow-sm' : 'text-ink-3 hover:text-ink-2'}`}>
+                channel === 'email' ? 'bg-panel text-ink shadow-xs' : 'text-ink-3 hover:text-ink-2'}`}>
               Email
             </button>
           </div>
@@ -115,7 +115,7 @@ function ComposeBar({
             <input value={smsText} onChange={e => setSmsText(e.target.value)}
               onKeyDown={e => e.key === 'Enter' && sendSms()}
               placeholder="Type a message..."
-              className="flex-1 bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-hairline" />
+              className="flex-1 bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-hidden focus:border-hairline" />
             <button onClick={sendSms} disabled={sending || !smsText.trim()}
               className="flex items-center gap-1.5 bg-indigo-600 hover:bg-indigo-700 text-white disabled:bg-bg-2 px-4 py-2 rounded-lg text-sm transition-colors">
               <Send className="w-3.5 h-3.5" />{sending ? '...' : 'Send'}
@@ -129,11 +129,11 @@ function ComposeBar({
           <div className="space-y-2">
             <input value={emailSubject} onChange={e => setEmailSubject(e.target.value)}
               placeholder="Subject"
-              className="w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-hairline" />
+              className="w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-hidden focus:border-hairline" />
             <textarea value={emailBody} onChange={e => setEmailBody(e.target.value)}
               placeholder="Write a message..."
               rows={3}
-              className="w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-hairline resize-none" />
+              className="w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-hidden focus:border-hairline resize-none" />
             <div className="flex justify-end">
               <button onClick={sendEmail} disabled={sendingEmail || !emailBody.trim()}
                 className="flex items-center gap-1.5 bg-indigo-600 hover:bg-indigo-700 text-white disabled:bg-bg-2 px-4 py-2 rounded-lg text-sm transition-colors">

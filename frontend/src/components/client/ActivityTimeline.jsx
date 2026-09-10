@@ -40,7 +40,7 @@ export default function ActivityTimeline({
           onKeyDown={e => { if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') submitNote() }}
           rows={2}
           placeholder="Add an internal note about this client…"
-          className="w-full resize-none bg-transparent text-sm text-ink placeholder:text-ink-3 focus:outline-none"
+          className="w-full resize-none bg-transparent text-sm text-ink placeholder:text-ink-3 focus:outline-hidden"
         />
         <div className="flex items-center justify-between mt-1">
           <span className="text-[11px] text-ink-3">⌘/Ctrl + Enter</span>

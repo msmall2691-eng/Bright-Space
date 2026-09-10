@@ -37,7 +37,7 @@ export default function GlobalToasts() {
 
   if (!toasts.length) return null
   return (
-    <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[120] flex flex-col gap-2 max-w-[90vw]">
+    <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-120 flex flex-col gap-2 max-w-[90vw]">
       {toasts.map(t => (
         <div
           key={t.id}
