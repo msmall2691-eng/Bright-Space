@@ -2054,7 +2054,8 @@ def _compute_followups(db: Session, org_id: int) -> dict:
     # that never got a real amount still surfaces as money to chase.
     unbilled_cutoff = business_today() - timedelta(days=3)
     billed_job_ids = (db.query(Invoice.job_id)
-                      .filter(Invoice.job_id.isnot(None), Invoice.total > 0)
+                      .filter(Invoice.job_id.isnot(None), Invoice.total > 0,
+                              Invoice.status != "void")
                       .subquery())
     unbilled = (db.query(func.count(Job.id))
                 .filter(Job.status == "completed",

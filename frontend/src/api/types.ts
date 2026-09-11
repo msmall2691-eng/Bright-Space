@@ -9162,6 +9162,8 @@ export interface components {
             price?: number | null;
             /** Posted Rate */
             posted_rate?: number | null;
+            /** Notify Customer */
+            notify_customer?: boolean | null;
             /**
              * Allow Conflicts
              * @default false

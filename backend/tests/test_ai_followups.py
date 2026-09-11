@@ -155,6 +155,52 @@ def test_unbilled_jobs_scan_follows_invoice_job_linkage():
         db.close()
 
 
+def test_a_void_invoice_does_not_count_a_job_as_billed():
+    # BB-INV-02: "billed" is a non-zero invoice that is NOT voided. A voided
+    # invoice means the bill was cancelled — the work is still uninvoiced money
+    # to chase, so a completed job whose only invoice is void must stay flagged.
+    db = SessionLocal()
+    c = p = None
+    try:
+        c = Client(name="Void Bill Owner", email="void@example.com",
+                   status="active", org_id=1)
+        db.add(c); db.commit(); db.refresh(c)
+        p = Property(client_id=c.id, name="Void House", address="3 Void Rd",
+                     property_type="residential", active=True, org_id=1)
+        db.add(p); db.commit(); db.refresh(p)
+        j = Job(client_id=c.id, property_id=p.id, org_id=1,
+                job_type="residential", title="Deep clean",
+                scheduled_date=date.today() - timedelta(days=10),
+                status="completed")
+        db.add(j); db.commit(); db.refresh(j)
+
+        def unbilled_count():
+            res = _compute_followups(db, 1)
+            item = next((i for i in res["followups"]
+                         if "never invoiced" in i["title"]), None)
+            return int(item["title"].split()[0]) if item else 0
+
+        n_before = unbilled_count()
+        assert n_before >= 1, "completed job with no invoice must be flagged"
+
+        # A VOID invoice (non-zero total) must NOT clear it — the bill was cancelled.
+        db.add(Invoice(client_id=c.id, job_id=j.id, org_id=1,
+                       status="void", total=150.0))
+        db.commit()
+        assert unbilled_count() == n_before, "a void invoice wrongly cleared the job"
+
+        # A live draft with a real total DOES clear it (control).
+        db.add(Invoice(client_id=c.id, job_id=j.id, org_id=1,
+                       status="draft", total=150.0))
+        db.commit()
+        assert unbilled_count() == n_before - 1
+    finally:
+        db.rollback()
+        _cleanup(db, client_ids=[c.id] if c else (),
+                 property_ids=[p.id] if p else ())
+        db.close()
+
+
 def test_record_context_is_tenant_isolated():
     db = SessionLocal()
     other = mine = None

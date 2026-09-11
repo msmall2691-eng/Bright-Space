@@ -28,6 +28,7 @@ from utils.dates import business_today
 # were making the same mistake.
 from services.dunning_service import (
     _due_stage, _days_past_due, send_due_dunning, DEFAULT_CADENCE_DAYS,
+    _invoice_to_email_dict,
 )
 from scheduler import invoice_dunning_tick
 
@@ -108,6 +109,20 @@ def test_due_stage_advances_one_at_a_time():
     assert _due_stage(30, cadence, 2) == 3
     # Final stage never re-fires.
     assert _due_stage(50, cadence, 3) is None
+
+
+def test_email_dict_carries_the_discount():
+    # BB-INV-01: the overdue reminder rebuilds the invoice email from this dict.
+    # Dropping `discount` printed subtotal + tax with no discount line, so the
+    # figures didn't reconcile to `total` and overstated what the customer owed.
+    inv = Invoice(client_id=1, invoice_number="INV-D-DISC", status="sent",
+                  subtotal=300.0, tax_rate=0, tax=0, discount=50.0, total=250.0,
+                  due_date="2026-07-01",
+                  items=[{"name": "clean", "qty": 1, "unit_price": 300.0}])
+    d = _invoice_to_email_dict(inv)
+    assert d["discount"] == 50.0
+    # And the numbers reconcile: subtotal + tax - discount == total.
+    assert d["subtotal"] + d["tax"] - d["discount"] == d["total"]
 
 
 # ── send_due_dunning (integration-style with mocked send_email) ────────────
