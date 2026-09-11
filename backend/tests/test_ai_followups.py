@@ -16,6 +16,7 @@ string building. The guarantees that matter:
 from datetime import date, datetime, time, timedelta, timezone
 
 import pytest
+from sqlalchemy import update
 from fastapi.testclient import TestClient
 
 from main import app
@@ -189,11 +190,19 @@ def test_a_void_invoice_does_not_count_a_job_as_billed():
         db.commit()
         assert unbilled_count() == n_before, "a void invoice wrongly cleared the job"
 
-        # A live draft with a real total DOES clear it (control).
-        db.add(Invoice(client_id=c.id, job_id=j.id, org_id=1,
-                       status="draft", total=150.0))
+        # A NULL-status nonzero invoice IS billed — only an explicit "void" is
+        # cancelled. In SQL `status != "void"` is UNKNOWN for NULL, so without
+        # the is_(None) branch a legacy NULL-status invoice would drop out of
+        # "billed" and the job would be falsely flagged (Codex P2 on #877).
+        # The ORM's default="draft" fires when status is set to None, so force a
+        # real NULL with a direct UPDATE to exercise the SQL three-valued path.
+        nullish = Invoice(client_id=c.id, job_id=j.id, org_id=1,
+                          status="draft", total=150.0)
+        db.add(nullish); db.commit(); db.refresh(nullish)
+        db.execute(update(Invoice).where(Invoice.id == nullish.id)
+                   .values(status=None))
         db.commit()
-        assert unbilled_count() == n_before - 1
+        assert unbilled_count() == n_before - 1, "a NULL-status invoice must count as billed"
     finally:
         db.rollback()
         _cleanup(db, client_ids=[c.id] if c else (),

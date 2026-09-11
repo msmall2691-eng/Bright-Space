@@ -2053,9 +2053,14 @@ def _compute_followups(db: Session, org_id: int) -> dict:
     # unbilled when it has no invoice totalling more than $0, so a placeholder
     # that never got a real amount still surfaces as money to chase.
     unbilled_cutoff = business_today() - timedelta(days=3)
+    # A nonzero invoice counts as billed UNLESS it was explicitly voided. Note
+    # Invoice.status is nullable (default="draft" only fires on ORM insert), and
+    # in SQL `status != "void"` is UNKNOWN for a NULL status — which would drop a
+    # legacy NULL-status invoice from "billed" and falsely flag its job as never
+    # invoiced. Treat NULL as not-void (Codex P2 on #877).
     billed_job_ids = (db.query(Invoice.job_id)
                       .filter(Invoice.job_id.isnot(None), Invoice.total > 0,
-                              Invoice.status != "void")
+                              or_(Invoice.status.is_(None), Invoice.status != "void"))
                       .subquery())
     unbilled = (db.query(func.count(Job.id))
                 .filter(Job.status == "completed",
