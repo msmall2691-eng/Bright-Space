@@ -20,7 +20,7 @@ import CrewJobSheet from './CrewJobSheet'
 const DOW = ['S', 'M', 'T', 'W', 'T', 'F', 'S']   // Sunday-first, US calendar
 const ymd = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 
-export default function CrewMonth() {
+export default function CrewMonth({ previewUserId = null }) {
   const now = new Date()
   const [anchor, setAnchor] = useState({ year: now.getFullYear(), month: now.getMonth() + 1 })
   const [data, setData] = useState(null)
@@ -28,14 +28,17 @@ export default function CrewMonth() {
   const [selected, setSelected] = useState(ymd(now))
   const [openJobId, setOpenJobId] = useState(null)
 
+  const preview = previewUserId != null
+  const base = preview ? `/api/crew/preview/${previewUserId}/schedule-month` : '/api/crew/schedule-month'
+
   useEffect(() => {
     let cancelled = false
     setData(null); setError(null)
-    get(`/api/crew/schedule-month?year=${anchor.year}&month=${anchor.month}`)
+    get(`${base}?year=${anchor.year}&month=${anchor.month}`)
       .then(d => { if (!cancelled) setData(d) })
       .catch(e => { if (!cancelled) setError(e.detail || e.message || 'Could not load') })
     return () => { cancelled = true }
-  }, [anchor])
+  }, [anchor, base])
 
   const byDate = useMemo(() => {
     const m = {}

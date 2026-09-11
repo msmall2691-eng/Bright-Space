@@ -16,7 +16,7 @@ import { del, upload } from '../../api'
 import { prepareForUpload } from '../../utils/imageDownscale'
 import { ErrorNote } from './primitives'
 
-export default function CrewHeadshot({ photoUrl, onChange }) {
+export default function CrewHeadshot({ photoUrl, onChange, disabled = false }) {
   const fileRef = useRef(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState(null)
@@ -28,7 +28,7 @@ export default function CrewHeadshot({ photoUrl, onChange }) {
   const pick = async e => {
     const file = e.target.files?.[0]
     e.target.value = ''            // let the same file be re-picked after a failure
-    if (!file) return
+    if (!file || disabled) return
     setBusy(true); setError(null)
     try {
       const { blob, filename } = await prepareForUpload(file)
@@ -47,6 +47,7 @@ export default function CrewHeadshot({ photoUrl, onChange }) {
   }
 
   const remove = async () => {
+    if (disabled) return
     setBusy(true); setError(null)
     try {
       await del('/api/crew/me/photo')
@@ -79,21 +80,26 @@ export default function CrewHeadshot({ photoUrl, onChange }) {
         </div>
       </div>
 
-      <div className="flex items-center gap-2">
-        <button type="button" onClick={() => fileRef.current?.click()} disabled={busy}
-          className="inline-flex items-center gap-1.5 rounded-lg border border-hairline bg-panel px-3 py-2 text-[13px] font-medium text-ink-2 hover:bg-bg-2 disabled:opacity-60">
-          <Camera className="w-4 h-4" aria-hidden="true" />
-          {busy ? 'Working…' : photoUrl ? 'Change photo' : 'Add a photo'}
-        </button>
-        {photoUrl && (
-          <button type="button" onClick={remove} disabled={busy}
-            className="inline-flex items-center gap-1.5 rounded-lg border border-hairline bg-panel px-3 py-2 text-[13px] font-medium text-ink-2 hover:bg-red-50 dark:hover:bg-red-950/30 disabled:opacity-60">
-            <Trash2 className="w-4 h-4" aria-hidden="true" /> Remove
+      {/* Changing a headshot is the cleaner's own; in an office preview the
+          controls are hidden (and the handlers above no-op) so a tap can't
+          fire a cleaner-only upload/delete under the office session. */}
+      {!disabled && (
+        <div className="flex items-center gap-2">
+          <button type="button" onClick={() => fileRef.current?.click()} disabled={busy}
+            className="inline-flex items-center gap-1.5 rounded-lg border border-hairline bg-panel px-3 py-2 text-[13px] font-medium text-ink-2 hover:bg-bg-2 disabled:opacity-60">
+            <Camera className="w-4 h-4" aria-hidden="true" />
+            {busy ? 'Working…' : photoUrl ? 'Change photo' : 'Add a photo'}
           </button>
-        )}
-        <input ref={fileRef} type="file" accept="image/*" className="hidden"
-          onChange={pick} />
-      </div>
+          {photoUrl && (
+            <button type="button" onClick={remove} disabled={busy}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-hairline bg-panel px-3 py-2 text-[13px] font-medium text-ink-2 hover:bg-red-50 dark:hover:bg-red-950/30 disabled:opacity-60">
+              <Trash2 className="w-4 h-4" aria-hidden="true" /> Remove
+            </button>
+          )}
+          <input ref={fileRef} type="file" accept="image/*" className="hidden"
+            onChange={pick} />
+        </div>
+      )}
 
       <ErrorNote>{error}</ErrorNote>
     </div>

@@ -21,20 +21,27 @@ import { Landmark } from 'lucide-react'
 import { get, post } from '../../api'
 import { ErrorNote } from './primitives'
 
-export default function CrewPayoutSetup() {
+export default function CrewPayoutSetup({ previewUserId = null }) {
   const [state, setState] = useState(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState(null)
 
+  // Direct-deposit setup is a Stripe onboarding flow the cleaner completes for
+  // themselves; there's no preview twin (and starting it would redirect the
+  // office to Stripe). In an office preview, show a note instead of fetching.
+  const preview = previewUserId != null
+
   useEffect(() => {
+    if (preview) return undefined
     let off = false
     get('/api/crew/me/payouts')
       .then(d => { if (!off) setState(d) })
       .catch(() => { if (!off) setState({ available: false, connected: false }) })
     return () => { off = true }
-  }, [])
+  }, [preview])
 
   const start = async () => {
+    if (preview) return
     setBusy(true); setError(null)
     try {
       const r = await post('/api/crew/me/payouts/setup', {})
@@ -45,6 +52,12 @@ export default function CrewPayoutSetup() {
       setError(e.detail || e.message || 'Could not start the setup')
     } finally { setBusy(false) }
   }
+
+  if (preview) return (
+    <p className="text-[12px] text-ink-3">
+      Direct-deposit setup is private to this cleaner — not shown in preview.
+    </p>
+  )
 
   if (!state) return <p className="text-[12px] text-ink-3">Checking…</p>
 

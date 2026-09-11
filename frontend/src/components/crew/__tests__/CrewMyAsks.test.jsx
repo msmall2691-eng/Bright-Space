@@ -50,3 +50,15 @@ it('says so plainly when the sub has asked for nothing', async () => {
   render(<CrewMyAsks />)
   await screen.findByText(/haven't asked for any jobs/i)
 })
+
+it('reads the office preview twin, and withdrawing is inert there', async () => {
+  get.mockResolvedValue({ claims: CLAIMS })
+  render(<CrewMyAsks previewUserId={42} />)
+  await screen.findByText('Waiting to hear')
+  // Office preview reads the read-only twin for the NAMED cleaner…
+  expect(get).toHaveBeenCalledWith('/api/crew/preview/42/my-claims')
+  // …and the withdraw is the cleaner's own — a tap posts nothing.
+  const buttons = screen.getAllByRole('button', { name: /withdraw/i })
+  fireEvent.click(buttons[0])
+  await waitFor(() => expect(post).not.toHaveBeenCalled())
+})

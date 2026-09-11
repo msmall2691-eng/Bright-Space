@@ -25,18 +25,22 @@ const FIELDS = [
   { key: 'emergency_contact_phone', label: 'Emergency contact phone', type: 'tel' },
 ]
 
-export default function CrewProfile({ bare = false }) {
+export default function CrewProfile({ bare = false, previewUserId = null }) {
   const [me, setMe] = useState(null)          // server truth
   const [form, setForm] = useState(null)      // edited copy
   const [saving, setSaving] = useState(false)
   const [savedFlash, setSavedFlash] = useState(false)
   const [error, setError] = useState(null)
 
+  // Office preview: the named cleaner's profile through the read-only twin.
+  // Editing is the cleaner's own (the API refuses a PATCH from an office role).
+  const preview = previewUserId != null
+
   useEffect(() => {
-    get('/api/crew/me')
+    get(preview ? `/api/crew/preview/${previewUserId}/me` : '/api/crew/me')
       .then(d => { setMe(d); setForm(d) })
       .catch(e => setError(e.detail || e.message || 'Could not load your profile'))
-  }, [])
+  }, [preview, previewUserId])
 
   useEffect(() => {
     if (!savedFlash) return undefined
@@ -47,6 +51,7 @@ export default function CrewProfile({ bare = false }) {
   const dirty = me && form && FIELDS.some(f => (form[f.key] || '') !== (me[f.key] || ''))
 
   const save = async () => {
+    if (preview) return
     setSaving(true); setError(null)
     try {
       const body = {}
@@ -79,6 +84,7 @@ export default function CrewProfile({ bare = false }) {
 
       <CrewHeadshot
         photoUrl={form.photo_url}
+        disabled={preview}
         onChange={url => {
           // Both copies, or the next PATCH computes `dirty` against a stale
           // server truth and the photo change looks like an unsaved edit.

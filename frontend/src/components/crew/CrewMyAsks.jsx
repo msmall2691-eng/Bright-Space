@@ -35,22 +35,27 @@ const fmtDay = (iso) => {
     : d.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })
 }
 
-export default function CrewMyAsks() {
+export default function CrewMyAsks({ previewUserId = null }) {
   const [claims, setClaims] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   const [busyId, setBusyId] = useState(null)
 
+  // Office preview: the named cleaner's asks through the read-only twin.
+  const preview = previewUserId != null
+  const claimsUrl = preview ? `/api/crew/preview/${previewUserId}/my-claims` : '/api/crew/my-claims'
+
   const load = useCallback(() => {
     setLoading(true); setError(null)
-    return get('/api/crew/my-claims')
+    return get(claimsUrl)
       .then(d => setClaims(d?.claims || []))
       .catch(setError)
       .finally(() => setLoading(false))
-  }, [])
+  }, [claimsUrl])
   useEffect(() => { load() }, [load])
 
   const withdraw = useCallback(async (jobId) => {
+    if (preview) return                    // withdrawing is the cleaner's alone
     setBusyId(jobId)
     try {
       await post(`/api/crew/jobs/${jobId}/claim/withdraw`, {})
@@ -62,7 +67,7 @@ export default function CrewMyAsks() {
       toast.error(e.detail || e.message || 'Could not withdraw')
       if (e.status === 409) await load()
     } finally { setBusyId(null) }
-  }, [load])
+  }, [load, preview])
 
   if (loading) return <Skeleton className="h-16 w-full rounded-lg" />
   if (error) return <ErrorState onRetry={load} compact />

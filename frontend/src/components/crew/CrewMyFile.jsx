@@ -103,19 +103,29 @@ function DocRow({ doc, busy, onUpload }) {
   )
 }
 
-export default function CrewMyFile({ bare = false }) {
+export default function CrewMyFile({ bare = false, previewUserId = null }) {
   const [file, setFile] = useState(null)
   const [error, setError] = useState(false)
   const [busy, setBusy] = useState(false)
 
+  // Office preview: read the NAMED cleaner's file through the read-only twin.
+  // Uploads and signing are the cleaner's alone (the API refuses them from an
+  // office role), so the write handlers below no-op in preview.
+  const preview = previewUserId != null
+  const fileUrl = preview ? `/api/crew/preview/${previewUserId}/my-file` : '/api/crew/my-file'
+  const agreementUrl = preview
+    ? `/api/crew/preview/${previewUserId}/my-file/agreement`
+    : '/api/crew/my-file/agreement'
+
   const load = useCallback(() => {
-    get('/api/crew/my-file')
+    get(fileUrl)
       .then(r => { setFile(r); setError(false) })
       .catch(() => setError(true))
-  }, [])
+  }, [fileUrl])
   useEffect(() => { load() }, [load])
 
   const upload = async (kind, f, expiresAt) => {
+    if (preview) return
     setBusy(true)
     try {
       const form = new FormData()
@@ -145,7 +155,7 @@ export default function CrewMyFile({ bare = false }) {
   const openAgreement = async () => {
     setOpeningAgreement(true)
     try {
-      setAgreement(await get('/api/crew/my-file/agreement'))
+      setAgreement(await get(agreementUrl))
       setReadToEnd(false)
     } catch (e) {
       toast.error(e?.detail || e?.message || 'Could not open the agreement')
@@ -161,7 +171,7 @@ export default function CrewMyFile({ bare = false }) {
   }
 
   const signAgreement = async () => {
-    if (!agreement) return
+    if (!agreement || preview) return
     setBusy(true)
     try {
       // Echo the hash of what was actually rendered. The server refuses a

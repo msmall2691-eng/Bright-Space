@@ -104,7 +104,7 @@ function LockedWeekSummary({ entry, template }) {
   )
 }
 
-export default function CrewAvailability({ bare = false }) {
+export default function CrewAvailability({ bare = false, previewUserId = null }) {
   const [data, setData] = useState(null)         // full GET payload
   const [idx, setIdx] = useState(0)              // strip position (0 = current week)
   const [draft, setDraft] = useState(null)       // edited copy for the shown week
@@ -114,9 +114,15 @@ export default function CrewAvailability({ bare = false }) {
   const [flash, setFlash] = useState(null)       // one-line save confirmation
   const [error, setError] = useState(null)
 
+  // Office preview: read the named cleaner's availability through the twin.
+  // Availability is a signal the SUB sets (brightbase-marketplace) — the office
+  // never edits it — so every write handler below no-ops in preview.
+  const preview = previewUserId != null
+  const availUrl = preview ? `/api/crew/preview/${previewUserId}/me/availability` : '/api/crew/me/availability'
+
   const load = useCallback(async (keepIdx = true) => {
     try {
-      const d = await get('/api/crew/me/availability')
+      const d = await get(availUrl)
       setData(d)
       setError(null)
       if (!keepIdx) setIdx(0)
@@ -125,7 +131,7 @@ export default function CrewAvailability({ bare = false }) {
       setError(e.detail || e.message || 'Could not load availability')
       return null
     }
-  }, [])
+  }, [availUrl])
   useEffect(() => { load(false) }, [load])
 
   // Re-check lock state whenever the tab regains focus — a grid must never
@@ -157,6 +163,7 @@ export default function CrewAvailability({ bare = false }) {
   const isSet = entry.source === 'set'
 
   const toggle = (day, slot) => {
+    if (preview) return
     setDraft(prev => {
       const has = (prev[day] || []).includes(slot)
       const slots = has ? prev[day].filter(s => s !== slot) : [...(prev[day] || []), slot].sort()
@@ -165,6 +172,7 @@ export default function CrewAvailability({ bare = false }) {
   }
 
   const saveWeek = async () => {
+    if (preview) return
     setBusy(true); setError(null)
     try {
       const res = await put('/api/crew/me/availability/week',
@@ -185,6 +193,7 @@ export default function CrewAvailability({ bare = false }) {
   }
 
   const revertWeek = async () => {
+    if (preview) return
     setBusy(true); setError(null)
     try {
       await del(`/api/crew/me/availability/week?week_start=${entry.week_start}`)
@@ -199,6 +208,7 @@ export default function CrewAvailability({ bare = false }) {
   }
 
   const saveTemplate = async () => {
+    if (preview) return
     setBusy(true); setError(null)
     try {
       await put('/api/crew/me/availability', { week: tmplDraft })

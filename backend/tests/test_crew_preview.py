@@ -157,3 +157,43 @@ def test_wrong_org_wrong_role_and_missing_are_one_answer(ids):
     codes = {api.get(f"/api/crew/preview/{x}/my-day").status_code
              for x in (theirs, staff, 99999999)}
     assert codes == {404}, f"distinguishable: {codes}"
+
+
+# ── The rest of the crew app, previewed ─────────────────────────────────────
+#
+# My Day had a twin; the other tabs (My File, My asks, Earnings, Profile,
+# Routes) fetched caller-relative crew URLs an office session hit as itself —
+# every one require_role("cleaner"), so from the office they 403'd and the
+# preview rendered a broken tab. Each now has an office-only read twin that
+# resolves the named cleaner and calls the real endpoint, so the same three
+# guarantees hold on every tab: office-only, org-scoped, and one 404 for
+# wrong-org / wrong-role / nonexistent so it cannot enumerate.
+
+PREVIEW_TABS = [
+    "my-file", "my-file/agreement", "my-claims", "me", "me/earnings", "my-routes",
+    "schedule-month?year=2026&month=9", "me/availability", "me/time-off",
+]
+
+
+@pytest.mark.parametrize("tab", PREVIEW_TABS)
+def test_the_office_can_preview_every_crew_tab(ids, tab):
+    uid = _mk_cleaner(ids)
+    r = _api(_Admin()).get(f"/api/crew/preview/{uid}/{tab}")
+    assert r.status_code == 200, f"{tab} -> {r.status_code} {r.text[:200]}"
+
+
+@pytest.mark.parametrize("tab", PREVIEW_TABS)
+def test_a_cleaner_cannot_preview_another_on_any_tab(ids, tab):
+    uid = _mk_cleaner(ids)
+    r = _api(_OtherCleaner()).get(f"/api/crew/preview/{uid}/{tab}")
+    assert r.status_code == 403, f"{tab} -> {r.status_code} {r.text[:160]}"
+
+
+@pytest.mark.parametrize("tab", PREVIEW_TABS)
+def test_enumeration_is_one_answer_on_every_tab(ids, tab):
+    theirs = _mk_cleaner(ids, org_id=2)
+    staff = _mk_cleaner(ids, role="admin")
+    api = _api(_Admin())
+    codes = {api.get(f"/api/crew/preview/{x}/{tab}").status_code
+             for x in (theirs, staff, 99999999)}
+    assert codes == {404}, f"{tab} distinguishable: {codes}"

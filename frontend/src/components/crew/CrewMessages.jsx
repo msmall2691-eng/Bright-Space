@@ -17,18 +17,26 @@ const fmtTime = (iso) => {
   catch { return '' }
 }
 
-export function CrewThread({ onClose }) {
+export function CrewThread({ onClose, previewUserId = null }) {
   const [msgs, setMsgs] = useState(null)
   const [error, setError] = useState(null)
 
+  // The office's chat with a cleaner is a live two-way thread the office
+  // already holds in its own inbox — previewing it here would be reading its
+  // own conversation, and sending would post AS the cleaner. So in an office
+  // preview the chat is not fetched and not sendable.
+  const preview = previewUserId != null
+
   const load = useCallback(() => {
+    if (preview) { setMsgs([]); return }
     get('/api/crew/messages')
       .then(setMsgs)
       .catch(e => setError(e.detail || e.message || 'Could not load'))
-  }, [])
+  }, [preview])
   useEffect(() => { load() }, [load])
 
   const send = async (text) => {
+    if (preview) return
     setError(null)
     try {
       await post('/api/crew/messages', { body: text })
@@ -51,11 +59,13 @@ export function CrewThread({ onClose }) {
         body: m.body,
         meta: `${m.sender === 'office' ? `${m.sender_name || 'Office'} · ` : ''}${fmtTime(m.created_at)}`,
       }))}
-      empty="No messages yet — say hi, ask about a schedule, report a problem."
+      empty={preview
+        ? "Chat isn't shown in preview — the office's thread with a cleaner lives in the office inbox."
+        : "No messages yet — say hi, ask about a schedule, report a problem."}
       error={error}
       onSend={send}
       maxLength={2000}
-      placeholder="Message the office…"
+      placeholder={preview ? 'Not available in preview' : 'Message the office…'}
     />
   )
 }
