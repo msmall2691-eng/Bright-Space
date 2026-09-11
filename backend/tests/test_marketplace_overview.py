@@ -277,6 +277,31 @@ def test_another_orgs_name_never_surfaces_on_a_shared_cleaner_id(ids):
     assert "CT-DUP" in names, "should fall back to the id when no in-org name"
 
 
+def test_a_legacy_null_org_homonym_never_beats_the_tenants_own_name(ids):
+    """_scope admits org_id IS NULL (legacy default-workspace) rows. A
+    NON-default tenant sharing a cleaner_id with such a legacy user must show
+    its OWN user's name, not the legacy one, and deterministically (BB-MT).
+    """
+    jid = _mk_job(ids, org_id=2, posted_rate=100.0)
+    _ask(ids, jid, cleaner_id="CT-GHOST", org_id=2)
+    db = SessionLocal()
+    ghost = User(email=f"ghost-{uuid.uuid4().hex[:4]}@x.com", role="cleaner",
+                 full_name="Legacy Ghost", org_id=None, active=True,
+                 status="active", cleaner_id="CT-GHOST")
+    mine = User(email=f"mine-{uuid.uuid4().hex[:4]}@x.com", role="cleaner",
+                full_name="Org2 Real", org_id=2, active=True,
+                status="active", cleaner_id="CT-GHOST")
+    db.add_all([ghost, mine]); db.commit()
+    db.refresh(ghost); db.refresh(mine)
+    ids["users"].extend([ghost.id, mine.id])
+    db.close()
+
+    job = next(j for j in _build(org_id=2)["waiting"]["jobs"] if j["job_id"] == jid)
+    names = [a["name"] for a in job["askers"]]
+    assert "Org2 Real" in names
+    assert "Legacy Ghost" not in names, "legacy NULL-org name leaked into org 2"
+
+
 def test_a_cleaner_cannot_read_the_office_view(ids):
     """The bench, what is owed and who is still un-vetted are internal facts.
     A cleaner's own side of this is My Day, built from /api/crew/*."""

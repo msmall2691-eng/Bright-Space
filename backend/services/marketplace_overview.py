@@ -96,10 +96,20 @@ def build(db: Session, org_id: int, *, today: Optional[date] = None) -> dict:
             # Scope the name lookup to this org (BB-MT: a cleaner_id colliding
             # across tenants would otherwise surface another org's name on the
             # hub — every other query in build() is _scope'd, this one wasn't).
-            for u in (db.query(User)
-                      .filter(_scope(User, org_id), User.cleaner_id.in_(cids))
-                      .all()):
-                cnames[u.cleaner_id] = u.full_name or u.email
+            #
+            # _scope also admits legacy org_id IS NULL rows (they belong to the
+            # default workspace — rls.py). For a NON-default tenant that shares
+            # a cleaner_id with such a legacy user, that NULL row must not win
+            # (or be picked nondeterministically) over the tenant's own user —
+            # so resolve exact-org matches FIRST and never let a NULL homonym
+            # overwrite one. The default org, whose own users may BE the NULL
+            # rows, still resolves them (they're the only match).
+            urows = (db.query(User)
+                     .filter(_scope(User, org_id), User.cleaner_id.in_(cids))
+                     .all())
+            urows.sort(key=lambda u: 0 if u.org_id == org_id else 1)
+            for u in urows:
+                cnames.setdefault(u.cleaner_id, u.full_name or u.email)
         for r in reqs:
             asked[r.job_id] = asked.get(r.job_id, 0) + 1
             pr = posted_by_id.get(r.job_id)
