@@ -4,7 +4,7 @@ import secrets
 from fastapi import APIRouter, Depends, HTTPException, Response
 from sqlalchemy import or_, and_, func
 from sqlalchemy.orm import Session, joinedload
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from typing import Optional, List, Union
 from datetime import datetime, timezone, date, time, timedelta
 from zoneinfo import ZoneInfo
@@ -2108,7 +2108,11 @@ def auto_assign_turnovers(dry_run: bool = False, db: Session = Depends(get_db),
 
 class BulkRescheduleRequest(BaseModel):
     job_ids: List[int]
-    shift_days: int
+    # Bounded to ±10 years: a legitimate weather-/sick-day move is a handful of
+    # days, and an unbounded shift can overflow `scheduled_date + timedelta`
+    # (date year > 9999) — an OverflowError, not an HTTPException, which would
+    # abort the loop mid-batch (Codex on #878). Reject it at the edge with a 422.
+    shift_days: int = Field(..., ge=-3650, le=3650)
 
 
 # Registered before /{job_id} so the literal path isn't swallowed by the int route.
@@ -2155,8 +2159,9 @@ def bulk_reschedule(body: BulkRescheduleRequest, db: Session = Depends(get_db),
     # crew at all; funnelling both branches through the rollup closes that gap
     # (audit #4) and dedupes the one-off branch in the same move.
     moved_jobs = []
+    jobs_by_id = {j.id: j for j in jobs}
     for job_id in body.job_ids:
-        job = next((j for j in jobs if j.id == job_id), None)
+        job = jobs_by_id.get(job_id)
         if job is None:
             skipped.append({"job_id": job_id, "reason": "not found"})
             continue
@@ -2187,14 +2192,32 @@ def bulk_reschedule(body: BulkRescheduleRequest, db: Session = Depends(get_db),
                     notify_crew=False),
                     db=db, org_id=oid)
                 moved_job = job
+            # Commit THIS item before moving on. update_job already commits a
+            # one-off move internally; committing here also persists a recurring
+            # move (which otherwise waits for a trailing commit). The point is
+            # abort-safety: because the per-job crew notice is suppressed and the
+            # rollup runs only after the loop, a later item raising a NON-
+            # HTTPException would otherwise leave this move applied with nobody
+            # told (Codex on #878). Now every moved_jobs entry is already
+            # committed, so the rollup notifies exactly what actually moved.
+            db.commit()
             shifted.append(job_id)
             if moved_job is not None:
                 moved_jobs.append(moved_job)
         except HTTPException as e:
+            db.rollback()   # drop this item's partial write; keep prior commits
             skipped.append({"job_id": job_id, "reason": e.detail})
-    db.commit()
-    # ONE rollup per assigned cleaner across the whole batch — after commit so it
-    # describes reality and can never roll back the move. Best-effort.
+        except Exception as e:  # noqa: BLE001 — one bad item must not abort the batch
+            # An unexpected error on one item is recorded and skipped rather than
+            # 500-ing the whole move and stranding already-committed jobs with
+            # their crew notice suppressed. Prior items stay committed; this
+            # item's partial write is rolled back.
+            db.rollback()
+            logger.warning("[bulk-reschedule] could not move job %s: %s", job_id, e)
+            skipped.append({"job_id": job_id, "reason": "could not reschedule"})
+    # ONE rollup per assigned cleaner across the whole batch — every entry is
+    # already committed above, so it describes reality and can never announce a
+    # move that rolled back. Best-effort.
     from services.crew_notify import notify_jobs_rescheduled_bulk
     notify_jobs_rescheduled_bulk(db, moved_jobs, oid)
     return {"shifted": len(shifted), "shifted_ids": shifted, "skipped": skipped}

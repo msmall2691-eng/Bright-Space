@@ -244,6 +244,49 @@ def test_rollup_helper_is_a_noop_when_no_one_is_assigned(seeded):
     m.assert_not_called()
 
 
+def test_an_absurd_shift_is_rejected_before_it_can_overflow(seeded):
+    # Bounded at ±10 years: an unbounded shift overflows date + timedelta (an
+    # OverflowError, not an HTTPException, which would abort the loop) — reject
+    # it at the edge with a 422 (Codex on #878).
+    db, c, p = seeded
+    j = _make_job(db, c, p, date(2026, 8, 1))
+    r = api.post("/api/jobs/bulk-reschedule", json={"job_ids": [j.id], "shift_days": 4000})
+    assert r.status_code == 422, r.text
+
+
+def test_an_unexpected_error_on_one_item_does_not_abort_the_batch(seeded):
+    # A non-HTTPException on a later item must not 500 the whole move and strand
+    # earlier, already-committed moves with their crew notice suppressed. The
+    # bad item is skipped; the good one stays moved and reaches the rollup.
+    from modules.scheduling import router as sched_router
+    db, c, p = seeded
+    j1 = _make_job(db, c, p, date(2026, 8, 1), cleaner_ids=["c1"])
+    j2 = _make_job(db, c, p, date(2026, 8, 1), cleaner_ids=["c1"])
+    real_update = sched_router.update_job
+
+    def _fake(job_id, data, **kw):
+        if job_id == j2.id:
+            raise ValueError("boom")            # an unexpected, non-HTTP error
+        return real_update(job_id, data, **kw)
+
+    seen = {}
+
+    def _capture(db_, jobs_, org=None):
+        seen["ids"] = {j.id for j in jobs_}
+        return 0
+    with patch("modules.scheduling.router.update_job", side_effect=_fake), \
+         patch("services.crew_notify.notify_jobs_rescheduled_bulk", side_effect=_capture):
+        r = api.post("/api/jobs/bulk-reschedule",
+                     json={"job_ids": [j1.id, j2.id], "shift_days": 2})
+    assert r.status_code == 200, r.text          # NOT a 500
+    body = r.json()
+    assert body["shifted_ids"] == [j1.id]
+    assert any(s["job_id"] == j2.id for s in body["skipped"])
+    assert seen.get("ids") == {j1.id}            # rollup fired for what moved
+    db.refresh(j1)
+    assert j1.scheduled_date == date(2026, 8, 3)  # and it really moved + committed
+
+
 def test_shift_zero_days_rejected(seeded):
     db, c, p = seeded
     j = _make_job(db, c, p, date(2026, 8, 1))
