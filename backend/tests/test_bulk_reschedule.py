@@ -244,6 +244,94 @@ def test_rollup_helper_is_a_noop_when_no_one_is_assigned(seeded):
     m.assert_not_called()
 
 
+def test_an_absurd_shift_is_rejected_before_it_can_overflow(seeded):
+    # Bounded at ±10 years: an unbounded shift overflows date + timedelta (an
+    # OverflowError, not an HTTPException, which would abort the loop) — reject
+    # it at the edge with a 422 (Codex on #878).
+    db, c, p = seeded
+    j = _make_job(db, c, p, date(2026, 8, 1))
+    r = api.post("/api/jobs/bulk-reschedule", json={"job_ids": [j.id], "shift_days": 4000})
+    assert r.status_code == 422, r.text
+
+
+def test_an_unexpected_error_on_one_item_does_not_abort_the_batch(seeded):
+    # A non-HTTPException on a later item must not 500 the whole move and strand
+    # earlier, already-committed moves with their crew notice suppressed. The
+    # bad item is skipped; the good one stays moved and reaches the rollup.
+    from modules.scheduling import router as sched_router
+    db, c, p = seeded
+    j1 = _make_job(db, c, p, date(2026, 8, 1), cleaner_ids=["c1"])
+    j2 = _make_job(db, c, p, date(2026, 8, 1), cleaner_ids=["c1"])
+    real_update = sched_router.update_job
+
+    def _fake(job_id, data, **kw):
+        if job_id == j2.id:
+            raise ValueError("boom")            # an unexpected, non-HTTP error
+        return real_update(job_id, data, **kw)
+
+    seen = {}
+
+    def _capture(db_, jobs_, org=None):
+        seen["ids"] = {j.id for j in jobs_}
+        return 0
+    with patch("modules.scheduling.router.update_job", side_effect=_fake), \
+         patch("services.crew_notify.notify_jobs_rescheduled_bulk", side_effect=_capture):
+        r = api.post("/api/jobs/bulk-reschedule",
+                     json={"job_ids": [j1.id, j2.id], "shift_days": 2})
+    assert r.status_code == 200, r.text          # NOT a 500
+    body = r.json()
+    assert body["shifted_ids"] == [j1.id]
+    assert any(s["job_id"] == j2.id for s in body["skipped"])
+    assert seen.get("ids") == {j1.id}            # rollup fired for what moved
+    db.refresh(j1)
+    assert j1.scheduled_date == date(2026, 8, 3)  # and it really moved + committed
+
+
+def test_a_move_that_commits_then_errors_is_still_reported_and_notified(seeded):
+    # update_job commits a one-off move INTERNALLY, then can raise afterwards
+    # (building its response, an Invoice read). The move is persisted, so the
+    # operator must be told it MOVED and the crew must get the rollup — deciding
+    # off the exception would wrongly report it skipped (Codex P1 on #880).
+    from modules.scheduling import router as sched_router
+    db, c, p = seeded
+    j = _make_job(db, c, p, date(2026, 8, 1), cleaner_ids=["c1"])
+    real_update = sched_router.update_job
+
+    def _commit_then_raise(job_id, data, **kw):
+        real_update(job_id, data, **kw)          # performs AND commits the move
+        raise RuntimeError("blew up after the commit")
+
+    seen = {}
+
+    def _capture(db_, jobs_, org=None):
+        seen["ids"] = {x.id for x in jobs_}
+        return 0
+    with patch("modules.scheduling.router.update_job", side_effect=_commit_then_raise), \
+         patch("services.crew_notify.notify_jobs_rescheduled_bulk", side_effect=_capture):
+        r = api.post("/api/jobs/bulk-reschedule", json={"job_ids": [j.id], "shift_days": 2})
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["shifted_ids"] == [j.id]         # reported moved — because it did
+    assert body["skipped"] == []
+    assert seen.get("ids") == {j.id}             # and the crew rollup fired for it
+    db.refresh(j)
+    assert j.scheduled_date == date(2026, 8, 3)   # truly committed
+
+
+def test_a_job_near_the_max_date_is_skipped_not_a_500(seeded):
+    # shift_days is bounded, but a job stored near date.max still overflows
+    # date + timedelta on an allowed shift. Skip that one job, don't 500 the
+    # batch (Codex P2 on #880).
+    db, c, p = seeded
+    j = _make_job(db, c, p, date(9999, 12, 31))
+    r = api.post("/api/jobs/bulk-reschedule", json={"job_ids": [j.id], "shift_days": 1})
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["shifted"] == 0
+    assert body["skipped"][0]["job_id"] == j.id
+    assert "out of range" in body["skipped"][0]["reason"]
+
+
 def test_shift_zero_days_rejected(seeded):
     db, c, p = seeded
     j = _make_job(db, c, p, date(2026, 8, 1))

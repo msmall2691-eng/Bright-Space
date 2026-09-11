@@ -4,7 +4,7 @@ import secrets
 from fastapi import APIRouter, Depends, HTTPException, Response
 from sqlalchemy import or_, and_, func
 from sqlalchemy.orm import Session, joinedload
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from typing import Optional, List, Union
 from datetime import datetime, timezone, date, time, timedelta
 from zoneinfo import ZoneInfo
@@ -2108,7 +2108,11 @@ def auto_assign_turnovers(dry_run: bool = False, db: Session = Depends(get_db),
 
 class BulkRescheduleRequest(BaseModel):
     job_ids: List[int]
-    shift_days: int
+    # Bounded to ±10 years: a legitimate weather-/sick-day move is a handful of
+    # days, and an unbounded shift can overflow `scheduled_date + timedelta`
+    # (date year > 9999) — an OverflowError, not an HTTPException, which would
+    # abort the loop mid-batch (Codex on #878). Reject it at the edge with a 422.
+    shift_days: int = Field(..., ge=-3650, le=3650)
 
 
 # Registered before /{job_id} so the literal path isn't swallowed by the int route.
@@ -2154,9 +2158,20 @@ def bulk_reschedule(body: BulkRescheduleRequest, db: Session = Depends(get_db),
     # cleaner — brightbase-economy). The recurring branch never notified the
     # crew at all; funnelling both branches through the rollup closes that gap
     # (audit #4) and dedupes the one-off branch in the same move.
+    # WHY THIS IS TRUTH-CHECKED RATHER THAN FLAG-TRACKED. update_job commits a
+    # one-off move INTERNALLY, and its commit boundary is not ours to control:
+    # it can raise AFTER that commit (building its response, an Invoice read),
+    # by which point the move is already persisted. Deciding "moved vs skipped"
+    # off the exception would then either tell the operator a committed job
+    # didn't move (P1) or, the other way, announce a move that rolled back. So
+    # for the one-off branch we ask the DB what actually landed on the new date,
+    # and the crew rollup is built from that — never from whether a call threw.
+    # The recurring branch, by contrast, defers its commit to us, so there the
+    # exception IS authoritative (a raise means nothing committed).
     moved_jobs = []
+    jobs_by_id = {j.id: j for j in jobs}
     for job_id in body.job_ids:
-        job = next((j for j in jobs if j.id == job_id), None)
+        job = jobs_by_id.get(job_id)
         if job is None:
             skipped.append({"job_id": job_id, "reason": "not found"})
             continue
@@ -2166,9 +2181,19 @@ def bulk_reschedule(body: BulkRescheduleRequest, db: Session = Depends(get_db),
         if not job.scheduled_date:
             skipped.append({"job_id": job_id, "reason": "no scheduled_date"})
             continue
-        new_date = job.scheduled_date + timedelta(days=body.shift_days)
+        # Per-JOB overflow: shift_days is bounded, but a job stored near date.max
+        # can still overflow date + timedelta on an allowed shift. Skip just that
+        # job (a 422 can't see per-row dates), never abort the batch (Codex #880).
         try:
-            if job.recurring_schedule_id:
+            new_date = job.scheduled_date + timedelta(days=body.shift_days)
+        except (OverflowError, ValueError):
+            skipped.append({"job_id": job_id, "reason": "resulting date is out of range"})
+            continue
+
+        if job.recurring_schedule_id:
+            # Recurring: _reschedule_occurrence defers its commit to us, so a
+            # raise here means nothing was written — the exception is the truth.
+            try:
                 sched = _get_schedule_or_404(db, job.recurring_schedule_id, oid)
                 _, moved_job = _reschedule_occurrence(
                     db, sched, job.scheduled_date, new_date,
@@ -2176,25 +2201,52 @@ def bulk_reschedule(body: BulkRescheduleRequest, db: Session = Depends(get_db),
                     cleaner_ids=job.cleaner_ids, reason="Bulk reschedule",
                     notify_customer=_bulk_notify_move,
                 )
-            else:
-                # Route one-off moves through update_job so the Google Calendar
-                # event moves too (a bare scheduled_date write left the event on
-                # the old day permanently — reconcile can't fix a job that
-                # already has an event id) and the confirmed/reminder flags reset.
-                # notify_crew=False: the rollup below is the crew's one notice.
-                update_job(job.id, JobUpdate(
-                    scheduled_date=new_date.isoformat(), allow_conflicts=True,
-                    notify_crew=False),
-                    db=db, org_id=oid)
-                moved_job = job
-            shifted.append(job_id)
-            if moved_job is not None:
-                moved_jobs.append(moved_job)
+                db.commit()
+                shifted.append(job_id)
+                if moved_job is not None:
+                    moved_jobs.append(moved_job)
+            except HTTPException as e:
+                db.rollback()
+                skipped.append({"job_id": job_id, "reason": e.detail})
+            except Exception as e:  # noqa: BLE001 — one bad item must not abort the batch
+                db.rollback()
+                logger.warning("[bulk-reschedule] recurring job %s failed: %s", job_id, e)
+                skipped.append({"job_id": job_id, "reason": "could not reschedule"})
+            continue
+
+        # One-off: route through update_job so the Google Calendar event moves
+        # too (a bare scheduled_date write stranded the event on the old day —
+        # reconcile can't fix a job that already has an event id) and the
+        # confirmed/reminder flags reset. notify_crew=False: the rollup is the
+        # crew's one notice. Its commit is internal, so the DB — not this
+        # exception — decides whether the job moved.
+        err = None
+        try:
+            update_job(job.id, JobUpdate(
+                scheduled_date=new_date.isoformat(), allow_conflicts=True,
+                notify_crew=False),
+                db=db, org_id=oid)
         except HTTPException as e:
-            skipped.append({"job_id": job_id, "reason": e.detail})
-    db.commit()
-    # ONE rollup per assigned cleaner across the whole batch — after commit so it
-    # describes reality and can never roll back the move. Best-effort.
+            err = e.detail
+        except Exception as e:  # noqa: BLE001
+            logger.warning("[bulk-reschedule] job %s failed: %s", job_id, e)
+            err = "could not reschedule"
+        # Drop any uncommitted partial from a failed attempt; a move update_job
+        # already committed survives this rollback and is found below.
+        db.rollback()
+        landed = (db.query(Job)
+                  .filter(Job.id == job_id, Job.scheduled_date == new_date,
+                          or_(Job.org_id == oid, Job.org_id.is_(None)))
+                  .first())
+        if landed is not None:
+            shifted.append(job_id)
+            moved_jobs.append(landed)
+        else:
+            skipped.append({"job_id": job_id, "reason": err or "could not reschedule"})
+
+    # ONE rollup per assigned cleaner across the whole batch. moved_jobs holds
+    # only rows confirmed committed above, so it describes reality and can never
+    # announce a move that rolled back — nor miss one that committed. Best-effort.
     from services.crew_notify import notify_jobs_rescheduled_bulk
     notify_jobs_rescheduled_bulk(db, moved_jobs, oid)
     return {"shifted": len(shifted), "shifted_ids": shifted, "skipped": skipped}
