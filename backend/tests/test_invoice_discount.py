@@ -16,11 +16,26 @@ Covered here, each mutation-checked:
 from datetime import date, time
 
 import pytest
+from pydantic import ValidationError
 
 from database.db import SessionLocal
 from database.models import Client, Property, Job, Quote, Invoice
 from modules.invoicing.router import calc_totals, create_invoice, update_invoice, InvoiceCreate, InvoiceItem, InvoiceUpdate
 from modules.scheduling.completion import auto_create_draft_invoice
+
+
+def test_a_negative_discount_is_rejected():
+    # total = subtotal + tax - discount, so a negative discount silently ADDS to
+    # the total — a hidden surcharge. A discount only ever subtracts; reject < 0
+    # on both the create and update shapes before it can reach calc_totals.
+    items = [InvoiceItem(name="Clean", qty=1, unit_price=100.0)]
+    with pytest.raises(ValidationError):
+        InvoiceCreate(client_id=1, items=items, discount=-10.0)
+    with pytest.raises(ValidationError):
+        InvoiceUpdate(discount=-0.01)
+    # Zero and positive still fine.
+    assert InvoiceCreate(client_id=1, items=items, discount=0).discount == 0
+    assert InvoiceUpdate(discount=25.0).discount == 25.0
 
 
 def test_calc_totals_subtracts_discount_after_tax():

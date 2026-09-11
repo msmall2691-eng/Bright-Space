@@ -2,7 +2,7 @@ import os
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import or_
 from sqlalchemy.orm import Session
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from typing import Optional, List, Literal
 from datetime import datetime, date, timezone
 
@@ -30,7 +30,10 @@ class InvoiceCreate(BaseModel):
     opportunity_id: Optional[int] = None
     items: List[InvoiceItem]
     tax_rate: Optional[float] = 0
-    discount: Optional[float] = 0     # BB-INV-01: flat $ off, after tax
+    # BB-INV-01: flat $ off, after tax. ge=0 — total = subtotal + tax - discount,
+    # so a NEGATIVE discount silently ADDS to the total (a hidden surcharge the
+    # customer never agreed to). A discount only ever subtracts; reject below zero.
+    discount: Optional[float] = Field(default=0, ge=0)
     due_date: Optional[str] = None
     notes: Optional[str] = None
     custom_fields: Optional[dict] = {}
@@ -39,7 +42,7 @@ class InvoiceCreate(BaseModel):
 class InvoiceUpdate(BaseModel):
     items: Optional[List[InvoiceItem]] = None
     tax_rate: Optional[float] = None
-    discount: Optional[float] = None  # BB-INV-01
+    discount: Optional[float] = Field(default=None, ge=0)  # BB-INV-01: never negative (see InvoiceCreate)
     status: Optional[Literal["draft", "sent", "paid", "overdue", "void"]] = None
     due_date: Optional[str] = None
     notes: Optional[str] = None
