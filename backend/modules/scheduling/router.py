@@ -58,6 +58,13 @@ class JobCreate(BaseModel):
     # field is silently dropped by pydantic — the same way property_id was on
     # JobUpdate for months (see the note below).
     posted_rate: Optional[float] = None
+    # Suppress the "your cleaning is scheduled" customer notice for THIS create
+    # (BB-JOB-01). create_job already reads getattr(data, "notify_customer",
+    # None) is not False — but the field was only on JobUpdate, so a
+    # notify_customer:false in a create body was silently dropped and the notice
+    # sent anyway. None = default (send); False = stay quiet. Same meaning as
+    # JobUpdate's field, at creation time.
+    notify_customer: Optional[bool] = None
     # When true, bypass the cleaner double-booking guard (intentional overlap).
     allow_conflicts: Optional[bool] = False
     # Set only when this Job is being PROMOTED from an already-existing Google
@@ -1195,7 +1202,11 @@ def create_job(data: JobCreate, db: Session = Depends(get_db), org_id: int = Dep
             db.add(new_prop); db.commit(); db.refresh(new_prop)
             resolved_property_id = new_prop.id
 
-    payload = data.model_dump(exclude={"allow_conflicts"})
+    # allow_conflicts and notify_customer are request-only knobs, not Job
+    # columns — the customer-notice suppression is read off `data` below (the
+    # transition-into-scheduled block), so keep them out of the ORM payload or
+    # Job(**payload) raises "invalid keyword argument".
+    payload = data.model_dump(exclude={"allow_conflicts", "notify_customer"})
     payload["property_id"] = resolved_property_id
     # Store real date/time objects (the columns are Date/Time) rather than
     # relying on the DB to implicitly cast the inbound strings — keeps writes
@@ -4130,6 +4141,16 @@ def delete_job(job_id: int, db: Session = Depends(get_db), org_id: int = Depends
             _log_integration(db, entity_type="job", entity_id=job.id, org_id=job.org_id, provider="gcal",
                              action="delete", status="failed", external_id=old_event_id,
                              detail=str(e), commit=False)
+    # Whoever is currently ON the job won it and is planning their day around
+    # it — deleting it out from under them with no word is the same silence a
+    # cancel would be (BB-CREW-03). Distinct from close_offer below, which
+    # answers the people still holding a PENDING request; the assigned sub is
+    # not one of them. Best-effort (notify_job_cancelled swallows its own
+    # errors), and it must run BEFORE db.delete while cleaner_ids/property/org
+    # are still readable off the row.
+    if job.cleaner_ids:
+        from services.crew_notify import notify_job_cancelled
+        notify_job_cancelled(db, job, job.cleaner_ids)
     # The request rows cascade away with the job (migration 097's FK), so
     # nothing is left to read later — which makes telling the people who asked
     # the entire deliverable here. A sub whose request evaporates with no word
