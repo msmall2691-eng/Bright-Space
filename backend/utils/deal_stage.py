@@ -42,6 +42,54 @@ QUOTE_STATUS_STAGE = {
 LEAD_DISPLAY_STATUSES = ["new", "reviewed", "quoted", "converted", "archived"]
 
 
+def lead_display_status_candidate_filter(model, display_status):
+    """A SQL prefilter for the derived-status Requests tabs.
+
+    `lead_display_status` is DERIVED (P4) rather than stored, so the intake
+    list can't filter the `status` column for new/reviewed/quoted/converted —
+    it loaded EVERY non-archived lead, batch-loaded their quotes, derived each
+    one, then sliced in Python. On an org with thousands of leads that is a
+    full-table scan on every Requests tab load (BB-FIND-03).
+
+    This returns a SQLAlchemy condition that is a guaranteed SUPERSET of the
+    rows whose derived display status is `display_status`, so the scan can be
+    pruned to candidates while `lead_display_status` still makes the exact call
+    in Python — no derivation logic is duplicated into SQL, only a coarse "could
+    this row possibly be T" gate. Returns None for a value it can't safely
+    prune (an unusual stored status), so the caller falls back to the full scan.
+
+    Two assumptions, both true of the intake list: archived rows are already
+    excluded by the caller, and a lead's quote is available only via
+    `converted_quote_id` (how the list batch-loads quotes) — so the derivation
+    reduces to `converted_quote_id`, `opportunity_id` and the stored `status`.
+
+    Kept HERE, beside lead_display_status, ON PURPOSE: the two must move
+    together, and `tests/test_intake_derived_filter.py` asserts the pruned scan
+    returns exactly what a full scan + derivation would, on every tab.
+    """
+    from sqlalchemy import and_, or_
+
+    cq = model.converted_quote_id
+    op = model.opportunity_id
+    st = model.status
+    if display_status in ("converted", "quoted"):
+        # Both derive from a lead carrying a converted_quote_id (its quote then
+        # splits converted vs quoted) — or, rarely, from the stored status alone
+        # on a lead with no quote and no opportunity.
+        return or_(cq.isnot(None),
+                   and_(cq.is_(None), op.is_(None), st == display_status))
+    if display_status == "reviewed":
+        # Promoted to a deal but not yet quoted, or stored 'reviewed' with no quote.
+        return and_(cq.is_(None), or_(op.isnot(None), st == "reviewed"))
+    if display_status == "new":
+        # No quote, no opportunity, and a stored status that itself falls through
+        # to 'new' (step 5 returns the stored value for the other words).
+        return and_(cq.is_(None), op.is_(None),
+                    or_(st.is_(None),
+                        st.notin_(["reviewed", "quoted", "converted", "archived"])))
+    return None  # unknown display value → caller scans everything (unchanged)
+
+
 def lead_display_status(intake, quote=None):
     """Derive a lead's inbox status from the strongest available signal.
 

@@ -11,7 +11,7 @@ from modules.auth.router import require_role, current_org_id, resolve_org_id
 from database.models import LeadIntake, Client, Quote
 from modules.intake.normalize import build_intake, upsert_lead, _property_key
 from utils.contacts import find_client_by_contact, add_contact_email, add_contact_phone
-from utils.deal_stage import lead_display_status
+from utils.deal_stage import lead_display_status, lead_display_status_candidate_filter
 from ratelimit import limiter
 
 router = APIRouter()
@@ -345,8 +345,17 @@ def get_intakes(
     # `archived` stays a stored-column filter — it is the one operator-set state
     # and always wins in the derivation too.
     if status and status != "archived":
-        candidates = (q.filter(LeadIntake.status != "archived")
-                      .order_by(LeadIntake.created_at.desc()).all())
+        # BB-FIND-03: prune the candidate scan to rows that COULD derive to this
+        # status instead of loading every non-archived lead into memory. The
+        # prefilter is a guaranteed superset (co-located with lead_display_status
+        # so the two can't drift); the Python derivation below still makes the
+        # exact call, so a page is still never silently short. None → the value
+        # isn't safely prunable and we scan everything, exactly as before.
+        cand_q = q.filter(LeadIntake.status != "archived")
+        prefilter = lead_display_status_candidate_filter(LeadIntake, status)
+        if prefilter is not None:
+            cand_q = cand_q.filter(prefilter)
+        candidates = cand_q.order_by(LeadIntake.created_at.desc()).all()
         quotes_by_id = _batch_quotes(db, candidates)
         matching = [
             r for r in candidates
