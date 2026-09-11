@@ -208,6 +208,86 @@ def notify_job_cancelled(db: Session, job, cleaner_ids) -> int:
                            tag=f"job-cancelled-{job.id}")
 
 
+def _moved_batch_line(jobs) -> str:
+    """"Sat, Sep 12 · Maple Cottage; Sun, Sep 13 · Oak House (+2 more)" — the
+    new days for a batch of the cleaner's OWN moved jobs. Property names are
+    fine here (unlike the offer board): the recipient is assigned to every one.
+    """
+    def one(j):
+        parts = []
+        d = getattr(j, "scheduled_date", None)
+        if d is not None:
+            parts.append(d.strftime("%a, %b %-d") if hasattr(d, "strftime") else str(d))
+        prop = getattr(j, "property", None)
+        where = (getattr(prop, "name", None) if prop is not None else None) or getattr(j, "title", None) or "a job"
+        parts.append(where)
+        return " · ".join(parts)
+    shown = "; ".join(one(j) for j in jobs[:3])
+    extra = len(jobs) - 3
+    return shown + (f" (+{extra} more)" if extra > 0 else "")
+
+
+def notify_jobs_rescheduled_bulk(db: Session, jobs, org_id=None) -> int:
+    """ONE "your jobs moved" per cleaner when a batch of their jobs is shifted
+    together (the weather-day / sick-day bulk reschedule). Shifting a twelve-
+    house day one job at a time would fire twelve `notify_job_rescheduled`
+    texts at the same person — the over-notification that trains someone to
+    silence the channel (brightbase-economy) — so the bulk path suppresses
+    update_job's per-job notice and calls this once. It also closes the gap
+    where the recurring branch told the assigned crew nothing at all (audit #4).
+
+    Best-effort, event-driven (no tick, R1); push then SMS fallback via
+    notify_user_or_sms. The recipient is ON these jobs, so the body may name
+    the property (same as _job_line / notify_job_rescheduled). Returns channels
+    delivered.
+    """
+    jobs = [j for j in (jobs or []) if j is not None and (getattr(j, "cleaner_ids", None) or [])]
+    if not jobs:
+        return 0
+    try:
+        from database.models import User
+
+        # cleaner_id -> [their moved jobs]. A job with two cleaners rolls up to
+        # both; a cleaner with three moved jobs hears once, not three times.
+        by_cleaner: dict = {}
+        for j in jobs:
+            for c in (j.cleaner_ids or []):
+                cid = str(c).strip()
+                if cid:
+                    by_cleaner.setdefault(cid, []).append(j)
+        if not by_cleaner:
+            return 0
+
+        oid = org_id if org_id is not None else getattr(jobs[0], "org_id", None)
+        q = db.query(User).filter(User.cleaner_id.in_(list(by_cleaner.keys())),
+                                  User.role == "cleaner")
+        if oid is not None:
+            # Same tenant guard as the other notify paths: cleaner_id isn't
+            # unique across orgs, so never resolve another org's same-ID login.
+            q = q.filter(or_(User.org_id == oid, User.org_id.is_(None)))
+
+        sent = 0
+        for u in q.all():
+            mine = by_cleaner.get(u.cleaner_id) or []
+            if not mine:
+                continue
+            if len(mine) == 1:
+                title = "A job of yours moved"
+                body = _job_line(mine[0])
+                tag = f"job-moved-{mine[0].id}"
+            else:
+                title = f"{len(mine)} of your jobs moved"
+                body = _moved_batch_line(mine)
+                # One stable tag for the batch so a re-run replaces, not stacks.
+                tag = f"jobs-moved-{min(j.id for j in mine)}-{len(mine)}"
+            sent += notify_user_or_sms(u.id, title, body, url="/my-day",
+                                       tag=tag, category="job_assignments")
+        return sent
+    except Exception:  # pragma: no cover - notify must never break scheduling
+        logger.exception("bulk reschedule crew notify failed")
+        return 0
+
+
 def _offer_line(job) -> str:
     """"Sat, Sep 12 · 9 AM · Rockport, ME · $180" — town, never the house.
 

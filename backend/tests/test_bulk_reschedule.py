@@ -55,10 +55,12 @@ def seeded():
     db.commit(); db.close()
 
 
-def _make_job(db, c, p, sched_date, status="scheduled", recurring_schedule_id=None):
+def _make_job(db, c, p, sched_date, status="scheduled", recurring_schedule_id=None,
+              cleaner_ids=None):
     j = Job(client_id=c.id, property_id=p.id, title="Bulk Job", job_type="residential",
             scheduled_date=sched_date, start_time=time(9, 0), end_time=time(11, 0),
-            status=status, recurring_schedule_id=recurring_schedule_id)
+            status=status, recurring_schedule_id=recurring_schedule_id,
+            cleaner_ids=cleaner_ids or [])
     db.add(j); db.commit(); db.refresh(j)
     return j
 
@@ -149,6 +151,97 @@ def test_shift_recurring_occurrence_writes_exception_not_bare_patch(seeded):
     ).first()
     assert new_job is not None
     assert new_job.start_time == time(9, 0)
+
+
+# ── crew notice on a bulk move (audit #4) ────────────────────────────────────
+
+def test_bulk_move_sends_one_crew_rollup_and_suppresses_per_job(seeded):
+    # A weather-day move of a cleaner's whole day must be ONE "your jobs moved"
+    # rollup, not one text per job (brightbase-economy). The one-off branch runs
+    # through update_job, whose per-job notice the bulk path suppresses.
+    db, c, p = seeded
+    j1 = _make_job(db, c, p, date(2026, 8, 1), cleaner_ids=["c1"])
+    j2 = _make_job(db, c, p, date(2026, 8, 1), cleaner_ids=["c1"])
+    # Read the ids inside the call — the endpoint's session closes after the
+    # response, leaving the passed Job objects detached.
+    seen = {}
+
+    def _capture(db_, jobs_, org=None):
+        seen["ids"] = {j.id for j in jobs_}
+        return 0
+    with patch("services.crew_notify.notify_job_rescheduled") as per_job, \
+         patch("services.crew_notify.notify_jobs_rescheduled_bulk",
+               side_effect=_capture) as rollup:
+        r = api.post("/api/jobs/bulk-reschedule",
+                     json={"job_ids": [j1.id, j2.id], "shift_days": 2})
+    assert r.status_code == 200, r.text
+    per_job.assert_not_called()                 # no per-job "a job of yours moved"
+    assert rollup.call_count == 1               # exactly one rollup for the batch
+    assert seen["ids"] == {j1.id, j2.id}
+
+
+def test_bulk_move_of_recurring_occurrence_notifies_the_crew(seeded):
+    # The recurring branch (_reschedule_occurrence) never told the assigned crew
+    # anything — audit #4. Funnelling its moved Job into the rollup closes that.
+    db, c, p = seeded
+    sched = RecurringSchedule(
+        client_id=c.id, property_id=p.id, job_type="residential", title="Weekly clean",
+        address=p.address, frequency="weekly", day_of_week=5, days_of_week=[5],
+        start_time=time(9, 0), end_time=time(11, 0), cleaner_ids=["c1"], active=True,
+    )
+    db.add(sched); db.commit(); db.refresh(sched)
+    j = _make_job(db, c, p, date(2026, 8, 1), recurring_schedule_id=sched.id,
+                  cleaner_ids=["c1"])
+    seen = {}
+
+    def _capture(db_, jobs_, org=None):
+        seen["n"] = len(jobs_)
+        if jobs_:
+            seen["cleaners"] = list(jobs_[0].cleaner_ids or [])
+            seen["date"] = jobs_[0].scheduled_date
+        return 0
+    with patch("services.crew_notify.notify_jobs_rescheduled_bulk",
+               side_effect=_capture) as rollup:
+        r = api.post("/api/jobs/bulk-reschedule", json={"job_ids": [j.id], "shift_days": 1})
+    assert r.status_code == 200, r.text
+    assert rollup.call_count == 1
+    assert seen["n"] == 1
+    assert seen["cleaners"] == ["c1"]
+    assert seen["date"] == date(2026, 8, 2)   # the moved occurrence
+
+
+def test_rollup_helper_sends_one_message_per_cleaner(seeded):
+    # The helper groups a cleaner's several moved jobs into a single message.
+    from database.models import User
+    from services import crew_notify
+    db, c, p = seeded
+    u = User(email=f"c-{uuid.uuid4().hex[:6]}@example.com", role="cleaner",
+             cleaner_id=f"cl{uuid.uuid4().hex[:5]}", org_id=None)
+    db.add(u); db.commit(); db.refresh(u)
+    try:
+        j1 = _make_job(db, c, p, date(2026, 8, 3), cleaner_ids=[u.cleaner_id])
+        j2 = _make_job(db, c, p, date(2026, 8, 4), cleaner_ids=[u.cleaner_id])
+        with patch.object(crew_notify, "notify_user_or_sms", return_value=1) as m:
+            crew_notify.notify_jobs_rescheduled_bulk(db, [j1, j2], None)
+        assert m.call_count == 1                     # one message, not two
+        args, kwargs = m.call_args
+        assert args[0] == u.id
+        assert "2 of your jobs moved" in args[1]
+        assert kwargs["category"] == "job_assignments"
+        assert kwargs["url"] == "/my-day"
+    finally:
+        db.query(User).filter(User.id == u.id).delete(synchronize_session=False)
+        db.commit()
+
+
+def test_rollup_helper_is_a_noop_when_no_one_is_assigned(seeded):
+    from services import crew_notify
+    db, c, p = seeded
+    j = _make_job(db, c, p, date(2026, 8, 3), cleaner_ids=[])
+    with patch.object(crew_notify, "notify_user_or_sms", return_value=1) as m:
+        n = crew_notify.notify_jobs_rescheduled_bulk(db, [j], None)
+    assert n == 0
+    m.assert_not_called()
 
 
 def test_shift_zero_days_rejected(seeded):

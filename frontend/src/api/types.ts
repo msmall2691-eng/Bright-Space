@@ -9209,6 +9209,8 @@ export interface components {
             allow_conflicts: boolean | null;
             /** Notify Customer */
             notify_customer?: boolean | null;
+            /** Notify Crew */
+            notify_crew?: boolean | null;
             /** Open For Claims */
             open_for_claims?: boolean | null;
             /** Posted Rate */

@@ -105,6 +105,12 @@ class JobUpdate(BaseModel):
     # Lets an operator nudge a job around the calendar silently (the default) but
     # still opt into telling the customer when a move actually matters to them.
     notify_customer: Optional[bool] = None
+    # Per-move override for the ASSIGNED-CREW "a job of yours moved" notice.
+    # None = normal (notify the continuing crew); False = stay quiet on this
+    # edit. The bulk-reschedule path sets False so a weather-day move of a
+    # cleaner's whole day fires ONE rollup instead of one text per job
+    # (brightbase-economy) — see bulk_reschedule.
+    notify_crew: Optional[bool] = None
     # Crew app Phase 3: put the job "up for grabs" on every cleaner's phone
     # (claiming flips it back off atomically, crew router's /claim).
     open_for_claims: Optional[bool] = None
@@ -2142,6 +2148,13 @@ def bulk_reschedule(body: BulkRescheduleRequest, db: Session = Depends(get_db),
     _bulk_notify_move = _bulk_ne(db) and _bulk_nom(db)
 
     shifted, skipped = [], []
+    # The Job rows landing on the new date, gathered for ONE crew rollup after
+    # the loop rather than a per-job "a job of yours moved" from each update_job
+    # (a twelve-house weather day would otherwise fire twelve texts at the same
+    # cleaner — brightbase-economy). The recurring branch never notified the
+    # crew at all; funnelling both branches through the rollup closes that gap
+    # (audit #4) and dedupes the one-off branch in the same move.
+    moved_jobs = []
     for job_id in body.job_ids:
         job = next((j for j in jobs if j.id == job_id), None)
         if job is None:
@@ -2157,7 +2170,7 @@ def bulk_reschedule(body: BulkRescheduleRequest, db: Session = Depends(get_db),
         try:
             if job.recurring_schedule_id:
                 sched = _get_schedule_or_404(db, job.recurring_schedule_id, oid)
-                _reschedule_occurrence(
+                _, moved_job = _reschedule_occurrence(
                     db, sched, job.scheduled_date, new_date,
                     rescheduled_start_time=job.start_time, rescheduled_end_time=job.end_time,
                     cleaner_ids=job.cleaner_ids, reason="Bulk reschedule",
@@ -2168,13 +2181,22 @@ def bulk_reschedule(body: BulkRescheduleRequest, db: Session = Depends(get_db),
                 # event moves too (a bare scheduled_date write left the event on
                 # the old day permanently — reconcile can't fix a job that
                 # already has an event id) and the confirmed/reminder flags reset.
+                # notify_crew=False: the rollup below is the crew's one notice.
                 update_job(job.id, JobUpdate(
-                    scheduled_date=new_date.isoformat(), allow_conflicts=True),
+                    scheduled_date=new_date.isoformat(), allow_conflicts=True,
+                    notify_crew=False),
                     db=db, org_id=oid)
+                moved_job = job
             shifted.append(job_id)
+            if moved_job is not None:
+                moved_jobs.append(moved_job)
         except HTTPException as e:
             skipped.append({"job_id": job_id, "reason": e.detail})
     db.commit()
+    # ONE rollup per assigned cleaner across the whole batch — after commit so it
+    # describes reality and can never roll back the move. Best-effort.
+    from services.crew_notify import notify_jobs_rescheduled_bulk
+    notify_jobs_rescheduled_bulk(db, moved_jobs, oid)
     return {"shifted": len(shifted), "shifted_ids": shifted, "skipped": skipped}
 
 
@@ -3816,7 +3838,10 @@ def update_job(job_id: int, data: JobUpdate, db: Session = Depends(get_db), org_
     # RESCHEDULE goes only to cleaners already on the job: a newly-added cleaner
     # just got "New job for you" above, so "a job of yours moved" in the same
     # breath is noise. `moved` already excludes a cancel (a cancel isn't a move).
-    if moved:
+    # notify_crew=False suppresses this single-job move notice — the bulk
+    # reschedule path sets it so a whole-day shift sends ONE rollup instead of
+    # one text per job (brightbase-economy); see bulk_reschedule.
+    if moved and data.notify_crew is not False:
         continuing = [c for c in (job.cleaner_ids or [])
                       if str(c) in set(prev_cleaner_ids)]
         if continuing:
