@@ -3862,3 +3862,39 @@ def preview_my_routes(user_id: int, db: Session = Depends(get_db),
     oid = resolve_org_id(org_id, db)
     target = _preview_target(db, oid, user_id, viewer, "My routes")
     return my_routes(db=db, org_id=oid, current_user=target)
+
+
+@router.get("/preview/{user_id}/schedule-month",
+            dependencies=[Depends(require_role("admin", "manager"))])
+def preview_schedule_month(user_id: int, year: int, month: int,
+                           db: Session = Depends(get_db),
+                           org_id: int = Depends(current_org_id),
+                           viewer: User = Depends(get_current_user)):
+    """This sub's month calendar (the Schedule → Month view)."""
+    oid = resolve_org_id(org_id, db)
+    target = _preview_target(db, oid, user_id, viewer, "Month")
+    return schedule_month(year=year, month=month, db=db, org_id=oid, current_user=target)
+
+
+@router.get("/preview/{user_id}/me/availability",
+            dependencies=[Depends(require_role("admin", "manager"))])
+def preview_availability(user_id: int, db: Session = Depends(get_db),
+                         org_id: int = Depends(current_org_id),
+                         viewer: User = Depends(get_current_user)):
+    """This sub's availability picture — useful for "why aren't they getting
+    offered work" without a second screen. Read-only: changing availability is
+    a signal the SUB sets (brightbase-marketplace), never the office."""
+    oid = resolve_org_id(org_id, db)
+    target = _preview_target(db, oid, user_id, viewer, "Availability")
+    return get_my_availability(db=db, current_user=target)
+
+
+@router.get("/preview/{user_id}/me/time-off",
+            dependencies=[Depends(require_role("admin", "manager"))])
+def preview_time_off(user_id: int, db: Session = Depends(get_db),
+                     org_id: int = Depends(current_org_id),
+                     viewer: User = Depends(get_current_user)):
+    """This sub's time-off entries (approved / requested / denied)."""
+    oid = resolve_org_id(org_id, db)
+    target = _preview_target(db, oid, user_id, viewer, "Time off")
+    return my_time_off(db=db, current_user=target)

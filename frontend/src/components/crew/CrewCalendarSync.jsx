@@ -12,11 +12,17 @@ import { get, post } from '../../api'
 import { copyToClipboard } from '../../utils/clipboard'
 import { ErrorNote } from './primitives'
 
-export default function CrewCalendarSync({ bare = false }) {
+export default function CrewCalendarSync({ bare = false, previewUserId = null }) {
   const [url, setUrl] = useState(null)
   const [busy, setBusy] = useState(false)
   const [copied, setCopied] = useState(false)
   const [error, setError] = useState(null)
+
+  // A cleaner's calendar-feed URL is a private secret token (subscribing to it
+  // exposes their schedule) — not the office's to fetch or rotate, and there's
+  // deliberately no preview twin. In an office preview, show a note instead of
+  // the fetch/rotate controls so the panel neither 403s nor leaks the token.
+  const preview = previewUserId != null
 
   const fetchLink = async (rotate = false) => {
     setBusy(true); setError(null)
@@ -58,7 +64,11 @@ export default function CrewCalendarSync({ bare = false }) {
         </p>
       </div>
 
-      {!url ? (
+      {preview ? (
+        <p className="text-[11.5px] text-ink-3">
+          The calendar link is private to this cleaner — not shown in preview.
+        </p>
+      ) : !url ? (
         <button onClick={() => fetchLink(false)} disabled={busy}
           className="w-full text-[13px] font-semibold bg-blue-600 hover:bg-blue-700 text-white py-2.5 rounded-lg disabled:opacity-60 transition-colors">
           {busy ? 'One sec…' : 'Get my calendar link'}

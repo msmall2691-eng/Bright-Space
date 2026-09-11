@@ -148,18 +148,31 @@ function DocReader({ doc, onClose }) {
   )
 }
 
-export default function CrewLearn() {
+export default function CrewLearn({ previewUserId = null }) {
   const [docs, setDocs] = useState(null)
   const [error, setError] = useState(null)
   const [cat, setCat] = useState('all')
   const [open, setOpen] = useState(null)
 
+  // This tab bundles the cleaner's PRIVATE notes (nobody sees them, not even
+  // the office — MyNotes above) and the job-ask action, neither of which the
+  // office may see or do on their behalf. So the whole tab is withheld from an
+  // office preview rather than partially shown.
+  const preview = previewUserId != null
+
   useEffect(() => {
+    if (preview) return
     get('/api/crew/docs')
       .then(setDocs)
       .catch(e => setError(e.detail || e.message || 'Could not load'))
-  }, [])
+  }, [preview])
 
+  if (preview) return (
+    <p className="text-[12.5px] text-ink-3 px-1 py-6 text-center">
+      The Learn tab — private notes, company guides, and asking for jobs —
+      isn’t shown in preview.
+    </p>
+  )
   if (error) return <ErrorNote>{error}</ErrorNote>
   if (!docs) return <Skeleton className="h-56 w-full rounded-xl" />
 

@@ -14,19 +14,25 @@ import { ErrorNote } from './primitives'
 const STATUS = { requested: 'warning', approved: 'success', denied: 'neutral' }
 const LABEL = { requested: 'Pending', approved: 'Approved', denied: 'Not approved' }
 
-export default function CrewTimeOff({ bare = false }) {
+export default function CrewTimeOff({ bare = false, previewUserId = null }) {
   const [rows, setRows] = useState(null)
   const [form, setForm] = useState({ start_date: '', end_date: '', reason: '' })
   const [open, setOpen] = useState(false)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState(null)
 
+  // Office preview: the named cleaner's time-off through the twin. Requesting
+  // and withdrawing time off is the cleaner's own, so both no-op in preview.
+  const preview = previewUserId != null
+  const timeOffUrl = preview ? `/api/crew/preview/${previewUserId}/me/time-off` : '/api/crew/me/time-off'
+
   const load = useCallback(() => {
-    get('/api/crew/me/time-off').then(setRows).catch(() => setRows([]))
-  }, [])
+    get(timeOffUrl).then(setRows).catch(() => setRows([]))
+  }, [timeOffUrl])
   useEffect(() => { load() }, [load])
 
   const submit = async () => {
+    if (preview) return
     if (!form.start_date) { setError('Pick a start date'); return }
     setBusy(true); setError(null)
     try {
@@ -46,6 +52,7 @@ export default function CrewTimeOff({ bare = false }) {
   }
 
   const withdraw = async (id) => {
+    if (preview) return
     setBusy(true)
     try { await del(`/api/crew/me/time-off/${id}`); load() }
     catch (e) { setError(e.detail || e.message || 'Could not withdraw') }

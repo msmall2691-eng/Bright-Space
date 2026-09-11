@@ -834,7 +834,7 @@ export default function MyDay({ previewUserId = null }) {
           </div>
         )}
 
-        {tab === 'schedule' && schedView === 'month' && <CrewMonth />}
+        {tab === 'schedule' && schedView === 'month' && <CrewMonth previewUserId={previewUserId} />}
 
         {/* The full route detail — its houses and their shares — is fetched
             here and not in my-day, so an unopened tab costs nothing. */}
@@ -881,10 +881,10 @@ export default function MyDay({ previewUserId = null }) {
         {/* Chat is a full-screen thread (the office side pushes replies).
             Closing it re-fetches my-day so the unread badge clears. */}
         {tab === 'chat' && (
-          <CrewThread onClose={() => { setTab('today'); fetchDay(true) }} />
+          <CrewThread previewUserId={previewUserId} onClose={() => { setTab('today'); fetchDay(true) }} />
         )}
 
-        {tab === 'learn' && <CrewLearn />}
+        {tab === 'learn' && <CrewLearn previewUserId={previewUserId} />}
 
         {tab === 'me' && (
           /* One sectioned accordion instead of six stacked cards: every row
@@ -910,11 +910,11 @@ export default function MyDay({ previewUserId = null }) {
                 </SettingRow>
                 <SettingRow icon={CalendarClock} label="My availability"
                   summary="Set the weeks ahead — each week locks when it starts">
-                  <CrewAvailability bare />
+                  <CrewAvailability bare previewUserId={previewUserId} />
                 </SettingRow>
                 <SettingRow icon={CalendarOff} label="Time off"
                   summary="Request days off — the office approves">
-                  <CrewTimeOff bare />
+                  <CrewTimeOff bare previewUserId={previewUserId} />
                 </SettingRow>
                 {/* Sits under Work, above pay: it's the thing that decides
                     whether there IS any work, and a sub blocked by it needs to
@@ -927,7 +927,7 @@ export default function MyDay({ previewUserId = null }) {
                     somebody wonders how the money actually reaches them. */}
                 <SettingRow icon={Landmark} label="Direct deposit"
                   summary="Get paid to your bank — optional">
-                  <CrewPayoutSetup />
+                  <CrewPayoutSetup previewUserId={previewUserId} />
                 </SettingRow>
                 {/* What the office has recorded owing you, per job (BB-PAY-01) —
                     the ledger, distinct from where the money goes above. */}
@@ -953,7 +953,7 @@ export default function MyDay({ previewUserId = null }) {
                 </SettingRow>
                 <SettingRow icon={CalendarPlus} label="Calendar link"
                   summary="See your jobs in Google or Apple Calendar">
-                  <CrewCalendarSync bare />
+                  <CrewCalendarSync bare previewUserId={previewUserId} />
                 </SettingRow>
               </CrewCard>
             </section>

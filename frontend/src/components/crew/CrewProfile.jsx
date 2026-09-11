@@ -84,6 +84,7 @@ export default function CrewProfile({ bare = false, previewUserId = null }) {
 
       <CrewHeadshot
         photoUrl={form.photo_url}
+        disabled={preview}
         onChange={url => {
           // Both copies, or the next PATCH computes `dirty` against a stale
           // server truth and the photo change looks like an unsaved edit.

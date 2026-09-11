@@ -171,6 +171,7 @@ def test_wrong_org_wrong_role_and_missing_are_one_answer(ids):
 
 PREVIEW_TABS = [
     "my-file", "my-file/agreement", "my-claims", "me", "me/earnings", "my-routes",
+    "schedule-month?year=2026&month=9", "me/availability", "me/time-off",
 ]
 
 
