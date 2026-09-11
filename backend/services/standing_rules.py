@@ -407,6 +407,22 @@ def claim_high_bid_flag_pct(db: Session) -> int:
     return _read_field(db, _FIELDS["claim_high_bid_flag_pct"])
 
 
+def is_high_bid(requested_rate, posted_rate, flag_over_pct) -> bool:
+    """Whether an ask is far enough over the posted price to flag it for the
+    office (BB-CLAIM-02). A heads-up only — nothing here blocks or ranks. A bid
+    at or below posted is never flagged; an unpriced job has no line to be over.
+
+    The one definition, so the claim-review row (scheduling router) and the
+    marketplace hub can't drift apart on what counts as a high bid — they used
+    to carry byte-identical copies of this."""
+    if requested_rate is None or not posted_rate or flag_over_pct is None:
+        return False
+    try:
+        return float(requested_rate) > float(posted_rate) * (1 + float(flag_over_pct) / 100.0)
+    except (TypeError, ValueError):
+        return False
+
+
 def claim_default_pay_pct(db: Session) -> int:
     """The share of a job's billed amount to offer a sub when the office opens
     it to the crew without naming a rate (BB-CLAIM-04). 0 = off — the office

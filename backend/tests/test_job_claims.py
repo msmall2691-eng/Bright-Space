@@ -210,6 +210,39 @@ def test_the_board_marks_a_job_instant_only_when_the_office_turned_it_on(ids):
         _clear()
 
 
+def test_instant_stamp_follows_the_award_gate_not_just_the_board(ids, monkeypatch):
+    """BB-CLAIM-03: a grandfathered sub with an incomplete file is CLEARED to
+    see the board (blocking_requirements is grandfather-exempt) but their
+    instant claim is HELD (can_take_jobs is not). The `instant_claim` stamp
+    must follow the award gate, not the board gate — otherwise the card
+    promises "it's yours" and hands back a pending request.
+
+    Driven by patching the two gates directly, which is exactly the split the
+    grandfather path produces at runtime: cleared=True, can_take_jobs=False.
+    """
+    import services.sub_vetting as sv
+    from modules.settings.router import set_setting
+    jid = _mk_job(ids, [], open_for_claims=True, posted_rate=80.0)
+    try:
+        db = SessionLocal(); set_setting(db, "claim_auto_approve_mode", "auto"); db.commit(); db.close()
+        api = _as(_Cleaner(9941, "CT-941"))
+        monkeypatch.setattr(sv, "blocking_requirements", lambda db, u: [])  # cleared to SEE
+
+        # Cleared but not awardable → board shows the job, but not as instant.
+        monkeypatch.setattr(sv, "can_take_jobs", lambda db, uid: False)
+        board = api.get("/api/crew/my-day").json()["open_jobs"]
+        row = next(j for j in board if j["id"] == jid)
+        assert row["instant_claim"] is False, "held sub must not be told 'it's yours'"
+
+        # Awardable → now it's genuinely instant.
+        monkeypatch.setattr(sv, "can_take_jobs", lambda db, uid: True)
+        board = api.get("/api/crew/my-day").json()["open_jobs"]
+        assert next(j for j in board if j["id"] == jid)["instant_claim"] is True
+    finally:
+        db = SessionLocal(); set_setting(db, "claim_auto_approve_mode", "off"); db.commit(); db.close()
+        _clear()
+
+
 def test_a_job_with_no_posted_rate_cannot_be_requested_blind(ids):
     """Fix: a sub must not end up working for an unstated amount.
 

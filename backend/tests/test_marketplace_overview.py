@@ -257,6 +257,26 @@ def test_another_org_is_invisible(ids):
     assert mine in open_ids and theirs not in open_ids
 
 
+def test_another_orgs_name_never_surfaces_on_a_shared_cleaner_id(ids):
+    """The asker-name lookup is org-scoped (BB-MT). If a cleaner_id collides
+    across tenants, org 1's hub must fall back to the id string, never render
+    org 2's person's name — the one query here that used to skip _scope."""
+    jid = _mk_job(ids, org_id=1, posted_rate=100.0)
+    _ask(ids, jid, cleaner_id="CT-DUP", org_id=1)
+    # A DIFFERENT tenant happens to have a user on the same cleaner_id string.
+    db = SessionLocal()
+    other = User(email=f"other-{uuid.uuid4().hex[:4]}@x.com", role="cleaner",
+                 full_name="Other Org Person", org_id=2, active=True,
+                 status="active", cleaner_id="CT-DUP")
+    db.add(other); db.commit(); db.refresh(other); ids["users"].append(other.id)
+    db.close()
+
+    job = next(j for j in _build(org_id=1)["waiting"]["jobs"] if j["job_id"] == jid)
+    names = [a["name"] for a in job["askers"]]
+    assert "Other Org Person" not in names, "cross-tenant name leaked onto the hub"
+    assert "CT-DUP" in names, "should fall back to the id when no in-org name"
+
+
 def test_a_cleaner_cannot_read_the_office_view(ids):
     """The bench, what is owed and who is still un-vetted are internal facts.
     A cleaner's own side of this is My Day, built from /api/crew/*."""

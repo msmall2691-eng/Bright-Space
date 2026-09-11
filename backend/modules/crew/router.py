@@ -378,6 +378,15 @@ def my_day(
     # for the whole board (brightbase-economy), stamped per job below.
     from services.claim_autoapprove import instant_claims_on
     instant_on = instant_claims_on(db)
+    # ...and can THIS sub actually be awarded on the spot? The board's `cleared`
+    # gate (blocking_requirements) is grandfather-exempt, but the award gate
+    # (claim_autoapprove → can_take_jobs) is NOT: a grandfathered sub with an
+    # incomplete file is cleared to SEE the board yet their instant claim is
+    # held for approval. Stamp "instant" with the same honest answer the award
+    # path uses, so the card can't promise "it's yours" and then hand back a
+    # pending request (BB-CLAIM-03).
+    from services.sub_vetting import can_take_jobs
+    can_instant = instant_on and can_take_jobs(db, current_user.id)
 
     open_jobs = []
     open_job_ids = [j.id for j in jobs if cleared
@@ -432,7 +441,7 @@ def my_day(
                     # spot: instant claiming on AND the job priced. The card
                     # says "it's yours" only when this is true; otherwise it's
                     # an ask the office confirms.
-                    "instant_claim": bool(instant_on and j.posted_rate is not None)})
+                    "instant_claim": bool(can_instant and j.posted_rate is not None)})
         open_jobs.append(row)
 
     return {
