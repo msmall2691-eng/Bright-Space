@@ -22,16 +22,19 @@ const STATUS = {
   paid: { dot: 'bg-emerald-500',  word: 'Paid' },
 }
 
-export default function CrewEarnings() {
+export default function CrewEarnings({ previewUserId = null }) {
   const [data, setData] = useState(null)
 
   useEffect(() => {
     let off = false
-    get('/api/crew/me/earnings')
+    const url = previewUserId != null
+      ? `/api/crew/preview/${previewUserId}/me/earnings`
+      : '/api/crew/me/earnings'
+    get(url)
       .then(d => { if (!off) setData(d) })
       .catch(() => { if (!off) setData({ lines: [], paid: 0, pending: 0, count: 0 }) })
     return () => { off = true }
-  }, [])
+  }, [previewUserId])
 
   if (!data) return <p className="text-[12px] text-ink-3">Checking…</p>
 

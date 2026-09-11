@@ -838,7 +838,7 @@ export default function MyDay({ previewUserId = null }) {
 
         {/* The full route detail — its houses and their shares — is fetched
             here and not in my-day, so an unopened tab costs nothing. */}
-        {tab === 'schedule' && schedView === 'routes' && <CrewMyRoutes />}
+        {tab === 'schedule' && schedView === 'routes' && <CrewMyRoutes previewUserId={previewUserId} />}
 
         {tab === 'schedule' && schedView === 'list' && !loading && !error && data && (data.open_jobs || []).length > 0 && (
           <section>
@@ -893,7 +893,7 @@ export default function MyDay({ previewUserId = null }) {
             <CrewCard className="px-4">
               <SettingRow icon={CircleUserRound} label="Your info"
                 summary="Name, phone, emergency contact">
-                <CrewProfile bare />
+                <CrewProfile bare previewUserId={previewUserId} />
               </SettingRow>
             </CrewCard>
 
@@ -906,7 +906,7 @@ export default function MyDay({ previewUserId = null }) {
                     the board (once someone's picked). Withdraw lives here. */}
                 <SettingRow icon={Sparkles} label="My asks"
                   summary="Jobs you've asked for, and what happened">
-                  <CrewMyAsks />
+                  <CrewMyAsks previewUserId={previewUserId} />
                 </SettingRow>
                 <SettingRow icon={CalendarClock} label="My availability"
                   summary="Set the weeks ahead — each week locks when it starts">
@@ -921,7 +921,7 @@ export default function MyDay({ previewUserId = null }) {
                     find it without being told where to look. */}
                 <SettingRow icon={ShieldCheck} label="My file"
                   summary="Agreement, W-9 and insurance — needed to ask for jobs">
-                  <CrewMyFile bare />
+                  <CrewMyFile bare previewUserId={previewUserId} />
                 </SettingRow>
                 {/* Sits right above "This week": the money screen is where
                     somebody wonders how the money actually reaches them. */}
@@ -933,7 +933,7 @@ export default function MyDay({ previewUserId = null }) {
                     the ledger, distinct from where the money goes above. */}
                 <SettingRow icon={DollarSign} label="What you're owed"
                   summary="Your payouts, per job — owed and paid">
-                  <CrewEarnings />
+                  <CrewEarnings previewUserId={previewUserId} />
                 </SettingRow>
                 <SettingRow icon={DollarSign} label="This week"
                   summary={weekPay

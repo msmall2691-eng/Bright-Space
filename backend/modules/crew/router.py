@@ -3759,3 +3759,106 @@ def preview_my_day(
         "user_id": target.id,
     }
     return payload
+
+
+def _preview_target(db: Session, oid: int, user_id: int, viewer: User, what: str) -> User:
+    """Resolve the cleaner an office role is previewing, and log the look.
+
+    Shared by every /preview/{user_id}/* twin below so the resolution, the
+    enumeration-proof 404, and the one greppable audit line stay identical to
+    preview_my_day (whose own inline copy predates this helper). `what` names
+    the screen being read in the log.
+    """
+    target = (db.query(User)
+              .filter(User.id == user_id,
+                      User.role == "cleaner",
+                      or_(User.org_id == oid, User.org_id.is_(None)))
+              .first())
+    if target is None:
+        # Wrong org, wrong role and nonexistent are one answer — no enumeration.
+        raise HTTPException(status_code=404, detail="No such cleaner.")
+    log.warning(
+        "[crew] office preview: %s (id=%s, %s) viewed %s as %s (id=%s)",
+        getattr(viewer, "email", "?"), getattr(viewer, "id", "?"),
+        getattr(viewer, "role", "?"), what, target.email, target.id,
+    )
+    return target
+
+
+# The rest of the crew app, previewed. My Day had a twin; the other tabs
+# (My File, My asks, Earnings, Profile, Routes) fetched caller-relative crew
+# URLs that an office session hits as itself — every one gated
+# require_role("cleaner"), so from the office they 403'd and the preview
+# rendered a broken tab. Each twin below mirrors preview_my_day exactly: an
+# office-only route that resolves the named cleaner and calls the real endpoint
+# with current_user=target, so what the office sees is what the cleaner sees,
+# and — because the mutating routes keep require_role("cleaner") with no admin
+# bypass — nothing here can be acted on (brightbase-marketplace Rule 0).
+
+
+@router.get("/preview/{user_id}/my-file",
+            dependencies=[Depends(require_role("admin", "manager"))])
+def preview_my_file(user_id: int, db: Session = Depends(get_db),
+                    org_id: int = Depends(current_org_id),
+                    viewer: User = Depends(get_current_user)):
+    """My File (vetting documents), for a named cleaner, to an office role."""
+    oid = resolve_org_id(org_id, db)
+    target = _preview_target(db, oid, user_id, viewer, "My File")
+    return my_file(db=db, current_user=target)
+
+
+@router.get("/preview/{user_id}/my-file/agreement",
+            dependencies=[Depends(require_role("admin", "manager"))])
+def preview_agreement(user_id: int, db: Session = Depends(get_db),
+                      org_id: int = Depends(current_org_id),
+                      viewer: User = Depends(get_current_user)):
+    """The agreement text, so the office preview's My File tab doesn't 403 when
+    it loads it. The document is global; the target only gates the office role
+    and records the look."""
+    oid = resolve_org_id(org_id, db)
+    target = _preview_target(db, oid, user_id, viewer, "the agreement")
+    return read_agreement(current_user=target)
+
+
+@router.get("/preview/{user_id}/my-claims",
+            dependencies=[Depends(require_role("admin", "manager"))])
+def preview_my_claims(user_id: int, db: Session = Depends(get_db),
+                      org_id: int = Depends(current_org_id),
+                      viewer: User = Depends(get_current_user)):
+    """My asks (this sub's claim requests and how each was decided)."""
+    oid = resolve_org_id(org_id, db)
+    target = _preview_target(db, oid, user_id, viewer, "My asks")
+    return my_claims(db=db, org_id=oid, current_user=target)
+
+
+@router.get("/preview/{user_id}/me/earnings",
+            dependencies=[Depends(require_role("admin", "manager"))])
+def preview_earnings(user_id: int, db: Session = Depends(get_db),
+                     org_id: int = Depends(current_org_id),
+                     viewer: User = Depends(get_current_user)):
+    """What this sub is owed and has been paid — per job, never by the hour."""
+    oid = resolve_org_id(org_id, db)
+    target = _preview_target(db, oid, user_id, viewer, "Earnings")
+    return my_earnings(db=db, org_id=oid, current_user=target)
+
+
+@router.get("/preview/{user_id}/me",
+            dependencies=[Depends(require_role("admin", "manager"))])
+def preview_me(user_id: int, db: Session = Depends(get_db),
+               org_id: int = Depends(current_org_id),
+               viewer: User = Depends(get_current_user)):
+    """This sub's own profile row (the crew app's Profile tab)."""
+    oid = resolve_org_id(org_id, db)
+    target = _preview_target(db, oid, user_id, viewer, "Profile")
+    return get_me(db=db, current_user=target)
+
+
+@router.get("/preview/{user_id}/my-routes",
+            dependencies=[Depends(require_role("admin", "manager"))])
+def preview_my_routes(user_id: int, db: Session = Depends(get_db),
+                      org_id: int = Depends(current_org_id),
+                      viewer: User = Depends(get_current_user)):
+    """Routes offered to, and owned by, this sub."""
+    oid = resolve_org_id(org_id, db)
+    target = _preview_target(db, oid, user_id, viewer, "My routes")
+    return my_routes(db=db, org_id=oid, current_user=target)

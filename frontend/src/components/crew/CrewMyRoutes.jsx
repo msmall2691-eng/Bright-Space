@@ -45,19 +45,26 @@ function Houses({ members }) {
   )
 }
 
-export default function CrewMyRoutes() {
+export default function CrewMyRoutes({ previewUserId = null }) {
   const [data, setData] = useState(null)
   const [error, setError] = useState(false)
   const [busy, setBusy] = useState(null)
 
+  // Office preview: the named cleaner's routes through the read-only twin.
+  // Accepting/declining a route is the sub choosing their own work (Rule 0),
+  // so it stays theirs — the API refuses it from an office role.
+  const preview = previewUserId != null
+  const routesUrl = preview ? `/api/crew/preview/${previewUserId}/my-routes` : '/api/crew/my-routes'
+
   const load = useCallback(() => {
-    get('/api/crew/my-routes')
+    get(routesUrl)
       .then(r => { setData(r); setError(false) })
       .catch(() => setError(true))
-  }, [])
+  }, [routesUrl])
   useEffect(() => { load() }, [load])
 
   const decide = async (routeId, verb) => {
+    if (preview) return
     setBusy(routeId)
     try {
       await post(`/api/crew/routes/${routeId}/${verb}`)
