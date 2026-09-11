@@ -51,19 +51,6 @@ def _iso(d) -> Optional[str]:
     return d.isoformat() if d else None
 
 
-def _is_high_bid(requested_rate, posted_rate, flag_over_pct) -> bool:
-    """Whether an ask is far enough over the posted price to flag it for the
-    office (BB-CLAIM-02) — the same rule the claim-review row uses, kept here
-    as a tiny local so this hub service never imports the scheduling router. A
-    bid at or below posted, or an unpriced job, is never flagged."""
-    if requested_rate is None or not posted_rate or flag_over_pct is None:
-        return False
-    try:
-        return float(requested_rate) > float(posted_rate) * (1 + float(flag_over_pct) / 100.0)
-    except (TypeError, ValueError):
-        return False
-
-
 def build(db: Session, org_id: int, *, today: Optional[date] = None) -> dict:
     from services import bench
 
@@ -93,7 +80,7 @@ def build(db: Session, org_id: int, *, today: Optional[date] = None) -> dict:
     # here (Rule 0: one approve path, the office never assigns).
     askers: dict = {}
     if job_ids:
-        from services.standing_rules import claim_high_bid_flag_pct
+        from services.standing_rules import claim_high_bid_flag_pct, is_high_bid
         flag_pct = claim_high_bid_flag_pct(db)
         posted_by_id = {j.id: j.posted_rate for j in open_jobs}
         reqs = (db.query(JobClaimRequest)
@@ -106,8 +93,23 @@ def build(db: Session, org_id: int, *, today: Optional[date] = None) -> dict:
         cids = {r.cleaner_id for r in reqs if r.cleaner_id}
         cnames: dict = {}
         if cids:
-            for u in db.query(User).filter(User.cleaner_id.in_(cids)).all():
-                cnames[u.cleaner_id] = u.full_name or u.email
+            # Scope the name lookup to this org (BB-MT: a cleaner_id colliding
+            # across tenants would otherwise surface another org's name on the
+            # hub — every other query in build() is _scope'd, this one wasn't).
+            #
+            # _scope also admits legacy org_id IS NULL rows (they belong to the
+            # default workspace — rls.py). For a NON-default tenant that shares
+            # a cleaner_id with such a legacy user, that NULL row must not win
+            # (or be picked nondeterministically) over the tenant's own user —
+            # so resolve exact-org matches FIRST and never let a NULL homonym
+            # overwrite one. The default org, whose own users may BE the NULL
+            # rows, still resolves them (they're the only match).
+            urows = (db.query(User)
+                     .filter(_scope(User, org_id), User.cleaner_id.in_(cids))
+                     .all())
+            urows.sort(key=lambda u: 0 if u.org_id == org_id else 1)
+            for u in urows:
+                cnames.setdefault(u.cleaner_id, u.full_name or u.email)
         for r in reqs:
             asked[r.job_id] = asked.get(r.job_id, 0) + 1
             pr = posted_by_id.get(r.job_id)
@@ -118,7 +120,7 @@ def build(db: Session, org_id: int, *, today: Optional[date] = None) -> dict:
                 "name": cnames.get(r.cleaner_id, r.cleaner_id),
                 "rate": round(float(rate), 2) if rate is not None else None,
                 "countered": r.requested_rate is not None,
-                "high_bid": _is_high_bid(r.requested_rate, pr, flag_pct),
+                "high_bid": is_high_bid(r.requested_rate, pr, flag_pct),
             })
 
     # One query for the names rather than a lazy load per job.

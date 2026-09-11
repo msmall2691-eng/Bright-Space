@@ -3028,17 +3028,10 @@ def _claim_request_history(db: Session, pending, org_id) -> dict:
     return out
 
 
-def _is_high_bid(requested_rate, posted_rate, flag_over_pct) -> bool:
-    """Whether this request is far enough over the posted price to flag it for
-    the office (BB-CLAIM-02). A heads-up only — nothing here blocks or ranks.
-    A bid at or below posted is never flagged; an unpriced job has no line to
-    be over."""
-    if requested_rate is None or not posted_rate or flag_over_pct is None:
-        return False
-    try:
-        return float(requested_rate) > float(posted_rate) * (1 + float(flag_over_pct) / 100.0)
-    except (TypeError, ValueError):
-        return False
+# BB-CLAIM-02: the high-bid rule lives once in services.standing_rules now (the
+# marketplace hub carried a byte-identical copy). Re-exported under the old name
+# so the claim-review row below and existing imports keep working.
+from services.standing_rules import is_high_bid as _is_high_bid
 
 
 def _claim_request_row(r: JobClaimRequest, names_by_cid: dict,
