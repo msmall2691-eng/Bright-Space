@@ -21,7 +21,7 @@ import pytest
 from database.db import SessionLocal
 from database.models import Client, Property, Job, User, Activity
 from services import crew_notify
-from modules.scheduling.router import update_job, skip_job, JobUpdate
+from modules.scheduling.router import update_job, skip_job, delete_job, JobUpdate
 
 
 @pytest.fixture
@@ -164,3 +164,28 @@ def test_skip_tells_the_assigned_sub(ctx):
         skip_job(j.id, reason="customer away", db=db, org_id=1)
     assert cancelled.call_count == 1
     assert cancelled.call_args.args[2] == [u.cleaner_id]
+
+
+# ── delete_job: a hard delete is a cancel to whoever was on it ────────────────
+
+def test_delete_tells_the_assigned_sub(ctx):
+    # A deleted job vanishes out from under the assigned sub the same as a
+    # cancel — and close_offer only answers people still holding a PENDING
+    # request, never the person who already won it.
+    db, cleaner, job = ctx
+    u = cleaner()
+    j = job([u.cleaner_id])
+    with patch.object(crew_notify, "notify_job_cancelled") as cancelled:
+        delete_job(j.id, db=db, org_id=1)
+    assert cancelled.call_count == 1
+    assert cancelled.call_args.args[2] == [u.cleaner_id]
+    # and it really did delete
+    assert db.query(Job).filter(Job.id == j.id).first() is None
+
+
+def test_delete_of_an_unassigned_job_notifies_nobody(ctx):
+    db, cleaner, job = ctx
+    j = job([])
+    with patch.object(crew_notify, "notify_job_cancelled") as cancelled:
+        delete_job(j.id, db=db, org_id=1)
+    assert cancelled.call_count == 0

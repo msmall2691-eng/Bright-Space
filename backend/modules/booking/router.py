@@ -778,7 +778,11 @@ def update_booking(request: Request, data: BookingUpdate, db: Session = Depends(
     the customer-facing response never depends on the alert paths).
     """
     from database.models import Activity, LeadIntake
-    from services.booking_email_service import format_requested_date
+    # service_label is used in the owner-email block below; leaving it out made
+    # every update/cancel owner email raise NameError, swallowed by the except
+    # so the owner was never told a booking changed (BB-BOOK-01, same trap as
+    # submit_booking's own local import).
+    from services.booking_email_service import format_requested_date, service_label
 
     key = (data.idempotencyKey or "").strip()
     lead = (

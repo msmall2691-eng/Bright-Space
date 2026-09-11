@@ -91,3 +91,25 @@ def test_a_dateless_inquiry_still_emails_the_owner():
         assert "Commercial clean" in spy.call_args.kwargs["subject"]
     finally:
         _cleanup(intake_id)
+
+
+def test_a_customer_UPDATE_also_emails_the_owner_with_the_service_label():
+    # /update had the SAME NameError trap as /submit — service_label used in the
+    # owner-email f-strings but imported only inside /submit. A customer editing
+    # their booking must still ping the owner, and the subject must carry the
+    # resolved label (proof service_label is in scope in update_booking too).
+    key = str(uuid.uuid4())
+    r = client.post("/api/booking/submit", json=_payload(idempotencyKey=key, serviceType="standard"))
+    assert r.status_code == 201, r.text
+    intake_id = r.json()["bookingId"]
+    try:
+        spy = MagicMock(return_value=True)
+        with patch("modules.booking.router._send_owner_email", spy):
+            r2 = client.post("/api/booking/update",
+                             json={"idempotencyKey": key, "bedrooms": 3})
+        assert r2.status_code == 200, r2.text
+        assert spy.called, "owner update email was never attempted (NameError swallowed?)"
+        assert "Standard clean" in spy.call_args.kwargs["subject"]
+        assert "updated" in spy.call_args.kwargs["subject"].lower()
+    finally:
+        _cleanup(intake_id)

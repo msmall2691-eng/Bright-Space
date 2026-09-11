@@ -164,6 +164,19 @@ def test_creating_a_scheduled_job_notifies(ctx):
     assert notice.call_args.args[1].client_id == c.id
 
 
+def test_creating_with_notify_customer_false_suppresses(ctx):
+    # notify_customer was declared only on JobUpdate, so a create body asking to
+    # stay quiet was silently dropped by pydantic and the notice went out anyway.
+    # With the field on JobCreate, False must actually suppress at creation time.
+    db, client, job = ctx
+    c = client()
+    with patch("services.scheduled_notice.notify_customer_scheduled") as notice:
+        create_job(JobCreate(client_id=c.id, title="Visit", scheduled_date="2026-09-20",
+                             start_time="09:00", end_time="12:00", notify_customer=False),
+                   db=db, org_id=1)
+    assert notice.call_count == 0
+
+
 # ── the standing rule is visible + off by default ─────────────────────────────
 
 def test_rule_is_listed_and_defaults_off(ctx):
