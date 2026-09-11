@@ -19,7 +19,7 @@ import uuid
 import pytest
 
 from database.db import SessionLocal
-from database.models import Client, Quote, LeadIntake
+from database.models import Client, Opportunity, Quote, LeadIntake
 from modules.intake.router import get_intakes
 
 
@@ -32,13 +32,20 @@ def ctx():
     c = Client(name="Derive Co", email=f"d-{uuid.uuid4().hex[:6]}@example.com",
                status="active", org_id=1)
     db.add(c); db.commit(); db.refresh(c)
-    made = {"quotes": [], "intakes": []}
+    made = {"quotes": [], "intakes": [], "opps": []}
     yield db, c, made
     db.rollback()
     db.query(LeadIntake).filter(LeadIntake.id.in_(made["intakes"] or [0])).delete(synchronize_session=False)
     db.query(Quote).filter(Quote.id.in_(made["quotes"] or [0])).delete(synchronize_session=False)
+    db.query(Opportunity).filter(Opportunity.id.in_(made["opps"] or [0])).delete(synchronize_session=False)
     db.query(Client).filter(Client.id == c.id).delete(synchronize_session=False)
     db.commit(); db.close()
+
+
+def _opportunity(db, c, made):
+    o = Opportunity(client_id=c.id, title="Rev", stage="new", org_id=1)
+    db.add(o); db.commit(); db.refresh(o); made["opps"].append(o.id)
+    return o
 
 
 def _quote(db, c, made, status):
@@ -64,11 +71,12 @@ def test_pruned_scan_matches_a_full_scan_on_every_tab(ctx):
     # derives to no tab) and an 'archived' (never in a non-archived tab).
     q_sent = _quote(db, c, made, "sent")
     q_conv = _quote(db, c, made, "converted")
+    opp = _opportunity(db, c, made)   # a real row, so an FK-enforcing DB is happy
 
     leads = {
         "new_stored":       _lead(db, made, status="new").id,
         "new_null":         _lead(db, made, status=None).id,
-        "reviewed_opp":     _lead(db, made, status="new", opportunity_id=987654).id,
+        "reviewed_opp":     _lead(db, made, status="new", opportunity_id=opp.id).id,
         "reviewed_stored":  _lead(db, made, status="reviewed").id,
         "quoted_quote":     _lead(db, made, status="quoted", converted_quote_id=q_sent.id).id,
         "quoted_stored":    _lead(db, made, status="quoted").id,
