@@ -286,23 +286,44 @@ export default function JobDetail() {
     return Promise.resolve()
   }
 
-  const applyTimingScope = async (scope) => {
+  // `pending` is captured (defaults to the held edit) so the 409 "Reschedule
+  // anyway" retry still knows the target date after the scope dialog is closed.
+  const applyTimingScope = async (scope, allowConflicts = false, pending = timingEdit) => {
+    if (!pending) return
     setScopeBusy(true)
     try {
       const { message } = await rescheduleRecurringVisit(scope, {
         schedId: job.recurring_schedule_id,
         originalDate: job.scheduled_date,
-        newDate: timingEdit.scheduled_date ?? job.scheduled_date,
-        newStart: timingEdit.start_time ?? job.start_time,
-        newEnd: timingEdit.end_time ?? job.end_time,
+        newDate: pending.scheduled_date ?? job.scheduled_date,
+        newStart: pending.start_time ?? job.start_time,
+        newEnd: pending.end_time ?? job.end_time,
         cleanerIds: job.cleaner_ids || [],
+        allowConflicts,
         reason: 'Rescheduled from the job page',
       })
       toast.success(message)
       setTimingEdit(null)
       load()
     } catch (e) {
-      toast.error(e?.message || 'Could not move this visit — nothing was changed.')
+      const status = e && (e.status || e.statusCode)
+      const detail = (e && (e.detail || e.message)) || ''
+      // A 409 is a crew conflict or time-off on the TARGET date, not a hard
+      // failure — the calendar drag has always offered a "Reschedule anyway"
+      // override here, but the job page swallowed it into a silent "nothing
+      // was changed", which read as a broken far-date move. Match the drag:
+      // close the scope dialog so the notice isn't buried behind it, name the
+      // conflict, and let her push it through.
+      if (status === 409 && !allowConflicts) {
+        setTimingEdit(null)
+        toast.error(`Can't move: ${detail.slice(0, 160) || 'the crew has a conflict or time off that day'}`, {
+          action: { label: 'Reschedule anyway', onClick: () => applyTimingScope(scope, true, pending) },
+        })
+      } else {
+        toast.error(detail
+          ? `Couldn't move this visit: ${detail.slice(0, 160)}`
+          : 'Could not move this visit — nothing was changed.')
+      }
     } finally {
       setScopeBusy(false)
     }
