@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Plus, Search, Phone, Mail, Inbox, SlidersHorizontal, X, Check, RotateCcw, UserPlus } from 'lucide-react'
+import { Plus, Search, Phone, Mail, Voicemail, Inbox, SlidersHorizontal, X, Check, RotateCcw, UserPlus } from 'lucide-react'
 import { NotifPermissionButton } from './primitives'
 import { ConvItem } from './ConvItem'
 import { SwipeRow } from './SwipeRow'
@@ -8,6 +8,11 @@ const CHANNEL_TABS = [
   { key: '', label: 'All' },
   { key: 'sms', label: 'SMS', icon: Phone },
   { key: 'email', label: 'Email', icon: Mail },
+  // Inbound calls and voicemail transcripts, written by the Twilio voice
+  // webhook (backend/modules/comms/router.py). Its own tab rather than a
+  // filter inside SMS: a missed call is a different kind of unread, and the
+  // one thing you want to scan on its own after a day away from the phone.
+  { key: 'voice', label: 'Voicemail', icon: Voicemail },
 ]
 
 /** Whole left column of the Comms page. Pure presentational — every piece
@@ -190,6 +195,7 @@ export function InboxLeftPanel({
             <div className="text-sm font-semibold text-ink-3 mb-1">
               {channelFilter === 'sms' ? 'No SMS conversations'
                 : channelFilter === 'email' ? 'No email conversations'
+                : channelFilter === 'voice' ? 'No calls or voicemail'
                 : 'No conversations'}
             </div>
             <p className="text-[12px] text-ink-3 text-center leading-relaxed">

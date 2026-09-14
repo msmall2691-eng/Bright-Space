@@ -53,6 +53,18 @@ _PUBLIC_PREFIXES = (
     "/api/intake/submit",
     "/api/intake/webhook",
     "/api/comms/twilio/webhook",
+    # Inbound VOICE: the call answer URL plus its callbacks (after-dial,
+    # after-record, recording, transcription). Twilio can't send our API key,
+    # so each handler verifies X-Twilio-Signature itself and REFUSES when
+    # TWILIO_AUTH_TOKEN is unset — same fail-closed posture as the SMS
+    # webhook above. A prefix because this is a genuine family of five
+    # callbacks for one call; nothing else may be mounted under it.
+    #
+    # This entry is the fix for a real outage: the number's Voice webhook
+    # pointed at /api/twilio/voice, which matched nothing here, so this
+    # middleware answered Twilio with a 401 and every inbound call died at
+    # 0 seconds (Twilio error 11200) from 2026-04-29 to 2026-09-14.
+    "/api/comms/twilio/voice",
     # Stripe Connect account events. Stripe can't send our API key, so the
     # handler verifies the webhook signature itself and REFUSES when
     # STRIPE_WEBHOOK_SECRET is unset — same posture as Twilio above. It is the

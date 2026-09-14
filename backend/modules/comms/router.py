@@ -57,6 +57,37 @@ DEFAULT_ASSIGNEE = os.getenv("DEFAULT_CONVERSATION_ASSIGNEE") or None
 # BrightBase tab/laptop is closed. Unset (default) disables forwarding.
 FORWARD_INBOUND_SMS_TO = os.getenv("FORWARD_INBOUND_SMS_TO") or None
 
+# ---------------------------------------------------------------------------
+# Voice config (BB-VOICE-01)
+#
+# The number's Voice webhook pointed at /api/twilio/voice for months — a route
+# that has never existed in this app. Twilio got a 401 from the auth
+# middleware, had no TwiML to run, and dropped the call: every inbound call in
+# the Twilio log between 2026-04-29 and 2026-09-14 shows 0 sec with error
+# 11200. Nobody could reach the business by phone. These endpoints are the
+# route that URL should have been pointing at all along.
+#
+# Ring-through target defaults to the SMS forward number so voice and SMS reach
+# the same on-call phone without a second setting to keep in sync. Unset (both
+# unset) means callers go straight to voicemail rather than hearing nothing.
+VOICE_RING_SECONDS = int(os.getenv("VOICE_RING_SECONDS", "20"))
+
+# Twilio's built-in transcription only covers recordings up to 2 minutes, so
+# the cap is 120 by default — a longer max would silently produce voicemails
+# that never get a transcript, which is the whole point of this feature.
+VOICE_MAX_RECORDING_SECONDS = int(os.getenv("VOICE_MAX_RECORDING_SECONDS", "120"))
+
+VOICE_GREETING = os.getenv("VOICE_GREETING") or (
+    "Thanks for calling. We can't pick up right now. Please leave your name, "
+    "your number, and what you need after the tone, and we'll call you back."
+)
+
+# Optional Twilio <Say> voice (e.g. "Polly.Joanna"). Left unset so Twilio uses
+# its default — naming a voice the account can't synthesize is a TwiML error,
+# and a TwiML error here drops the call, which is the failure this whole
+# module exists to fix.
+VOICE_TTS_VOICE = os.getenv("VOICE_TTS_VOICE") or None
+
 
 # ---------------------------------------------------------------------------
 # Pydantic schemas
@@ -1040,54 +1071,62 @@ def send_email_message(data: EmailRequest, db: Session = Depends(get_db),
     return msg_to_dict(msg)
 
 
-@router.post("/twilio/webhook")  # PUBLIC: Twilio posts here; signature is validated inside the handler (BB-SEC-06)
-async def twilio_inbound(request: Request, background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
-    """Receive inbound SMS from Twilio webhook. Groups into a conversation."""
-    form = await request.form()
+def _twilio_request_url(request: Request) -> str:
+    """The public URL Twilio actually signed.
 
-    # BB-SEC-06: validate X-Twilio-Signature. Without this anyone can POST a
-    # forged payload to /api/comms/twilio/webhook with arbitrary From/Body
-    # and inject SMS records, optionally with a real client's phone — which
-    # also triggers FORWARD_INBOUND_SMS_TO outbound SMS, turning Twilio
-    # into a free open relay against the on-call line.
-    auth_token = os.getenv("TWILIO_AUTH_TOKEN", "").strip()
-    if not auth_token:
-        # Fail CLOSED, not open (July-2026 audit finding). TWILIO_AUTH_TOKEN
-        # is already required for outbound SMS (integrations/twilio_client.py)
-        # — every quote/job-reminder/owner-alert send needs it — so if it's
-        # unset in production, outbound SMS is already broken and this
-        # webhook has no legitimate traffic to serve anyway. The old
-        # behavior (log a warning, accept the request) let anyone POST a
-        # forged payload with an arbitrary From/Body, inject SMS records
-        # under a real client's number, and trigger FORWARD_INBOUND_SMS_TO
-        # — turning Twilio into a free open relay against the on-call line.
-        logger.error(
-            "[twilio] rejecting webhook — TWILIO_AUTH_TOKEN not set, cannot "
-            "validate signature. Set TWILIO_AUTH_TOKEN to accept inbound SMS."
-        )
-        raise HTTPException(status_code=403, detail="SMS webhook not configured")
-
-    from twilio.request_validator import RequestValidator
-    validator = RequestValidator(auth_token)
-    signature = request.headers.get("X-Twilio-Signature", "")
-    # Twilio signs the full public URL it POSTed to. Behind Railway's
-    # proxy, request.url may show the internal scheme/host; prefer the
-    # X-Forwarded-* headers when present so the signed string matches
-    # what Twilio actually used.
+    Twilio signs the full URL it POSTed to. Behind Railway's proxy
+    request.url can show the internal scheme/host, so prefer the
+    X-Forwarded-* headers when present or the signature never matches.
+    """
     fwd_proto = request.headers.get("X-Forwarded-Proto")
     fwd_host = request.headers.get("X-Forwarded-Host") or request.headers.get("Host")
     if fwd_proto and fwd_host:
         url = f"{fwd_proto}://{fwd_host}{request.url.path}"
         if request.url.query:
             url = f"{url}?{request.url.query}"
-    else:
-        url = str(request.url)
-    params = {k: v for k, v in form.items()}
-    if not validator.validate(url, params, signature):
+        return url
+    return str(request.url)
+
+
+def _verify_twilio_signature(request: Request, params: dict, *, what: str = "webhook") -> None:
+    """BB-SEC-06: fail-CLOSED X-Twilio-Signature check. Raises 403, or returns.
+
+    Shared by the SMS webhook and every voice endpoint. Without this anyone
+    can POST a forged payload with an arbitrary From/Body and inject records
+    under a real client's number — which also triggers the operator forward,
+    turning Twilio into a free open relay against the on-call line.
+
+    Fails CLOSED when TWILIO_AUTH_TOKEN is unset (July-2026 audit finding).
+    That token is already required for outbound SMS — every quote, job
+    reminder and owner alert needs it — so if it is unset in production there
+    is no legitimate inbound traffic to serve anyway.
+    """
+    auth_token = os.getenv("TWILIO_AUTH_TOKEN", "").strip()
+    if not auth_token:
+        logger.error(
+            f"[twilio] rejecting {what} — TWILIO_AUTH_TOKEN not set, cannot "
+            f"validate signature. Set TWILIO_AUTH_TOKEN to accept inbound traffic."
+        )
+        raise HTTPException(status_code=403, detail="Twilio webhook not configured")
+
+    from twilio.request_validator import RequestValidator
+    validator = RequestValidator(auth_token)
+    signature = request.headers.get("X-Twilio-Signature", "")
+    if not validator.validate(_twilio_request_url(request), params, signature):
         logger.warning(
-            f"[twilio] rejected webhook with bad signature from {request.client.host if request.client else 'unknown'}"
+            f"[twilio] rejected {what} with bad signature from "
+            f"{request.client.host if request.client else 'unknown'}"
         )
         raise HTTPException(status_code=403, detail="Invalid Twilio signature")
+
+
+@router.post("/twilio/webhook")  # PUBLIC: Twilio posts here; signature is validated inside the handler (BB-SEC-06)
+async def twilio_inbound(request: Request, background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
+    """Receive inbound SMS from Twilio webhook. Groups into a conversation."""
+    form = await request.form()
+
+    params = {k: v for k, v in form.items()}
+    _verify_twilio_signature(request, params, what="SMS webhook")
 
     from_number = form.get("From", "")
     to_number = form.get("To", "")
@@ -1299,3 +1338,392 @@ def _mirror_inbound_sms_to_twenty(params: dict) -> None:
     except Exception as e:
         # A failed mirror must never surface to Twilio.
         logger.warning(f"[twenty] mirror of inbound SMS failed: {e}")
+
+
+# ---------------------------------------------------------------------------
+# Voice — inbound calls and voicemail (BB-VOICE-01)
+#
+# PUBLIC routes: Twilio posts here with no API key, so every handler verifies
+# X-Twilio-Signature itself via _verify_twilio_signature (fail-closed). The
+# /api/comms/twilio/voice prefix is allowlisted in auth.py.
+#
+# Call flow:
+#   POST /twilio/voice          → <Dial> the on-call phone for VOICE_RING_SECONDS
+#   POST /twilio/voice/after-dial   → answered? hang up. missed? greet + <Record>
+#   POST /twilio/voice/after-record → recording finished normally
+#   POST /twilio/voice/recording    → recording status callback (fires even when
+#                                     the caller hangs up mid-message)
+#   POST /twilio/voice/transcription → Twilio's transcript, minutes later
+#
+# Every one of those writes the SAME Message row, keyed on CallSid, so a call
+# is one inbox entry that fills in as Twilio learns more about it — not four.
+# ---------------------------------------------------------------------------
+
+_VOICE_BASE = "/api/comms/twilio/voice"
+
+
+def _voice_forward_target() -> Optional[str]:
+    """Number to ring before voicemail. Falls back to the SMS forward number.
+
+    Read per-request rather than at import so the deploy picks up a Railway
+    env change on restart without this module caring which var was set.
+    """
+    return (os.getenv("VOICE_FORWARD_TO") or os.getenv("FORWARD_INBOUND_SMS_TO") or "").strip() or None
+
+
+def _twiml(vr) -> Response:
+    return Response(content=str(vr), media_type="text/xml")
+
+
+def _say(vr, text: str):
+    """<Say> with the configured voice, or Twilio's default when unset."""
+    if VOICE_TTS_VOICE:
+        vr.say(text, voice=VOICE_TTS_VOICE)
+    else:
+        vr.say(text)
+
+
+def _voicemail_prompt(vr):
+    """Greeting + <Record> with transcription, appended to a VoiceResponse."""
+    _say(vr, VOICE_GREETING)
+    vr.record(
+        max_length=VOICE_MAX_RECORDING_SECONDS,
+        timeout=5,
+        play_beep=True,
+        finish_on_key="#",
+        transcribe=True,
+        transcribe_callback=f"{_VOICE_BASE}/transcription",
+        action=f"{_VOICE_BASE}/after-record",
+        method="POST",
+        recording_status_callback=f"{_VOICE_BASE}/recording",
+        recording_status_callback_method="POST",
+    )
+    # Only reached when the caller stayed silent through the whole timeout.
+    _say(vr, "We didn't catch a message. Goodbye.")
+    vr.hangup()
+
+
+def _fmt_duration(seconds) -> str:
+    try:
+        s = int(seconds or 0)
+    except (TypeError, ValueError):
+        s = 0
+    return f"{s // 60}:{s % 60:02d}"
+
+
+def _voice_log(
+    db: Session,
+    *,
+    call_sid: str,
+    from_number: str,
+    to_number: str,
+    body: str,
+    subject: Optional[str] = None,
+) -> Optional[Message]:
+    """Create-or-update the single Message row for one inbound call.
+
+    Keyed on CallSid, so after-dial / after-record / recording / transcription
+    all converge on one inbox entry. Only the first write bumps unread and the
+    SLA clock — a transcript landing two minutes later is new information
+    about a call already in the inbox, not a second call.
+
+    Returns the Message, or None if the payload had no CallSid to key on.
+    """
+    if not call_sid:
+        logger.warning("[twilio-voice] payload with no CallSid; not logging")
+        return None
+
+    from_normalized = _normalize_contact(from_number) or from_number
+    existing = db.query(Message).filter(Message.external_id == call_sid).first()
+    if existing:
+        existing.body = body
+        if subject:
+            existing.subject = subject
+        db.commit()
+        return existing
+
+    client = _match_client_by_phone(db, from_normalized)
+    if client:
+        logger.info(f"[twilio-voice] Matched call {call_sid} → client #{client.id} ({client.name})")
+    else:
+        logger.info(f"[twilio-voice] Call {call_sid} from unknown number {from_normalized}")
+        # BB-MT-01: org_id deliberately unset — same reasoning as inbound SMS.
+        # One shared business number, no to_number → org mapping, so a call
+        # from an unrecognized number has no resolvable org.
+        client = Client(
+            name=from_normalized,
+            phone=from_normalized,
+            status="lead",
+            source="phone",
+        )
+        db.add(client)
+        db.flush()
+
+    conv = find_or_create_conversation(
+        db, channel="voice",
+        client_id=client.id,
+        external_contact=from_normalized,
+        org_id=client.org_id,
+    )
+    msg = Message(
+        client_id=client.id,
+        conversation_id=conv.id,
+        channel="voice",
+        direction="inbound",
+        from_addr=from_normalized,
+        to_addr=_normalize_contact(to_number),
+        subject=subject,
+        body=body,
+        status="received",
+        external_id=call_sid,
+        org_id=client.org_id,  # BB-MT-01
+    )
+    db.add(msg)
+    db.flush()
+    _apply_inbound(conv, msg)
+    db.commit()
+
+    try:
+        from services.push_service import notify_staff
+        who = (client.name if client else None) or from_normalized or "Missed call"
+        notify_staff(
+            db,
+            f"📞 {who}",
+            body[:140] or "Missed call",
+            url="/messages",
+            tag=f"conv-{conv.id}",
+            org_id=getattr(conv, "org_id", None),
+            category="messages",
+        )
+    except Exception:
+        pass
+
+    return msg
+
+
+def _forward_voicemail_sms(*, from_number: str, client_name: Optional[str], text: str) -> None:
+    """Text the on-call phone a copy of the voicemail transcript.
+
+    The point of the whole feature: the transcript arrives where she already
+    looks, instead of behind a voicemail box nobody checks. Best-effort —
+    a failed send must never make Twilio retry the callback.
+    """
+    target = _voice_forward_target()
+    if not target:
+        return
+    target_normalized = _normalize_contact(target)
+    # Loop prevention, same as the SMS forward: never text the on-call line
+    # about its own call.
+    if from_number and from_number == target_normalized:
+        return
+
+    label = client_name or from_number or "unknown"
+    snippet = (text or "").strip()
+    if len(snippet) > 1200:
+        snippet = snippet[:1200] + "…"
+    try:
+        send_sms(to=target_normalized, body=f"Voicemail from {label}:\n{snippet}")
+        logger.info(f"[twilio-voice] Forwarded voicemail from {from_number} to {target_normalized}")
+    except Exception as e:
+        logger.warning(f"[twilio-voice] Voicemail forward to {target_normalized} failed: {e}")
+
+
+@router.post("/twilio/voice")  # PUBLIC: signature validated inside the handler (BB-SEC-06)
+async def twilio_voice(request: Request, db: Session = Depends(get_db)):
+    """Answer an inbound call: ring the on-call phone, else take a message."""
+    form = await request.form()
+    params = {k: v for k, v in form.items()}
+    _verify_twilio_signature(request, params, what="voice webhook")
+
+    from twilio.twiml.voice_response import VoiceResponse, Dial
+
+    from_number = form.get("From", "")
+    to_number = form.get("To", "")
+    call_sid = form.get("CallSid", "")
+    logger.info(f"[twilio-voice] Inbound call {call_sid} from {from_number} to {to_number}")
+
+    vr = VoiceResponse()
+    target = _voice_forward_target()
+
+    if not target:
+        # Straight-to-voicemail mode. Nothing rings, so after-dial never runs
+        # and this is the only chance to log the call before the caller may
+        # hang up without recording.
+        logger.info("[twilio-voice] No forward target configured — going straight to voicemail")
+        _voice_log(
+            db,
+            call_sid=call_sid,
+            from_number=from_number,
+            to_number=to_number,
+            body="Incoming call — no message left.",
+            subject="Missed call",
+        )
+        _voicemail_prompt(vr)
+        return _twiml(vr)
+
+    # callerId must be a number this account owns or has verified — the
+    # caller's own number is neither, so use the business line. The caller's
+    # number is in the inbox entry and the voicemail text either way.
+    caller_id = _normalize_contact(os.getenv("TWILIO_PHONE_NUMBER", "")) or None
+    dial = Dial(
+        timeout=VOICE_RING_SECONDS,
+        action=f"{_VOICE_BASE}/after-dial",
+        method="POST",
+        caller_id=caller_id,
+    )
+    dial.number(_normalize_contact(target))
+    vr.append(dial)
+    # No TwiML after <Dial>: an `action` URL means Twilio continues there and
+    # never falls through to the verbs below it.
+    return _twiml(vr)
+
+
+@router.post("/twilio/voice/after-dial")  # PUBLIC: signature validated inside the handler
+async def twilio_voice_after_dial(request: Request, db: Session = Depends(get_db)):
+    """The ring-through ended. Answered → hang up. Missed → take a message."""
+    form = await request.form()
+    params = {k: v for k, v in form.items()}
+    _verify_twilio_signature(request, params, what="voice after-dial")
+
+    from twilio.twiml.voice_response import VoiceResponse
+
+    status = (form.get("DialCallStatus") or "").lower()
+    call_sid = form.get("CallSid", "")
+    vr = VoiceResponse()
+
+    if status == "completed":
+        # She picked up and the call has ended. Nothing to log — she was there.
+        logger.info(f"[twilio-voice] Call {call_sid} answered; no voicemail needed")
+        vr.hangup()
+        return _twiml(vr)
+
+    logger.info(f"[twilio-voice] Call {call_sid} not answered (DialCallStatus={status!r}); taking a message")
+    _voice_log(
+        db,
+        call_sid=call_sid,
+        from_number=form.get("From", ""),
+        to_number=form.get("To", ""),
+        body="Missed call — caller hung up without leaving a message.",
+        subject="Missed call",
+    )
+    _voicemail_prompt(vr)
+    return _twiml(vr)
+
+
+def _record_finished(db: Session, form) -> None:
+    """Shared by after-record and the recording status callback.
+
+    Both can fire for one voicemail (and only one fires when the caller hangs
+    up mid-message), so this is idempotent by way of _voice_log's CallSid key.
+    """
+    call_sid = form.get("CallSid", "")
+    duration = form.get("RecordingDuration")
+    url = form.get("RecordingUrl") or ""
+
+    # A 0-second or absent recording is a hang-up, not a voicemail. Leave the
+    # "missed call" entry from after-dial exactly as it is.
+    try:
+        secs = int(duration or 0)
+    except (TypeError, ValueError):
+        secs = 0
+    if secs < 1 or not url:
+        logger.info(f"[twilio-voice] Call {call_sid} left no usable recording (dur={duration!r})")
+        return
+
+    body = "Voicemail received — transcript pending."
+    if url:
+        body += f"\n\nRecording: {url}.mp3"
+    _voice_log(
+        db,
+        call_sid=call_sid,
+        from_number=form.get("From", ""),
+        to_number=form.get("To", ""),
+        body=body,
+        subject=f"Voicemail ({_fmt_duration(secs)})",
+    )
+
+
+@router.post("/twilio/voice/after-record")  # PUBLIC: signature validated inside the handler
+async def twilio_voice_after_record(request: Request, db: Session = Depends(get_db)):
+    """Recording finished normally (# pressed, silence, or max length)."""
+    form = await request.form()
+    params = {k: v for k, v in form.items()}
+    _verify_twilio_signature(request, params, what="voice after-record")
+
+    from twilio.twiml.voice_response import VoiceResponse
+
+    _record_finished(db, form)
+    vr = VoiceResponse()
+    _say(vr, "Thanks. We'll get back to you soon. Goodbye.")
+    vr.hangup()
+    return _twiml(vr)
+
+
+@router.post("/twilio/voice/recording")  # PUBLIC: signature validated inside the handler
+async def twilio_voice_recording(request: Request, db: Session = Depends(get_db)):
+    """Recording status callback — fires even when the caller hangs up mid-message.
+
+    That hang-up case is the common one for a real voicemail (people rarely
+    press #), and <Record action=...> does NOT fire on hangup. Without this
+    callback those voicemails would record and never reach the inbox.
+    """
+    form = await request.form()
+    params = {k: v for k, v in form.items()}
+    _verify_twilio_signature(request, params, what="voice recording callback")
+
+    if (form.get("RecordingStatus") or "completed").lower() == "completed":
+        _record_finished(db, form)
+    return Response(status_code=204)
+
+
+@router.post("/twilio/voice/transcription")  # PUBLIC: signature validated inside the handler
+async def twilio_voice_transcription(request: Request, db: Session = Depends(get_db)):
+    """Twilio's transcript, which lands a minute or two after the recording."""
+    form = await request.form()
+    params = {k: v for k, v in form.items()}
+    _verify_twilio_signature(request, params, what="voice transcription callback")
+
+    call_sid = form.get("CallSid", "")
+    status = (form.get("TranscriptionStatus") or "").lower()
+    text = (form.get("TranscriptionText") or "").strip()
+    url = form.get("RecordingUrl") or ""
+
+    msg = db.query(Message).filter(Message.external_id == call_sid).first()
+
+    if status != "completed" or not text:
+        logger.info(f"[twilio-voice] Transcription for {call_sid} unusable (status={status!r})")
+        if msg and "transcript pending" in (msg.body or "").lower():
+            msg.body = (msg.body or "").replace(
+                "Voicemail received — transcript pending.",
+                "Voicemail received — Twilio couldn't transcribe it. Listen to the recording.",
+            )
+            db.commit()
+        return Response(status_code=204)
+
+    body = text
+    if url:
+        body += f"\n\nRecording: {url}.mp3"
+
+    msg = _voice_log(
+        db,
+        call_sid=call_sid,
+        from_number=form.get("From", ""),
+        to_number=form.get("To", ""),
+        body=body,
+        subject=msg.subject if msg and msg.subject else "Voicemail",
+    )
+
+    client_name = None
+    if msg and msg.client_id:
+        c = db.query(Client).filter(Client.id == msg.client_id).first()
+        # A placeholder lead is named after its own phone number — repeating
+        # that in the alert tells her nothing she can't already see.
+        if c and c.name and c.name != (msg.from_addr or ""):
+            client_name = c.name
+
+    _forward_voicemail_sms(
+        from_number=_normalize_contact(form.get("From", "")) or "",
+        client_name=client_name,
+        text=text,
+    )
+    return Response(status_code=204)
