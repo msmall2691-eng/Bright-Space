@@ -9761,6 +9761,8 @@ export interface components {
         };
         /** PropertyUpdate */
         PropertyUpdate: {
+            /** Client Id */
+            client_id?: number | null;
             /** Name */
             name?: string | null;
             /** Address */

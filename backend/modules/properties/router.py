@@ -65,6 +65,12 @@ class PropertyCreate(BaseModel):
 
 
 class PropertyUpdate(BaseModel):
+    # Reassign a property to a different client. Absent from PropertyUpdate
+    # before, so the property form's client picker sent client_id and the PATCH
+    # silently dropped it — a property mis-linked to the wrong client (or an
+    # orphan whose client was merged/removed) could not be re-pointed by hand at
+    # all. Validated in update_property against the caller's workspace.
+    client_id: Optional[int] = None
     name: Optional[str] = None
     address: Optional[str] = None
     city: Optional[str] = None
@@ -473,7 +479,23 @@ def update_property(property_id: int, data: PropertyUpdate, db: Session = Depend
     # never persisted — the save looked successful and the old value came back
     # on reload. Fields the client omits stay untouched, so partial PATCHes still
     # work. (Codex review on #657.)
-    for field, value in data.model_dump(exclude_unset=True).items():
+    fields = data.model_dump(exclude_unset=True)
+    # Reassigning to another client is a real move (fix a mis-linked/orphaned
+    # property), but it must land on a real client IN THIS WORKSPACE — a stray
+    # or cross-tenant id would set a dangling/leaking FK. A property always
+    # belongs to a client, so an explicit null is rejected rather than orphaning
+    # it further.
+    if "client_id" in fields:
+        new_client_id = fields["client_id"]
+        if new_client_id is None:
+            raise HTTPException(status_code=422, detail="A property must belong to a client.")
+        target = db.query(Client).filter(
+            Client.id == new_client_id,
+            or_(Client.org_id == org_id, Client.org_id.is_(None)),  # MT-2 tenant scope
+        ).first()
+        if not target:
+            raise HTTPException(status_code=404, detail="That client isn't in this workspace.")
+    for field, value in fields.items():
         setattr(prop, field, value)
     db.commit()
     db.refresh(prop)
