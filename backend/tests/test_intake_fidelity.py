@@ -386,6 +386,77 @@ def test_idempotency_key_collapses_two_posts_into_one_lead():
         _cleanup_email(email)
 
 
+# --- The same key is also used for PROGRESSIVE submission, not just replays ---
+
+def test_idempotency_key_folds_in_the_second_stage_payload():
+    """The twin of the test above: same key, but a RICHER second post.
+
+    maineclean.co's /book flow posts twice for one visit under ONE key —
+    step 1-2 is a thin intake (contact + specs + estimate, no date), step 3 is
+    the actual booking carrying requestedDate and the six on-site essentials.
+    The key is shared deliberately so the two collapse into a single Lead.
+
+    Collapsing must not mean DISCARDING. The short-circuit used to return the
+    existing row untouched, so the operator's Requests card kept the thin
+    step-1 intake and silently lost the date and every essential — while the
+    website still got a 201 and logged the forward as delivered.
+
+    The test above pins that a stale replay can't overwrite good data; this one
+    pins that genuinely new information still lands.
+    """
+    email = _uniq_email()
+    key = f"idem-{uuid.uuid4().hex}"
+    try:
+        # Stage 1 — the intake forward. No date, no essentials.
+        r1 = client.post("/api/booking/submit", json={
+            "name": "Two Stage", "email": email, "phone": "2075557799",
+            "address": "10 Harbor St", "serviceType": "standard",
+            "squareFeet": 1800, "bathrooms": 2, "frequency": "biweekly",
+            "idempotencyKey": key,
+        })
+        assert r1.status_code == 201, r1.text
+
+        # Stage 3 — the booking forward. Same key, strictly more information.
+        r2 = client.post("/api/booking/submit", json={
+            "name": "Two Stage", "email": email, "phone": "2075557799",
+            "address": "10 Harbor St", "serviceType": "standard",
+            "squareFeet": 1800, "bathrooms": 2, "frequency": "biweekly",
+            "idempotencyKey": key,
+            "requestedDate": "2026-10-15",
+            "entryMethod": "lockbox",
+            "parkingNotes": "Driveway, do not block the garage",
+            "petsDetail": "Two cats, keep the back door shut",
+            "focusAreas": ["kitchen", "bathrooms"],
+            "specialInstructions": "Please use the fragrance-free products",
+            "arrivalWindow": "morning",
+        })
+        assert r2.status_code == 201, r2.text
+        assert r2.json()["bookingId"] == r1.json()["bookingId"], "should stay one lead"
+
+        db = SessionLocal()
+        try:
+            rows = db.query(LeadIntake).filter(LeadIntake.idempotency_key == key).all()
+            assert len(rows) == 1, f"expected 1 Lead, got {len(rows)}"
+            lead = rows[0]
+            cf = dict(lead.custom_fields or {})
+
+            # The date the customer actually booked.
+            assert lead.requested_date == "2026-10-15", (
+                f"requested_date lost: {lead.requested_date!r}"
+            )
+            # The six essentials the cleaner needs on site.
+            assert cf.get("entry_method") == "lockbox"
+            assert cf.get("parking_notes") == "Driveway, do not block the garage"
+            assert cf.get("pets_detail") == "Two cats, keep the back door shut"
+            assert cf.get("focus_areas") == ["kitchen", "bathrooms"]
+            assert cf.get("special_instructions") == "Please use the fragrance-free products"
+            assert cf.get("arrival_window") == "morning"
+        finally:
+            db.close()
+    finally:
+        _cleanup_email(email)
+
+
 # --- Inbox-only: client/property dedup happens at CONVERSION, not intake ---
 
 def _convert_request(db, intake_id, org_id=1):
