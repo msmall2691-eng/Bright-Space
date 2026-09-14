@@ -1175,36 +1175,40 @@ def update_client(client_id: int, data: ClientUpdate, db: Session = Depends(get_
     return client_to_dict(client)
 
 
-class ClientMergeRequest(BaseModel):
-    loser_id: int
+# Every client-scoped table that carries an integer client_id FK and must ride
+# with the client on a merge. (label -> Model). Kept as one list so the manual
+# merge and the by-email auto-cleanup move EXACTLY the same tables — the reason
+# the auto-cleanup used to shed recurring schedules and invoices was that it
+# carried its own shorter, drifted copy of this set. RecurringSchedule and
+# Invoice in particular cascade-DELETE when their client row is removed, so
+# omitting either from a merge is silent loss of scheduled work / billing.
+_CLIENT_REPARENT_TABLES = (
+    ("jobs", Job), ("invoices", Invoice), ("quotes", Quote),
+    ("properties", Property), ("recurring", RecurringSchedule),
+    ("opportunities", Opportunity), ("activities", Activity), ("leads", LeadIntake),
+)
 
 
-@router.post("/{winner_id}/merge", dependencies=[Depends(require_role("admin", "manager"))])
-def merge_clients(winner_id: int, body: ClientMergeRequest, db: Session = Depends(get_db)):
-    """Collapse a duplicate: merge `loser_id` INTO `winner_id`.
+def _merge_client_into(db: Session, winner: "Client", loser: "Client", report: dict) -> dict:
+    """Re-parent EVERY record the loser owns onto the winner, losslessly, then
+    delete the emptied loser. This is the ONE merge body: the manual /merge
+    endpoint and the by-email auto-cleanup both call it, so a table added here
+    is moved by both and neither can silently cascade-delete a row the other
+    rescues.
 
-    Re-parents every record the loser owns onto the winner — jobs, invoices,
-    properties, recurring schedules, opportunities, lead intakes, activities,
-    messages, SMS conversations (folded so the (client_id, channel) unique index
-    can't blow up), and contact phones/emails (deduped) — backfills the winner's
-    empty contact fields from the loser, then deletes the loser.
+    Re-parents jobs, invoices, properties, recurring schedules, opportunities,
+    lead intakes, activities, messages, conversations (folded so the
+    (client_id, channel) unique index can't blow up) and contact phones/emails
+    (deduped); backfills the winner's empty contact fields from the loser.
 
-    Quotes ARE re-parented too: Quote.client_id is an integer FK to clients.id
-    with ondelete=CASCADE, and Client.quotes is cascade="all, delete-orphan", so
-    leaving quotes on the loser would DELETE them when the loser is removed
-    (silent data loss). They move to the winner with the other linked tables.
-    """
-    loser_id = body.loser_id
-    if loser_id == winner_id:
-        raise HTTPException(status_code=400, detail="Cannot merge a client into itself")
-    winner = db.query(Client).filter(Client.id == winner_id).first()
-    loser = db.query(Client).filter(Client.id == loser_id).first()
-    if not winner:
-        raise HTTPException(status_code=404, detail="Winner client not found")
-    if not loser:
-        raise HTTPException(status_code=404, detail="Loser client not found")
-
-    report = {"linked_conversations": 0, "linked_messages": 0, "merged_conversations": 0}
+    Mutates `report` (linked_conversations / linked_messages /
+    merged_conversations) and returns the per-table reassignment counts.
+    Commits. The caller guarantees winner and loser are distinct rows and — for
+    the auto-cleanup — in the same org (never merge across tenants)."""
+    report.setdefault("linked_conversations", 0)
+    report.setdefault("linked_messages", 0)
+    report.setdefault("merged_conversations", 0)
+    winner_id, loser_id = winner.id, loser.id
 
     # 1. Backfill the winner's empty contact fields from the loser.
     for f in ("first_name", "last_name", "email", "phone", "phone_tail", "address",
@@ -1274,8 +1278,9 @@ def merge_clients(winner_id: int, body: ClientMergeRequest, db: Session = Depend
 
     # 6. Bulk re-parent the unconstrained integer-FK tables (direct UPDATE — no
     #    ORM cascade, so the rows move rather than getting delete-orphaned).
-    for Model in (Job, Invoice, Quote, Property, RecurringSchedule, Opportunity, Activity, LeadIntake):
-        db.query(Model).filter(Model.client_id == loser_id).update(
+    reassigned = {}
+    for label, Model in _CLIENT_REPARENT_TABLES:
+        reassigned[label] = db.query(Model).filter(Model.client_id == loser_id).update(
             {Model.client_id: winner_id}, synchronize_session=False
         )
 
@@ -1284,10 +1289,45 @@ def merge_clients(winner_id: int, body: ClientMergeRequest, db: Session = Depend
     # 7. Delete the now-empty loser. Re-fetch fresh first so no stale in-session
     #    collection makes the cascade delete a row we just moved.
     db.expire_all()
-    loser = db.query(Client).filter(Client.id == loser_id).first()
-    if loser:
-        db.delete(loser)
+    fresh_loser = db.query(Client).filter(Client.id == loser_id).first()
+    if fresh_loser:
+        db.delete(fresh_loser)
         db.commit()
+    return reassigned
+
+
+class ClientMergeRequest(BaseModel):
+    loser_id: int
+
+
+@router.post("/{winner_id}/merge", dependencies=[Depends(require_role("admin", "manager"))])
+def merge_clients(winner_id: int, body: ClientMergeRequest, db: Session = Depends(get_db)):
+    """Collapse a duplicate: merge `loser_id` INTO `winner_id`.
+
+    Re-parents every record the loser owns onto the winner — jobs, invoices,
+    properties, recurring schedules, opportunities, lead intakes, activities,
+    messages, SMS conversations (folded so the (client_id, channel) unique index
+    can't blow up), and contact phones/emails (deduped) — backfills the winner's
+    empty contact fields from the loser, then deletes the loser. The re-parenting
+    itself lives in _merge_client_into, shared with the by-email auto-cleanup.
+
+    Quotes ARE re-parented too: Quote.client_id is an integer FK to clients.id
+    with ondelete=CASCADE, and Client.quotes is cascade="all, delete-orphan", so
+    leaving quotes on the loser would DELETE them when the loser is removed
+    (silent data loss). They move to the winner with the other linked tables.
+    """
+    loser_id = body.loser_id
+    if loser_id == winner_id:
+        raise HTTPException(status_code=400, detail="Cannot merge a client into itself")
+    winner = db.query(Client).filter(Client.id == winner_id).first()
+    loser = db.query(Client).filter(Client.id == loser_id).first()
+    if not winner:
+        raise HTTPException(status_code=404, detail="Winner client not found")
+    if not loser:
+        raise HTTPException(status_code=404, detail="Loser client not found")
+
+    report = {"linked_conversations": 0, "linked_messages": 0, "merged_conversations": 0}
+    _merge_client_into(db, winner, loser, report)
 
     winner = db.query(Client).filter(Client.id == winner_id).first()
     return {
@@ -1594,43 +1634,40 @@ def _dedupe_is_placeholder(name):
 
 @router.post("/cleanup-duplicates-by-email", dependencies=[Depends(require_role("admin"))])
 def cleanup_duplicates_by_email(dry_run: bool = True, db: Session = Depends(get_db)):
-    """Merge placeholder-named Client rows into properly-named clients that
-    share the same (case-insensitive) email. Default dry_run=true returns a
-    preview without applying changes.
+    """Merge placeholder-named Client rows into the properly-named client that
+    shares the same (case-insensitive) email WITHIN THE SAME ORG. Default
+    dry_run=true returns a preview without applying changes.
 
-    Reassigns these to the keeper before deleting the placeholder:
-      - leads (LeadIntake.client_id)
-      - quotes (Quote.client_id)
-      - jobs (Job.client_id)
-      - properties (Property.client_id)
-      - opportunities (Opportunity.client_id)
-      - activities (Activity.client_id)
-      - messages (Message.client_id)
+    The actual re-parenting is _merge_client_into — the same lossless body the
+    manual /merge endpoint uses — so every client-scoped table rides with the
+    placeholder onto the keeper. This function only decides WHICH rows merge;
+    it no longer carries its own reassignment list. It used to move a strict
+    subset (leads/quotes/jobs/properties/activities/messages/opportunities) and
+    then delete the placeholder, which cascade-DELETED the placeholder's
+    invoices, recurring schedules, conversations and contact rows — silent loss
+    of billing and scheduled work.
+
+    Org-scoped: grouping is keyed on (org_id, email), so two different tenants'
+    clients that happen to share an address (info@…, office@…) are NEVER merged
+    into each other. A cross-org merge would corrupt tenant isolation.
     """
-    from sqlalchemy import func as _sa_func
-    from database.models import LeadIntake as _LI, Quote as _Q, Job as _J, Property as _P, Activity as _A, Message as _M
-
-    try:
-        from database.models import Opportunity as _O
-    except Exception:
-        _O = None
-
-    # Group clients by lowercased email, only emails with > 1 client
+    # Only clients with a usable email are merge candidates. Group by
+    # (org_id, lowercased email) so a shared address can never bridge tenants.
     rows = (
         db.query(Client)
         .filter(Client.email.isnot(None), Client.email != "")
         .all()
     )
-    by_email = {}
+    by_key = {}
     for c in rows:
-        key = (c.email or "").strip().lower()
-        if not key:
+        email = (c.email or "").strip().lower()
+        if not email:
             continue
-        by_email.setdefault(key, []).append(c)
+        by_key.setdefault((c.org_id, email), []).append(c)
 
     report = {"dry_run": bool(dry_run), "merges": [], "errors": []}
 
-    for email, group in by_email.items():
+    for (org_id, email), group in by_key.items():
         if len(group) < 2:
             continue
         # Pick the keeper: prefer the one with a real (non-placeholder) name.
@@ -1642,7 +1679,7 @@ def cleanup_duplicates_by_email(dry_run: bool = True, db: Session = Depends(get_
         if not placeholders:
             # No placeholders to merge in.
             continue
-        # Prefer the one with the most attached records as the keeper
+        # Prefer the one with the most attached records as the keeper.
         def _score(c):
             return (
                 len(getattr(c, "jobs", []) or []),
@@ -1656,6 +1693,7 @@ def cleanup_duplicates_by_email(dry_run: bool = True, db: Session = Depends(get_
             if placeholder.id == keeper.id:
                 continue
             merge_detail = {
+                "org_id": org_id,
                 "email": email,
                 "keeper_id": keeper.id,
                 "keeper_name": keeper.name,
@@ -1665,44 +1703,39 @@ def cleanup_duplicates_by_email(dry_run: bool = True, db: Session = Depends(get_
             }
             try:
                 if not dry_run:
-                    # Reassign FK rows
-                    n_leads = db.query(_LI).filter(_LI.client_id == placeholder.id).update({"client_id": keeper.id})
-                    n_quotes = db.query(_Q).filter(_Q.client_id == placeholder.id).update({"client_id": keeper.id})
-                    n_jobs = db.query(_J).filter(_J.client_id == placeholder.id).update({"client_id": keeper.id})
-                    n_props = db.query(_P).filter(_P.client_id == placeholder.id).update({"client_id": keeper.id})
-                    n_acts = db.query(_A).filter(_A.client_id == placeholder.id).update({"client_id": keeper.id})
-                    n_msgs = db.query(_M).filter(_M.client_id == placeholder.id).update({"client_id": keeper.id})
-                    n_opps = 0
-                    if _O is not None:
-                        n_opps = db.query(_O).filter(_O.client_id == placeholder.id).update({"client_id": keeper.id})
+                    sub_report = {}
+                    reassigned = _merge_client_into(db, keeper, placeholder, sub_report)
+                    # Fold in the conversation/message counts the helper tracks
+                    # separately from the bulk-reparent tables.
                     merge_detail["reassigned"] = {
-                        "leads": n_leads, "quotes": n_quotes, "jobs": n_jobs,
-                        "properties": n_props, "activities": n_acts,
-                        "messages": n_msgs, "opportunities": n_opps,
+                        **reassigned,
+                        "conversations": sub_report.get("linked_conversations", 0),
+                        "messages": sub_report.get("linked_messages", 0),
+                        "merged_conversations": sub_report.get("merged_conversations", 0),
                     }
-                    # Backfill keeper contact fields from the placeholder if missing
-                    if placeholder.phone and not (keeper.phone and keeper.phone.strip()):
-                        keeper.phone = placeholder.phone
-                    if placeholder.address and not (keeper.address and keeper.address.strip()):
-                        keeper.address = placeholder.address
-                    db.flush()
-                    db.delete(placeholder)
                 else:
-                    # Dry-run: just count what WOULD be reassigned
-                    merge_detail["reassigned"] = {
-                        "leads": db.query(_sa_func.count(_LI.id)).filter(_LI.client_id == placeholder.id).scalar(),
-                        "quotes": db.query(_sa_func.count(_Q.id)).filter(_Q.client_id == placeholder.id).scalar(),
-                        "jobs": db.query(_sa_func.count(_J.id)).filter(_J.client_id == placeholder.id).scalar(),
-                        "properties": db.query(_sa_func.count(_P.id)).filter(_P.client_id == placeholder.id).scalar(),
-                        "activities": db.query(_sa_func.count(_A.id)).filter(_A.client_id == placeholder.id).scalar(),
-                        "messages": db.query(_sa_func.count(_M.id)).filter(_M.client_id == placeholder.id).scalar(),
+                    # Dry-run: count what WOULD move — the SAME table set the
+                    # real merge reassigns, so the preview can't understate loss.
+                    counts = {
+                        label: db.query(func.count(Model.id))
+                                 .filter(Model.client_id == placeholder.id).scalar() or 0
+                        for label, Model in _CLIENT_REPARENT_TABLES
                     }
+                    counts["conversations"] = (
+                        db.query(func.count(Conversation.id))
+                          .filter(Conversation.client_id == placeholder.id).scalar() or 0
+                    )
+                    counts["messages"] = (
+                        db.query(func.count(Message.id))
+                          .filter(Message.client_id == placeholder.id).scalar() or 0
+                    )
+                    merge_detail["reassigned"] = counts
                 report["merges"].append(merge_detail)
             except Exception as e:
+                # A failed merge leaves the session mid-transaction; roll back so
+                # the remaining groups still get a clean session to work in.
+                db.rollback()
                 report["errors"].append({**merge_detail, "error": str(e)})
-
-    if not dry_run and report["merges"]:
-        db.commit()
 
     report["merged_count"] = len(report["merges"])
     return report
