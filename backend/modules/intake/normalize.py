@@ -454,6 +454,45 @@ def _lock_contact_for_upsert(db: Session, email: Optional[str], phone: Optional[
         logger.warning("contact upsert lock failed: %s", e)
 
 
+def _backfill_lead(existing: "LeadIntake", data: IntakeData) -> bool:
+    """Fold a repeat submission's NEW information onto the lead we already have.
+
+    Both dedup paths need this. maineclean.co's /book flow posts TWICE for one
+    visit under ONE idempotency key: step 1-2 sends a thin intake (contact,
+    sqft, baths, estimate) and step 3 sends the real booking (requestedDate
+    plus the six on-site "essentials" and the arrival window). The second POST
+    is not a stale duplicate — it is strictly newer information the operator
+    needs on the Requests card.
+
+    Rules, unchanged from the recency path that has always used them:
+      * scalars fill only where the lead is still empty, so a genuinely stale
+        re-post can never overwrite good data (this is what keeps a replayed
+        forward with a different address from clobbering the original);
+      * the longest free-text message wins;
+      * custom_fields shallow-merge with the incoming keys winning, because
+        "fill-if-missing" is the wrong rule for a dict — the first hit may
+        already have {} on the row.
+
+    Returns True if anything actually changed, so the caller can skip a
+    pointless commit.
+    """
+    changed = False
+    for f in _MERGE_FIELDS:
+        val = getattr(data, f, None)
+        if val not in (None, "") and not getattr(existing, f, None):
+            setattr(existing, f, val)
+            changed = True
+    if data.message and (not existing.message or len(data.message) > len(existing.message or "")):
+        existing.message = data.message
+        changed = True
+    if data.custom_fields:
+        merged = {**(existing.custom_fields or {}), **data.custom_fields}
+        if merged != (existing.custom_fields or {}):
+            existing.custom_fields = merged
+            changed = True
+    return changed
+
+
 def upsert_lead(db: Session, data: IntakeData) -> dict:
     """The single write path for public leads — INBOX-ONLY (Twenty-style).
 
@@ -495,6 +534,16 @@ def upsert_lead(db: Session, data: IntakeData) -> dict:
             .first()
         )
         if by_key is not None:
+            # Collapse onto the existing Lead — but FOLD IN anything new the
+            # caller sent. Returning bare here silently dropped the entire
+            # second payload, which for maineclean.co's two-stage /book flow
+            # meant the operator's Requests card kept the thin step-1 intake
+            # and lost the requested date and every /book essential. The
+            # fill-if-missing rules in _backfill_lead keep a genuinely stale
+            # replay from overwriting good data.
+            if _backfill_lead(by_key, data):
+                db.commit()
+                db.refresh(by_key)
             return {
                 "success": True,
                 "intake_id": by_key.id,
@@ -518,27 +567,8 @@ def upsert_lead(db: Session, data: IntakeData) -> dict:
         recent = _find_recent_name_address_duplicate(db, data)
         name_addr_merge = recent is not None
     if recent:
-        changed = False
-        for f in _MERGE_FIELDS:
-            val = getattr(data, f, None)
-            if val not in (None, "") and not getattr(recent, f, None):
-                setattr(recent, f, val)
-                changed = True
-        # Keep the longest free-text message (the richer note wins).
-        if data.message and (not recent.message or len(data.message) > len(recent.message or "")):
-            recent.message = data.message
-            changed = True
-        # Shallow-merge custom_fields. The scalar _MERGE_FIELDS loop's
-        # "fill-if-missing" rule is wrong for a dict — the earlier hit
-        # (e.g. an intake-submit) may already have {} on the row, but the
-        # follow-up booking submit's essentials are strictly newer info the
-        # operator needs. Merge with incoming keys winning; assign a fresh
-        # dict so SQLAlchemy's JSON change detection actually fires.
-        if data.custom_fields:
-            merged = {**(recent.custom_fields or {}), **data.custom_fields}
-            if merged != (recent.custom_fields or {}):
-                recent.custom_fields = merged
-                changed = True
+        # Same back-fill the idempotency-key path uses — see _backfill_lead.
+        changed = _backfill_lead(recent, data)
         # Name+address merge: the two rows have DIFFERENT contact info by
         # definition, so preserve both. Back-fill any contact field the
         # original was missing, and when the new submission carries a
