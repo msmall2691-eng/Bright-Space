@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
 from pydantic import BaseModel
 from typing import Optional, List
+from calendar import monthrange
 from datetime import date, datetime, timedelta, timezone
 
 logger = logging.getLogger(__name__)
@@ -410,9 +411,17 @@ def _occurs_on(sched: RecurringSchedule, d: date, today: date) -> bool:
     hand-copied branch ladders before; the biweekly-anchor bug had to be patched
     in each.)"""
     if sched.frequency == "monthly":
-        # No clamping: a month without day `dom` (e.g. Feb 30) simply has no
-        # occurrence, matching the old generator's date()-ValueError skip.
-        return d.day == (sched.day_of_month or 1)
+        # Clamp the requested day-of-month to the month's LAST day, so a series
+        # set to the 29th/30th/31st still lands — on the last day — in shorter
+        # months instead of silently generating NOTHING there. Before this, a
+        # "clean on the 31st, monthly" series produced no visit in Feb/Apr/Jun/
+        # Sep/Nov (~5 months a year); a day_of_month of 31 plainly means "end of
+        # month", which is what the clamp delivers. Only the last calendar day of
+        # a short month satisfies a too-large dom, so at most one occurrence per
+        # month still holds — no doubling. dom is bounded into 1..31 defensively
+        # (the column is documented 1-28 but never enforced on input).
+        dom = min(max(sched.day_of_month or 1, 1), 31)
+        return d.day == min(dom, monthrange(d.year, d.month)[1])
     interval = max(1, sched.interval_weeks or 1)
     if sched.frequency == "daily":
         # interval_weeks is reused as the day step; empty days_of_week = every day.

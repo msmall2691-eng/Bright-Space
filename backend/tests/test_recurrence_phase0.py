@@ -216,31 +216,36 @@ def test_generate_dates_biweekly_skips_alternate_weeks():
         assert (b - a).days == 14
 
 
-def test_generate_dates_monthly_skips_invalid_day():
-    """day_of_month=31 should silently skip months with <31 days."""
+def test_generate_dates_monthly_clamps_to_end_of_short_month():
+    """day_of_month=31 lands on the LAST day of months with <31 days — it is
+    clamped, not skipped (the old behavior dropped ~5 months a year)."""
+    from calendar import monthrange
     s = _StubSchedule(days_of_week=None, day_of_week=None)
     s.frequency = "monthly"
     s.interval_weeks = None
     s.day_of_month = 31
     dates = generate_dates(s, weeks_ahead=52)  # cover ~1 year
-    parsed = dates
-    months_seen = {(d.year, d.month) for d in parsed}
-    # Feb, Apr, Jun, Sep, Nov never have a 31st — none of those should appear.
-    for d in parsed:
-        assert d.day == 31
+    # February (and Apr/Jun/Sep/Nov) must now appear — clamped, not skipped.
+    assert any(d.month == 2 for d in dates), "a short month must generate now"
+    # Each date is the clamped day, and there is at most one per month.
+    for d in dates:
+        assert d.day == min(31, monthrange(d.year, d.month)[1])
+    assert len({(d.year, d.month) for d in dates}) == len(dates)
 
 
 def test_generate_dates_monthly_handles_leap_day():
-    """day_of_month=29 in a non-leap year should skip Feb."""
+    """day_of_month=29 lands on Feb 29 in a leap year and Feb 28 otherwise —
+    never skipped."""
+    from calendar import monthrange
     s = _StubSchedule(days_of_week=None, day_of_week=None)
     s.frequency = "monthly"
     s.interval_weeks = None
     s.day_of_month = 29
     dates = generate_dates(s, weeks_ahead=104)  # ~2 years to cross a Feb
-    parsed = dates
-    # Just assert nothing crashed and every emitted date really is the 29th.
-    for d in parsed:
-        assert d.day == 29
+    febs = [d for d in dates if d.month == 2]
+    assert febs, "February must generate now (clamped), not be skipped"
+    for d in dates:
+        assert d.day == min(29, monthrange(d.year, d.month)[1])
 
 
 # ---------------------------------------------------------------------------
