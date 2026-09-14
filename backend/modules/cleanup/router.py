@@ -102,7 +102,7 @@ def cleanup_scan(db: Session = Depends(get_db), org_id: int = Depends(current_or
 
     # --- Cluster clients by strong keys (union-find) ------------------------
     uf = _UF()
-    by_email, by_phone, by_namezip = {}, {}, {}
+    by_email, by_phone, by_namezip, by_nameaddr = {}, {}, {}, {}
     for c in clients:
         uf.find(c.id)  # ensure present even if singleton
         email = (c.email or "").strip().lower()
@@ -115,13 +115,24 @@ def cleanup_scan(db: Session = Depends(get_db), org_id: int = Depends(current_or
         zip5 = (c.zip_code or "")[:5]
         if nk and zip5:
             by_namezip.setdefault(f"{nk}|{zip5}", []).append(c.id)
+        # name + street address. Catches the returning customer whose ZIP is
+        # missing or typo'd (so name + ZIP finds nothing) but whose street is on
+        # file. ZIP is deliberately EXCLUDED from the key so a bad ZIP can't
+        # split the pair; city/state stay in so two different-town clients who
+        # share a street name and a common name don't cluster. High-precision —
+        # the same normalized name AND the same street+city is rarely a
+        # coincidence — and it only SURFACES the pair; the operator still
+        # confirms the merge, so a rare Jr./Sr. collision is caught by a human.
+        ak = _addr_key(c.address, c.city, c.state)
+        if nk and ak:
+            by_nameaddr.setdefault(f"{nk}|{ak}", []).append(c.id)
 
     def _union_all(groups):
         for ids in groups.values():
             for other in ids[1:]:
                 uf.union(ids[0], other)
 
-    for g in (by_email, by_phone, by_namezip):
+    for g in (by_email, by_phone, by_namezip, by_nameaddr):
         _union_all(g)
 
     # Reasons per client id (why it matched something).
@@ -138,6 +149,10 @@ def cleanup_scan(db: Session = Depends(get_db), org_id: int = Depends(current_or
         if len(ids) > 1:
             for i in ids:
                 reasons.setdefault(i, set()).add("name + ZIP")
+    for key, ids in by_nameaddr.items():
+        if len(ids) > 1:
+            for i in ids:
+                reasons.setdefault(i, set()).add("name + address")
 
     clusters = {}
     for c in clients:
