@@ -6,11 +6,11 @@ fastapi==0.141.1
 starlette==1.6.0
 uvicorn[standard]==0.52.4
 sqlalchemy==2.0.52
-psycopg2-binary==2.9.12
+psycopg2-binary==2.9.13
 anthropic==0.40.0
 python-dotenv==1.2.3
 pyyaml==6.0.3
-twilio==9.11.0
+twilio==9.11.1
 httpx==0.28.1
 websockets==13.1
 python-multipart==0.0.32
