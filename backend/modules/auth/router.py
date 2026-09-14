@@ -481,10 +481,17 @@ def google_login_url(request: Request, db: Session = Depends(get_db)):
     if not is_oauth_available():
         return {"enabled": False}
     state = secrets.token_urlsafe(24)
-    _app_set(db, f"sso_state_{state}", datetime.now(timezone.utc).isoformat())
-    db.commit()
     flow = build_login_flow(request, state=state)
     auth_url, _ = flow.authorization_url(access_type="offline", include_granted_scopes="true", prompt="consent")
+    # Persist the PKCE code_verifier alongside the state nonce. authorization_url()
+    # generates it as a side effect on the Flow and sends its S256 challenge to
+    # Google; the callback builds a FRESH Flow, so without carrying the verifier
+    # across, the token exchange goes up with none and Google rejects it
+    # ("Missing code verifier") -> sso_error=failed -> "Google sign-in failed."
+    # (BB-AUTH-PKCE)
+    _app_set(db, f"sso_state_{state}",
+             f"{datetime.now(timezone.utc).isoformat()}|{flow.code_verifier or ''}")
+    db.commit()
     return {"enabled": True, "auth_url": auth_url}
 
 
@@ -496,12 +503,21 @@ def google_login_callback(request: Request, code: str = "", state: str = "", db:
     from fastapi.responses import RedirectResponse
     from integrations.google_oauth import build_login_flow, client_id as _google_client_id
 
-    if not state or _app_get(db, f"sso_state_{state}") is None:
+    stored_state = _app_get(db, f"sso_state_{state}") if state else None
+    if stored_state is None:
         raise HTTPException(status_code=400, detail="Invalid or expired sign-in state.")
     _app_del(db, f"sso_state_{state}")
+    # Recover the PKCE verifier stored with the nonce (see login-url). Backward
+    # compatible: rows written before BB-AUTH-PKCE are the bare timestamp with no
+    # '|verifier' suffix, so partition() yields '' and no verifier is applied.
+    code_verifier = stored_state.partition("|")[2]
 
     try:
         flow = build_login_flow(request, state=state)
+        # Re-apply the verifier the auth request committed to, so this fresh Flow
+        # completes the PKCE exchange it started (BB-AUTH-PKCE).
+        if code_verifier:
+            flow.code_verifier = code_verifier
         # Bounded timeout — Flow.fetch_token forwards to requests_oauthlib,
         # which (like bare `requests`) has no default timeout. A hung Google
         # token endpoint would otherwise wedge this callback's worker
@@ -1225,11 +1241,13 @@ def google_account_connect_url(request: Request, db: Session = Depends(get_db),
         raise HTTPException(status_code=503,
                             detail="TOKEN_ENCRYPTION_KEY is not set on the server — tokens can't be stored safely.")
     state = secrets.token_urlsafe(24)
-    _app_set(db, f"gconnect_state_{state}",
-             f"{current_user.id}|{datetime.now(timezone.utc).isoformat()}")
-    db.commit()
     flow = build_connect_flow(request, state=state)
     auth_url, _ = flow.authorization_url(access_type="offline", include_granted_scopes="true", prompt="consent")
+    # Carry the PKCE verifier across to the callback's fresh Flow (BB-AUTH-PKCE);
+    # appended as a third field so pre-fix 2-field rows still parse.
+    _app_set(db, f"gconnect_state_{state}",
+             f"{current_user.id}|{datetime.now(timezone.utc).isoformat()}|{flow.code_verifier or ''}")
+    db.commit()
     return {"auth_url": auth_url}
 
 
@@ -1247,8 +1265,12 @@ def google_account_callback(request: Request, code: str = "", state: str = "",
     if not stored:
         return RedirectResponse(url="/settings?google_account=invalid_state", status_code=302)
     _app_del(db, f"gconnect_state_{state}")
+    code_verifier = ""
     try:
-        user_id_s, issued_at = stored.split("|", 1)
+        parts = stored.split("|", 2)
+        user_id_s, issued_at = parts[0], parts[1]
+        # Third field is the PKCE verifier (BB-AUTH-PKCE); absent on pre-fix rows.
+        code_verifier = parts[2] if len(parts) > 2 else ""
         age = (datetime.now(timezone.utc) - datetime.fromisoformat(issued_at)).total_seconds()
     except Exception:
         age, user_id_s = 1e9, "0"
@@ -1262,6 +1284,9 @@ def google_account_callback(request: Request, code: str = "", state: str = "",
 
     try:
         flow = build_connect_flow(request, state=state)
+        # Complete the PKCE exchange the auth request started (BB-AUTH-PKCE).
+        if code_verifier:
+            flow.code_verifier = code_verifier
         # Bounded timeout — Flow.fetch_token forwards to requests_oauthlib,
         # which (like bare `requests`) has no default timeout. A hung Google
         # token endpoint would otherwise wedge this callback's worker

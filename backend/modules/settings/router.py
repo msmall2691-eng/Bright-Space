@@ -628,16 +628,20 @@ def google_connect(request: Request, db: Session = Depends(get_db)):
                    "/api/settings/google/callback.",
         )
     state = secrets.token_urlsafe(24)
-    set_setting(db, "google_oauth_state", state)
-    # Remember where to send the operator back to (the app origin they came from).
-    set_setting(db, "google_oauth_return", request.headers.get("referer") or "")
-    db.commit()
     flow = build_flow(request, state=state)
     auth_url, _ = flow.authorization_url(
         access_type="offline",          # get a refresh token
         include_granted_scopes="true",
         prompt="consent",               # ensure a refresh token is returned
     )
+    set_setting(db, "google_oauth_state", state)
+    # Persist the PKCE verifier authorization_url() generated so the callback's
+    # fresh Flow can complete the exchange it committed to — otherwise Google
+    # rejects it ("Missing code verifier"). (BB-AUTH-PKCE)
+    set_setting(db, "google_oauth_verifier", flow.code_verifier or "")
+    # Remember where to send the operator back to (the app origin they came from).
+    set_setting(db, "google_oauth_return", request.headers.get("referer") or "")
+    db.commit()
     return {"auth_url": auth_url}
 
 
@@ -651,9 +655,13 @@ def google_callback(request: Request, code: str = "", state: str = "", db: Sessi
     saved = get_setting(db, "google_oauth_state")
     if not state or not saved or state != saved:
         raise HTTPException(status_code=400, detail="Invalid or expired OAuth state.")
+    # Verifier stored with the state at /google/connect (BB-AUTH-PKCE).
+    code_verifier = get_setting(db, "google_oauth_verifier") or ""
 
     try:
         flow = build_flow(request, state=state)
+        if code_verifier:
+            flow.code_verifier = code_verifier
         # Bounded timeout — same rationale as the auth-router callbacks: a
         # hung Google token endpoint shouldn't wedge this worker forever.
         flow.fetch_token(code=code, timeout=10)
@@ -664,6 +672,7 @@ def google_callback(request: Request, code: str = "", state: str = "", db: Sessi
 
     set_setting(db, "google_token", creds.to_json())
     set_setting(db, "google_oauth_state", "")
+    set_setting(db, "google_oauth_verifier", "")
     ret = get_setting(db, "google_oauth_return") or "/"
     db.commit()
 
