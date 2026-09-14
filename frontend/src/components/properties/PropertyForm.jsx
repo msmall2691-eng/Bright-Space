@@ -163,19 +163,49 @@ export function PropertyForm({
           </div>
         ))}
 
-        {/* Common fields */}
-        <div>
-          <label className="block text-xs text-ink-3 mb-1">Access Notes</label>
-          <textarea value={form.access_notes || ''} onChange={e => setForm(f => ({ ...f, access_notes: e.target.value }))} rows={2}
-            placeholder="e.g. Side door, lockbox 4251"
-            className="w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-hidden resize-none" />
-        </div>
-
-        <div>
-          <label className="block text-xs text-ink-3 mb-1">Parking Notes</label>
-          <input value={form.parking_notes || ''} onChange={e => setForm(f => ({ ...f, parking_notes: e.target.value }))}
-            placeholder="Where to park"
-            className="w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-hidden focus:border-blue-400" />
+        {/* Access & codes — everything the crew needs to get in, in one place.
+            The door/gate code and WiFi apply to ANY property type; before this,
+            house_code was buried in the STR-only block and WiFi was editable
+            only from a job's page, so a residential gate code or a WiFi password
+            had nowhere to be entered from the property itself. All of these save
+            to the property, so every job there shows them on the crew card and
+            in the offline cache. */}
+        <div className="border-t border-hairline pt-4">
+          <h3 className="text-xs font-semibold text-ink-2 uppercase mb-3">Access &amp; codes</h3>
+          <div className="space-y-3">
+            <div>
+              <label className="block text-xs text-ink-3 mb-1">Door / gate code</label>
+              <input value={form.house_code || ''} onChange={e => setForm(f => ({ ...f, house_code: e.target.value }))}
+                placeholder="e.g. 4251# or front-door keypad"
+                className="w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-hidden focus:border-blue-400" />
+            </div>
+            <div>
+              <label className="block text-xs text-ink-3 mb-1">Access notes</label>
+              <textarea value={form.access_notes || ''} onChange={e => setForm(f => ({ ...f, access_notes: e.target.value }))} rows={2}
+                placeholder="e.g. Side door, lockbox 4251"
+                className="w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-hidden resize-none" />
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs text-ink-3 mb-1">WiFi network</label>
+                <input value={form.wifi_ssid || ''} onChange={e => setForm(f => ({ ...f, wifi_ssid: e.target.value }))}
+                  placeholder="e.g. SeasideCottage"
+                  className="w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-hidden focus:border-blue-400" />
+              </div>
+              <div>
+                <label className="block text-xs text-ink-3 mb-1">WiFi password</label>
+                <input value={form.wifi_password || ''} onChange={e => setForm(f => ({ ...f, wifi_password: e.target.value }))}
+                  placeholder="shown on crew cards + offline"
+                  className="w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-hidden focus:border-blue-400" />
+              </div>
+            </div>
+            <div>
+              <label className="block text-xs text-ink-3 mb-1">Parking notes</label>
+              <input value={form.parking_notes || ''} onChange={e => setForm(f => ({ ...f, parking_notes: e.target.value }))}
+                placeholder="Where to park"
+                className="w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-hidden focus:border-blue-400" />
+            </div>
+          </div>
         </div>
 
         <div className="grid grid-cols-2 gap-3">
@@ -258,13 +288,8 @@ export function PropertyForm({
                   className="w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-hidden" />
               </div>
             </div>
-
-            <div>
-              <label className="block text-xs text-ink-3 mb-1">House Code</label>
-              <input value={form.house_code || ''} onChange={e => setForm(f => ({ ...f, house_code: e.target.value }))}
-                placeholder="e.g. 1234 or Front door code"
-                className="w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-hidden focus:border-blue-400" />
-            </div>
+            {/* Door code moved to the shared "Access & codes" section above so
+                it's editable for every property type, not just STR. */}
           </div>
         )}
 
