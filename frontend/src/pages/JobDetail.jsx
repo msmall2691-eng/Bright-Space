@@ -143,11 +143,11 @@ const STATUS_OPTIONS = [
   // "unscheduled" = converted from a quote but no date yet. Distinct badge so
   // an operator can spot date-less jobs at a glance; auto-flips to
   // "scheduled" server-side when a date is saved on the job.
-  { value: 'unscheduled', label: 'unscheduled', chipClass: 'bg-amber-500/15 text-amber-600 border-amber-500/30',    dot: 'bg-amber-500' },
-  { value: 'scheduled',   label: 'scheduled',   chipClass: 'bg-blue-500/15 text-blue-500 border-blue-500/20',       dot: 'bg-blue-500' },
-  { value: 'in_progress', label: 'in progress', chipClass: 'bg-amber-500/15 text-amber-500 border-amber-500/20',    dot: 'bg-amber-500' },
-  { value: 'completed',   label: 'completed',   chipClass: 'bg-emerald-500/15 text-emerald-500 border-emerald-500/20', dot: 'bg-emerald-500' },
-  { value: 'cancelled',   label: 'cancelled',   chipClass: 'bg-bg-2 text-ink-3 border-hairline',                    dot: 'bg-ink-3' },
+  { value: 'unscheduled', label: 'unscheduled', dot: 'bg-amber-500' },
+  { value: 'scheduled',   label: 'scheduled',   dot: 'bg-blue-500' },
+  { value: 'in_progress', label: 'in progress', dot: 'bg-amber-500' },
+  { value: 'completed',   label: 'completed',   dot: 'bg-emerald-500' },
+  { value: 'cancelled',   label: 'cancelled',   dot: 'bg-ink-3' },
 ]
 const JOB_TYPE_OPTIONS = [
   { value: 'residential', label: 'residential' },
@@ -490,9 +490,7 @@ export default function JobDetail() {
           <div className="bg-panel border border-hairline rounded-xl p-4 space-y-4 self-start">
             <div>
               <div className="flex items-center gap-2 mb-2">
-                <div className="w-10 h-10 rounded-lg bg-indigo-600/15 text-blue-500 flex items-center justify-center shrink-0">
-                  <Calendar className="w-5 h-5" />
-                </div>
+                <Calendar className="w-5 h-5 text-ink-3 shrink-0" />
                 <InlineSelect value={job.status} options={STATUS_OPTIONS} onSelect={setStatus} />
               </div>
               {/* Warn when the DB status is 'scheduled' but the job is missing a

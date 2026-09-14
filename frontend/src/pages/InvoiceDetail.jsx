@@ -14,10 +14,10 @@ import RecordSkeleton from '../components/record/RecordSkeleton'
 import { EmptyState } from '../components/ui'
 
 const STATUS_OPTIONS = [
-  { value: 'draft',   label: 'draft',   chipClass: 'bg-bg-2 text-ink-3 border-hairline',                    dot: 'bg-ink-3' },
-  { value: 'sent',    label: 'sent',    chipClass: 'bg-blue-500/15 text-blue-500 border-blue-500/20',       dot: 'bg-blue-500' },
-  { value: 'overdue', label: 'overdue', chipClass: 'bg-red-500/15 text-red-500 border-red-500/20',          dot: 'bg-red-500' },
-  { value: 'paid',    label: 'paid',    chipClass: 'bg-emerald-500/15 text-emerald-500 border-emerald-500/20', dot: 'bg-emerald-500' },
+  { value: 'draft',   label: 'draft',   dot: 'bg-ink-3' },
+  { value: 'sent',    label: 'sent',    dot: 'bg-blue-500' },
+  { value: 'overdue', label: 'overdue', dot: 'bg-red-500' },
+  { value: 'paid',    label: 'paid',    dot: 'bg-emerald-500' },
 ]
 
 const money = (n) => n == null || n === '' ? '$0' :
@@ -143,9 +143,7 @@ export default function InvoiceDetail() {
           <div className="bg-panel border border-hairline rounded-xl p-4 space-y-4 self-start">
             <div>
               <div className="flex items-center gap-2 mb-2">
-                <div className="w-10 h-10 rounded-lg bg-indigo-600/15 text-blue-500 flex items-center justify-center shrink-0">
-                  <Receipt className="w-5 h-5" />
-                </div>
+                <Receipt className="w-5 h-5 text-ink-3 shrink-0" />
                 <InlineSelect value={inv.status} options={STATUS_OPTIONS} onSelect={setStatus} />
               </div>
               <div className="text-[11px] text-ink-3">{inv.invoice_number}</div>

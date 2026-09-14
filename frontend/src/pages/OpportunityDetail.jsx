@@ -16,11 +16,11 @@ import { EmptyState } from '../components/ui'
 
 // Pipeline stages (mirrors the kanban + backend enum).
 const STAGE_OPTIONS = [
-  { value: 'new',       label: 'new',       chipClass: 'bg-bg-2 text-ink-2 border-hairline',                    dot: 'bg-ink-3' },
-  { value: 'qualified', label: 'qualified', chipClass: 'bg-blue-500/15 text-blue-500 border-blue-500/20',       dot: 'bg-blue-500' },
-  { value: 'quoted',    label: 'quoted',    chipClass: 'bg-amber-500/15 text-amber-500 border-amber-500/20',    dot: 'bg-amber-500' },
-  { value: 'won',       label: 'won',       chipClass: 'bg-emerald-500/15 text-emerald-500 border-emerald-500/20', dot: 'bg-emerald-500' },
-  { value: 'lost',      label: 'lost',      chipClass: 'bg-red-500/15 text-red-500 border-red-500/20',          dot: 'bg-red-500' },
+  { value: 'new',       label: 'new',       dot: 'bg-ink-3' },
+  { value: 'qualified', label: 'qualified', dot: 'bg-blue-500' },
+  { value: 'quoted',    label: 'quoted',    dot: 'bg-amber-500' },
+  { value: 'won',       label: 'won',       dot: 'bg-emerald-500' },
+  { value: 'lost',      label: 'lost',      dot: 'bg-red-500' },
 ]
 const SERVICE_OPTIONS = [
   { value: 'residential', label: 'residential' },
@@ -135,9 +135,7 @@ export default function OpportunityDetail() {
           <div className="bg-panel border border-hairline rounded-xl p-4 space-y-4 self-start">
             <div>
               <div className="flex items-center gap-2 mb-2">
-                <div className="w-10 h-10 rounded-lg bg-indigo-600/15 text-blue-500 flex items-center justify-center shrink-0">
-                  <TrendingUp className="w-5 h-5" />
-                </div>
+                <TrendingUp className="w-5 h-5 text-ink-3 shrink-0" />
                 <InlineSelect value={opp.stage} options={STAGE_OPTIONS} onSelect={setStage} />
               </div>
               <InlineEditField label="Deal" value={opp.title} placeholder="Untitled deal"
