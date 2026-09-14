@@ -20,14 +20,14 @@ import OriginalRequestCard from '../components/quoting/OriginalRequestCard'
 import { isPlaceholderName } from '../components/quoting/constants'
 
 const STATUS_OPTIONS = [
-  { value: 'draft',     label: 'draft',     chipClass: 'bg-bg-2 text-ink-3 border-hairline',                    dot: 'bg-ink-3' },
-  { value: 'sent',      label: 'sent',      chipClass: 'bg-blue-500/15 text-blue-500 border-blue-500/20',       dot: 'bg-blue-500' },
-  { value: 'viewed',    label: 'viewed',    chipClass: 'bg-cyan-500/15 text-cyan-500 border-cyan-500/20',       dot: 'bg-cyan-500' },
-  { value: 'accepted',  label: 'accepted',  chipClass: 'bg-emerald-500/15 text-emerald-500 border-emerald-500/20', dot: 'bg-emerald-500' },
-  { value: 'declined',  label: 'declined',  chipClass: 'bg-red-500/15 text-red-500 border-red-500/20',          dot: 'bg-red-500' },
-  { value: 'converted', label: 'converted', chipClass: 'bg-violet-500/15 text-violet-500 border-violet-500/20', dot: 'bg-violet-500' },
-  { value: 'expired',   label: 'expired',   chipClass: 'bg-amber-500/15 text-amber-500 border-amber-500/20',    dot: 'bg-amber-500' },
-  { value: 'archived',  label: 'archived',  chipClass: 'bg-bg-2 text-ink-3 border-hairline',                    dot: 'bg-ink-3' },
+  { value: 'draft',     label: 'draft',     dot: 'bg-ink-3' },
+  { value: 'sent',      label: 'sent',      dot: 'bg-blue-500' },
+  { value: 'viewed',    label: 'viewed',    dot: 'bg-cyan-500' },
+  { value: 'accepted',  label: 'accepted',  dot: 'bg-emerald-500' },
+  { value: 'declined',  label: 'declined',  dot: 'bg-red-500' },
+  { value: 'converted', label: 'converted', dot: 'bg-violet-500' },
+  { value: 'expired',   label: 'expired',   dot: 'bg-amber-500' },
+  { value: 'archived',  label: 'archived',  dot: 'bg-ink-3' },
 ]
 const SERVICE_OPTIONS = [
   { value: 'residential', label: 'residential' },
@@ -309,9 +309,7 @@ export default function QuoteDetail() {
           <div className="bg-panel border border-hairline rounded-xl p-4 space-y-4 self-start">
             <div>
               <div className="flex items-center gap-2 mb-2">
-                <div className="w-10 h-10 rounded-lg bg-indigo-600/15 text-blue-500 flex items-center justify-center shrink-0">
-                  <FileText className="w-5 h-5" />
-                </div>
+                <FileText className="w-5 h-5 text-ink-3 shrink-0" />
                 <InlineSelect value={quote.status} options={statusOptions} onSelect={setStatus} />
               </div>
               {quote.viewed_at && (
