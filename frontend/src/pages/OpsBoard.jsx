@@ -63,6 +63,20 @@ function persistCleared(set) {
   try { localStorage.setItem(CLEARED_KEY, JSON.stringify([...set])) } catch { /* ignore */ }
 }
 
+/* ── collapsible widget groups ────────────────────────────────────────────────
+   Owner declutter (Sept 2026): the secondary widget clusters (trends, system
+   health) can be folded away so the landing isn't a wall. Only CLOSED groups
+   are stored (default is open), so a slimmed-down dashboard stays slim per
+   device without hiding anything by default. */
+const GROUPS_KEY = 'brightbase_board_groups_closed'
+function loadClosedGroups() {
+  try { return new Set(JSON.parse(localStorage.getItem(GROUPS_KEY) || '[]')) }
+  catch { return new Set() }
+}
+function persistClosedGroups(set) {
+  try { localStorage.setItem(GROUPS_KEY, JSON.stringify([...set])) } catch { /* ignore */ }
+}
+
 function fmtRefreshed(iso) {
   if (!iso) return ''
   try {
@@ -412,6 +426,32 @@ function Section({ section, items, clearedSet, onToggle, onAction, actioningKey,
         </div>
       )}
     </section>
+  )
+}
+
+/** A quiet, foldable label above a cluster of dashboard widgets. Open by
+ *  default (nothing is hidden on first load); folding one persists per device,
+ *  so someone who slims their dashboard keeps it that way. It's a section
+ *  header + toggle, NOT a wrapping panel — the child widgets keep their own
+ *  card borders, so there's no box-in-box. */
+function WidgetGroup({ groupKey, title, children }) {
+  const [open, setOpen] = useState(() => !loadClosedGroups().has(groupKey))
+  const toggle = () => setOpen(o => {
+    const next = !o
+    const closed = loadClosedGroups()
+    if (next) closed.delete(groupKey); else closed.add(groupKey)
+    persistClosedGroups(closed)
+    return next
+  })
+  return (
+    <div className="flex flex-col gap-4">
+      <button type="button" onClick={toggle} aria-expanded={open}
+        className="flex items-center gap-1.5 text-[11px] font-medium uppercase tracking-wide text-ink-3 transition-colors hover:text-ink-2">
+        <ChevronDown className={`h-3 w-3 shrink-0 transition-transform ${open ? '' : '-rotate-90'}`} />
+        {title}
+      </button>
+      {open && children}
+    </div>
   )
 }
 
@@ -811,8 +851,12 @@ export default function OpsBoard() {
               <div className="grid grid-cols-1 gap-4 shell:grid-cols-2">
                 <div className="flex flex-col gap-4">
                   <MoneyToday snap={snapshot.money_today} />
-                  <MoneyTrend snap={snapshot.money_trend} />
-                  <LeadFunnel snap={snapshot.lead_funnel} />
+                  {(snapshot.money_trend || snapshot.lead_funnel) && (
+                    <WidgetGroup groupKey="trends" title="Trends">
+                      <MoneyTrend snap={snapshot.money_trend} />
+                      <LeadFunnel snap={snapshot.lead_funnel} />
+                    </WidgetGroup>
+                  )}
                   <AgentHelp navigate={navigate} />
                   {secondarySections.map(({ section, items }) => (
                     <Section key={section.key} section={section} items={items}
@@ -838,8 +882,12 @@ export default function OpsBoard() {
                       setConfirmingKey={setConfirmingKey} filtersActive={filtersActive}
                       maxRows={PRIMARY_ROW_CAP} />
                   ))}
-                  <FeedHealth snap={snapshot.feeds} />
-                  <RecurringHealth snap={snapshot.recurring} />
+                  {(snapshot.feeds || snapshot.recurring) && (
+                    <WidgetGroup groupKey="health" title="System health">
+                      <FeedHealth snap={snapshot.feeds} />
+                      <RecurringHealth snap={snapshot.recurring} />
+                    </WidgetGroup>
+                  )}
                 </div>
               </div>
             </>
