@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react'
-import { Mail, CheckCircle2, Check, Clock, AlertTriangle, StickyNote, ChevronDown } from 'lucide-react'
+import { Mail, Voicemail, CheckCircle2, Check, Clock, AlertTriangle, StickyNote, ChevronDown } from 'lucide-react'
 import { fullTime } from './utils'
 import { htmlToText, splitQuotedEmail } from '../../utils/format'
 
@@ -77,6 +77,7 @@ export function MessageBubble({ m, isFirst, showTime, contactName }) {
               outbound ? 'border-white/25 text-indigo-100' : 'border-hairline text-ink-3'
             }`}>
               {m.channel === 'email' && <Mail className="w-3 h-3 inline mr-1 -mt-0.5" />}
+              {m.channel === 'voice' && <Voicemail className="w-3 h-3 inline mr-1 -mt-0.5" />}
               {m.subject}
             </div>
           )}
@@ -105,6 +106,7 @@ export function MessageBubble({ m, isFirst, showTime, contactName }) {
             {fullTime(m.created_at)}
             {outbound && <DeliveryIcon status={m.status} />}
             {m.channel === 'email' && <Mail className="w-3 h-3 ml-1 opacity-50" />}
+            {m.channel === 'voice' && <Voicemail className="w-3 h-3 ml-1 opacity-50" />}
           </div>
         </div>
         {/* Failed sends must be unmissable — the in-bubble icon alone is easy
