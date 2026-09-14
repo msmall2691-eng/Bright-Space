@@ -475,7 +475,7 @@ def _thread_sent_email(db: Session, client_id: int, em: dict,
     Message-ID we already stored. Threaded by the RECIPIENT (to_email), the
     customer, so it lands in the same conversation their inbound mail does.
     Returns True if a new Message was created, False on a duplicate."""
-    from modules.comms.router import find_or_create_conversation, _apply_outbound
+    from modules.comms.router import find_or_create_conversation
 
     message_id = (em.get("message_id") or "").strip()
     if message_id and db.query(Message).filter(Message.external_id == message_id).first():
@@ -512,7 +512,21 @@ def _thread_sent_email(db: Session, client_id: int, em: dict,
     )
     db.add(msg)
     db.flush()
-    _apply_outbound(conv, msg)
+    # Chronology-safe bookkeeping (Codex P1 on #896). The sent scan backfills up
+    # to `newer_than_days`, so a historical send must NOT regress the
+    # conversation's activity clock or be mis-recorded as the reply to an inbound
+    # that actually arrived AFTER it. _apply_outbound sets these unconditionally,
+    # which is right for a live send but wrong for a backfill — so guard each by
+    # timestamp instead of calling it.
+    ts = msg.created_at or datetime.now(timezone.utc)
+    if conv.last_outbound_at is None or ts > conv.last_outbound_at:
+        conv.last_outbound_at = ts
+    if conv.last_message_at is None or ts > conv.last_message_at:
+        conv.last_message_at = ts
+    # First-response time only counts a reply that came AFTER the inbound it
+    # answers; a send predating the last inbound is not that reply.
+    if conv.last_inbound_at and not conv.first_response_at and ts >= conv.last_inbound_at:
+        conv.first_response_at = ts
     return True
 
 
@@ -548,8 +562,14 @@ def run_account_sent_sync(db: Session, account, *, max_results: int = 25,
         if not to_addr:
             continue
         client = _match_email_to_client(to_addr, db)
+        # Cross-tenant guard (Codex P1 on #896). _match_email_to_client is a
+        # GLOBAL lookup — a recipient address shared across tenants could resolve
+        # to ANOTHER org's client. Never attach this account's sent mail to a
+        # different org's conversation; treat a foreign match as "not a client".
+        if client and org_id is not None and client.org_id is not None and client.org_id != org_id:
+            client = None
         if not client:
-            skipped += 1  # not a client — read past, never stored
+            skipped += 1  # not a client in this org — read past, never stored
             continue
         try:
             if _thread_sent_email(db, client.id, em, account_id=account.id, org_id=org_id):

@@ -7,7 +7,7 @@ recent SENT, threads the ones addressed to a KNOWN client as OUTBOUND messages
 and dedups on the RFC Message-ID (so BrightBase's own sent copies aren't
 re-threaded into duplicates).
 """
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 from unittest.mock import patch
 
@@ -31,11 +31,12 @@ def ctx():
     db.commit(); db.close()
 
 
-def _sent(to_email, message_id, subject="Re: your quote", body="Sounds good!"):
+def _sent(to_email, message_id, subject="Re: your quote", body="Sounds good!",
+          date=None):
     return {
         "message_id": message_id, "from_email": "office@mainecleaninco.com",
         "to": to_email, "to_email": to_email, "subject": subject, "body": body,
-        "date": datetime.now(timezone.utc).isoformat(),
+        "date": (date or datetime.now(timezone.utc)).isoformat(),
     }
 
 
@@ -80,3 +81,56 @@ def test_sent_dedups_on_message_id(ctx):
     assert first["threaded"] == 1
     assert second["threaded"] == 0
     assert db.query(Message).filter(Message.external_id == "<sent-3@mail>").count() == 1
+
+
+def test_sent_to_another_orgs_client_is_not_threaded(ctx):
+    # Codex P1 on #896: _match_email_to_client is a GLOBAL lookup. A recipient
+    # address that belongs to ANOTHER org's client must never have this
+    # account's (org 1) sent mail attached to that foreign org's conversation.
+    db, client, acct = ctx
+    other = Client(name="Foreign Org", email="shared@example.com",
+                   status="active", org_id=2)
+    db.add(other); db.commit(); db.refresh(other)
+    try:
+        out = _run(db, acct, [_sent("shared@example.com", "<sent-x-org@mail>")])
+        assert out["threaded"] == 0
+        assert out["skipped_not_client"] == 1
+        # Nothing stored, and no conversation created against the foreign client.
+        assert db.query(Message).filter(
+            Message.external_id == "<sent-x-org@mail>").first() is None
+        assert db.query(Conversation).filter(
+            Conversation.client_id == other.id).first() is None
+    finally:
+        db.query(Message).filter(Message.client_id == other.id).delete(synchronize_session=False)
+        db.query(Conversation).filter(Conversation.client_id == other.id).delete(synchronize_session=False)
+        db.query(Client).filter(Client.id == other.id).delete(synchronize_session=False)
+        db.commit()
+
+
+def test_backfilled_old_send_does_not_regress_conversation_clock(ctx):
+    # Codex P1 on #896: the scan backfills up to newer_than_days. A historical
+    # send must not (a) drag the conversation's last_message_at backwards, nor
+    # (b) be mis-recorded as the first response to an inbound that arrived AFTER
+    # it. Seed a conversation whose latest activity (and last inbound) is NOW,
+    # then thread a send dated two days ago.
+    db, client, acct = ctx
+    # The schema stores naive UTC (see _parse_email_dt / _utcnow); seed the
+    # conversation the same way so the comparison mirrors production.
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    old = now - timedelta(days=2)
+    conv = Conversation(
+        client_id=client.id, channel="email", status="open", priority="normal",
+        org_id=1, last_message_at=now, last_inbound_at=now, first_response_at=None,
+    )
+    db.add(conv); db.commit(); db.refresh(conv)
+
+    # `old` is timezone-aware on the wire (real Gmail Date headers are); the
+    # sync normalizes it to naive UTC before storing.
+    out = _run(db, acct, [_sent("customer@example.com", "<sent-old@mail>",
+                                date=old.replace(tzinfo=timezone.utc))])
+    assert out["threaded"] == 1
+    db.refresh(conv)
+    # The newer inbound still owns the activity clock — not dragged back to `old`.
+    assert conv.last_message_at >= now
+    # A send that predates the inbound is not the reply to it: SLA stays unmet.
+    assert conv.first_response_at is None
