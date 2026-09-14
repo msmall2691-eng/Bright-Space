@@ -252,6 +252,28 @@ def fetch_inbox_for_account(creds, max_results: int = 30, skip_automated: bool =
     return out
 
 
+def fetch_sent_for_account(creds, max_results: int = 25, newer_than_days: int = 7) -> list:
+    """Fetch the account's recently SENT messages — the owner's own outgoing
+    mail — so a reply composed directly in Gmail (not through BrightBase) can be
+    threaded into the client's conversation.
+
+    Bounded by count AND age (`newer_than:Nd`) to keep the poll cheap; dedup on
+    the RFC Message-ID happens downstream, which also skips the SENT copy of any
+    reply BrightBase itself sent (it carries the Message-ID we already stored).
+    skip_automated is off — these are the owner's own sends, never bulk."""
+    service = _service(creds)
+    kwargs = dict(userId="me", labelIds=["SENT"], maxResults=max_results)
+    if newer_than_days:
+        kwargs["q"] = f"newer_than:{int(newer_than_days)}d"
+    listing = service.users().messages().list(**kwargs).execute()
+    out = []
+    for ref in listing.get("messages", []) or []:
+        d = _message_dict(service, ref["id"], skip_automated=False)
+        if d:
+            out.append(d)
+    return out
+
+
 class HistoryExpired(Exception):
     """Gmail returned 404 for the stored startHistoryId — it's older than
     Gmail's history retention window (≈ 1 week), so an incremental sync isn't

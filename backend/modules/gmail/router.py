@@ -463,3 +463,103 @@ def run_account_inbox_sync(db: Session, account, *, max_results: int = 30) -> di
     return result
 
 
+def _thread_sent_email(db: Session, client_id: int, em: dict,
+                       account_id: Optional[int] = None,
+                       org_id: Optional[int] = None) -> bool:
+    """Attach a message the owner SENT (composed in Gmail, not through
+    BrightBase) to the client's email Conversation as an OUTBOUND message, so a
+    reply written straight from Gmail still shows up in the thread here.
+
+    Dedupes on the RFC Message-ID (external_id) — which also skips the SENT copy
+    of any reply BrightBase itself sent, since that copy carries the same
+    Message-ID we already stored. Threaded by the RECIPIENT (to_email), the
+    customer, so it lands in the same conversation their inbound mail does.
+    Returns True if a new Message was created, False on a duplicate."""
+    from modules.comms.router import find_or_create_conversation, _apply_outbound
+
+    message_id = (em.get("message_id") or "").strip()
+    if message_id and db.query(Message).filter(Message.external_id == message_id).first():
+        return False
+
+    to_addr = (em.get("to_email") or "").strip()
+    conv = find_or_create_conversation(
+        db, channel="email",
+        client_id=client_id,
+        external_contact=to_addr,
+        subject=em.get("subject", ""),
+        org_id=org_id,
+    )
+    if conv.client_id is None and client_id:
+        conv.client_id = client_id
+    if account_id and conv.synced_by_google_account_id is None:
+        conv.synced_by_google_account_id = account_id
+
+    msg = Message(
+        client_id=client_id,
+        conversation_id=conv.id,
+        channel="email",
+        direction="outbound",
+        from_addr=em.get("from_email", ""),
+        to_addr=em.get("to", "") or to_addr,
+        subject=em.get("subject", ""),
+        body=em.get("body", ""),
+        external_id=message_id or None,
+        status="sent",
+        is_internal_note=False,
+        synced_by_google_account_id=account_id,
+        created_at=_parse_email_dt(em.get("date")) or datetime.now(timezone.utc),
+        org_id=org_id,  # BB-MT-01
+    )
+    db.add(msg)
+    db.flush()
+    _apply_outbound(conv, msg)
+    return True
+
+
+def run_account_sent_sync(db: Session, account, *, max_results: int = 25,
+                          newer_than_days: int = 7) -> dict:
+    """Thread the owner's Gmail-composed replies to KNOWN clients into their
+    conversations as outbound messages, so a reply written directly in Gmail
+    isn't invisible in BrightBase.
+
+    Sent mail to anyone who is NOT already a client is read past and never
+    stored (no lead is created from a sent message — matching by the recipient
+    only, via _match_email_to_client). Rides the existing per-account poll (no
+    new tick); dedup on the Message-ID keeps it idempotent and skips the copies
+    of replies BrightBase itself sent."""
+    from integrations.google_accounts import AccountCredentialsError, account_credentials
+    from integrations.gmail_api import fetch_sent_for_account
+
+    org_id = getattr(account, "org_id", None)
+    try:
+        creds = account_credentials(db, account)
+        emails = fetch_sent_for_account(creds, max_results=max_results,
+                                        newer_than_days=newer_than_days)
+    except AccountCredentialsError as e:
+        logger.info(f"[gmail-sent] sync skipped for {getattr(account, 'email', '?')}: {e}")
+        return {"threaded": 0, "skipped_not_client": 0}
+    except Exception as e:
+        logger.warning(f"[gmail-sent] sent sync failed for {getattr(account, 'email', '?')}: {e}")
+        return {"threaded": 0, "skipped_not_client": 0}
+
+    threaded, skipped = 0, 0
+    for em in emails:
+        to_addr = (em.get("to_email") or "").strip()
+        if not to_addr:
+            continue
+        client = _match_email_to_client(to_addr, db)
+        if not client:
+            skipped += 1  # not a client — read past, never stored
+            continue
+        try:
+            if _thread_sent_email(db, client.id, em, account_id=account.id, org_id=org_id):
+                threaded += 1
+        except Exception as e:
+            logger.warning(f"[gmail-sent] could not thread sent message to {to_addr}: {e}")
+    # The inbox pass already committed via mark_sync; these outbound rows are
+    # added after it, so commit them here (nothing else does).
+    if threaded:
+        db.commit()
+    return {"threaded": threaded, "skipped_not_client": skipped}
+
+
