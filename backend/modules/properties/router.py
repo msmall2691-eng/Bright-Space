@@ -41,6 +41,11 @@ class PropertyCreate(BaseModel):
     check_in_time: Optional[str] = None  # "14:00"
     check_out_time: Optional[str] = None  # "10:00"
     house_code: Optional[str] = None
+    # Access codes settable at create time. These were update-only, so a new
+    # property could not carry WiFi until a later edit — and the only editor
+    # that exposed WiFi was a job's page. (PropertyUpdate already had them.)
+    wifi_ssid: Optional[str] = None
+    wifi_password: Optional[str] = None
     timezone: Optional[str] = None
     business_name: Optional[str] = None
     hours_of_operation: Optional[str] = None

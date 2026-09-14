@@ -9690,6 +9690,10 @@ export interface components {
             check_out_time?: string | null;
             /** House Code */
             house_code?: string | null;
+            /** Wifi Ssid */
+            wifi_ssid?: string | null;
+            /** Wifi Password */
+            wifi_password?: string | null;
             /** Timezone */
             timezone?: string | null;
             /** Business Name */
