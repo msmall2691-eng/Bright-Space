@@ -49,14 +49,16 @@ _ANTHROPIC_TIERS = {
     "sonnet": os.getenv("AGENT_MODEL_SONNET", "claude-sonnet-4-6"),
     "opus": os.getenv("AGENT_MODEL_OPUS", "claude-opus-4-8"),
 }
-# Defaults are gemini-3.6-flash across the board: Google retired the gemini-2.5-*
-# ids for new API keys (a 404 that names 3.6-flash as the replacement), and it's
-# the one current model we can rely on being available. Point the fast tier at a
-# -flash-lite and the hard tier at a larger model via these env vars once you've
-# confirmed those ids for your key (GET .../v1beta/models) — that's the tiering,
-# and it's one env var, not a deploy.
+# The fast tier defaults to gemini-3.5-flash-lite (Google's cheapest/fastest
+# current model — routing, the QC pass, the daily brief, crew /ask); standard
+# and hard default to gemini-3.6-flash. Note there is NO gemini-3.6-flash-lite —
+# the -flash-lite line is 3.5/3.1, so don't "match" the 3.6 by guessing one.
+# Google retired the gemini-2.5-* ids for new keys (a 404 that named 3.6-flash
+# as the replacement), so those are gone. Every tier stays env-overridable —
+# point the hard tier at a larger model via GEMINI_MODEL_PRO once you've
+# confirmed its id for your key (GET .../v1beta/models); one env var, no deploy.
 _GEMINI_TIERS = {
-    "haiku": os.getenv("GEMINI_MODEL_FAST", "gemini-3.6-flash"),
+    "haiku": os.getenv("GEMINI_MODEL_FAST", "gemini-3.5-flash-lite"),
     "sonnet": os.getenv("GEMINI_MODEL", "gemini-3.6-flash"),
     "opus": os.getenv("GEMINI_MODEL_PRO", "gemini-3.6-flash"),
 }
