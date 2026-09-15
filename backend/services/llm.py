@@ -49,10 +49,16 @@ _ANTHROPIC_TIERS = {
     "sonnet": os.getenv("AGENT_MODEL_SONNET", "claude-sonnet-4-6"),
     "opus": os.getenv("AGENT_MODEL_OPUS", "claude-opus-4-8"),
 }
+# Defaults are gemini-3.6-flash across the board: Google retired the gemini-2.5-*
+# ids for new API keys (a 404 that names 3.6-flash as the replacement), and it's
+# the one current model we can rely on being available. Point the fast tier at a
+# -flash-lite and the hard tier at a larger model via these env vars once you've
+# confirmed those ids for your key (GET .../v1beta/models) — that's the tiering,
+# and it's one env var, not a deploy.
 _GEMINI_TIERS = {
-    "haiku": os.getenv("GEMINI_MODEL_FAST", "gemini-2.5-flash-lite"),
-    "sonnet": os.getenv("GEMINI_MODEL", "gemini-2.5-flash"),
-    "opus": os.getenv("GEMINI_MODEL_PRO", "gemini-2.5-pro"),
+    "haiku": os.getenv("GEMINI_MODEL_FAST", "gemini-3.6-flash"),
+    "sonnet": os.getenv("GEMINI_MODEL", "gemini-3.6-flash"),
+    "opus": os.getenv("GEMINI_MODEL_PRO", "gemini-3.6-flash"),
 }
 
 
@@ -218,8 +224,14 @@ def _gemini_config(system, max_tokens, *, json_mode=False, temperature=None, too
 
 
 def _gemini_complete(system, user_content, model, max_tokens, json_mode, temperature):
+    # Hold the Client in a local for the whole call. As a throwaway
+    # (`_gemini().models.generate_content(...)`) the Client can be GC'd and its
+    # httpx transport closed mid-call, and the SDK's internal retry then dies
+    # with "Cannot send a request, as the client has been closed" instead of
+    # surfacing the real error — every other adapter here already binds it.
+    client = _gemini()
     cfg = _gemini_config(system, max_tokens, json_mode=json_mode, temperature=temperature)
-    resp = _gemini().models.generate_content(model=model, contents=user_content, config=cfg)
+    resp = client.models.generate_content(model=model, contents=user_content, config=cfg)
     return (resp.text or "").strip()
 
 
