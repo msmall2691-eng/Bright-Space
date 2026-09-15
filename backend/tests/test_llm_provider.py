@@ -5,6 +5,7 @@ Both adapters are exercised with fake clients (no network, no real key) — the
 point is that complete_text and run_tool_loop dispatch to the right provider,
 convert tools, run the tool loop, and return the final text either way.
 """
+import json
 from types import SimpleNamespace
 from unittest.mock import patch
 
@@ -132,6 +133,32 @@ def test_run_tool_loop_gemini_executes_then_answers(monkeypatch):
                                 tools=_TOOLS, execute=lambda n, a: calls.append(n) or {"clients": 3})
     assert out == "Here is your summary."
     assert calls == ["get_business_snapshot"]
+
+
+def test_gemini_fn_response_is_json_safe():
+    # The real failure in prod: a tool result carried a date, and the genai SDK
+    # json.dumps()'d the request with no default=, crashing with "Object of type
+    # date is not JSON serializable". The payload must be coerced to plain JSON
+    # types (dates -> iso strings), and a non-dict result wrapped under "result".
+    import datetime
+    from decimal import Decimal
+    safe = llm._gemini_fn_response(
+        {"job_date": datetime.date(2026, 9, 15), "amount": Decimal("12.50")})
+    # Round-trips through json with no error, and no raw date/Decimal survives.
+    assert json.dumps(safe)  # would raise if anything were unserializable
+    assert safe["job_date"] == "2026-09-15"
+    assert llm._gemini_fn_response(["a", "b"]) == {"result": ["a", "b"]}
+
+
+def test_run_tool_loop_gemini_survives_a_date_in_the_tool_result(monkeypatch):
+    # End-to-end: a tool that returns a date must not break the Gemini loop.
+    monkeypatch.setenv("LLM_PROVIDER", "gemini")
+    import datetime
+    with patch.object(llm, "_gemini", return_value=_FakeGemini()):
+        out = llm.run_tool_loop(
+            system="s", user_content="what's on today?", tools=_TOOLS,
+            execute=lambda n, a: {"next_job": datetime.date(2026, 9, 15)})
+    assert out == "Here is your summary."
 
 
 def test_gemini_tools_pass_schema_through_verbatim():
