@@ -27,6 +27,7 @@ from database.models import (
     Quote, Client, Job, Property, LeadIntake, IntegrationEvent,
 )
 from modules.auth.router import get_current_user, require_role, current_org_id, resolve_org_id
+from modules.intake.details import fill_property_access_from_intake, compose_job_notes_from_intake
 from utils.integration_log import log_integration_event as _log_integration
 from utils.dates import coerce_date, fmt_long_date
 from utils.address import format_address
@@ -1164,6 +1165,15 @@ def _convert_quote_to_job(
     svc, job_type, prop_type = _quote_job_vocab(quote)
     prop = _resolve_property_for_quote(db, quote, prop_type)
 
+    # Carry the customer's on-site request details onto the records the crew
+    # reads: the request's place-stable access info (entry method, parking,
+    # pets) onto the property (fill-if-missing), and the per-visit instructions
+    # (focus areas, special instructions, arrival window) into the job's notes,
+    # which the crew job card shows. Both no-op when there is no linked intake.
+    intake = _quote_intake(db, quote)
+    fill_property_access_from_intake(prop, intake)
+    job_notes = compose_job_notes_from_intake(quote.notes, intake)
+
     # Fully-scheduled conversion → reuse the Scheduling create-job path so
     # the same guards + calendar side effects run. It also flips the source
     # quote to "converted" and advances the opportunity, matching what this
@@ -1182,7 +1192,7 @@ def _convert_quote_to_job(
             opportunity_id=quote.opportunity_id,
             property_id=prop.id,
             cleaner_ids=[str(c) for c in (cleaner_ids or [])],
-            notes=quote.notes,
+            notes=job_notes,
         )
         # create_job's org_id is a FastAPI dependency (Depends(current_org_id))
         # that only resolves through real request injection; called in-process
@@ -1207,7 +1217,7 @@ def _convert_quote_to_job(
         address=quote.address or prop.address,
         status="unscheduled",
         cleaner_ids=[str(c) for c in cleaner_ids] if cleaner_ids else [],
-        notes=quote.notes,
+        notes=job_notes,
         # BB-MT-01: unlike the scheduled path just above (which explicitly
         # passes quote.org_id to create_job for this exact reason), this
         # direct-insert left org_id NULL — every unscheduled quote→job
