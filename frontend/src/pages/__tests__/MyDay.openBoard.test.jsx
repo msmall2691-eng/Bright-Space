@@ -65,7 +65,7 @@ it('lists an open job once on a day with nothing booked', async () => {
   await waitFor(() => expect(screen.queryAllByText(/Camden ME/).length)
     .toBeGreaterThan(0))
   // The board is the ONE place this job appears. Twice is the bug.
-  expect(screen.getAllByRole('button', { name: /ask for this job/i })).toHaveLength(1)
+  expect(screen.getAllByRole('button', { name: /take it/i })).toHaveLength(1)
 })
 
 it('still lists it once when the day does have work booked', async () => {
@@ -75,7 +75,7 @@ it('still lists it once when the day does have work booked', async () => {
     address: '9 Elm St, Portland ME',
   }
   await show({ ...DAY, today: [assigned] })
-  expect(screen.getAllByRole('button', { name: /ask for this job/i })).toHaveLength(1)
+  expect(screen.getAllByRole('button', { name: /take it/i })).toHaveLength(1)
 })
 
 // ── The day-at-a-glance dashboard (what makes home more than a jobs list) ────
@@ -119,36 +119,40 @@ it('says which day an offer is for', async () => {
 })
 
 
-it('asking for a job opens the sheet and files the request', async () => {
-  // The assertion that was missing. The other tests prove the BUTTON exists;
-  // #777 deleted the sheet it opens, so the button set state that nothing
-  // rendered — no sheet, no rate field, no POST, no feedback. A test that only
-  // finds the button passes on a dead button. This one clicks it.
+it('taking a job files an accept-at-posted request in one tap — no bid sheet', async () => {
+  // The primary action is a one-tap ACCEPT: it POSTs the claim directly with
+  // requested_rate:null ("your posted price is fine"), no rate field in the way.
   post.mockResolvedValue({ auto_approved: false })
   await show()
 
-  fireEvent.click(screen.getByRole('button', { name: /ask for this job/i }))
+  fireEvent.click(screen.getByRole('button', { name: /take it · \$140/i }))
 
-  // The sheet — the render that regressed — is what carries the confirm.
-  const send = await screen.findByRole('button', { name: /send request/i })
-  fireEvent.click(send)
-
-  // Empty rate box means "your posted price is fine" — null, not 0.
   await waitFor(() => expect(post).toHaveBeenCalledWith(
     '/api/crew/jobs/41/claim',
     { requested_rate: null, message: null },
   ))
 })
 
-it('claims instantly when the office has instant claiming on', async () => {
-  // The same board, but the office turned instant claiming on: the backend
-  // stamps instant_claim on the offer, and the copy follows it — "Claim this
-  // job" and "Claim it", not the ask wording. Proves the flag flows through.
+it('bidding a different price is the secondary path — opens the sheet', async () => {
+  // Bidding is the last resort: a quiet link that opens the offer sheet, which
+  // still confirms to the posted price when the rate box is left empty.
+  post.mockResolvedValue({ auto_approved: false })
+  await show()
+
+  fireEvent.click(screen.getByRole('button', { name: /ask for a different price/i }))
+  const send = await screen.findByRole('button', { name: /send request/i })
+  fireEvent.click(send)
+
+  await waitFor(() => expect(post).toHaveBeenCalledWith(
+    '/api/crew/jobs/41/claim', { requested_rate: null, message: null }))
+})
+
+it('taking it claims instantly when the office has instant claiming on', async () => {
+  // Same one-tap accept, but the office turned instant claiming on: the backend
+  // auto-approves and the toast says it's yours. The button is still "Take it".
   post.mockResolvedValue({ auto_approved: true })
   await show({ ...DAY, open_jobs: [{ ...OFFER, instant_claim: true }] })
-  fireEvent.click(screen.getByRole('button', { name: /claim this job/i }))
-  const send = await screen.findByRole('button', { name: /claim it/i })
-  fireEvent.click(send)
+  fireEvent.click(screen.getByRole('button', { name: /take it · \$140/i }))
   await waitFor(() => expect(post).toHaveBeenCalledWith(
     '/api/crew/jobs/41/claim', { requested_rate: null, message: null }))
 })
@@ -174,7 +178,7 @@ it('has a Jobs tab that lists every open job to claim', async () => {
   fireEvent.click(screen.getByRole('button', { name: 'Jobs' }))
   expect(await screen.findByText('Open jobs')).toBeTruthy()      // the header
   expect(screen.getByText(/Camden ME/)).toBeTruthy()             // the offer
-  expect(screen.getByRole('button', { name: /ask for this job/i })).toBeTruthy()
+  expect(screen.getByRole('button', { name: /take it/i })).toBeTruthy()
 })
 
 it('the Jobs tab tells an uncleared sub why it is empty', async () => {
