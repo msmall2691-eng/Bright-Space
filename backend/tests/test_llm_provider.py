@@ -133,3 +133,120 @@ def test_gemini_tools_pass_schema_through_verbatim():
     assert gtools is not None and len(gtools) == 1
     decl = gtools[0].function_declarations[0]
     assert decl.name == "get_business_snapshot"
+
+
+# --- stream_tool_loop (the live Workspace chat) ------------------------------
+
+def _events(gen):
+    return list(gen)
+
+
+class _FakeAnthropicStream:
+    """A messages.stream(...) context manager: one tool-use turn, then a final
+    text turn. Yields delta + block-start events, get_final_message() gives the
+    turn's stop_reason/content."""
+    def __init__(self, turns):
+        self._turns = turns
+
+    def __call__(self, **kw):
+        self._cur = self._turns.pop(0)
+        return self
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *a):
+        return False
+
+    def __iter__(self):
+        return iter(self._cur["events"])
+
+    def get_final_message(self):
+        return SimpleNamespace(stop_reason=self._cur["stop_reason"],
+                               content=self._cur["content"])
+
+
+def test_stream_tool_loop_anthropic_events_and_execution(monkeypatch):
+    monkeypatch.setenv("LLM_PROVIDER", "anthropic")
+    delta = SimpleNamespace(type="content_block_delta", delta=SimpleNamespace(text="Hi "))
+    start = SimpleNamespace(type="content_block_start",
+                            content_block=SimpleNamespace(type="tool_use", name="get_business_snapshot"))
+    turns = [
+        {"events": [start],
+         "stop_reason": "tool_use",
+         "content": [SimpleNamespace(type="tool_use", name="get_business_snapshot", input={}, id="t1")]},
+        {"events": [delta, SimpleNamespace(type="content_block_delta", delta=SimpleNamespace(text="there."))],
+         "stop_reason": "end_turn", "content": []},
+    ]
+    stream = _FakeAnthropicStream(turns)
+    fake = SimpleNamespace(messages=SimpleNamespace(stream=stream))
+    calls = []
+    with patch.object(llm, "_anthropic", return_value=fake):
+        evs = _events(llm.stream_tool_loop(
+            system="s", messages=[{"role": "user", "content": "hi"}], tools=_TOOLS,
+            execute=lambda n, a: calls.append(n) or {"clients": 3}))
+    kinds = [e["type"] for e in evs]
+    assert kinds[0] == "tool_call" and kinds[-1] == "final"
+    assert {"type": "tool_result", "name": "get_business_snapshot", "preview": '{"clients": 3}'} in evs
+    assert evs[-1]["text"] == "Hi there."
+    assert evs[-1]["tools_used"] == ["get_business_snapshot"]
+    assert calls == ["get_business_snapshot"]
+
+
+def _gchunk(text=None, calls=None):
+    return SimpleNamespace(text=text, function_calls=calls or [])
+
+
+def _gfc(name, args=None, **extra):
+    return SimpleNamespace(name=name, args=args or {}, **extra)
+
+
+class _FakeGeminiStreaming:
+    """models.generate_content_stream(...) → a fresh iterator per turn: first a
+    tool-call turn, then a text turn."""
+    def __init__(self):
+        self._turns = [
+            [_gchunk(calls=[_gfc("get_business_snapshot")])],
+            [_gchunk(text="Here "), _gchunk(text="you go.")],
+        ]
+        self.models = SimpleNamespace(generate_content_stream=self._stream)
+
+    def _stream(self, **kw):
+        return iter(self._turns.pop(0))
+
+
+def test_stream_tool_loop_gemini_events_and_execution(monkeypatch):
+    monkeypatch.setenv("LLM_PROVIDER", "gemini")
+    calls = []
+    with patch.object(llm, "_gemini", return_value=_FakeGeminiStreaming()):
+        evs = _events(llm.stream_tool_loop(
+            system="s", messages=[{"role": "user", "content": "how's business?"}],
+            tools=_TOOLS, execute=lambda n, a: calls.append(n) or {"clients": 3}))
+    kinds = [e["type"] for e in evs]
+    assert "tool_call" in kinds and kinds[-1] == "final"
+    assert {"type": "tool_result", "name": "get_business_snapshot", "preview": '{"clients": 3}'} in evs
+    assert evs[-1]["text"] == "Here you go."
+    assert evs[-1]["tools_used"] == ["get_business_snapshot"]
+    assert calls == ["get_business_snapshot"]
+
+
+def test_stream_tool_loop_gemini_runs_a_repeated_call_once(monkeypatch):
+    # A function call can echo across chunks; the loop must act on it once.
+    monkeypatch.setenv("LLM_PROVIDER", "gemini")
+
+    class _Echoing:
+        def __init__(self):
+            self._turns = [
+                [_gchunk(calls=[_gfc("get_business_snapshot")]),
+                 _gchunk(calls=[_gfc("get_business_snapshot")])],
+                [_gchunk(text="done.")],
+            ]
+            self.models = SimpleNamespace(generate_content_stream=lambda **kw: iter(self._turns.pop(0)))
+
+    calls = []
+    with patch.object(llm, "_gemini", return_value=_Echoing()):
+        evs = _events(llm.stream_tool_loop(
+            system="s", messages=[{"role": "user", "content": "x"}], tools=_TOOLS,
+            execute=lambda n, a: calls.append(n) or {"ok": 1}))
+    assert calls == ["get_business_snapshot"]  # executed once, not twice
+    assert evs[-1]["text"] == "done."

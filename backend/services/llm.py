@@ -98,6 +98,33 @@ def run_tool_loop(*, system: str, user_content: str, tools: list[dict],
     return _anthropic_tool_loop(system, user_content, tools, execute, model, max_tokens, max_iters)
 
 
+def stream_tool_loop(*, system: str, messages: list[dict], tools: list[dict],
+                     execute: Callable[[str, dict], Any], tier: str = "sonnet",
+                     max_tokens: int = 4096, max_iters: int = 8):
+    """Streaming sibling of ``run_tool_loop`` for the live Workspace chat.
+
+    ``messages`` is the running conversation as plain ``{role, content}`` dicts
+    (role ``user``/``assistant``, content a string) — the same history the
+    websocket already keeps. This is a generator: it yields event dicts the
+    transport layer renders, in order, and always ends with exactly one
+    ``final`` event:
+
+        {"type": "chunk",       "text": str}          # a token delta
+        {"type": "tool_call",   "name": str}          # the model is calling a tool
+        {"type": "tool_result", "name": str, "preview": str}
+        {"type": "final",       "text": str, "tools_used": list[str]}
+
+    ``execute(name, args) -> dict`` runs one tool; the caller keeps org-scoping
+    and the read-only operations gate inside it, exactly as the non-streaming
+    loop does. Tool previews are truncated to 120 chars to match the existing
+    wire shape."""
+    model = model_for_tier(tier)
+    if provider() == "gemini":
+        yield from _gemini_stream_tool_loop(system, messages, tools, execute, model, max_tokens, max_iters)
+    else:
+        yield from _anthropic_stream_tool_loop(system, messages, tools, execute, model, max_tokens, max_iters)
+
+
 # --- Anthropic adapter -------------------------------------------------------
 
 def _anthropic():
@@ -132,6 +159,39 @@ def _anthropic_tool_loop(system, user_content, tools, execute, model, max_tokens
                                 "content": json.dumps(out, default=str)})
         messages.append({"role": "user", "content": results})
     return "".join(b.text for b in resp.content if getattr(b, "type", None) == "text").strip() if resp else ""
+
+
+def _anthropic_stream_tool_loop(system, messages, tools, execute, model, max_tokens, max_iters):
+    client = _anthropic()
+    loop_messages = list(messages)
+    tools_used: list[str] = []
+    final_text = ""
+    for _ in range(max_iters):
+        turn_text = ""
+        with client.messages.stream(model=model, max_tokens=max_tokens, system=system,
+                                    messages=loop_messages, tools=tools) as stream:
+            for event in stream:
+                if event.type == "content_block_delta" and hasattr(event.delta, "text"):
+                    turn_text += event.delta.text
+                    yield {"type": "chunk", "text": event.delta.text}
+                elif event.type == "content_block_start" and event.content_block.type == "tool_use":
+                    yield {"type": "tool_call", "name": event.content_block.name}
+            final_msg = stream.get_final_message()
+        if final_msg.stop_reason != "tool_use":
+            final_text = turn_text
+            break
+        tool_results = []
+        for block in final_msg.content:
+            if block.type == "tool_use":
+                out = execute(block.name, dict(block.input))
+                result_text = json.dumps(out, default=str)
+                tools_used.append(block.name)
+                yield {"type": "tool_result", "name": block.name, "preview": result_text[:120]}
+                tool_results.append({"type": "tool_result", "tool_use_id": block.id,
+                                     "content": result_text})
+        loop_messages.append({"role": "assistant", "content": final_msg.content})
+        loop_messages.append({"role": "user", "content": tool_results})
+    yield {"type": "final", "text": final_text, "tools_used": tools_used}
 
 
 # --- Gemini adapter ----------------------------------------------------------
@@ -201,3 +261,63 @@ def _gemini_tool_loop(system, user_content, tools, execute, model, max_tokens, m
                 name=c.name, response=out if isinstance(out, dict) else {"result": out}))
         contents.append(types.Content(role="user", parts=parts))
     return (resp.text or "").strip() if resp else ""
+
+
+def _gemini_contents_from_messages(messages):
+    """Plain {role, content:str} history → Gemini Content list. Assistant turns
+    map to role 'model'; anything without a string body is skipped."""
+    from google.genai import types
+    out = []
+    for m in messages:
+        content = m.get("content")
+        if not isinstance(content, str):
+            continue
+        role = "model" if m.get("role") == "assistant" else "user"
+        out.append(types.Content(role=role, parts=[types.Part.from_text(text=content)]))
+    return out
+
+
+def _gemini_stream_tool_loop(system, messages, tools, execute, model, max_tokens, max_iters):
+    from google.genai import types
+    client = _gemini()
+    cfg = _gemini_config(system, max_tokens, tools=_gemini_tools(tools))
+    contents = _gemini_contents_from_messages(messages)
+    tools_used: list[str] = []
+    final_text = ""
+    for _ in range(max_iters):
+        turn_text = ""
+        calls = []
+        seen = set()  # a function call can echo across chunks; act on each once
+        for chunk in client.models.generate_content_stream(
+                model=model, contents=contents, config=cfg):
+            piece = chunk.text or ""
+            if piece:
+                turn_text += piece
+                yield {"type": "chunk", "text": piece}
+            for fc in (chunk.function_calls or []):
+                if getattr(fc, "will_continue", None) or getattr(fc, "partial_args", None):
+                    continue  # a partial (still-streaming) call — wait for the whole thing
+                sig = (fc.name, json.dumps(fc.args or {}, sort_keys=True, default=str))
+                if sig in seen:
+                    continue
+                seen.add(sig)
+                calls.append(fc)
+        if not calls:
+            final_text = turn_text
+            break
+        # Record the model's turn (any text it spoke, then its calls), then answer
+        # each call with a user-role functionResponse part (Gemini's convention).
+        model_parts = ([types.Part.from_text(text=turn_text)] if turn_text else []) \
+            + [types.Part(function_call=fc) for fc in calls]
+        contents.append(types.Content(role="model", parts=model_parts))
+        resp_parts = []
+        for fc in calls:
+            yield {"type": "tool_call", "name": fc.name}
+            out = execute(fc.name, dict(fc.args or {}))
+            tools_used.append(fc.name)
+            yield {"type": "tool_result", "name": fc.name,
+                   "preview": json.dumps(out, default=str)[:120]}
+            resp_parts.append(types.Part.from_function_response(
+                name=fc.name, response=out if isinstance(out, dict) else {"result": out}))
+        contents.append(types.Content(role="user", parts=resp_parts))
+    yield {"type": "final", "text": final_text, "tools_used": tools_used}
