@@ -3374,6 +3374,14 @@ def get_job_details(job_id: int, db: Session = Depends(get_db), org_id: int = De
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
 
+    # Fold in a Google Calendar RSVP if the customer accepted their invite — the
+    # logic (and its scheduling-invariant / economy guards) lives in the service;
+    # this is read-on-view, office roles only, and a no-op for a job with no
+    # invite out or one already confirmed. Crew read the flag via /crew/my-day.
+    if getattr(current_user, "role", None) in ("admin", "manager", "viewer"):
+        from services.gcal_confirmations import maybe_capture_customer_rsvp
+        maybe_capture_customer_rsvp(db, job)
+
     invoices = db.query(Invoice).filter(
         Invoice.job_id == job.id,
         or_(Invoice.org_id == org_id, Invoice.org_id.is_(None)),
