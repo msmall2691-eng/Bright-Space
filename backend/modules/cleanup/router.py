@@ -240,11 +240,38 @@ def cleanup_scan(db: Session = Depends(get_db), org_id: int = Depends(current_or
     no_contact = [c for c in clients if not (c.email or "").strip() and not phone_last10(c.phone)]
     no_property = [c for c in clients if (c.status == "active") and c.id not in prop_client_ids]
 
+    # LIVE jobs whose client disagrees with their property's client. This is the
+    # drift the create-time guard and the property-reassign re-point now prevent
+    # going forward; the flag surfaces rows that drifted BEFORE those landed, so
+    # they can be corrected by hand. COMPLETED/CANCELLED jobs are excluded on
+    # purpose — a reassign deliberately leaves finished work on the old client,
+    # so flagging it would be noise, not a problem.
+    prop_owner = {p.id: p.client_id for p in props}
+    mismatch = []
+    if prop_owner:
+        live = (
+            db.query(Job.id, Job.client_id, Job.property_id, Job.title)
+            .filter(Job.property_id.in_(list(prop_owner.keys())),
+                    Job.status.notin_(["completed", "cancelled"]))
+            .all()
+        )
+        for j in live:
+            owner = prop_owner.get(j.property_id)
+            if owner is not None and j.client_id is not None and j.client_id != owner:
+                mismatch.append({
+                    "job_id": j.id,
+                    "title": j.title or f"Job #{j.id}",
+                    "property_id": j.property_id,
+                    "job_client": client_names.get(j.client_id, f"#{j.client_id}"),
+                    "property_client": client_names.get(owner, f"#{owner}"),
+                })
+
     quality = {
         "no_contact": {"count": len(no_contact),
                        "samples": [{"id": c.id, "name": c.name or "(no name)"} for c in no_contact[:8]]},
         "no_property": {"count": len(no_property),
                         "samples": [{"id": c.id, "name": c.name or "(no name)"} for c in no_property[:8]]},
+        "client_property_mismatch": {"count": len(mismatch), "samples": mismatch[:8]},
     }
 
     return {
@@ -252,7 +279,9 @@ def cleanup_scan(db: Session = Depends(get_db), org_id: int = Depends(current_or
         "summary": {
             "duplicate_client_groups": len(duplicate_clients),
             "duplicate_property_groups": len(duplicate_properties),
-            "quality_flags": quality["no_contact"]["count"] + quality["no_property"]["count"],
+            "quality_flags": (quality["no_contact"]["count"]
+                              + quality["no_property"]["count"]
+                              + quality["client_property_mismatch"]["count"]),
         },
         "duplicate_clients": duplicate_clients,
         "duplicate_properties": duplicate_properties,
