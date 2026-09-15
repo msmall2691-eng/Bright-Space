@@ -25,6 +25,7 @@ from fastapi.responses import FileResponse
 
 from agents.tools import get_tools_for_agent, execute_tool, load_agent_roster
 from modules.ai.router import review_agent_turn
+from services import llm
 
 from auth import APIKeyMiddleware
 from auth_jwt import verify_jwt
@@ -489,13 +490,16 @@ async def agent_websocket(websocket: WebSocket, agent_name: str):
     if conn_key not in agent_histories:
         agent_histories[conn_key] = []
 
-    api_key = os.getenv("ANTHROPIC_API_KEY")
-    if not api_key:
-        await websocket.send_json({"type": "error", "content": "ANTHROPIC_API_KEY not configured"})
+    # The chat runs on whichever provider LLM_PROVIDER selects (default
+    # anthropic). Gemini streams through services/llm.py's stream_tool_loop; the
+    # anthropic path below is unchanged and needs the SDK client here.
+    if not llm.available():
+        await websocket.send_json({"type": "error", "content": "AI provider not configured"})
         await websocket.close()
         return
 
-    client = anthropic.Anthropic(api_key=api_key)
+    client = None if llm.provider() == "gemini" else anthropic.Anthropic(
+        api_key=os.getenv("ANTHROPIC_API_KEY"))
 
     # BB-SEC-13. `run_operation` generates Job rows for every active recurring
     # schedule and pushes jobs to Google Calendar, which emails a real invite to
@@ -539,64 +543,92 @@ async def agent_websocket(websocket: WebSocket, agent_name: str):
             agent_histories[conn_key].append({"role": "user", "content": message})
             _trim_history(conn_key)
 
-            # Agentic tool-use loop
-            loop_messages = list(agent_histories[conn_key])
+            # Agentic tool-use loop. Runs on whichever provider LLM_PROVIDER
+            # selects; both paths emit the same websocket events and leave
+            # final_text / tools_used for the shared history + QC tail below.
             final_text = ""
             tools_used = []  # every tool name called this turn, for the QC pass below
 
-            while True:
-                full_text = ""
-                tool_uses = []
-
-                with client.messages.stream(
-                    model=model_id,
-                    max_tokens=4096,
+            if llm.provider() == "gemini":
+                # Same streaming agentic loop, through the provider seam. The loop,
+                # tool execution (org-scoped + operations-gated via execute_tool),
+                # and history conversion live in services/llm.py; here we just
+                # relay each event onto the socket in the exact wire shape the
+                # anthropic path emits.
+                for ev in llm.stream_tool_loop(
                     system=config["system_prompt"],
-                    messages=loop_messages,
+                    messages=list(agent_histories[conn_key]),
                     tools=tools,
-                ) as stream:
-                    for event in stream:
-                        # Stream text chunks to frontend
-                        if event.type == "content_block_delta" and hasattr(event.delta, "text"):
-                            full_text += event.delta.text
-                            await websocket.send_json({"type": "chunk", "content": event.delta.text})
-                        # Notify frontend when a tool call starts
-                        elif event.type == "content_block_start":
-                            cb = event.content_block
-                            if cb.type == "tool_use":
-                                await websocket.send_json({"type": "tool_call", "name": cb.name})
+                    execute=lambda name, args: execute_tool(
+                        name, args, agent_name, org_id=agent_org_id,
+                        allow_operations=allow_operations),
+                    tier=requested_tier, max_tokens=4096,
+                ):
+                    kind = ev["type"]
+                    if kind == "chunk":
+                        await websocket.send_json({"type": "chunk", "content": ev["text"]})
+                    elif kind == "tool_call":
+                        await websocket.send_json({"type": "tool_call", "name": ev["name"]})
+                    elif kind == "tool_result":
+                        await websocket.send_json({"type": "tool_result",
+                                                   "name": ev["name"], "preview": ev["preview"]})
+                    elif kind == "final":
+                        final_text, tools_used = ev["text"], ev["tools_used"]
+            else:
+                # ── Anthropic streaming path (unchanged behavior) ──
+                loop_messages = list(agent_histories[conn_key])
+                while True:
+                    full_text = ""
 
-                    final_msg = stream.get_final_message()
+                    with client.messages.stream(
+                        model=model_id,
+                        max_tokens=4096,
+                        system=config["system_prompt"],
+                        messages=loop_messages,
+                        tools=tools,
+                    ) as stream:
+                        for event in stream:
+                            # Stream text chunks to frontend
+                            if event.type == "content_block_delta" and hasattr(event.delta, "text"):
+                                full_text += event.delta.text
+                                await websocket.send_json({"type": "chunk", "content": event.delta.text})
+                            # Notify frontend when a tool call starts
+                            elif event.type == "content_block_start":
+                                cb = event.content_block
+                                if cb.type == "tool_use":
+                                    await websocket.send_json({"type": "tool_call", "name": cb.name})
 
-                if final_msg.stop_reason == "tool_use":
-                    # Execute every tool call, collect results
-                    tool_results = []
-                    for block in final_msg.content:
-                        if block.type == "tool_use":
-                            tools_used.append(block.name)
-                            result = execute_tool(block.name, dict(block.input), agent_name,
-                                                  org_id=agent_org_id,
-                                                  allow_operations=allow_operations)
-                            result_text = json.dumps(result, default=str)
-                            tool_results.append({
-                                "type": "tool_result",
-                                "tool_use_id": block.id,
-                                "content": result_text,
-                            })
-                            await websocket.send_json({
-                                "type": "tool_result",
-                                "name": block.name,
-                                "preview": result_text[:120],
-                            })
+                        final_msg = stream.get_final_message()
 
-                    # Add assistant + tool results to message history and loop
-                    loop_messages.append({"role": "assistant", "content": final_msg.content})
-                    loop_messages.append({"role": "user", "content": tool_results})
+                    if final_msg.stop_reason == "tool_use":
+                        # Execute every tool call, collect results
+                        tool_results = []
+                        for block in final_msg.content:
+                            if block.type == "tool_use":
+                                tools_used.append(block.name)
+                                result = execute_tool(block.name, dict(block.input), agent_name,
+                                                      org_id=agent_org_id,
+                                                      allow_operations=allow_operations)
+                                result_text = json.dumps(result, default=str)
+                                tool_results.append({
+                                    "type": "tool_result",
+                                    "tool_use_id": block.id,
+                                    "content": result_text,
+                                })
+                                await websocket.send_json({
+                                    "type": "tool_result",
+                                    "name": block.name,
+                                    "preview": result_text[:120],
+                                })
 
-                else:
-                    # No more tool calls â done
-                    final_text = full_text
-                    break
+                        # Add assistant + tool results to message history and loop
+                        loop_messages.append({"role": "assistant", "content": final_msg.content})
+                        loop_messages.append({"role": "user", "content": tool_results})
+
+                    else:
+                        # No more tool calls — done
+                        final_text = full_text
+                        break
 
             agent_histories[conn_key].append({"role": "assistant", "content": final_text})
             _trim_history(conn_key)
