@@ -1187,6 +1187,18 @@ def create_job(data: JobCreate, db: Session = Depends(get_db), org_id: int = Dep
         ).first()
         if not owned_property:
             raise HTTPException(status_code=404, detail="Property not found")
+        # Ownership consistency (mirrors the update_job guard, BB — Codex P1 on
+        # #271): a supplied property must belong to the SAME client this job is
+        # for. Without this, a job is born with client_id=A on client B's
+        # property — the exact client/property drift the update path already
+        # refuses, and which leaves the crew, invoices and calendar attributing
+        # the visit to the wrong client.
+        if owned_property.client_id and owned_property.client_id != data.client_id:
+            raise HTTPException(
+                status_code=400,
+                detail="That property belongs to a different client. Pick one of this "
+                       "client's properties.",
+            )
     if not resolved_property_id:
         existing_prop = (db.query(Property)
                          .filter(Property.client_id == data.client_id)

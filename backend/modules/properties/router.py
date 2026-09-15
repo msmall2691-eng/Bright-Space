@@ -485,6 +485,8 @@ def update_property(property_id: int, data: PropertyUpdate, db: Session = Depend
     # or cross-tenant id would set a dangling/leaking FK. A property always
     # belongs to a client, so an explicit null is rejected rather than orphaning
     # it further.
+    old_client_id = prop.client_id
+    reassigned_to = None
     if "client_id" in fields:
         new_client_id = fields["client_id"]
         if new_client_id is None:
@@ -495,12 +497,39 @@ def update_property(property_id: int, data: PropertyUpdate, db: Session = Depend
         ).first()
         if not target:
             raise HTTPException(status_code=404, detail="That client isn't in this workspace.")
+        reassigned_to = new_client_id
     for field, value in fields.items():
         setattr(prop, field, value)
+
+    # When the property changes hands, its LIVE work must follow — otherwise
+    # job.client_id drifts out of sync with property.client_id and the crew /
+    # invoices / calendar attribute the visit to the previous owner. Re-point
+    # the property's non-completed, non-cancelled jobs and its recurring
+    # schedules to the new client; COMPLETED and CANCELLED jobs stay on the old
+    # client so past records remain accurate (owner's policy). Only the jobs
+    # still on the OLD client move, so a job already correctly re-pointed (or on
+    # a third client) is left alone.
+    repointed = {"jobs": 0, "recurring": 0}
+    if reassigned_to is not None and reassigned_to != old_client_id:
+        from database.models import Job, RecurringSchedule
+        repointed["jobs"] = db.query(Job).filter(
+            Job.property_id == prop.id,
+            Job.client_id == old_client_id,
+            Job.status.notin_(["completed", "cancelled"]),
+        ).update({Job.client_id: reassigned_to}, synchronize_session=False)
+        repointed["recurring"] = db.query(RecurringSchedule).filter(
+            RecurringSchedule.property_id == prop.id,
+            RecurringSchedule.client_id == old_client_id,
+        ).update({RecurringSchedule.client_id: reassigned_to}, synchronize_session=False)
+
     db.commit()
     db.refresh(prop)
     n30 = _turnovers_next_30d(db, prop.id) if prop.property_type == "str" else None
-    return prop_to_dict(prop, turnovers_next_30d=n30)
+    result = prop_to_dict(prop, turnovers_next_30d=n30)
+    if reassigned_to is not None and reassigned_to != old_client_id:
+        # Tell the operator what followed the property to the new client.
+        result["reassigned"] = repointed
+    return result
 
 
 @router.post("/{property_id}/sync", dependencies=[Depends(require_role("admin", "manager"))])
