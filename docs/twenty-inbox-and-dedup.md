@@ -61,29 +61,29 @@ can't create a duplicate.
 ## Cleaning up existing duplicates (dry-run first)
 
 Two offline scripts find and merge duplicates. **Both default to a dry run** —
-they print the merge plan and change nothing. Re-run with `--commit` to apply.
-Run the client merge first (properties are keyed per client, so collapsing
-duplicate clients first gives the property pass the correct grouping).
+it prints the merge plan and changes nothing. Re-run with `--commit` to apply.
 
 ```bash
 cd backend
 
-# 1. Preview duplicate CLIENTS (same normalized email or last-10 phone, per org)
+# Preview duplicate CLIENTS (same normalized email or last-10 phone, per org)
 python scripts/merge_duplicate_clients.py
 
-# 2. Preview duplicate PROPERTIES (same client + normalized address)
-python scripts/merge_duplicate_properties.py
-
-# When the plans look right, apply — clients first, then properties:
+# When the plan looks right, apply:
 python scripts/merge_duplicate_clients.py --commit
-python scripts/merge_duplicate_properties.py --commit
 ```
 
-Both scripts keep the **oldest** row as the keeper, repoint every foreign-key
-table (discovered generically via the SQLAlchemy inspector, so new FK tables
-are handled automatically), and delete the duplicates. The property merge also
-back-fills any size fields (bedrooms/bathrooms/square_footage) the keeper was
-missing from a duplicate, so no captured detail is lost.
+The client script keeps the **oldest** row as the keeper, repoints every
+foreign-key table (discovered generically via the SQLAlchemy inspector, so new
+FK tables are handled automatically), and deletes the duplicates.
+
+**Duplicate PROPERTIES are merged in the app**, not by a script — the **Tidy Up**
+page surfaces them and, on a keeper-select confirm, calls
+`POST /api/cleanup/clients/... /properties/merge` (`modules/cleanup/router.py`).
+That endpoint is lossless (full-field back-fill, not just size), org-scoped,
+coalesces re-syncable iCal events, and refuses a merge that would collide two
+live turnover jobs rather than cancelling one. It supersedes the old offline
+`merge_duplicate_properties.py`, which has been removed.
 
 > Run these against a backup/branch first if you can. `--commit` deletes rows.
 
