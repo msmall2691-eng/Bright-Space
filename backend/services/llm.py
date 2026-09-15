@@ -250,6 +250,19 @@ def _gemini_tools(tools):
     return [types.Tool(function_declarations=decls)] if decls else None
 
 
+def _gemini_fn_response(out):
+    """A tool result, as a JSON-safe dict for a Gemini functionResponse part.
+
+    The genai SDK ``json.dumps()`` the request body with no ``default=``, so a
+    raw ``date`` / ``Decimal`` / model object in a tool result crashes
+    serialization ("Object of type date is not JSON serializable") — the
+    Anthropic path already sidesteps this with ``json.dumps(..., default=str)``.
+    Coerce the whole payload to plain JSON types the same way, and wrap a
+    non-dict result (from_function_response needs a dict)."""
+    payload = out if isinstance(out, dict) else {"result": out}
+    return json.loads(json.dumps(payload, default=str))
+
+
 def _gemini_tool_loop(system, user_content, tools, execute, model, max_tokens, max_iters):
     from google.genai import types
     client = _gemini()
@@ -270,7 +283,7 @@ def _gemini_tool_loop(system, user_content, tools, execute, model, max_tokens, m
         for c in calls:
             out = execute(c.name, dict(c.args or {}))
             parts.append(types.Part.from_function_response(
-                name=c.name, response=out if isinstance(out, dict) else {"result": out}))
+                name=c.name, response=_gemini_fn_response(out)))
         contents.append(types.Content(role="user", parts=parts))
     return (resp.text or "").strip() if resp else ""
 
@@ -330,6 +343,6 @@ def _gemini_stream_tool_loop(system, messages, tools, execute, model, max_tokens
             yield {"type": "tool_result", "name": fc.name,
                    "preview": json.dumps(out, default=str)[:120]}
             resp_parts.append(types.Part.from_function_response(
-                name=fc.name, response=out if isinstance(out, dict) else {"result": out}))
+                name=fc.name, response=_gemini_fn_response(out)))
         contents.append(types.Content(role="user", parts=resp_parts))
     yield {"type": "final", "text": final_text, "tools_used": tools_used}
