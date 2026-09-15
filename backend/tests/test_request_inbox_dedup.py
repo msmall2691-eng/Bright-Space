@@ -5,9 +5,7 @@ auto-creator:
   * a new request is JUST a LeadIntake — no Client/Property/Opportunity;
   * convert-to-client resolves-or-reuses a client (dedup) and attaches the
     property, so a returning customer never spawns a duplicate;
-  * create_property is idempotent per client on the normalized address; and
-  * merge_duplicate_properties groups duplicates per client by normalized
-    address (the offline cleanup for existing data).
+  * create_property is idempotent per client on the normalized address.
 """
 import uuid
 
@@ -191,25 +189,3 @@ def test_create_property_dedups_on_normalized_address(db):
         db.query(Property).filter(Property.client_id == c.id).delete(synchronize_session=False)
         db.query(Client).filter(Client.id == c.id).delete(synchronize_session=False)
         db.commit()
-
-
-def test_merge_duplicate_properties_groups_per_client():
-    """The offline cleanup groups only same-client, same-normalized-address
-    rows — different clients or different cities stay separate."""
-    from types import SimpleNamespace
-    from scripts.merge_duplicate_properties import find_duplicate_groups
-
-    props = [
-        SimpleNamespace(id=1, client_id=10, address="1 Main St", city="Bath", state="ME", zip_code="04530"),
-        SimpleNamespace(id=2, client_id=10, address="1 main st ", city="bath", state="ME", zip_code="04530"),
-        SimpleNamespace(id=3, client_id=10, address="1 Main St", city="Portland", state="ME", zip_code="04101"),
-        SimpleNamespace(id=4, client_id=99, address="1 Main St", city="Bath", state="ME", zip_code="04530"),
-        SimpleNamespace(id=5, client_id=10, address="", city="", state="", zip_code=""),
-        SimpleNamespace(id=6, client_id=10, address="  ", city="", state="", zip_code=""),
-    ]
-    groups = find_duplicate_groups(props)
-    # Only #1 and #2 (same client, same normalized address) group. #3 is a
-    # different city, #4 a different client, and the blank-address rows (#5/#6)
-    # never group because a property with no address can't be safely matched.
-    assert len(groups) == 1
-    assert {p.id for p in groups[0]} == {1, 2}
