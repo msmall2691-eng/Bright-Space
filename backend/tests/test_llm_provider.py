@@ -34,6 +34,15 @@ def test_model_for_tier_maps_per_provider(monkeypatch):
     assert llm.model_for_tier("nonsense").startswith("gemini")
 
 
+def test_gemini_defaults_are_a_current_model():
+    # Regression guard: the gemini-2.5-* ids were retired for new API keys
+    # (a 404 in prod). The built-in default for every tier must be a current,
+    # non-2.5 gemini id so a fresh deploy works before any env override.
+    for tier in ("haiku", "sonnet", "opus"):
+        model = llm._GEMINI_TIERS[tier]
+        assert model.startswith("gemini-") and "-2.5-" not in model, model
+
+
 def test_available_follows_the_selected_provider(monkeypatch):
     monkeypatch.setenv("LLM_PROVIDER", "gemini")
     monkeypatch.delenv("GEMINI_API_KEY", raising=False)
