@@ -557,14 +557,34 @@ def submit_booking(request: Request, data: BookingSubmit, background_tasks: Back
         alert_estimate_min = payload.estimate_min if payload.estimate_min is not None else estimate_min
         alert_estimate_max = payload.estimate_max if payload.estimate_max is not None else estimate_max
 
-    # A DEDUPED SUBMISSION IS NOT A NEW LEAD. `build_intake` collapses repeat
-    # posts into one row — the same form double-tapped, a retry, a bot — but
-    # every notification below fired anyway, so 20 requests inside the hourly
-    # limit meant 20 pages to the owner's phone, 20 owner emails, and 20 texts
-    # to the customer, all for one lead that exists once in the database.
-    # The row is the record; the alerts follow the row.
-    if result.get("deduped"):
-        logger.info("[booking] deduped onto intake=%s — no alerts re-sent",
+    # A DEDUPED SUBMISSION THAT ADDS NOTHING IS NOT A NEW LEAD. `build_intake`
+    # collapses repeat posts into one row — the same form double-tapped, a
+    # retry, a bot — but every notification below fired anyway, so 20 requests
+    # inside the hourly limit meant 20 pages to the owner's phone, 20 owner
+    # emails, and 20 texts to the customer, all for one lead that exists once
+    # in the database. The row is the record; the alerts follow the row.
+    #
+    # "Deduped" was doing too much work as a silence condition, though.
+    # maineclean.co's /book flow posts here TWICE under one idempotency key by
+    # design: step 1-2 sends a thin intake, step 3 sends the real booking with
+    # the requested date, the six on-site essentials and the customer's
+    # manage/cancel link. Only the FIRST post was ever a new lead, so:
+    #
+    #   * the owner's alert came from the thin payload and said "no date
+    #     requested" for a booking that had a date, and
+    #   * the customer's confirmation SMS — the ONLY channel that carries the
+    #     self-service manage/cancel link, since the email template has no
+    #     field for it — went out before the link existed, and the post that
+    #     carried it returned here without sending anything.
+    #
+    # So the silence condition is now "this post changed nothing", which is
+    # what the original 20-pages fix was actually reaching for. upsert_lead
+    # reports what a deduped post back-filled; an empty list is a true replay.
+    # This stays retry-safe: the website's forward sweep re-posting stage 2
+    # back-fills nothing the second time and lands here silently.
+    enriched = result.get("enriched") or []
+    if result.get("deduped") and not enriched:
+        logger.info("[booking] deduped onto intake=%s, nothing new — no alerts re-sent",
                     result["intake_id"])
         return BookingResponse(
             success=True,
@@ -572,6 +592,9 @@ def submit_booking(request: Request, data: BookingSubmit, background_tasks: Back
             requestedDate=data.requestedDate,
             message="Your booking request has been submitted! We'll review and confirm within 1 business day.",
         )
+    if result.get("deduped"):
+        logger.info("[booking] deduped onto intake=%s but gained %s — re-alerting",
+                    result["intake_id"], ",".join(enriched))
 
     # Ping the owner by SMS as soon as a booking lands. Twilio-only; if the
     # env isn't configured or the send fails the booking still succeeds —
@@ -638,10 +661,16 @@ def submit_booking(request: Request, data: BookingSubmit, background_tasks: Back
     # Email the customer a receipt so they know we got it and know what
     # comes next (the Google Calendar invite once we approve). Same
     # best-effort contract as the owner SMS.
-    try:
-        _send_booking_customer_confirmation(data, result["intake_id"], alert_estimate_min, alert_estimate_max)
-    except Exception as e:
-        logger.warning("booking customer email failed: %s", e)
+    #
+    # Not resent on an enriching dedup: they had this receipt seconds ago from
+    # stage 1, and the template carries no manage link, so a second copy adds
+    # nothing but a duplicate in their inbox. The SMS below is resent, because
+    # that one IS the link.
+    if not result.get("deduped"):
+        try:
+            _send_booking_customer_confirmation(data, result["intake_id"], alert_estimate_min, alert_estimate_max)
+        except Exception as e:
+            logger.warning("booking customer email failed: %s", e)
 
     # Also text the customer a confirmation with their self-service manage link.
     # Twilio-only (maineclean.co has no SMS); same best-effort contract — the

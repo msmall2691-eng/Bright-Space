@@ -473,24 +473,28 @@ def _backfill_lead(existing: "LeadIntake", data: IntakeData) -> bool:
         "fill-if-missing" is the wrong rule for a dict — the first hit may
         already have {} on the row.
 
-    Returns True if anything actually changed, so the caller can skip a
-    pointless commit.
+    Returns the SET OF FIELD NAMES it landed — empty when the submission was a
+    pure replay. Callers use it two ways: skip a pointless commit (any
+    non-empty set is truthy), and decide whether a deduped submission deserves
+    to re-alert. submit_booking needs the second: a repeat post carries nothing
+    new and must stay silent, but the /book flow's second stage lands a real
+    requested date, and the owner was told "no date requested" by the first.
     """
-    changed = False
+    gained: set[str] = set()
     for f in _MERGE_FIELDS:
         val = getattr(data, f, None)
         if val not in (None, "") and not getattr(existing, f, None):
             setattr(existing, f, val)
-            changed = True
+            gained.add(f)
     if data.message and (not existing.message or len(data.message) > len(existing.message or "")):
         existing.message = data.message
-        changed = True
+        gained.add("message")
     if data.custom_fields:
         merged = {**(existing.custom_fields or {}), **data.custom_fields}
         if merged != (existing.custom_fields or {}):
             existing.custom_fields = merged
-            changed = True
-    return changed
+            gained.add("custom_fields")
+    return gained
 
 
 def upsert_lead(db: Session, data: IntakeData) -> dict:
@@ -541,7 +545,8 @@ def upsert_lead(db: Session, data: IntakeData) -> dict:
             # and lost the requested date and every /book essential. The
             # fill-if-missing rules in _backfill_lead keep a genuinely stale
             # replay from overwriting good data.
-            if _backfill_lead(by_key, data):
+            gained = _backfill_lead(by_key, data)
+            if gained:
                 db.commit()
                 db.refresh(by_key)
             return {
@@ -549,6 +554,9 @@ def upsert_lead(db: Session, data: IntakeData) -> dict:
                 "intake_id": by_key.id,
                 "client_id": by_key.client_id,
                 "deduped": True,
+                # What this post actually added. Empty for a replay; the /book
+                # flow's second stage lands requested_date + custom_fields here.
+                "enriched": sorted(gained),
             }
 
     # Serialize concurrent upserts for the same contact BEFORE the recency
@@ -568,7 +576,8 @@ def upsert_lead(db: Session, data: IntakeData) -> dict:
         name_addr_merge = recent is not None
     if recent:
         # Same back-fill the idempotency-key path uses — see _backfill_lead.
-        changed = _backfill_lead(recent, data)
+        gained = _backfill_lead(recent, data)
+        changed = bool(gained)
         # Name+address merge: the two rows have DIFFERENT contact info by
         # definition, so preserve both. Back-fill any contact field the
         # original was missing, and when the new submission carries a
@@ -601,7 +610,8 @@ def upsert_lead(db: Session, data: IntakeData) -> dict:
         if changed:
             db.commit()
             db.refresh(recent)
-        return {"success": True, "intake_id": recent.id, "client_id": recent.client_id, "deduped": True}
+        return {"success": True, "intake_id": recent.id, "client_id": recent.client_id,
+                "deduped": True, "enriched": sorted(gained)}
 
     # Brand-new request: persist EVERY structured column the customer gave us,
     # but leave client_id NULL — no Client/Property/Opportunity is created.
@@ -649,6 +659,9 @@ def upsert_lead(db: Session, data: IntakeData) -> dict:
                     "intake_id": winner.id,
                     "client_id": winner.client_id,
                     "deduped": True,
+                    # Lost an insert race: the winner row is whatever the other
+                    # transaction wrote, and we merged nothing onto it.
+                    "enriched": [],
                 }
         raise
 
@@ -676,4 +689,5 @@ def upsert_lead(db: Session, data: IntakeData) -> dict:
     except Exception:
         pass
 
-    return {"success": True, "intake_id": intake.id, "client_id": intake.client_id, "deduped": False}
+    return {"success": True, "intake_id": intake.id, "client_id": intake.client_id,
+            "deduped": False, "enriched": []}
