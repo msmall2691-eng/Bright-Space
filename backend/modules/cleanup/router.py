@@ -23,12 +23,14 @@ from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy import func, or_
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from database.db import get_db
 from database.models import (
     Client, Property, Job, Invoice, Quote, Conversation, Message, Opportunity,
     RecurringSchedule, LeadIntake, ContactEmail, ContactPhone, Activity, User,
+    PropertyIcal, ICalEvent, PropertyCrewNote, PropertyPhoto,
 )
 from modules.auth.router import require_role, current_org_id, resolve_org_id
 from utils.contacts import phone_last10, add_contact_email, add_contact_phone
@@ -373,6 +375,127 @@ def merge_clients(body: MergeClientsBody, db: Session = Depends(get_db),
     # Delete the (now childless) duplicate directly — no ORM cascade surprises.
     db.flush()
     db.query(Client).filter(Client.id == dup.id).delete(synchronize_session=False)
+    db.commit()
+    db.refresh(primary)
+
+    return {
+        "merged_into": {"id": primary.id, "name": primary.name},
+        "removed": body.duplicate_id,
+        "moved": moved,
+    }
+
+
+# Every table with a property_id FK that must ride with the property on a merge.
+# Invoice and Opportunity are CLIENT-scoped (no property_id), so they are not
+# here — a property merge never touches them. ICalEvent is handled separately
+# (coalesced by uid first) because of its (property_id, uid) unique constraint.
+_PROPERTY_FK_MODELS = [
+    Job, RecurringSchedule, Quote, LeadIntake,
+    PropertyIcal, PropertyCrewNote, PropertyPhoto,
+]
+
+# Fill-if-missing scalar fields the keeper inherits from the duplicate. Broad
+# (not just size) so a merge can't drop access notes, wifi, codes, pricing or
+# STR settings the keeper happened to be missing — the gap the old offline
+# script had.
+_PROPERTY_BACKFILL_FIELDS = (
+    "name", "address", "city", "state", "zip_code", "lat", "lng",
+    "access_notes", "parking_notes", "house_code", "wifi_ssid", "wifi_password",
+    "notes", "check_in_time", "check_out_time", "timezone",
+    "default_price", "turnover_rate", "default_duration_hours", "default_crew_size",
+    "site_contact_name", "site_contact_phone", "site_contact_email",
+    "business_name", "hours_of_operation",
+    "bedrooms", "bathrooms", "square_footage", "year_built",
+)
+
+
+class MergePropertiesBody(BaseModel):
+    primary_id: int
+    duplicate_id: int
+
+
+@router.post("/properties/merge", dependencies=[Depends(require_role("admin", "manager"))])
+def merge_properties(body: MergePropertiesBody, db: Session = Depends(get_db),
+                     org_id: int = Depends(current_org_id)):
+    """Merge `duplicate_id` into `primary_id`: reassign every property-scoped
+    record (jobs, recurring schedules, quotes, lead intakes, iCal feeds + events,
+    crew notes, photos) to the primary, back-fill the primary's missing fields,
+    then delete the duplicate.
+
+    Both must be the SAME client's properties — a "duplicate" across two clients
+    is a client merge, not a property merge, and re-pointing one client's
+    property onto another would corrupt ownership.
+
+    Lossless: the full field set is back-filled (not just size), so access notes,
+    wifi, codes, pricing and STR settings survive. iCal events are coalesced by
+    uid before the repoint (re-syncable, avoids the (property_id, uid) unique
+    violation). If the two properties have overlapping LIVE turnover jobs on the
+    same checkout date (the (property_id, scheduled_date, job_type) live-turnover
+    unique index), the merge is REFUSED rather than auto-cancelling canonical
+    work (scheduling-invariants R7) — the operator cancels the duplicate turnover
+    first. Hard to undo; the /cleanup review page confirms first."""
+    if body.primary_id == body.duplicate_id:
+        raise HTTPException(400, "primary and duplicate are the same property")
+
+    oid = resolve_org_id(org_id, db)
+    org = lambda model: or_(model.org_id == oid, model.org_id.is_(None))
+
+    primary = db.query(Property).filter(org(Property), Property.id == body.primary_id).first()
+    dup = db.query(Property).filter(org(Property), Property.id == body.duplicate_id).first()
+    if not primary or not dup:
+        raise HTTPException(404, "property not found in this workspace")
+    if primary.client_id != dup.client_id:
+        raise HTTPException(
+            400, "Those properties belong to different clients — merge the clients first.")
+
+    # Coalesce re-syncable iCal events by uid so the repoint can't trip the
+    # (property_id, uid) unique constraint; the feed refills them next sync.
+    keeper_uids = {
+        u for (u,) in db.query(ICalEvent.uid).filter(ICalEvent.property_id == primary.id).all()
+    }
+    if keeper_uids:
+        for ev in db.query(ICalEvent).filter(ICalEvent.property_id == dup.id).all():
+            if ev.uid in keeper_uids:
+                db.delete(ev)
+        db.flush()
+
+    moved = {}
+    try:
+        with db.begin_nested():
+            n = db.query(ICalEvent).filter(ICalEvent.property_id == dup.id).update(
+                {ICalEvent.property_id: primary.id}, synchronize_session=False)
+            if n:
+                moved["ical_events"] = n
+            for model in _PROPERTY_FK_MODELS:
+                n = db.query(model).filter(model.property_id == dup.id).update(
+                    {model.property_id: primary.id}, synchronize_session=False)
+                if n:
+                    moved[model.__tablename__] = n
+    except IntegrityError:
+        # The only per-property unique key a repoint can hit is the live-turnover
+        # index. Don't auto-cancel a Job (R7) — surface it for the operator.
+        db.rollback()
+        raise HTTPException(
+            409,
+            "These properties have overlapping turnover jobs on the same date(s). "
+            "Cancel the duplicate turnover(s), then merge.",
+        )
+
+    # Back-fill the primary's missing scalar fields from the duplicate (keeper
+    # wins where it already has a value; 0 is a real value, not "missing").
+    for field in _PROPERTY_BACKFILL_FIELDS:
+        cur = getattr(primary, field, None)
+        if cur in (None, "") and getattr(dup, field, None) not in (None, ""):
+            setattr(primary, field, getattr(dup, field))
+    # custom_fields / checklist_template: shallow-merge with the keeper winning.
+    if getattr(dup, "custom_fields", None):
+        primary.custom_fields = {**(dup.custom_fields or {}), **(primary.custom_fields or {})}
+    if not getattr(primary, "checklist_template", None) and getattr(dup, "checklist_template", None):
+        primary.checklist_template = dup.checklist_template
+    primary.updated_at = datetime.now(timezone.utc)
+
+    db.flush()
+    db.query(Property).filter(Property.id == dup.id).delete(synchronize_session=False)
     db.commit()
     db.refresh(primary)
 

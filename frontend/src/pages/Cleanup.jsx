@@ -56,12 +56,35 @@ function ClientRow({ c, isPrimary, onPick }) {
   )
 }
 
+function PropRow({ p, isPrimary, onPick }) {
+  return (
+    <label className={`flex cursor-pointer items-start gap-3 rounded-xl border px-3 py-2.5 transition-colors ${
+      isPrimary ? 'border-indigo-400 bg-indigo-500/5' : 'border-hairline hover:border-hairline-2'
+    }`}>
+      <input type="radio" checked={isPrimary} onChange={onPick} className="mt-1 accent-indigo-600" />
+      <div className="min-w-0 flex-1">
+        <div className="flex items-center gap-2">
+          <span className="truncate text-[13px] font-semibold text-ink">{p.name || '(unnamed)'}</span>
+          {isPrimary
+            ? <span className="inline-flex items-center gap-1 text-[9.5px] font-bold uppercase tracking-wide text-ink-2"><span className="h-1.5 w-1.5 rounded-full bg-indigo-500" aria-hidden="true" />Keep</span>
+            : <span className="inline-flex items-center gap-1 text-[9.5px] font-bold uppercase tracking-wide text-ink-3"><span className="h-1.5 w-1.5 rounded-full bg-rose-500" aria-hidden="true" />Merge in</span>}
+        </div>
+        <div className="mt-1 flex flex-wrap gap-x-3 gap-y-0.5 text-[11px] text-ink-3">
+          {p.client_name && <span className="inline-flex items-center gap-1"><Users className="h-3 w-3" />{p.client_name}</span>}
+          {p.property_type && <span className="capitalize">{p.property_type}</span>}
+        </div>
+      </div>
+    </label>
+  )
+}
+
 export default function Cleanup() {
   const navigate = useNavigate()
   const [data, setData] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(false)
   const [primaryBy, setPrimaryBy] = useState({})
+  const [primaryPropBy, setPrimaryPropBy] = useState({})
   const [confirmKey, setConfirmKey] = useState(null)
   const [busyKey, setBusyKey] = useState(null)
   const [note, setNote] = useState('')
@@ -110,6 +133,45 @@ export default function Cleanup() {
     }
   }
 
+  const primaryPropFor = (g) => primaryPropBy[g.key] ?? g.properties[0].id
+  // Only same-client properties are true duplicates — a shared address across
+  // two clients isn't one, and the backend refuses that merge.
+  const propDupsFor = (g) => {
+    const keeper = g.properties.find(p => p.id === primaryPropFor(g)) || g.properties[0]
+    return g.properties.filter(p => p.id !== keeper.id && p.client_id === keeper.client_id)
+  }
+
+  async function doMergeProps(g) {
+    const primaryId = primaryPropFor(g)
+    const keeper = g.properties.find(p => p.id === primaryId)
+    const dups = propDupsFor(g)
+    setBusyKey(g.key)
+    let done = 0
+    try {
+      for (const d of dups) {
+        await post('/api/cleanup/properties/merge', { primary_id: primaryId, duplicate_id: d.id })
+        done += 1
+      }
+      setData(prev => ({
+        ...prev,
+        duplicate_properties: prev.duplicate_properties.filter(x => x.key !== g.key),
+        summary: { ...prev.summary, duplicate_property_groups: Math.max(0, prev.summary.duplicate_property_groups - 1) },
+      }))
+      setNote(`Merged ${done} duplicate propert${done === 1 ? 'y' : 'ies'} into ${keeper?.name || 'the keeper'}.`)
+    } catch (e) {
+      // A turnover-overlap 409 (or any mid-loop failure after earlier merges
+      // committed) — report honestly and rescan so the group refreshes.
+      if (done > 0) {
+        setNote(`Merged ${done} of ${dups.length}, then hit an error — rescanning.`)
+        await load()
+      } else {
+        setNote(e?.message || 'Merge failed — nothing was changed. Try again.')
+      }
+    } finally {
+      setBusyKey(null); setConfirmKey(null)
+    }
+  }
+
   if (error && !loading) {
     return (
       <div className="flex min-h-[60vh] items-center justify-center px-4">
@@ -122,6 +184,7 @@ export default function Cleanup() {
   const dupClients = data?.duplicate_clients || []
   const dupProps = data?.duplicate_properties || []
   const quality = data?.quality || { no_contact: { count: 0, samples: [] }, no_property: { count: 0, samples: [] } }
+  const mismatch = quality.client_property_mismatch || { count: 0, samples: [] }
   const s = data?.summary || {}
 
   return (
@@ -223,28 +286,61 @@ export default function Cleanup() {
                 <Home className="h-4 w-4 text-ink-3" /> Duplicate properties
               </h2>
               <div className="space-y-3">
-                {dupProps.map(g => (
-                  <div key={g.key} className={`${CARD} p-3.5`}>
-                    <div className="text-[13px] font-semibold text-ink">{g.address}</div>
-                    <div className="mt-2 space-y-1.5">
-                      {g.properties.map(p => (
-                        <button key={p.id} onClick={() => navigate(`/properties/${p.id}`)}
-                          className="flex w-full items-center gap-2 rounded-lg border border-hairline px-3 py-2 text-left hover:border-hairline-2">
-                          <span className="text-[12px] text-ink">{p.name || g.address}</span>
-                          {p.client_name && <span className="text-[11px] text-ink-3">· {p.client_name}</span>}
-                          <ArrowRight className="ml-auto h-3.5 w-3.5 text-ink-3" />
-                        </button>
-                      ))}
+                {dupProps.map(g => {
+                  const primaryId = primaryPropFor(g)
+                  const dups = propDupsFor(g)
+                  const crossClient = g.properties.length - 1 - dups.length
+                  return (
+                    <div key={g.key} className={`${CARD} p-3.5`}>
+                      <div className="mb-2 text-[13px] font-semibold text-ink">{g.address}</div>
+                      <div className="space-y-2">
+                        {g.properties.map(p => (
+                          <PropRow key={p.id} p={p} isPrimary={p.id === primaryId}
+                            onPick={() => setPrimaryPropBy(m => ({ ...m, [g.key]: p.id }))} />
+                        ))}
+                      </div>
+                      {crossClient > 0 && (
+                        <p className="mt-2 text-[11px] text-ink-3">
+                          {crossClient} here belong{crossClient === 1 ? 's' : ''} to a different client and won't merge — merge those clients first, or open each to check.
+                        </p>
+                      )}
+                      <div className="mt-3 flex items-center justify-end gap-2">
+                        {dups.length === 0 ? (
+                          <button onClick={() => navigate(`/properties/${primaryId}`)}
+                            className="inline-flex items-center gap-1.5 rounded-lg border border-hairline bg-panel px-3 py-1.5 text-[12px] font-semibold text-ink-2 hover:text-ink">
+                            Open to review <ArrowRight className="h-3.5 w-3.5" />
+                          </button>
+                        ) : confirmKey === g.key ? (
+                          <>
+                            <span className="mr-auto text-[11px] font-medium text-rose-600 dark:text-rose-300">
+                              This can't be undone.
+                            </span>
+                            <button onClick={() => setConfirmKey(null)}
+                              className="rounded-lg border border-hairline px-3 py-1.5 text-[12px] font-semibold text-ink-2 hover:text-ink">
+                              Cancel
+                            </button>
+                            <button onClick={() => doMergeProps(g)} disabled={busyKey === g.key}
+                              className="inline-flex items-center gap-1.5 rounded-lg bg-rose-600 px-3 py-1.5 text-[12px] font-semibold text-white hover:bg-rose-700 disabled:opacity-60">
+                              {busyKey === g.key ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <GitMerge className="h-3.5 w-3.5" />}
+                              Merge {dups.length} into keep
+                            </button>
+                          </>
+                        ) : (
+                          <button onClick={() => setConfirmKey(g.key)}
+                            className="inline-flex items-center gap-1.5 rounded-lg border border-hairline bg-panel px-3 py-1.5 text-[12px] font-semibold text-ink-2 hover:text-ink">
+                            <GitMerge className="h-3.5 w-3.5" /> Merge duplicates
+                          </button>
+                        )}
+                      </div>
                     </div>
-                    <p className="mt-2 text-[11px] text-ink-3">Open each to confirm, then keep the right one.</p>
-                  </div>
-                ))}
+                  )
+                })}
               </div>
             </section>
           )}
 
           {/* Data-quality */}
-          {(quality.no_contact.count > 0 || quality.no_property.count > 0) && (
+          {(quality.no_contact.count > 0 || quality.no_property.count > 0 || mismatch.count > 0) && (
             <section className="mt-8">
               <h2 className="mb-3 flex items-center gap-2 text-sm font-bold text-ink">
                 <AlertTriangle className="h-4 w-4 text-ink-3" /> Needs attention
@@ -272,6 +368,29 @@ export default function Cleanup() {
                     </div>
                   </div>
                 ))}
+                {mismatch.count > 0 && (
+                  <div className={`${CARD} p-3.5 sm:col-span-2`}>
+                    <div className="flex items-baseline gap-2">
+                      <span className="text-lg font-bold tabular-nums text-ink">{mismatch.count}</span>
+                      <span className="text-[12px] font-medium text-ink-2">Job assigned to a property owned by a different client</span>
+                    </div>
+                    <p className="mt-1 text-[11px] text-ink-3">
+                      These live jobs point at a client that isn't the one who owns the property. Open the property to fix the link.
+                    </p>
+                    <div className="mt-2 flex flex-wrap gap-1.5">
+                      {mismatch.samples.map(m => (
+                        <button key={m.job_id} onClick={() => navigate(`/properties/${m.property_id}`)}
+                          title={`Job says ${m.job_client} · property says ${m.property_client}`}
+                          className="rounded-md border border-hairline px-2 py-0.5 text-[11px] text-ink-2 hover:text-ink hover:bg-bg-2">
+                          {m.title}
+                        </button>
+                      ))}
+                      {mismatch.count > mismatch.samples.length && (
+                        <span className="px-1 py-0.5 text-[11px] text-ink-3">+{mismatch.count - mismatch.samples.length} more</span>
+                      )}
+                    </div>
+                  </div>
+                )}
               </div>
             </section>
           )}
