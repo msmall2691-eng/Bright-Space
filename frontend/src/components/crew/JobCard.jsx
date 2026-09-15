@@ -349,7 +349,7 @@ export default function JobCard({ job, onMarkDone, onPhotos, onRespond, onDeclin
         </div>
       )}
 
-      {(job.client_name || (job.teammates && job.teammates.length > 0)) && (
+      {(job.client_name || job.customer_confirmed || (job.teammates && job.teammates.length > 0)) && (
         <div className="mt-3 space-y-1">
           {job.client_name && (
             <div className="text-[13px] text-ink-2 flex items-center gap-1.5 flex-wrap">
@@ -363,6 +363,15 @@ export default function JobCard({ job, onMarkDone, onPhotos, onRespond, onDeclin
                   <Phone className="w-3 h-3" /> Text client
                 </button>
               )}
+            </div>
+          )}
+          {job.customer_confirmed && (
+            /* Quiet dot+word (emerald = ok/done), not a badge. Tells the
+               cleaner the customer confirmed this visit — the door will be
+               open — without a call to the office. */
+            <div className="text-[12px] text-ink-2 flex items-center gap-1.5">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" aria-hidden="true" />
+              Customer confirmed
             </div>
           )}
           {job.teammates && job.teammates.length > 0 && (
