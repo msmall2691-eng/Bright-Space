@@ -28,7 +28,7 @@ apscheduler==3.11.3
 # dropped its pytz dependency, so it must be declared explicitly or a fresh
 # install (CI, Docker) has no pytz and every import of main fails at collection.
 pytz==2026.3.post1
-bcrypt==4.2.0
+bcrypt==5.0.0
 PyJWT==2.13.0
 slowapi==0.1.10
 reportlab==5.0.1
