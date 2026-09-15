@@ -6,17 +6,17 @@ fastapi==0.141.1
 starlette==1.6.0
 uvicorn[standard]==0.52.4
 sqlalchemy==2.0.52
-psycopg2-binary==2.9.12
+psycopg2-binary==2.9.13
 anthropic==0.40.0
 google-genai==2.23.0
 python-dotenv==1.2.3
 pyyaml==6.0.3
-twilio==9.11.0
+twilio==9.11.1
 httpx==0.28.1
 websockets==13.1
 python-multipart==0.0.32
 icalendar==6.1.0
-alembic==1.19.2
+alembic==1.20.0
 google-api-python-client==2.200.0
 google-auth-httplib2==0.4.2
 google-auth-oauthlib==1.4.1
@@ -29,7 +29,7 @@ apscheduler==3.11.3
 # install (CI, Docker) has no pytz and every import of main fails at collection.
 pytz==2026.3.post1
 bcrypt==4.2.0
-PyJWT==2.13.0
+PyJWT==2.14.0
 slowapi==0.1.10
 reportlab==5.0.1
 
