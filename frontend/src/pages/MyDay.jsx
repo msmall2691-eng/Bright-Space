@@ -466,6 +466,27 @@ export default function MyDay({ previewUserId = null }) {
     finally { setActionBusy(false) }
   }, [claimJob, claimRate, claimMessage, fetchDay])
 
+  // One-tap ACCEPT at the posted price — no modal, no price input. This is the
+  // primary way a cleaner takes an open job; bidding a different price is the
+  // secondary path (opens the claim sheet). Sends requested_rate:null = "your
+  // price is fine". Files a REQUEST — with instant claiming off (the default)
+  // the office still confirms, so res.auto_approved decides the toast rather
+  // than promising "it's yours" when it isn't.
+  const acceptJob = useCallback(async (job) => {
+    if (!job) return
+    setActionBusy(true); setActionError(null)
+    try {
+      const res = await post(`/api/crew/jobs/${job.id}/claim`, { requested_rate: null, message: null })
+      toast.success(res?.auto_approved
+        ? 'It’s yours — it’s on your schedule now.'
+        : 'Sent — the office will confirm this one.')
+      await fetchDay(true)
+    } catch (e) {
+      setActionError(e.detail || e.message || 'Could not take this job')
+      if (e.status === 409) await fetchDay(true)
+    } finally { setActionBusy(false) }
+  }, [fetchDay])
+
   // BRINGING SOMEONE (migration 107). One of the five Maine criteria for this
   // arrangement is that a subcontractor hires, pays and supervises their own
   // assistants — the app modelled one cleaner per job, so there was nowhere to
@@ -706,6 +727,7 @@ export default function MyDay({ previewUserId = null }) {
                       /* showDate: this list is the whole board, not one day —
                          without it every offer reads as today's. */
                       <JobCard key={j.id} job={j} busy={actionBusy} showDate
+                        onAccept={() => acceptJob(j)}
                         onClaim={() => { setActionError(null); setClaimRate(j.my_claim_request?.requested_rate ?? ''); setClaimMessage(j.my_claim_request?.message || ''); setClaimJob(j) }} />
                     ))}
                   </div>
@@ -743,7 +765,8 @@ export default function MyDay({ previewUserId = null }) {
                 </SectionLabel>
                 <div className="space-y-3">
                   {(data.open_jobs || []).filter(j => j.scheduled_date === data.as_of).map(j => (
-                    <JobCard key={j.id} job={j} onClaim={() => { setActionError(null); setClaimRate(j.my_claim_request?.requested_rate ?? ''); setClaimMessage(j.my_claim_request?.message || ''); setClaimJob(j) }} busy={actionBusy} />
+                    <JobCard key={j.id} job={j} onAccept={() => acceptJob(j)}
+                        onClaim={() => { setActionError(null); setClaimRate(j.my_claim_request?.requested_rate ?? ''); setClaimMessage(j.my_claim_request?.message || ''); setClaimJob(j) }} busy={actionBusy} />
                   ))}
                 </div>
               </section>
@@ -808,6 +831,7 @@ export default function MyDay({ previewUserId = null }) {
                   <div className="space-y-3">
                     {g.jobs.map(j => (
                       <JobCard key={j.id} job={j} busy={actionBusy}
+                        onAccept={() => acceptJob(j)}
                         onClaim={() => { setActionError(null); setClaimRate(j.my_claim_request?.requested_rate ?? ''); setClaimMessage(j.my_claim_request?.message || ''); setClaimJob(j) }} />
                     ))}
                   </div>
@@ -847,7 +871,8 @@ export default function MyDay({ previewUserId = null }) {
             </SectionLabel>
             <div className="space-y-3">
               {(data.open_jobs || []).map(j => (
-                <JobCard key={j.id} job={j} showDate onClaim={() => { setActionError(null); setClaimRate(j.my_claim_request?.requested_rate ?? ''); setClaimMessage(j.my_claim_request?.message || ''); setClaimJob(j) }} busy={actionBusy} />
+                <JobCard key={j.id} job={j} showDate onAccept={() => acceptJob(j)}
+                        onClaim={() => { setActionError(null); setClaimRate(j.my_claim_request?.requested_rate ?? ''); setClaimMessage(j.my_claim_request?.message || ''); setClaimJob(j) }} busy={actionBusy} />
               ))}
             </div>
           </section>
@@ -1158,8 +1183,8 @@ export default function MyDay({ previewUserId = null }) {
           <div>
             <div className="text-base font-bold text-ink">
               {willBeInstant ? 'Claim this job'
-                : posted == null || abovePosted ? 'Make an offer'
-                : 'Ask for this job'}
+                : posted == null ? 'Make an offer'
+                : 'Offer a different price'}
             </div>
             <div className="text-[13px] text-ink-3 mt-0.5 truncate">
               {claimJob.property_name || claimJob.title}
@@ -1190,7 +1215,7 @@ export default function MyDay({ previewUserId = null }) {
             <input
               type="number" inputMode="decimal" min="1" step="1"
               value={claimRate} onChange={e => setClaimRate(e.target.value)}
-              autoFocus={posted == null}
+              autoFocus
               placeholder={posted != null ? `${Number(posted)}` : 'e.g. 120'}
               className="mt-1.5 w-full rounded-lg border border-hairline bg-bg px-3 py-2.5 text-base text-ink placeholder-ink-3 focus:outline-hidden focus:border-blue-400"
             />

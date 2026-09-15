@@ -224,7 +224,7 @@ function RespondRow({ job, onRespond, onDecline, busy }) {
   )
 }
 
-export default function JobCard({ job, onMarkDone, onPhotos, onRespond, onDecline, onClaim, onTextClient, onHouseInfo, onHelpers, busy = false, showDate = false }) {
+export default function JobCard({ job, onMarkDone, onPhotos, onRespond, onDecline, onClaim, onAccept, onTextClient, onHouseInfo, onHelpers, busy = false, showDate = false }) {
   const isTurnover = job.job_type === 'str_turnover'
   const done = job.status === 'completed'
   const houseLine = houseSpecsLine(job)
@@ -478,7 +478,14 @@ export default function JobCard({ job, onMarkDone, onPhotos, onRespond, onDeclin
                   </p>
                 )}
               </div>
-              <button onClick={onClaim} disabled={busy}
+              {/* Priced job → the primary action is a one-tap ACCEPT at the
+                  posted price. Naming a different price is a secondary, opt-in
+                  path (the link below), not the first thing a cleaner faces.
+                  When the office has instant claiming off (the default), an
+                  accept still files a request the office confirms — the caption
+                  below says so, so "Take it" never over-promises. Pending and
+                  no-price jobs keep the office-confirmed offer flow. */}
+              <button onClick={mine?.status === 'pending' ? onClaim : (priced ? (onAccept || onClaim) : onClaim)} disabled={busy}
                 className={`shrink-0 min-h-[44px] px-4 text-[13px] font-semibold rounded-lg transition-colors inline-flex items-center gap-1.5 disabled:opacity-60 ${
                   mine?.status === 'pending'
                     ? 'bg-panel border border-hairline-2 text-ink-2 hover:bg-bg-2 active:bg-bg-2 font-medium'
@@ -489,18 +496,23 @@ export default function JobCard({ job, onMarkDone, onPhotos, onRespond, onDeclin
                   ? 'Change my offer'
                   : !priced
                     ? (<><Sparkles className="w-4 h-4" aria-hidden="true" /> Make an offer</>)
-                    : instant
-                      ? (<><Sparkles className="w-4 h-4" aria-hidden="true" /> Claim this job</>)
-                      : (<><Sparkles className="w-4 h-4" aria-hidden="true" /> Ask for this job</>)}
+                    : (<><Check className="w-4 h-4" aria-hidden="true" /> Take it · ${Number(rate).toLocaleString(undefined, { maximumFractionDigits: 2 })}</>)}
               </button>
             </div>
             {mine?.status !== 'pending' && priced && (
-              <p className="text-[10px] text-ink-3 mt-1.5">
-                {instant
-                  ? "Claim it and it's yours — first to claim gets it"
-                  : 'The office confirms who gets it.'}
-                {job.teammates?.length ? ` · you'd join ${job.teammates.join(', ')}` : ''}
-              </p>
+              <div className="mt-1.5 flex items-center justify-between gap-3">
+                <p className="text-[10px] text-ink-3">
+                  {instant
+                    ? "Take it and it's yours — first to accept gets it"
+                    : 'The office confirms who gets it.'}
+                  {job.teammates?.length ? ` · you'd join ${job.teammates.join(', ')}` : ''}
+                </p>
+                {/* Bidding is the last resort — a quiet text link, not a button. */}
+                <button onClick={onClaim} disabled={busy}
+                  className="shrink-0 text-[11px] font-medium text-ink-3 underline underline-offset-2 hover:text-ink-2 disabled:opacity-60">
+                  Ask for a different price
+                </button>
+              </div>
             )}
           </div>
         )
