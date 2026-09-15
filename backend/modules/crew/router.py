@@ -126,6 +126,13 @@ def _job_row(job: Job, names_by_cid: dict | None = None, self_cid: str | None = 
         # logged in the conversation — never a personal phone-to-phone line.
         "client_name": client.name if client else None,
         "can_text_client": bool(client and (client.phone or "").strip()),
+        # Did the customer confirm this visit? A cleaner seeing "confirmed"
+        # knows the door will be open without calling the office. Set by the
+        # tap-to-confirm link in the reminder text or (on manual-invite jobs)
+        # the customer's Google Calendar "Yes"; cleared automatically if the
+        # visit is rescheduled. A bool, not the timestamp — the crew payload
+        # rides rural cell data and only needs the yes/no.
+        "customer_confirmed": job.customer_confirmed_at is not None,
         "crew_size": len(job.cleaner_ids or []),
         # The OTHER people on this job, as display names (crew-ID strings mean
         # nothing to a human). Resolved from the map my-day builds in one query.
