@@ -49,18 +49,21 @@ _ANTHROPIC_TIERS = {
     "sonnet": os.getenv("AGENT_MODEL_SONNET", "claude-sonnet-4-6"),
     "opus": os.getenv("AGENT_MODEL_OPUS", "claude-opus-4-8"),
 }
-# The fast tier defaults to gemini-3.5-flash-lite (Google's cheapest/fastest
-# current model — routing, the QC pass, the daily brief, crew /ask); standard
-# and hard default to gemini-3.6-flash. Note there is NO gemini-3.6-flash-lite —
-# the -flash-lite line is 3.5/3.1, so don't "match" the 3.6 by guessing one.
-# Google retired the gemini-2.5-* ids for new keys (a 404 that named 3.6-flash
-# as the replacement), so those are gone. Every tier stays env-overridable —
-# point the hard tier at a larger model via GEMINI_MODEL_PRO once you've
-# confirmed its id for your key (GET .../v1beta/models); one env var, no deploy.
+# Tiering: fast -> gemini-3.5-flash-lite (cheapest/fastest — routing, the QC
+# pass, the daily brief, crew /ask); standard -> gemini-3.6-flash; hard ->
+# gemini-3.8-flash, the strongest GA Flash, for the rare complex query the
+# router escalates. There is no stable Gemini "Pro" GA id right now (only
+# gemini-3.1-pro-preview), and gemini-3.8-flash is both more capable than 3.6
+# and on introductory pricing, so it's the cheap-and-reliable hard tier. Notes
+# for the next person: there is NO gemini-3.6-flash-lite (the -flash-lite line
+# is 3.5/3.1), and the gemini-2.5-* ids are retired for new keys (a 404 that
+# named 3.6-flash as the replacement). Every tier stays env-overridable — swap
+# a tier once you've confirmed a new id for your key (GET .../v1beta/models);
+# one env var, no deploy.
 _GEMINI_TIERS = {
     "haiku": os.getenv("GEMINI_MODEL_FAST", "gemini-3.5-flash-lite"),
     "sonnet": os.getenv("GEMINI_MODEL", "gemini-3.6-flash"),
-    "opus": os.getenv("GEMINI_MODEL_PRO", "gemini-3.6-flash"),
+    "opus": os.getenv("GEMINI_MODEL_PRO", "gemini-3.8-flash"),
 }
 
 
