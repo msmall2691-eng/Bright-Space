@@ -23,14 +23,13 @@ import SubNav from '../components/ui/SubNav'
 import GoogleCalendarView from '../components/schedule/GoogleCalendarView'
 import ScheduleSyncSettings from '../components/schedule/ScheduleSyncSettings'
 import { AutoAssignModal, FixTimesModal, OpenToCrewModal } from '../components/schedule/PowerToolModals'
-import { ScheduleHealthStrip, ScheduleBulkBar } from '../components/schedule/ScheduleSections'
+import { ScheduleHealthStrip } from '../components/schedule/ScheduleSections'
 import { AvailabilityPanel } from '../components/schedule/ScheduleTabs'
 import { VISIT_STATUS_CONFIG, shortDate, cleanerInitials } from '../components/schedule/constants'
 import { useScheduleData } from '../hooks/useScheduleData'
 import { useScheduleAnalytics } from '../hooks/useScheduleAnalytics'
 import { useScheduleTools } from '../hooks/useScheduleTools'
 import { useScheduleFilters } from '../hooks/useScheduleFilters'
-import { useVisitSelection } from '../hooks/useVisitSelection'
 import { useIsMobile } from '../hooks/useIsMobile'
 import { toLocalYMD, todayYMD } from '../utils/format'
 
@@ -224,7 +223,6 @@ export default function Schedule() {
     unassignedOnly, setUnassignedOnly,
     noGcalOnly, setNoGcalOnly,
     filteredVisits, unassignedCount, visitsByDate, scheduleStats,
-    currentlyVisibleVisits,
   } = useScheduleFilters({ visits, jobs, properties, viewMode, dateStr })
 
   const handleEdit = (visit, job, property) => {
@@ -360,18 +358,6 @@ export default function Schedule() {
       throw err
     }
   }
-
-  const {
-    selectedVisitIds, toggleVisitSelect, selectAllVisible,
-    clearVisitSelection, bulkDeleteVisits, bulkDeleting,
-    bulkShiftVisits, bulkShifting,
-  } = useVisitSelection({
-    visits, setVisits, currentlyVisibleVisits, toast,
-    // Shifted visits land on a different date — the month grid caches its
-    // own jobs list keyed off calRefresh, so bump it the same way a job
-    // save/delete does (handleJobSave above) to pick up the moved jobs.
-    onAfterShift: () => setCalRefresh(k => k + 1),
-  })
 
   const handleEditJob = (job) => {
     setEditingJob(job)
@@ -518,7 +504,11 @@ export default function Schedule() {
       <ScheduleToolbar
         viewMode={viewMode}
         onViewChange={setViewMode}
-        showDateNav={true}
+        // Agenda (narrow day view) has AgendaHero's DateStrip for day/week nav,
+        // so the toolbar's prev/next-week arrows are a redundant second nav there
+        // (owner: "way too busy"). Keep them for week + the wide dispatch board,
+        // which have no DateStrip.
+        showDateNav={effectiveView !== 'agenda'}
         currentDate={currentDate}
         onPrevWeek={prevWeek}
         onNextWeek={nextWeek}
@@ -555,26 +545,6 @@ export default function Schedule() {
         <ScheduleHealthStrip
           stats={scheduleStats}
           weekLabel={viewMode === 'month' ? 'This month' : 'This week'}
-        />
-      )}
-
-      {/* Selection / bulk-action bar — agenda view only. In month view the
-          grid has no per-job checkbox to individually deselect, and the
-          "visible" set is the whole week (not just what's rendered), so
-          "Select all visible → Cancel N" would mass-cancel jobs the user
-          can't see. Keep bulk operations to the list surface where every
-          row is individually selectable. */}
-      {effectiveView === 'agenda' && (
-        <ScheduleBulkBar
-          visibleCount={currentlyVisibleVisits.length}
-          allSelected={currentlyVisibleVisits.length > 0 && currentlyVisibleVisits.every(v => selectedVisitIds.has(v.id))}
-          onSelectAllVisible={selectAllVisible}
-          selectedCount={selectedVisitIds.size}
-          onClear={clearVisitSelection}
-          onBulkDelete={bulkDeleteVisits}
-          bulkDeleting={bulkDeleting}
-          onBulkShift={bulkShiftVisits}
-          bulkShifting={bulkShifting}
         />
       )}
 

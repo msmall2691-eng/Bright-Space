@@ -36,6 +36,11 @@ const VIEWS = [
 export default function ScheduleToolbar({
   viewMode,
   onViewChange,
+  // When false, the toolbar's prev/next-week date-nav is suppressed — the
+  // parent uses this in the narrow-day "agenda" view, where AgendaHero's
+  // DateStrip already provides day/week navigation and a second nav row read
+  // as clutter (owner: "way too busy"). Defaults on so week/dispatch keep it.
+  showDateNav = true,
   currentDate,
   onPrevWeek,
   onNextWeek,
@@ -130,10 +135,11 @@ export default function ScheduleToolbar({
             ))}
           </div>
 
-          {/* Row 3 — date nav (non-month only; month has CalendarView's own
-              header, and these arrows step by a WEEK which is the wrong axis
-              for a month grid). */}
-          {viewMode !== 'month' && viewMode !== 'google' && (
+          {/* Row 3 — date nav. Hidden in month/google (CalendarView has its
+              own header, and these week-stepping arrows are the wrong axis for
+              a month grid) and whenever `showDateNav` is off — the agenda view,
+              where AgendaHero's DateStrip already carries day/week nav. */}
+          {viewMode !== 'month' && viewMode !== 'google' && showDateNav && (
             <div className="mt-2 flex items-center gap-2">
               <button onClick={onPrevWeek} aria-label="Previous"
                 className="grid place-items-center w-9 h-9 rounded-lg bg-bg-2 text-ink-3 active:scale-95 transition-transform">
@@ -166,7 +172,7 @@ export default function ScheduleToolbar({
             ))}
           </div>
 
-          {viewMode !== 'month' && viewMode !== 'google' && (
+          {viewMode !== 'month' && viewMode !== 'google' && showDateNav && (
             <div className="flex items-center gap-1 ml-1">
               <button onClick={onPrevWeek} className="p-1 hover:bg-bg-2 rounded text-ink-3" aria-label="Previous week">
                 <ChevronLeft className="w-4 h-4" />
