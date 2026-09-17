@@ -60,8 +60,18 @@ describe('ScheduleToolbar — phone layout', () => {
 
   it('shows the date-nav in a non-month view and steps weeks', () => {
     const onNextWeek = vi.fn()
-    render(<ScheduleToolbar {...baseProps} viewMode="agenda" onNextWeek={onNextWeek} />)
+    // showDateNav defaults on; week view has no DateStrip so it keeps the arrows.
+    render(<ScheduleToolbar {...baseProps} viewMode="week" onNextWeek={onNextWeek} />)
     fireEvent.click(screen.getByLabelText('Next'))
     expect(onNextWeek).toHaveBeenCalled()
+  })
+
+  it('hides the week date-nav when showDateNav is off (agenda view has DateStrip)', () => {
+    // In the narrow-day "agenda" view the parent passes showDateNav={false}
+    // because AgendaHero's DateStrip already carries day/week nav — the toolbar
+    // arrows would be a redundant second nav row (owner: "way too busy").
+    render(<ScheduleToolbar {...baseProps} viewMode="week" showDateNav={false} />)
+    expect(screen.queryByLabelText('Previous')).toBeNull()
+    expect(screen.queryByLabelText('Next')).toBeNull()
   })
 })
