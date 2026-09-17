@@ -111,11 +111,10 @@ export default function ScheduleToolbar({
               </IconButton>
               {toolsMenu}
             </div>
-
-            <button onClick={onNewJob} aria-label="New job"
-              className="shrink-0 grid place-items-center w-9 h-9 rounded-lg bg-indigo-600 text-white shadow-xs active:scale-95 transition-transform">
-              <Plus className="w-5 h-5" />
-            </button>
+            {/* No "+" here on phone: the bottom-right StickyActionBar FAB is the
+                one primary "New job" on phones (design language: one primary per
+                view, mobile primary = the FAB). Two indigo + buttons firing the
+                same action was the per-view-primary violation. */}
           </div>
 
           {/* Row 2 — the view switcher, full width, real tap targets. Short

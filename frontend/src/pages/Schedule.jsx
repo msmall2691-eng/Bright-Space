@@ -547,10 +547,16 @@ export default function Schedule() {
         onToggleGuestStays={toggleGuestStays}
       />
 
-      <ScheduleHealthStrip
-        stats={scheduleStats}
-        weekLabel={viewMode === 'month' ? 'This month' : 'This week'}
-      />
+      {/* The today/this-week count strip is redundant in the agenda view —
+          AgendaHero's OpsSummary already shows the day count there, and two
+          count strips stacked is exactly the "way too busy" the owner flagged.
+          Keep it for week/month/desktop-day where there's no OpsSummary. */}
+      {effectiveView !== 'agenda' && (
+        <ScheduleHealthStrip
+          stats={scheduleStats}
+          weekLabel={viewMode === 'month' ? 'This month' : 'This week'}
+        />
+      )}
 
       {/* Selection / bulk-action bar — agenda view only. In month view the
           grid has no per-job checkbox to individually deselect, and the
