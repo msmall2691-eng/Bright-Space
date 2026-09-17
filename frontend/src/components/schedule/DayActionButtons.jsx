@@ -6,7 +6,7 @@ import { mapsDirectionsUrl } from '../../utils/maps'
  *  needed) + "Print" (day sheet via window.print(), Tier 4 roadmap items
  *  13 and 15). Shared between AgendaHero (the live agenda header) and
  *  AgendaDay's own header (the standalone/hideHeader=false case). */
-export default function DayActionButtons({ visits, jobs, properties, className = '' }) {
+export default function DayActionButtons({ visits, jobs, properties, className = '', showPrint = true }) {
   const addresses = (visits || [])
     .filter(v => v.status !== 'cancelled')
     .map(v => properties?.[jobs?.[v.job_id]?.property_id]?.address)
@@ -27,14 +27,16 @@ export default function DayActionButtons({ visits, jobs, properties, className =
           Directions
         </a>
       )}
-      <button
-        onClick={() => window.print()}
-        className="flex items-center gap-1.5 text-xs px-2.5 py-1.5 min-h-[44px] sm:min-h-0 rounded-lg bg-bg-2 hover:bg-hairline text-ink-2 transition-colors"
-        title="Print this day's schedule"
-      >
-        <Printer className="w-3.5 h-3.5" />
-        Print
-      </button>
+      {showPrint && (
+        <button
+          onClick={() => window.print()}
+          className="flex items-center gap-1.5 text-xs px-2.5 py-1.5 min-h-[44px] sm:min-h-0 rounded-lg bg-bg-2 hover:bg-hairline text-ink-2 transition-colors"
+          title="Print this day's schedule"
+        >
+          <Printer className="w-3.5 h-3.5" />
+          Print
+        </button>
+      )}
     </div>
   )
 }

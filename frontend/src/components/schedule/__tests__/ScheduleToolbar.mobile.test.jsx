@@ -35,10 +35,20 @@ const baseProps = {
 }
 
 describe('ScheduleToolbar — phone layout', () => {
-  it('gives the phone a dedicated icon-only New Job button', () => {
+  it('drops the phone toolbar "+" — the bottom-right FAB is the one mobile primary', () => {
+    // De-clutter: the icon-only "New job" (aria-label) that used to sit in the
+    // phone toolbar was removed so there is ONE primary on a phone — the
+    // bottom-right StickyActionBar FAB (its own component/test). The desktop
+    // "New Job" text button (no aria-label) is the only New-Job control left in
+    // this toolbar, so the phone-unique aria-label is gone.
+    render(<ScheduleToolbar {...baseProps} />)
+    expect(screen.queryByLabelText('New job')).toBeNull()
+  })
+
+  it('keeps the desktop New Job button wired to onNewJob', () => {
     const onNewJob = vi.fn()
     render(<ScheduleToolbar {...baseProps} onNewJob={onNewJob} />)
-    fireEvent.click(screen.getByLabelText('New job'))
+    fireEvent.click(screen.getByText('New Job'))
     expect(onNewJob).toHaveBeenCalled()
   })
 
