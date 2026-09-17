@@ -374,7 +374,13 @@ def create_quote(
     org_id: int = Depends(current_org_id),
 ):
     """Create a quote from the Quoting UI (integer client_id + inline items)."""
-    client = db.query(Client).filter(Client.id == quote_data.client_id).first()
+    oid = resolve_org_id(org_id, db)
+    # MT-2: only a client in the caller's workspace can back a new quote (tolerate
+    # legacy NULL-org rows); otherwise a cross-org client_id would seed a quote here.
+    client = db.query(Client).filter(
+        Client.id == quote_data.client_id,
+        or_(Client.org_id == oid, Client.org_id.is_(None)),
+    ).first()
     if not client:
         raise HTTPException(status_code=404, detail="Client not found")
 
@@ -395,7 +401,7 @@ def create_quote(
         opportunity_id=quote_data.opportunity_id,
         property_id=quote_data.property_id,
         created_by=getattr(current_user, "id", None),
-        org_id=resolve_org_id(org_id, db),  # MT-2: stamp the caller's workspace
+        org_id=oid,  # MT-2: stamp the caller's workspace (same org as the client lookup)
         # Temporary unique placeholder; replaced with QT-YYYY-#### after flush.
         quote_number=f"PENDING-{secrets.token_hex(8)}",
         title=quote_data.title,
@@ -647,8 +653,12 @@ def patch_quote(quote_id: int, quote_data: QuoteUpdate, db: Session = Depends(ge
 
 # PUT kept as an alias of PATCH for backward compatibility.
 @router.put("/{quote_id}", dependencies=[Depends(require_role("admin", "manager"))])
-def update_quote(quote_id: int, quote_data: QuoteUpdate, db: Session = Depends(get_db)):
-    return patch_quote(quote_id, quote_data, db)
+def update_quote(quote_id: int, quote_data: QuoteUpdate, db: Session = Depends(get_db),
+                 org_id: int = Depends(current_org_id)):
+    # Forward the caller's org so the in-process PATCH call stays org-scoped —
+    # without this, patch_quote's `org_id=Depends(current_org_id)` arrives as the
+    # unresolved Depends sentinel and falls back to org 1 (MT-2 scope defeated).
+    return patch_quote(quote_id, quote_data, db, org_id)
 
 
 @router.delete("/{quote_id}", dependencies=[Depends(require_role("admin", "manager"))])
@@ -670,7 +680,8 @@ def delete_quote(quote_id: int, db: Session = Depends(get_db), org_id: int = Dep
 
 
 @router.delete("/{quote_id}/permanent", dependencies=[Depends(require_role("admin"))])
-def permanently_delete_quote(quote_id: int, db: Session = Depends(get_db)):
+def permanently_delete_quote(quote_id: int, db: Session = Depends(get_db),
+                             org_id: int = Depends(current_org_id)):
     """Hard-delete an archived quote (admin only) — for clearing test/junk quotes.
 
     Requires the quote be archived first (so this can't be a one-click way to
@@ -680,7 +691,7 @@ def permanently_delete_quote(quote_id: int, db: Session = Depends(get_db)):
     intact (no FK back to quotes)."""
     from database.models import RecurringSchedule
 
-    quote = _get_quote_or_404(quote_id, db)
+    quote = _get_quote_or_404(quote_id, db, resolve_org_id(org_id, db))
     if quote.status != "archived":
         raise HTTPException(status_code=409, detail="Archive the quote before deleting it permanently.")
     if quote.status == "converted" or _existing_job_for_quote(db, quote):
@@ -718,7 +729,8 @@ class QuoteSendRequest(BaseModel):
 
 
 @router.post("/{quote_id}/send", dependencies=[Depends(require_role("admin", "manager"))])
-def send_quote(quote_id: int, body: QuoteSendRequest = QuoteSendRequest(), db: Session = Depends(get_db)):
+def send_quote(quote_id: int, body: QuoteSendRequest = QuoteSendRequest(), db: Session = Depends(get_db),
+               org_id: int = Depends(current_org_id)):
     """Actually DELIVER the quote to the customer over the chosen channel(s), then
     mark it sent. Email attaches the PDF; SMS texts the public accept-link.
 
@@ -726,7 +738,7 @@ def send_quote(quote_id: int, body: QuoteSendRequest = QuoteSendRequest(), db: S
     delivered — so the UI's email/SMS picker was ignored and customers never
     received anything. Returns per-channel results: {"email": "sent", "sms": ...}.
     """
-    quote = _get_quote_or_404(quote_id, db)
+    quote = _get_quote_or_404(quote_id, db, resolve_org_id(org_id, db))
     # draft = first send; sent/viewed = a follow-up nudge (re-send);
     # changes_requested = the owner revised it and is sending the revised quote
     # back (which clears the change-request flag below).
@@ -934,9 +946,10 @@ def send_quote(quote_id: int, body: QuoteSendRequest = QuoteSendRequest(), db: S
 
 
 @router.post("/{quote_id}/generate-token", dependencies=[Depends(require_role("admin", "manager"))])
-def generate_quote_token(quote_id: int, db: Session = Depends(get_db)):
+def generate_quote_token(quote_id: int, db: Session = Depends(get_db),
+                         org_id: int = Depends(current_org_id)):
     """Ensure a public token exists and return it + the shareable link."""
-    quote = _get_quote_or_404(quote_id, db)
+    quote = _get_quote_or_404(quote_id, db, resolve_org_id(org_id, db))
     token = _ensure_public_token(quote)
     quote.updated_at = _utcnow()
     db.commit()
@@ -956,11 +969,12 @@ class AdminAcceptRequest(BaseModel):
 
 @router.post("/{quote_id}/accept", dependencies=[Depends(require_role("admin", "manager"))])
 def accept_quote(quote_id: int, body: AdminAcceptRequest = None,
-                 background_tasks: BackgroundTasks = None, db: Session = Depends(get_db)):
+                 background_tasks: BackgroundTasks = None, db: Session = Depends(get_db),
+                 org_id: int = Depends(current_org_id)):
     """Admin-side accept. Runs the SAME side effects as the public accept link
     (convert to job / advance the opportunity to won / notify) via the shared
     finalizer, instead of the old stub that only flipped the status."""
-    quote = _get_quote_or_404(quote_id, db)
+    quote = _get_quote_or_404(quote_id, db, resolve_org_id(org_id, db))
     if quote.status in ("accepted", "declined", "converted"):
         raise HTTPException(status_code=400, detail=f"Quote has already been {quote.status}")
     quote.status = "accepted"
@@ -974,8 +988,9 @@ def accept_quote(quote_id: int, body: AdminAcceptRequest = None,
 
 
 @router.post("/{quote_id}/decline", dependencies=[Depends(require_role("admin", "manager"))])
-def decline_quote(quote_id: int, db: Session = Depends(get_db)):
-    quote = _get_quote_or_404(quote_id, db)
+def decline_quote(quote_id: int, db: Session = Depends(get_db),
+                  org_id: int = Depends(current_org_id)):
+    quote = _get_quote_or_404(quote_id, db, resolve_org_id(org_id, db))
     if quote.status in ("accepted", "declined"):
         raise HTTPException(status_code=400, detail=f"Quote has already been {quote.status}")
     quote.status = "declined"
@@ -1278,6 +1293,7 @@ def convert_quote_to_job(
     quote_id: int,
     payload: Optional[ConvertToJobRequest] = None,
     db: Session = Depends(get_db),
+    org_id: int = Depends(current_org_id),
 ):
     """Create a Job from a quote. Accepts an optional payload with
     scheduled_date, start_time, end_time, cleaner_ids so the modal can
@@ -1285,7 +1301,7 @@ def convert_quote_to_job(
     Job lands as 'unscheduled' and the operator finishes on the
     Scheduling page. Every Job needs a Property, so we reuse the
     client's existing property or create one from the quote address."""
-    quote = _get_quote_or_404(quote_id, db)
+    quote = _get_quote_or_404(quote_id, db, resolve_org_id(org_id, db))
     p = payload or ConvertToJobRequest()
     job = _convert_quote_to_job(
         db, quote,
@@ -1993,8 +2009,14 @@ def list_quote_requests(
     status: Optional[str] = Query(None),
     limit: int = Query(100, ge=1, le=500),
     offset: int = Query(0, ge=0),
+    org_id: int = Depends(current_org_id),
 ):
-    query = db.query(LeadIntake).filter(LeadIntake.source == _QR_SOURCE)
+    oid = resolve_org_id(org_id, db)
+    query = db.query(LeadIntake).filter(
+        LeadIntake.source == _QR_SOURCE,
+        # MT-2: scope to the caller's workspace; tolerate legacy NULL-org rows.
+        or_(LeadIntake.org_id == oid, LeadIntake.org_id.is_(None)),
+    )
     if status:
         query = query.filter(LeadIntake.status == status)
     rows = query.order_by(LeadIntake.created_at.desc()).offset(offset).limit(limit).all()
@@ -2002,10 +2024,17 @@ def list_quote_requests(
 
 
 @router.put("/requests/{request_id}", dependencies=[Depends(require_role("admin", "manager"))])
-def update_quote_request(request_id: int, request_data: QuoteRequestUpdate, db: Session = Depends(get_db)):
+def update_quote_request(request_id: int, request_data: QuoteRequestUpdate, db: Session = Depends(get_db),
+                         org_id: int = Depends(current_org_id)):
+    oid = resolve_org_id(org_id, db)
     row = (
         db.query(LeadIntake)
-        .filter(LeadIntake.id == request_id, LeadIntake.source == _QR_SOURCE)
+        .filter(
+            LeadIntake.id == request_id,
+            LeadIntake.source == _QR_SOURCE,
+            # MT-2: a request in another workspace reads as 404; tolerate legacy NULL-org.
+            or_(LeadIntake.org_id == oid, LeadIntake.org_id.is_(None)),
+        )
         .first()
     )
     if not row:
@@ -2051,12 +2080,13 @@ def _pdf_line_items(quote: Quote) -> list:
 
 
 @router.get("/{quote_id}/delivery-history", dependencies=[Depends(require_role("admin", "manager", "viewer"))])
-def get_quote_delivery_history(quote_id: int, db: Session = Depends(get_db)):
+def get_quote_delivery_history(quote_id: int, db: Session = Depends(get_db),
+                               org_id: int = Depends(current_org_id)):
     """Combined email + SMS delivery history, sorted newest first.
 
     Backed by IntegrationEvent — the same audit log the GCal sync writes to —
     after the per-channel quote_emails/quote_sms tables were retired."""
-    quote = _get_quote_or_404(quote_id, db)
+    quote = _get_quote_or_404(quote_id, db, resolve_org_id(org_id, db))
     rows = (
         db.query(IntegrationEvent)
         .filter(
