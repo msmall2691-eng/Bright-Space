@@ -186,9 +186,9 @@ export default function PublicQuote() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-linear-to-br from-blue-50 to-indigo-50 flex items-center justify-center p-4">
+      <div className="min-h-screen bg-bg flex items-center justify-center p-4">
         <div className="text-center">
-          <Clock className="w-12 h-12 text-blue-300 mx-auto mb-4 animate-spin" />
+          <Clock className="w-12 h-12 text-ink-3 mx-auto mb-4 animate-spin" />
           <p className="text-ink-2 font-medium">Loading quote...</p>
         </div>
       </div>
@@ -197,9 +197,9 @@ export default function PublicQuote() {
 
   if (error && !quote) {
     return (
-      <div className="min-h-screen bg-linear-to-br from-red-50 to-orange-50 flex items-center justify-center p-4">
+      <div className="min-h-screen bg-bg flex items-center justify-center p-4">
         <div className="text-center max-w-sm">
-          <AlertCircle className="w-16 h-16 text-red-300 mx-auto mb-4" />
+          <AlertCircle className="w-16 h-16 text-red-400 mx-auto mb-4" />
           <h1 className="text-xl font-bold text-ink mb-2">Unable to Load Quote</h1>
           <p className="text-ink-2">{error}</p>
         </div>
@@ -242,7 +242,7 @@ export default function PublicQuote() {
       <div className="w-14 h-14 rounded-full bg-emerald-100 flex items-center justify-center mx-auto mb-3">
         <CheckCircle className="w-8 h-8 text-emerald-600" />
       </div>
-      <p className="text-xl font-bold text-emerald-800">You're booked! 🎉</p>
+      <p className="text-xl font-bold text-emerald-800">You're booked!</p>
       <p className="text-sm text-emerald-700 mt-1">
         {scheduled.date_label} ({scheduled.window === 'afternoon' ? 'afternoon' : 'morning'}) — we'll confirm the exact time shortly.{inboxLine}
       </p>
@@ -252,7 +252,7 @@ export default function PublicQuote() {
       <div className="w-14 h-14 rounded-full bg-emerald-100 flex items-center justify-center mx-auto mb-3">
         <CheckCircle className="w-8 h-8 text-emerald-600" />
       </div>
-      <p className="text-xl font-bold text-emerald-800">Quote accepted — thank you! 🎉</p>
+      <p className="text-xl font-bold text-emerald-800">Quote accepted — thank you!</p>
       <p className="text-sm text-emerald-700 mt-1">
         {accepted ? `Accepted on ${todayLong}. ` : ''}We'll reach out shortly to lock in your date.{inboxLine}
       </p>
