@@ -131,3 +131,27 @@ def test_stats_counts_by_derived_status_not_stored(api):
         for m in made:
             db.delete(m)
         db.commit(); db.close()
+
+
+def test_stats_are_org_scoped(api):
+    """The tiles must count only the caller's workspace (api fixture = org 1),
+    like the Requests list does — a lead in another org must not show up in the
+    totals. The endpoint was role-gated but had no tenant filter."""
+    db = SessionLocal()
+    made = []
+    try:
+        base = api.get("/api/intake/stats").json()
+        # A lead belonging to a DIFFERENT workspace.
+        other = LeadIntake(name="Other Org Lead",
+                           email=f"{uuid.uuid4().hex[:6]}@ex.com",
+                           status="new", source="website", org_id=2)
+        db.add(other); db.commit(); db.refresh(other)
+        made = [other]
+        after = api.get("/api/intake/stats").json()
+        # Org 2's lead is invisible to org 1's dashboard.
+        assert after["total"] - base["total"] == 0
+        assert after["new"] - base["new"] == 0
+    finally:
+        for m in made:
+            db.delete(m)
+        db.commit(); db.close()

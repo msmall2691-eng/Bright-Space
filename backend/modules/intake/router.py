@@ -474,7 +474,7 @@ def create_intake(data: ManualIntakeCreate, db: Session = Depends(get_db), org_i
 
 
 @router.get("/stats", dependencies=[Depends(require_role("admin", "manager"))])
-def get_intake_stats(db: Session = Depends(get_db)):
+def get_intake_stats(db: Session = Depends(get_db), org_id: int = Depends(current_org_id)):
     """Quick counts for the requests dashboard.
 
     Bucketed by the DERIVED display status (lead_display_status) — exactly what
@@ -486,13 +486,21 @@ def get_intake_stats(db: Session = Depends(get_db)):
     with the tab counts on the same screen. This mirrors the list's derivation
     (converted_quote_id + its quote, opportunity_id, stored status) so the two
     can't drift.
+
+    ORG-SCOPED, and it was not: role-gated but with no tenant filter, so the
+    tiles counted every workspace's leads together while the list beside them
+    (get_intakes) scopes to the caller's org. Same tenant filter as the list —
+    the caller's org plus legacy NULL-org (public-form) rows. Same class of
+    latent-with-one-org / wrong-with-two bug that invoice_summary_by_service
+    already carried a note about.
     """
     rows = db.query(
         LeadIntake.status,
         LeadIntake.priority,
         LeadIntake.converted_quote_id,
         LeadIntake.opportunity_id,
-    ).all()
+    ).filter(or_(LeadIntake.org_id == resolve_org_id(org_id, db),
+                 LeadIntake.org_id.is_(None))).all()
     quote_ids = {r.converted_quote_id for r in rows if r.converted_quote_id}
     quotes_by_id = {}
     if quote_ids:
