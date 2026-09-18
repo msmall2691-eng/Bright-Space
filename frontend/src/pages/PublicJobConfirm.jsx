@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { useParams } from 'react-router-dom'
 import { CheckCircle, AlertCircle, Clock, Calendar, MapPin } from 'lucide-react'
 import WhosComing from '../components/customer/WhosComing'
+import { publicFetch } from '../utils/publicFetch'
 
 function formatTime(t) {
   if (!t) return ''
@@ -45,7 +46,7 @@ export default function PublicJobConfirm() {
   useEffect(() => {
     const loadJob = async () => {
       try {
-        const res = await window.fetch(`/api/jobs/public/${token}`)
+        const res = await publicFetch(`/api/jobs/public/${token}`)
         if (!res.ok) {
           if (res.status === 404) setError('Visit not found. The link may be incorrect or expired.')
           else setError('Something went wrong on our end. Please try again in a moment.')
@@ -64,7 +65,7 @@ export default function PublicJobConfirm() {
   const handleConfirm = async () => {
     setConfirming(true)
     try {
-      const res = await window.fetch(`/api/jobs/public/${token}/confirm`, { method: 'POST' })
+      const res = await publicFetch(`/api/jobs/public/${token}/confirm`, { method: 'POST' })
       if (!res.ok) {
         const data = await res.json().catch(() => ({}))
         setError(data.detail || 'Could not confirm. Please try again.')
@@ -84,7 +85,7 @@ export default function PublicJobConfirm() {
     if (availability) return
     setLoadingAvail(true)
     try {
-      const res = await window.fetch(`/api/jobs/public/${token}/availability`)
+      const res = await publicFetch(`/api/jobs/public/${token}/availability`)
       if (!res.ok) { setError('Could not load available times. Please try again.'); return }
       const data = await res.json()
       setAvailability(data)
@@ -119,7 +120,7 @@ export default function PublicJobConfirm() {
     if (!reschedDate) return
     setRescheduling(true)
     try {
-      const res = await window.fetch(`/api/jobs/public/${token}/reschedule`, {
+      const res = await publicFetch(`/api/jobs/public/${token}/reschedule`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ date: reschedDate, window: reschedWindow, scope: reschedScope }),
@@ -144,7 +145,7 @@ export default function PublicJobConfirm() {
   const handleRequestReschedule = async () => {
     setRequesting(true)
     try {
-      const res = await window.fetch(`/api/jobs/public/${token}/request-reschedule`, {
+      const res = await publicFetch(`/api/jobs/public/${token}/request-reschedule`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ message: requestMsg.trim() || null }),

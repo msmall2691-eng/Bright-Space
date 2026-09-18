@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { useParams } from 'react-router-dom'
 import { CheckCircle, AlertCircle, Clock, X, Download, Printer } from 'lucide-react'
 import QuoteDocument from '../components/QuoteDocument'
+import { publicFetch } from '../utils/publicFetch'
 
 export default function PublicQuote() {
   const { token } = useParams()
@@ -37,7 +38,7 @@ export default function PublicQuote() {
   useEffect(() => {
     const loadQuote = async () => {
       try {
-        const res = await window.fetch(`/api/quotes/public/${token}`)
+        const res = await publicFetch(`/api/quotes/public/${token}`)
         if (!res.ok) {
           // Distinguish a bad/expired link (404) from a server fault (5xx) so a
           // valid link is never wrongly called "broken".
@@ -64,9 +65,10 @@ export default function PublicQuote() {
   }, [token])
 
   const handleAccept = async () => {
+    setError(null)  // clear any prior action's error so it can't linger over a success
     setAccepting(true)
     try {
-      const res = await window.fetch(`/api/quotes/public/${token}/accept`, {
+      const res = await publicFetch(`/api/quotes/public/${token}/accept`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -90,11 +92,12 @@ export default function PublicQuote() {
   }
 
   const openScheduler = async () => {
+    setError(null)
     setShowSchedule(true)
     if (availability) return
     setLoadingAvail(true)
     try {
-      const res = await window.fetch(`/api/quotes/public/${token}/availability`)
+      const res = await publicFetch(`/api/quotes/public/${token}/availability`)
       if (!res.ok) { setError('Could not load available dates. Please try again.'); return }
       const data = await res.json()
       setAvailability(data)
@@ -109,9 +112,10 @@ export default function PublicQuote() {
 
   const handleSchedule = async () => {
     if (!schedDate) return
+    setError(null)
     setScheduling(true)
     try {
-      const res = await window.fetch(`/api/quotes/public/${token}/schedule`, {
+      const res = await publicFetch(`/api/quotes/public/${token}/schedule`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -135,9 +139,10 @@ export default function PublicQuote() {
 
   const handleRequestChanges = async () => {
     if (!requestMsg.trim()) return
+    setError(null)
     setRequesting(true)
     try {
-      const res = await window.fetch(`/api/quotes/public/${token}/request-changes`, {
+      const res = await publicFetch(`/api/quotes/public/${token}/request-changes`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ message: requestMsg.trim() }),
@@ -157,9 +162,10 @@ export default function PublicQuote() {
   }
 
   const handleDecline = async () => {
+    setError(null)
     setDeclining(true)
     try {
-      const res = await window.fetch(`/api/quotes/public/${token}/decline`, {
+      const res = await publicFetch(`/api/quotes/public/${token}/decline`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ reason: declineReason.trim() || null }),
@@ -211,6 +217,11 @@ export default function PublicQuote() {
   const isExpired = !isAccepted && !isDeclined && (quote.status === 'expired' || quote.is_expired)
   const isClosed = isAccepted || isDeclined || isExpired
   const todayLong = new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })
+  // Only promise an email receipt when one will actually be sent: accept sends a
+  // receipt only if an email was entered or is on the client record. Saying "check
+  // your inbox" with no email on file was a promise the backend never kept.
+  const hasEmail = !!((acceptEmail || '').trim() || (quote.client_email || '').trim())
+  const inboxLine = hasEmail ? ' A confirmation is on its way to your inbox.' : ''
 
   const pdfUrl = `/api/quotes/public/${token}/pdf`
   const toolbar = (
@@ -233,7 +244,7 @@ export default function PublicQuote() {
       </div>
       <p className="text-xl font-bold text-emerald-800">You're booked! 🎉</p>
       <p className="text-sm text-emerald-700 mt-1">
-        {scheduled.date_label} ({scheduled.window === 'afternoon' ? 'afternoon' : 'morning'}) — we'll confirm the exact time shortly. A confirmation is on its way to your inbox.
+        {scheduled.date_label} ({scheduled.window === 'afternoon' ? 'afternoon' : 'morning'}) — we'll confirm the exact time shortly.{inboxLine}
       </p>
     </div>
   ) : isAccepted ? (
@@ -243,7 +254,7 @@ export default function PublicQuote() {
       </div>
       <p className="text-xl font-bold text-emerald-800">Quote accepted — thank you! 🎉</p>
       <p className="text-sm text-emerald-700 mt-1">
-        {accepted ? `Accepted on ${todayLong}. ` : ''}We'll reach out shortly to lock in your date. A confirmation is on its way to your inbox.
+        {accepted ? `Accepted on ${todayLong}. ` : ''}We'll reach out shortly to lock in your date.{inboxLine}
       </p>
     </div>
   ) : requested ? (
@@ -327,7 +338,18 @@ export default function PublicQuote() {
           {loadingAvail ? (
             <p className="text-sm text-ink-3">Loading available dates…</p>
           ) : openDates.length === 0 ? (
-            <p className="text-sm text-ink-3">No open dates right now — accept and we'll reach out to schedule.</p>
+            <>
+              <p className="text-sm text-ink-3">No open dates right now — accept and we'll reach out to schedule.</p>
+              {/* Don't dead-end into just "Back": let the customer accept right here
+                  instead of hunting for the secondary accept button below. */}
+              <button
+                onClick={handleAccept}
+                disabled={accepting}
+                className="w-full bg-emerald-600 hover:bg-emerald-700 disabled:bg-bg-2 text-white font-semibold py-4 sm:py-3 text-base rounded-xl min-h-[52px] transition-colors disabled:cursor-not-allowed shadow-xs"
+              >
+                {accepting ? 'Accepting…' : "Accept — we'll reach out to schedule"}
+              </button>
+            </>
           ) : (
             <>
               <select

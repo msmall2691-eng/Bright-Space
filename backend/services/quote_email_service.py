@@ -613,27 +613,3 @@ class QuoteEmailService:
                 "error": str(e),
                 "email_id": None,
             }
-
-    def send_quote_to_multiple(
-        self,
-        recipients: list[dict],
-        quote_number: str,
-        total_amount: str,
-        expires_at: str,
-        quote_link: str,
-        pdf_bytes: Optional[bytes] = None,
-    ) -> list[dict]:
-        """Send quote emails to multiple recipients"""
-        results = []
-        for recipient in recipients:
-            result = self.send_quote_email(
-                to_email=recipient['email'],
-                client_name=recipient['name'],
-                quote_number=quote_number,
-                total_amount=total_amount,
-                expires_at=expires_at,
-                quote_link=quote_link,
-                pdf_bytes=pdf_bytes,
-            )
-            results.append(result)
-        return results
