@@ -225,6 +225,26 @@ def quote_policies_text(db: Session) -> str:
     return v if (v is not None and v.strip()) else DEFAULT_QUOTE_POLICIES
 
 
+# Default terms shown at the bottom of every customer-facing quote surface
+# (public page, email, PDF) when Settings → General → Quote terms is blank.
+# Without one, a quote carried no estimate / non-binding language at all, so
+# a customer could read the number as a fixed contract price. Owner-set text
+# overrides this entirely.
+DEFAULT_QUOTE_TERMS = (
+    "This quote is a good-faith estimate based on the information provided. "
+    "Final pricing may be adjusted if the home or scope differs from what was "
+    "described. Accepting this quote simply reserves a spot on our schedule — "
+    "there is no contract or long-term commitment, and you can cancel or "
+    "reschedule any time."
+)
+
+
+def quote_terms_text(db: Session) -> str:
+    """The configured quote terms, or the sensible default when unset."""
+    v = get_setting(db, "quote_terms")
+    return v if (v is not None and v.strip()) else DEFAULT_QUOTE_TERMS
+
+
 @router.get("/general", dependencies=[Depends(require_role("admin", "manager"))])
 def get_general_settings(db: Session = Depends(get_db)):
     return {k: get_setting(db, k) for k in _GENERAL_KEYS}

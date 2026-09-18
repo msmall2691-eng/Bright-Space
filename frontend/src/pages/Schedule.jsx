@@ -5,6 +5,7 @@ import Button from '../components/ui/Button'
 import ErrorState from '../components/ui/ErrorState'
 import JobEditModal from '../components/JobEditModal'
 import JobCreateModal from '../components/JobCreateModal'
+import NeedsDateStrip from '../components/schedule/NeedsDateStrip'
 import CalendarView from '../components/CalendarView'
 import { toast } from '../utils/toastBus'
 import { confirmDialog } from '../utils/confirmBus'
@@ -111,6 +112,7 @@ export default function Schedule() {
     visits, setVisits,
     jobs, setJobs,
     properties, clients,
+    unscheduled, setUnscheduled,
     loading, loadError,
     refresh,
     employees, empName,
@@ -402,6 +404,12 @@ export default function Schedule() {
 
   const handleJobSave = async (envelope) => {
     if (envelope && envelope.action && envelope.jobId != null) {
+      // Keep the "Needs a date" strip honest without a week refetch: a
+      // deleted job leaves it, and so does one that just got a date.
+      setUnscheduled(prev => prev.filter(j =>
+        j.id !== envelope.jobId
+        || (envelope.action !== 'delete' && envelope.job && !envelope.job.scheduled_date)
+      ))
       if (envelope.action === 'delete') {
         setVisits(prev => prev.filter(v => (v.job_id ?? v.id) !== envelope.jobId))
       } else if (envelope.job) {
@@ -546,6 +554,15 @@ export default function Schedule() {
           stats={scheduleStats}
           weekLabel={viewMode === 'month' ? 'This month' : 'This week'}
         />
+      )}
+
+      {/* Jobs with no date (quote accepted, day not picked yet). Office
+          views only: the phone agenda is already the "way too busy" surface
+          and crew never receive this list. "Schedule" opens the same edit
+          modal as the drawer's Edit; saving a date lands the job on the
+          calendar (and the PATCH sends the customer's booked-in notice). */}
+      {effectiveView !== 'agenda' && (
+        <NeedsDateStrip jobs={unscheduled} onSchedule={handleEditJob} />
       )}
 
       {/* Render branch: agenda (mobile day + hero) / dispatch (desktop

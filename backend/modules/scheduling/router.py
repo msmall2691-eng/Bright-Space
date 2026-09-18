@@ -1356,12 +1356,14 @@ def create_job(data: JobCreate, db: Session = Depends(get_db), org_id: int = Dep
     # schedule the moment it's assigned. The response key stays as an explicit
     # retirement marker (not a silently vanished field).
     # Tell the CUSTOMER their cleaning is booked in (BB-CUST-01) when the office
-    # creates a scheduled job directly for them. Skipped for a quote-sourced job
-    # (source_quote): accepting the quote already sent the customer a receipt, so
-    # a second "you're scheduled" would double up. Also honours an explicit
-    # notify_customer=False. Gated OFF by default; best-effort, post-commit.
+    # creates a scheduled job for them. This used to skip a quote-sourced job on
+    # the theory that the accept receipt covered it — but that receipt goes out
+    # at accept time, before any date exists on the owner-scheduled path, so
+    # the customer never heard WHEN. A quote-sourced job that gets a date sends
+    # the dated notice like any other; the customer self-schedule path passes
+    # notify_customer=False because it sends its own dated confirmation (one
+    # message, not two). Gated OFF by default; best-effort, post-commit.
     if (job.status == "scheduled" and job.scheduled_date and job.client_id
-            and source_quote is None
             and getattr(data, "notify_customer", None) is not False):
         from services.scheduled_notice import notify_customer_scheduled
         notify_customer_scheduled(db, job)
@@ -4746,6 +4748,27 @@ def _job_as_visit(job: dict) -> dict:
     }
 
 
+_UNSCHEDULED_CAP = 50
+
+
+def _unscheduled_jobs(db: Session, org_id: int) -> list:
+    """Open jobs with no scheduled_date, oldest first, capped. Full job dicts
+    so the page can hand one straight to JobEditModal without another fetch."""
+    org_id = resolve_org_id(org_id, db)
+    rows = (
+        db.query(Job).options(joinedload(Job.client))
+        .filter(
+            or_(Job.org_id == org_id, Job.org_id.is_(None)),
+            Job.scheduled_date.is_(None),
+            Job.status.notin_(["cancelled", "completed"]),
+        )
+        .order_by(Job.created_at.asc(), Job.id.asc())
+        .limit(_UNSCHEDULED_CAP)
+        .all()
+    )
+    return [job_to_dict(j) for j in rows]
+
+
 @schedule_router.get("/week", dependencies=[Depends(require_role("admin", "manager", "viewer", "cleaner"))])
 def schedule_week(
     scheduled_date_from: str,
@@ -4810,6 +4833,14 @@ def schedule_week(
         # /api/visits used to emit so the FE fallback keeps rendering unchanged.
         "visits": [_job_as_visit(j) for j in (stripped_jobs or [])],
         "jobs": stripped_jobs,
+        # Date-less jobs (quote accepted → auto-converted, nobody picked a day
+        # yet). The date-range query above can never return them, so the
+        # Schedule page had no way to show "needs a date". Rides this payload
+        # (one query, no extra request — brightbase-economy) and is office-only:
+        # crew payloads stay light and an unscheduled job isn't theirs yet.
+        "unscheduled": (
+            _unscheduled_jobs(db, org_id) if role in ("admin", "manager", "viewer") else []
+        ),
         "properties": _get_properties(db=db, org_id=org_id),
         # limit/offset are Query() defaults — pass explicitly. 50 matches the
         # standalone /api/clients default the page used before.

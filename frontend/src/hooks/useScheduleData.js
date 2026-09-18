@@ -40,6 +40,9 @@ export function useScheduleData(currentDate, viewMode = 'week', { pollMs = 45000
   const [jobs, setJobs] = useState({})
   const [properties, setProperties] = useState({})
   const [clients, setClients] = useState({})
+  // Date-less open jobs (office roles only; the backend sends [] to crew).
+  // Rides the same week payload — see NeedsDateStrip for why it exists.
+  const [unscheduled, setUnscheduled] = useState([])
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState(false)
   const [refreshKey, setRefreshKey] = useState(0)
@@ -121,7 +124,7 @@ export function useScheduleData(currentDate, viewMode = 'week', { pollMs = 45000
         // trigger the full re-render/re-layout cascade every 45s. JSON.stringify
         // of the four lists runs once per poll (45s cadence), which is trivial
         // next to the render work it saves.
-        const sig = JSON.stringify([week?.visits, week?.jobs, week?.properties, week?.clients])
+        const sig = JSON.stringify([week?.visits, week?.jobs, week?.properties, week?.clients, week?.unscheduled])
         if (backgroundPoll && sig === lastSigRef.current) return
         lastSigRef.current = sig
 
@@ -142,6 +145,7 @@ export function useScheduleData(currentDate, viewMode = 'week', { pollMs = 45000
         setJobs(jobsMap)
         setProperties(propsMap)
         setClients(clientsMap)
+        setUnscheduled(Array.isArray(week?.unscheduled) ? week.unscheduled : [])
       } catch (err) {
         console.error('[Schedule]', err)
       }
@@ -173,6 +177,7 @@ export function useScheduleData(currentDate, viewMode = 'week', { pollMs = 45000
     jobs, setJobs,
     properties,
     clients,
+    unscheduled, setUnscheduled,
     loading, loadError,
     refresh,
     employees, empName,
