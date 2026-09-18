@@ -79,3 +79,55 @@ def test_stats_not_shadowed_by_detail_route(api):
     r = api.get("/api/intake/stats")
     assert r.status_code == 200, r.text
     assert "total" in r.json()
+
+
+def test_stats_counts_by_derived_status_not_stored(api):
+    """The tiles must count the DERIVED display status (what the list shows),
+    not the raw `status` column. A lead whose quote is `converted` counts as
+    `converted` even though no code ever writes that value to `status`; a lead
+    with a live (non-converted) quote counts as `quoted` even while its stored
+    status is still `new`. Counting the column made `converted` permanently 0
+    and undercounted `quoted`."""
+    db = SessionLocal()
+    made = []
+    try:
+        base = api.get("/api/intake/stats").json()
+
+        c = Client(name=f"Lead {uuid.uuid4().hex[:6]}", status="lead", org_id=1)
+        db.add(c); db.commit(); db.refresh(c)
+
+        # A won deal: quote.status == "converted", but the lead's stored status
+        # is still "new" (the value the column would have counted).
+        qc = Quote(client_id=c.id, quote_number=f"Q-{uuid.uuid4().hex[:6]}",
+                   status="converted", service_type="residential", total=185,
+                   org_id=1, public_token=uuid.uuid4().hex)
+        db.add(qc); db.commit(); db.refresh(qc)
+        won = LeadIntake(name="Won Lead", email=f"{uuid.uuid4().hex[:6]}@ex.com",
+                         status="new", source="website", org_id=1,
+                         client_id=c.id, converted_quote_id=qc.id)
+
+        # A quoted deal: live quote, stored status still "new".
+        qs = Quote(client_id=c.id, quote_number=f"Q-{uuid.uuid4().hex[:6]}",
+                   status="sent", service_type="residential", total=210,
+                   org_id=1, public_token=uuid.uuid4().hex)
+        db.add(qs); db.commit(); db.refresh(qs)
+        quoted = LeadIntake(name="Quoted Lead", email=f"{uuid.uuid4().hex[:6]}@ex.com",
+                            status="new", source="website", org_id=1,
+                            client_id=c.id, converted_quote_id=qs.id)
+
+        db.add_all([won, quoted]); db.commit()
+        db.refresh(won); db.refresh(quoted)
+        made = [won, quoted, qc, qs, c]
+
+        after = api.get("/api/intake/stats").json()
+        # The won lead lands in `converted` (never possible when counting the
+        # column), the quoted lead in `quoted` — and NEITHER inflates `new`
+        # despite both carrying status == "new".
+        assert after["converted"] - base["converted"] == 1
+        assert after["quoted"] - base["quoted"] == 1
+        assert after["new"] - base["new"] == 0
+        assert after["total"] - base["total"] == 2
+    finally:
+        for m in made:
+            db.delete(m)
+        db.commit(); db.close()
