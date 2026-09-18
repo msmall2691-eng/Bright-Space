@@ -14,6 +14,7 @@ import Requests from './pages/Requests'
 import Deals from './pages/Deals'
 import PublicQuote from './pages/PublicQuote'
 import PublicJobConfirm from './pages/PublicJobConfirm'
+import PublicPayment from './pages/PublicPayment'
 import CustomerPortal from './pages/CustomerPortal'
 import PortalVerify from './pages/PortalVerify'
 import AcceptInvite from './pages/AcceptInvite'
@@ -250,6 +251,7 @@ export default function App() {
 
   const isPublicRoute = location.pathname.startsWith('/quote/')
     || location.pathname.startsWith('/job/') || location.pathname.startsWith('/portal')
+    || location.pathname.startsWith('/pay/')
     || location.pathname.startsWith('/accept-invite')
     // Applying to join the bench. No token in the path — this one is meant to
     // be shared as a plain link, on a card or in a job ad.
@@ -267,6 +269,7 @@ export default function App() {
       <Routes>
         <Route path="/quote/:token" element={<PublicQuote />} />
         <Route path="/job/:token" element={<PublicJobConfirm />} />
+        <Route path="/pay/:token" element={<PublicPayment />} />
         <Route path="/portal/verify" element={<PortalVerify />} />
         <Route path="/portal" element={<CustomerPortal />} />
         <Route path="/accept-invite" element={<AcceptInvite />} />

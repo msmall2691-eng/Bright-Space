@@ -1,4 +1,5 @@
 import os
+import secrets
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import or_
 from sqlalchemy.orm import Session
@@ -12,6 +13,7 @@ from database.db import get_db
 from database.models import Invoice, Client, Message
 from modules.auth.router import require_role, current_org_id, resolve_org_id
 from utils.activity_logger import log_invoice_created, log_invoice_paid
+from ratelimit import rate_limit
 
 
 router = APIRouter()
@@ -81,6 +83,16 @@ def calc_totals(items: list, tax_rate: float, discount: float = 0.0) -> tuple:
     return round(subtotal, 2), tax, total
 
 
+def _ensure_invoice_public_token(inv: Invoice) -> str:
+    """Return the invoice's public (no-login) page token, minting one if missing.
+
+    Same shape as _ensure_job_public_token / the quote token: an unguessable
+    URL-safe token that IS the credential for /pay/{token}. Caller commits."""
+    if not inv.public_token:
+        inv.public_token = secrets.token_urlsafe(32)
+    return inv.public_token
+
+
 def invoice_to_dict(inv: Invoice) -> dict:
     return {
         "id": inv.id,
@@ -88,6 +100,9 @@ def invoice_to_dict(inv: Invoice) -> dict:
         "job_id": inv.job_id,
         "opportunity_id": inv.opportunity_id,
         "invoice_number": inv.invoice_number,
+        # Office-only: lets InvoiceDetail show/copy the customer's pay-page link.
+        # None until the invoice has been sent at least once.
+        "public_token": inv.public_token,
         "items": inv.items,
         "subtotal": inv.subtotal,
         "tax_rate": inv.tax_rate,
@@ -352,6 +367,9 @@ def send_invoice(invoice_id: int, data: SendInvoiceRequest, db: Session = Depend
     # customer never receives an email/SMS titled "Invoice None". The set value
     # persists on the db.commit() at the end of this handler.
     inv_num = assign_invoice_number(db, inv)
+    # Mint the public pay-page token now, so a sent invoice always has a stable
+    # /pay/{token} link (persisted on the db.commit() at the end of this handler).
+    _ensure_invoice_public_token(inv)
     inv_dict = invoice_to_dict(inv)
     company_phone = os.getenv("TWILIO_PHONE_NUMBER", "")
     results = {}
@@ -407,16 +425,62 @@ def send_invoice(invoice_id: int, data: SendInvoiceRequest, db: Session = Depend
     return {"invoice_id": invoice_id, "results": results}
 
 
-# NO PUBLIC INVOICE ENDPOINT. `GET /public/{invoice_id}/{token}` served an
-# invoice — with the customer's email and phone on it — to anyone holding an
-# HMAC token, for a public payment page that never worked (it called a URL
-# that did not match this route, so every visitor got "Invoice Not Found")
-# and which the owner has since decided not to build. Both are gone, along
-# with the token: a capability URL logged on every request and read by
-# nothing is only a way in.
+# ── Public (no-login) invoice page ───────────────────────────────────────────
 #
-# The office marks an invoice paid through `process_payment` below, which is
-# admin/manager-gated and always was.
+# History: an earlier `GET /public/{invoice_id}/{token}` was deleted because it
+# (a) never worked end-to-end and (b) leaked the customer's email and phone to
+# any token holder. The owner has since re-authorized a customer-facing invoice
+# page (online payment), so it is rebuilt here — deliberately fixing both
+# faults: the read side is verified end-to-end (see tests/test_public_invoice.py)
+# and the payload is MINIMAL — invoice number, line items, money, due date,
+# status, and the company name for "questions". NO email, phone, address,
+# internal notes, custom_fields, or any other invoice. The token is a stored,
+# per-row credential (revocable one invoice at a time by nulling the column).
+#
+# Taking money (a Square Payments charge + a signature-verified webhook that
+# flips the invoice to paid) is the WRITE side and is intentionally NOT here
+# yet — it is gated on authorizing Square with a Payments scope. Until then the
+# page is a read-only invoice view with a clearly-labelled "pay online coming
+# soon" seam, and the office still records payments via `process_payment` below.
+
+def _public_invoice_dict(inv: Invoice, db: Session) -> dict:
+    """The MINIMAL customer-facing shape for /pay/{token}. Deliberately omits
+    all contact PII and every internal field — see the note above."""
+    client = db.query(Client).filter(Client.id == inv.client_id).first()
+    company_name = os.getenv("FROM_NAME", "Maine Cleaning Co")
+    company_phone = os.getenv("TWILIO_PHONE_NUMBER", "")
+    return {
+        "invoice_number": inv.invoice_number,
+        # Display name only — confirms the customer has the right invoice. No
+        # email / phone / address (that leak is why the old endpoint was killed).
+        "client_name": (client.name if client else None),
+        "items": inv.items or [],
+        "subtotal": inv.subtotal,
+        "tax_rate": inv.tax_rate,
+        "tax": inv.tax,
+        "discount": inv.discount or 0,
+        "total": inv.total,
+        "status": inv.status,        # sent | overdue | paid | void
+        "due_date": inv.due_date,
+        "paid_at": inv.paid_at.isoformat() if inv.paid_at else None,
+        "notes": inv.notes,          # customer-facing invoice note (shown on the email too)
+        "company_name": company_name,
+        "company_phone": company_phone,
+        # The write path isn't built yet. The page reads this to show a
+        # "pay online is coming soon — reply/call to pay" state instead of a
+        # dead button. Flip to True when the Square charge endpoint ships.
+        "online_payment_enabled": False,
+    }
+
+
+@router.get("/public/{token}", dependencies=[Depends(rate_limit(120, 3600, "invoice_view"))])
+def public_view_invoice(token: str, db: Session = Depends(get_db)):
+    """Customer-facing view of a single invoice via its public token. No login;
+    the unguessable token in the path is the credential. Minimal payload."""
+    inv = db.query(Invoice).filter(Invoice.public_token == token).first()
+    if not inv:
+        raise HTTPException(status_code=404, detail="Invoice not found")
+    return _public_invoice_dict(inv, db)
 
 
 @router.post("/{invoice_id}/pay", dependencies=[Depends(require_role("admin", "manager"))])
