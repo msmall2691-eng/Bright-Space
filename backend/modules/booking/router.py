@@ -215,24 +215,13 @@ def _send_booking_owner_alert(
     return _send_owner_sms(db, body, intake_id)
 
 
-# ---------------------------------------------------------------------------
-# Maps website serviceType values to our internal service_type
-# ---------------------------------------------------------------------------
-BOOKING_SERVICE_MAP = {
-    "airbnb-turnover": "str",
-    "vrbo-turnover": "str",
-    "vacation-rental": "str",
-    "str-turnover": "str",
-    "str": "str",   # bare "str" is what the maineclean.co bookingMutation sends
-    "residential-cleaning": "residential",
-    "residential": "residential",
-    "standard": "residential",
-    "deep": "residential",
-    "deep-cleaning": "residential",
-    "move-in-out": "residential",
-    "commercial-cleaning": "commercial",
-    "commercial": "commercial",
-}
+# Service-type mapping lives in modules.intake.normalize.SERVICE_TYPE_MAP /
+# canonical_service_type — the single canonical map every intake path uses.
+# A second, drifting copy used to live here (it recognized a few more STR
+# spellings than the canonical one but was wired to nothing), which meant the
+# codebase disagreed with itself about what "vrbo-turnover" was. Those spellings
+# are now folded into the canonical map; submit_booking passes the raw
+# serviceType straight through build_intake, which maps it once.
 
 
 class BookingSubmit(BaseModel):

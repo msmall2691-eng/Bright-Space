@@ -27,7 +27,11 @@ from database.models import (
     Quote, Client, Job, Property, LeadIntake, IntegrationEvent,
 )
 from modules.auth.router import get_current_user, require_role, current_org_id, resolve_org_id
-from modules.intake.details import fill_property_access_from_intake, compose_job_notes_from_intake
+from modules.intake.details import (
+    fill_property_access_from_intake,
+    fill_property_rental_from_intake,
+    compose_job_notes_from_intake,
+)
 from utils.integration_log import log_integration_event as _log_integration
 from utils.dates import coerce_date, fmt_long_date
 from utils.address import format_address
@@ -463,6 +467,13 @@ def create_quote(
     if intake and not intake.converted_quote_id:
         intake.status = "quoted"
         intake.converted_quote_id = quote.id
+        # Link the lead back to the client it just became a customer of. Without
+        # this the converted request keeps client_id=NULL and never shows on the
+        # client profile's Requests tab (get_intakes ?client_id) — the
+        # orphaned-lead / broken-backlink case the data-doctor scan flags. The
+        # /intake/{id}/convert-* endpoints already set this; the live composer
+        # path (Requests -> Quoting -> here) was the one that didn't.
+        intake.client_id = quote.client_id
     # Pipeline: surface this quote as a deal (reuse the client's active one).
     from utils.opportunity_helper import ensure_opportunity, advance_opportunity
     opp = ensure_opportunity(
@@ -472,6 +483,10 @@ def create_quote(
     if opp:
         quote.opportunity_id = opp.id
         advance_opportunity(db, opp, "quoted", amount=quote.total)
+        # Same backlink for the opportunity, so the intake↔opportunity link isn't
+        # one-directional (the lead couldn't resolve its own deal otherwise).
+        if intake and not intake.opportunity_id:
+            intake.opportunity_id = opp.id
     db.commit()
     db.refresh(quote)
     return _quote_dict(quote)
@@ -757,8 +772,9 @@ class QuoteSendRequest(BaseModel):
     # Optional per-send overrides for the email envelope.
     subject: Optional[str] = None
     greeting: Optional[str] = None
-    # Owner copy: blind-copy the business on the customer email. When omitted,
-    # the configured company email is used; pass "" to explicitly skip the copy.
+    # Owner copy: blind-copy the business on the customer email. OFF by default
+    # (the owner asked to stop being BCC'd on every quote). Pass an explicit
+    # address here to still send a copy; omitting it sends no owner copy.
     copy_to: Optional[str] = None
 
 
@@ -775,11 +791,13 @@ def _send_quote_email(db, quote, client, body, quote_link) -> tuple:
         return "no email address on file", ["no valid email address"]
     try:
         company = _company_info(db)
-        # Owner copy: default to the configured company email so the owner always
-        # gets a copy; an explicit "" from the UI skips it, an explicit address
-        # overrides the default.
-        owner_copy = (company.get("company_email") or "") if body.copy_to is None \
-            else (body.copy_to or "")
+        # Owner copy: OFF by default now. The owner stopped wanting a BCC of
+        # every quote in their inbox ("confusing getting the emails") — the
+        # in-app record (quote status flips to 'sent', the request shows
+        # 'quoted', and the IntegrationEvent below logs the delivery) is the
+        # source of truth that a quote went out. An explicit address in
+        # body.copy_to still sends a copy; omitted/blank means no owner copy.
+        owner_copy = (body.copy_to or "") if body.copy_to else ""
         # Front-of-house photo proxy URL (when enabled + address). The PDF fetch
         # and the email both skip gracefully if there's no Street View coverage.
         photo_url = _property_photo_url(quote, db)
@@ -1232,6 +1250,9 @@ def _convert_quote_to_job(
     # which the crew job card shows. Both no-op when there is no linked intake.
     intake = _quote_intake(db, quote)
     fill_property_access_from_intake(prop, intake)
+    # For an STR property, also carry the rental specifics (check-in/out times,
+    # guests, listing URL, turnover day) that the request captured.
+    fill_property_rental_from_intake(prop, intake)
     job_notes = compose_job_notes_from_intake(quote.notes, intake)
 
     # Fully-scheduled conversion → reuse the Scheduling create-job path so

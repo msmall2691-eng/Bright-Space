@@ -10,7 +10,7 @@ from database.db import get_db
 from modules.auth.router import require_role, current_org_id, resolve_org_id
 from database.models import LeadIntake, Client, Quote
 from modules.intake.normalize import build_intake, upsert_lead, _property_key
-from modules.intake.details import fill_property_access_from_intake
+from modules.intake.details import fill_property_access_from_intake, fill_property_rental_from_intake
 from utils.contacts import find_client_by_contact, add_contact_email, add_contact_phone
 from utils.deal_stage import lead_display_status, lead_display_status_candidate_filter
 from ratelimit import limiter
@@ -239,6 +239,9 @@ def _resolve_property_for_intake(db: Session, client: Client, intake: LeadIntake
         # Carry the request's place-stable access details (entry method, parking,
         # pets) onto the property — fill-if-missing, so an operator's edits win.
         fill_property_access_from_intake(prop, intake)
+        # And, for an STR property, the rental specifics (check-in/out times,
+        # guests, listing URL, turnover day) that were previously dropped.
+        fill_property_rental_from_intake(prop, intake)
         return prop
 
     prop = Property(
@@ -252,6 +255,9 @@ def _resolve_property_for_intake(db: Session, client: Client, intake: LeadIntake
         square_footage=intake.square_footage,
     )
     fill_property_access_from_intake(prop, intake)
+    # STR rental specifics (check-in/out times -> the HH:MM columns; guests,
+    # listing URL, turnover day -> custom_fields). No-op for residential.
+    fill_property_rental_from_intake(prop, intake)
     db.add(prop)
     db.flush()
     return prop
@@ -474,25 +480,56 @@ def create_intake(data: ManualIntakeCreate, db: Session = Depends(get_db), org_i
 
 
 @router.get("/stats", dependencies=[Depends(require_role("admin", "manager"))])
-def get_intake_stats(db: Session = Depends(get_db)):
-    """Quick counts for the requests dashboard."""
-    total = db.query(func.count(LeadIntake.id)).scalar()
-    new = db.query(func.count(LeadIntake.id)).filter(LeadIntake.status == "new").scalar()
-    reviewed = db.query(func.count(LeadIntake.id)).filter(LeadIntake.status == "reviewed").scalar()
-    quoted = db.query(func.count(LeadIntake.id)).filter(LeadIntake.status == "quoted").scalar()
-    converted = db.query(func.count(LeadIntake.id)).filter(LeadIntake.status == "converted").scalar()
-    archived = db.query(func.count(LeadIntake.id)).filter(LeadIntake.status == "archived").scalar()
-    urgent = db.query(func.count(LeadIntake.id)).filter(
-        LeadIntake.priority == "urgent",
-        LeadIntake.status.in_(["new", "reviewed"])
-    ).scalar()
+def get_intake_stats(db: Session = Depends(get_db), org_id: int = Depends(current_org_id)):
+    """Quick counts for the requests dashboard.
+
+    Bucketed by the DERIVED display status (lead_display_status) — exactly what
+    the Requests list renders — NOT the raw ``status`` column. Counting the
+    column was wrong: no code ever writes ``status == 'converted'`` (P4 makes
+    that value derived from the lead's quote), so the "converted" tile was
+    permanently 0, and "quoted"/"reviewed" undercounted every lead whose quote
+    or opportunity had advanced past its stored status. The tiles disagreed
+    with the tab counts on the same screen. This mirrors the list's derivation
+    (converted_quote_id + its quote, opportunity_id, stored status) so the two
+    can't drift.
+
+    ORG-SCOPED, and it was not: role-gated but with no tenant filter, so the
+    tiles counted every workspace's leads together while the list beside them
+    (get_intakes) scopes to the caller's org. Same tenant filter as the list —
+    the caller's org plus legacy NULL-org (public-form) rows. Same class of
+    latent-with-one-org / wrong-with-two bug that invoice_summary_by_service
+    already carried a note about.
+    """
+    rows = db.query(
+        LeadIntake.status,
+        LeadIntake.priority,
+        LeadIntake.converted_quote_id,
+        LeadIntake.opportunity_id,
+    ).filter(or_(LeadIntake.org_id == resolve_org_id(org_id, db),
+                 LeadIntake.org_id.is_(None))).all()
+    quote_ids = {r.converted_quote_id for r in rows if r.converted_quote_id}
+    quotes_by_id = {}
+    if quote_ids:
+        quotes_by_id = {
+            q.id: q
+            for q in db.query(Quote.id, Quote.status).filter(Quote.id.in_(quote_ids)).all()
+        }
+    counts = {"new": 0, "reviewed": 0, "quoted": 0, "converted": 0, "archived": 0}
+    urgent = 0
+    for r in rows:
+        ds = lead_display_status(r, quotes_by_id.get(r.converted_quote_id))
+        # Any unexpected stored value (e.g. a dead 'received') folds into 'new',
+        # matching lead_display_status's own fall-through intent.
+        counts[ds if ds in counts else "new"] += 1
+        if r.priority == "urgent" and (ds if ds in counts else "new") in ("new", "reviewed"):
+            urgent += 1
     return {
-        "total": total,
-        "new": new,
-        "reviewed": reviewed,
-        "quoted": quoted,
-        "converted": converted,
-        "archived": archived,
+        "total": len(rows),
+        "new": counts["new"],
+        "reviewed": counts["reviewed"],
+        "quoted": counts["quoted"],
+        "converted": counts["converted"],
+        "archived": counts["archived"],
         "urgent": urgent,
     }
 

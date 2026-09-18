@@ -89,11 +89,12 @@ _PUBLIC_PREFIXES = (
     # (rate-limited); the data endpoints enforce a portal-session token in the
     # portal router's own dependency, not the staff API key.
     "/api/portal/",
-    # `/api/invoices/public/` was here for a customer-facing payment portal
-    # that never worked and has been deleted rather than finished — see
-    # modules/invoicing/router.py. There is no unauthenticated invoice
-    # endpoint any more, so nothing needs the exemption, and leaving the
-    # prefix open would exempt whatever somebody mounts under it next.
+    # Customer-facing invoice / pay page — passwordless. The per-invoice token
+    # in the path is the credential (revocable by nulling invoices.public_token);
+    # the endpoint returns a minimal, PII-free payload. Read-only today; the
+    # Square payment write path is gated on Square auth — see
+    # modules/invoicing/router.py.
+    "/api/invoices/public/",
     # Company logo image — loaded unauthenticated by the quote email (<img>),
     # the PDF generator, and the public quote page. Read-only; serves bytes only.
     "/api/settings/logo",

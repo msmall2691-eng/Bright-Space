@@ -291,6 +291,13 @@ def build_invoice_email(invoice: dict, client_name: str, company_phone: str = ""
     header_color = "#dc2626" if status == "overdue" else "#1d4ed8"
     label = "OVERDUE INVOICE" if status == "overdue" else "Invoice"
 
+    # Self-service portal: the customer can view every visit, quote and invoice
+    # and sign in with just their email (magic link, no password). Nothing else
+    # in the app tells the customer this portal exists, so surface it on the
+    # recurring touchpoint they actually open — the invoice.
+    from config import app_base_url
+    _portal_url = f"{app_base_url().rstrip('/')}/portal"
+
     html = f"""<!DOCTYPE html>
 <html>
 <head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
@@ -357,6 +364,11 @@ def build_invoice_email(invoice: dict, client_name: str, company_phone: str = ""
 
     <!-- Footer -->
     <div style="background:#f9fafb;padding:16px 32px;text-align:center;border-top:1px solid #e5e7eb;">
+      <div style="font-size:13px;color:#374151;margin-bottom:6px;">
+        View all your cleanings, quotes &amp; invoices anytime at
+        <a href="{_portal_url}" style="color:#7c3aed;text-decoration:none;font-weight:600;">your portal</a>.
+        Just enter this email — no password needed.
+      </div>
       <div style="font-size:13px;color:#9ca3af;">{from_name} · {from_email}</div>
     </div>
   </div>
@@ -387,6 +399,9 @@ Due by: {due_date}
 
 Reply to this email with any questions.
 {f'You can also call or text us at {company_phone}.' if company_phone else ''}
+
+View all your cleanings, quotes & invoices anytime at {_portal_url}
+(just enter this email — no password needed).
 
 Thank you,
 {from_name}

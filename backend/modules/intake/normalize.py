@@ -52,24 +52,56 @@ DEDUP_WINDOW_MINUTES = 5
 # operator to merge/archive by hand instead of being auto-merged.
 NAME_ADDR_DEDUP_WINDOW_MINUTES = 24 * 60
 
-# Raw website service keys -> canonical service_type. (Consolidates the two
-# near-identical maps that lived in booking/router.py and intake/router.py.)
+# Raw website service keys -> canonical service_type. THE canonical map for the
+# whole app (consolidates the two near-identical maps that lived in
+# booking/router.py and intake/router.py — the booking one is now deleted).
+# Canonical values are only ever "residential" | "commercial" | "str" (Property
+# has a CHECK constraint on exactly those, so nothing else may be produced here).
 SERVICE_TYPE_MAP = {
+    # Residential
     "standard": "residential",
     "deep": "residential",
+    "deep-cleaning": "residential",
     "move-in-out": "residential",
     "move-in": "residential",
     "move-out": "residential",
     "residential": "residential",
     "residential-cleaning": "residential",
+    "house": "residential",
+    "home": "residential",
+    "apartment": "residential",
+    "condo": "residential",
+    # Short-term / vacation rental turnovers. The old map knew only 4 spellings,
+    # so "cottage", "short-term-rental", "rental", "vrbo" etc. silently fell
+    # through to residential — the exact bug that mislabeled a cottage Airbnb.
     "str": "str",
+    "str-turnover": "str",
     "vacation-rental": "str",
+    "vacation-rental-turnover": "str",
     "airbnb": "str",
     "airbnb-turnover": "str",
+    "vrbo": "str",
+    "vrbo-turnover": "str",
+    "short-term-rental": "str",
+    "rental": "str",
+    "turnover": "str",
+    "cottage": "str",
+    "cabin": "str",
+    # Commercial
     "commercial": "commercial",
-    "office": "commercial",
     "commercial-cleaning": "commercial",
+    "office": "commercial",
+    "retail": "commercial",
 }
+
+# Fallback keyword sniff (whole tokens, not substrings — "industrial" must not
+# match on "str"). Used only when the exact key isn't in the map, to rescue a
+# near-miss/free-text service word instead of silently calling it residential.
+_STR_KEYWORDS = {
+    "str", "airbnb", "vrbo", "bnb", "turnover", "vacation", "rental",
+    "cottage", "cabin",
+}
+_COMMERCIAL_KEYWORDS = {"commercial", "office", "retail", "business", "industrial"}
 
 # Names we overwrite when a real website lead lands on a placeholder client, so
 # the Quoting dropdown shows the real person rather than a stale test/import name.
@@ -79,8 +111,37 @@ _PLACEHOLDER_NAMES = (
 
 
 def canonical_service_type(service_key: Optional[str]) -> str:
-    """Map a raw website service key to the canonical service_type."""
-    return SERVICE_TYPE_MAP.get((service_key or "").strip().lower(), "residential")
+    """Map a raw website service key to the canonical service_type
+    ("residential" | "commercial" | "str").
+
+    Resolution order: exact map (separators normalized so "vacation rental",
+    "vacation_rental" and "vacation-rental" all hit) -> whole-token keyword sniff
+    (rescues an unlisted rental/commercial phrasing) -> default residential.
+
+    A genuinely unrecognized non-empty key is LOGGED (a breadcrumb so a future
+    mislabel is visible instead of silently vanishing into residential), and a
+    keyword-rescued STR is logged too. An empty/missing key is the ordinary
+    "form didn't ask" case and defaults quietly to residential.
+    """
+    raw = (service_key or "").strip().lower()
+    if not raw:
+        return "residential"
+    key = re.sub(r"[\s_]+", "-", raw)
+    mapped = SERVICE_TYPE_MAP.get(key)
+    if mapped:
+        return mapped
+    tokens = set(re.split(r"[-/]+", key))
+    if tokens & _STR_KEYWORDS:
+        logger.info("intake: service_type %r rescued to 'str' by keyword", service_key)
+        return "str"
+    if tokens & _COMMERCIAL_KEYWORDS:
+        logger.info("intake: service_type %r rescued to 'commercial' by keyword", service_key)
+        return "commercial"
+    logger.warning(
+        "intake: unrecognized service_type %r -> defaulting to 'residential' "
+        "(add it to SERVICE_TYPE_MAP if it should be rental/commercial)", service_key,
+    )
+    return "residential"
 
 
 # Common synonyms collapsed to one canonical source value so "Website" and

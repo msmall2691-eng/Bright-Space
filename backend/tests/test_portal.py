@@ -200,29 +200,29 @@ def test_portal_scopes_strictly_to_own_email():
         db.commit(); db.close()
 
 
-def test_there_is_no_unauthenticated_invoice_endpoint():
-    """`GET /api/invoices/public/{id}/{token}` served an invoice — with the
-    customer's email and phone on it — to anyone holding an HMAC token, for a
-    public payment page that never worked: it called a URL that did not match
-    this route, so every visitor got "Invoice Not Found".
-
-    The owner decided to delete the page rather than finish it, so the route,
-    the token helper and the `/api/invoices/public/` exemption in the API-key
-    middleware all went with it. A capability URL that is logged on every
-    request and read by nothing is only a way in.
+def test_the_public_invoice_endpoint_is_token_gated_and_leaks_no_pii():
+    """A customer-facing invoice page WAS deleted once (it never worked and it
+    leaked the customer's email + phone to any token holder). The owner has
+    since re-authorized it, and it is rebuilt with both faults fixed: exactly
+    one public GET, exempted in the middleware, returning a minimal PII-free
+    payload. The token is the only credential — see test_public_invoice.py for
+    the payload and 404 behavior.
 
     The office still marks an invoice paid through POST /api/invoices/{id}/pay,
-    which is admin/manager-gated and unaffected.
+    which is admin/manager-gated and unaffected — taking money online (Square)
+    is a separate, not-yet-built write path.
     """
-    from main import app as _app
-    public_invoice_routes = [r.path for r in _app.routes
-                             if "invoices/public" in getattr(r, "path", "")]
-    assert public_invoice_routes == [], public_invoice_routes
+    from modules.invoicing.router import router as inv_router
+    public_invoice_routes = sorted(
+        r.path for r in inv_router.routes if r.path.startswith("/public")
+    )
+    # Exactly the one read endpoint — no write/pay route slipped in with it.
+    assert public_invoice_routes == ["/public/{token}"], public_invoice_routes
 
-    # And the middleware no longer waves that prefix through.
+    # The middleware waves that prefix through (passwordless, token-gated).
     import auth as auth_mw
     exempt = getattr(auth_mw, "_PUBLIC_PREFIXES", ()) or ()
-    assert not any("invoices/public" in p for p in exempt), list(exempt)
+    assert any("invoices/public" in p for p in exempt), list(exempt)
 
 
 def test_portal_endpoints_require_a_session_token():

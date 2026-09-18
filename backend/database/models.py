@@ -1503,6 +1503,10 @@ class Invoice(Base):
     opportunity_id = Column(Integer, ForeignKey("opportunities.id"), nullable=True)
 
     invoice_number = Column(String, unique=True)
+    # Opaque token for the public (no-login) invoice/pay page at /pay/{token}.
+    # Lazily minted the first time the invoice is sent (mirrors Quote.public_token
+    # / Job.public_token). Null = no public link exists yet / link revoked.
+    public_token = Column(String(64), nullable=True, unique=True, index=True)
     items = Column(JSON, default=list)
     subtotal = Column(Float, default=0)
     tax_rate = Column(Float, default=0)

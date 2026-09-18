@@ -7,6 +7,7 @@ import {
   INPUT_CLASS, PROPERTY_TYPE_COLORS, PROPERTY_TYPE_LABELS, EMPTY_ICAL,
 } from './constants'
 import PropertyPhoto from '../PropertyPhoto'
+import RentalSummary from './RentalSummary'
 
 export default function PropertiesTab({
   properties, navigate, setJobModal,
@@ -391,6 +392,10 @@ export default function PropertiesTab({
                   </button>
                 </div>
               </div>
+              {/* At-a-glance rental facts (STR only) — check-in/out, turnover,
+                  price, guests, listing, and iCal sync health, read-only so you
+                  don't have to open Edit to see them. Renders nothing otherwise. */}
+              <RentalSummary property={p} />
             </div>
           )
         })}

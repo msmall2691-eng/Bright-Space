@@ -90,7 +90,7 @@ export default function LaunchStepper({ opportunityId, title, onClose }) {
       case 'quote':
         // Quote needs line items — hand off to the quote editor rather than
         // create an empty ($0, unsendable) quote.
-        return { label: 'Open quote editor', onClick: () => { onClose?.(); navigate('/billing?view=quotes') } }
+        return { label: 'Open quote editor', onClick: () => { onClose?.(); navigate('/quotes') } }
       case 'send':
         return { label: busy ? 'Sending…' : 'Send quote', icon: Send, onClick: L.sendQuote, disabled: !primaryQuote }
       case 'accept':
