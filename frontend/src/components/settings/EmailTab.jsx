@@ -216,7 +216,7 @@ export default function EmailTab({ toast, active }) {
               className="w-4 h-4 rounded border-hairline text-indigo-600 focus:ring-0" />
             <div>
               <div className="text-sm font-medium text-ink">Auto-create contacts from emails</div>
-              <div className="text-xs text-ink-3">When enabled, unknown email senders are automatically added as leads (like Twenty CRM)</div>
+              <div className="text-xs text-ink-3">When enabled, unknown email senders are automatically added as leads</div>
             </div>
           </label>
         </div>

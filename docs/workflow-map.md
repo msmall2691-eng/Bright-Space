@@ -80,7 +80,7 @@ All three converge on `_finalize_quote_accept()` (`modules/quoting/router.py:116
 - Validates timing, checks for a same-property/same-date `str_turnover` conflict (409), and — unless `allow_conflicts=True` — runs cleaner-conflict, time-off, and daily-capacity guards, plus a Google Calendar Free/Busy check if enabled.
 - Defaults `property_id` if omitted (client's first property, or a new one).
 - **Pushes to Google Calendar immediately** (GCal is the system's "source of truth" for the calendar side).
-- **Auto-dispatches to Connecteam immediately** if cleaners are already assigned at creation — no separate "Dispatch" click needed.
+- **No external dispatch step.** Connecteam was removed; assigned cleaners see the job on their native My Day schedule as soon as `cleaner_ids` is set. The response still carries `connecteam: {dispatched: false, reason: "retired"}` as an explicit retirement marker.
 
 **Owner action:** fills out `JobCreateModal` — client/property, one-time date or recurring cadence (this modal is the fork point between Stage 3 and Stage 7), optional inline crew assignment.
 
@@ -90,16 +90,13 @@ All three converge on `_finalize_quote_accept()` (`modules/quoting/router.py:116
 
 ## Stage 4 — Dispatch
 
-Dispatch is **not a separate click** — it's an automatic side effect of `cleaner_ids` being set on a Job, wherever that happens: at creation (Stage 3), on any edit that changes cleaners/time (`update_job()` diffs a "Connecteam-relevant signature" and calls `resync_job()` or `auto_dispatch_job()` as needed), or on cancel (shifts are pulled).
+Dispatch is **not a separate click** and no longer involves an external system. Connecteam was removed (`backend/integrations/connecteam_auto.py` and the outbox drain tick are gone); "dispatch" now simply means `cleaner_ids` is set on a Job, wherever that happens — at creation (Stage 3), on any edit in `update_job()`, or on cancel. Assigned cleaners see the job on their native **My Day** schedule (`modules/crew/router.py`) the moment it's assigned; the crew list is our own `users` table (cleaner-role accounts managed on `/crew`).
 
-**The actual logic** lives in `backend/integrations/connecteam_auto.py`:
-- `auto_dispatch_job()` — one Connecteam shift per assigned cleaner. No-ops with a reason (`inactive_status`, `not_configured`, `no_cleaners`, `already_dispatched`) rather than erroring.
-- `remove_job_from_connecteam()` — deletes shifts; keeps any that fail so a retry can clean up.
-- `resync_job()` — remove then re-add, used on reschedule/reassign.
+Retirement markers you'll still see in code: `create_job()` returns `connecteam: {dispatched: false, reason: "retired"}`, `POST /api/jobs/sync-reconcile` returns `connecteam: {skipped: "retired"}`, and `IntegrationEvent` rows with `provider="connecteam"` are historical only.
 
-**Owner action:** assign crew inline in `JobEditModal`/`JobCreateModal`/`ConvertToJobModal`; dispatch fires on save. The **desktop Dispatch view** (merged in this pass — `DispatchBoard.jsx`) surfaces this directly: an `UnassignedQueue` (jobs today with no crew, sorted by start time), a `DispatchTimeline` (jobs positioned by time, colored by service type), and `CrewUtilization` (per-crew hours + capacity bar) so assigning a crew and triggering dispatch happen in the same click. A manual catch-up action, **"Fix sync now"** on the Schedule health strip, pushes unsynced jobs to Google Calendar and dispatches upcoming assigned-but-unpushed jobs in one call (`POST /api/jobs/sync-reconcile`); this also runs automatically on a scheduled background tick.
+**Owner action:** assign crew inline in `JobEditModal`/`JobCreateModal`/`ConvertToJobModal`; dispatch fires on save. The **desktop Dispatch view** (merged in this pass — `DispatchBoard.jsx`) surfaces this directly: an `UnassignedQueue` (jobs today with no crew, sorted by start time), a `DispatchTimeline` (jobs positioned by time, colored by service type), and `CrewUtilization` (per-crew hours + capacity bar) so assigning a crew and triggering dispatch happen in the same click. A manual catch-up action, **"Fix sync now"** on the Schedule health strip, pushes unsynced jobs to Google Calendar in one call (`POST /api/jobs/sync-reconcile`; its former Connecteam half is retired); this also runs automatically on a scheduled background tick.
 
-**Handoff → completion:** `job.connecteam_shift_ids` and `job.dispatched` are the durable record; `job.gcal_event_id`/`gcal_account_id` record the calendar side. Same `Job` row proceeds.
+**Handoff → completion:** `job.cleaner_ids` (and the legacy `job.dispatched` flag) are the durable record; `job.gcal_event_id`/`gcal_account_id` record the calendar side. Same `Job` row proceeds.
 
 ---
 
@@ -143,7 +140,7 @@ There are two "mark complete" code paths, and they used to have materially diffe
 
 **Trigger — ongoing generation:** a background scheduler tick (`recurring_jobs_tick()`, default every 24h) plus manual `POST /api/recurring/generate-all` / `/{id}/generate` from `Recurring.jsx`.
 
-**`generate_jobs()` logic:** expands the rule out to `generate_weeks_ahead` (default 8) weeks, honoring frequency/interval/days-of-week; subtracts skip exceptions and adds reschedules; skips dates that already have a Job (idempotent, safe to re-run). **For each new date, the Job is a near-verbatim clone of the schedule's template fields** (`client_id`, `property_id`, `job_type`, `title`, `address`, `cleaner_ids`, `notes`) — not derived from the previously-completed occurrence. Pushes to Google Calendar the same way `create_job()` does, and **auto-dispatches each new occurrence to Connecteam** when auto-dispatch is on (the default) — via the durable outbox (`enqueue_sync`, when `connecteam_outbox_enabled`) or an inline `auto_dispatch_job()` call, gated by `connecteam_auto_dispatch_enabled`, exactly like job create/edit (`recurring/router.py:718-748`; locked in by `test_recurrence_ends.py::test_recurring_generation_enqueues_outbox_when_enabled`). In **manual** dispatch mode the occurrences aren't pushed — they wait for an operator or the sync-reconcile tick. It still **does not run the cleaner-conflict/capacity/Free-Busy guards** that `create_job()` applies. *(Correction: this previously read "does not auto-dispatch to Connecteam"; the Connecteam push pass was added to `generate_jobs()` since.)*
+**`generate_jobs()` logic:** expands the rule out to `generate_weeks_ahead` (default 8) weeks, honoring frequency/interval/days-of-week; subtracts skip exceptions and adds reschedules; skips dates that already have a Job (idempotent, safe to re-run). **For each new date, the Job is a near-verbatim clone of the schedule's template fields** (`client_id`, `property_id`, `job_type`, `title`, `address`, `cleaner_ids`, `notes`) — not derived from the previously-completed occurrence. Pushes to Google Calendar the same way `create_job()` does. New occurrences are **not** dispatched anywhere external (Connecteam and its outbox were removed — `recurring/router.py` carries the retirement comment); assigned crew see them on native My Day. It still **does not run the cleaner-conflict/capacity/Free-Busy guards** that `create_job()` applies.
 
 **Owner action:** `Recurring.jsx` draws a clear line between **"just this visit"** (Skip/Reschedule → creates a `RecurrenceException`, immediately cancels/materializes the affected Job) and **"all future visits"** (PATCH the rule itself — frequency/days/times/duration; pause via `active:false`; cancel via soft-disable DELETE).
 
