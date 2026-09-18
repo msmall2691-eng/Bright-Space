@@ -26,6 +26,11 @@ already been litigated:
 - **`recurring-doctor`** — load when recurring-series data looks wrong
   (duplicates, ghosts, ended-but-active). Points at the health scan and the
   root causes already identified; don't re-diagnose from scratch.
+- **`data-doctor`** — load when the data underneath the app looks wrong, or
+  before a migration. The whole-schema read-only scan
+  (`GET /api/admin/data-health`, `scripts/data_doctor.py`) for the tables
+  recurring-doctor doesn't cover: dangling FKs, missing-required drift, money
+  anomalies, totals that don't add up, stuck lifecycle rows, duplicate contacts.
 
 User-level skills that also govern work here when present: `brightbase-build`
 (conventions, security checklist), `brightbase-migrations` (Alembic
