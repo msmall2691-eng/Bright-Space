@@ -463,6 +463,13 @@ def create_quote(
     if intake and not intake.converted_quote_id:
         intake.status = "quoted"
         intake.converted_quote_id = quote.id
+        # Link the lead back to the client it just became a customer of. Without
+        # this the converted request keeps client_id=NULL and never shows on the
+        # client profile's Requests tab (get_intakes ?client_id) — the
+        # orphaned-lead / broken-backlink case the data-doctor scan flags. The
+        # /intake/{id}/convert-* endpoints already set this; the live composer
+        # path (Requests -> Quoting -> here) was the one that didn't.
+        intake.client_id = quote.client_id
     # Pipeline: surface this quote as a deal (reuse the client's active one).
     from utils.opportunity_helper import ensure_opportunity, advance_opportunity
     opp = ensure_opportunity(
@@ -472,6 +479,10 @@ def create_quote(
     if opp:
         quote.opportunity_id = opp.id
         advance_opportunity(db, opp, "quoted", amount=quote.total)
+        # Same backlink for the opportunity, so the intake↔opportunity link isn't
+        # one-directional (the lead couldn't resolve its own deal otherwise).
+        if intake and not intake.opportunity_id:
+            intake.opportunity_id = opp.id
     db.commit()
     db.refresh(quote)
     return _quote_dict(quote)
