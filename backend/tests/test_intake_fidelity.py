@@ -580,3 +580,84 @@ def test_convert_matches_legacy_client_by_phone_no_duplicate():
     finally:
         _cleanup_email(new_email)
         _cleanup_email(old_email)
+
+
+# --- ...and the alerts have to follow the information, not just the row ---
+
+def test_second_stage_notifies_and_a_pure_replay_stays_silent(monkeypatch):
+    """The alert half of the two-stage /book flow.
+
+    Dedup suppression exists for a real reason: a double-tapped form used to
+    page the owner twenty times for one lead. But "deduped" was too blunt a
+    silence condition. Stage 2 of /book is deduped BY DESIGN, and it is the
+    post that carries the requested date and — critically — the customer's
+    manage/cancel link. The confirmation SMS is the only channel that carries
+    that link (the email template has no field for it), so suppressing stage 2
+    meant the customer never received it at all, and the owner's alert said
+    "no date requested" for a booking that had a date.
+
+    So: an enriching dedup re-alerts, a replay does not. Three posts here —
+    thin, rich, then the rich one again (the website's retry sweep) — must
+    produce exactly two owner alerts and two customer texts, not three.
+    """
+    from modules.booking import router as booking_router
+
+    owner_alerts, customer_texts, customer_emails = [], [], []
+    monkeypatch.setattr(
+        booking_router, "_send_booking_owner_alert",
+        lambda db, data, intake_id, lo, hi: owner_alerts.append(data.requestedDate) or True,
+    )
+    monkeypatch.setattr(
+        booking_router, "_send_owner_email",
+        lambda db, subject, lines, intake_id: True,
+    )
+    monkeypatch.setattr(
+        booking_router, "_send_booking_customer_sms",
+        lambda db, data, intake_id: customer_texts.append(data.manageUrl),
+    )
+    monkeypatch.setattr(
+        booking_router, "_send_booking_customer_confirmation",
+        lambda data, intake_id, lo, hi: customer_emails.append(intake_id),
+    )
+
+    email = _uniq_email()
+    key = f"idem-{uuid.uuid4().hex}"
+    thin = {
+        "name": "Alert Stage", "email": email, "phone": "2075557744",
+        "address": "88 Beach Ave", "serviceType": "standard",
+        "squareFeet": 1600, "bathrooms": 2, "frequency": "biweekly",
+        "idempotencyKey": key,
+    }
+    rich = {
+        **thin,
+        "requestedDate": "2026-11-02",
+        "entryMethod": "lockbox",
+        "manageUrl": "https://www.maineclean.co/booking/manage/abc-123",
+    }
+    try:
+        assert client.post("/api/booking/submit", json=thin).status_code == 201
+        assert client.post("/api/booking/submit", json=rich).status_code == 201
+        # The retry sweep re-posting stage 2. Back-fills nothing this time.
+        assert client.post("/api/booking/submit", json=rich).status_code == 201
+
+        assert len(owner_alerts) == 2, (
+            f"expected the thin post and the enriching one to alert, got {owner_alerts}"
+        )
+        # The second alert is the one that finally names the date.
+        assert owner_alerts[0] is None
+        assert owner_alerts[1] == "2026-11-02"
+
+        assert len(customer_texts) == 2, (
+            f"expected one text per informative post, got {customer_texts}"
+        )
+        # The whole point: the manage/cancel link reaches the customer.
+        assert customer_texts[0] is None
+        assert customer_texts[1] == "https://www.maineclean.co/booking/manage/abc-123"
+
+        # The receipt is not worth duplicating — they had it seconds ago and it
+        # carries no manage link.
+        assert len(customer_emails) == 1, (
+            f"receipt should not be resent on a dedup, got {len(customer_emails)}"
+        )
+    finally:
+        _cleanup_email(email)
