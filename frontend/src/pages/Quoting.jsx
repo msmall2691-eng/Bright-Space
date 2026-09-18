@@ -188,6 +188,17 @@ export default function Quoting() {
     }
   }, [location.search])
 
+  // The "Accepted" hub tab is this same page at /quotes/accepted — the Quotes
+  // list pre-filtered to accepted-but-not-yet-converted quotes (the "said yes,
+  // still needs booking" set). Keyed on pathname so it applies on entry without
+  // fighting the user if they then change the status dropdown.
+  useEffect(() => {
+    if (location.pathname.endsWith('/quotes/accepted')) {
+      setTab('quotes')
+      setQuoteStatusFilter('accepted')
+    }
+  }, [location.pathname])
+
   useEffect(() => {
     if (location.state?.quoteId) {
       get(`/api/quotes/${location.state.quoteId}`).then(q => {

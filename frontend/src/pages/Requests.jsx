@@ -593,7 +593,7 @@ export default function Requests() {
     // intake's contact, address, and message. Backend already transitions
     // lead_intake.status → 'quoted' when the quote is created with
     // intake_id, and → 'converted' when that quote becomes a job.
-    navigate('/billing?view=quotes', { state: { openNewFromIntake: intake } })
+    navigate('/quotes', { state: { openNewFromIntake: intake } })
   }
 
   // Twenty-style "convert lead → contact": promote a request to a Client

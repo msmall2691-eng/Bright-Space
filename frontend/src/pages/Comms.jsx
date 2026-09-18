@@ -210,7 +210,7 @@ export default function Comms() {
       if (intake?.error) {
         setFlash({ ok: false, msg: intake.error })
       } else {
-        navigate('/billing?view=quotes', { state: { openNewFromIntake: intake } })
+        navigate('/quotes', { state: { openNewFromIntake: intake } })
       }
     } catch (e) {
       setFlash({ ok: false, msg: 'Could not draft a quote' })

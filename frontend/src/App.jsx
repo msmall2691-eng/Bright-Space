@@ -172,6 +172,9 @@ const QuoteDetail = lazy(() => import('./pages/QuoteDetail'))
 const InvoiceDetail = lazy(() => import('./pages/InvoiceDetail'))
 const Schedule = lazy(() => import('./pages/Schedule'))
 const Billing = lazy(() => import('./pages/Billing'))
+// Quotes now have their own route under the Requests hub (out of the Billing
+// shell), so the quote list is reachable directly, not only via ?view=quotes.
+const Quoting = lazy(() => import('./pages/Quoting'))
 const Payroll = lazy(() => import('./pages/Payroll'))
 const Comms = lazy(() => import('./pages/Comms'))
 const Properties = lazy(() => import('./pages/Properties'))
@@ -371,11 +374,15 @@ export default function App() {
               <Route path="/deals" element={<Deals />} />
               <Route path="/opportunities/:id" element={<OpportunityDetail />} />
               <Route path="/jobs/:id" element={<JobDetail />} />
+              {/* Quotes list + the Accepted view live under the Requests hub.
+                  Static paths, so they rank above /quotes/:id in the router. */}
+              <Route path="/quotes" element={<Quoting />} />
+              <Route path="/quotes/accepted" element={<Quoting />} />
               <Route path="/quotes/:id" element={<QuoteDetail />} />
               <Route path="/invoices/:id" element={<InvoiceDetail />} />
-              {/* Quoting + Invoicing consolidated under one Billing surface. */}
+              {/* Money is invoices + payments now; quotes moved to /quotes. */}
               <Route path="/billing" element={<Billing />} />
-              <Route path="/quoting" element={<Navigate to="/billing?view=quotes" replace />} />
+              <Route path="/quoting" element={<Navigate to="/quotes" replace />} />
               <Route path="/invoicing" element={<Navigate to="/billing?view=invoices" replace />} />
               <Route path="/schedule" element={<Schedule />} />
               <Route path="/scheduling" element={<Navigate to="/schedule" replace />} />

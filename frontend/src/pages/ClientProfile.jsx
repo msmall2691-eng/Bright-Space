@@ -423,7 +423,7 @@ export default function ClientProfile() {
           sm:inline` left bare icon pills on phones — the exact "not
           cleaned up" look the owner screenshotted). */}
       <div className="grid grid-cols-2 sm:flex sm:flex-wrap sm:items-center gap-2 px-4 sm:px-6 py-3 bg-panel/50 border-b border-hairline shrink-0">
-        <button onClick={() => navigate('/billing?view=quotes', { state: { openNew: true, clientId: parseInt(id) } })}
+        <button onClick={() => navigate('/quotes', { state: { openNew: true, clientId: parseInt(id) } })}
           data-testid="client-action-new-quote"
           className="flex items-center justify-center sm:justify-start gap-1.5 text-xs bg-bg-2 hover:bg-bg-2 border border-hairline px-3 py-2 min-h-[44px] sm:min-h-0 sm:py-1.5 rounded-lg transition-colors">
           <FileText className="w-3.5 h-3.5 text-blue-400 shrink-0" /> <span className="truncate">New Quote</span>

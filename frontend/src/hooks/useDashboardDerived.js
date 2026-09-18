@@ -62,9 +62,9 @@ export function useDashboardDerived({
       { key: 'new',      label: 'New leads', n: newLeads, tone: { text: 'text-purple-600',  bar: 'bg-purple-500' },
         sub: 'to quote',           onClick: () => navigate('/requests') },
       { key: 'quoted',   label: 'Quoted',    n: quoted,   tone: { text: 'text-blue-600',    bar: 'bg-blue-500' },
-        sub: 'awaiting reply',     onClick: () => navigate('/billing?view=quotes&tab=quotes') },
+        sub: 'awaiting reply',     onClick: () => navigate('/quotes') },
       { key: 'accepted', label: 'Accepted',  n: accepted, tone: { text: 'text-amber-600',   bar: 'bg-amber-500' },
-        sub: 'ready to schedule',  onClick: () => navigate('/billing?view=quotes&tab=quotes') },
+        sub: 'ready to schedule',  onClick: () => navigate('/quotes/accepted') },
       { key: 'won',      label: 'Won',       n: won,      tone: { text: 'text-emerald-600', bar: 'bg-emerald-500' },
         sub: 'became jobs',        onClick: () => navigate('/clients') },
     ]

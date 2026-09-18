@@ -2,7 +2,7 @@ import {
   LayoutDashboard, Sparkles, Users, Calendar, Receipt,
   DollarSign, MessageSquare, Home, Repeat, Settings, Inbox,
   TrendingUp, Radar, Rows3, Filter, HardHat, Store, CalendarDays, FileText, Star,
-  GitMerge, Route, CalendarClock,
+  GitMerge, Route, CalendarClock, FileCheck,
 } from 'lucide-react'
 
 /**
@@ -103,19 +103,31 @@ export const NAV_SECTIONS = [
         ],
       },
       {
-        to: '/deals', icon: Rows3, label: 'Sales',
+        // Was "Sales", landing on Deals — but the owner's #1 friction was that
+        // incoming requests were impossible to find: the word never appeared in
+        // the sidebar and Requests sat two clicks deep under "Sales". This row
+        // is now the Requests hub — the incoming → quote → accepted journey in
+        // one place: it SAYS "Requests", lands on the incoming-lead list, and
+        // keeps Quotes, Accepted, Deals and the Quote funnel a tab away. Quotes
+        // MOVED here from "Money" (its own /quotes route) rather than being
+        // listed in both — a page in two places teaches you to distrust the nav.
+        // Gated admin/manager because the whole intake/sales surface already is
+        // (/api/intake 403s a viewer), so a Requests-first landing can't be a
+        // viewer's — Deals, previously all-roles via this row, now inherits that.
+        to: '/requests', icon: Inbox, label: 'Requests', roles: ['admin', 'manager'],
         tabs: [
-          { to: '/deals',    icon: Rows3,  label: 'Deals', keywords: 'sales pipeline opportunities board' },
-          // /api/intake is admin/manager-only — a viewer's Requests page could
-          // only error, so don't offer the link.
-          { to: '/requests', icon: Inbox,  label: 'Requests', roles: ['admin', 'manager'], keywords: 'sales leads intake website' },
-          { to: '/funnel',   icon: Filter, label: 'Quote funnel', roles: ['admin', 'manager'], keywords: 'sales conversion close rate' },
+          { to: '/requests',        icon: Inbox,     label: 'Requests', keywords: 'sales leads intake website inbox incoming new' },
+          { to: '/quotes',          icon: FileText,  label: 'Quotes', keywords: 'quotes estimates pricing proposals' },
+          // The "said yes, still needs booking" set — accepted quotes not yet
+          // converted to a scheduled job. Same page, pre-filtered.
+          { to: '/quotes/accepted', icon: FileCheck, label: 'Accepted', keywords: 'accepted won ready to schedule book' },
+          { to: '/deals',           icon: Rows3,     label: 'Deals', keywords: 'sales pipeline opportunities board' },
+          { to: '/funnel',          icon: Filter,    label: 'Quote funnel', keywords: 'sales conversion close rate' },
         ],
       },
-      // Billing already owns its own internal `?view=` tabs (quotes /
-      // invoices / payments), so it stays a leaf here — a second strip on top
-      // of those would be two tab rows saying nearly the same thing.
-      { to: '/billing', icon: Receipt, label: 'Money', pageLabel: 'Billing', keywords: 'money quotes invoices payments estimates' },
+      // Money is invoices + payments now — quotes moved to the Requests hub, so
+      // this stays a leaf with no strip (Invoicing owns its own internal views).
+      { to: '/billing', icon: Receipt, label: 'Money', pageLabel: 'Billing', keywords: 'money invoices payments billing dunning' },
     ],
   },
 ]
@@ -148,7 +160,7 @@ export const CREATE_ACTIONS = [
   { label: 'New lead',    icon: Inbox,         to: '/requests?new=1',            keywords: 'create lead request intake' },
   { label: 'New message', icon: MessageSquare, to: '/comms?compose=1',           keywords: 'create message sms text compose' },
   { label: 'New job',     icon: CalendarDays,  to: '/schedule?new=1',            keywords: 'create job visit book schedule appointment' },
-  { label: 'New quote',   icon: FileText,      to: '/billing?view=quotes&new=1', keywords: 'create quote estimate billing' },
+  { label: 'New quote',   icon: FileText,      to: '/quotes?new=1',              keywords: 'create quote estimate billing' },
   { label: 'New client',  icon: Users,         to: '/clients?new=1',             keywords: 'create client customer contact person' },
 ]
 
@@ -259,7 +271,7 @@ const DETAIL_ROUTES = [
   { prefix: '/requests/',      parent: '/requests',   label: 'Request',  record: 'lead' },
   { prefix: '/opportunities/', parent: '/deals',      label: 'Deal' },
   { prefix: '/jobs/',          parent: '/schedule',   label: 'Job',      record: 'job' },
-  { prefix: '/quotes/',        parent: '/billing',    label: 'Quote',    record: 'quote' },
+  { prefix: '/quotes/',        parent: '/quotes',     label: 'Quote',    record: 'quote' },
   { prefix: '/invoices/',      parent: '/billing',    label: 'Invoice',  record: 'invoice' },
   { prefix: '/properties/',    parent: '/properties', label: 'Property', record: 'property' },
 ]

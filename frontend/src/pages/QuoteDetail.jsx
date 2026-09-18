@@ -209,7 +209,7 @@ export default function QuoteDetail() {
     try {
       await del(`/api/quotes/${id}`)
       toast.success('Quote archived')
-      navigate('/billing?view=quotes&tab=quotes')
+      navigate('/quotes')
     } catch (e) {
       // e.message carries the backend's 409 detail ("…Cancel/delete the job first.")
       toast.error(e?.message || 'Could not archive quote')
@@ -266,7 +266,7 @@ export default function QuoteDetail() {
   if (notFound || !quote) {
     return (
       <div className="p-6">
-        <button onClick={() => navigate('/billing?view=quotes&tab=quotes')} className="flex items-center gap-1.5 text-[13px] text-ink-3 hover:text-ink-2 mb-4">
+        <button onClick={() => navigate('/quotes')} className="flex items-center gap-1.5 text-[13px] text-ink-3 hover:text-ink-2 mb-4">
           <ArrowLeft className="w-4 h-4" /> Back to Quotes
         </button>
         <EmptyState icon={FileText} title="Quote not found" description="It may have been archived or moved to another workspace." />
@@ -302,7 +302,7 @@ export default function QuoteDetail() {
     <div className="h-full overflow-y-auto">
       <div className="p-4 sm:p-6 max-w-[1400px] mx-auto">
         <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
-          <button onClick={() => navigate('/billing?view=quotes&tab=quotes')} className="flex items-center gap-1.5 text-[13px] text-ink-3 hover:text-ink-2">
+          <button onClick={() => navigate('/quotes')} className="flex items-center gap-1.5 text-[13px] text-ink-3 hover:text-ink-2">
             <ArrowLeft className="w-4 h-4" /> Back to Quotes
           </button>
           {editable && (
