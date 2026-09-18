@@ -13,17 +13,18 @@ A meta-note before the stages: a "dispatch-first redesign" (`DispatchBoard`, `Un
 **Model:** `LeadIntake` (`database/models.py:553-611`), table `lead_intakes`.
 
 **Trigger:** three public, unauthenticated endpoints all funnel through one canonical path:
-- `POST /api/booking/submit` (`modules/booking/router.py:222`) — the maineclean.co booking/quote-request form.
-- `POST /api/intake/submit` (`modules/intake/router.py:98`) — the maineclean.co contact form.
-- `POST /api/intake/webhook` (`modules/intake/router.py:380`) — the "InstantEstimate" webhook / CRM-forward shape.
+- `POST /api/booking/submit` (`modules/booking/router.py:409`) — the maineclean.co booking/quote-request form.
+- `POST /api/intake/submit` (`modules/intake/router.py:260`) — the maineclean.co contact form.
+- `POST /api/intake/webhook` (`modules/intake/router.py:763`) — the "InstantEstimate" webhook / CRM-forward shape.
 
-All three call `build_intake()` + `upsert_lead()` (`modules/intake/normalize.py:151,443`), which is where the real logic lives:
+All three call `build_intake()` + `upsert_lead()` (`modules/intake/normalize.py:186,500`), which is where the real logic lives:
 - **Idempotency-key short-circuit** — a client-supplied UUID collapses duplicate submits from the dual-forward pattern into one row (migration 044).
 - **5-minute dedup window** — a second submit from the same email/phone within 5 minutes updates the existing row (fill-if-missing merge) instead of creating a second lead, guarded by a Postgres advisory lock against a true race.
-- **Client match-or-create** by email/phone; the old contact value is preserved into `ContactEmail`/`ContactPhone` before being overwritten.
-- **Property attach** — the booking address becomes a `Property` on the client (deduped on normalized address), so later stages have structured data instead of re-typed text.
-- **Opportunity creation** — every lead becomes a deal at `stage="new"`; `LeadIntake.opportunity_id` is set.
+- **Inbox-only.** A new request lands as a `LeadIntake` row and **nothing else**: `upsert_lead` does **not** create a Client, a Property, or an Opportunity, and never mutates an existing client (`LeadIntake.client_id` stays NULL until staff act). Auto-creating all three on every website submission was the main source of duplicate clients/properties, so it was removed at the root.
 - A price estimate (`estimate_min`/`estimate_max`) is computed if the caller didn't send one.
+- Notifies the office: staff web push on a genuinely new lead (`upsert_lead`), plus the owner SMS + email alert (`services/owner_alerts.py`) from both `/booking/submit` and `/intake/submit` — a deduped replay that adds nothing re-alerts nobody.
+
+**Where a request becomes a customer:** only when staff convert it — `POST /api/intake/{id}/convert-to-client` (`modules/intake/router.py:573`) or `convert-to-quote` (`:618`), both via `_resolve_client_for_intake()`. That is the single place that matches an existing Client by email/phone (via the multi-value `ContactEmail`/`ContactPhone` tables) or creates a `lead` Client, attaches the address as a `Property` (deduped on normalized address), and links the request. `convert-to-client` also opens the deal (`ensure_opportunity` → `LeadIntake.opportunity_id`); on the `convert-to-quote` / "Create Quote" path the Opportunity comes from `create_quote` (`utils/opportunity_helper`). Nothing about a raw inbound request creates one.
 
 **Owner action:** works the **Requests page** (`pages/Requests.jsx`). Each card shows contact info, source, status, priority, estimate range. Row actions: **View Details**, **Create Quote**, **Archive**, **Delete**.
 
@@ -48,7 +49,7 @@ All three call `build_intake()` + `upsert_lead()` (`modules/intake/normalize.py:
 2. Customer public link: `POST /api/quotes/public/{token}/accept` — row-locked against double-taps, checks `valid_until` expiry.
 3. Customer self-schedule: `POST /api/quotes/public/{token}/schedule` — accepts **and** creates/dates a Job in one step (bypasses the normal cleaner-conflict guards since the customer can't react to a 409).
 
-All three converge on `_finalize_quote_accept()` (`modules/quoting/router.py:1169`): logs `quote_accepted`; if `quote.property_id` is set, calls `_convert_quote_to_job()` (creates the Job **and** advances the Opportunity to `"won"`); otherwise just advances the Opportunity directly (an accepted-but-unconverted quote still counts as won). Emails the owner, and the customer if requested.
+All three converge on `_finalize_quote_accept()` (`modules/quoting/router.py:1658`): logs `quote_accepted`; if `quote.property_id` is set, calls `_convert_quote_to_job()` (creates the Job **and** advances the Opportunity to `"won"`); otherwise just advances the Opportunity directly (an accepted-but-unconverted quote still counts as won). Emails the owner, and the customer if requested.
 
 **Owner action:** the status dropdown on `QuoteDetail.jsx` routes "accepted"/"declined" through the real accept/decline endpoints (not a raw PATCH) specifically so the conversion side effects fire. "converted" is not manually selectable — it's a derived state reached only via Convert-to-Job.
 
