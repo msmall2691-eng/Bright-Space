@@ -166,9 +166,9 @@ export default function PublicJobConfirm() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-linear-to-br from-blue-50 to-indigo-50 flex items-center justify-center p-4">
+      <div className="min-h-screen bg-bg flex items-center justify-center p-4">
         <div className="text-center">
-          <Clock className="w-12 h-12 text-blue-300 mx-auto mb-4 animate-spin" />
+          <Clock className="w-12 h-12 text-ink-3 mx-auto mb-4 animate-spin" />
           <p className="text-ink-2 font-medium">Loading your visit...</p>
         </div>
       </div>
@@ -177,9 +177,9 @@ export default function PublicJobConfirm() {
 
   if (error && !job) {
     return (
-      <div className="min-h-screen bg-linear-to-br from-red-50 to-orange-50 flex items-center justify-center p-4">
+      <div className="min-h-screen bg-bg flex items-center justify-center p-4">
         <div className="text-center max-w-sm">
-          <AlertCircle className="w-16 h-16 text-red-300 mx-auto mb-4" />
+          <AlertCircle className="w-16 h-16 text-red-400 mx-auto mb-4" />
           <h1 className="text-xl font-bold text-ink mb-2">Unable to Load Visit</h1>
           <p className="text-ink-2">{error}</p>
         </div>
@@ -257,7 +257,7 @@ export default function PublicJobConfirm() {
                   ) : (
                     <div className="rounded-xl bg-emerald-50 border border-emerald-200 px-4 py-4 text-center">
                       <CheckCircle className="w-10 h-10 text-emerald-600 mx-auto mb-1.5" />
-                      <p className="text-base font-bold text-emerald-800">You're rescheduled! 🎉</p>
+                      <p className="text-base font-bold text-emerald-800">You're rescheduled!</p>
                       <p className="text-sm text-emerald-700 mt-0.5">{rescheduled.date_label} · {rescheduled.window === 'afternoon' ? 'afternoon (1–4pm)' : 'morning (9am–12pm)'} arrival. We'll confirm the exact time shortly.</p>
                     </div>
                   )
