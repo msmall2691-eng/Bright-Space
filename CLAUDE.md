@@ -31,6 +31,12 @@ already been litigated:
   (`GET /api/admin/data-health`, `scripts/data_doctor.py`) for the tables
   recurring-doctor doesn't cover: dangling FKs, missing-required drift, money
   anomalies, totals that don't add up, stuck lifecycle rows, duplicate contacts.
+- **`schema-guardian`** — load BEFORE editing `database/models.py` or writing a
+  migration. The authoring-time design checklist: tenant tables get
+  `org_id` + `TENANT_TABLES` + `apply_org_rls` + a tenancy test in one migration
+  (enforced by `tests/test_schema_guardrails.py`), money is float dollars,
+  calendar days are `Date`, FK columns get an index, access details stay put.
+  Design only — `brightbase-migrations` owns Alembic mechanics.
 
 User-level skills that also govern work here when present: `brightbase-build`
 (conventions, security checklist), `brightbase-migrations` (Alembic
