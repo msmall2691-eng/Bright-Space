@@ -237,51 +237,50 @@ export default function PublicQuote() {
     </>
   )
 
+  // Quiet hairline cards (design language: bg-panel + border-hairline, a colored
+  // icon/dot for meaning, ink text — no tinted fills). Same shapes as
+  // components/schedule/OpsAlerts.jsx, now on the customer side too.
   const banner = scheduled ? (
-    <div className="no-print mb-3 rounded-2xl bg-emerald-50 border border-emerald-200 px-5 py-6 text-center shadow-xs">
-      <div className="w-14 h-14 rounded-full bg-emerald-100 flex items-center justify-center mx-auto mb-3">
-        <CheckCircle className="w-8 h-8 text-emerald-600" />
-      </div>
-      <p className="text-xl font-bold text-emerald-800">You're booked!</p>
-      <p className="text-sm text-emerald-700 mt-1">
+    <div className="no-print mb-3 rounded-2xl bg-panel border border-hairline px-5 py-6 text-center shadow-xs">
+      <CheckCircle className="w-10 h-10 text-emerald-600 mx-auto mb-3" />
+      <p className="text-xl font-bold text-ink">You're booked!</p>
+      <p className="text-sm text-ink-2 mt-1">
         {scheduled.date_label} ({scheduled.window === 'afternoon' ? 'afternoon' : 'morning'}) — we'll confirm the exact time shortly.{inboxLine}
       </p>
     </div>
   ) : isAccepted ? (
-    <div className="no-print mb-3 rounded-2xl bg-emerald-50 border border-emerald-200 px-5 py-6 text-center shadow-xs">
-      <div className="w-14 h-14 rounded-full bg-emerald-100 flex items-center justify-center mx-auto mb-3">
-        <CheckCircle className="w-8 h-8 text-emerald-600" />
-      </div>
-      <p className="text-xl font-bold text-emerald-800">Quote accepted — thank you!</p>
-      <p className="text-sm text-emerald-700 mt-1">
+    <div className="no-print mb-3 rounded-2xl bg-panel border border-hairline px-5 py-6 text-center shadow-xs">
+      <CheckCircle className="w-10 h-10 text-emerald-600 mx-auto mb-3" />
+      <p className="text-xl font-bold text-ink">Quote accepted — thank you!</p>
+      <p className="text-sm text-ink-2 mt-1">
         {accepted ? `Accepted on ${todayLong}. ` : ''}We'll reach out shortly to lock in your date.{inboxLine}
       </p>
     </div>
   ) : requested ? (
-    <div className="no-print mb-3 flex items-center gap-2 rounded-xl bg-blue-50 border border-blue-200 px-4 py-3">
+    <div className="no-print mb-3 flex items-center gap-2 rounded-xl bg-panel border border-hairline px-4 py-3">
       <CheckCircle className="w-5 h-5 text-indigo-600 shrink-0" />
-      <p className="text-sm text-blue-800 font-medium">Change request sent — we'll review and send an updated quote shortly.</p>
+      <p className="text-sm text-ink-2 font-medium">Change request sent — we'll review and send an updated quote shortly.</p>
     </div>
   ) : isDeclined ? (
-    <div className="no-print mb-3 flex items-center gap-2 rounded-xl bg-bg-2 border border-hairline px-4 py-3">
+    <div className="no-print mb-3 flex items-center gap-2 rounded-xl bg-panel border border-hairline px-4 py-3">
       <X className="w-5 h-5 text-ink-3 shrink-0" />
       <p className="text-sm text-ink-2 font-medium">This quote was declined. If anything changes, just reach out.</p>
     </div>
   ) : isExpired ? (
-    <div className="no-print mb-3 rounded-xl bg-amber-50 border border-amber-200 px-4 py-3">
+    <div className="no-print mb-3 rounded-xl bg-panel border border-hairline px-4 py-3">
       <div className="flex items-center gap-2">
-        <Clock className="w-5 h-5 text-amber-600 shrink-0" />
-        <p className="text-sm text-amber-800 font-medium">
+        <Clock className="w-5 h-5 text-amber-500 shrink-0" />
+        <p className="text-sm text-ink-2 font-medium">
           This quote expired{quote.valid_until ? ` on ${quote.valid_until}` : ''} — contact us for an updated quote.
         </p>
       </div>
       {(quote.company_email || quote.company_phone) && (
         <div className="mt-2 flex flex-wrap gap-2">
           {quote.company_email && (
-            <a href={`mailto:${quote.company_email}`} className="text-xs px-3 py-1.5 rounded-lg bg-amber-600 text-white font-medium">Email us</a>
+            <a href={`mailto:${quote.company_email}`} className="text-xs px-3 py-1.5 rounded-md bg-panel border border-hairline-2 text-ink-2 font-medium hover:bg-bg-2 transition-colors">Email us</a>
           )}
           {quote.company_phone && (
-            <a href={`tel:${quote.company_phone.replace(/[^\d+]/g, '')}`} className="text-xs px-3 py-1.5 rounded-lg bg-panel border border-amber-300 text-amber-800 font-medium">Call us</a>
+            <a href={`tel:${quote.company_phone.replace(/[^\d+]/g, '')}`} className="text-xs px-3 py-1.5 rounded-md bg-panel border border-hairline-2 text-ink-2 font-medium hover:bg-bg-2 transition-colors">Call us</a>
           )}
         </div>
       )}
@@ -309,7 +308,7 @@ export default function PublicQuote() {
           <button
             type="button"
             onClick={() => setEditingContact(true)}
-            className="shrink-0 text-[13px] font-semibold text-emerald-700 hover:text-emerald-800 underline underline-offset-2"
+            className="shrink-0 text-[13px] font-semibold text-ink-2 hover:text-ink underline underline-offset-2"
           >
             Not you?
           </button>
@@ -426,8 +425,9 @@ export default function PublicQuote() {
     <div className="min-h-screen bg-bg">
       <div className="max-w-2xl mx-auto px-4 py-6 sm:px-6 sm:py-10">
         {error && (
-          <div className="no-print bg-red-50 border border-red-200 rounded-lg p-4 mb-6">
-            <p className="text-sm text-red-700">{error}</p>
+          <div className="no-print flex items-center gap-2 bg-panel border border-hairline rounded-lg px-4 py-3 mb-6">
+            <span className="w-1.5 h-1.5 rounded-full bg-red-500 shrink-0" aria-hidden="true" />
+            <p className="text-sm text-ink-2">{error}</p>
           </div>
         )}
 

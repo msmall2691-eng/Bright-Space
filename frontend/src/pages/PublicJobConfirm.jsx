@@ -201,8 +201,9 @@ export default function PublicJobConfirm() {
     <div className="min-h-screen bg-bg">
       <div className="max-w-lg mx-auto px-4 py-6 sm:px-6 sm:py-10">
         {error && (
-          <div className="bg-red-50 border border-red-200 rounded-lg p-4 mb-4">
-            <p className="text-sm text-red-700">{error}</p>
+          <div className="flex items-center gap-2 bg-panel border border-hairline rounded-lg px-4 py-3 mb-4">
+            <span className="w-1.5 h-1.5 rounded-full bg-red-500 shrink-0" aria-hidden="true" />
+            <p className="text-sm text-ink-2">{error}</p>
           </div>
         )}
 
@@ -250,26 +251,26 @@ export default function PublicJobConfirm() {
 
                 {rescheduled ? (
                   rescheduled.pending ? (
-                    <div className="flex items-start gap-2 rounded-xl bg-blue-50 border border-blue-200 px-4 py-3">
+                    <div className="flex items-start gap-2 rounded-xl bg-panel border border-hairline px-4 py-3">
                       <Clock className="w-5 h-5 text-indigo-600 shrink-0 mt-0.5" />
-                      <p className="text-sm text-blue-800 font-medium">Request received — that time is popular, so we'll confirm it and get right back to you.</p>
+                      <p className="text-sm text-ink-2 font-medium">Request received — that time is popular, so we'll confirm it and get right back to you.</p>
                     </div>
                   ) : (
-                    <div className="rounded-xl bg-emerald-50 border border-emerald-200 px-4 py-4 text-center">
+                    <div className="rounded-xl bg-panel border border-hairline px-4 py-4 text-center">
                       <CheckCircle className="w-10 h-10 text-emerald-600 mx-auto mb-1.5" />
-                      <p className="text-base font-bold text-emerald-800">You're rescheduled!</p>
-                      <p className="text-sm text-emerald-700 mt-0.5">{rescheduled.date_label} · {rescheduled.window === 'afternoon' ? 'afternoon (1–4pm)' : 'morning (9am–12pm)'} arrival. We'll confirm the exact time shortly.</p>
+                      <p className="text-base font-bold text-ink">You're rescheduled!</p>
+                      <p className="text-sm text-ink-2 mt-0.5">{rescheduled.date_label} · {rescheduled.window === 'afternoon' ? 'afternoon (1–4pm)' : 'morning (9am–12pm)'} arrival. We'll confirm the exact time shortly.</p>
                     </div>
                   )
                 ) : isConfirmed ? (
-                  <div className="flex items-center gap-2 rounded-xl bg-emerald-50 border border-emerald-200 px-4 py-3">
+                  <div className="flex items-center gap-2 rounded-xl bg-panel border border-hairline px-4 py-3">
                     <CheckCircle className="w-5 h-5 text-emerald-600 shrink-0" />
-                    <p className="text-sm text-emerald-800 font-medium">Confirmed — see you then!</p>
+                    <p className="text-sm text-ink-2 font-medium">Confirmed — see you then!</p>
                   </div>
                 ) : isRequested ? (
-                  <div className="flex items-center gap-2 rounded-xl bg-blue-50 border border-blue-200 px-4 py-3">
+                  <div className="flex items-center gap-2 rounded-xl bg-panel border border-hairline px-4 py-3">
                     <CheckCircle className="w-5 h-5 text-indigo-600 shrink-0" />
-                    <p className="text-sm text-blue-800 font-medium">Reschedule request sent — we'll follow up shortly.</p>
+                    <p className="text-sm text-ink-2 font-medium">Reschedule request sent — we'll follow up shortly.</p>
                   </div>
                 ) : showReschedule ? (
                   <div className="space-y-3 rounded-xl border border-hairline bg-bg p-4">
@@ -337,7 +338,8 @@ export default function PublicJobConfirm() {
                         )}
 
                         {selectedBusy() && (
-                          <p className="text-[12px] text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+                          <p className="flex items-center gap-1.5 text-[12px] text-ink-2 bg-panel border border-hairline rounded-lg px-3 py-2">
+                            <span className="w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0" aria-hidden="true" />
                             That time is popular — we'll confirm it with you before it's locked in.
                           </p>
                         )}
