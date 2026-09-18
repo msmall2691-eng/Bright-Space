@@ -5,6 +5,8 @@ import SavedViewsBar from '../components/SavedViewsBar'
 import PageHero from '../components/ui/PageHero'
 import InlineSelect from '../components/InlineSelect'
 import JobCreateModal from '../components/JobCreateModal'
+import JobEditModal from '../components/JobEditModal'
+import { jobPropertyOption } from '../utils/jobPropertyOption'
 import { get, post, patch } from "../api"
 import { formatDate, combineAddress } from '../utils/format'
 import { pushToast } from '../utils/toastBus'
@@ -594,6 +596,27 @@ export default function Quoting() {
     await loadQuotes()
     showToast('Client onboarded — schedule created ✓')
   }
+  // A quote that auto-converted on accept ALREADY has a job (date-less,
+  // status 'unscheduled'). POST /api/jobs with that quote_id is idempotent and
+  // hands back the existing job untouched — so the create modal would be a
+  // dead end. Put the date on the existing job instead: one fetch on click,
+  // then the same JobEditModal the Schedule page uses (its PATCH also sends
+  // the customer's "you're booked in" notice on the transition to scheduled).
+  const [scheduleJob, setScheduleJob] = useState(null)
+  const openSchedule = async (q) => {
+    if (q.job_id) {
+      try {
+        const job = await get(`/api/jobs/${q.job_id}`)
+        setScheduleJob(job)
+        return
+      } catch { /* fall through to the create modal */ }
+    }
+    setScheduleQuote(q)
+  }
+  const finishScheduleJob = async () => {
+    setScheduleJob(null)
+    await loadQuotes()
+  }
 
 
 
@@ -763,7 +786,7 @@ export default function Quoting() {
                 onNavigate={navigate}
                 onSend={openSendPanel}
                 onCopyLink={copyPublicLink}
-                onSchedule={setScheduleQuote}
+                onSchedule={openSchedule}
                 onArchive={archiveQuote}
                 onUpdateStatus={updateStatus}
                 copiedQuoteId={copiedQuoteId}
@@ -894,6 +917,15 @@ export default function Quoting() {
         />
       )}
 
+      {scheduleJob && (
+        <JobEditModal
+          job={scheduleJob}
+          properties={jobPropertyOption(scheduleJob)}
+          onClose={() => setScheduleJob(null)}
+          onSave={finishScheduleJob}
+          notify={(m) => showToast(m)}
+        />
+      )}
       {scheduleQuote && (
         <JobCreateModal
           clientId={scheduleQuote.client_id}

@@ -106,9 +106,38 @@ def _items_to_dicts(items) -> list:
     return out
 
 
-def _quote_dict(q: Quote) -> dict:
-    """Serialize a Quote to the shape the Quoting UI expects."""
+def _job_fields_for_quotes(db: Session, quotes) -> dict:
+    """{quote_id: {"job_id", "job_scheduled_date"}} for every quote in one
+    query (no N+1). Lets the Quotes list tell a converted quote whose job is
+    still date-less ("Set up schedule") apart from one that is actually on the
+    calendar ("Scheduled") — auto-convert on accept flips a quote to
+    'converted' before any date exists, so status alone can't."""
+    ids = [q.id for q in quotes if q is not None]
+    out: dict = {}
+    if not ids:
+        return out
+    rows = (db.query(Job.id, Job.quote_id, Job.scheduled_date)
+            .filter(Job.quote_id.in_(ids)).order_by(Job.id.asc()).all())
+    for job_id, quote_id, sched in rows:
+        if quote_id in out:
+            continue  # first (oldest) job wins, matching _existing_job_for_quote
+        out[quote_id] = {
+            "job_id": job_id,
+            "job_scheduled_date": str(sched) if sched else None,
+        }
+    return out
+
+
+def _quote_dict(q: Quote, job_fields: Optional[dict] = None) -> dict:
+    """Serialize a Quote to the shape the Quoting UI expects.
+
+    ``job_fields`` is the per-quote entry from :func:`_job_fields_for_quotes`;
+    callers that don't batch-load jobs leave it None and the two job keys are
+    emitted as None (the UI treats "unknown" like "no date yet")."""
+    jf = job_fields or {}
     return {
+        "job_id": jf.get("job_id"),
+        "job_scheduled_date": jf.get("job_scheduled_date"),
         "id": q.id,
         "client_id": q.client_id,
         "client_name": q.client.name if q.client else None,
@@ -481,7 +510,8 @@ def list_quotes(
         # Archived (soft-deleted) quotes are hidden unless asked for explicitly.
         query = query.filter(Quote.status != "archived")
     quotes = query.order_by(Quote.created_at.desc()).offset(offset).limit(limit).all()
-    return [_quote_dict(q) for q in quotes]
+    jobs_by_quote = _job_fields_for_quotes(db, quotes)
+    return [_quote_dict(q, jobs_by_quote.get(q.id)) for q in quotes]
 
 
 def _hours_since(ts) -> Optional[float]:
@@ -573,7 +603,8 @@ def property_photo(address: str = Query(..., min_length=3, max_length=300), db: 
 
 @router.get("/{quote_id}", dependencies=[Depends(require_role("admin", "manager", "viewer"))])
 def get_quote(quote_id: int, db: Session = Depends(get_db), org_id: int = Depends(current_org_id)):
-    return _quote_dict(_get_quote_or_404(quote_id, db, resolve_org_id(org_id, db)))
+    quote = _get_quote_or_404(quote_id, db, resolve_org_id(org_id, db))
+    return _quote_dict(quote, _job_fields_for_quotes(db, [quote]).get(quote.id))
 
 
 @router.get("/{quote_id}/details", dependencies=[Depends(require_role("admin", "manager", "viewer"))])
@@ -591,11 +622,14 @@ def get_quote_details(quote_id: int, db: Session = Depends(get_db), org_id: int 
     prop = None
     if quote.property_id:
         prop = db.query(Property).filter(Property.id == quote.property_id).first()
-    job = db.query(Job).filter(Job.quote_id == quote.id).first()
+    job = db.query(Job).filter(Job.quote_id == quote.id).order_by(Job.id.asc()).first()
     client = quote.client
 
     return {
-        **_quote_dict(quote),
+        **_quote_dict(quote, {
+            "job_id": job.id if job else None,
+            "job_scheduled_date": (str(job.scheduled_date) if job and job.scheduled_date else None),
+        }),
         # Contact fields the detail page's Send panel prefills from.
         "client_email": getattr(client, "email", None) if client else None,
         "client_phone": getattr(client, "phone", None) if client else None,
@@ -1400,13 +1434,15 @@ def _quote_by_token(token: str, db: Session) -> Quote:
 def _company_info(db: Session) -> dict:
     """Customer-facing business identity: Settings rows first, env fallback.
     Powers the public quote page footer and the quote email."""
-    from modules.settings.router import get_setting, quote_policies_text
+    from modules.settings.router import get_setting, quote_policies_text, quote_terms_text
     return {
         "company_name": get_setting(db, "company_name") or os.getenv("COMPANY_NAME", DEFAULT_COMPANY_NAME),
         "company_email": (get_setting(db, "company_email") or os.getenv("COMPANY_EMAIL")
                           or get_setting(db, "from_email") or os.getenv("SMTP_USER")),
         "company_phone": get_setting(db, "company_phone") or os.getenv("COMPANY_PHONE"),
-        "quote_terms": get_setting(db, "quote_terms") or None,
+        # Estimate / non-binding language. Always present — the owner's text
+        # when set, else the shared default (public page, email, PDF alike).
+        "quote_terms": quote_terms_text(db),
         # Customer-facing service policies (pickup, access, 24h cancellation…).
         # Always present — falls back to a sensible professional default.
         "quote_policies": quote_policies_text(db),
@@ -1517,15 +1553,21 @@ def _notify_staff_quote_event(db: Session, quote: Quote, summary: str, activity_
 
 
 def _notify_owner_quote_event_core(subject: str, lines: list, *, quote_number: str,
-                                   client_name: str, total: float) -> None:
+                                   client_name: str, total: float,
+                                   to_email: Optional[str] = None) -> None:
     """Primitive-only owner notification send. Takes plain values (not the ORM
     quote) so it is safe to run from a BackgroundTasks callback AFTER the request
     session has closed — lazy-loading quote.client there would raise
-    DetachedInstanceError. Best-effort: never raises."""
+    DetachedInstanceError. Best-effort: never raises.
+
+    ``to_email`` is the owner alert address (Settings owner_alert_email → env
+    OWNER_ALERT_EMAIL, resolved by the caller while its session is live); when
+    unset the SMTP sender address is used, which is where these went before
+    the owner alert address existed."""
     try:
         from integrations.email import _load_smtp_creds, send_email
         creds = _load_smtp_creds()
-        owner = creds.get("from_email")
+        owner = to_email or creds.get("from_email")
         if not owner:
             logger.info("[quotes] no owner email configured; skipping owner notification")
             return
@@ -1549,19 +1591,26 @@ def _notify_owner_quote_event(db: Session, quote: Quote, subject: str, lines: li
     """Email the business owner when a customer responds to a quote. Thin ORM
     wrapper around :func:`_notify_owner_quote_event_core` for the synchronous
     callers (request-changes, decline, schedule) that still have a live session."""
+    from services.owner_alerts import owner_alert_email
     _notify_owner_quote_event_core(
         subject, lines,
         quote_number=quote.quote_number,
         client_name=(quote.client.name if quote.client else "a customer"),
         total=float(quote.total or 0),
+        to_email=owner_alert_email(db),
     )
 
 
 def _send_customer_quote_confirmation_core(to_email: str, *, quote_number: str,
-                                           total: float, accepted_name: str) -> None:
+                                           total: float, accepted_name: str,
+                                           scheduled_label: Optional[str] = None) -> None:
     """Primitive-only customer receipt send. Like the owner core, takes plain
     values so it can run from a BackgroundTasks callback after the session closes.
-    Best-effort — never raises."""
+    Best-effort — never raises.
+
+    ``scheduled_label`` (e.g. "September 22, 2026 (morning)") is set by the
+    customer self-schedule path: the receipt then confirms the booked date
+    instead of promising a call to schedule one."""
     if not to_email or "@" not in to_email:
         return
     try:
@@ -1571,24 +1620,30 @@ def _send_customer_quote_confirmation_core(to_email: str, *, quote_number: str,
         company = creds.get("from_name") or "Our team"
         name = first_name_of(accepted_name) or "there"
         total = f"${float(total or 0):,.2f}"
+        if scheduled_label:
+            what_next = f"You're booked in for {scheduled_label}. We'll see you then!"
+            subject = f"You're booked in — {scheduled_label}"
+        else:
+            what_next = f"{company} will reach out shortly to schedule your service."
+            subject = f"Quote {quote_number} confirmed — thank you!"
         lines = [
             f"Hi {name},",
             "",
             f"Thanks for accepting quote {quote_number} ({total}).",
-            f"{company} will reach out shortly to schedule your service.",
+            what_next,
             "",
             "Questions? Just reply to this email.",
         ]
         import html as _html
         body = "<div style='font-family:sans-serif;font-size:14px;color:#111'>" + \
             "<br>".join(_html.escape(l) if l else "&nbsp;" for l in lines) + "</div>"
-        send_email(to=to_email, subject=f"Quote {quote_number} confirmed — thank you!",
-                   html_body=body, text_body="\n".join(lines))
+        send_email(to=to_email, subject=subject, html_body=body, text_body="\n".join(lines))
     except Exception as e:
         logger.warning(f"[quotes] customer confirmation email failed for {quote_number}: {e}")
 
 
-def _send_customer_quote_confirmation(db: Session, quote: Quote, to_email: str) -> None:
+def _send_customer_quote_confirmation(db: Session, quote: Quote, to_email: str,
+                                      scheduled_label: Optional[str] = None) -> None:
     """Email the customer a receipt when they accept their quote. Thin ORM
     wrapper around the primitive core for synchronous callers."""
     _send_customer_quote_confirmation_core(
@@ -1596,6 +1651,7 @@ def _send_customer_quote_confirmation(db: Session, quote: Quote, to_email: str) 
         quote_number=quote.quote_number,
         total=float(quote.total or 0),
         accepted_name=(quote.accepted_by_name or (quote.client.name if quote.client else "")),
+        scheduled_label=scheduled_label,
     )
 
 
@@ -1613,17 +1669,33 @@ def _finalize_quote_accept(db: Session, quote: Quote, *, background_tasks=None,
         is supplied so the customer's accept click doesn't block on serial SMTP.
 
     Commits the accept + opportunity/conversion before returning. Email inputs are
-    captured up front so a backgrounded send is safe after the session closes."""
+    captured up front so a backgrounded send is safe after the session closes.
+
+    Owner channels on accept (all best-effort, all in the background task):
+      - email to the owner alert address (Settings owner_alert_email → env
+        OWNER_ALERT_EMAIL; falls back to the SMTP sender when unset),
+      - a short SMS to owner_alert_phone / OWNER_ALERT_PHONE when set,
+      - a staff web push (mirrors the "quote viewed" push).
+    An accepted quote with nobody told is a lost booking, so this is the one
+    event that fans out to every owner channel."""
     _notify_staff_quote_event(db, quote, f"Client accepted quote {quote.quote_number}", "quote_accepted")
 
     # Capture everything the emails need NOW, while the ORM instance is live.
+    from services.owner_alerts import owner_alert_email, owner_alert_phone
     qn = quote.quote_number
+    quote_id = quote.id
+    org_id = getattr(quote, "org_id", None)
     who = quote.accepted_by_name or (quote.client.name if quote.client else "The customer")
+    total = float(quote.total or 0)
     owner_kwargs = dict(
         quote_number=qn,
         client_name=(quote.client.name if quote.client else "a customer"),
-        total=float(quote.total or 0),
+        total=total,
+        to_email=owner_alert_email(db),
     )
+    owner_phone = owner_alert_phone(db)
+    # Deep link that opens the booking modal straight away (QuoteDetail ?book=1).
+    schedule_link = f"{app_base_url().rstrip('/')}/quotes/{quote_id}?book=1"
     customer_email = quote.accepted_by_email or (quote.client.email if quote.client else None)
     customer_kwargs = dict(
         quote_number=qn,
@@ -1650,16 +1722,51 @@ def _finalize_quote_accept(db: Session, quote: Quote, *, background_tasks=None,
         _notify_owner_quote_event_core(
             f"✅ Quote {qn} accepted",
             [f"{who} accepted quote {qn}.",
-             "You can convert it to a scheduled job from the Quoting page."],
+             f"Set up the schedule: {schedule_link}"],
             **owner_kwargs,
         )
         if send_customer_receipt:
             _send_customer_quote_confirmation_core(customer_email, **customer_kwargs)
+        _notify_owner_quote_accepted_extra(
+            quote_number=qn, who=who, total=total, schedule_link=schedule_link,
+            owner_phone=owner_phone, quote_id=quote_id, org_id=org_id,
+        )
 
     if background_tasks is not None:
         background_tasks.add_task(_emails)
     else:
         _emails()
+
+
+def _notify_owner_quote_accepted_extra(*, quote_number: str, who: str, total: float,
+                                       schedule_link: str, owner_phone: Optional[str],
+                                       quote_id: int, org_id: Optional[int]) -> None:
+    """Owner SMS + staff web push for an accepted quote. Primitive-only (safe
+    after the request session closes) and best-effort per channel — a Twilio
+    hiccup must not stop the push, and neither may ever raise into the
+    customer's accept response."""
+    if owner_phone:
+        try:
+            from integrations.twilio_client import send_sms
+            send_sms(to=owner_phone,
+                     body=f"Quote {quote_number} accepted by {who} — ${total:,.2f}. "
+                          f"Schedule: {schedule_link}")
+            logger.info("[quotes] owner SMS sent for accepted quote %s", quote_number)
+        except Exception as e:
+            logger.warning("[quotes] owner SMS failed for accepted quote %s: %s", quote_number, e)
+    try:
+        from services.push_service import notify_staff
+        notify_staff(
+            None,
+            "Quote accepted ✅",
+            f"{who} accepted quote {quote_number} (${total:,.2f})",
+            url=f"/quotes/{quote_id}?book=1",
+            tag=f"quote-accepted-{quote_id}",
+            org_id=org_id,
+            category="quotes",
+        )
+    except Exception:
+        pass
 
 
 @router.get("/public/{token}", dependencies=[Depends(rate_limit(120, 3600, "quote_view"))])
@@ -1908,9 +2015,11 @@ def public_schedule_quote(token: str, data: PublicScheduleRequest, db: Session =
             # Re-date the already-created job (keeps one job per quote) + sync GCal.
             # org_id explicit for the same reason as the create_job call below —
             # in-process calls skip FastAPI's Depends resolution entirely.
+            # notify_customer=False: this path sends its own dated confirmation
+            # below — one message, not the schedule write's notice as well.
             update_job(existing.id, JobUpdate(
                 scheduled_date=d.isoformat(), start_time=start, end_time=end,
-                allow_conflicts=True), db=db, org_id=quote.org_id)
+                allow_conflicts=True, notify_customer=False), db=db, org_id=quote.org_id)
             job_id = existing.id
         else:
             svc, job_type, prop_type = _quote_job_vocab(quote)
@@ -1925,6 +2034,7 @@ def public_schedule_quote(token: str, data: PublicScheduleRequest, db: Session =
                 job_type=job_type, scheduled_date=d.isoformat(), start_time=start, end_time=end,
                 address=quote.address or prop.address, property_id=prop.id, quote_id=quote.id,
                 cleaner_ids=[], notes=quote.notes, allow_conflicts=True,
+                notify_customer=False,  # own dated confirmation below
             ), db=db, org_id=quote.org_id)
             job_id = created["id"]
     except HTTPException as e:
@@ -1948,9 +2058,14 @@ def public_schedule_quote(token: str, data: PublicScheduleRequest, db: Session =
         [f"{who} accepted quote {quote.quote_number} and booked {nice_date} ({win_label}).",
          "A job was created (unassigned) and pushed to the calendar — assign a cleaner when ready."],
     )
-    if newly_accepted:
-        _send_customer_quote_confirmation(
-            db, quote, quote.accepted_by_email or (quote.client.email if quote.client else None))
+    # The customer just picked a date, so their confirmation carries it — and
+    # goes out whether or not this call was also the accept (a customer who
+    # accepted earlier and is scheduling now still needs to hear the date).
+    # The job write above was told notify_customer=False, so this is the ONE
+    # customer message for a self-schedule.
+    _send_customer_quote_confirmation(
+        db, quote, quote.accepted_by_email or (quote.client.email if quote.client else None),
+        scheduled_label=f"{nice_date} ({win_label})")
 
     return {
         "scheduled": True, "quote_number": quote.quote_number, "job_id": job_id,

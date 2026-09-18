@@ -237,7 +237,9 @@ class QuoteEmailService:
         self.company_email = (self._db_setting("company_email") or os.getenv("COMPANY_EMAIL")
                               or self.from_email)
         self.company_phone = self._db_setting("company_phone") or os.getenv("COMPANY_PHONE")
-        self.quote_terms = self._db_setting("quote_terms")
+        # Same default the public page + PDF use (settings.quote_terms_text),
+        # so the email never goes out without estimate/non-binding language.
+        self.quote_terms = self._terms_setting()
         # Customer-facing service policies — falls back to the shared default so
         # every quote email carries pickup / access / 24h-cancellation policies.
         self.quote_policies = self._policies_setting()
@@ -266,6 +268,22 @@ class QuoteEmailService:
                 db.close()
         except Exception:
             return None
+
+    @staticmethod
+    def _terms_setting():
+        """The configured quote terms, or the shared default when unset.
+        Best-effort — falls back to the default constant without a DB."""
+        from modules.settings.router import DEFAULT_QUOTE_TERMS
+        try:
+            from database.db import SessionLocal
+            from modules.settings.router import quote_terms_text
+            db = SessionLocal()
+            try:
+                return quote_terms_text(db)
+            finally:
+                db.close()
+        except Exception:
+            return DEFAULT_QUOTE_TERMS
 
     @staticmethod
     def _policies_setting():

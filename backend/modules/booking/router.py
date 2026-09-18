@@ -1,7 +1,6 @@
 import logging
 import os
 from datetime import datetime, timezone
-from html import escape as _esc
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request
 from sqlalchemy.orm import Session
@@ -170,70 +169,26 @@ def _send_booking_customer_sms(db: Session, data: "BookingSubmit", intake_id: in
             pass
 
 
+# Owner alert channels live in services/owner_alerts.py now — intake and
+# quoting send the same "ping the owner" alerts, and a shared service beats
+# three copies (or a router importing a router). These thin wrappers keep the
+# booking-local names (tests patch `modules.booking.router._send_owner_*`).
+from services import owner_alerts as _owner_alerts
+
+
 def _owner_notify_setting(db: Session, key: str, env_var: str) -> Optional[str]:
-    """Owner-notification destination: the Settings row first (operator can
-    edit it in BrightBase without a redeploy), then the env var as the
-    deploy-time fallback. Shared by the owner SMS (owner_alert_phone /
-    OWNER_ALERT_PHONE) and owner email (owner_alert_email / OWNER_ALERT_EMAIL)
-    paths so the two channels can't drift on lookup rules."""
-    value = None
-    try:
-        from database.models import AppSetting
-        row = db.query(AppSetting).filter(AppSetting.key == key).first()
-        if row and (row.value or "").strip():
-            value = row.value.strip()
-    except Exception:
-        pass
-    return value or (os.getenv(env_var) or "").strip() or None
+    return _owner_alerts.owner_notify_setting(db, key, env_var)
 
 
 def _send_owner_sms(db: Session, body: str, intake_id: int) -> bool:
-    """Text the owner. Uses the same integrations.twilio_client the quote-SMS
-    path uses, so the same TWILIO_ACCOUNT_SID / TWILIO_AUTH_TOKEN /
-    TWILIO_PHONE_NUMBER configuration covers this path — no extra env work
-    needed to enable.
-
-    Returns True only when a message was actually handed to Twilio, so
-    callers can tell "nothing configured" apart from success and escalate
-    when no owner channel worked at all. Raises on send failure — callers
-    wrap in try/except (best-effort contract).
-    """
-    to_number = _owner_notify_setting(db, "owner_alert_phone", "OWNER_ALERT_PHONE")
-    if not to_number:
-        logger.info("[booking] owner SMS skipped — no owner_alert_phone / OWNER_ALERT_PHONE set")
-        return False
-    from integrations.twilio_client import send_sms
-    send_sms(to=to_number, body=body)
-    logger.info("[booking] owner SMS sent for intake=%s", intake_id)
-    return True
+    """Text the owner. True = handed to Twilio, False = not configured,
+    raises on send failure (callers wrap — best-effort contract)."""
+    return _owner_alerts.send_owner_sms(db, body, ref=f"for intake={intake_id}", tag="booking")
 
 
 def _send_owner_email(db: Session, subject: str, lines: list, intake_id: int) -> bool:
-    """Email the owner a booking-event summary (new booking / update / cancel).
-
-    Recipient comes from Settings ("owner_alert_email") first, then the
-    OWNER_ALERT_EMAIL env var — the same settings-then-env pattern as the
-    owner SMS phone. Deliberately plain (short lines, no template): this is
-    an internal operator ping, not the branded customer receipt in
-    services.booking_email_service.
-
-    Same return/raise contract as _send_owner_sms: True = actually sent,
-    False = not configured, raises = send failed.
-    """
-    to_email = _owner_notify_setting(db, "owner_alert_email", "OWNER_ALERT_EMAIL")
-    if not to_email:
-        logger.info("[booking] owner email skipped — no owner_alert_email / OWNER_ALERT_EMAIL set")
-        return False
-    from integrations.email import send_email
-    text_lines = [str(l) for l in lines if l]
-    html_body = (
-        '<div style="font-family:Arial,sans-serif;font-size:14px;line-height:1.6;">'
-        + "<br>".join(_esc(l) for l in text_lines)
-        + "</div>"
-    )
-    send_email(to=to_email, subject=subject, html_body=html_body, text_body="\n".join(text_lines))
-    logger.info("[booking] owner email sent for intake=%s", intake_id)
-    return True
+    """Email the owner a booking-event summary. Same contract as _send_owner_sms."""
+    return _owner_alerts.send_owner_email(db, subject, lines, ref=f"for intake={intake_id}", tag="booking")
 
 
 def _send_booking_owner_alert(

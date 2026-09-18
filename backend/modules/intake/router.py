@@ -287,7 +287,73 @@ def submit_intake(request: Request, data: IntakeSubmit, db: Session = Depends(ge
         custom_fields={"photos": photos} if photos else None,
         idempotency_key=data.idempotency_key or data.idempotencyKey,
     )
-    return upsert_lead(db, payload)
+    result = upsert_lead(db, payload)
+    _alert_owner_new_request(db, data, result)
+    return result
+
+
+def _alert_owner_new_request(db: Session, data: IntakeSubmit, result: dict) -> None:
+    """Text + email the owner about a website request, the same way
+    /api/booking/submit does (services.owner_alerts). upsert_lead already
+    web-pushes staff on a brand-new lead, but push is the one channel the owner
+    may never have enabled on her phone; SMS + email were only wired for the
+    /book form, so a contact-form lead could sit unseen.
+
+    Same silence rule as booking: a deduped post that added nothing is a
+    replay, not a new lead (the row is the record; the alerts follow the row).
+    Best-effort — nothing here can fail the customer's 201."""
+    try:
+        if result.get("deduped") and not (result.get("enriched") or []):
+            return
+        from services import owner_alerts
+        from services.booking_email_service import format_requested_date, service_label
+        intake_id = result.get("intake_id")
+        svc = service_label(data.service_type)
+        # Owner-facing: say plainly when no date was asked for (contact-form
+        # leads usually carry none) instead of the customer-copy fallback.
+        requested = data.requested_date or data.preferred_date
+        date_label = format_requested_date(requested) if requested else "no date requested"
+        where = ", ".join(p for p in [data.address, data.city] if p) or "no address given"
+        est = None
+        if data.estimate_min is not None and data.estimate_max is not None:
+            est = f"Estimate: ${int(data.estimate_min)}–${int(data.estimate_max)}"
+        sms_sent = email_sent = False
+        try:
+            sms_sent = owner_alerts.send_owner_sms(
+                db,
+                f"New request #{intake_id}: {data.name} — {svc} on {date_label}\n"
+                f"{where}\n{data.phone or data.email or ''}\n"
+                f"See details in Bright-Space Requests.",
+                ref=f"for intake={intake_id}", tag="intake",
+            )
+        except Exception as e:
+            logger.warning("[intake] owner SMS failed for intake %s: %s", intake_id, e)
+        try:
+            email_sent = owner_alerts.send_owner_email(
+                db,
+                subject=f"New request from {data.name} — {svc} on {date_label}",
+                lines=[
+                    f"New request #{intake_id}",
+                    f"Name: {data.name}",
+                    f"Service: {svc}",
+                    f"Requested date: {date_label}",
+                    f"Address: {where}",
+                    f"Phone: {data.phone or '—'}",
+                    f"Email: {data.email or '—'}",
+                    est,
+                    (f"Message: {data.message}" if data.message else None),
+                    "See details in Bright-Space Requests.",
+                ],
+                ref=f"for intake={intake_id}", tag="intake",
+            )
+        except Exception as e:
+            logger.warning("[intake] owner email failed for intake %s: %s", intake_id, e)
+        if not sms_sent and not email_sent:
+            # Push may still have gone out (upsert_lead), but neither owner
+            # channel did — greppable, like booking's equivalent line.
+            logger.info("[intake] owner SMS/email not sent for intake=%s (unconfigured or failed)", intake_id)
+    except Exception as e:  # pragma: no cover - alerts never break the submit
+        logger.warning("[intake] owner alert failed: %s", e)
 
 
 def _batch_quotes(db: Session, rows) -> dict:

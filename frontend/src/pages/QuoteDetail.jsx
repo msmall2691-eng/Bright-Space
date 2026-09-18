@@ -15,6 +15,8 @@ import QuoteLineEditor from '../components/quoting/QuoteLineEditor'
 import RecordSkeleton from '../components/record/RecordSkeleton'
 import { EmptyState } from '../components/ui'
 import JobCreateModal from '../components/JobCreateModal'
+import JobEditModal from '../components/JobEditModal'
+import { jobPropertyOption } from '../utils/jobPropertyOption'
 import SendQuotePanel from '../components/quoting/SendQuotePanel'
 import OriginalRequestCard from '../components/quoting/OriginalRequestCard'
 import { isPlaceholderName } from '../components/quoting/constants'
@@ -220,20 +222,45 @@ export default function QuoteDetail() {
   const [convertModalOpen, setConvertModalOpen] = useState(false)
   const openConvertModal = () => setConvertModalOpen(true)
 
+  // Auto-convert on accept creates the job WITHOUT a date, so a converted
+  // quote can still need scheduling. The create modal can't help here (POST
+  // /api/jobs with this quote_id idempotently returns the existing job), so
+  // put the date on the existing job via JobEditModal — one fetch on click.
+  const [scheduleJob, setScheduleJob] = useState(null)
+  const openScheduleJob = async () => {
+    if (!quote?.job?.id) return
+    try { setScheduleJob(await get(`/api/jobs/${quote.job.id}`)) }
+    catch (e) { toast.error(e?.message || 'Could not open the job') }
+  }
+
   // /quotes/:id?book=1 opens the booking modal straight away. Home's
   // "Accepted, not booked" card links here, and the whole point of that card
   // is that the visit was never scheduled — landing on the quote and making
   // the operator hunt for the button would waste the trip. The param is
   // stripped after use so a refresh doesn't reopen it.
+  //
+  // Resolved once the quote has loaded: a quote that already has a date-less
+  // job (auto-convert on accept) opens the edit modal on THAT job; anything
+  // else opens the convert modal as before. Deciding before the quote is in
+  // hand always picked the convert modal, which POST /api/jobs turns into a
+  // silent no-op for an already-converted quote.
   const [searchParams, setSearchParams] = useSearchParams()
+  const [bookIntent, setBookIntent] = useState(false)
   useEffect(() => {
     if (searchParams.get('book') === '1') {
-      setConvertModalOpen(true)
+      setBookIntent(true)
       const next = new URLSearchParams(searchParams)
       next.delete('book')
       setSearchParams(next, { replace: true })
     }
   }, [searchParams, setSearchParams])
+  useEffect(() => {
+    if (!bookIntent || !quote) return
+    setBookIntent(false)
+    if (quote.job?.id && !quote.job.scheduled_date) openScheduleJob()
+    else if (!quote.job) setConvertModalOpen(true)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [bookIntent, quote])
 
   if (loading) return <RecordSkeleton />
   if (notFound || !quote) {
@@ -353,7 +380,25 @@ export default function QuoteDetail() {
                 </button>
               </div>
             )}
+            {canEdit() && quote.job && !quote.job.scheduled_date && quote.job.status !== 'cancelled' && (
+              <div className="border-t border-hairline pt-3">
+                <button onClick={openScheduleJob}
+                  title="The job exists but has no date yet"
+                  className="w-full flex items-center justify-center gap-1.5 bg-bg-2 hover:bg-bg-3 border border-hairline text-ink-2 px-3 py-2 rounded-lg text-[12px] font-medium transition-colors">
+                  <Calendar className="w-3.5 h-3.5" /> Set up schedule
+                </button>
+              </div>
+            )}
           </div>
+          {scheduleJob && (
+            <JobEditModal
+              job={scheduleJob}
+              properties={jobPropertyOption(scheduleJob)}
+              onClose={() => setScheduleJob(null)}
+              onSave={() => { setScheduleJob(null); load() }}
+              notify={(m) => toast.success(m)}
+            />
+          )}
           {convertModalOpen && (
             <JobCreateModal
               clientId={quote.client_id}

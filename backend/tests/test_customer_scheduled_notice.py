@@ -9,9 +9,10 @@ carries no address or access detail.
 
 These pin: it fires only when the rule is on and the job is actually scheduled;
 it reaches both channels; it never inlines an address; and the schedule write
-sites (update_job on the transition into scheduled; create_job for a direct,
-non-quote scheduled job) call it — but not on an unrelated edit, and not when
-the operator unticked "notify customer".
+sites (update_job on the transition into scheduled; create_job for a scheduled
+job, quote-sourced or not — see test_audit_gaps_quote_to_schedule for the
+quote case) call it — but not on an unrelated edit, and not when the operator
+unticked "notify customer".
 """
 import uuid
 from datetime import date, time
