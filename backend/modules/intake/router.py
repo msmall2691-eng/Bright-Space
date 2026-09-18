@@ -10,7 +10,7 @@ from database.db import get_db
 from modules.auth.router import require_role, current_org_id, resolve_org_id
 from database.models import LeadIntake, Client, Quote
 from modules.intake.normalize import build_intake, upsert_lead, _property_key
-from modules.intake.details import fill_property_access_from_intake
+from modules.intake.details import fill_property_access_from_intake, fill_property_rental_from_intake
 from utils.contacts import find_client_by_contact, add_contact_email, add_contact_phone
 from utils.deal_stage import lead_display_status, lead_display_status_candidate_filter
 from ratelimit import limiter
@@ -239,6 +239,9 @@ def _resolve_property_for_intake(db: Session, client: Client, intake: LeadIntake
         # Carry the request's place-stable access details (entry method, parking,
         # pets) onto the property — fill-if-missing, so an operator's edits win.
         fill_property_access_from_intake(prop, intake)
+        # And, for an STR property, the rental specifics (check-in/out times,
+        # guests, listing URL, turnover day) that were previously dropped.
+        fill_property_rental_from_intake(prop, intake)
         return prop
 
     prop = Property(
@@ -252,6 +255,9 @@ def _resolve_property_for_intake(db: Session, client: Client, intake: LeadIntake
         square_footage=intake.square_footage,
     )
     fill_property_access_from_intake(prop, intake)
+    # STR rental specifics (check-in/out times -> the HH:MM columns; guests,
+    # listing URL, turnover day -> custom_fields). No-op for residential.
+    fill_property_rental_from_intake(prop, intake)
     db.add(prop)
     db.flush()
     return prop

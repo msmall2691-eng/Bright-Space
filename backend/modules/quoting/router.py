@@ -27,7 +27,11 @@ from database.models import (
     Quote, Client, Job, Property, LeadIntake, IntegrationEvent,
 )
 from modules.auth.router import get_current_user, require_role, current_org_id, resolve_org_id
-from modules.intake.details import fill_property_access_from_intake, compose_job_notes_from_intake
+from modules.intake.details import (
+    fill_property_access_from_intake,
+    fill_property_rental_from_intake,
+    compose_job_notes_from_intake,
+)
 from utils.integration_log import log_integration_event as _log_integration
 from utils.dates import coerce_date, fmt_long_date
 from utils.address import format_address
@@ -1246,6 +1250,9 @@ def _convert_quote_to_job(
     # which the crew job card shows. Both no-op when there is no linked intake.
     intake = _quote_intake(db, quote)
     fill_property_access_from_intake(prop, intake)
+    # For an STR property, also carry the rental specifics (check-in/out times,
+    # guests, listing URL, turnover day) that the request captured.
+    fill_property_rental_from_intake(prop, intake)
     job_notes = compose_job_notes_from_intake(quote.notes, intake)
 
     # Fully-scheduled conversion → reuse the Scheduling create-job path so
