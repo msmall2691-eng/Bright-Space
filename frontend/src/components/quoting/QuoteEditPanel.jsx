@@ -57,6 +57,30 @@ export default function QuoteEditPanel({
   const setAddingClient = setAddingClientProp ?? setAddingClientLocal
   const [clientErr, setClientErr] = useState('')
 
+  // Would clicking Send ship what the operator currently sees? The backend
+  // builds the email + PDF from the SAVED quote, so any unsaved edit in this
+  // form (a changed price, an added line) would send the OLD numbers. Compare
+  // the send-relevant fields of the live form against the last-saved quote and
+  // block Send until they save — "Send" next to an editable form otherwise
+  // silently mails a stale quote.
+  const _num = (v) => parseFloat(v) || 0
+  const _sendShape = (src) => JSON.stringify({
+    title: (src.title || '').trim(),
+    customer_message: (src.customer_message || '').trim(),
+    address: (src.address || '').trim(),
+    service_type: src.service_type || '',
+    tax_rate: _num(src.tax_rate),
+    notes: (src.notes || '').trim(),
+    valid_until: src.valid_until || '',
+    items: (src.items || [])
+      .filter(i => (i.name || '').trim() || _num(i.unit_price) > 0)
+      .map(i => ({
+        name: (i.name || '').trim(), qty: _num(i.qty), unit_price: _num(i.unit_price),
+        unit: i.unit || '', description: (i.description || '').trim(),
+      })),
+  })
+  const sendDirty = !!selected && _sendShape(form) !== _sendShape(selected)
+
   // Property spec lookup (RentCast) — pull beds/baths/sqft from the address so
   // the admin doesn't have to research each property by hand before quoting.
   const [specs, setSpecs] = useState(null)      // { square_footage, bedrooms, bathrooms, year_built, property_type }
@@ -489,10 +513,16 @@ export default function QuoteEditPanel({
             {saving ? 'Saving...' : selected ? 'Update Quote' : 'Create Quote'}
           </button>
           {selected && (
-            <button onClick={() => onSend(selected)}
-              className="flex items-center gap-2 bg-indigo-600 hover:bg-blue-500 px-4 py-2.5 rounded-lg text-sm font-medium transition-colors">
+            <button onClick={() => onSend(selected)} disabled={sendDirty}
+              title={sendDirty ? 'Save your changes first — Send emails the saved quote, so unsaved edits would go out as the old numbers.' : 'Send this quote to the customer'}
+              className="flex items-center gap-2 bg-indigo-600 hover:bg-blue-500 disabled:bg-bg-2 disabled:text-ink-3 disabled:cursor-not-allowed px-4 py-2.5 rounded-lg text-sm font-medium transition-colors">
               <Send className="w-4 h-4" /> Send
             </button>
+          )}
+          {sendDirty && (
+            <span className="self-center text-[11px] text-amber-600 dark:text-amber-300 shrink-0">
+              Update to send
+            </span>
           )}
         </div>
       ) : (

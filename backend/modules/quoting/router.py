@@ -728,6 +728,137 @@ class QuoteSendRequest(BaseModel):
     copy_to: Optional[str] = None
 
 
+def _send_quote_email(db, quote, client, body, quote_link) -> tuple:
+    """Build the branded PDF + email and deliver it to the customer.
+
+    Returns (result, errors): `result` is the per-channel status string the UI
+    shows ("sent" / "failed" / "no email address on file"); `errors` are the
+    human-readable reasons to fold into the quote's last_send_error. Logs an
+    IntegrationEvent (commit=False) for the delivery history on every outcome.
+    Extracted verbatim from send_quote — the send path was one ~210-line block."""
+    to_email = (body.email or client.email or "").strip()
+    if "@" not in to_email:
+        return "no email address on file", ["no valid email address"]
+    try:
+        company = _company_info(db)
+        # Owner copy: default to the configured company email so the owner always
+        # gets a copy; an explicit "" from the UI skips it, an explicit address
+        # overrides the default.
+        owner_copy = (company.get("company_email") or "") if body.copy_to is None \
+            else (body.copy_to or "")
+        # Front-of-house photo proxy URL (when enabled + address). The PDF fetch
+        # and the email both skip gracefully if there's no Street View coverage.
+        photo_url = _property_photo_url(quote, db)
+        # Structured "what you asked for" rows from the linked request, shown on
+        # the PDF and email so the customer can verify the scope matches what
+        # they submitted (same source as the page).
+        service_details = build_service_details(db, quote)
+        pdf_bytes = QuotePDFService(
+            company_name=company["company_name"], company_email=company["company_email"] or "",
+            company_phone=company["company_phone"], brand_color=company["brand_color"],
+            terms=company["quote_terms"], logo_url=company.get("company_logo_url"),
+        ).generate_quote_pdf(
+            quote_number=quote.quote_number, client_name=client.name,
+            client_email=client.email or "", client_phone=client.phone,
+            line_items=_pdf_line_items(quote), subtotal=quote.subtotal,
+            tax_amount=quote.tax, discount_amount=quote.discount,
+            total_amount=quote.total, notes=quote.notes, expires_at=quote.valid_until,
+            quote_title=quote.title, property_photo_url=photo_url,
+            quote_link=quote_link, address=format_address(quote.address),
+            service_type=quote.service_type, customer_message=quote.customer_message,
+            service_details=service_details,
+        )
+        # For the EMAIL we only embed the photo when Google actually has imagery
+        # (a 404 proxy would show a broken image in mail clients).
+        email_photo_url = None
+        if photo_url:
+            try:
+                from services.property_media import has_street_view
+                from modules.settings.router import get_setting
+                if has_street_view(quote.address, get_setting(db, "google_maps_api_key")):
+                    email_photo_url = photo_url
+            except Exception:
+                email_photo_url = None
+        res = QuoteEmailService().send_quote_email(
+            to_email=to_email, client_name=client.name, quote_number=quote.quote_number,
+            # Authoritative first name from the client record; falls back to
+            # name-splitting inside the service when unset.
+            client_first_name=getattr(client, "first_name", None),
+            total_amount=float(quote.total or 0),
+            expires_at=fmt_long_date(quote.valid_until),
+            quote_link=quote_link, pdf_bytes=pdf_bytes, pdf_filename=f"{quote.quote_number}.pdf",
+            subject=(body.subject or "").strip() or None,
+            greeting=_safe_greeting(body.greeting),
+            # Send-time personal note wins; the quote's stored customer message
+            # is the default intro.
+            intro_message=(body.custom_message or "").strip()
+                          or (quote.customer_message or "").strip() or None,
+            quote_title=quote.title,
+            items=quote.items or [],
+            subtotal=quote.subtotal, tax=quote.tax, discount=quote.discount,
+            tax_rate=quote.tax_rate, address=format_address(quote.address),
+            bcc=owner_copy, property_photo_url=email_photo_url,
+            scope=quote.notes, service_type=quote.service_type,
+            service_details=service_details,
+        )
+        if res.get("success"):
+            _log_integration(db, entity_type="quote", entity_id=quote.id, org_id=quote.org_id, provider="email",
+                             action="send", status="ok", external_id=res.get("email_id"),
+                             recipient=to_email, commit=False)
+            return "sent", []
+        # Surface the REAL reason (not a generic string) so the owner/UI can tell
+        # an SMTP problem from a code bug.
+        real_error = str(res.get("error") or "email could not be sent")
+        logger.error(f"Quote {quote.id} email send failed: {real_error}")
+        _log_integration(db, entity_type="quote", entity_id=quote.id, org_id=quote.org_id, provider="email",
+                         action="send", status="failed", recipient=to_email,
+                         detail=real_error, commit=False)
+        return "failed", [real_error]
+    except Exception as e:
+        # PDF build / service construction can raise (e.g. the date drift bug);
+        # record the actual exception, not "email could not be sent".
+        logger.exception(f"Quote {quote.id} email send error")
+        _log_integration(db, entity_type="quote", entity_id=quote.id, org_id=quote.org_id, provider="email",
+                         action="send", status="failed", recipient=to_email,
+                         detail=str(e), commit=False)
+        return "failed", [str(e) or "email could not be sent"]
+
+
+def _send_quote_sms(db, quote, client, body, quote_link) -> tuple:
+    """Text the customer the public accept-link. Same (result, errors) contract
+    and best-effort logging as _send_quote_email. Extracted from send_quote."""
+    to_phone = (body.phone or client.phone or "").strip()
+    from utils.phone import is_deliverable_sms_number, normalize_e164
+    if not to_phone:
+        return "no phone number on file", ["no phone number"]
+    if not is_deliverable_sms_number(to_phone):
+        # Twilio would silently reject / bill for placeholder-labelled or
+        # malformed numbers. Fail cleanly here with a reason the UI can show.
+        _log_integration(db, entity_type="quote", entity_id=quote.id, org_id=quote.org_id, provider="sms",
+                         action="send", status="failed", recipient=to_phone,
+                         detail="invalid phone number (placeholder or bad format)", commit=False)
+        return "invalid phone number", ["invalid phone number"]
+    try:
+        from integrations.twilio_client import send_sms
+        from services.quote_email_service import build_quote_sms_body
+        company_name = _company_info(db).get("company_name")
+        msg = build_quote_sms_body(
+            quote=quote, client=client, company_name=company_name,
+            quote_link=quote_link, custom_message=body.custom_message,
+        )
+        sms_result = send_sms(to=(normalize_e164(to_phone) or to_phone), body=msg)
+        _log_integration(db, entity_type="quote", entity_id=quote.id, org_id=quote.org_id, provider="sms",
+                         action="send", status="ok", external_id=sms_result.get("sid"),
+                         recipient=to_phone, commit=False)
+        return "sent", []
+    except Exception as e:
+        logger.warning(f"Quote {quote.id} SMS send error: {e}")
+        _log_integration(db, entity_type="quote", entity_id=quote.id, org_id=quote.org_id, provider="sms",
+                         action="send", status="failed", recipient=to_phone,
+                         detail=str(e), commit=False)
+        return "failed", ["text message could not be sent"]
+
+
 @router.post("/{quote_id}/send", dependencies=[Depends(require_role("admin", "manager"))])
 def send_quote(quote_id: int, body: QuoteSendRequest = QuoteSendRequest(), db: Session = Depends(get_db),
                org_id: int = Depends(current_org_id)):
@@ -772,136 +903,16 @@ def send_quote(quote_id: int, body: QuoteSendRequest = QuoteSendRequest(), db: S
     results: dict = {}
     errors: list = []
 
+    # Delivery itself lives in the two channel helpers above (this route was a
+    # single ~210-line block); each returns its per-channel status + any errors
+    # and logs its own IntegrationEvent. The status-transition below is unchanged.
     if want_email:
-        to_email = (body.email or client.email or "").strip()
-        if "@" not in to_email:
-            results["email"] = "no email address on file"
-            errors.append("no valid email address")
-        else:
-            try:
-                company = _company_info(db)
-                # Owner copy: default to the configured company email so the
-                # owner always gets a copy; an explicit "" from the UI skips it,
-                # and an explicit address overrides the default.
-                owner_copy = (company.get("company_email") or "") if body.copy_to is None \
-                    else (body.copy_to or "")
-                # Front-of-house photo proxy URL (when enabled + address). The
-                # PDF fetch and the email both skip gracefully if there's no
-                # Street View coverage.
-                photo_url = _property_photo_url(quote, db)
-                # Structured "what you asked for" rows from the linked request,
-                # shown on the PDF and the email so the customer can verify the
-                # scope matches what they submitted (same source as the page).
-                service_details = build_service_details(db, quote)
-                pdf_bytes = QuotePDFService(
-                    company_name=company["company_name"], company_email=company["company_email"] or "",
-                    company_phone=company["company_phone"], brand_color=company["brand_color"],
-                    terms=company["quote_terms"], logo_url=company.get("company_logo_url"),
-                ).generate_quote_pdf(
-                    quote_number=quote.quote_number, client_name=client.name,
-                    client_email=client.email or "", client_phone=client.phone,
-                    line_items=_pdf_line_items(quote), subtotal=quote.subtotal,
-                    tax_amount=quote.tax, discount_amount=quote.discount,
-                    total_amount=quote.total, notes=quote.notes, expires_at=quote.valid_until,
-                    quote_title=quote.title, property_photo_url=photo_url,
-                    quote_link=quote_link, address=format_address(quote.address),
-                    service_type=quote.service_type, customer_message=quote.customer_message,
-                    service_details=service_details,
-                )
-                # For the EMAIL we only embed the photo when Google actually has
-                # imagery (a 404 proxy would show a broken image in mail clients).
-                email_photo_url = None
-                if photo_url:
-                    try:
-                        from services.property_media import has_street_view
-                        from modules.settings.router import get_setting
-                        if has_street_view(quote.address, get_setting(db, "google_maps_api_key")):
-                            email_photo_url = photo_url
-                    except Exception:
-                        email_photo_url = None
-                res = QuoteEmailService().send_quote_email(
-                    to_email=to_email, client_name=client.name, quote_number=quote.quote_number,
-                    # Authoritative first name from the client record; falls
-                    # back to name-splitting inside the service when unset.
-                    client_first_name=getattr(client, "first_name", None),
-                    total_amount=float(quote.total or 0),
-                    expires_at=fmt_long_date(quote.valid_until),
-                    quote_link=quote_link, pdf_bytes=pdf_bytes, pdf_filename=f"{quote.quote_number}.pdf",
-                    subject=(body.subject or "").strip() or None,
-                    greeting=_safe_greeting(body.greeting),
-                    # Send-time personal note wins; the quote's stored
-                    # customer message is the default intro.
-                    intro_message=(body.custom_message or "").strip()
-                                  or (quote.customer_message or "").strip() or None,
-                    quote_title=quote.title,
-                    items=quote.items or [],
-                    subtotal=quote.subtotal, tax=quote.tax, discount=quote.discount,
-                    tax_rate=quote.tax_rate, address=format_address(quote.address),
-                    bcc=owner_copy, property_photo_url=email_photo_url,
-                    scope=quote.notes, service_type=quote.service_type,
-                    service_details=service_details,
-                )
-                if res.get("success"):
-                    results["email"] = "sent"
-                    _log_integration(db, entity_type="quote", entity_id=quote.id, org_id=quote.org_id, provider="email",
-                                     action="send", status="ok", external_id=res.get("email_id"),
-                                     recipient=to_email, commit=False)
-                else:
-                    results["email"] = "failed"
-                    # Surface the REAL reason (not a generic string) so the
-                    # owner/UI can tell an SMTP problem from a code bug.
-                    real_error = str(res.get("error") or "email could not be sent")
-                    errors.append(real_error)
-                    logger.error(f"Quote {quote.id} email send failed: {real_error}")
-                    _log_integration(db, entity_type="quote", entity_id=quote.id, org_id=quote.org_id, provider="email",
-                                     action="send", status="failed", recipient=to_email,
-                                     detail=real_error, commit=False)
-            except Exception as e:
-                results["email"] = "failed"
-                # PDF build / service construction can raise (e.g. the date
-                # drift bug); record the actual exception, not "email could
-                # not be sent", and capture the traceback.
-                errors.append(str(e) or "email could not be sent")
-                logger.exception(f"Quote {quote.id} email send error")
-                _log_integration(db, entity_type="quote", entity_id=quote.id, org_id=quote.org_id, provider="email",
-                                 action="send", status="failed", recipient=to_email,
-                                 detail=str(e), commit=False)
+        results["email"], email_errors = _send_quote_email(db, quote, client, body, quote_link)
+        errors.extend(email_errors)
 
     if want_sms:
-        to_phone = (body.phone or client.phone or "").strip()
-        from utils.phone import is_deliverable_sms_number, normalize_e164
-        if not to_phone:
-            results["sms"] = "no phone number on file"
-            errors.append("no phone number")
-        elif not is_deliverable_sms_number(to_phone):
-            # Twilio would silently reject / bill for placeholder-labelled or
-            # malformed numbers. Fail cleanly here with a reason the UI can show.
-            results["sms"] = "invalid phone number"
-            errors.append("invalid phone number")
-            _log_integration(db, entity_type="quote", entity_id=quote.id, org_id=quote.org_id, provider="sms",
-                             action="send", status="failed", recipient=to_phone,
-                             detail="invalid phone number (placeholder or bad format)", commit=False)
-        else:
-            try:
-                from integrations.twilio_client import send_sms
-                from services.quote_email_service import build_quote_sms_body
-                company_name = _company_info(db).get("company_name")
-                msg = build_quote_sms_body(
-                    quote=quote, client=client, company_name=company_name,
-                    quote_link=quote_link, custom_message=body.custom_message,
-                )
-                sms_result = send_sms(to=(normalize_e164(to_phone) or to_phone), body=msg)
-                results["sms"] = "sent"
-                _log_integration(db, entity_type="quote", entity_id=quote.id, org_id=quote.org_id, provider="sms",
-                                 action="send", status="ok", external_id=sms_result.get("sid"),
-                                 recipient=to_phone, commit=False)
-            except Exception as e:
-                results["sms"] = "failed"
-                errors.append("text message could not be sent")
-                logger.warning(f"Quote {quote.id} SMS send error: {e}")
-                _log_integration(db, entity_type="quote", entity_id=quote.id, org_id=quote.org_id, provider="sms",
-                                 action="send", status="failed", recipient=to_phone,
-                                 detail=str(e), commit=False)
+        results["sms"], sms_errors = _send_quote_sms(db, quote, client, body, quote_link)
+        errors.extend(sms_errors)
 
     delivered = any(v == "sent" for v in results.values())
     # Delivery visibility: a failed send must not leave a silent "draft" —
@@ -2077,6 +2088,25 @@ def _pdf_line_items(quote: Quote) -> list:
         }
         for i in (quote.items or [])
     ]
+
+
+def _extract_recipient(ev) -> Optional[str]:
+    """The address/phone a delivery targeted. utils.integration_log stores it in
+    request_payload as "to <recipient>", so strip that prefix back off; tolerate a
+    bare note or an empty value."""
+    rp = (ev.request_payload or "").strip()
+    if rp.lower().startswith("to "):
+        return rp[3:].strip() or None
+    return rp or None
+
+
+def _ie_status(ev) -> str:
+    """Delivery outcome for a history row. IntegrationEvent.status is already
+    'ok' | 'failed'; infer from error_message only for a legacy row written
+    without a status."""
+    if ev.status:
+        return ev.status
+    return "failed" if ev.error_message else "ok"
 
 
 @router.get("/{quote_id}/delivery-history", dependencies=[Depends(require_role("admin", "manager", "viewer"))])
