@@ -13,8 +13,9 @@ from database.models import (
     Job, LeadIntake, Quote, Invoice, Conversation, Message,
     Opportunity, ContactEmail, ContactPhone, Activity,
 )
-from modules.auth.router import require_role, current_org_id
+from modules.auth.router import require_role, current_org_id, resolve_org_id
 from utils.phone import normalize_e164, phone_tail
+from services.data_doctor import run_data_scan
 
 log = logging.getLogger(__name__)
 
@@ -429,3 +430,13 @@ def scheduler_health():
         "summary": tick_health.summary(jobs),
         **detail,
     }
+
+
+@router.get("/data-health", dependencies=[Depends(require_role("admin", "manager"))])
+def data_health(db: Session = Depends(get_db), org_id: int = Depends(current_org_id)):
+    """Read-only, whole-schema data-quality scan (the sibling of the recurring
+    health scan). Scoped to the caller's workspace. Never writes — it reports
+    dangling references, missing-required drift, money anomalies, stuck
+    lifecycle rows, and duplicate contacts, each with a suggested fix. See
+    services/data_doctor.py and the data-doctor skill."""
+    return run_data_scan(db, resolve_org_id(org_id, db))
