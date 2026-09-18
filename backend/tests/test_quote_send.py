@@ -168,9 +168,10 @@ def test_send_with_string_valid_until_does_not_crash(quote_ctx):
     assert kwargs["expires_at"] == "July 13, 2026"
 
 
-def test_send_bccs_owner_copy_by_default(quote_ctx):
-    """The owner gets a blind copy of the quote email: with no explicit copy_to,
-    the configured company email is BCC'd."""
+def test_send_does_not_bcc_owner_by_default(quote_ctx):
+    """The owner is NO LONGER BCC'd on every quote by default (they asked to
+    stop getting the copies). With no explicit copy_to, no owner copy is sent —
+    even when a company email is configured."""
     db, c, q = quote_ctx
     with patch("modules.quoting.router.QuotePDFService") as PDF, \
          patch("modules.quoting.router.QuoteEmailService") as Email, \
@@ -182,7 +183,7 @@ def test_send_bccs_owner_copy_by_default(quote_ctx):
         Email.return_value.send_quote_email.return_value = {"success": True, "email_id": "bcc-default"}
         send_quote(q.id, QuoteSendRequest(channel="email"), db=db)
     _, kwargs = Email.return_value.send_quote_email.call_args
-    assert kwargs["bcc"] == "owner@co.com"
+    assert kwargs["bcc"] == ""
 
 
 def test_send_copy_to_override_and_explicit_skip(quote_ctx):

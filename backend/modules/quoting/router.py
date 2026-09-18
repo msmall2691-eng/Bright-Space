@@ -768,8 +768,9 @@ class QuoteSendRequest(BaseModel):
     # Optional per-send overrides for the email envelope.
     subject: Optional[str] = None
     greeting: Optional[str] = None
-    # Owner copy: blind-copy the business on the customer email. When omitted,
-    # the configured company email is used; pass "" to explicitly skip the copy.
+    # Owner copy: blind-copy the business on the customer email. OFF by default
+    # (the owner asked to stop being BCC'd on every quote). Pass an explicit
+    # address here to still send a copy; omitting it sends no owner copy.
     copy_to: Optional[str] = None
 
 
@@ -786,11 +787,13 @@ def _send_quote_email(db, quote, client, body, quote_link) -> tuple:
         return "no email address on file", ["no valid email address"]
     try:
         company = _company_info(db)
-        # Owner copy: default to the configured company email so the owner always
-        # gets a copy; an explicit "" from the UI skips it, an explicit address
-        # overrides the default.
-        owner_copy = (company.get("company_email") or "") if body.copy_to is None \
-            else (body.copy_to or "")
+        # Owner copy: OFF by default now. The owner stopped wanting a BCC of
+        # every quote in their inbox ("confusing getting the emails") — the
+        # in-app record (quote status flips to 'sent', the request shows
+        # 'quoted', and the IntegrationEvent below logs the delivery) is the
+        # source of truth that a quote went out. An explicit address in
+        # body.copy_to still sends a copy; omitted/blank means no owner copy.
+        owner_copy = (body.copy_to or "") if body.copy_to else ""
         # Front-of-house photo proxy URL (when enabled + address). The PDF fetch
         # and the email both skip gracefully if there's no Street View coverage.
         photo_url = _property_photo_url(quote, db)
