@@ -1556,7 +1556,27 @@ export default function Recurring() {
   // JobCreateModal loads properties itself, scoped to whichever client gets
   // picked inside it — no page-level preload needed (the old RecurringCreateModal
   // required properties up front for its own picker; this modal doesn't).
-  const openCreate = useCallback(() => setShowCreate(true), [])
+  const openCreate = useCallback(() => { setCreatePrefill(null); setShowCreate(true) }, [])
+
+  // A "do this next" handoff from elsewhere (e.g. a paid invoice → "Set up
+  // recurring") opens the create modal prefilled for that client/property via
+  // ?new=1&client=&property=&name=. One-shot: the params are cleared so a
+  // refresh doesn't reopen it.
+  const [createPrefill, setCreatePrefill] = useState(null)
+  useEffect(() => {
+    if (params.get('new') === '1') {
+      const cid = params.get('client')
+      const pid = params.get('property')
+      setCreatePrefill({
+        clientId: cid ? Number(cid) : undefined,
+        clientName: params.get('name') || undefined,
+        initialPropertyId: pid ? Number(pid) : null,
+      })
+      setShowCreate(true)
+      setParams({}, { replace: true })
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   const openSeries = (id) => setParams({ series: String(id) })
   const backToList = () => setParams({})
@@ -1773,8 +1793,11 @@ export default function Recurring() {
       {showCreate && (
         <JobCreateModal
           defaultRecurring
-          onClose={() => setShowCreate(false)}
-          onCreated={() => { setShowCreate(false); loadList() }}
+          clientId={createPrefill?.clientId}
+          clientName={createPrefill?.clientName}
+          initialPropertyId={createPrefill?.initialPropertyId ?? null}
+          onClose={() => { setShowCreate(false); setCreatePrefill(null) }}
+          onCreated={() => { setShowCreate(false); setCreatePrefill(null); loadList() }}
         />
       )}
     </>

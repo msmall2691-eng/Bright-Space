@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useParams, useNavigate, Link } from 'react-router-dom'
 import {
-  ArrowLeft, Building2, TrendingUp, Calendar, FileText, Receipt, CheckCircle, Send, Trash2,
+  ArrowLeft, Building2, TrendingUp, Calendar, FileText, Receipt, CheckCircle, Send, Trash2, Repeat,
 } from 'lucide-react'
 import { get, patch, post, del } from '../api'
 import { toast } from '../utils/toastBus'
@@ -180,6 +180,20 @@ export default function InvoiceDetail() {
                   className="w-full flex items-center justify-center gap-1.5 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white px-3 py-2 rounded-lg text-[12px] font-medium transition-colors">
                   <CheckCircle className="w-3.5 h-3.5" /> Mark paid
                 </button>
+              </div>
+            )}
+
+            {/* "Do this next": once it's paid, the last arrow in the pipeline —
+                turn a one-off into a repeating clean. This was the one hop with
+                no link at all. Prefills the recurring create for this client. */}
+            {canEdit() && inv.status === 'paid' && inv.client_id && (
+              <div className="border-t border-hairline pt-3">
+                <button
+                  onClick={() => navigate(`/recurring?new=1&client=${inv.client_id}${inv.client_name ? `&name=${encodeURIComponent(inv.client_name)}` : ''}`)}
+                  className="w-full flex items-center justify-center gap-1.5 bg-bg-2 hover:bg-bg-3 border border-hairline text-ink-2 px-3 py-2 rounded-lg text-[12px] font-medium transition-colors">
+                  <Repeat className="w-3.5 h-3.5" /> Set up recurring
+                </button>
+                <p className="mt-1.5 text-center text-[11px] text-ink-3">Turn this into a repeating clean.</p>
               </div>
             )}
 
