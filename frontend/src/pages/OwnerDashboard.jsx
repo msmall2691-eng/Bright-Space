@@ -160,7 +160,8 @@ function AiHealthTile() {
             {probe && !probe._fatal && (
               <div className="mb-2">
                 <ProbeResult name="Text completion" r={probe.completion} />
-                <ProbeResult name="Tool-using loop (assistant path)" r={probe.tool_loop} />
+                <ProbeResult name="Tool-using loop (simple)" r={probe.tool_loop} />
+                <ProbeResult name="Tool loop with reasoning (assistant path)" r={probe.tool_loop_reasoning} />
               </div>
             )}
             {probe?._fatal && <div className="mb-2 text-[12px] text-red-600 dark:text-red-300">Self-test request failed.</div>}

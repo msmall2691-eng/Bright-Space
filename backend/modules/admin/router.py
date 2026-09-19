@@ -491,13 +491,16 @@ def ai_health(probe: bool = False):
         "input_schema": {"type": "object", "properties": {}},
     }]
 
+    def _ping_exec(name, args):
+        from datetime import date
+        return {"pong": True, "count": 1, "as_of": date.today().isoformat()}
+
     def _tool_loop():
         used = []
 
         def _exec(name, args):
             used.append(name)
-            from datetime import date
-            return {"pong": True, "count": 1, "as_of": date.today().isoformat()}
+            return _ping_exec(name, args)
 
         txt = llm.run_tool_loop(
             system="Call the ping tool exactly once, then reply with exactly: DONE",
@@ -505,8 +508,28 @@ def ai_health(probe: bool = False):
             execute=_exec, tier="haiku", max_tokens=64, max_iters=3)
         return {"text": (txt or "")[:120], "tools_used": used}
 
+    def _tool_loop_reasoning():
+        # A reasoning-heavy tool call — the real assistant path. On a thinking
+        # model the model emits a reasoning step before the tool call, so this
+        # exercises the tool-result continuation that was failing. Runs at the
+        # standard tier (the tier the Workspace agents use).
+        used = []
+
+        def _exec(name, args):
+            used.append(name)
+            return _ping_exec(name, args)
+
+        txt = llm.run_tool_loop(
+            system=("Reason step by step. First work out which is larger and by "
+                    "how much: 17 times 23, or 400. Then call the ping tool once. "
+                    "Then reply with exactly: DONE"),
+            user_content="Do the reasoning, call ping, then say DONE.",
+            tools=_PING_TOOL, execute=_exec, tier="sonnet", max_tokens=512, max_iters=3)
+        return {"text": (txt or "")[:120], "tools_used": used}
+
     info["probes"] = {
         "completion": _probe(_completion),
         "tool_loop": _probe(_tool_loop),
+        "tool_loop_reasoning": _probe(_tool_loop_reasoning),
     }
     return info

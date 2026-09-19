@@ -289,7 +289,14 @@ def _gemini_tool_loop(system, user_content, tools, execute, model, max_tokens, m
             out = execute(c.name, dict(c.args or {}))
             parts.append(types.Part.from_function_response(
                 name=c.name, response=_gemini_fn_response(out)))
-        contents.append(types.Content(role="user", parts=parts))
+        # Tool results go back under the "tool" role, per the SDK's documented
+        # function-calling loop. "user" is tolerated by simple calls but breaks
+        # the continuation on thinking models (gemini-2.5/3.x): after the model
+        # emits a reasoning step + a function_call (carrying a thought
+        # signature), it expects the next turn to be a tool turn, and a "user"
+        # turn there is what made the Workspace assistant fail right after a
+        # tool ran.
+        contents.append(types.Content(role="tool", parts=parts))
     return (resp.text or "").strip() if resp else ""
 
 
@@ -349,5 +356,7 @@ def _gemini_stream_tool_loop(system, messages, tools, execute, model, max_tokens
                    "preview": json.dumps(out, default=str)[:120]}
             resp_parts.append(types.Part.from_function_response(
                 name=fc.name, response=_gemini_fn_response(out)))
-        contents.append(types.Content(role="user", parts=resp_parts))
+        # "tool" role, not "user" — see _gemini_tool_loop: a "user" tool turn
+        # breaks the continuation on thinking models after a function_call.
+        contents.append(types.Content(role="tool", parts=resp_parts))
     yield {"type": "final", "text": final_text, "tools_used": tools_used}
