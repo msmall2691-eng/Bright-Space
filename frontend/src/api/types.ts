@@ -5027,6 +5027,50 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/settings/sms-status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Sms Status
+         * @description Is Twilio configured, and where are the owner-alert destinations set?
+         *     Feeds the Integrations tab's Text messages card so an operator can see at a
+         *     glance why a lead text did or didn't go out.
+         */
+        get: operations["sms_status_api_settings_sms_status_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/settings/notifications": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Save Notifications
+         * @description Set who gets the owner alerts. Stored as AppSetting rows the alert code
+         *     prefers over the OWNER_ALERT_* env vars, so this takes effect without a
+         *     redeploy. A blank value clears the row (the env var, if any, takes over).
+         */
+        post: operations["save_notifications_api_settings_notifications_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/settings/general/logo": {
         parameters: {
             query?: never;
@@ -10017,6 +10061,13 @@ export interface components {
             custom_fields?: {
                 [key: string]: unknown;
             } | null;
+        };
+        /** OwnerAlertConfig */
+        OwnerAlertConfig: {
+            /** Owner Alert Phone */
+            owner_alert_phone?: string | null;
+            /** Owner Alert Email */
+            owner_alert_email?: string | null;
         };
         /** PriorityRequest */
         PriorityRequest: {
@@ -18755,6 +18806,59 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["GeneralSettings"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    sms_status_api_settings_sms_status_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    save_notifications_api_settings_notifications_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["OwnerAlertConfig"];
             };
         };
         responses: {

@@ -183,7 +183,8 @@ def _owner_notify_setting(db: Session, key: str, env_var: str) -> Optional[str]:
 def _send_owner_sms(db: Session, body: str, intake_id: int) -> bool:
     """Text the owner. True = handed to Twilio, False = not configured,
     raises on send failure (callers wrap — best-effort contract)."""
-    return _owner_alerts.send_owner_sms(db, body, ref=f"for intake={intake_id}", tag="booking")
+    return _owner_alerts.send_owner_sms(db, body, ref=f"for intake={intake_id}", tag="booking",
+                                        entity_type="intake", entity_id=intake_id)
 
 
 def _send_owner_email(db: Session, subject: str, lines: list, intake_id: int) -> bool:

@@ -348,6 +348,77 @@ def save_general_settings(config: GeneralSettings, db: Session = Depends(get_db)
     return {k: get_setting(db, k) for k in _GENERAL_KEYS}
 
 
+# ── Owner alerts + SMS status ────────────────────────────────────────────────
+# The owner-alert destinations (who gets a text/email when a lead or booking
+# comes in) live in AppSetting rows the app already prefers over the
+# OWNER_ALERT_* env vars — but nothing wrote those rows, so they were only ever
+# settable as env vars on Railway. This adds the UI's read/write path, plus a
+# status read the Integrations tab uses to show whether Twilio is configured and
+# where each destination is coming from (database / env / none).
+
+_EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+
+
+class OwnerAlertConfig(BaseModel):
+    owner_alert_phone: Optional[str] = None
+    owner_alert_email: Optional[str] = None
+
+
+def _setting_source(db: Session, key: str, env_var: str) -> str:
+    """Where the effective value comes from — the same precedence the alert
+    code uses (AppSetting row first, env var fallback)."""
+    import os
+    if (get_setting(db, key) or "").strip():
+        return "database"
+    if (os.getenv(env_var) or "").strip():
+        return "env"
+    return "none"
+
+
+@router.get("/sms-status", dependencies=[Depends(require_role("admin", "manager"))])
+def sms_status(db: Session = Depends(get_db)):
+    """Is Twilio configured, and where are the owner-alert destinations set?
+    Feeds the Integrations tab's Text messages card so an operator can see at a
+    glance why a lead text did or didn't go out."""
+    from integrations.twilio_client import configured as twilio_configured
+    from services.owner_alerts import owner_alert_phone, owner_alert_email
+    return {
+        "twilio_configured": twilio_configured(),
+        "owner_alert_phone": {
+            "value": owner_alert_phone(db) or "",
+            "source": _setting_source(db, "owner_alert_phone", "OWNER_ALERT_PHONE"),
+        },
+        "owner_alert_email": {
+            "value": owner_alert_email(db) or "",
+            "source": _setting_source(db, "owner_alert_email", "OWNER_ALERT_EMAIL"),
+        },
+    }
+
+
+@router.post("/notifications", dependencies=[Depends(require_role("admin"))])
+def save_notifications(config: OwnerAlertConfig, db: Session = Depends(get_db)):
+    """Set who gets the owner alerts. Stored as AppSetting rows the alert code
+    prefers over the OWNER_ALERT_* env vars, so this takes effect without a
+    redeploy. A blank value clears the row (the env var, if any, takes over)."""
+    if config.owner_alert_phone is not None:
+        raw = config.owner_alert_phone.strip()
+        if raw:
+            from services.sms_guard import nanp_number
+            norm = nanp_number(raw)
+            if not norm:
+                raise HTTPException(400, "Owner alert phone must be a US or Canada mobile number.")
+            set_setting(db, "owner_alert_phone", norm)
+        else:
+            set_setting(db, "owner_alert_phone", "")   # clear → fall back to env
+    if config.owner_alert_email is not None:
+        raw = config.owner_alert_email.strip()
+        if raw and not _EMAIL_RE.match(raw):
+            raise HTTPException(400, "Owner alert email must be a valid email address.")
+        set_setting(db, "owner_alert_email", raw)
+    db.commit()
+    return sms_status(db)
+
+
 # Logo upload. The logo is consumed by three unauthenticated surfaces — the
 # quote email (<img src>), the PDF (fetched over HTTP), and the public quote
 # page — so it must be servable WITHOUT a login. We store the bytes in
