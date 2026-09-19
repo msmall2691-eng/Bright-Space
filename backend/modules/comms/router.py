@@ -24,7 +24,7 @@ from sqlalchemy.orm import Session, joinedload, selectinload
 from database.db import get_db
 from modules.auth.router import require_role, current_org_id
 from database.models import Message, Conversation, Client, LeadIntake, ContactPhone
-from integrations.twilio_client import send_sms
+from services.sms_send import send_and_log
 from integrations.email import send_email as _send_email
 from utils.phone import digits_only as _digits_only, phone_tail as _phone_tail
 from utils.dates import add_business_minutes
@@ -653,7 +653,9 @@ def send_reply(conv_id: int, data: SendReplyRequest, db: Session = Depends(get_d
 
     try:
         if conv.channel == "sms":
-            result = send_sms(to=to_addr, body=data.body)
+            result = send_and_log(to=to_addr, body=data.body, action="comms",
+                                  entity_type="conversation", entity_id=conv.id,
+                                  org_id=getattr(conv, "org_id", None))
             from_addr = os.getenv("TWILIO_PHONE_NUMBER", "")
             status = result.get("status", "sent")
             external_id = result.get("sid")
@@ -922,7 +924,8 @@ def send_sms_message(data: SMSRequest, db: Session = Depends(get_db),
     to_normalized = _normalize_contact(data.to)
 
     try:
-        result = send_sms(to=to_normalized, body=data.body)
+        result = send_and_log(to=to_normalized, body=data.body, action="comms",
+                              org_id=org_id)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=f"Configuration error: {e}")
     except RuntimeError as e:
@@ -1281,7 +1284,7 @@ def _forward_inbound_sms_if_configured(*, from_number: str, client_name: Optiona
     forward_body = f"BrightBase SMS from {label}:\n{snippet}"
 
     try:
-        send_sms(to=target_normalized, body=forward_body)
+        send_and_log(to=target_normalized, body=forward_body, action="comms_forward")
         logger.info(f"[twilio] Forwarded inbound SMS from {from_number} to {target_normalized}")
     except Exception as e:
         # Don't surface to caller — failed forward shouldn't make Twilio retry.
@@ -1470,7 +1473,7 @@ def _forward_voicemail_sms(*, from_number: str, client_name: Optional[str], text
     if len(snippet) > 1200:
         snippet = snippet[:1200] + "…"
     try:
-        send_sms(to=target_normalized, body=f"Voicemail from {label}:\n{snippet}")
+        send_and_log(to=target_normalized, body=f"Voicemail from {label}:\n{snippet}", action="comms_forward")
         logger.info(f"[twilio-voice] Forwarded voicemail from {from_number} to {target_normalized}")
     except Exception as e:
         logger.warning(f"[twilio-voice] Voicemail forward to {target_normalized} failed: {e}")

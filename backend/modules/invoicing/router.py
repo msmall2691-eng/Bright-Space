@@ -355,7 +355,7 @@ class SendInvoiceRequest(BaseModel):
 def send_invoice(invoice_id: int, data: SendInvoiceRequest, db: Session = Depends(get_db)):
     """Send an invoice to a client via email and/or SMS."""
     from integrations.email import send_email, build_invoice_email, build_invoice_sms
-    from integrations.twilio_client import send_sms
+    from services.sms_send import send_and_log
 
     inv = db.query(Invoice).filter(Invoice.id == invoice_id).first()
     if not inv:
@@ -408,7 +408,9 @@ def send_invoice(invoice_id: int, data: SendInvoiceRequest, db: Session = Depend
         if data.custom_message:
             sms_body = data.custom_message + "\n\n" + sms_body
         try:
-            send_sms(to=to_phone, body=sms_body)
+            send_and_log(to=to_phone, body=sms_body, action="invoice",
+                         entity_type="invoice", entity_id=inv.id,
+                         org_id=getattr(inv, "org_id", None))
             results["sms"] = "sent"
             msg = Message(client_id=inv.client_id, channel="sms", direction="outbound",
                           from_addr=company_phone, to_addr=to_phone, body=sms_body, status="sent",

@@ -3108,14 +3108,16 @@ def text_client(
                  or "Your cleaner")
     msg_body = _compose_client_text(template, job, who_first, note)
 
-    from integrations.twilio_client import send_sms
+    from services.sms_send import send_and_log
     from modules.comms.router import (
         _normalize_contact, find_or_create_conversation, _apply_outbound,
     )
     from database.models import Message
     to = _normalize_contact(phone)
     try:
-        result = send_sms(to=to, body=msg_body)
+        result = send_and_log(to=to, body=msg_body, action="client_text",
+                              entity_type="job", entity_id=getattr(job, "id", 0) or 0,
+                              org_id=getattr(job, "org_id", None))
     except ValueError as e:
         raise HTTPException(status_code=409, detail="Texting isn't set up yet — tell the office.")
     except Exception:
