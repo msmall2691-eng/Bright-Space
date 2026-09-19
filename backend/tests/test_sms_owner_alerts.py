@@ -33,8 +33,7 @@ def _wipe():
         db.query(AppSetting).filter(AppSetting.key.in_(_KEYS)).delete(synchronize_session=False)
         db.query(IntegrationEvent).filter(
             IntegrationEvent.provider == "sms",
-            IntegrationEvent.action == "owner_alert",
-            IntegrationEvent.entity_id == 90001,
+            IntegrationEvent.action.in_(("owner_alert", "test")),
         ).delete(synchronize_session=False)
         db.commit()
     finally:
@@ -134,6 +133,48 @@ def test_owner_sms_failure_is_logged_and_reraises():
         assert "30034" in (rows[0].error_message or "")
     finally:
         db.close()
+
+
+def _twilio_configured():
+    return patch.multiple(
+        "integrations.twilio_client",
+        _TWILIO_ACCOUNT_SID="AC_test", _TWILIO_AUTH_TOKEN="tok_test",
+        _TWILIO_PHONE_NUMBER="+12075550100")
+
+
+def test_sms_test_send_success_is_logged():
+    with _twilio_configured(), patch("integrations.twilio_client.send_sms",
+                                     return_value={"sid": "SM_test", "status": "queued"}) as sms:
+        r = client.post("/api/settings/sms-test", json={"to": "207-503-3301"})
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["ok"] is True and body["to"] == "+12075033301"
+    assert sms.called and sms.call_args.kwargs["to"] == "+12075033301"
+    db = SessionLocal()
+    try:
+        row = (db.query(IntegrationEvent)
+               .filter(IntegrationEvent.provider == "sms",
+                       IntegrationEvent.action == "test",
+                       IntegrationEvent.status == "ok")
+               .order_by(IntegrationEvent.id.desc()).first())
+        assert row is not None and row.request_payload == "to +12075033301"
+    finally:
+        db.close()
+
+
+def test_sms_test_send_surfaces_twilio_error():
+    with _twilio_configured(), patch("integrations.twilio_client.send_sms",
+                                     side_effect=RuntimeError("Twilio API error: 30034 unregistered")):
+        r = client.post("/api/settings/sms-test", json={"to": "2075033301"})
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["ok"] is False and "30034" in body["error"]
+
+
+def test_sms_test_send_needs_a_number():
+    # No `to` and no owner_alert_phone configured → 400.
+    r = client.post("/api/settings/sms-test", json={})
+    assert r.status_code == 400
 
 
 def test_owner_sms_unconfigured_sends_nothing_and_logs_no_row():

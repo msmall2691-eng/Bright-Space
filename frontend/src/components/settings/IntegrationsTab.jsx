@@ -288,6 +288,8 @@ function SmsCard({ toast, active }) {
   const [form, setForm] = useState({ phone: '', email: '' })
   const [busy, setBusy] = useState(false)
   const [events, setEvents] = useState(null)
+  const [testing, setTesting] = useState(false)
+  const [testResult, setTestResult] = useState(null)
 
   const refresh = () => {
     setSt(s => ({ ...s, loading: true }))
@@ -316,6 +318,18 @@ function SmsCard({ toast, active }) {
     } catch (e) {
       toast(e?.detail || e?.message || 'Could not save', 'error')
     } finally { setBusy(false) }
+  }
+
+  const sendTest = async () => {
+    setTesting(true); setTestResult(null)
+    try {
+      const r = await post('/api/settings/sms-test', { to: form.phone.trim() })
+      setTestResult(r)
+      if (r.ok) toast('Test text sent')
+      refreshEvents()   // the attempt lands in the activity log
+    } catch (e) {
+      setTestResult({ ok: false, error: e?.detail || e?.message || 'Could not send test' })
+    } finally { setTesting(false) }
   }
 
   const twilioOk = !st.loading && st.twilio_configured
@@ -369,12 +383,26 @@ function SmsCard({ toast, active }) {
               className="w-full bg-bg border border-hairline rounded-lg px-3 py-2 text-sm text-ink placeholder-ink-3 focus:outline-hidden focus:border-blue-400" />
           </div>
         </div>
-        <div className="mt-3">
+        <div className="mt-3 flex flex-wrap items-center gap-2">
           <button onClick={save} disabled={busy || st.loading}
             className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-xs font-semibold transition-colors disabled:opacity-50">
             {busy ? 'Saving…' : 'Save alert destinations'}
           </button>
+          <button onClick={sendTest} disabled={testing || st.loading}
+            className="px-3 py-2 rounded-lg text-xs font-medium bg-bg-2 hover:bg-hairline text-ink-2 transition-colors disabled:opacity-50">
+            {testing ? 'Sending…' : 'Send test text'}
+          </button>
         </div>
+        {testResult && (
+          <div className="mt-2 flex items-start gap-1.5 text-[12px]">
+            <span className={`mt-[5px] h-1.5 w-1.5 shrink-0 rounded-full ${testResult.ok ? 'bg-emerald-500' : 'bg-red-500'}`} aria-hidden="true" />
+            <span className={testResult.ok ? 'text-ink-2' : 'text-ink'}>
+              {testResult.ok
+                ? `Test text sent to ${testResult.to}${testResult.status ? ` (${testResult.status})` : ''} — check that phone.`
+                : <>Couldn't send{testResult.to ? ` to ${testResult.to}` : ''}: <span className="text-red-600 break-words">{testResult.error}</span></>}
+            </span>
+          </div>
+        )}
       </div>
 
       {/* Recent SMS activity — the audit read, so "did a text go out?" is

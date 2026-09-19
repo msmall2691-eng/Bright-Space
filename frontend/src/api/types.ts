@@ -5071,6 +5071,31 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/settings/sms-test": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Send Test Sms
+         * @description Send one test text so an operator can verify Twilio end to end — and see
+         *     the EXACT provider error if it fails (e.g. A2P 10DLC rejection 30034),
+         *     instead of guessing from "no text arrived". Defaults to the owner-alert
+         *     phone. The attempt is written to the SMS audit log like any other send, so
+         *     it shows up in the recent-activity read too. Returns a structured result
+         *     (never a 500 on a Twilio rejection) so the UI can render the error.
+         */
+        post: operations["send_test_sms_api_settings_sms_test_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/settings/general/logo": {
         parameters: {
             query?: never;
@@ -10880,6 +10905,11 @@ export interface components {
         ServiceScopesUpdate: {
             /** Services */
             services: unknown[];
+        };
+        /** SmsTestBody */
+        SmsTestBody: {
+            /** To */
+            to?: string | null;
         };
         /** SquareConfig */
         SquareConfig: {
@@ -18861,6 +18891,39 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["OwnerAlertConfig"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    send_test_sms_api_settings_sms_test_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SmsTestBody"];
             };
         };
         responses: {
