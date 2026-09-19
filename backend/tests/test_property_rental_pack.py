@@ -77,6 +77,30 @@ def world():
     db.commit(); db.close()
 
 
+def test_reference_photos_ride_the_today_card_as_metadata(world):
+    """The job card carries reference-photo METADATA (id/url/caption) so the
+    cleaner can see the house is documented and tap straight to the gallery.
+    The image bytes still load only when the gallery opens (AuthImage)."""
+    db = SessionLocal()
+    try:
+        for i in range(2):
+            db.add(PropertyPhoto(property_id=world["prop"], org_id=1,
+                                 caption=f"Room {i}", content_type="image/jpeg",
+                                 size_bytes=3, data=b"jpg"))
+        db.commit()
+    finally:
+        db.close()
+    api = _as(_Cleaner(9911, "CT-pk-1"))
+    row = [j for j in api.get("/api/crew/my-day").json()["today"] if j["id"] == world["job"]][0]
+    assert len(row["photos"]) == 2
+    for ph in row["photos"]:
+        assert ph["url"].startswith(f"/api/crew/properties/{world['prop']}/photos/")
+        assert isinstance(ph["id"], int)
+    # An offer (open job) must NOT carry photos — identity/reference stays off
+    # the board until the job is won.
+    assert "photos" in row
+
+
 def test_wifi_on_assigned_cards_stripped_from_offers(world):
     try:
         api = _as(_Cleaner(9911, "CT-pk-1"))
