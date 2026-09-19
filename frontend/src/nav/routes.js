@@ -29,6 +29,10 @@ import {
  *               renders nothing.
  *  - `pageLabel` — breadcrumb/switcher label for a leaf whose sidebar label is
  *               a category name (Money → "Billing").
+ *  - `secondary` — a rarely-used tab that SubNav folds under a quiet "More"
+ *               instead of the everyday strip. Still reachable, still routed;
+ *               just out of the way (Routes/Turnovers/Calendar sync, Deals/
+ *               Quote funnel, Tidy Up).
  *  - `roles`  — when present, only those roles see the item (matches the
  *               backend's gates — e.g. /api/dashboard/owner 403s viewers, so
  *               viewers don't get a link that only errors). Role gates live on
@@ -75,8 +79,8 @@ export const NAV_SECTIONS = [
           // The "said yes, still needs booking" set — accepted quotes not yet
           // converted to a scheduled job. Same page, pre-filtered.
           { to: '/quotes/accepted', icon: FileCheck, label: 'Accepted', keywords: 'accepted won ready to schedule book' },
-          { to: '/deals',           icon: Rows3,     label: 'Deals', keywords: 'sales pipeline opportunities board' },
-          { to: '/funnel',          icon: Filter,    label: 'Quote funnel', keywords: 'sales conversion close rate' },
+          { to: '/deals',           icon: Rows3,     label: 'Deals', secondary: true, keywords: 'sales pipeline opportunities board' },
+          { to: '/funnel',          icon: Filter,    label: 'Quote funnel', secondary: true, keywords: 'sales conversion close rate' },
         ],
       },
       {
@@ -88,7 +92,7 @@ export const NAV_SECTIONS = [
           // property merge tool reachable only from one buried link in
           // Settings → General. It cleans up clients and properties, so it
           // belongs beside them — /api/cleanup is admin/manager-only.
-          { to: '/cleanup', icon: GitMerge, label: 'Tidy Up', roles: ['admin', 'manager'],
+          { to: '/cleanup', icon: GitMerge, label: 'Tidy Up', roles: ['admin', 'manager'], secondary: true,
             keywords: 'duplicates merge cleanup tidy dedupe' },
         ],
       },
@@ -101,13 +105,13 @@ export const NAV_SECTIONS = [
           // Routes group recurring houses into one sub's standing day. Office-only:
           // every /api/routes endpoint is admin/manager (the crew side lives in
           // the crew app, on /api/crew/my-routes).
-          { to: '/routes',    icon: Route,    label: 'Routes', roles: ['admin', 'manager'], keywords: 'block standing subcontractor owner day' },
+          { to: '/routes',    icon: Route,    label: 'Routes', roles: ['admin', 'manager'], secondary: true, keywords: 'block standing subcontractor owner day' },
           // Guest changeover days staffed as a batch. Office-only, like the
           // rest of this family — the crew side is the ordinary open board.
-          { to: '/turnovers', icon: CalendarClock, label: 'Turnovers', roles: ['admin', 'manager'], keywords: 'saturday changeover str airbnb window price step' },
+          { to: '/turnovers', icon: CalendarClock, label: 'Turnovers', roles: ['admin', 'manager'], secondary: true, keywords: 'saturday changeover str airbnb window price step' },
           // Renamed from "Sync" — plain enough in context, but "Calendar sync"
           // reads unambiguously on first glance for a non-technical owner.
-          { to: '/sync',      icon: Radar,    label: 'Calendar sync', roles: ['admin', 'manager', 'viewer'], keywords: 'google ical feeds turnovers' },
+          { to: '/sync',      icon: Radar,    label: 'Calendar sync', roles: ['admin', 'manager', 'viewer'], secondary: true, keywords: 'google ical feeds turnovers' },
         ],
       },
       // Money is invoices + payments now — quotes moved to the Leads hub, so
