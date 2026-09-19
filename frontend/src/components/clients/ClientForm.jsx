@@ -76,9 +76,7 @@ export function ClientForm({
         {/* Phone Numbers Management */}
         {selected && (
           <div className="pt-2">
-            <div className="text-[10px] font-semibold uppercase tracking-widest text-ink-3 mb-2 flex items-center gap-2">
-              <div className="h-px flex-1 bg-bg-2" /><span>Phone Numbers</span><div className="h-px flex-1 bg-bg-2" />
-            </div>
+            <div className="text-[10px] font-semibold uppercase tracking-widest text-ink-3 mb-2">Phone numbers</div>
 
             {/* Existing phone numbers */}
             <div className="space-y-1.5 mb-3">
@@ -121,16 +119,14 @@ export function ClientForm({
                 <option value="home">Home</option>
               </select>
               <button onClick={addPhoneNumber} disabled={!newPhoneNumber.trim()}
-                className="w-full bg-emerald-600 hover:bg-emerald-700 disabled:bg-bg-2 disabled:text-ink-3 text-white px-3 py-2 rounded-lg text-[12px] font-medium transition-colors">
-                Add Phone Number
+                className="w-full bg-bg-2 hover:bg-bg-2 border border-hairline-2 text-ink-2 hover:text-ink disabled:opacity-50 disabled:text-ink-3 px-3 py-2 rounded-lg text-[12px] font-medium transition-colors">
+                Add phone number
               </button>
             </div>
           </div>
         )}
         <div className="pt-1">
-          <div className="text-[10px] font-semibold uppercase tracking-widest text-ink-3 mb-3 flex items-center gap-2">
-            <div className="h-px flex-1 bg-bg-2" /><span>Service Address</span><div className="h-px flex-1 bg-bg-2" />
-          </div>
+          <div className="text-[10px] font-semibold uppercase tracking-widest text-ink-3 mb-3">Service address</div>
           {ADDRESS_FIELDS.map(({ label, key }) => (
             <div key={key} className="mb-3">
               <label className="block text-[11px] text-ink-3 mb-1 font-medium">{label}</label>
@@ -156,9 +152,7 @@ export function ClientForm({
               + Add separate billing address
             </button>
           ) : (<>
-            <div className="text-[10px] font-semibold uppercase tracking-widest text-ink-3 mb-3 flex items-center gap-2">
-              <div className="h-px flex-1 bg-bg-2" /><span>Billing Address</span><div className="h-px flex-1 bg-bg-2" />
-            </div>
+            <div className="text-[10px] font-semibold uppercase tracking-widest text-ink-3 mb-3">Billing address</div>
             {BILLING_FIELDS.map(({ label, key }) => (
               <div key={key} className="mb-3">
                 <label className="block text-[11px] text-ink-3 mb-1 font-medium">{label}</label>
@@ -215,7 +209,7 @@ export function ClientForm({
       <div className="p-6 pb-bottomnav sm:pb-6 border-t border-hairline flex gap-3">
         {selected && (
           <button onClick={() => deleteClient(selected.id)}
-            className="px-4 py-2 text-[13px] text-red-500 hover:text-red-600 border border-red-200 hover:border-red-300 rounded-lg transition-colors font-medium">
+            className="px-4 py-2 text-[13px] text-red-500 hover:text-red-600 border border-hairline hover:border-red-300 rounded-lg transition-colors font-medium">
             Delete
           </button>
         )}

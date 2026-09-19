@@ -411,7 +411,7 @@ const RequestCard = ({ intake, onViewDetails, onCreateQuote, onConvertToClient, 
         || intake.custom_fields.arrival_window
         || (Array.isArray(intake.custom_fields.photos) && intake.custom_fields.photos.length)
       ) && (
-        <div className="text-[11px] text-ink-2 bg-bg border border-hairline rounded p-2 space-y-0.5">
+        <div className="text-[11px] text-ink-2 border-t border-hairline pt-2 mt-1 space-y-0.5">
           <div className="text-[10px] font-semibold uppercase tracking-wide text-ink-3 mb-1">Booking essentials</div>
           {intake.custom_fields.arrival_window && (
             <div><span className="text-ink-3">Arrival:</span> {ARRIVAL_WINDOW_LABELS[intake.custom_fields.arrival_window] || intake.custom_fields.arrival_window}</div>
@@ -453,7 +453,7 @@ const RequestCard = ({ intake, onViewDetails, onCreateQuote, onConvertToClient, 
                 {intake.custom_fields.photos.slice(0, 3).map((src, i) => (
                   <a key={i} href={src} target="_blank" rel="noopener noreferrer">
                     <img src={src} alt={`Attachment ${i + 1}`}
-                      className="w-16 h-16 object-cover rounded border border-blue-200" />
+                      className="w-16 h-16 object-cover rounded border border-hairline" />
                   </a>
                 ))}
               </div>
