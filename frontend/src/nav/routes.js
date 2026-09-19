@@ -39,10 +39,16 @@ import {
  * no entry here and no breadcrumb of its own; `/pipeline` now just redirects
  * to that URL (see App.jsx) for old bookmarks/links.
  */
+// The rows are ordered to read top-to-bottom like the business's own line —
+// a lead comes in, becomes a client, gets scheduled, gets invoiced — with
+// Crew (who does the work) after it and Settings in the footer:
+//   Home · Messages · Leads · Clients · Schedule · Money · Crew
+// Labels use ONE word per concept (owner's "stop the confusing doubles"):
+// "Leads" (not Requests/Intake), "Crew" (not Marketplace/Bench). Routes are
+// unchanged — only the sidebar labels and order moved — so every old URL and
+// bookmark still resolves.
 export const NAV_SECTIONS = [
   {
-    // No group labels. With seven rows they were pure noise (and the owner
-    // said so) — "Sales / Customers / Operations / Team" are gone.
     label: null,
     items: [
       {
@@ -56,6 +62,36 @@ export const NAV_SECTIONS = [
       // All /api/comms endpoints (and the crew-chat office side) are
       // admin/manager-only. No tabs — Messages is a leaf.
       { to: '/comms', icon: MessageSquare, label: 'Messages', roles: ['admin', 'manager'], keywords: 'sms email inbox texts crew chat' },
+      {
+        // The start of the line: everything coming IN — website requests, the
+        // quotes you send, and the ones they accepted. "Leads" is the one word
+        // for it (was "Requests"/"Sales"); the incoming list is still the
+        // landing tab. Quotes/Accepted/Deals/Funnel stay a tab away. Gated
+        // admin/manager (the whole intake/sales surface already is).
+        to: '/requests', icon: Inbox, label: 'Leads', roles: ['admin', 'manager'],
+        tabs: [
+          { to: '/requests',        icon: Inbox,     label: 'New', keywords: 'requests sales leads intake website inbox incoming' },
+          { to: '/quotes',          icon: FileText,  label: 'Quotes', keywords: 'quotes estimates pricing proposals' },
+          // The "said yes, still needs booking" set — accepted quotes not yet
+          // converted to a scheduled job. Same page, pre-filtered.
+          { to: '/quotes/accepted', icon: FileCheck, label: 'Accepted', keywords: 'accepted won ready to schedule book' },
+          { to: '/deals',           icon: Rows3,     label: 'Deals', keywords: 'sales pipeline opportunities board' },
+          { to: '/funnel',          icon: Filter,    label: 'Quote funnel', keywords: 'sales conversion close rate' },
+        ],
+      },
+      {
+        to: '/clients', icon: Users, label: 'Clients',
+        tabs: [
+          { to: '/clients',    icon: Users, label: 'Clients', keywords: 'customers contacts' },
+          { to: '/properties', icon: Home,  label: 'Properties', keywords: 'homes rentals sites str' },
+          // Tidy Up was orphaned: a working duplicate-client / duplicate-
+          // property merge tool reachable only from one buried link in
+          // Settings → General. It cleans up clients and properties, so it
+          // belongs beside them — /api/cleanup is admin/manager-only.
+          { to: '/cleanup', icon: GitMerge, label: 'Tidy Up', roles: ['admin', 'manager'],
+            keywords: 'duplicates merge cleanup tidy dedupe' },
+        ],
+      },
       {
         to: '/schedule', icon: Calendar, label: 'Schedule',
         tabs: [
@@ -74,60 +110,22 @@ export const NAV_SECTIONS = [
           { to: '/sync',      icon: Radar,    label: 'Calendar sync', roles: ['admin', 'manager', 'viewer'], keywords: 'google ical feeds turnovers' },
         ],
       },
+      // Money is invoices + payments now — quotes moved to the Leads hub, so
+      // this stays a leaf with no strip (Invoicing owns its own internal views).
+      { to: '/billing', icon: Receipt, label: 'Money', pageLabel: 'Billing', keywords: 'money invoices payments billing dunning' },
       {
-        // THE BENCH GOT A FRONT DOOR. It had shipped as five surfaces bolted
-        // onto other pages — applicants and the roster on Crew, open jobs on
-        // Schedule, standing work on Routes, money on Payouts — and the first
-        // question the owner asked about it was where to find it. Crew and
-        // Payouts move here from Settings rather than being listed twice:
-        // with the employee model gone they are not "set up the people who
-        // work here" any more, they are how the bench is run day to day.
-        to: '/marketplace', icon: Store, label: 'Marketplace',
+        // Who does the work — the subcontractor bench, one word: "Crew" (was
+        // "Marketplace", which read as jargon). Overview (waiting-on-you / open
+        // jobs / the front door), the Roster (add cleaners, vetting), and
+        // Payouts a tab each. Only office roles; a solo owner not dispatching to
+        // subs can mostly ignore it.
+        to: '/marketplace', icon: HardHat, label: 'Crew', roles: ['admin', 'manager'],
         tabs: [
           { to: '/marketplace', icon: Store,      label: 'Overview', roles: ['admin', 'manager'], keywords: 'bench subcontractors marketplace open jobs applicants apply' },
-          { to: '/crew',        icon: HardHat,    label: 'Crew', roles: ['admin', 'manager'], keywords: 'team cleaners subs bench roster invite applicants vetting documents insurance' },
+          { to: '/crew',        icon: HardHat,    label: 'Roster', roles: ['admin', 'manager'], keywords: 'crew team cleaners subs bench roster invite applicants vetting documents insurance' },
           { to: '/payroll',     icon: DollarSign, label: 'Payouts', roles: ['admin', 'manager'], keywords: 'pay subcontractors payouts ledger 1099 stripe direct deposit' },
         ],
       },
-      {
-        to: '/clients', icon: Users, label: 'Clients',
-        tabs: [
-          { to: '/clients',    icon: Users, label: 'Clients', keywords: 'customers contacts' },
-          { to: '/properties', icon: Home,  label: 'Properties', keywords: 'homes rentals sites str' },
-          // Tidy Up was orphaned: a working duplicate-client / duplicate-
-          // property merge tool reachable only from one buried link in
-          // Settings → General. It cleans up clients and properties, so it
-          // belongs beside them — /api/cleanup is admin/manager-only.
-          { to: '/cleanup', icon: GitMerge, label: 'Tidy Up', roles: ['admin', 'manager'],
-            keywords: 'duplicates merge cleanup tidy dedupe' },
-        ],
-      },
-      {
-        // Was "Sales", landing on Deals — but the owner's #1 friction was that
-        // incoming requests were impossible to find: the word never appeared in
-        // the sidebar and Requests sat two clicks deep under "Sales". This row
-        // is now the Requests hub — the incoming → quote → accepted journey in
-        // one place: it SAYS "Requests", lands on the incoming-lead list, and
-        // keeps Quotes, Accepted, Deals and the Quote funnel a tab away. Quotes
-        // MOVED here from "Money" (its own /quotes route) rather than being
-        // listed in both — a page in two places teaches you to distrust the nav.
-        // Gated admin/manager because the whole intake/sales surface already is
-        // (/api/intake 403s a viewer), so a Requests-first landing can't be a
-        // viewer's — Deals, previously all-roles via this row, now inherits that.
-        to: '/requests', icon: Inbox, label: 'Requests', roles: ['admin', 'manager'],
-        tabs: [
-          { to: '/requests',        icon: Inbox,     label: 'Requests', keywords: 'sales leads intake website inbox incoming new' },
-          { to: '/quotes',          icon: FileText,  label: 'Quotes', keywords: 'quotes estimates pricing proposals' },
-          // The "said yes, still needs booking" set — accepted quotes not yet
-          // converted to a scheduled job. Same page, pre-filtered.
-          { to: '/quotes/accepted', icon: FileCheck, label: 'Accepted', keywords: 'accepted won ready to schedule book' },
-          { to: '/deals',           icon: Rows3,     label: 'Deals', keywords: 'sales pipeline opportunities board' },
-          { to: '/funnel',          icon: Filter,    label: 'Quote funnel', keywords: 'sales conversion close rate' },
-        ],
-      },
-      // Money is invoices + payments now — quotes moved to the Requests hub, so
-      // this stays a leaf with no strip (Invoicing owns its own internal views).
-      { to: '/billing', icon: Receipt, label: 'Money', pageLabel: 'Billing', keywords: 'money invoices payments billing dunning' },
     ],
   },
 ]
