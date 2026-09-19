@@ -60,6 +60,7 @@ from modules.search import router as search_router
 from modules.geo.router import router as geo_router
 from modules.settings.router import router as settings_router
 from modules.views.router import router as views_router
+from modules.notes.router import router as notes_router
 from modules.auth.router import router as auth_router, require_role
 from modules.admin.router import router as admin_router
 from modules.ai.router import router as ai_router
@@ -229,6 +230,7 @@ app.include_router(search_router, prefix="/api/search", tags=["search"])
 app.include_router(geo_router, prefix="/api/geo", tags=["geo"])
 app.include_router(settings_router, prefix="/api/settings", tags=["settings"])
 app.include_router(views_router, prefix="/api/views", tags=["views"])
+app.include_router(notes_router, prefix="/api/notes", tags=["notes"])
 app.include_router(admin_router, prefix="/api/admin", tags=["admin"])
 app.include_router(ai_router, prefix="/api/ai", tags=["ai"])
 app.include_router(dashboard_router, prefix="/api/dashboard", tags=["dashboard"])

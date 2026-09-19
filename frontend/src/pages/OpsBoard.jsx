@@ -44,6 +44,7 @@ import { ErrorState } from '../components/ui'
 import { TAG_TONE, SEV_DOT, SEV_LABEL, STAT_TONE, INT_DOT, SEV_ORDER } from '../components/board/tokens'
 import BoardAssistant from '../components/board/BoardAssistant'
 import HomeScheduleCalendar from '../components/board/HomeScheduleCalendar'
+import StickyNotes from '../components/board/StickyNotes'
 import ProposalsQueue, { relTime } from '../components/board/ProposalsQueue'
 import AgentHelp from '../components/board/AgentHelp'
 import { MoneyToday, CrewToday, FeedHealth, RecurringHealth } from '../components/board/SnapshotBoxes'
@@ -872,6 +873,7 @@ export default function OpsBoard() {
                 </div>
 
                 <div className="flex flex-col gap-4">
+                  <StickyNotes />
                   <CrewToday snap={snapshot.crew} />
                   {canComms && <CrewActivity navigate={navigate} />}
                   <ProposalsQueue />
