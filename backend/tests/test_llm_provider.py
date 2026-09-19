@@ -132,7 +132,39 @@ def test_run_tool_loop_gemini_executes_then_answers(monkeypatch):
         out = llm.run_tool_loop(system="s", user_content="how's business?",
                                 tools=_TOOLS, execute=lambda n, a: calls.append(n) or {"clients": 3})
     assert out == "Here is your summary."
-    assert calls == ["get_business_snapshot"]
+    assert calls == ["get_business_snapshot"]  # the tool actually ran
+
+
+def test_run_tool_loop_gemini_sends_tool_result_under_tool_role(monkeypatch):
+    """The tool result must go back under role='tool', not 'user'. A 'user'
+    turn there breaks the continuation on thinking models (gemini-2.5/3.x)
+    after the model emits a reasoning step + a function_call — the bug that
+    made the Workspace assistant fail right after a tool ran."""
+    monkeypatch.setenv("LLM_PROVIDER", "gemini")
+    seen = []
+
+    class _Recording:
+        def __init__(self):
+            self._turns = [
+                SimpleNamespace(
+                    function_calls=[SimpleNamespace(name="get_business_snapshot", args={})],
+                    candidates=[SimpleNamespace(content=SimpleNamespace(role="model", parts=[]))],
+                    text=None),
+                SimpleNamespace(function_calls=[], text="ok"),
+            ]
+            self.models = SimpleNamespace(generate_content=self._gen)
+
+        def _gen(self, **kw):
+            seen.append(kw.get("contents"))
+            return self._turns.pop(0)
+
+    with patch.object(llm, "_gemini", return_value=_Recording()):
+        llm.run_tool_loop(system="s", user_content="how's business?",
+                          tools=_TOOLS, execute=lambda n, a: {"clients": 3})
+    # The second request carries the tool result — under the tool role.
+    roles = [getattr(c, "role", None) for c in seen[1]]
+    assert "tool" in roles
+    assert "user" not in roles[1:]  # only the original prompt is a user turn
 
 
 def test_gemini_fn_response_is_json_safe():
