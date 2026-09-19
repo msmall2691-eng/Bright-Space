@@ -80,13 +80,13 @@ export function ThreadHeader({
               onAssign={onAssign}
             />
           )}
+          {/* Dot+word when resolved (emerald dot + "Done"), plain secondary
+              otherwise — no resting tinted fill (owner veto). */}
           <button onClick={onToggleStatus}
-            className={`text-[12px] font-semibold px-3.5 py-2 rounded-xl transition-all flex items-center gap-1.5 ${
-              detail.status === 'resolved'
-                ? 'bg-emerald-50 dark:bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-100 dark:hover:bg-emerald-500/25 ring-1 ring-emerald-200 dark:ring-emerald-500/30'
-                : 'bg-bg-2 text-ink-2 hover:bg-emerald-50 dark:hover:bg-emerald-500/15 hover:text-emerald-700 dark:hover:text-emerald-300'
-            }`}>
-            <CheckCircle2 className="w-3.5 h-3.5" />
+            className="text-[12px] font-medium px-3 py-2 rounded-md border border-hairline-2 bg-panel text-ink-2 hover:bg-bg-2 transition-colors flex items-center gap-1.5">
+            {detail.status === 'resolved'
+              ? <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" aria-hidden="true" />
+              : <CheckCircle2 className="w-3.5 h-3.5" />}
             {detail.status === 'resolved' ? 'Done' : 'Mark done'}
           </button>
           {/* Contact/details: on mobile this switches to the contact pane

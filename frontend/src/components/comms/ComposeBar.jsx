@@ -49,26 +49,33 @@ export function ComposeBar({
     <div className="border-t border-hairline bg-panel px-4 pt-2.5 pb-safe">
       {/* Mode toggle — wraps on narrow phones so the AI button + flash never clip */}
       <div className="flex flex-wrap items-center gap-1.5 gap-y-2 mb-2">
-        <button onClick={() => setNoteMode(false)}
-          className={`inline-flex items-center gap-1.5 text-[12px] font-semibold px-3 py-1.5 rounded-lg transition-all ${
-            !noteMode ? 'bg-indigo-600 text-white shadow-xs' : 'bg-bg-2 text-ink-3 hover:bg-bg-2'
-          }`}>
-          <Send className="w-3 h-3" /> Reply
-        </button>
-        {allowNotes && (
-          <button onClick={() => setNoteMode(true)}
-            className={`inline-flex items-center gap-1.5 text-[12px] font-semibold px-3 py-1.5 rounded-lg transition-all ${
-              noteMode ? 'bg-amber-500 text-white shadow-xs' : 'bg-bg-2 text-ink-3 hover:bg-bg-2'
+        {/* Reply/Note is a neutral segmented control, not two filled pills —
+            note mode carries its amber meaning as selected-state text, not a
+            resting fill (owner veto). */}
+        <div className="inline-flex items-center gap-0.5 bg-bg-2 rounded-lg p-0.5">
+          <button onClick={() => setNoteMode(false)}
+            className={`inline-flex items-center gap-1.5 text-[12px] font-medium px-3 py-1.5 rounded-md transition-colors ${
+              !noteMode ? 'bg-panel text-ink shadow-xs' : 'text-ink-3 hover:text-ink-2'
             }`}>
-            <StickyNote className="w-3 h-3" /> Note
+            <Send className="w-3 h-3" /> Reply
           </button>
-        )}
+          {allowNotes && (
+            <button onClick={() => setNoteMode(true)}
+              className={`inline-flex items-center gap-1.5 text-[12px] font-medium px-3 py-1.5 rounded-md transition-colors ${
+                noteMode ? 'bg-panel text-amber-600 dark:text-amber-400 shadow-xs' : 'text-ink-3 hover:text-ink-2'
+              }`}>
+              <StickyNote className="w-3 h-3" /> Note
+            </button>
+          )}
+        </div>
 
         {onDraftAI && !noteMode && (
           <button onClick={onDraftAI} disabled={draftingAI}
             title="Let AI draft a reply — you can edit before sending"
-            className="inline-flex items-center gap-1.5 text-[12px] font-semibold px-3 py-1.5 rounded-lg border border-violet-200 dark:border-violet-500/30 bg-violet-50 dark:bg-violet-500/15 text-violet-700 dark:text-violet-300 hover:bg-violet-100 dark:hover:bg-violet-500/25 disabled:opacity-50 transition-all">
-            {draftingAI ? <Loader2 className="w-3 h-3 animate-spin" /> : <Sparkles className="w-3 h-3" />}
+            className="inline-flex items-center gap-1.5 text-[12px] font-medium px-3 py-1.5 rounded-md border border-hairline-2 bg-panel text-ink-2 hover:bg-bg-2 disabled:opacity-50 transition-colors">
+            {draftingAI
+              ? <Loader2 className="w-3 h-3 animate-spin text-violet-500" />
+              : <Sparkles className="w-3 h-3 text-violet-500" />}
             Draft with AI
           </button>
         )}
@@ -76,9 +83,12 @@ export function ComposeBar({
         <div className="flex-1" />
 
         {flash && (
-          <span className={`text-[11px] font-semibold px-2.5 py-1 rounded-lg animate-fade-in ${
-            flash.ok ? 'bg-emerald-50 text-emerald-700' : 'bg-red-50 text-red-700'
-          }`}>{flash.msg}</span>
+          <span className={`inline-flex items-center gap-1.5 text-[11px] font-medium animate-fade-in ${
+            flash.ok ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400'
+          }`}>
+            <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${flash.ok ? 'bg-emerald-500' : 'bg-red-500'}`} aria-hidden="true" />
+            {flash.msg}
+          </span>
         )}
       </div>
 
@@ -130,10 +140,8 @@ export function ComposeBar({
             ? 'Write an internal note (not sent to customer)...'
             : `Reply via ${(detail.channel || 'sms').toUpperCase()}...`
           }
-          className={`flex-1 border rounded-xl px-4 py-2.5 text-base sm:text-[13px] resize-none focus:outline-hidden focus:ring-2 transition-all leading-relaxed ${
-            noteMode
-              ? 'border-amber-200 bg-amber-50/50 focus:ring-amber-500/20 placeholder-amber-400'
-              : 'border-hairline bg-bg focus:ring-indigo-500/20 focus:bg-panel placeholder-ink-3'
+          className={`flex-1 border border-hairline bg-bg rounded-xl px-4 py-2.5 text-base sm:text-[13px] resize-none placeholder-ink-3 focus:outline-hidden focus:ring-2 focus:bg-panel transition-all leading-relaxed ${
+            noteMode ? 'focus:ring-amber-500/20' : 'focus:ring-indigo-500/20'
           }`}
           onKeyDown={e => { if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') onSend() }} />
         <button onClick={onSend} disabled={sending || !reply.trim()}
