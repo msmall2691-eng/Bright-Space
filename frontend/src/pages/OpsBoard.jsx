@@ -47,7 +47,7 @@ import HomeScheduleCalendar from '../components/board/HomeScheduleCalendar'
 import StickyNotes from '../components/board/StickyNotes'
 import QuickActions from '../components/board/QuickActions'
 import ProposalsQueue, { relTime } from '../components/board/ProposalsQueue'
-import AgentHelp from '../components/board/AgentHelp'
+import NovaChat from '../components/board/NovaChat'
 import { MoneyToday, CrewToday, FeedHealth, RecurringHealth } from '../components/board/SnapshotBoxes'
 import { MoneyTrend, LeadFunnel } from '../components/board/Charts'
 import BenchDigest from '../components/BenchDigest'
@@ -863,7 +863,7 @@ export default function OpsBoard() {
                       <LeadFunnel snap={snapshot.lead_funnel} />
                     </WidgetGroup>
                   )}
-                  <AgentHelp navigate={navigate} />
+                  <NovaChat navigate={navigate} />
                   {secondarySections.map(({ section, items }) => (
                     <Section key={section.key} section={section} items={items}
                       clearedSet={cleared} onToggle={toggleCleared}
