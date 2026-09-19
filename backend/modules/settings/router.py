@@ -219,10 +219,73 @@ DEFAULT_QUOTE_POLICIES = (
 )
 
 
-def quote_policies_text(db: Session) -> str:
-    """The configured service policies, or the sensible default when unset."""
-    v = get_setting(db, "quote_policies")
-    return v if (v is not None and v.strip()) else DEFAULT_QUOTE_POLICIES
+# STR turnovers and commercial jobs need different prep notes than a home
+# clean. On an Airbnb turnover the guest isn't the customer, so residential
+# lines ("pick up your personal items and clutter", "secure pets during the
+# visit") read wrong — which is exactly the mismatch the owner flagged on a
+# real STR quote. The defaults below are therefore service-specific; a saved
+# override (per-service, or the legacy global one for home cleans) still wins.
+DEFAULT_QUOTE_POLICIES_STR = (
+    "Please share the lockbox code, smart-lock PIN, or key location, along with "
+    "the checkout and next check-in times, so we can turn the unit in the window "
+    "between guests.\n"
+    "Let us know where fresh linens, cleaning supplies, and restock items (paper "
+    "goods, toiletries, coffee) are kept — or if you'd like us to provide them.\n"
+    "Tell us about any on-site pets and any owner closets or areas that are "
+    "off-limits.\n"
+    "Need to change a turnover date? Give us as much notice as you can — "
+    "back-to-back bookings can make same-day changes impossible.\n"
+    "Laundry isn't included in the base turnover price; on-site or off-site "
+    "laundry is confirmed once we know the number of loads."
+)
+
+DEFAULT_QUOTE_POLICIES_COMMERCIAL = (
+    "Please confirm access for the scheduled time — a key, code, lockbox, or an "
+    "after-hours on-site contact.\n"
+    "Let us know which areas are in scope and any rooms that stay locked or "
+    "off-limits.\n"
+    "Point us to where supplies and consumables are stored, or let us know if "
+    "we're providing them.\n"
+    "Need to cancel or reschedule? Please give us at least 24 hours' notice; "
+    "same-day changes may be subject to a fee.\n"
+    "Invoicing is per the terms of your service agreement."
+)
+
+# service_type -> its per-service override setting key (a saved value wins).
+_POLICY_KEYS = {
+    "str": "quote_policies_str",
+    "commercial": "quote_policies_commercial",
+    "residential": "quote_policies_residential",
+}
+# service_type -> its default block. Home-clean variants (residential, deep,
+# move_in_out, unknown) share the residential default.
+_DEFAULT_POLICIES_BY_TYPE = {
+    "str": DEFAULT_QUOTE_POLICIES_STR,
+    "commercial": DEFAULT_QUOTE_POLICIES_COMMERCIAL,
+}
+
+
+def quote_policies_text(db: Session, service_type: Optional[str] = None) -> str:
+    """The customer-facing prep policies for a quote, resolved by service type.
+
+    Order of precedence:
+      1. a per-service override the operator saved (quote_policies_<type>),
+      2. the legacy single global override — but only for home cleans, since
+         its wording is residential and applying it to an STR/commercial quote
+         is the bug we're fixing,
+      3. the service-appropriate default.
+    """
+    st = (service_type or "").strip().lower()
+    key = _POLICY_KEYS.get(st)
+    if key:
+        v = get_setting(db, key)
+        if v is not None and v.strip():
+            return v
+    if st not in ("str", "commercial"):
+        v = get_setting(db, "quote_policies")
+        if v is not None and v.strip():
+            return v
+    return _DEFAULT_POLICIES_BY_TYPE.get(st, DEFAULT_QUOTE_POLICIES)
 
 
 # Default terms shown at the bottom of every customer-facing quote surface

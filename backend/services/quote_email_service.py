@@ -286,15 +286,16 @@ class QuoteEmailService:
             return DEFAULT_QUOTE_TERMS
 
     @staticmethod
-    def _policies_setting():
-        """The configured service policies, or the shared professional default
-        when unset — so every quote email carries them. Best-effort."""
+    def _policies_setting(service_type=None):
+        """The customer prep policies for this quote's service type, or the
+        service-appropriate default when unset — so every quote email carries
+        the right ones. Best-effort."""
         try:
             from database.db import SessionLocal
             from modules.settings.router import quote_policies_text
             db = SessionLocal()
             try:
-                return quote_policies_text(db)
+                return quote_policies_text(db, service_type)
             finally:
                 db.close()
         except Exception:
@@ -586,7 +587,10 @@ class QuoteEmailService:
                     {"label": str(d.get("label") or ""), "value": str(d.get("value") or "")}
                     for d in (service_details or []) if isinstance(d, dict) and d.get("label") and d.get("value")
                 ],
-                policies=self._policy_lines(self.quote_policies),
+                # Resolve prep policies for THIS quote's service type (an STR
+                # turnover gets turnover notes, not residential ones), not the
+                # generic block cached at construction.
+                policies=self._policy_lines(self._policies_setting(service_type)),
                 property_photo_url=(property_photo_url or "").strip() or None,
             )
 

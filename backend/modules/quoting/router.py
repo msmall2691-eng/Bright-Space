@@ -790,7 +790,7 @@ def _send_quote_email(db, quote, client, body, quote_link) -> tuple:
     if "@" not in to_email:
         return "no email address on file", ["no valid email address"]
     try:
-        company = _company_info(db)
+        company = _company_info(db, quote.service_type)
         # Owner copy: OFF by default now. The owner stopped wanting a BCC of
         # every quote in their inbox ("confusing getting the emails") — the
         # in-app record (quote status flips to 'sent', the request shows
@@ -809,6 +809,9 @@ def _send_quote_email(db, quote, client, body, quote_link) -> tuple:
             company_name=company["company_name"], company_email=company["company_email"] or "",
             company_phone=company["company_phone"], brand_color=company["brand_color"],
             terms=company["quote_terms"], logo_url=company.get("company_logo_url"),
+            # Service-aware prep policies, so the emailed PDF matches the public
+            # page and the downloadable PDF (this used to send none at all).
+            policies=company.get("quote_policies"),
         ).generate_quote_pdf(
             quote_number=quote.quote_number, client_name=client.name,
             client_email=client.email or "", client_phone=client.phone,
@@ -1452,9 +1455,11 @@ def _quote_by_token(token: str, db: Session) -> Quote:
     return quote
 
 
-def _company_info(db: Session) -> dict:
+def _company_info(db: Session, service_type: Optional[str] = None) -> dict:
     """Customer-facing business identity: Settings rows first, env fallback.
-    Powers the public quote page footer and the quote email."""
+    Powers the public quote page footer and the quote email. ``service_type``
+    picks the right customer prep policies (an STR turnover gets turnover
+    notes, not the residential "pick up your clutter / secure pets" block)."""
     from modules.settings.router import get_setting, quote_policies_text, quote_terms_text
     return {
         "company_name": get_setting(db, "company_name") or os.getenv("COMPANY_NAME", DEFAULT_COMPANY_NAME),
@@ -1464,9 +1469,10 @@ def _company_info(db: Session) -> dict:
         # Estimate / non-binding language. Always present — the owner's text
         # when set, else the shared default (public page, email, PDF alike).
         "quote_terms": quote_terms_text(db),
-        # Customer-facing service policies (pickup, access, 24h cancellation…).
-        # Always present — falls back to a sensible professional default.
-        "quote_policies": quote_policies_text(db),
+        # Customer-facing service policies (pickup, access, 24h cancellation…),
+        # resolved for this quote's service type. Always present — falls back to
+        # the service-appropriate default.
+        "quote_policies": quote_policies_text(db, service_type),
         # Header band color for every customer-facing quote surface (page,
         # email, PDF). Defaults to the email's original slate.
         "brand_color": get_setting(db, "brand_color") or "#1f2937",
@@ -1478,7 +1484,7 @@ def _company_info(db: Session) -> dict:
 
 def _public_quote_dict(quote: Quote, db: Session) -> dict:
     """Client-facing serialization for the public accept page."""
-    company = _company_info(db)
+    company = _company_info(db, quote.service_type)
     # The customer opening this page IS the client on the quote — the
     # token was sent to their inbox/phone. Surface the name/email we
     # already have so the accept form prefills instead of asking them
@@ -1918,7 +1924,7 @@ def public_quote_pdf(token: str, download: bool = False, db: Session = Depends(g
     """
     quote = _quote_by_token(token, db)
     client = db.query(Client).filter(Client.id == quote.client_id).first()
-    company = _company_info(db)
+    company = _company_info(db, quote.service_type)
     pdf_bytes = QuotePDFService(
         company_name=company["company_name"], company_email=company["company_email"] or "",
         company_phone=company["company_phone"], brand_color=company["brand_color"],
