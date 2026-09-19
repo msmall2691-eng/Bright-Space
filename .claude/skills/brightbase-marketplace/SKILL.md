@@ -216,15 +216,21 @@ stripped; the customer's *name and street address* were not. An offer carries
 
 ---
 
-## Known gaps, as of migration 104
+## Known gaps, as of migration 117
 
-Real, verified, unfixed. Do not rediscover them from scratch.
+Real, verified. Do not rediscover them from scratch. Items struck through are
+DONE — left here so the next session doesn't re-chase a closed gap.
 
-- **The subcontractor agreement has no text.** `CURRENT_AGREEMENT_VERSION`
-  points at no document, no endpoint, no screen. Subs tap "sign" on a version
-  string — while Part 2's "a written contract defining the relationship" is one
-  of the criteria this arrangement most needs. **Highest-value open item, and
-  it is a writing task, not a coding one.**
+- ~~**The subcontractor agreement has no text.**~~ **DONE — migration 105 +
+  `backend/agreements/`.** The full Independent Contractor Agreement lives at
+  `backend/agreements/subcontractor_<version>.md` (current `2026-10`), served
+  by `services/sub_agreement.py` (`current()`/`load()`), read and signed on the
+  crew app's My File tab (`CrewMyFile.jsx` renders the text with a read-to-the-
+  end gate), and every acceptance records the version + a **SHA-256 of the
+  exact bytes shown** + IP + timestamp (`SubAgreement`). It's enforced:
+  `blocking_requirements` gates claiming on `has_current_agreement`. Bumping the
+  text is a new `subcontractor_<version>.md` file plus
+  `CURRENT_AGREEMENT_VERSION` — everyone re-accepts, cleanly.
 - ~~**A sub cannot bring a helper** — Part 1 #4.~~ **DONE — migration 107.**
   A sub adds their own helper to their own job: a name, optionally a phone,
   and nothing else. No account, no vetting file, no rate, no payout, and no
@@ -237,8 +243,14 @@ Real, verified, unfixed. Do not rediscover them from scratch.
   printed on it. Consider pushing W-9 collection to a payments rail that also
   files the 1099-NECs you owe (the threshold is $2,000 from the 2026 tax year,
   not the $600 everyone remembers — `services/bench.form_1099_threshold`).
-- **Posting a job notifies nobody.** No push, no SMS. The bench finds out by
-  opening the app, and everyone sees the same unranked list.
+- ~~**Posting a job notifies nobody.**~~ **DONE.** `services/crew_notify.py`
+  `notify_jobs_posted` pushes "new job on the board" (web push, SMS fallback)
+  to every *cleared* sub on the false→true post edge, fired post-commit from
+  `update_job` — no tick (R1). One notification per batch, town+day+rate only
+  (no house), mute-aware. **Migration 117** made it audience-aware: a targeted
+  offer (`Job.offer_audience`) pings only the invited cleaners, the same set the
+  board reveals it to. Still open under this: everyone still sees the same
+  *unranked* list — ranking (below) is the unbuilt part.
 - **No service radius, rate floor, capability tags or reliability signals.**
   A design for all four exists; the ranking must remain a *recommendation
   ordering on the existing pull*.
