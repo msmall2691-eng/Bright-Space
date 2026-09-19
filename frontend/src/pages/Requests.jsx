@@ -4,6 +4,7 @@ import {
   MoreVertical, Plus, Search, FileText, Archive, AlertCircle,
   Home, Building2, Wind, Zap, Mail, Phone, MapPin, X, MessageSquare, Globe,
   Trash2, MessageCircle, Inbox, ChevronRight, Copy, UserPlus, ArrowUpRight,
+  SlidersHorizontal, ChevronDown,
 } from 'lucide-react'
 import { get, post, patch, del } from '../api'
 import { displayContactName } from '../utils/display'
@@ -396,9 +397,10 @@ const RequestCard = ({ intake, onViewDetails, onCreateQuote, onConvertToClient, 
         </p>
       )}
 
-      {/* /book "essentials" — surfaced from LeadIntake.custom_fields.
-          Only rendered if any of the six on-site fields came in, so a
-          contact-form lead doesn't grow an empty block. */}
+      {/* On-site booking details (arrival, entry, listing, parking, pets,
+          focus, notes, photos) live in the detail drawer now — the card stays
+          a triage surface. This one quiet line signals they're on file and
+          opens the drawer, which renders the full block. */}
       {intake.custom_fields && (
         intake.custom_fields.entry_method
         || intake.custom_fields.parking_notes
@@ -411,55 +413,11 @@ const RequestCard = ({ intake, onViewDetails, onCreateQuote, onConvertToClient, 
         || intake.custom_fields.arrival_window
         || (Array.isArray(intake.custom_fields.photos) && intake.custom_fields.photos.length)
       ) && (
-        <div className="text-[11px] text-ink-2 bg-bg border border-hairline rounded p-2 space-y-0.5">
-          <div className="text-[10px] font-semibold uppercase tracking-wide text-ink-3 mb-1">Booking essentials</div>
-          {intake.custom_fields.arrival_window && (
-            <div><span className="text-ink-3">Arrival:</span> {ARRIVAL_WINDOW_LABELS[intake.custom_fields.arrival_window] || intake.custom_fields.arrival_window}</div>
-          )}
-          {intake.custom_fields.listing_url && (
-            <div><span className="text-ink-3">Listing:</span>{' '}
-              <a href={intake.custom_fields.listing_url} target="_blank" rel="noopener noreferrer" className="text-indigo-600 hover:underline break-all">
-                {intake.custom_fields.listing_url}
-              </a>
-            </div>
-          )}
-          {intake.custom_fields.turnover_day && (
-            <div><span className="text-ink-3">Turnover day:</span> {intake.custom_fields.turnover_day}</div>
-          )}
-          {intake.custom_fields.pets_allowed && (
-            <div><span className="text-ink-3">Pets allowed:</span> {intake.custom_fields.pets_allowed}</div>
-          )}
-          {intake.custom_fields.entry_method && (
-            <div><span className="text-ink-3">Entry:</span> {intake.custom_fields.entry_method.replace('-', ' ')}</div>
-          )}
-          {intake.custom_fields.parking_notes && (
-            <div><span className="text-ink-3">Parking:</span> {intake.custom_fields.parking_notes}</div>
-          )}
-          {intake.custom_fields.pets_detail && (
-            <div><span className="text-ink-3">Pets:</span> {intake.custom_fields.pets_detail}</div>
-          )}
-          {intake.custom_fields.focus_areas && intake.custom_fields.focus_areas.length > 0 && (
-            <div><span className="text-ink-3">Focus:</span> {intake.custom_fields.focus_areas.join(', ')}</div>
-          )}
-          {intake.custom_fields.special_instructions && (
-            <div className="line-clamp-2"><span className="text-ink-3">Notes:</span> {intake.custom_fields.special_instructions}</div>
-          )}
-          {/* Customer-attached photos (custom_fields.photos, inline data URIs).
-              Up to 3 thumbnails; click opens the full image in a new tab. */}
-          {Array.isArray(intake.custom_fields.photos) && intake.custom_fields.photos.length > 0 && (
-            <div>
-              <span className="text-ink-3">Photos ({intake.custom_fields.photos.length}):</span>
-              <div className="flex gap-1.5 mt-1">
-                {intake.custom_fields.photos.slice(0, 3).map((src, i) => (
-                  <a key={i} href={src} target="_blank" rel="noopener noreferrer">
-                    <img src={src} alt={`Attachment ${i + 1}`}
-                      className="w-16 h-16 object-cover rounded border border-blue-200" />
-                  </a>
-                ))}
-              </div>
-            </div>
-          )}
-        </div>
+        <button onClick={() => onViewDetails(intake)}
+          className="mt-1 inline-flex items-center gap-1 text-[11px] font-medium text-ink-3 hover:text-indigo-600 transition-colors">
+          Booking details
+          <ChevronRight className="w-3 h-3" />
+        </button>
       )}
     </div>
   )
@@ -475,6 +433,7 @@ export default function Requests() {
   const [selectedServiceType, setSelectedServiceType] = useState('all')
   const [selectedPriority, setSelectedPriority] = useState('all')
   const [searchTerm, setSearchTerm] = useState('')
+  const [filtersOpen, setFiltersOpen] = useState(false)
   // "Possible duplicates" view — leads sharing a name or address with another
   // lead (but not already collapsed by contact). Lets the operator bulk-select
   // and archive the leftover cruft the auto-merge can't safely collapse.
@@ -712,19 +671,34 @@ export default function Requests() {
         >
           <SubNav className="mb-3" />
 
-          {/* Search */}
-          <div className="relative mb-4">
-            <Search className="w-4 h-4 text-ink-3 absolute left-3 top-1/2 -translate-y-1/2" />
-            <input
-              type="text"
-              placeholder="Search by name, email, phone, or address..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full pl-10 pr-4 py-2 border border-hairline rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent text-sm"
-            />
+          {/* Search + a single Filters disclosure — the saved views, the three
+              selects and the duplicates toggle fold behind it so the header
+              reads calm, matching Home. A dot marks when any filter is
+              narrowing the list, so nothing hides silently. */}
+          <div className="flex items-center gap-2 mb-4">
+            <div className="relative flex-1">
+              <Search className="w-4 h-4 text-ink-3 absolute left-3 top-1/2 -translate-y-1/2" />
+              <input
+                type="text"
+                placeholder="Search by name, email, phone, or address..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="w-full pl-10 pr-4 py-2 border border-hairline rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent text-sm"
+              />
+            </div>
+            <button onClick={() => setFiltersOpen(v => !v)} aria-expanded={filtersOpen}
+              className="flex shrink-0 items-center gap-1.5 px-3 py-2 rounded-lg text-sm border border-hairline bg-panel text-ink-2 hover:bg-bg-2 transition-colors">
+              <SlidersHorizontal className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">Filters</span>
+              {(selectedStatus !== 'all' || selectedServiceType !== 'all' || selectedPriority !== 'all' || showDuplicatesOnly) && (
+                <span className="w-1.5 h-1.5 rounded-full bg-indigo-500" aria-hidden="true" />
+              )}
+              <ChevronDown className={`w-3 h-3 transition-transform ${filtersOpen ? 'rotate-180' : ''}`} />
+            </button>
           </div>
 
           {/* Filters */}
+          {filtersOpen && (
           <div className="flex flex-wrap gap-3 items-center">
             {/* Saved view tabs — presets of the filters below (plus the
                 duplicates toggle); the selects stay for ad-hoc tweaks. */}
@@ -783,6 +757,7 @@ export default function Requests() {
               </button>
             )}
           </div>
+          )}
         </PageHero>
       </div>
 
