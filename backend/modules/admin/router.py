@@ -1,6 +1,7 @@
 import csv
 import io
 import logging
+import os
 from typing import Optional, List
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
 from sqlalchemy.orm import Session
@@ -440,3 +441,72 @@ def data_health(db: Session = Depends(get_db), org_id: int = Depends(current_org
     lifecycle rows, and duplicate contacts, each with a suggested fix. See
     services/data_doctor.py and the data-doctor skill."""
     return run_data_scan(db, resolve_org_id(org_id, db))
+
+
+@router.get("/ai-health", dependencies=[Depends(require_role("admin", "manager"))])
+def ai_health(probe: bool = False):
+    """Which LLM is BrightBase actually using, and does it work?
+
+    Reports the active provider (``LLM_PROVIDER``), whether that provider's key
+    is present, and the model id resolved for each tier. With ``?probe=1`` it
+    runs two live self-tests and surfaces the REAL provider exception (admin
+    only) instead of the calm end-user fallback the chat shows:
+
+      * ``completion`` — a one-shot text call (basic provider connectivity).
+      * ``tool_loop``  — a bounded tool-using loop, the path the Workspace
+        agents use. This is where a tool-result-continuation bug shows up, so
+        it reproduces the "assistant ran into a problem" failure directly.
+
+    Admin/manager only; the probe spends a few tokens, so it is opt-in. Never
+    writes and never returns a key value — only whether one is set."""
+    from services import llm
+
+    info = {
+        "provider": llm.provider(),
+        "available": llm.available(),
+        "anthropic_key_present": bool(os.getenv("ANTHROPIC_API_KEY")),
+        "gemini_key_present": bool(os.getenv("GEMINI_API_KEY")),
+        "models": {t: llm.model_for_tier(t) for t in ("haiku", "sonnet", "opus")},
+    }
+    if not probe:
+        return info
+
+    def _probe(fn):
+        try:
+            return {"ok": True, "result": fn()}
+        except Exception as e:  # noqa: BLE001 — surfacing the real error is the point
+            return {"ok": False, "error_type": type(e).__name__, "error": str(e)[:800]}
+
+    def _completion():
+        txt = llm.complete_text(
+            system="You are a health check. Reply with exactly: OK",
+            user_content="Reply with OK.", tier="haiku", max_tokens=16)
+        return (txt or "")[:120]
+
+    # A trivial tool whose result carries a date + number, so the tool-result
+    # continuation (the failing step) is exercised the same way a real tool is.
+    _PING_TOOL = [{
+        "name": "ping",
+        "description": "Health-check tool. Call it once, then reply DONE.",
+        "input_schema": {"type": "object", "properties": {}},
+    }]
+
+    def _tool_loop():
+        used = []
+
+        def _exec(name, args):
+            used.append(name)
+            from datetime import date
+            return {"pong": True, "count": 1, "as_of": date.today().isoformat()}
+
+        txt = llm.run_tool_loop(
+            system="Call the ping tool exactly once, then reply with exactly: DONE",
+            user_content="Ping, then say DONE.", tools=_PING_TOOL,
+            execute=_exec, tier="haiku", max_tokens=64, max_iters=3)
+        return {"text": (txt or "")[:120], "tools_used": used}
+
+    info["probes"] = {
+        "completion": _probe(_completion),
+        "tool_loop": _probe(_tool_loop),
+    }
+    return info
