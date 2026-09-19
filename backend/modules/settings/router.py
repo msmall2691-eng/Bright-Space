@@ -419,6 +419,49 @@ def save_notifications(config: OwnerAlertConfig, db: Session = Depends(get_db)):
     return sms_status(db)
 
 
+class SmsTestBody(BaseModel):
+    to: Optional[str] = None
+
+
+@router.post("/sms-test", dependencies=[Depends(require_role("admin"))])
+def send_test_sms(body: SmsTestBody, db: Session = Depends(get_db)):
+    """Send one test text so an operator can verify Twilio end to end — and see
+    the EXACT provider error if it fails (e.g. A2P 10DLC rejection 30034),
+    instead of guessing from "no text arrived". Defaults to the owner-alert
+    phone. The attempt is written to the SMS audit log like any other send, so
+    it shows up in the recent-activity read too. Returns a structured result
+    (never a 500 on a Twilio rejection) so the UI can render the error."""
+    from services.sms_guard import nanp_number
+    raw = (body.to or "").strip()
+    if not raw:
+        from services.owner_alerts import owner_alert_phone
+        raw = owner_alert_phone(db) or ""
+    to = nanp_number(raw)
+    if not to:
+        raise HTTPException(400, "Enter a US or Canada mobile number to test (or set the owner alert phone first).")
+
+    from integrations.twilio_client import configured as twilio_configured
+    if not twilio_configured():
+        return {"ok": False, "error": "Twilio isn't configured on the server "
+                "(TWILIO_ACCOUNT_SID / TWILIO_AUTH_TOKEN / TWILIO_PHONE_NUMBER)."}
+
+    from integrations.twilio_client import send_sms
+    from utils.integration_log import log_integration_event
+    msg = "BrightBase test — your text messaging is working. No action needed."
+    try:
+        res = send_sms(to=to, body=msg)
+    except Exception as e:
+        log_integration_event(db, entity_type="settings", entity_id=0,
+                              provider="sms", action="test", status="failed",
+                              recipient=to, detail=str(e), commit=True)
+        return {"ok": False, "to": to, "error": str(e)}
+    log_integration_event(db, entity_type="settings", entity_id=0,
+                          provider="sms", action="test", status="ok",
+                          recipient=to, external_id=(res or {}).get("sid"), commit=True)
+    return {"ok": True, "to": to, "sid": (res or {}).get("sid"),
+            "status": (res or {}).get("status")}
+
+
 # Logo upload. The logo is consumed by three unauthenticated surfaces — the
 # quote email (<img src>), the PDF (fetched over HTTP), and the public quote
 # page — so it must be servable WITHOUT a login. We store the bytes in

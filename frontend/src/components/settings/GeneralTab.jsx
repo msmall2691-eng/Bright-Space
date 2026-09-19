@@ -15,6 +15,7 @@ const ACCENT_SWATCH = {
   rose: '#e11d48', cyan: '#0891b2',
 }
 import ServiceScopesEditor from './ServiceScopesEditor'
+import DataHealthCard from './DataHealthCard'
 
 /** General settings tab — Appearance + Company Info + Logo + Service
  *  Descriptions + Property Photos & Data + Auto-Sync & Automation +
@@ -389,6 +390,8 @@ export default function GeneralTab({ toast, active, automation, dangerZone }) {
           {generalSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle className="w-4 h-4" />}
           Save Changes
         </button>
+
+        <DataHealthCard />
 
         {dangerZone}
       </div>
