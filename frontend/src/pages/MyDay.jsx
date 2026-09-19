@@ -11,7 +11,7 @@
  * week-pay summary), not four.
  */
 import { useCallback, useEffect, useState } from 'react'
-import { MapPin, LogOut, RefreshCw, CalendarDays, Clock, Car, DollarSign, CheckCircle2, CalendarRange, CircleUserRound, Sparkles, BookOpen, MessageSquare, Sun, CalendarClock, CalendarOff, Smartphone, CalendarPlus, ShieldCheck, Landmark } from 'lucide-react'
+import { MapPin, LogOut, RefreshCw, CalendarDays, Clock, Car, DollarSign, CheckCircle2, CalendarRange, CircleUserRound, Sparkles, BookOpen, MessageSquare, Sun, CalendarClock, CalendarOff, Smartphone, CalendarPlus, ShieldCheck, Landmark, Lightbulb } from 'lucide-react'
 import { get, post as apiPost, patch as apiPatch, del as apiDel, logout } from '../api'
 import { toast } from '../utils/toastBus'
 import { EmptyState, ErrorState, Skeleton } from '../components/ui'
@@ -161,6 +161,28 @@ function DayGlance({ week, openCount, unread, onTab }) {
         </button>
       ))}
     </div>
+  )
+}
+
+/** Two rotating pro cleaning tips on the crew home — a quiet, always-there way
+ *  to train the team without a meeting. Text rides the my-day payload
+ *  (data.tips), so no extra fetch on a rural connection. */
+function ProTips({ tips }) {
+  if (!tips || tips.length === 0) return null
+  return (
+    <section>
+      <SectionLabel className="mb-2 flex items-center gap-1.5">
+        <Lightbulb className="w-3.5 h-3.5" /> Pro tips
+      </SectionLabel>
+      <div className="space-y-2.5">
+        {tips.map((t, i) => (
+          <div key={i} className="rounded-xl border border-hairline bg-panel px-4 py-3">
+            <p className="text-[13.5px] font-semibold text-ink">{t.title}</p>
+            <p className="mt-1 text-[13px] leading-relaxed text-ink-2">{t.body}</p>
+          </div>
+        ))}
+      </div>
+    </section>
   )
 }
 
@@ -772,6 +794,9 @@ export default function MyDay({ previewUserId = null }) {
               </section>
             )}
 
+
+            {/* Two rotating pro cleaning tips — quiet training on the home. */}
+            <ProTips tips={data.tips} />
 
             {/* Save-to-phone + notifications setup. Dismissible here (sticks
                 via localStorage); always reachable again from the Me tab. */}
