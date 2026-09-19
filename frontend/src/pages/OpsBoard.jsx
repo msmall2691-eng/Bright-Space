@@ -44,6 +44,7 @@ import { ErrorState } from '../components/ui'
 import { TAG_TONE, SEV_DOT, SEV_LABEL, STAT_TONE, INT_DOT, SEV_ORDER } from '../components/board/tokens'
 import BoardAssistant from '../components/board/BoardAssistant'
 import HomeScheduleCalendar from '../components/board/HomeScheduleCalendar'
+import HomeWidgets from '../components/board/HomeWidgets'
 import StickyNotes from '../components/board/StickyNotes'
 import QuickActions from '../components/board/QuickActions'
 import ProposalsQueue, { relTime } from '../components/board/ProposalsQueue'
@@ -836,11 +837,20 @@ export default function OpsBoard() {
                   shape of the week/month at a glance). Rendered outside the
                   `anyVisible` gate: an empty attention board must never hide
                   the week's work. */}
-              <QuickActions navigate={navigate} />
-
               <div data-testid="home-calendar-slot">
                 <HomeScheduleCalendar navigate={navigate} />
               </div>
+
+              {/* The customizable widget zone: the "little boxes" she asked to
+                  arrange — quick actions, notes, the Nova chat — each draggable
+                  by its grip into whatever order she likes, saved per device.
+                  Office-only tiles fall out for a viewer, so the zone quietly
+                  shrinks rather than framing an empty box. */}
+              <HomeWidgets items={[
+                canComms && { key: 'quick', label: 'Quick actions', node: <QuickActions navigate={navigate} /> },
+                { key: 'notes', label: 'Notes', node: <StickyNotes /> },
+                canComms && { key: 'nova', label: 'Ask Nova', node: <NovaChat navigate={navigate} /> },
+              ].filter(Boolean)} />
 
               {/* TWO COLUMNS THAT PACK, not a grid.
                   Home used a CSS grid, which ties every card in a row to the
@@ -863,7 +873,6 @@ export default function OpsBoard() {
                       <LeadFunnel snap={snapshot.lead_funnel} />
                     </WidgetGroup>
                   )}
-                  <NovaChat navigate={navigate} />
                   {secondarySections.map(({ section, items }) => (
                     <Section key={section.key} section={section} items={items}
                       clearedSet={cleared} onToggle={toggleCleared}
@@ -876,7 +885,6 @@ export default function OpsBoard() {
                 </div>
 
                 <div className="flex flex-col gap-4">
-                  <StickyNotes />
                   <CrewToday snap={snapshot.crew} />
                   {canComms && <CrewActivity navigate={navigate} />}
                   <ProposalsQueue />
