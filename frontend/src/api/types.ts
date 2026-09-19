@@ -9775,6 +9775,8 @@ export interface components {
             open_for_claims?: boolean | null;
             /** Posted Rate */
             posted_rate?: number | null;
+            /** Offer Audience */
+            offer_audience?: string[] | null;
         };
         /**
          * LinkClientRequest
