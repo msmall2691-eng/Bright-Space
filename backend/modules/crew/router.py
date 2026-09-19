@@ -2290,7 +2290,7 @@ def crew_weather(current_user: User = Depends(require_role("cleaner"))):
     return data
 
 
-# ── Month schedule (own jobs; whole crew for flagged leads) ──────────────────
+# ── Month schedule (whole-month SHAPE for everyone; owner: "shape only, no PII") ─
 
 @router.get("/schedule-month")
 def schedule_month(
@@ -2302,11 +2302,20 @@ def schedule_month(
 ):
     """One calendar month of jobs for the crew app's Month view.
 
-    Everyone sees their OWN jobs. A lead the admin flagged
-    (can_view_full_schedule) also sees everyone else's — but those rows are
-    NAMES/TIMES ONLY: no door codes, no access notes, no client phone, no
-    office notes. Access details stay need-to-know, scoped to the jobs
-    you're actually on (security-roles: gate codes are the crown jewels).
+    Every cleaner sees the SHAPE of the whole month — which days and slots are
+    busy, and the town — so the crew can read the rhythm of the week rather than
+    only their own handful of jobs (owner's call: "shape only, no PII"). Only
+    the jobs that are actually YOURS carry identity: the property name and your
+    teammates. Every other job is stripped to town + time. A street address is
+    never on a job that isn't yours — not in a field, and not smuggled through
+    the title (a Property's `name` IS its address; that's why the non-owned
+    title is rebuilt via _offer_title, the same trap the open board hit). Access
+    details (door codes, access notes, office notes, client phone) were never on
+    a month row and still aren't — those keys are simply absent.
+
+    can_view_full_schedule (a lead the admin flagged) now adds exactly one thing
+    on top of the shape: WHO is covering each job — teammate names, never the
+    customer. It no longer gates whether you can see the schedule at all.
     """
     _require_crew_id(current_user)
     if not (1 <= month <= 12):
@@ -2314,7 +2323,7 @@ def schedule_month(
     oid = resolve_org_id(org_id, db)
     first = date(year, month, 1)
     last = date(year + (month == 12), (month % 12) + 1, 1) - timedelta(days=1)
-    see_all = bool(getattr(current_user, "can_view_full_schedule", False))
+    show_cover = bool(getattr(current_user, "can_view_full_schedule", False))
 
     jobs = (db.query(Job)
             .options(joinedload(Job.property))
@@ -2323,25 +2332,46 @@ def schedule_month(
                     Job.scheduled_date <= last,
                     Job.status.notin_(("cancelled",)))
             .all())
-    if not see_all:
-        jobs = [j for j in jobs if current_user.cleaner_id in (j.cleaner_ids or [])]
     names = _names_by_cleaner_id(db, jobs)
 
     out = []
     for j in sorted(jobs, key=lambda x: (x.scheduled_date, x.start_time is None, x.start_time)):
         mine = current_user.cleaner_id in (j.cleaner_ids or [])
-        out.append({
+        row = {
             "id": j.id,
             "date": j.scheduled_date.isoformat(),
             "start_time": _fmt_time(j.start_time),
             "end_time": _fmt_time(j.end_time),
-            "title": j.title,
-            "property_name": j.property.name if j.property else None,
             "status": j.status,
             "mine": mine,
-            "cleaners": sorted(names.get(str(c), str(c)) for c in (j.cleaner_ids or [])),
-        })
-    return {"year": year, "month": month, "see_all": see_all, "jobs": out}
+        }
+        if mine:
+            # Your own job — you already hold the address, so show it in full.
+            row.update({
+                "title": j.title,
+                "property_name": j.property.name if j.property else None,
+                "cleaners": sorted(names.get(str(c), str(c)) for c in (j.cleaner_ids or [])),
+            })
+        else:
+            # Someone else's job — SHAPE ONLY: town + time, a generic title, no
+            # property name and no client identity. Coverage names ride only for
+            # a flagged lead, and even then they are teammates, never customers.
+            prop = getattr(j, "property", None)
+            area = " ".join(x for x in [getattr(prop, "city", None),
+                                        getattr(prop, "state", None)] if x) or None
+            row.update({
+                "title": _offer_title(j, area),
+                "property_name": None,
+                "area": area,
+                "cleaners": (sorted(names.get(str(c), str(c)) for c in (j.cleaner_ids or []))
+                             if show_cover else []),
+            })
+        out.append(row)
+    # see_all: this view always includes other people's jobs now (as shape), so
+    # the frontend's "gray = others" affordance is always on. show_cover says
+    # whether the non-owned rows name who's covering.
+    return {"year": year, "month": month, "see_all": True,
+            "show_cover": show_cover, "jobs": out}
 
 
 # ── Personal calendar feed (subscribe from Google/Apple Calendar) ────────────
