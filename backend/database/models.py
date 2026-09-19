@@ -1396,6 +1396,31 @@ class CrewMessage(Base):
     read_at = Column(DateTime, nullable=True)
 
 
+class CrewPeerMessage(Base):
+    """One message in a cleaner↔cleaner thread (crew app: message another
+    cleaner directly, not only the office). A thread is the unordered pair
+    {from_user_id, to_user_id} — either direction is the same conversation.
+    read_at is set when the recipient loads the thread; a push carries
+    attention to the recipient exactly like an office reply.
+
+    Nothing about access details is special here: the system never injects a
+    door code, address, or client name into a peer thread — it is plain chat,
+    so whatever text a row holds is what a cleaner typed. Crew coordinating
+    their own work is, if anything, evidence for the subcontractor model
+    (independent operators arranging things between themselves), not against
+    it — see brightbase-marketplace."""
+    __tablename__ = "crew_peer_messages"
+    org_id = Column(Integer, ForeignKey("orgs.id"), nullable=True, index=True)  # tenant scope (MT-1)
+
+    id = Column(Integer, primary_key=True, index=True)
+    from_user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    to_user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    sender_name = Column(String, nullable=True)
+    body = Column(Text, nullable=False)
+    created_at = Column(DateTime, default=_utcnow)
+    read_at = Column(DateTime, nullable=True)
+
+
 class CleanerAvailability(Base):
     """A cleaner's WEEKLY availability pattern, self-maintained from the crew
     app's Me tab (crew app Phase 4, owner decision #3: per-day AM / PM / Off).

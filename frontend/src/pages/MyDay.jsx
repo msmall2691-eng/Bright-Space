@@ -25,7 +25,7 @@ import CrewLearn from '../components/crew/CrewLearn'
 import CrewMonth from '../components/crew/CrewMonth'
 import CrewCalendarSync from '../components/crew/CrewCalendarSync'
 import CrewTimeOff from '../components/crew/CrewTimeOff'
-import { CrewThread } from '../components/crew/CrewMessages'
+import CrewChatHub from '../components/crew/CrewChat'
 import PropertySheet from '../components/crew/PropertySheet'
 // The job card lives in its own file so every crew surface (Today list,
 // schedule list, month tap-through sheet) renders the SAME details.
@@ -928,10 +928,13 @@ export default function MyDay({ previewUserId = null }) {
           )
         )}
 
-        {/* Chat is a full-screen thread (the office side pushes replies).
-            Closing it re-fetches my-day so the unread badge clears. */}
+        {/* Chat opens the Messages hub — the office thread on top, teammates
+            below (crew-to-crew). Closing it re-fetches my-day so the unread
+            badge clears. */}
         {tab === 'chat' && (
-          <CrewThread previewUserId={previewUserId} onClose={() => { setTab('today'); fetchDay(true) }} />
+          <CrewChatHub previewUserId={previewUserId}
+            officeUnread={data?.unread_messages || 0}
+            onClose={() => { setTab('today'); fetchDay(true) }} />
         )}
 
         {tab === 'learn' && <CrewLearn previewUserId={previewUserId} />}
@@ -1016,7 +1019,8 @@ export default function MyDay({ previewUserId = null }) {
         )}
       </div>
 
-      <CrewTabBar tab={tab} setTab={setTab} chatUnread={data?.unread_messages || 0} />
+      <CrewTabBar tab={tab} setTab={setTab}
+        chatUnread={(data?.unread_messages || 0) + (data?.unread_peer_messages || 0)} />
 
       {sheetJobId && (
         <CrewJobSheet jobId={sheetJobId} onClose={() => setSheetJobId(null)} />

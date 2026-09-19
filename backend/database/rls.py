@@ -39,6 +39,9 @@ TENANT_TABLES = [
     "cleaner_week_availability",
     # Cleaner↔office message threads (migration 089), org-scoped.
     "crew_messages",
+    # Cleaner↔cleaner direct threads (migration 116), org-scoped. Added with
+    # the table, not in a later audit (see 095 for why that matters).
+    "crew_peer_messages",
     # Property crew notes + reference photos (migration 090), org-scoped.
     "property_crew_notes",
     "property_photos",
