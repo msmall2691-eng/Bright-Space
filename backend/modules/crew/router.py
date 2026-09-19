@@ -28,7 +28,7 @@ from typing import List, Optional
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, Response, UploadFile
 from pydantic import BaseModel
-from sqlalchemy import or_, func
+from sqlalchemy import or_, and_, func
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, joinedload
 
@@ -36,7 +36,7 @@ from database.db import get_db
 from ratelimit import rate_limit
 from database.models import (
     CleanerAvailability, CleanerTimeOff, CleanerWeekAvailability, CrewDoc,
-    CrewMessage, CrewPhoto, Job, JobClaimRequest, JobHelper, JobPhoto, JobResponse,
+    CrewMessage, CrewPeerMessage, CrewPhoto, Job, JobClaimRequest, JobHelper, JobPhoto, JobResponse,
     PropertyCrewNote,
     PropertyPhoto, SubAgreement, SubDocument, User,
 )
@@ -529,6 +529,14 @@ def my_day(
             .filter(CrewMessage.user_id == current_user.id,
                     CrewMessage.sender == "office",
                     CrewMessage.read_at.is_(None))
+            .scalar() or 0
+        ),
+        # Unread messages from OTHER cleaners (crew-to-crew chat), so the Team
+        # tab badges without a second request — same idea as unread_messages.
+        "unread_peer_messages": (
+            db.query(func.count(CrewPeerMessage.id))
+            .filter(CrewPeerMessage.to_user_id == current_user.id,
+                    CrewPeerMessage.read_at.is_(None))
             .scalar() or 0
         ),
         # This week in money — just the totals (earned so far + still booked),
@@ -2836,6 +2844,143 @@ def office_reply(
     except Exception:
         log.exception("push notify failed on office_reply")
     return _msg_dict(m)
+
+
+# ── Crew-to-crew chat (cleaner ↔ cleaner direct threads) ─────────────────────
+# Separate from the office thread above: a cleaner messages a teammate directly
+# (swap a day, arrange a ride, "bring the blue caddy"). One thread per pair,
+# either direction. The system never injects access details — plain peer chat.
+# Name only in the directory; no email, no phone.
+
+def _peer_msg_dict(m: CrewPeerMessage, me_id: int) -> dict:
+    return {"id": m.id, "mine": m.from_user_id == me_id,
+            "sender_name": m.sender_name, "body": m.body,
+            "created_at": _iso_utc(m.created_at)}
+
+
+def _peer_or_404(db, peer_id: int, oid: int, me_id: int) -> User:
+    """The other cleaner in a thread: a real cleaner in this org, and not the
+    caller. 404 (never 403) so the endpoint reveals nothing about who exists."""
+    if peer_id == me_id:
+        raise HTTPException(status_code=404, detail="Cleaner not found.")
+    peer = (db.query(User)
+            .filter(User.id == peer_id, User.role == "cleaner",
+                    or_(User.org_id == oid, User.org_id.is_(None)))
+            .first())
+    if not peer:
+        raise HTTPException(status_code=404, detail="Cleaner not found.")
+    return peer
+
+
+@router.get("/chat/peers")
+def crew_chat_peers(
+    db: Session = Depends(get_db),
+    org_id: int = Depends(current_org_id),
+    current_user: User = Depends(require_role("cleaner")),
+):
+    """The other cleaners this cleaner can message, newest conversation first
+    (never-messaged ones sort last, alphabetically). Name only, plus an
+    unread-from-them count so the Team tab can badge without opening a thread."""
+    oid = resolve_org_id(org_id, db)
+    me = current_user.id
+    peers = (db.query(User)
+             .filter(User.role == "cleaner", User.id != me,
+                     or_(User.org_id == oid, User.org_id.is_(None)),
+                     or_(User.status.is_(None), User.status != "disabled"))
+             .all())
+    ids = [u.id for u in peers]
+    unread_by_peer: dict = {}
+    last_at_by_peer: dict = {}
+    if ids:
+        unread_by_peer = dict(
+            db.query(CrewPeerMessage.from_user_id, func.count(CrewPeerMessage.id))
+              .filter(CrewPeerMessage.to_user_id == me,
+                      CrewPeerMessage.from_user_id.in_(ids),
+                      CrewPeerMessage.read_at.is_(None))
+              .group_by(CrewPeerMessage.from_user_id).all())
+        # Last activity per pair — max of the two directions, merged in Python
+        # to stay dialect-safe (no CASE in the GROUP BY).
+        out_last = dict(
+            db.query(CrewPeerMessage.to_user_id, func.max(CrewPeerMessage.created_at))
+              .filter(CrewPeerMessage.from_user_id == me,
+                      CrewPeerMessage.to_user_id.in_(ids))
+              .group_by(CrewPeerMessage.to_user_id).all())
+        in_last = dict(
+            db.query(CrewPeerMessage.from_user_id, func.max(CrewPeerMessage.created_at))
+              .filter(CrewPeerMessage.to_user_id == me,
+                      CrewPeerMessage.from_user_id.in_(ids))
+              .group_by(CrewPeerMessage.from_user_id).all())
+        for pid in ids:
+            times = [t for t in (out_last.get(pid), in_last.get(pid)) if t]
+            if times:
+                last_at_by_peer[pid] = max(times)
+    rows = [{
+        "user_id": u.id,
+        "name": u.full_name or u.email,
+        "unread": int(unread_by_peer.get(u.id, 0)),
+        "last_activity": _iso_utc(last_at_by_peer[u.id]) if u.id in last_at_by_peer else None,
+    } for u in peers]
+    active = sorted([r for r in rows if r["last_activity"]],
+                    key=lambda r: r["last_activity"], reverse=True)
+    empty = sorted([r for r in rows if not r["last_activity"]],
+                   key=lambda r: (r["name"] or "").lower())
+    return active + empty
+
+
+@router.get("/chat/{peer_id}")
+def crew_chat_thread(
+    peer_id: int,
+    db: Session = Depends(get_db),
+    org_id: int = Depends(current_org_id),
+    current_user: User = Depends(require_role("cleaner")),
+):
+    """The thread between the caller and one other cleaner (oldest first).
+    Loading it marks the peer's messages to the caller read."""
+    oid = resolve_org_id(org_id, db)
+    me = current_user.id
+    _peer_or_404(db, peer_id, oid, me)
+    rows = (db.query(CrewPeerMessage)
+            .filter(or_(
+                and_(CrewPeerMessage.from_user_id == me, CrewPeerMessage.to_user_id == peer_id),
+                and_(CrewPeerMessage.from_user_id == peer_id, CrewPeerMessage.to_user_id == me)))
+            .order_by(CrewPeerMessage.created_at.asc())
+            .limit(200).all())
+    now = _now_naive_utc()
+    dirty = False
+    for m in rows:
+        if m.to_user_id == me and m.read_at is None:
+            m.read_at = now; dirty = True
+    if dirty:
+        db.commit()
+    return [_peer_msg_dict(m, me) for m in rows]
+
+
+@router.post("/chat/{peer_id}", status_code=201)
+def crew_chat_send(
+    peer_id: int,
+    body: MessageBody,
+    db: Session = Depends(get_db),
+    org_id: int = Depends(current_org_id),
+    current_user: User = Depends(require_role("cleaner")),
+):
+    oid = resolve_org_id(org_id, db)
+    me = current_user.id
+    peer = _peer_or_404(db, peer_id, oid, me)
+    text = _sanitize_note(body.body)
+    if not text:
+        raise HTTPException(status_code=422, detail="Say something first.")
+    who = getattr(current_user, "full_name", None) or current_user.email
+    m = CrewPeerMessage(org_id=oid, from_user_id=me, to_user_id=peer.id,
+                        sender_name=who, body=text, created_at=_now_naive_utc())
+    db.add(m); db.commit(); db.refresh(m)
+    try:
+        from services.push_service import notify_user
+        notify_user(peer.id, f"Message from {who}",
+                    text if len(text) <= 120 else text[:117] + "…",
+                    url="/my-day", tag=f"crew-peer-{me}", category="crew")
+    except Exception:
+        log.exception("push notify failed on crew_chat_send")
+    return _peer_msg_dict(m, me)
 
 
 # ── Structured client texts (no numbers on crew phones) ──────────────────────

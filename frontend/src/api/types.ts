@@ -710,7 +710,8 @@ export interface paths {
          *     properties, recurring schedules, opportunities, lead intakes, activities,
          *     messages, SMS conversations (folded so the (client_id, channel) unique index
          *     can't blow up), and contact phones/emails (deduped) — backfills the winner's
-         *     empty contact fields from the loser, then deletes the loser.
+         *     empty contact fields from the loser, then deletes the loser. The re-parenting
+         *     itself lives in _merge_client_into, shared with the by-email auto-cleanup.
          *
          *     Quotes ARE re-parented too: Quote.client_id is an integer FK to clients.id
          *     with ondelete=CASCADE, and Client.quotes is cascade="all, delete-orphan", so
@@ -817,18 +818,22 @@ export interface paths {
         put?: never;
         /**
          * Cleanup Duplicates By Email
-         * @description Merge placeholder-named Client rows into properly-named clients that
-         *     share the same (case-insensitive) email. Default dry_run=true returns a
-         *     preview without applying changes.
+         * @description Merge placeholder-named Client rows into the properly-named client that
+         *     shares the same (case-insensitive) email WITHIN THE SAME ORG. Default
+         *     dry_run=true returns a preview without applying changes.
          *
-         *     Reassigns these to the keeper before deleting the placeholder:
-         *       - leads (LeadIntake.client_id)
-         *       - quotes (Quote.client_id)
-         *       - jobs (Job.client_id)
-         *       - properties (Property.client_id)
-         *       - opportunities (Opportunity.client_id)
-         *       - activities (Activity.client_id)
-         *       - messages (Message.client_id)
+         *     The actual re-parenting is _merge_client_into — the same lossless body the
+         *     manual /merge endpoint uses — so every client-scoped table rides with the
+         *     placeholder onto the keeper. This function only decides WHICH rows merge;
+         *     it no longer carries its own reassignment list. It used to move a strict
+         *     subset (leads/quotes/jobs/properties/activities/messages/opportunities) and
+         *     then delete the placeholder, which cascade-DELETED the placeholder's
+         *     invoices, recurring schedules, conversations and contact rows — silent loss
+         *     of billing and scheduled work.
+         *
+         *     Org-scoped: grouping is keyed on (org_id, email), so two different tenants'
+         *     clients that happen to share an address (info@…, office@…) are NEVER merged
+         *     into each other. A cross-org merge would corrupt tenant isolation.
          */
         post: operations["cleanup_duplicates_by_email_api_clients_cleanup_duplicates_by_email_post"];
         delete?: never;
@@ -2550,6 +2555,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/invoices/public/{token}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Public View Invoice
+         * @description Customer-facing view of a single invoice via its public token. No login;
+         *     the unguessable token in the path is the credential. Minimal payload.
+         */
+        get: operations["public_view_invoice_api_invoices_public__token__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/invoices/{invoice_id}/pay": {
         parameters: {
             query?: never;
@@ -3092,6 +3118,110 @@ export interface paths {
          * @description Receive inbound SMS from Twilio webhook. Groups into a conversation.
          */
         post: operations["twilio_inbound_api_comms_twilio_webhook_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/comms/twilio/voice": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Twilio Voice
+         * @description Answer an inbound call: ring the on-call phone, else take a message.
+         */
+        post: operations["twilio_voice_api_comms_twilio_voice_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/comms/twilio/voice/after-dial": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Twilio Voice After Dial
+         * @description The ring-through ended. Answered → hang up. Missed → take a message.
+         */
+        post: operations["twilio_voice_after_dial_api_comms_twilio_voice_after_dial_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/comms/twilio/voice/after-record": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Twilio Voice After Record
+         * @description Recording finished normally (# pressed, silence, or max length).
+         */
+        post: operations["twilio_voice_after_record_api_comms_twilio_voice_after_record_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/comms/twilio/voice/recording": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Twilio Voice Recording
+         * @description Recording status callback — fires even when the caller hangs up mid-message.
+         *
+         *     That hang-up case is the common one for a real voicemail (people rarely
+         *     press #), and <Record action=...> does NOT fire on hangup. Without this
+         *     callback those voicemails would record and never reach the inbox.
+         */
+        post: operations["twilio_voice_recording_api_comms_twilio_voice_recording_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/comms/twilio/voice/transcription": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Twilio Voice Transcription
+         * @description Twilio's transcript, which lands a minute or two after the recording.
+         */
+        post: operations["twilio_voice_transcription_api_comms_twilio_voice_transcription_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -4290,6 +4420,23 @@ export interface paths {
         /**
          * Get Intake Stats
          * @description Quick counts for the requests dashboard.
+         *
+         *     Bucketed by the DERIVED display status (lead_display_status) — exactly what
+         *     the Requests list renders — NOT the raw ``status`` column. Counting the
+         *     column was wrong: no code ever writes ``status == 'converted'`` (P4 makes
+         *     that value derived from the lead's quote), so the "converted" tile was
+         *     permanently 0, and "quoted"/"reviewed" undercounted every lead whose quote
+         *     or opportunity had advanced past its stored status. The tiles disagreed
+         *     with the tab counts on the same screen. This mirrors the list's derivation
+         *     (converted_quote_id + its quote, opportunity_id, stored status) so the two
+         *     can't drift.
+         *
+         *     ORG-SCOPED, and it was not: role-gated but with no tenant filter, so the
+         *     tiles counted every workspace's leads together while the list beside them
+         *     (get_intakes) scopes to the caller's org. Same tenant filter as the list —
+         *     the caller's org plus legacy NULL-org (public-form) rows. Same class of
+         *     latent-with-one-org / wrong-with-two bug that invoice_summary_by_service
+         *     already carried a note about.
          */
         get: operations["get_intake_stats_api_intake_stats_get"];
         put?: never;
@@ -5375,6 +5522,45 @@ export interface paths {
         patch: operations["update_view_api_views__view_id__patch"];
         trace?: never;
     };
+    "/api/notes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Notes
+         * @description The caller's notes: by explicit sort_order first, then newest.
+         */
+        get: operations["list_notes_api_notes_get"];
+        put?: never;
+        /** Create Note */
+        post: operations["create_note_api_notes_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/notes/{note_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Delete Note */
+        delete: operations["delete_note_api_notes__note_id__delete"];
+        options?: never;
+        head?: never;
+        /** Update Note */
+        patch: operations["update_note_api_notes__note_id__patch"];
+        trace?: never;
+    };
     "/api/admin/import/clients": {
         parameters: {
             query?: never;
@@ -5518,6 +5704,63 @@ export interface paths {
          *     consecutive failures, missed runs and staleness. Admin/manager only.
          */
         get: operations["scheduler_health_api_admin_scheduler_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/admin/data-health": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Data Health
+         * @description Read-only, whole-schema data-quality scan (the sibling of the recurring
+         *     health scan). Scoped to the caller's workspace. Never writes — it reports
+         *     dangling references, missing-required drift, money anomalies, stuck
+         *     lifecycle rows, and duplicate contacts, each with a suggested fix. See
+         *     services/data_doctor.py and the data-doctor skill.
+         */
+        get: operations["data_health_api_admin_data_health_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/admin/ai-health": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Ai Health
+         * @description Which LLM is BrightBase actually using, and does it work?
+         *
+         *     Reports the active provider (``LLM_PROVIDER``), whether that provider's key
+         *     is present, and the model id resolved for each tier. With ``?probe=1`` it
+         *     runs two live self-tests and surfaces the REAL provider exception (admin
+         *     only) instead of the calm end-user fallback the chat shows:
+         *
+         *       * ``completion`` — a one-shot text call (basic provider connectivity).
+         *       * ``tool_loop``  — a bounded tool-using loop, the path the Workspace
+         *         agents use. This is where a tool-result-continuation bug shows up, so
+         *         it reproduces the "assistant ran into a problem" failure directly.
+         *
+         *     Admin/manager only; the probe spends a few tokens, so it is opt-in. Never
+         *     writes and never returns a key value — only whether one is set.
+         */
+        get: operations["ai_health_api_admin_ai_health_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -6191,6 +6434,42 @@ export interface paths {
          *     Hard to undo — the caller (the /cleanup review page) confirms first.
          */
         post: operations["merge_clients_api_cleanup_clients_merge_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/cleanup/properties/merge": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Merge Properties
+         * @description Merge `duplicate_id` into `primary_id`: reassign every property-scoped
+         *     record (jobs, recurring schedules, quotes, lead intakes, iCal feeds + events,
+         *     crew notes, photos) to the primary, back-fill the primary's missing fields,
+         *     then delete the duplicate.
+         *
+         *     Both must be the SAME client's properties — a "duplicate" across two clients
+         *     is a client merge, not a property merge, and re-pointing one client's
+         *     property onto another would corrupt ownership.
+         *
+         *     Lossless: the full field set is back-filled (not just size), so access notes,
+         *     wifi, codes, pricing and STR settings survive. iCal events are coalesced by
+         *     uid before the repoint (re-syncable, avoids the (property_id, uid) unique
+         *     violation). If the two properties have overlapping LIVE turnover jobs on the
+         *     same checkout date (the (property_id, scheduled_date, job_type) live-turnover
+         *     unique index), the merge is REFUSED rather than auto-cancelling canonical
+         *     work (scheduling-invariants R7) — the operator cancels the duplicate turnover
+         *     first. Hard to undo; the /cleanup review page confirms first.
+         */
+        post: operations["merge_properties_api_cleanup_properties_merge_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -7404,6 +7683,50 @@ export interface paths {
         put?: never;
         /** Office Reply */
         post: operations["office_reply_api_crew_messages__user_id__post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/crew/chat/peers": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Crew Chat Peers
+         * @description The other cleaners this cleaner can message, newest conversation first
+         *     (never-messaged ones sort last, alphabetically). Name only, plus an
+         *     unread-from-them count so the Team tab can badge without opening a thread.
+         */
+        get: operations["crew_chat_peers_api_crew_chat_peers_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/crew/chat/{peer_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Crew Chat Thread
+         * @description The thread between the caller and one other cleaner (oldest first).
+         *     Loading it marks the peer's messages to the caller read.
+         */
+        get: operations["crew_chat_thread_api_crew_chat__peer_id__get"];
+        put?: never;
+        /** Crew Chat Send */
+        post: operations["crew_chat_send_api_crew_chat__peer_id__post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -9509,6 +9832,13 @@ export interface components {
             /** Duplicate Id */
             duplicate_id: number;
         };
+        /** MergePropertiesBody */
+        MergePropertiesBody: {
+            /** Primary Id */
+            primary_id: number;
+            /** Duplicate Id */
+            duplicate_id: number;
+        };
         /** MessageBody */
         MessageBody: {
             /** Body */
@@ -9577,6 +9907,36 @@ export interface components {
         NoteBody: {
             /** Body */
             body: string;
+        };
+        /** NoteCreate */
+        NoteCreate: {
+            /**
+             * Body
+             * @default
+             */
+            body: string;
+            /** Color */
+            color?: string | null;
+        };
+        /** NoteResponse */
+        NoteResponse: {
+            /** Id */
+            id: number;
+            /** Body */
+            body: string;
+            /** Color */
+            color: string;
+            /** Sort Order */
+            sort_order: number;
+        };
+        /** NoteUpdate */
+        NoteUpdate: {
+            /** Body */
+            body?: string | null;
+            /** Color */
+            color?: string | null;
+            /** Sort Order */
+            sort_order?: number | null;
         };
         /** OffPhaseCleanupApply */
         OffPhaseCleanupApply: {
@@ -14547,6 +14907,37 @@ export interface operations {
             };
         };
     };
+    public_view_invoice_api_invoices_public__token__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                token: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     process_payment_api_invoices__invoice_id__pay_post: {
         parameters: {
             query?: never;
@@ -15275,6 +15666,106 @@ export interface operations {
         };
     };
     twilio_inbound_api_comms_twilio_webhook_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    twilio_voice_api_comms_twilio_voice_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    twilio_voice_after_dial_api_comms_twilio_voice_after_dial_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    twilio_voice_after_record_api_comms_twilio_voice_after_record_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    twilio_voice_recording_api_comms_twilio_voice_recording_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    twilio_voice_transcription_api_comms_twilio_voice_transcription_post: {
         parameters: {
             query?: never;
             header?: never;
@@ -19066,6 +19557,123 @@ export interface operations {
             };
         };
     };
+    list_notes_api_notes_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NoteResponse"][];
+                };
+            };
+        };
+    };
+    create_note_api_notes_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["NoteCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NoteResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_note_api_notes__note_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                note_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_note_api_notes__note_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                note_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["NoteUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NoteResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     import_clients_api_admin_import_clients_post: {
         parameters: {
             query?: {
@@ -19238,6 +19846,57 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+        };
+    };
+    data_health_api_admin_data_health_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    ai_health_api_admin_ai_health_get: {
+        parameters: {
+            query?: {
+                probe?: boolean;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
@@ -20052,6 +20711,39 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["MergeClientsBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    merge_properties_api_cleanup_properties_merge_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MergePropertiesBody"];
             };
         };
         responses: {
@@ -21944,6 +22636,92 @@ export interface operations {
             header?: never;
             path: {
                 user_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MessageBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    crew_chat_peers_api_crew_chat_peers_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    crew_chat_thread_api_crew_chat__peer_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                peer_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    crew_chat_send_api_crew_chat__peer_id__post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                peer_id: number;
             };
             cookie?: never;
         };
