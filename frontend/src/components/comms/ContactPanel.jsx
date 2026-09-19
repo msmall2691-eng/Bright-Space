@@ -32,8 +32,8 @@ function AppointmentRow({ job, tone = 'upcoming', onRemind }) {
   return (
     <div className="flex items-center justify-between gap-2 bg-bg-2 rounded-lg px-2.5 py-1.5">
       <div className="flex items-center gap-2 min-w-0">
-        <div className={`w-6 h-6 rounded-lg flex items-center justify-center shrink-0 ${
-          tone === 'upcoming' ? 'bg-indigo-500/10 text-indigo-600 dark:text-indigo-300' : 'bg-bg-2 text-ink-3'
+        <div className={`w-6 h-6 rounded-lg bg-panel flex items-center justify-center shrink-0 ${
+          tone === 'upcoming' ? 'text-indigo-500 dark:text-indigo-300' : 'text-ink-3'
         }`}>
           {tone === 'upcoming' ? <Calendar className="w-3 h-3" /> : <CheckCircle2 className="w-3 h-3" />}
         </div>
@@ -119,9 +119,9 @@ export function ContactPanel({ detail, context, onRemind, onClose, onDraftQuote,
           <div className="flex-1 min-w-0">
             <h3 className="font-bold text-ink text-[15px] truncate leading-tight">{name}</h3>
             <div className="flex items-center gap-1.5 mt-1 flex-wrap">
-              <span className="inline-flex items-center gap-1.5 text-[10px] font-semibold text-ink-2">
+              <span className="inline-flex items-center gap-1.5 text-[10px] font-semibold text-ink-2 capitalize">
                 <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${client?.status === 'active' ? 'bg-emerald-500' : 'bg-ink-3'}`} aria-hidden="true" />
-                {(client?.status || 'new').toUpperCase()}
+                {client?.status || 'new'}
               </span>
               <ChannelBadge channel={detail.channel} />
               {client?.created_at && (
@@ -183,8 +183,8 @@ export function ContactPanel({ detail, context, onRemind, onClose, onDraftQuote,
         {client ? (
           /* Client-side <Link> (was a raw <a>, which forced a full page reload) */
           <Link to={`/clients/${client.id}`}
-            className="mt-2 w-full flex items-center justify-center gap-1.5 text-[12px] font-semibold text-indigo-600 bg-indigo-500/10 hover:bg-indigo-500/15 py-2 rounded-xl transition-colors">
-            <User className="w-3.5 h-3.5" /> View Full Profile
+            className="mt-2 w-full flex items-center justify-center gap-1.5 text-[12px] font-medium text-ink-2 bg-panel border border-hairline-2 hover:bg-bg-2 py-2 rounded-md transition-colors">
+            <User className="w-3.5 h-3.5" /> View full profile
           </Link>
         ) : onLinkClient ? (
           <LinkClientControl onLink={onLinkClient} linking={linkingClient} />
@@ -267,8 +267,8 @@ export function ContactPanel({ detail, context, onRemind, onClose, onDraftQuote,
               <SectionLabel>Tags</SectionLabel>
               <div className="flex flex-wrap gap-1">
                 {detail.tags.map(t => (
-                  <span key={t} className="inline-flex items-center gap-1 text-[11px] bg-bg-2 text-ink-2 px-2 py-0.5 rounded-full font-medium">
-                    <Hash className="w-2.5 h-2.5" /> {t}
+                  <span key={t} className="inline-flex items-center gap-1 text-[11px] rounded-sm border border-hairline-2 bg-panel text-ink-2 px-1.5 py-0.5 font-medium">
+                    <Hash className="w-2.5 h-2.5 text-ink-3" /> {t}
                   </span>
                 ))}
               </div>
@@ -288,10 +288,12 @@ export function ContactPanel({ detail, context, onRemind, onClose, onDraftQuote,
               <div className="absolute left-[11px] top-2 bottom-2 w-px bg-bg-2" />
               <div className="space-y-3">
                 {timeline.map(item => {
+                  // Neutral bg-2 circles; the icon shape + a subtle icon tone
+                  // carry note/in/out, not a tinted fill (owner veto).
                   const iconConfig = {
-                    note:     { icon: StickyNote, bg: 'bg-amber-500/15', text: 'text-amber-600 dark:text-amber-300' },
-                    inbound:  { icon: ArrowLeft,  bg: 'bg-bg-2',  text: 'text-ink-3' },
-                    outbound: { icon: Send,       bg: 'bg-indigo-500/15',  text: 'text-indigo-600 dark:text-indigo-300' },
+                    note:     { icon: StickyNote, bg: 'bg-bg-2', text: 'text-amber-600 dark:text-amber-300' },
+                    inbound:  { icon: ArrowLeft,  bg: 'bg-bg-2', text: 'text-ink-3' },
+                    outbound: { icon: Send,       bg: 'bg-bg-2', text: 'text-indigo-500 dark:text-indigo-300' },
                   }
                   const cfg = iconConfig[item.type] || iconConfig.inbound
                   const Icon = cfg.icon

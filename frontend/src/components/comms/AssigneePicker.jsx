@@ -36,10 +36,12 @@ export function AssigneePicker({ currentName, currentId, onAssign }) {
 
   return (
     <div className="relative" ref={ref}>
+      {/* Plain secondary — the assignee's name (in ink-2) is what signals
+          "assigned", not a tinted fill (owner veto). */}
       <button onClick={() => setOpen(o => !o)}
         title="Assign this conversation"
-        className={`text-[12px] font-medium px-2.5 py-2 rounded-xl transition-all flex items-center gap-1.5 ${
-          currentName ? 'bg-indigo-500/10 text-indigo-700 dark:text-indigo-300 ring-1 ring-indigo-200 dark:ring-indigo-500/30' : 'bg-bg-2 text-ink-3 hover:bg-hairline'
+        className={`text-[12px] font-medium px-2.5 py-2 rounded-md border border-hairline-2 bg-panel hover:bg-bg-2 transition-colors flex items-center gap-1.5 ${
+          currentName ? 'text-ink-2' : 'text-ink-3'
         }`}>
         <UserCircle2 className="w-3.5 h-3.5" />
         <span className="max-w-[90px] truncate">{currentName || 'Assign'}</span>
