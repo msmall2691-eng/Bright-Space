@@ -76,7 +76,8 @@ def _job_row(job: Job, names_by_cid: dict | None = None, self_cid: str | None = 
              my_response: "JobResponse | None" = None,
              house_notes: "list | None" = None,
              my_claim_request: "JobClaimRequest | None" = None,
-             my_helpers: "list | None" = None) -> dict:
+             my_helpers: "list | None" = None,
+             photos: "list | None" = None) -> dict:
     prop = job.property
     client = job.client
     return {
@@ -115,6 +116,10 @@ def _job_row(job: Job, names_by_cid: dict | None = None, self_cid: str | None = 
         # Office-SHARED house notes ("upstairs drain clogs") inline so
         # they're readable offline too. Author-only notes don't ride here.
         "house_notes": house_notes or [],
+        # Reference photos of the house ("how the beds are staged") — metadata
+        # only (id/url/caption); the card lazy-loads the images so a cleaner can
+        # see what the house looks like without opening the house sheet.
+        "photos": photos or [],
         # Who I said I'm bringing (migration 107). Mine only — never another
         # sub's, on a job we share.
         "my_helpers": my_helpers or [],
@@ -182,6 +187,32 @@ def _shared_notes_by_property(db: Session, jobs) -> dict:
         bucket = out.setdefault(n.property_id, [])
         if len(bucket) < 5:
             bucket.append({"body": n.body, "author_name": n.author_name})
+    return out
+
+
+def _photos_by_property(db: Session, jobs) -> dict:
+    """property_id → [{id, url, caption}] reference photos, one batched query,
+    newest first, capped at 4 per property. METADATA ONLY — the image bytes
+    load lazily through the authenticated per-photo endpoint when the card
+    renders (frontend AuthImage), so this stays light on rural cell data
+    (brightbase-economy). Lets the crew see what the house looks like right on
+    the job card instead of two taps deep in the house sheet."""
+    pids = {j.property_id for j in jobs if j.property_id}
+    if not pids:
+        return {}
+    rows = (db.query(PropertyPhoto)
+            .filter(PropertyPhoto.property_id.in_(pids))
+            .order_by(PropertyPhoto.created_at.desc())
+            .all())
+    out: dict = {}
+    for p in rows:
+        bucket = out.setdefault(p.property_id, [])
+        if len(bucket) < 4:
+            bucket.append({
+                "id": p.id,
+                "url": f"/api/crew/properties/{p.property_id}/photos/{p.id}",
+                "caption": (p.caption or "").strip() or None,
+            })
     return out
 
 
@@ -327,6 +358,9 @@ def my_day(
     # today's payload is what the offline cache keeps). Upcoming rows travel
     # light — see the "upcoming" comment below.
     house_notes = _shared_notes_by_property(db, today_jobs)
+    # Reference photos for today's jobs only (metadata; images lazy-load). Kept
+    # off the 13-day upcoming preview to keep that payload light.
+    photos_by_prop = _photos_by_property(db, today_jobs)
     # The caller's own accept/decline answers for the window, one query.
     my_responses = {
         r.job_id: r
@@ -465,7 +499,8 @@ def my_day(
                        or (getattr(current_user, "email", "") or "").split("@")[0]),
         "today": [_job_row(j, names, current_user.cleaner_id, my_responses.get(j.id),
                            house_notes=house_notes.get(j.property_id),
-                           my_helpers=my_helpers.get(j.id))
+                           my_helpers=my_helpers.get(j.id),
+                           photos=photos_by_prop.get(j.property_id))
                   for j in today_jobs],
         # Upcoming rows are a 13-day preview and the bulk of the payload, so
         # the heavy per-house fields stay off them (rural cell data): no
@@ -2188,8 +2223,9 @@ def crew_job_detail(
     # Shared house notes ride the single-job payload too, so the month-view
     # tap-through shows the same card my-day renders (nothing silently missing).
     house_notes = _shared_notes_by_property(db, [job]).get(job.property_id)
+    photos = _photos_by_property(db, [job]).get(job.property_id)
     return _job_row(job, _names_by_cleaner_id(db, [job]), current_user.cleaner_id, my_resp,
-                    house_notes=house_notes)
+                    house_notes=house_notes, photos=photos)
 
 
 # ── Weather (Today-tab greeting) ─────────────────────────────────────────────

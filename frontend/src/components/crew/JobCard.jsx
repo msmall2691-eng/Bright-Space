@@ -383,6 +383,23 @@ export default function JobCard({ job, onMarkDone, onPhotos, onRespond, onDeclin
         </div>
       )}
 
+      {/* See the house — always visible when the property has reference photos,
+          so a cleaner can eyeball the staged rooms in one tap instead of
+          hunting inside "About this house". Only the count rides the payload;
+          the images load on tap (crew photos lazy-load behind a tap — rural
+          cell data, brightbase-economy). */}
+      {!job.open && (job.photos?.length || 0) > 0 && onHouseInfo && (
+        <button onClick={onHouseInfo}
+          className="mt-3 w-full flex items-center gap-2 rounded-lg border border-hairline bg-bg px-3 py-2 text-left active:opacity-70 transition-opacity">
+          <Camera className="w-4 h-4 text-blue-600 dark:text-blue-400 shrink-0" />
+          <span className="text-[13px] font-semibold text-ink">See the house</span>
+          <span className="text-[12px] text-ink-3">
+            {job.photos.length} photo{job.photos.length > 1 ? 's' : ''}
+          </span>
+          <span className="ml-auto text-[13px] text-ink-3">›</span>
+        </button>
+      )}
+
       {hasHouseSection && (
         /* Reference tier — specs, shared house notes, the photo gallery —
            behind one inline expander so the get-in cluster stays above the
