@@ -7460,11 +7460,20 @@ export interface paths {
          * Schedule Month
          * @description One calendar month of jobs for the crew app's Month view.
          *
-         *     Everyone sees their OWN jobs. A lead the admin flagged
-         *     (can_view_full_schedule) also sees everyone else's — but those rows are
-         *     NAMES/TIMES ONLY: no door codes, no access notes, no client phone, no
-         *     office notes. Access details stay need-to-know, scoped to the jobs
-         *     you're actually on (security-roles: gate codes are the crown jewels).
+         *     Every cleaner sees the SHAPE of the whole month — which days and slots are
+         *     busy, and the town — so the crew can read the rhythm of the week rather than
+         *     only their own handful of jobs (owner's call: "shape only, no PII"). Only
+         *     the jobs that are actually YOURS carry identity: the property name and your
+         *     teammates. Every other job is stripped to town + time. A street address is
+         *     never on a job that isn't yours — not in a field, and not smuggled through
+         *     the title (a Property's `name` IS its address; that's why the non-owned
+         *     title is rebuilt via _offer_title, the same trap the open board hit). Access
+         *     details (door codes, access notes, office notes, client phone) were never on
+         *     a month row and still aren't — those keys are simply absent.
+         *
+         *     can_view_full_schedule (a lead the admin flagged) now adds exactly one thing
+         *     on top of the shape: WHO is covering each job — teammate names, never the
+         *     customer. It no longer gates whether you can see the schedule at all.
          */
         get: operations["schedule_month_api_crew_schedule_month_get"];
         put?: never;

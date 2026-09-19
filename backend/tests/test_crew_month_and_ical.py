@@ -1,12 +1,14 @@
-"""Crew month view, lead see-all flag, and personal iCal feeds.
+"""Crew month view, lead coverage flag, and personal iCal feeds.
 
 Security is the story here:
-- A plain cleaner's month is THEIR jobs only; a lead flagged by the admin
-  (can_view_full_schedule) sees everyone's — but those rows carry
-  names/times only (no door codes, access notes, client phone, or office
-  notes; month rows omit those keys entirely).
-- The flag is admin-set only: the users PATCH is admin-gated, so a cleaner
-  cannot self-elevate.
+- Every cleaner sees the SHAPE of the whole month, but only their OWN jobs
+  carry identity: a job that isn't yours is stripped to town + time, with no
+  property name and no address (not even smuggled through the title), and
+  never door codes, access notes, client phone, or office notes.
+- A lead flagged by the admin (can_view_full_schedule) additionally sees WHO
+  is covering each job (teammate names) — still no customer identity. The flag
+  is admin-set only: the users PATCH is admin-gated, so a cleaner cannot
+  self-elevate.
 - The .ics feed needs no login (calendar apps can't send headers) but the
   token is the credential: wrong token 404s, the feed contains only that
   cleaner's jobs, and NEVER door codes or office notes — people share
@@ -87,35 +89,53 @@ def world():
     db.commit(); db.close()
 
 
-def test_month_scoping_and_lead_flag(world):
+def test_month_shape_for_all_and_lead_coverage(world):
     t = world["today"]
     try:
-        # Plain cleaner: own jobs only.
+        # Plain cleaner: sees the WHOLE month's shape now — both jobs — but the
+        # one that isn't theirs is stripped to town + time.
         solo = _as(_CleanerUser(world["solo"]))
         r = solo.get(f"/api/crew/schedule-month?year={t.year}&month={t.month}").json()
-        ids = {j["id"] for j in r["jobs"]}
-        assert world["j_solo"] in ids and world["j_lead"] not in ids
-        assert r["see_all"] is False
+        by_id = {j["id"]: j for j in r["jobs"]}
+        assert {world["j_solo"], world["j_lead"]} <= set(by_id)
+        assert r["see_all"] is True and r["show_cover"] is False
+
+        mine = by_id[world["j_solo"]]
+        assert mine["mine"] is True
+        assert mine["property_name"].startswith("4 Pine")   # own job keeps identity
+
+        other = by_id[world["j_lead"]]
+        assert other["mine"] is False
+        # No property name, no address — not in a field, not through the title.
+        assert other["property_name"] is None
+        assert "4 Pine" not in (other["title"] or "")
+        assert other["title"] == "Cleaning"                 # generic (no city/state set)
+        # A plain cleaner does NOT see who's covering someone else's job.
+        assert other["cleaners"] == []
+        # And never any access detail / office note keys.
+        for leaky in ("house_code", "access_notes", "notes", "client_phone", "address"):
+            assert leaky not in other
         _clear()
 
-        # Admin flips the lead flag through the normal users PATCH.
+        # Admin flips the coverage flag through the normal users PATCH.
         admin = _as(_Admin())
         resp = admin.patch(f"/api/auth/users/{world['lead'].id}",
                            json={"can_view_full_schedule": True})
         assert resp.status_code == 200 and resp.json()["can_view_full_schedule"] is True
         _clear()
 
-        # Lead now sees both — but the other cleaner's row is names/times
-        # only: month rows never carry access details or office notes.
+        # Lead now ALSO sees who's covering — teammate names, still no customer
+        # identity and still no property name on the job that isn't theirs.
         db = SessionLocal()
         fresh_lead = db.query(User).filter(User.id == world["lead"].id).first()
         lead_view = _CleanerUser(fresh_lead); db.close()
         lead = _as(lead_view)
         r = lead.get(f"/api/crew/schedule-month?year={t.year}&month={t.month}").json()
+        assert r["show_cover"] is True
         by_id = {j["id"]: j for j in r["jobs"]}
-        assert {world["j_lead"], world["j_solo"]} <= set(by_id)
         other = by_id[world["j_solo"]]
         assert other["mine"] is False and "Solo" in other["cleaners"]
+        assert other["property_name"] is None and "4 Pine" not in (other["title"] or "")
         for leaky in ("house_code", "access_notes", "notes", "client_phone"):
             assert leaky not in other
     finally:
