@@ -365,6 +365,15 @@ def notify_jobs_posted(db: Session, jobs, org_id=None) -> int:
             # skips these rows for the same reason.
             on_it = {str(c) for c in (getattr(job, "cleaner_ids", None) or [])}
             people = [p for p in people if p.get("cleaner_id") not in on_it]
+            # Targeted offer (migration 117): if the office limited who this
+            # offer shows for, notify only those cleaners — the same set the
+            # board reveals it to. An empty/absent audience is everyone, so this
+            # is a no-op for an untargeted post. Pushing "new job" to someone
+            # who can't see or claim it is the same dead-end notification the
+            # `on_it` and `cleared` filters exist to avoid.
+            audience = {str(c) for c in (getattr(job, "offer_audience", None) or [])}
+            if audience:
+                people = [p for p in people if p.get("cleaner_id") in audience]
         else:
             title = f"{len(jobs)} jobs on the board"
             body = _batch_line(jobs)
