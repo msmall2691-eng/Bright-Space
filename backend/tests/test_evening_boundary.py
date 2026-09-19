@@ -113,7 +113,9 @@ def test_a_job_two_days_out_is_not_texted_tomorrow_in_the_evening(made):
         tomorrow = _job_on(MAINE_DAY + timedelta(days=1))
         day_after = _job_on(MAINE_DAY + timedelta(days=2))
 
-        with patch("services.reminder_service.send_sms",
+        # Patched at the twilio seam send_and_log calls (the reminder path now
+        # routes through services.sms_send so the attempt is audit-logged).
+        with patch("integrations.twilio_client.send_sms",
                    return_value={"sid": "SM-test"}) as sms:
             send_due_reminders(db, lead_hours=24, now=EVENING_UTC)
 

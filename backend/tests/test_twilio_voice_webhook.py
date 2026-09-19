@@ -204,8 +204,8 @@ def test_transcript_updates_the_same_row_instead_of_adding_one(monkeypatch, twil
     Keyed on CallSid so the inbox shows a single entry that fills in, not
     three rows for one caller.
     """
-    import modules.comms.router as comms
-    monkeypatch.setattr(comms, "send_sms", lambda **kw: {"sid": "SM_test"}, raising=False)
+    monkeypatch.setattr("integrations.twilio_client.send_sms",
+                        lambda **kw: {"sid": "SM_test"})
     monkeypatch.setenv("VOICE_FORWARD_TO", "+12075559876")
 
     sid = "CAinbox-vm"
@@ -236,9 +236,11 @@ def test_transcript_updates_the_same_row_instead_of_adding_one(monkeypatch, twil
 
 def test_transcript_is_texted_to_the_on_call_phone(monkeypatch, twilio_token):
     """The payoff: the transcript arrives where she already looks."""
-    import modules.comms.router as comms
     sent = []
-    monkeypatch.setattr(comms, "send_sms", lambda **kw: sent.append(kw) or {"sid": "SM_t"}, raising=False)
+    # The voicemail forward now routes through services.sms_send.send_and_log,
+    # which calls this seam — patch it so the send is captured and audited.
+    monkeypatch.setattr("integrations.twilio_client.send_sms",
+                        lambda **kw: sent.append(kw) or {"sid": "SM_t"})
     monkeypatch.setenv("VOICE_FORWARD_TO", "+12075559876")
 
     sid = "CAinbox-alert"

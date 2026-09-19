@@ -87,7 +87,8 @@ def notify_user_or_sms(user_id, title: str, body: str, *, category: str,
     if sent:
         return sent
     try:
-        from integrations.twilio_client import configured as sms_configured, send_sms
+        from integrations.twilio_client import configured as sms_configured
+        from services.sms_send import send_and_log
         if not sms_configured():
             return 0
         from database.db import SessionLocal
@@ -108,7 +109,8 @@ def notify_user_or_sms(user_id, title: str, body: str, *, category: str,
         e164 = normalize_e164(phone)
         if not e164:
             return 0
-        send_sms(to=e164, body=(sms_body or f"{title} {body}").strip())
+        send_and_log(to=e164, body=(sms_body or f"{title} {body}").strip(),
+                     action="crew", entity_type="user", entity_id=user_id)
         return 1
     except Exception:  # pragma: no cover - a text must never break the caller
         logger.warning("SMS fallback failed for user %s", user_id, exc_info=True)
@@ -441,7 +443,8 @@ def _sms_offer(user_ids: list, phones: dict, title: str, body: str) -> int:
     """
     if not user_ids:
         return 0
-    from integrations.twilio_client import configured as sms_configured, send_sms
+    from integrations.twilio_client import configured as sms_configured
+    from services.sms_send import send_and_log
 
     if not sms_configured():
         # Same posture as push with no VAPID keys: quietly do nothing rather
@@ -466,7 +469,8 @@ def _sms_offer(user_ids: list, phones: dict, title: str, body: str) -> int:
         if not phone:
             continue
         try:
-            send_sms(to=phone, body=text)
+            send_and_log(to=phone, body=text, action="offer",
+                         entity_type="user", entity_id=uid)
             sent += 1
         except (ValueError, RuntimeError) as e:
             # One bad number or a Twilio outage must not cost the rest of the
