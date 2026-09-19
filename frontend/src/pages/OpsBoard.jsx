@@ -11,9 +11,11 @@
  * owns the full set — the board is a triage surface, not a scroll-forever
  * list.
  *
- * Upcoming visits are NOT one of those sections: they render as a Week/Month
- * calendar grid across the top (components/board/ScheduleCalendar.jsx), which
- * fetches itself from /api/schedule/week.
+ * Upcoming visits are NOT one of those sections: the REAL Schedule calendar
+ * renders across the top (components/board/HomeScheduleCalendar.jsx wrapping the
+ * shared <CalendarView>), so Home shows the same month, same jobs and same
+ * drag-to-reschedule as the Schedule page — not a diverging count grid. It runs
+ * its own useScheduleData(month) fetch (/api/schedule/week, correctly paged).
  *
  * The approval queue (components/board/ProposalsQueue.jsx) also fetches
  * itself: it lists pending ProposedActions, and on the first Home visit of a
@@ -41,7 +43,7 @@ import { pushToast } from '../utils/toastBus'
 import { ErrorState } from '../components/ui'
 import { TAG_TONE, SEV_DOT, SEV_LABEL, STAT_TONE, INT_DOT, SEV_ORDER } from '../components/board/tokens'
 import BoardAssistant from '../components/board/BoardAssistant'
-import ScheduleCalendar from '../components/board/ScheduleCalendar'
+import HomeScheduleCalendar from '../components/board/HomeScheduleCalendar'
 import ProposalsQueue, { relTime } from '../components/board/ProposalsQueue'
 import AgentHelp from '../components/board/AgentHelp'
 import { MoneyToday, CrewToday, FeedHealth, RecurringHealth } from '../components/board/SnapshotBoxes'
@@ -461,8 +463,8 @@ function WidgetGroup({ groupKey, title, children }) {
 // activity, schedule, then KPIs — so sections render in that order regardless
 // of payload order, split around the compact KPI band. Money/systems/noise
 // follow below the fold.
-// `today_schedule` is deliberately absent: today's visits now render as the
-// Week/Month calendar grid (components/board/ScheduleCalendar.jsx) rather than
+// `today_schedule` is deliberately absent: today's visits now render in the
+// real Schedule calendar (components/board/HomeScheduleCalendar.jsx) rather than
 // a second text list of the same jobs — the owner asked to "immediately have
 // eyes on the cal schedule", and carrying both was exactly the redundancy she
 // flagged. The backend no longer emits that section either.
@@ -833,7 +835,7 @@ export default function OpsBoard() {
                   `anyVisible` gate: an empty attention board must never hide
                   the week's work. */}
               <div data-testid="home-calendar-slot">
-                <ScheduleCalendar navigate={navigate} />
+                <HomeScheduleCalendar navigate={navigate} />
               </div>
 
               {/* TWO COLUMNS THAT PACK, not a grid.
