@@ -278,7 +278,7 @@ export default function GeneralTab({ toast, active, automation, dangerZone }) {
                 onChange={e => setGeneralSettings(s => ({ ...s, quote_policies: e.target.value }))}
                 placeholder={"Please pick up personal items so we can clean thoroughly.\nPlease make sure the home is accessible on your scheduled day.\nCancellations need 24 hours' notice.\nSecure pets during the visit."}
                 className={inp + ' resize-none'} />
-              <p className="text-[11px] text-ink-3 mt-1">Shown as a friendly checklist on the quote email, PDF, and public page (heading “A Few Things Before We Clean”). One policy per line. Leave blank to use the built-in professional defaults.</p>
+              <p className="text-[11px] text-ink-3 mt-1">Shown as a friendly checklist on the quote email, PDF, and public page (heading “A Few Things Before We Clean”). One policy per line. Applies to home cleans; short-term rental turnovers and commercial jobs use their own turnover/commercial-appropriate notes. Leave blank to use the built-in professional defaults.</p>
             </div>
           </div>
         </div>
