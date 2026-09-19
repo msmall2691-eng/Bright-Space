@@ -227,6 +227,18 @@ export default function IntegrationsTab({ toast, active }) {
           </div>
         </div>
 
+        {/* Text messages — Twilio status, who gets lead/booking alerts, and a
+            recent-activity read so an operator can see why a text did or didn't
+            go out (the owner alert phone was previously env-only, unsettable in
+            the app, and owner-alert texts weren't on the audit log at all). */}
+        <div>
+          <div className="mb-4">
+            <h2 className="text-lg font-bold text-ink">Text messages (SMS)</h2>
+            <p className="text-sm text-ink-2 mt-1">Who gets alerted when a lead or booking comes in, and whether texts are going out.</p>
+          </div>
+          <SmsCard toast={toast} active={active} />
+        </div>
+
         {/* Other integrations — payments + external workflows. */}
         <div>
           <div className="mb-4">
@@ -262,6 +274,139 @@ export default function IntegrationsTab({ toast, active }) {
             ))}
           </div>
         </div>
+      </div>
+    </div>
+  )
+}
+
+// Text messages — Twilio status, owner-alert destinations (phone + email that
+// get pinged on a new lead/booking), and a recent-activity read. The owner
+// alert phone in particular was previously only settable as a Railway env var;
+// here it saves to an AppSetting the backend prefers over the env var.
+function SmsCard({ toast, active }) {
+  const [st, setSt] = useState({ loading: true })
+  const [form, setForm] = useState({ phone: '', email: '' })
+  const [busy, setBusy] = useState(false)
+  const [events, setEvents] = useState(null)
+
+  const refresh = () => {
+    setSt(s => ({ ...s, loading: true }))
+    return get('/api/settings/sms-status')
+      .then(r => {
+        setSt({ loading: false, ...r })
+        setForm({ phone: r.owner_alert_phone?.value || '', email: r.owner_alert_email?.value || '' })
+      })
+      .catch(e => setSt({ loading: false, error: e?.message || 'Could not check status' }))
+  }
+  const refreshEvents = () => get('/api/integration-events?provider=sms&limit=15')
+    .then(setEvents).catch(() => setEvents([]))
+
+  useEffect(() => { if (active) { refresh(); refreshEvents() } }, [active])
+
+  const save = async () => {
+    setBusy(true)
+    try {
+      const r = await post('/api/settings/notifications', {
+        owner_alert_phone: form.phone.trim(),
+        owner_alert_email: form.email.trim(),
+      })
+      setSt({ loading: false, ...r })
+      setForm({ phone: r.owner_alert_phone?.value || '', email: r.owner_alert_email?.value || '' })
+      toast('Alert destinations saved')
+    } catch (e) {
+      toast(e?.detail || e?.message || 'Could not save', 'error')
+    } finally { setBusy(false) }
+  }
+
+  const twilioOk = !st.loading && st.twilio_configured
+  const srcLabel = { database: 'saved here', env: 'from server config', none: 'not set' }
+  const ACTIONS = { owner_alert: 'Owner alert', booking_confirm: 'Booking confirmation' }
+  const fmt = (iso) => { try { return new Date(iso).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) } catch { return '' } }
+
+  return (
+    <div className="bg-panel rounded-xl border border-hairline p-4 space-y-4">
+      {/* Twilio connection status */}
+      <div className="flex items-center justify-between gap-4">
+        <div className="flex items-center gap-4">
+          <span className="text-2xl">💬</span>
+          <div>
+            <h3 className="font-semibold text-ink">Twilio</h3>
+            <p className="text-xs text-ink-3">The number every BrightBase text is sent from</p>
+          </div>
+        </div>
+        <span className="inline-flex h-6 items-center gap-1.5 rounded-sm border border-hairline-2 bg-panel px-2 text-[11px] font-medium text-ink-2 shrink-0">
+          <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${st.loading ? 'bg-ink-3' : twilioOk ? 'bg-emerald-500' : 'bg-red-500'}`} aria-hidden="true" />
+          {st.loading ? 'Checking…' : twilioOk ? 'Configured' : 'Not configured'}
+        </span>
+      </div>
+      {!st.loading && !twilioOk && (
+        <div className="text-xs bg-panel border border-hairline rounded-lg p-3 leading-relaxed text-ink-2">
+          Twilio credentials aren't set on the server, so no texts can be sent. Set <code className="bg-bg-2 px-1 rounded">TWILIO_ACCOUNT_SID</code>, <code className="bg-bg-2 px-1 rounded">TWILIO_AUTH_TOKEN</code> and <code className="bg-bg-2 px-1 rounded">TWILIO_PHONE_NUMBER</code> on the BrightBase service.
+        </div>
+      )}
+
+      {/* Owner-alert destinations */}
+      <div className="border-t border-hairline pt-4">
+        <div className="text-xs font-semibold text-ink-2 mb-1">Where new-lead & booking alerts go</div>
+        <p className="text-[11px] text-ink-3 mb-3">The office gets a text and an email whenever a request comes in. Leave a field blank to turn that channel off (or fall back to the server's configured value).</p>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div>
+            <label className="flex items-center justify-between text-[11px] font-medium text-ink-2 mb-1">
+              <span>Alert phone (text)</span>
+              {!st.loading && <span className="text-[10px] text-ink-3">{srcLabel[st.owner_alert_phone?.source] || ''}</span>}
+            </label>
+            <input type="tel" value={form.phone} onChange={e => setForm(f => ({ ...f, phone: e.target.value }))}
+              placeholder="(207) 555-0142"
+              className="w-full bg-bg border border-hairline rounded-lg px-3 py-2 text-sm text-ink placeholder-ink-3 focus:outline-hidden focus:border-blue-400" />
+          </div>
+          <div>
+            <label className="flex items-center justify-between text-[11px] font-medium text-ink-2 mb-1">
+              <span>Alert email</span>
+              {!st.loading && <span className="text-[10px] text-ink-3">{srcLabel[st.owner_alert_email?.source] || ''}</span>}
+            </label>
+            <input type="email" value={form.email} onChange={e => setForm(f => ({ ...f, email: e.target.value }))}
+              placeholder="office@example.com"
+              className="w-full bg-bg border border-hairline rounded-lg px-3 py-2 text-sm text-ink placeholder-ink-3 focus:outline-hidden focus:border-blue-400" />
+          </div>
+        </div>
+        <div className="mt-3">
+          <button onClick={save} disabled={busy || st.loading}
+            className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-xs font-semibold transition-colors disabled:opacity-50">
+            {busy ? 'Saving…' : 'Save alert destinations'}
+          </button>
+        </div>
+      </div>
+
+      {/* Recent SMS activity — the audit read, so "did a text go out?" is
+          answerable without server logs. */}
+      <div className="border-t border-hairline pt-4">
+        <div className="flex items-center justify-between mb-2">
+          <div className="text-xs font-semibold text-ink-2">Recent text activity</div>
+          <button onClick={refreshEvents} className="text-[11px] text-ink-3 hover:text-ink-2">Refresh</button>
+        </div>
+        {events === null && <p className="text-[11px] text-ink-3">Loading…</p>}
+        {events !== null && events.length === 0 && (
+          <p className="text-[11px] text-ink-3">No text messages recorded yet.</p>
+        )}
+        {events !== null && events.length > 0 && (
+          <div className="space-y-1.5">
+            {events.map(e => (
+              <div key={e.id} className="flex items-start gap-2 text-[11.5px]">
+                <span className={`mt-[5px] h-1.5 w-1.5 shrink-0 rounded-full ${e.status === 'ok' ? 'bg-emerald-500' : e.status === 'failed' ? 'bg-red-500' : 'bg-ink-3'}`} aria-hidden="true" />
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-2">
+                    <span className="text-ink-2 font-medium">{ACTIONS[e.action] || e.action}</span>
+                    <span className="text-ink-3">{(e.request_payload || '').replace(/^to /, '') || ''}</span>
+                    <span className="text-ink-3 ml-auto shrink-0">{fmt(e.created_at)}</span>
+                  </div>
+                  {e.status === 'failed' && e.error_message && (
+                    <div className="text-red-600 mt-0.5 break-words">{e.error_message}</div>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   )

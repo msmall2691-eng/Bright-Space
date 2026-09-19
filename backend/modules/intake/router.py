@@ -331,6 +331,7 @@ def _alert_owner_new_request(db: Session, data: IntakeSubmit, result: dict) -> N
                 f"{where}\n{data.phone or data.email or ''}\n"
                 f"See details in Bright-Space Requests.",
                 ref=f"for intake={intake_id}", tag="intake",
+                entity_type="intake", entity_id=intake_id,
             )
         except Exception as e:
             logger.warning("[intake] owner SMS failed for intake %s: %s", intake_id, e)

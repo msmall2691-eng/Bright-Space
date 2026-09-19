@@ -51,16 +51,37 @@ def owner_alert_email(db: Session) -> Optional[str]:
     return owner_notify_setting(db, "owner_alert_email", "OWNER_ALERT_EMAIL")
 
 
-def send_owner_sms(db: Session, body: str, *, ref: str = "", tag: str = "owner-alert") -> bool:
+def send_owner_sms(db: Session, body: str, *, ref: str = "", tag: str = "owner-alert",
+                   entity_type: str = "owner_alert", entity_id=None) -> bool:
     """Text the owner via the same integrations.twilio_client the quote-SMS
     path uses, so one TWILIO_* configuration covers every owner alert.
-    ``ref`` is a log-only identifier (e.g. "intake=12", "quote=QT-7")."""
+    ``ref`` is a log-only identifier (e.g. "intake=12", "quote=QT-7").
+
+    Every ATTEMPT is written to the integration audit log (provider "sms",
+    action "owner_alert") so the SMS activity read (GET /api/integration-events
+    ?provider=sms) shows owner-alert texts alongside the customer booking SMS —
+    which is how an operator sees why a lead text did or didn't arrive. The
+    unconfigured case is not an attempt (no destination), so it stays a plain
+    INFO log rather than a failed row on every lead. Raises on a provider
+    failure after logging it — callers wrap this (best-effort contract)."""
     to_number = owner_alert_phone(db)
     if not to_number:
         logger.info("[%s] owner SMS skipped — no owner_alert_phone / OWNER_ALERT_PHONE set", tag)
         return False
     from integrations.twilio_client import send_sms
-    send_sms(to=to_number, body=body)
+    from utils.integration_log import log_integration_event
+    try:
+        res = send_sms(to=to_number, body=body)
+    except Exception as e:
+        log_integration_event(
+            db, entity_type=entity_type, entity_id=entity_id, provider="sms",
+            action="owner_alert", status="failed", recipient=to_number,
+            detail=str(e), commit=True)
+        raise
+    log_integration_event(
+        db, entity_type=entity_type, entity_id=entity_id, provider="sms",
+        action="owner_alert", status="ok", recipient=to_number,
+        external_id=(res or {}).get("sid"), commit=True)
     logger.info("[%s] owner SMS sent %s", tag, ref)
     return True
 
