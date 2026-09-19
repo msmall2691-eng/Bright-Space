@@ -7,6 +7,7 @@ import {
 import { get, patch, post, del, download } from '../api'
 import RecurrenceScopeDialog from '../components/schedule/RecurrenceScopeDialog'
 import JobClaimRequests from '../components/schedule/JobClaimRequests'
+import OfferAudience from '../components/schedule/OfferAudience'
 import JobMargin from '../components/schedule/JobMargin'
 import { rescheduleRecurringVisit } from '../utils/recurringReschedule'
 import { toast } from '../utils/toastBus'
@@ -694,6 +695,13 @@ export default function JobDetail() {
                     {job.open_for_claims ? 'On · tap to close' : 'Off'}
                   </span>
                 </button>
+              )}
+              {canEdit() && job.open_for_claims && (
+                /* Who this open offer shows for. Default is everyone; the office
+                   can limit it to chosen cleaners (still an offer they ask for,
+                   not an assignment — marketplace Rule 0). */
+                <OfferAudience audience={job.offer_audience || []}
+                  onSave={(ids) => saveField({ offer_audience: ids })} />
               )}
               {canEdit() && job.agreed_rate != null && (
                 /* What the job actually pays, once someone was approved. Kept

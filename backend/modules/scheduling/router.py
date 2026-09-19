@@ -118,6 +118,12 @@ class JobUpdate(BaseModel):
     # open_for_claims is on. NULL is fine (a re-opened job may not need a new
     # rate) — the crew app just won't show a number until one's set.
     posted_rate: Optional[float] = None
+    # Marketplace (migration 117): limit which cleaners see this open offer.
+    # A list of cleaner_ids; null or [] = every cleared sub (the default). This
+    # narrows WHO is invited to bid — the sub still requests/accepts and the
+    # office still decides, so it is an offer, never an assignment. In
+    # CLEARABLE_FIELDS so an explicit null resets it to "everyone".
+    offer_audience: Optional[List[str]] = None
 
 JOB_TYPES = {"residential", "deep_clean", "commercial", "str_turnover", "one_time"}
 JOB_STATUSES = {"unscheduled", "scheduled", "in_progress", "completed", "cancelled"}
@@ -131,7 +137,7 @@ JOB_STATUSES = {"unscheduled", "scheduled", "in_progress", "completed", "cancell
 # was honest, the server dropped it, and the old number came back on reload.
 # Distinguishing the two cases needs pydantic's `model_fields_set`, not the
 # value: absent and null both arrive as None.
-CLEARABLE_FIELDS = frozenset({"posted_rate"})
+CLEARABLE_FIELDS = frozenset({"posted_rate", "offer_audience"})
 # NO PER-JOB PAY MODE, AND NO HOURLY BUMP. `Job.pay_mode` ("auto | hourly |
 # piece") and `Job.pay_rate_bump` ("extra $/hr on top of each cleaner's normal
 # rate") were the employee model one level down from the per-cleaner hourly
@@ -718,6 +724,11 @@ def job_to_dict(j: Job, client: Client = None, effective_date=None,
         # Crew app Phase 3: "up for grabs" flag the office toggles; claiming
         # flips it back off (crew router's /claim).
         "open_for_claims": bool(getattr(j, "open_for_claims", False)),
+        # Marketplace (migration 117): who this open offer is limited to
+        # (cleaner_ids). [] / absent = everyone. Office-only serialization so
+        # the board can show and edit the audience; the crew row never carries
+        # it.
+        "offer_audience": list(getattr(j, "offer_audience", None) or []),
         # Marketplace pivot (migration 097): asking rate (posted) vs. the
         # final rate once a claim request is approved (agreed) — payroll
         # reads agreed_rate, never posted_rate.
@@ -3698,6 +3709,24 @@ def update_job(job_id: int, data: JobUpdate, db: Session = Depends(get_db), org_
                        "first, then post it — approving a request on an "
                        "assigned job would add a second person, not fill a "
                        "vacancy.")
+    # A targeted offer audience must resolve to real cleaner accounts in this
+    # org. A non-empty audience matching nobody would hide the job from the
+    # whole bench (a silent footgun), so reject it; an empty list stays
+    # "everyone". Order-preserving dedupe. This only narrows who is INVITED to
+    # bid — it never assigns anyone (brightbase-marketplace Rule 0).
+    if "offer_audience" in updates and updates["offer_audience"]:
+        want = [str(c).strip() for c in updates["offer_audience"] if str(c).strip()]
+        known = {str(u.cleaner_id) for u in db.query(User).filter(
+            User.role == "cleaner", User.cleaner_id.isnot(None),
+            or_(User.org_id == org_id, User.org_id.is_(None))).all()}
+        valid = [c for c in dict.fromkeys(want) if c in known]
+        if not valid:
+            raise HTTPException(
+                status_code=400,
+                detail="None of those cleaners were recognized — pick cleaners "
+                       "from your crew, or leave the job open to everyone.")
+        updates["offer_audience"] = valid
+
     if "status" in updates and updates["status"] not in JOB_STATUSES \
             and updates["status"] != job.status:
         raise HTTPException(status_code=400, detail=f"Unknown status '{updates['status']}'")

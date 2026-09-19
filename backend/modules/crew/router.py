@@ -447,6 +447,13 @@ def my_day(
             continue
         if current_user.cleaner_id in (j.cleaner_ids or []):
             continue
+        # Targeted offer (migration 117): if the office limited this offer to
+        # specific cleaners, only they see it. Empty/absent = everyone. This is
+        # visibility only — a targeted sub still asks and the office still
+        # decides (brightbase-marketplace: offered, never assigned).
+        audience = getattr(j, "offer_audience", None) or []
+        if audience and current_user.cleaner_id not in audience:
+            continue
         row = _job_row(j, names, current_user.cleaner_id,
                        my_claim_request=my_requests_by_job.get(j.id))
         # An offer says enough to bid on and no more. The house internals were

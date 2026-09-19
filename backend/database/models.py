@@ -686,6 +686,14 @@ class Job(Base):
     # are claimable — an unassigned job is not automatically open). The first
     # successful claim adds the claimer to cleaner_ids and flips this back off.
     open_for_claims = Column(Boolean, default=False, nullable=False)
+    # Marketplace (migration 117): limit WHO among the cleared bench sees this
+    # open offer. A list of cleaner_ids; NULL or [] means every cleared sub sees
+    # it (the default and prior behavior). This narrows the audience the office
+    # INVITES to bid — it is not an assignment: a targeted sub still requests or
+    # accepts, and the office still decides between requesters. "Offered, never
+    # assigned" is intact (brightbase-marketplace Rule 0). Identity stripping is
+    # unchanged: even a targeted offer carries only town + rate until it's won.
+    offer_audience = Column(JSON, nullable=True)
     # Marketplace pivot (migration 097): the office's asking rate when a job
     # is posted open, and the FINAL agreed rate once a request is approved
     # (may differ from posted_rate — the winning sub may have countered).
