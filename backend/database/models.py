@@ -2051,6 +2051,27 @@ class SavedView(Base):
     updated_at = Column(DateTime, default=_utcnow, onupdate=_utcnow)
 
 
+class StickyNote(Base):
+    """A member's pinned Home-dashboard sticky note. Per-user AND per-workspace
+    (org), like SavedView, so each person keeps their own notes — they follow
+    them across devices instead of living in one browser's localStorage.
+
+    `color` is one of a small palette the widget offers; `sort_order` orders the
+    board (lower first), so a drag-reorder is a batch of sort_order writes. The
+    body is free text and can be empty (a note the owner is about to fill in)."""
+    __tablename__ = "sticky_notes"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"),
+                     nullable=False, index=True)
+    org_id = Column(Integer, ForeignKey("orgs.id"), nullable=False, index=True)  # tenant scope (MT-1)
+    body = Column(Text, default="", nullable=False)
+    color = Column(String(16), default="amber", nullable=False)
+    sort_order = Column(Integer, default=0, nullable=False)
+    created_at = Column(DateTime, default=_utcnow)
+    updated_at = Column(DateTime, default=_utcnow, onupdate=_utcnow)
+
+
 class PushSubscription(Base):
     """A single browser/device Web Push subscription for a staff user.
 

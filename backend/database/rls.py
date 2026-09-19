@@ -18,7 +18,7 @@ TENANT_TABLES = [
     "recurrence_exceptions", "jobs", "lead_intakes", "invoices",
     "conversations", "messages", "opportunities", "contact_emails", "contact_phones",
     "activities", "quotes", "cleaner_time_off",
-    "integration_events", "saved_views",
+    "integration_events", "saved_views", "sticky_notes",
     # Phase 2 scheduling redesign (migration 068): the append-only event log and
     # per-target projection bookkeeping. Both carry org_id.
     "schedule_events", "projection_state",
