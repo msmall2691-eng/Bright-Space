@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { Plus, X, RefreshCw } from 'lucide-react'
 import { get, post, patch, del } from '../../api'
 
@@ -35,9 +35,12 @@ export default function StickyNotes() {
   }
   useEffect(load, [])
 
-  const add = async () => {
+  const add = useCallback(async () => {
     try {
-      const n = await post('/api/notes', { body: '', color: COLORS[notes.length % COLORS.length] })
+      // Color varies with the current count (functional read to dodge staleness).
+      let count = 0
+      setNotes(prev => { count = prev.length; return prev })
+      const n = await post('/api/notes', { body: '', color: COLORS[count % COLORS.length] })
       setNotes(prev => [n, ...prev])
       // Focus the new note's textarea on the next paint.
       requestAnimationFrame(() => {
@@ -45,7 +48,14 @@ export default function StickyNotes() {
         if (el) el.focus()
       })
     } catch { /* transient — the board just doesn't gain a note */ }
-  }
+  }, [])
+
+  // "Quick note" from the QuickActions widget adds a note without leaving Home.
+  useEffect(() => {
+    const h = () => add()
+    window.addEventListener('bb:add-note', h)
+    return () => window.removeEventListener('bb:add-note', h)
+  }, [add])
 
   // Body edits save on a short debounce (and immediately on blur) so a burst of
   // keystrokes is one request, not one per character.

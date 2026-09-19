@@ -45,6 +45,7 @@ import { TAG_TONE, SEV_DOT, SEV_LABEL, STAT_TONE, INT_DOT, SEV_ORDER } from '../
 import BoardAssistant from '../components/board/BoardAssistant'
 import HomeScheduleCalendar from '../components/board/HomeScheduleCalendar'
 import StickyNotes from '../components/board/StickyNotes'
+import QuickActions from '../components/board/QuickActions'
 import ProposalsQueue, { relTime } from '../components/board/ProposalsQueue'
 import AgentHelp from '../components/board/AgentHelp'
 import { MoneyToday, CrewToday, FeedHealth, RecurringHealth } from '../components/board/SnapshotBoxes'
@@ -835,6 +836,8 @@ export default function OpsBoard() {
                   shape of the week/month at a glance). Rendered outside the
                   `anyVisible` gate: an empty attention board must never hide
                   the week's work. */}
+              <QuickActions navigate={navigate} />
+
               <div data-testid="home-calendar-slot">
                 <HomeScheduleCalendar navigate={navigate} />
               </div>
