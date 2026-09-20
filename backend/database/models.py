@@ -297,6 +297,16 @@ class Client(Base):
     last_contacted_at = Column(DateTime, nullable=True)
     email_verified = Column(Boolean, default=False)
 
+    # Archive lifecycle (migration 119): a client who isn't a customer anymore.
+    # Archived = archived_at IS NOT NULL — hidden from every active list/dropdown
+    # /search, their work stopped (recurring off, upcoming visits cancelled,
+    # turnover bookings dismissed, open offers closed), but ALL history and
+    # invoices preserved and one-click reversible (unarchive). Orthogonal to
+    # `status` (lead/active/inactive), which stays the sales sub-stage. Nullable,
+    # no backfill — absent = active, exactly today's behavior.
+    archived_at = Column(DateTime, nullable=True, index=True)
+    archived_by = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+
     # Relationships - all cascade delete with client
     user = relationship("User", back_populates="client", uselist=False, foreign_keys="User.client_id")  # One client per user (for role=client users)
     quotes = relationship("Quote", back_populates="client", cascade="all, delete-orphan", foreign_keys="Quote.client_id")
@@ -397,6 +407,14 @@ class Property(Base):
     custom_fields = Column(JSON, default=dict)
 
     active = Column(Boolean, default=True, nullable=False)
+    # Archive lifecycle (migration 119): `active=False` is already the soft-
+    # delete/archive predicate (get_properties and the sync ticks honor it).
+    # archived_at records WHEN it was archived and tells a deliberate archive
+    # apart from a legacy active=False; archived_by is the actor. Nullable, no
+    # backfill — an archived property is active=False with archived_at set going
+    # forward. Access details (house_code/wifi/access_notes) are untouched here.
+    archived_at = Column(DateTime, nullable=True, index=True)
+    archived_by = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     # Structured size details, carried over from the lead/intake on convert so a
     # quote can pre-fill from the customer's request instead of re-typing.
     bedrooms = Column(Integer, nullable=True)

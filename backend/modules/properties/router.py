@@ -10,7 +10,9 @@ import logging
 from database.db import get_db
 from database.models import Property, ICalEvent, PropertyIcal, Client, Job
 from integrations.ical_sync import sync_property
-from modules.auth.router import require_role, current_org_id
+from modules.auth.router import require_role, current_org_id, resolve_org_id, get_current_user
+from database.models import User
+from sqlalchemy import func
 from utils.dates import business_today
 from utils.address import combine_address
 
@@ -875,16 +877,69 @@ def ical_preview(property_id: int, db: Session = Depends(get_db)):
     return out
 
 
-@router.delete("/{property_id}", status_code=204, dependencies=[Depends(require_role("admin", "manager"))])
-def delete_property(property_id: int, db: Session = Depends(get_db), org_id: int = Depends(current_org_id)):
+def _property_or_404(db, property_id, org_id):
+    org_id = resolve_org_id(org_id, db)
     prop = db.query(Property).filter(
         Property.id == property_id,
         or_(Property.org_id == org_id, Property.org_id.is_(None)),  # MT-2 tenant scope
     ).first()
     if not prop:
         raise HTTPException(status_code=404, detail="Property not found")
-    prop.active = False
-    db.commit()
+    return prop
+
+
+@router.delete("/{property_id}", status_code=204, dependencies=[Depends(require_role("admin", "manager"))])
+def delete_property(property_id: int, permanent: bool = False,
+                    db: Session = Depends(get_db), org_id: int = Depends(current_org_id),
+                    current_user: User = Depends(get_current_user)):
+    """Remove a property. Default is ARCHIVE (soft + reversible): the property
+    drops out of active lists and its future work stops (recurring off, upcoming
+    visits cancelled, future turnover bookings dismissed) while history stays.
+
+    `?permanent=true` hard-deletes the property and its iCal feeds/bookings — but
+    only when it has NO linked jobs, so job history is never destroyed (jobs
+    require a property, so a property with jobs must be archived, not deleted).
+    A property with jobs 409s with the count."""
+    prop = _property_or_404(db, property_id, org_id)
+    if permanent:
+        job_count = db.query(func.count(Job.id)).filter(Job.property_id == prop.id).scalar() or 0
+        if job_count:
+            raise HTTPException(status_code=409, detail={
+                "code": "property_has_jobs",
+                "message": "This property has jobs on it, so it can't be permanently "
+                           "deleted (that would lose job history). Archive it instead.",
+                "counts": {"jobs": job_count},
+            })
+        db.delete(prop)   # ical_events + property_icals cascade with it
+        db.commit()
+        return
+    # Soft delete == archive with the full cascade (scheduling-invariants R7:
+    # future visits are cancel-pending, never hard-deleted).
+    from services.client_lifecycle import archive_property
+    archive_property(db, prop, actor_id=getattr(current_user, "id", None))
+
+
+@router.get("/{property_id}/archive-preview", dependencies=[Depends(require_role("admin", "manager"))])
+def property_archive_preview(property_id: int, db: Session = Depends(get_db),
+                             org_id: int = Depends(current_org_id)):
+    from services.client_lifecycle import preview_property_archive
+    return preview_property_archive(db, _property_or_404(db, property_id, org_id))
+
+
+@router.post("/{property_id}/archive", dependencies=[Depends(require_role("admin", "manager"))])
+def archive_property_endpoint(property_id: int, db: Session = Depends(get_db),
+                              org_id: int = Depends(current_org_id),
+                              current_user: User = Depends(get_current_user)):
+    from services.client_lifecycle import archive_property
+    return archive_property(db, _property_or_404(db, property_id, org_id),
+                            actor_id=getattr(current_user, "id", None))
+
+
+@router.post("/{property_id}/unarchive", dependencies=[Depends(require_role("admin", "manager"))])
+def unarchive_property_endpoint(property_id: int, db: Session = Depends(get_db),
+                                org_id: int = Depends(current_org_id)):
+    from services.client_lifecycle import unarchive_property
+    return unarchive_property(db, _property_or_404(db, property_id, org_id))
 
 
 # Multiple iCal management endpoints
