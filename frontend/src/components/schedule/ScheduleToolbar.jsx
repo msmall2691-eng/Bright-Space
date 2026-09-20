@@ -107,7 +107,7 @@ export default function ScheduleToolbar({
 
             <IconButton onClick={onToggleFilters} label="Filters" active={filterActive}>
               <Filter className="w-[18px] h-[18px]" />
-              {filterActive && <span className="absolute top-1 right-1 w-2 h-2 rounded-full bg-blue-500" />}
+              {filterActive && <span className="absolute top-1 right-1 w-2 h-2 rounded-full bg-indigo-500" />}
             </IconButton>
 
             <div className="relative">
@@ -196,7 +196,7 @@ export default function ScheduleToolbar({
             <Filter className="w-4 h-4" />
             <span className="ml-1.5">Filters</span>
             {filterActive && (
-              <span className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-blue-500" />
+              <span className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-indigo-500" />
             )}
           </Button>
 
@@ -300,7 +300,7 @@ function IconButton({ onClick, label, active, children }) {
   return (
     <button onClick={onClick} aria-label={label}
       className={`relative shrink-0 grid place-items-center w-9 h-9 rounded-lg active:scale-95 transition-transform ${
-        active ? 'bg-blue-500/15 text-blue-600 dark:text-blue-300' : 'bg-bg-2 text-ink-2'}`}>
+        active ? 'bg-indigo-500/15 text-indigo-600 dark:text-indigo-300' : 'bg-bg-2 text-ink-2'}`}>
       {children}
     </button>
   )
