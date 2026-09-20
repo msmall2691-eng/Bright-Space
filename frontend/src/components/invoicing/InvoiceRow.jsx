@@ -94,13 +94,13 @@ export function InvoiceRow({
         )}
         {inv.status !== 'paid' && inv.status !== 'overdue' && days && (
           <button onClick={() => markOverdue(inv.id)}
-            className="text-[11px] px-2 py-1 rounded-md bg-red-500/10 text-red-400 hover:bg-red-500/20 transition-colors">
+            className="text-[11px] px-2 py-1 rounded-md bg-bg text-red-500 hover:bg-bg-2 transition-colors">
             Mark overdue
           </button>
         )}
         {inv.status !== 'paid' && (
           <button onClick={() => markPaid(inv.id)}
-            className="flex items-center gap-1 text-[11px] px-2 py-1 rounded-md bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20 transition-colors">
+            className="flex items-center gap-1 text-[11px] px-2 py-1 rounded-md bg-bg text-emerald-600 hover:bg-bg-2 transition-colors">
             <CheckCircle className="w-3 h-3" /> Paid
           </button>
         )}

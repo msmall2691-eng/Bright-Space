@@ -13,21 +13,12 @@ export const STATUS = {
  *  link against the same vocabulary the toolbar renders. */
 export const STATUS_FILTERS = ['', 'draft', 'sent', 'paid', 'overdue']
 
-/** Deterministic tinted palette for the client avatar chip that
- *  leads each row. `avatar(name)` hashes the first char into an
- *  index so the same client always renders the same color. */
-export const AVATAR_COLORS = [
-  'bg-violet-500/20 text-violet-300',
-  'bg-sky-500/20 text-blue-400',
-  'bg-emerald-500/20 text-emerald-300',
-  'bg-orange-500/20 text-orange-300',
-  'bg-pink-500/20 text-pink-300',
-  'bg-yellow-500/20 text-yellow-300',
-]
-
+/** The client initials chip that leads each row. Deliberately a single
+ *  neutral surface, not a per-client color: in this design language color
+ *  belongs to data (status, overdue), never to decorative chrome, so a
+ *  rainbow of tinted avatars was exactly the SaaS look the owner vetoed. */
 export function avatar(name = '') {
-  const i = name.charCodeAt(0) % AVATAR_COLORS.length
-  return { color: AVATAR_COLORS[i], initials: name.slice(0, 2).toUpperCase() }
+  return { color: 'bg-bg-2 text-ink-2', initials: name.slice(0, 2).toUpperCase() }
 }
 
 /** Blank line-item scaffold used to seed a new draft invoice and to
