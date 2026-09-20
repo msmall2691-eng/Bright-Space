@@ -108,6 +108,28 @@ describe('useClients', () => {
     expect(result.current.filtered[0].name).toBe('Paul Day')
   })
 
+  it('hides archived clients on the normal tabs (include_archived=false)', async () => {
+    renderHook(() => useClients('', ''))
+    await act(async () => { await vi.runAllTimersAsync() })
+    expect(_clientsUrls()[0]).toContain('include_archived=false')
+  })
+
+  it('the Archived view fetches archived rows and narrows to them', async () => {
+    get.mockImplementation((url) => {
+      if (url.startsWith('/api/clients/counts')) return Promise.resolve({})
+      return Promise.resolve([
+        { id: 1, name: 'Ana Client', archived: false },
+        { id: 2, name: 'Spin Drift', archived: true },
+      ])
+    })
+    const { result } = renderHook(() => useClients('archived', ''))
+    await act(async () => { await vi.runAllTimersAsync() })
+    expect(_clientsUrls()[0]).toContain('include_archived=true')
+    expect(_clientsUrls()[0]).not.toContain('include_archived=false')
+    // Only the archived row is shown.
+    expect(result.current.filtered.map(c => c.name)).toEqual(['Spin Drift'])
+  })
+
   it('matches phone and email as well as name (parity with pre-T-06 filter)', async () => {
     get.mockImplementation((url) => {
       if (url.startsWith('/api/clients/counts')) return Promise.resolve({})

@@ -8,6 +8,9 @@ const STATUS_PILLS = [
   { key: 'lead',     label: 'Leads' },
   { key: 'active',   label: 'Active' },
   { key: 'inactive', label: 'Inactive' },
+  // Archived = client lifecycle (archived_at set). Its own view, so an archived
+  // client is findable to unarchive; no server count (derived client-side).
+  { key: 'archived', label: 'Archived' },
 ]
 
 /** Page-level toolbar for the Clients list. The primary row stays lean —
@@ -83,7 +86,9 @@ export function ClientsToolbar({
                     : 'text-ink-3 hover:text-ink-2'
                 }`}>
                 {s.label}
-                <span className="ml-1.5 text-[10px] text-ink-3">{statusCounts[s.key]}</span>
+                {statusCounts[s.key] != null && (
+                  <span className="ml-1.5 text-[10px] text-ink-3">{statusCounts[s.key]}</span>
+                )}
               </button>
             ))}
           </div>

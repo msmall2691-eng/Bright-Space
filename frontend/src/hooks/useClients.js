@@ -37,10 +37,19 @@ export function useClients(statusFilter, search) {
 
   const _buildUrl = (q) => {
     const params = new URLSearchParams({ limit: String(LOOKUP_LIMIT) })
-    if (statusFilter) params.append('status', statusFilter)
-    // "All" tab (no status) hides archived (inactive) clients so archiving
-    // gets them off the list; the Inactive tab (status=inactive) still shows them.
-    else params.append('include_inactive', 'false')
+    if (statusFilter === 'archived') {
+      // The Archived view: fetch archived clients (default already includes
+      // them) and narrow to archived rows in `filtered` below.
+      params.append('include_archived', 'true')
+    } else {
+      if (statusFilter) params.append('status', statusFilter)
+      // "All" tab (no status) hides status=inactive clients.
+      else params.append('include_inactive', 'false')
+      // Every non-archived tab hides ARCHIVED clients so archiving takes them
+      // off the active list (client lifecycle). They're found on the Archived
+      // view, where they can be unarchived.
+      params.append('include_archived', 'false')
+    }
     if (q && q.trim()) params.append('search', q.trim())
     return `/api/clients?${params.toString()}`
   }
@@ -72,14 +81,17 @@ export function useClients(statusFilter, search) {
   // ever narrows (equal to `clients` once the server response for the
   // same query arrives). Codex #522 review.
   const filtered = useMemo(() => {
-    if (!search) return clients
+    // The Archived view fetches the whole book (to include archived rows), so
+    // narrow to the archived ones here.
+    let rows = statusFilter === 'archived' ? clients.filter(c => c.archived) : clients
+    if (!search) return rows
     const q = search.toLowerCase()
-    return clients.filter(c =>
+    return rows.filter(c =>
       (c.name || '').toLowerCase().includes(q) ||
       (c.phone || '').includes(search) ||
       (c.email || '').toLowerCase().includes(q)
     )
-  }, [clients, search])
+  }, [clients, search, statusFilter])
 
   return { clients, setClients, filtered, statusCounts, load }
 }
