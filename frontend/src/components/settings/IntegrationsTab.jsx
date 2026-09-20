@@ -334,8 +334,32 @@ function SmsCard({ toast, active }) {
 
   const twilioOk = !st.loading && st.twilio_configured
   const srcLabel = { database: 'saved here', env: 'from server config', none: 'not set' }
-  const ACTIONS = { owner_alert: 'Owner alert', booking_confirm: 'Booking confirmation' }
+  const ACTIONS = {
+    owner_alert: 'Owner alert', booking_confirm: 'Booking confirmation',
+    reminder: 'Reminder', invoice: 'Invoice', notice: 'Notice',
+    client_text: 'Text to client', comms: 'Message', comms_forward: 'Forward',
+    offer: 'Job offer', crew: 'Crew alert', test: 'Test text',
+  }
   const fmt = (iso) => { try { return new Date(iso).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) } catch { return '' } }
+  // Turn a raw Twilio error into a plain-English cause + next step. Matches on
+  // the error code that Twilio embeds in the message (e.g. "...error 30034...").
+  const errorHint = (msg) => {
+    const m = /\b(2\d{4}|3\d{4}|6\d{4})\b/.exec(msg || '')
+    const code = m && m[1]
+    const HINTS = {
+      '30034': "This number isn't registered for A2P 10DLC — US carriers block texts from unregistered numbers. Finish the Sole-Proprietor brand + campaign in Twilio, then attach this number.",
+      '30007': 'Carrier filtered this as spam — almost always A2P 10DLC registration not being complete.',
+      '30003': 'The handset was unreachable (off, or no longer in service).',
+      '30005': 'Unknown or unreachable number.',
+      '30006': 'That number is a landline or unreachable carrier — it can’t receive texts.',
+      '21610': 'This person replied STOP and is unsubscribed. They must text START to opt back in.',
+      '21614': "That number can't receive SMS.",
+      '21408': "Your Twilio account isn't permitted to text this region yet.",
+    }
+    if (code && HINTS[code]) return HINTS[code]
+    if (/not configured|credentials/i.test(msg || '')) return 'Twilio isn’t configured on the server.'
+    return null
+  }
 
   return (
     <div className="bg-panel rounded-xl border border-hairline p-4 space-y-4">
@@ -428,7 +452,12 @@ function SmsCard({ toast, active }) {
                     <span className="text-ink-3 ml-auto shrink-0">{fmt(e.created_at)}</span>
                   </div>
                   {e.status === 'failed' && e.error_message && (
-                    <div className="text-red-600 mt-0.5 break-words">{e.error_message}</div>
+                    <div className="mt-0.5">
+                      <div className="text-red-600 break-words">{e.error_message}</div>
+                      {errorHint(e.error_message) && (
+                        <div className="text-ink-2 mt-0.5">{errorHint(e.error_message)}</div>
+                      )}
+                    </div>
                   )}
                 </div>
               </div>
