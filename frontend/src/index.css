@@ -491,6 +491,21 @@ layer(base);
       0 1px 2px rgba(0, 0, 0, 0.5),
       0 12px 28px -18px rgba(0, 0, 0, 0.6);
   }
+  /* Quiet dialog enter motion (shared Modal). Kept to a 150ms fade + slight
+     scale — the "fluid, not flashy" line — and disabled under reduced-motion. */
+  @keyframes bb-modal-in {
+    from { opacity: 0; transform: translateY(4px) scale(0.98); }
+    to   { opacity: 1; transform: translateY(0) scale(1); }
+  }
+  @keyframes bb-backdrop-in {
+    from { opacity: 0; }
+    to   { opacity: 1; }
+  }
+  .bb-modal-in { animation: bb-modal-in 0.15s ease-out; }
+  .bb-backdrop-in { animation: bb-backdrop-in 0.15s ease-out; }
+  @media (prefers-reduced-motion: reduce) {
+    .bb-modal-in, .bb-backdrop-in { animation: none; }
+  }
   .bb-nav-active {
     box-shadow: inset 0 0 0 1px rgba(99, 102, 241, 0.22);
   }
