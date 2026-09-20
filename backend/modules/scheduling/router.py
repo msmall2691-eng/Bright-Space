@@ -4401,6 +4401,13 @@ def delete_job(job_id: int, db: Session = Depends(get_db), org_id: int = Depends
     # is the same silence as a cancel, minus the audit trail.
     from services.claim_approval import close_offer
     close_offer(db, job, reason="was removed from the schedule")
+    # A turnover the office deletes ON PURPOSE must stay deleted: mark its iCal
+    # booking dismissed so the generator stops recreating it on the next sync.
+    # The feed is an inbox — it must not resurrect a canonical, by-hand delete
+    # (scheduling-invariants Rule 0). Only this explicit human delete dismisses;
+    # the automatic false-cancel recovery never does. No-op for non-turnovers.
+    from integrations.ical_sync import dismiss_booking_for_job
+    dismiss_booking_for_job(db, job, actor="office delete")
     db.delete(job)
     db.commit()
 
