@@ -214,7 +214,7 @@ export default function SendQuotePanel({
           {(selected.items || []).map((item, i) => (
             <div key={i} className="flex justify-between text-ink-3">
               <span>{item.name} {parseFloat(item.qty) !== 1 ? `×${item.qty}` : ''}</span>
-              <span>${(parseFloat(item.qty || 1) * parseFloat(item.unit_price || 0)).toFixed(2)}</span>
+              <span>${((parseFloat(item.qty ?? 1) || 0) * parseFloat(item.unit_price || 0)).toFixed(2)}</span>
             </div>
           ))}
           <div className="flex justify-between font-bold text-ink border-t border-hairline pt-2 mt-1">

@@ -695,6 +695,10 @@ def patch_quote(quote_id: int, quote_data: QuoteUpdate, db: Session = Depends(ge
     """Partial update (the Quoting UI uses PATCH for both edits and status)."""
     quote = _get_quote_or_404(quote_id, db, resolve_org_id(org_id, db))
     _apply_update(quote, quote_data.model_dump(exclude_unset=True))
+    # Keep the linked deal's amount in step with the edited quote total, so the
+    # Pipeline card can't drift (e.g. show $150 while the quote reads $135).
+    from utils.opportunity_helper import sync_opportunity_amount
+    sync_opportunity_amount(db, quote)
     db.commit()
     db.refresh(quote)
     return _quote_dict(quote)
@@ -992,6 +996,10 @@ def send_quote(quote_id: int, body: QuoteSendRequest = QuoteSendRequest(), db: S
             # sent→accepted clock survive) and just record the nudge.
             quote.follow_up_sent_at = _utcnow()
     quote.updated_at = _utcnow()
+    # Sending is the moment these numbers go to the customer — make the linked
+    # deal match, which also repairs any pre-existing drift on a re-send.
+    from utils.opportunity_helper import sync_opportunity_amount
+    sync_opportunity_amount(db, quote)
     db.commit()
     db.refresh(quote)
 
