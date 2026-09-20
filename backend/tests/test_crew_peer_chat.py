@@ -112,6 +112,9 @@ def test_load_marks_read_and_badges(crew):
         assert peers[alice.id]["name"] == "Alice Peer"
         # Name only — nothing identifying beyond the display name.
         assert "email" not in peers[alice.id] and "phone" not in peers[alice.id]
+        # Inbox-style preview of the newest message; mine=False because Alice
+        # sent it (from Bob's point of view).
+        assert peers[alice.id]["last_message"] == {"mine": False, "preview": "grab my caddy"}
         assert bob_c.get("/api/crew/my-day").json()["unread_peer_messages"] == 1
 
         # Opening the thread clears it.

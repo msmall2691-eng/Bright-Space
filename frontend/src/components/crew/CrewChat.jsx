@@ -154,6 +154,9 @@ export default function CrewChatHub({ officeUnread = 0, previewUserId = null, on
         <div className="divide-y divide-hairline">
           {teammate.map(p => (
             <Row key={p.user_id} icon={MessageSquare} name={p.name}
+              sub={p.last_message
+                ? `${p.last_message.mine ? 'You: ' : ''}${p.last_message.preview}`
+                : 'No messages yet'}
               unread={p.unread} onClick={() => setOpen(p.user_id)} />
           ))}
         </div>

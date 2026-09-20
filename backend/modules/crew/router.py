@@ -2919,7 +2919,7 @@ def crew_chat_peers(
              .all())
     ids = [u.id for u in peers]
     unread_by_peer: dict = {}
-    last_at_by_peer: dict = {}
+    last_msg_by_peer: dict = {}   # pid -> the newest CrewPeerMessage in the pair
     if ids:
         unread_by_peer = dict(
             db.query(CrewPeerMessage.from_user_id, func.count(CrewPeerMessage.id))
@@ -2927,28 +2927,44 @@ def crew_chat_peers(
                       CrewPeerMessage.from_user_id.in_(ids),
                       CrewPeerMessage.read_at.is_(None))
               .group_by(CrewPeerMessage.from_user_id).all())
-        # Last activity per pair — max of the two directions, merged in Python
-        # to stay dialect-safe (no CASE in the GROUP BY).
-        out_last = dict(
-            db.query(CrewPeerMessage.to_user_id, func.max(CrewPeerMessage.created_at))
+        # Newest message per pair via MAX(id) each direction (ids are monotonic
+        # with insert order, so the higher id is the newer message — same idea
+        # as the office thread list), then ONE fetch for the chosen rows. That
+        # single query powers both the sort order and the preview line, so the
+        # two per-direction MAX(created_at) queries are gone (brightbase-economy).
+        out_mid = dict(
+            db.query(CrewPeerMessage.to_user_id, func.max(CrewPeerMessage.id))
               .filter(CrewPeerMessage.from_user_id == me,
                       CrewPeerMessage.to_user_id.in_(ids))
               .group_by(CrewPeerMessage.to_user_id).all())
-        in_last = dict(
-            db.query(CrewPeerMessage.from_user_id, func.max(CrewPeerMessage.created_at))
+        in_mid = dict(
+            db.query(CrewPeerMessage.from_user_id, func.max(CrewPeerMessage.id))
               .filter(CrewPeerMessage.to_user_id == me,
                       CrewPeerMessage.from_user_id.in_(ids))
               .group_by(CrewPeerMessage.from_user_id).all())
+        want = {}
         for pid in ids:
-            times = [t for t in (out_last.get(pid), in_last.get(pid)) if t]
-            if times:
-                last_at_by_peer[pid] = max(times)
-    rows = [{
-        "user_id": u.id,
-        "name": u.full_name or u.email,
-        "unread": int(unread_by_peer.get(u.id, 0)),
-        "last_activity": _iso_utc(last_at_by_peer[u.id]) if u.id in last_at_by_peer else None,
-    } for u in peers]
+            mids = [m for m in (out_mid.get(pid), in_mid.get(pid)) if m]
+            if mids:
+                want[pid] = max(mids)
+        if want:
+            by_id = {m.id: m for m in db.query(CrewPeerMessage)
+                     .filter(CrewPeerMessage.id.in_(list(want.values()))).all()}
+            last_msg_by_peer = {pid: by_id[mid] for pid, mid in want.items() if mid in by_id}
+    rows = []
+    for u in peers:
+        lm = last_msg_by_peer.get(u.id)
+        rows.append({
+            "user_id": u.id,
+            "name": u.full_name or u.email,
+            "unread": int(unread_by_peer.get(u.id, 0)),
+            "last_activity": _iso_utc(lm.created_at) if lm else None,
+            # A one-line preview of the newest message so the directory reads
+            # like an inbox. `mine` lets the app prefix "You: ". Body only —
+            # still no phone/email/access detail.
+            "last_message": ({"mine": lm.from_user_id == me,
+                              "preview": (lm.body or "").strip()[:80]} if lm else None),
+        })
     active = sorted([r for r in rows if r["last_activity"]],
                     key=lambda r: r["last_activity"], reverse=True)
     empty = sorted([r for r in rows if not r["last_activity"]],
