@@ -254,9 +254,21 @@ DONE — left here so the next session doesn't re-chase a closed gap.
 - **No service radius, rate floor, capability tags or reliability signals.**
   A design for all four exists; the ranking must remain a *recommendation
   ordering on the existing pull*.
-- **`services/claim_approval.py` nulls a prior decline's `reason` on
-  approval**, so the decline trail is lossy and cannot be repaired
-  retroactively. Capture the signal before that write, not after.
-- Per-IP rate limits are bypassable via `X-Forwarded-For`; `POST /api/crew/ask`
-  is unmetered; uploads buffer fully before the size check; `Routes.jsx` cannot
-  add houses to a route.
+- ~~**`services/claim_approval.py` nulls a prior decline's `reason` on
+  approval**~~ **DONE.** Approving a sub who had declined this job before still
+  flips their `job_responses` row to "accepted" and clears the reason, but the
+  prior decline reason is now captured into the `job_claim_approved` activity
+  log (`prior_decline_reason`) before the null, so the trail survives.
+- ~~**`POST /api/crew/ask` is unmetered**~~ **DONE** — it carries
+  `rate_limit(20, 3600, "crew_ask")`.
+- ~~**Per-IP rate limits are bypassable via `X-Forwarded-For`**~~ **DONE** —
+  `ratelimit.client_ip` charges the LAST X-Forwarded-For entry (the hop Railway's
+  proxy appends), not the attacker-controlled leftmost one; see its docstring.
+- ~~**Uploads buffer fully before the size check**~~ **DONE** — the four crew
+  upload sites (sub document, job photo, property photo, headshot) read through
+  `utils.uploads.read_capped`, which 413s the moment the running total crosses
+  the cap instead of buffering the whole file first.
+- **`Routes.jsx` cannot add houses to a route** — still open.
+- **No service radius, rate floor, capability tags or reliability signals** for
+  ranking (repeated from above): a design exists; ranking must stay a
+  *recommendation ordering on the existing pull*, never a picker.
