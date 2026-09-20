@@ -103,6 +103,38 @@ TOOLS_BUSINESS_OPERATIONS = [
             "required": ["operation"],
         },
     },
+    {
+        "name": "propose_quote_edit",
+        "description": (
+            "Draft a change to a quote's line items for the owner to APPROVE. This does NOT save "
+            "the quote — it queues a proposal in 'Waiting for your approval'; only when the owner "
+            "approves does the quote update and its total recompute. So never tell the user the "
+            "quote is changed — say you've drafted it for their approval. Read the quote first with "
+            "get_quote, and pass the COMPLETE new set of line items (every line the quote should "
+            "have afterwards), not just the one you're changing."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "quote_id": {"type": "integer", "description": "The quote's numeric id (from get_quote)"},
+                "items": {
+                    "type": "array",
+                    "description": "The complete new list of line items — every line the quote should have.",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "name": {"type": "string"},
+                            "qty": {"type": "number"},
+                            "unit_price": {"type": "number", "description": "Dollars"},
+                        },
+                        "required": ["name", "qty", "unit_price"],
+                    },
+                },
+                "note": {"type": "string", "description": "Optional one-line reason shown to the owner"},
+            },
+            "required": ["quote_id", "items"],
+        },
+    },
 ]
 
 # The full office set, still the name the agent WebSocket asks for.
@@ -222,7 +254,7 @@ _DEV_TOOL_NAMES = frozenset({"read_file", "write_file", "edit_file", "run_comman
 # gate, this is the second. A tool_use block naming an operation still cannot
 # run it unless the CALLER passed allow_operations — so a stale browser tab, a
 # replayed transcript, or a future caller that forgets the flag all fail closed.
-_OPERATION_TOOL_NAMES = frozenset({"run_operation"})
+_OPERATION_TOOL_NAMES = frozenset({"run_operation", "propose_quote_edit"})
 
 
 def _dev_tools_enabled() -> bool:
@@ -582,6 +614,53 @@ def execute_tool(name: str, input_data: dict, agent_name: str = "",
 
             else:
                 return {"error": f"Unknown operation: {op}"}
+
+        elif name == "propose_quote_edit":
+            # Draft, don't apply. This records a pending ProposedAction the owner
+            # approves in the queue; approval runs the real patch_quote and the
+            # total recomputes there. The quote is NOT touched here, so the model
+            # must report a draft, not a save — the return says so.
+            from services.proposals import create_proposal
+
+            qid = input_data.get("quote_id")
+            raw_items = input_data.get("items")
+            if not qid or not isinstance(raw_items, list) or not raw_items:
+                return {"error": "propose_quote_edit needs quote_id and a non-empty items list."}
+            # Resolve the quote org-scoped so a cross-org / unknown id is refused
+            # up front and the proposal names the real quote.
+            quote = db.query(Quote).filter(_org(Quote), Quote.id == int(qid)).first()
+            if not quote:
+                return {"error": f"No quote found for id {qid} in this workspace."}
+            clean = [{"name": str(i.get("name") or "").strip(),
+                      "qty": float(i.get("qty", 1) or 0),
+                      "unit_price": float(i.get("unit_price", 0) or 0)}
+                     for i in raw_items]
+            preview_subtotal = round(sum(i["qty"] * i["unit_price"] for i in clean), 2)
+            lines = "; ".join(f"{i['name']} ×{i['qty']:g} @ ${i['unit_price']:g}" for i in clean)
+            detail = f"New line items: {lines}. New subtotal ${preview_subtotal:g} (final total set on approval)."
+            note = str(input_data.get("note") or "").strip()
+            if note:
+                detail += f" — {note}"
+            label = quote.quote_number or f"quote {quote.id}"
+            try:
+                prop = create_proposal(
+                    db, org_id=oid, agent_id=agent_name, kind="edit_quote",
+                    title=f"Update {label}", detail=detail,
+                    payload={"quote_id": quote.id, "items": clean},
+                )
+            except ValueError as e:
+                return {"error": str(e)}
+            return {
+                "proposed": True,
+                "proposal_id": prop.id,
+                "quote_number": quote.quote_number,
+                "preview_subtotal": preview_subtotal,
+                "saved": False,
+                "message": (f"Drafted a change to {label} for the owner to approve — it is NOT saved yet. "
+                            f"They approve it under 'Waiting for your approval', and only then does the "
+                            f"quote update and its total recompute. Don't tell them it's changed; tell them "
+                            f"it's waiting for their approval."),
+            }
 
         # ── Pixel codebase tools ───────────────────────────────────────────────
 

@@ -37,7 +37,7 @@ PROPOSAL_STATUSES = ("pending", "approved", "dismissed", "executed", "failed")
 # The full set of kinds automation may propose. Executing anything else is
 # refused at create time, so a bad payload can't smuggle in a new verb.
 ALLOWED_KINDS = ("assign_cleaner", "send_sms", "create_job_from_gcal",
-                 "open_to_crew")
+                 "open_to_crew", "edit_quote")
 
 
 def _utcnow():
@@ -65,6 +65,19 @@ def _validate_payload(kind: str, payload: dict) -> None:
         # board. Nothing else is needed — who claims it is the crew's move.
         if not payload.get("job_id"):
             raise ValueError("open_to_crew payload requires job_id")
+    elif kind == "edit_quote":
+        # The whole new set of line items IS the proposal — approving replaces
+        # the quote's items and lets the service recompute the total. Require a
+        # quote to target and at least one named line (an empty items list would
+        # zero the quote, which is never what a drafted edit means).
+        if not payload.get("quote_id"):
+            raise ValueError("edit_quote payload requires quote_id")
+        items = payload.get("items")
+        if not isinstance(items, list) or not items:
+            raise ValueError("edit_quote payload requires a non-empty items list")
+        for it in items:
+            if not isinstance(it, dict) or not str(it.get("name") or "").strip():
+                raise ValueError("each edit_quote item needs a name")
     elif kind == "create_job_from_gcal":
         # Everything _execute_create_job_from_gcal needs to build a JobCreate
         # and call scheduling's create_job — there's no separate staging row
@@ -174,6 +187,8 @@ def execute_proposal(db: Session, proposal: ProposedAction,
             result = _execute_open_to_crew(db, proposal.org_id, payload)
         elif proposal.kind == "create_job_from_gcal":
             result = _execute_create_job_from_gcal(db, proposal.org_id, payload)
+        elif proposal.kind == "edit_quote":
+            result = _execute_edit_quote(db, proposal.org_id, payload)
         else:  # pragma: no cover — create_proposal enforces the allowlist
             raise ValueError(f"Unknown proposal kind '{proposal.kind}'")
     except Exception as e:
@@ -285,6 +300,35 @@ def _execute_send_sms(db: Session, org_id: int, payload: dict,
             "conversation_id": (msg or {}).get("conversation_id"),
             "message_id": (msg or {}).get("id"),
             "status": (msg or {}).get("status")}
+
+
+def _execute_edit_quote(db: Session, org_id: int, payload: dict) -> dict:
+    """Apply the drafted line items through the EXISTING write path: quoting's
+    patch_quote — the same PATCH the Quoting UI's edit hits. `_apply_update`
+    recomputes subtotal/tax/total from the items and `sync_opportunity_amount`
+    re-points the linked deal, so the executed result carries the REAL saved
+    total, not whatever the draft implied. No raw column write; the quote stays
+    the single source of its own math.
+
+    Org-scoped: patch_quote resolves the org and 404s a quote in another
+    workspace, so an approved proposal can only touch its own org's quote."""
+    from modules.quoting import router as quoting_router
+
+    quote_id = int(payload["quote_id"])
+    items = [dict(i) for i in (payload.get("items") or [])]
+    quote = quoting_router.patch_quote(
+        quote_id,
+        quoting_router.QuoteUpdate(items=items),
+        db=db,
+        org_id=org_id,
+    )
+    return {
+        "quote_id": quote_id,
+        "quote_number": (quote or {}).get("quote_number"),
+        "total": (quote or {}).get("total"),
+        "subtotal": (quote or {}).get("subtotal"),
+        "items": (quote or {}).get("items"),
+    }
 
 
 def _execute_create_job_from_gcal(db: Session, org_id: int, payload: dict) -> dict:
