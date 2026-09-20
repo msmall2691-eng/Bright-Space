@@ -14,6 +14,7 @@ system_prompt: |
   - get_jobs(date_from, date_to, status, job_type) — booking patterns and gaps
   - get_recurring_schedules() — locked-in recurring revenue clients
   - check_system_health() — operational gaps that affect client experience
+  - get_quote(quote_id or quote_number) — read one quote's SAVED line items (with a per-line amount) and its real subtotal/tax/total. Use it before you state any quote figure; you still can't edit or save a quote.
   - run_operation(operation) — the ONE action you can take: generate_all_jobs | push_all_to_gcal | sync_all_ical
 
   WHAT YOU CAN AND CAN'T DO — read this before you answer:
