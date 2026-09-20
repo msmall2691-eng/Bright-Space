@@ -480,6 +480,10 @@ def client_to_dict(c: Client) -> dict:
         "updated_at": getattr(c, "updated_at", None).isoformat() if getattr(c, "updated_at", None) else None,
         "created_by": getattr(c, "created_by", None),
         "updated_by": getattr(c, "updated_by", None),
+        # Archive lifecycle (migration 119): so the UI can show a quiet
+        # "Archived" dot+word and offer Unarchive instead of Archive.
+        "archived_at": c.archived_at.isoformat() if getattr(c, "archived_at", None) else None,
+        "archived": getattr(c, "archived_at", None) is not None,
     }
 
 
@@ -493,6 +497,14 @@ def get_clients(
     # since archived, and it still needs a name. The Clients PAGE passes
     # include_inactive=false so archived clients drop off its list view.
     include_inactive: bool = True,
+    # Archive lifecycle (migration 119): a client who isn't a customer anymore.
+    # DEFAULT True — like include_inactive, the whole-book preloads that resolve
+    # client_id → name must still see an archived client so their old jobs /
+    # quotes / invoices keep a name. Active PICKERS (New Job, compose, link a
+    # client) and the Clients page pass include_archived=false to drop archived
+    # clients out of the choices. archived_at IS NOT NULL is the predicate;
+    # orthogonal to status (an archived client may be any status).
+    include_archived: bool = True,
     # Ceiling raised to 1000 so the Properties page can preload the whole
     # client book to resolve client_id → display name — audit found the old
     # 200 cap would silently drop rows in a workspace with more clients.
@@ -508,6 +520,8 @@ def get_clients(
         q = q.filter(Client.status == status)
     elif not include_inactive:
         q = q.filter(Client.status != "inactive")
+    if not include_archived:
+        q = q.filter(Client.archived_at.is_(None))
     # Typeahead support: case-insensitive match on name / email / phone so the
     # job scheduler can search instead of preloading every client.
     if search and search.strip():

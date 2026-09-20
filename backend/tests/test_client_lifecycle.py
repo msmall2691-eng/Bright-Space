@@ -218,6 +218,27 @@ def test_permanent_property_delete_when_no_jobs(api):
         _cleanup(db, ids); db.close()
 
 
+def test_get_clients_include_archived_scoping(api):
+    """Archived clients still show by default (name resolution) but drop out
+    when a picker passes include_archived=false."""
+    db = SessionLocal()
+    ids = _seed(db)
+    try:
+        CL.archive_client(db, db.query(Client).get(ids["client"]), actor_id=99)
+
+        # Default: archived client is still returned (so old jobs keep a name),
+        # and carries the archived flag.
+        allc = api.get("/api/clients?limit=1000").json()
+        row = next((c for c in allc if c["id"] == ids["client"]), None)
+        assert row is not None and row["archived"] is True
+
+        # Picker opt-out: hidden.
+        active = api.get("/api/clients?limit=1000&include_archived=false").json()
+        assert all(c["id"] != ids["client"] for c in active)
+    finally:
+        _cleanup(db, ids); db.close()
+
+
 def test_default_property_delete_archives(api):
     db = SessionLocal()
     ids = _seed(db)

@@ -20,6 +20,9 @@ export function LinkClientControl({ onLink, linking }) {
       setLoading(true)
       const params = new URLSearchParams({ limit: '8' })
       if (q.trim()) params.append('search', q.trim())
+      // Archived clients aren't customers anymore — don't offer them when
+      // linking a conversation to a client (client lifecycle).
+      params.append('include_archived', 'false')
       get(`/api/clients?${params.toString()}`)
         .then(d => setResults(Array.isArray(d) ? d : []))
         .catch(() => setResults([]))

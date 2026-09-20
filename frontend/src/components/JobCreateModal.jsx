@@ -269,6 +269,10 @@ export default function JobCreateModal({
       // "New Job" unusable for the majority of records.
       const params = new URLSearchParams({ limit: '20' })
       if (q) params.append('search', q)
+      // Don't offer archived clients as the target of a NEW job — they're not
+      // customers anymore (client lifecycle). Name resolution elsewhere still
+      // includes them; this is a picker.
+      params.append('include_archived', 'false')
       get(`/api/clients?${params.toString()}`)
         .then(d => setClientResults(Array.isArray(d) ? d : []))
         .catch(e => { setClientLoadErr(e?.message || 'Could not load clients'); setClientResults([]) })
