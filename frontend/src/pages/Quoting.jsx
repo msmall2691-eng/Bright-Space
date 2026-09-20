@@ -588,6 +588,7 @@ export default function Quoting() {
   } = useQuotingMutations({
     toast: showToast,
     loadQuotes, loadIntakes, loadFollowUps, loadArchived,
+    setQuotes, setIntakes,
     selectedIds, clearSelection,
     currentSelectedId: selected?.id,
     onSelectedCleared: () => { setSelected(null); setPanel(null) },
