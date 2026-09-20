@@ -11,6 +11,7 @@ import EmptyState from '../components/ui/EmptyState'
 import PageHeader from '../components/ui/PageHeader'
 import ErrorNote from '../components/ui/ErrorNote'
 import SubNav from '../components/ui/SubNav'
+import ListSkeleton from '../components/ui/ListSkeleton'
 import { toast } from '../utils/toastBus'
 import { confirmDialog } from '../utils/confirmBus'
 import {
@@ -990,7 +991,7 @@ function SeriesDetail({ id, onBack, onChanged, toast }) {
     }
   }
 
-  if (loading) return <div className="p-6 text-sm text-ink-3">Loading…</div>
+  if (loading) return <div className="p-6"><ListSkeleton rows={4} /></div>
   if (error) return (
     <div className="p-6">
       <ErrorNote>{error}</ErrorNote>
@@ -1740,7 +1741,7 @@ export default function Recurring() {
         <ErrorNote className="mb-3">{error}</ErrorNote>
 
         {loading ? (
-          <div className="text-center text-ink-3 py-12 text-sm">Loading…</div>
+          <ListSkeleton rows={6} />
         ) : filtered.length === 0 ? (
           <EmptyState
             icon={Repeat}
