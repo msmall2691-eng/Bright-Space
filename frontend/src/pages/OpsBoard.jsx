@@ -173,7 +173,7 @@ function TopBand({ stats, unreadConversations, crewUnreadThreads, showComms, nav
     <div className="mt-4 flex items-stretch divide-x divide-hairline overflow-x-auto rounded-xl border border-hairline bg-panel">
       {commsEntries.map(e => (
         <button key={e.key} onClick={() => navigate(e.to)}
-          className="flex min-w-0 flex-1 shrink-0 flex-col items-start gap-0.5 px-3.5 py-2.5 text-left transition-colors hover:bg-bg-2">
+          className="flex min-w-[8.5rem] shrink-0 flex-col items-start gap-0.5 px-3.5 py-2.5 text-left transition-colors hover:bg-bg-2 shell:min-w-0 shell:flex-1">
           <span className="flex items-center gap-1.5">
             {e.n > 0 && <span className="h-1.5 w-1.5 rounded-full bg-indigo-500" aria-hidden="true" />}
             <span className={`text-[15px] font-bold leading-none tabular-nums ${e.n > 0 ? 'text-ink' : 'text-ink-3'}`}>
@@ -187,7 +187,7 @@ function TopBand({ stats, unreadConversations, crewUnreadThreads, showComms, nav
         <button key={stat.key}
           onClick={() => stat.href && navigate(stat.href)}
           title={stat.sub || undefined}
-          className="flex min-w-0 flex-1 shrink-0 flex-col items-start gap-0.5 px-3.5 py-2.5 text-left transition-colors hover:bg-bg-2">
+          className="flex min-w-[8.5rem] shrink-0 flex-col items-start gap-0.5 px-3.5 py-2.5 text-left transition-colors hover:bg-bg-2 shell:min-w-0 shell:flex-1">
           <span className={`text-[15px] font-bold leading-none tabular-nums ${STAT_TONE[stat.tone] || STAT_TONE.neutral}`}>
             {stat.value}
           </span>
