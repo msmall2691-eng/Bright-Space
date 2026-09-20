@@ -666,7 +666,7 @@ export default function JobCreateModal({
               {!addingClient ? (
                 selectedClient ? (
                   // A client is chosen — show it as a chip with a "Change" affordance.
-                  <div className="flex items-center justify-between gap-2 rounded-lg border border-blue-200 bg-blue-50/50 px-3 py-2">
+                  <div className="flex items-center justify-between gap-2 rounded-lg border border-hairline bg-bg-2 px-3 py-2">
                     <span className="flex items-center gap-2 min-w-0 text-sm text-ink">
                       <Check className="w-4 h-4 text-indigo-600 shrink-0" />
                       <span className="truncate font-medium">{selectedClient.name}</span>
@@ -752,7 +752,7 @@ export default function JobCreateModal({
                   </div>
                 )
               ) : (
-                <div className="rounded-lg border border-blue-200 bg-blue-50/50 p-2.5 space-y-2">
+                <div className="rounded-lg border border-hairline bg-bg-2 p-2.5 space-y-2">
                   <input autoFocus value={newClient.name} onChange={e => setNewClient(n => ({ ...n, name: e.target.value }))}
                     placeholder="Client name *"
                     className="w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-hidden focus:border-blue-400" />
@@ -997,7 +997,7 @@ export default function JobCreateModal({
               </button>
             )}
             {addingProp && (
-              <div className="rounded-lg border border-blue-200 bg-blue-50/50 p-2.5 space-y-2">
+              <div className="rounded-lg border border-hairline bg-bg-2 p-2.5 space-y-2">
                 <input autoFocus value={newProp.name} onChange={e => setNewProp(n => ({ ...n, name: e.target.value }))}
                   placeholder="Property name * (e.g. 4 Red Barn Circle)"
                   className="w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-hidden focus:border-blue-400" />
