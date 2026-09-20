@@ -1372,6 +1372,49 @@ def delete_client(client_id: int, force: bool = False,
     db.commit()
 
 
+def _client_or_404(db, client_id, org_id):
+    org_id = resolve_org_id(org_id, db)
+    client = db.query(Client).filter(
+        Client.id == client_id,
+        or_(Client.org_id == org_id, Client.org_id.is_(None)),  # MT-2 tenant scope
+    ).first()
+    if not client:
+        raise HTTPException(status_code=404, detail="Client not found")
+    return client
+
+
+@router.get("/{client_id}/archive-preview", dependencies=[Depends(require_role("admin", "manager"))])
+def client_archive_preview(client_id: int, db: Session = Depends(get_db),
+                           org_id: int = Depends(current_org_id)):
+    """Counts of what archiving this client will do — the confirm shows these
+    ('this will cancel N upcoming visits…') before the operator commits."""
+    from services.client_lifecycle import preview_client_archive
+    return preview_client_archive(db, _client_or_404(db, client_id, org_id))
+
+
+@router.post("/{client_id}/archive", dependencies=[Depends(require_role("admin", "manager"))])
+def archive_client_endpoint(client_id: int, db: Session = Depends(get_db),
+                            org_id: int = Depends(current_org_id),
+                            current_user: User = Depends(get_current_user)):
+    """Archive a client: hide them from active workflows and stop their work
+    (recurring off, upcoming visits cancelled, future turnover bookings
+    dismissed, open offers closed, open quotes archived) while keeping all
+    history and invoices intact. Reversible via unarchive."""
+    from services.client_lifecycle import archive_client
+    return archive_client(db, _client_or_404(db, client_id, org_id),
+                          actor_id=getattr(current_user, "id", None))
+
+
+@router.post("/{client_id}/unarchive", dependencies=[Depends(require_role("admin", "manager"))])
+def unarchive_client_endpoint(client_id: int, db: Session = Depends(get_db),
+                              org_id: int = Depends(current_org_id)):
+    """Bring an archived client back into active workflows. Restores the client
+    and their properties and resumes the booking feed; it does NOT resurrect
+    cancelled visits or recurring series (a human re-adds those)."""
+    from services.client_lifecycle import unarchive_client
+    return unarchive_client(db, _client_or_404(db, client_id, org_id))
+
+
 # Office only, and org-scoped — matching the guarded POST just below.
 @router.get("/{client_id}/phones", response_model=List[ContactPhoneRead],
             dependencies=[Depends(require_role("admin", "manager", "viewer"))])
