@@ -181,6 +181,43 @@ def _nights_between(checkin, checkout):
     return None
 
 
+def dismiss_booking_for_job(db, job, actor: str | None = None) -> int:
+    """Mark the iCal booking(s) behind a DELETED turnover as dismissed, so the
+    generator stops recreating a turnover for that booking ("just gone" — the
+    owner's explicit choice).
+
+    Call this ONLY for a deliberate human delete. The automatic false-cancel
+    recovery must never dismiss a booking, or a system hiccup would silently drop
+    a real cleaning — the exact loss the standing "a live booking always keeps a
+    turnover" policy exists to prevent (scheduling-invariants Rule 0 / the feed
+    is an inbox that must not override canonical, and R7 stays intact: nothing
+    here deletes a Job automatically — a human already did).
+
+    Best-effort and idempotent. Returns how many bookings it dismissed. Unlinks
+    job_id so the caller's hard-delete can't strand a dangling FK. A no-op for a
+    non-turnover job or one with no matching booking."""
+    if getattr(job, "job_type", None) != "str_turnover":
+        return 0
+    events = db.query(ICalEvent).filter(ICalEvent.job_id == job.id).all()
+    # Fallback: catch a same-property/date booking whose link a prior sweep
+    # already nulled, so re-deleting the recreated turnover still dismisses it.
+    if not events and getattr(job, "property_id", None) and getattr(job, "scheduled_date", None):
+        co = job.scheduled_date.isoformat() if hasattr(job.scheduled_date, "isoformat") else str(job.scheduled_date)
+        events = db.query(ICalEvent).filter(
+            ICalEvent.property_id == job.property_id,
+            ICalEvent.checkout_date == co,
+        ).all()
+    now = datetime.now(timezone.utc)
+    n = 0
+    for e in events:
+        if e.dismissed_at is None:
+            e.dismissed_at = now
+            e.dismissed_by = actor
+        e.job_id = None   # unlink so the hard-delete can't dangle/block the FK
+        n += 1
+    return n
+
+
 def _refresh_booking_metadata(job, uid, checkin, checkout) -> None:
     """Keep an existing turnover's stay metadata in step with its booking.
 
@@ -645,8 +682,14 @@ def _sync_ical_url(db: Session, prop: Property, ical_url: str, ical_source_label
                 # carries the booking window even if it predates that feature.
                 _refresh_booking_metadata(_linked, uid, checkin_date, checkout_date)
 
-        # Create a Job if: no live job yet + checkout is today or future
-        if event.job_id is None and checkout_date >= today:
+        # Create a Job if: no live job yet + checkout is today or future — UNLESS
+        # the office deliberately dismissed this booking (deleted its turnover).
+        # Dismissal is the one thing that overrides the standing "a live booking
+        # always keeps a turnover" policy, because a by-hand delete is a canonical
+        # decision the feed (an inbox) must not undo (scheduling-invariants Rule 0).
+        # The delete path also nulls event.job_id, so the resurrect block above is
+        # skipped too; this guard covers a fresh create and the reactivate path.
+        if event.job_id is None and checkout_date >= today and not event.dismissed_at:
             # Use PropertyIcal settings (if set) or property defaults. Computed
             # up front (not just in the "create new" branch below) so the
             # reactivate-a-cancelled-duplicate branch can push a fresh GCal
@@ -842,11 +885,21 @@ def _sync_ical_url(db: Session, prop: Property, ical_url: str, ical_source_label
         ).all()
         if j.scheduled_date
     }
+    # Bookings the office dismissed (deleted their turnover on purpose) are
+    # SUPPOSED to have no turnover — don't flag them as a missing/lost cleaning.
+    dismissed_uids = {
+        e.uid for e in db.query(ICalEvent).filter(
+            ICalEvent.property_id == prop.id,
+            ICalEvent.dismissed_at.isnot(None),
+        ).all()
+    }
     future_bookings = 0
     missing_turnovers = []
     for ev in all_events:
         co = ev.get("checkout_date")
         if not co or _is_host_block(ev.get("summary", "")) or co < today:
+            continue
+        if ev.get("uid") in dismissed_uids:
             continue
         future_bookings += 1
         co_str = co if isinstance(co, str) else (co.isoformat() if hasattr(co, "isoformat") else str(co))

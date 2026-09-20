@@ -479,6 +479,16 @@ class ICalEvent(Base):
     job_id = Column(Integer, ForeignKey("jobs.id"), nullable=True, unique=True)
     created_at = Column(DateTime, default=_utcnow)
 
+    # Dismissal (migration 118): the office deleted this booking's turnover ON
+    # PURPOSE, so the generator must stop recreating one for it. Without this,
+    # the standing "a live booking always keeps a turnover" policy resurrects a
+    # deliberately-deleted turnover on the next sync — the feed (an inbox)
+    # overriding a canonical human decision (scheduling-invariants Rule 0). Only
+    # an explicit human delete sets this; the automatic false-cancel recovery
+    # never does, so a system hiccup still can't silently drop a real cleaning.
+    dismissed_at = Column(DateTime, nullable=True)
+    dismissed_by = Column(String, nullable=True)   # actor label, for audit
+
     __table_args__ = (
         UniqueConstraint("property_id", "uid", name="uq_ical_property_uid"),
     )
