@@ -14,7 +14,8 @@ export default function PropertiesTab({
   propForm, setPropForm,
   showPropForm, setShowPropForm,
   editingProp,
-  savingProp, saveProp, deleteProp,
+  savingProp, saveProp,
+  archiveProp, unarchiveProp, deletePropPermanent,
   openNewProp, openEditProp,
   icalForm, setIcalForm,
   showIcalForm, setShowIcalForm,
@@ -276,10 +277,24 @@ export default function PropertiesTab({
               className={INPUT_CLASS + " resize-none"} />
           </div>
 
-          <div className="flex gap-2 pt-1">
+          <div className="flex flex-wrap gap-2 pt-1">
             {editingProp && (
-              <button onClick={() => deleteProp(editingProp.id)}
-                className="px-3 py-2 text-sm text-red-400 hover:text-red-300 border border-red-800 hover:border-red-600 rounded-lg transition-colors">
+              editingProp.archived || editingProp.active === false ? (
+                <button onClick={() => unarchiveProp(editingProp.id)}
+                  className="px-3 py-2 text-sm bg-panel border border-hairline-2 text-ink-2 hover:bg-bg-2 rounded-lg transition-colors">
+                  Unarchive
+                </button>
+              ) : (
+                <button onClick={() => archiveProp(editingProp.id)}
+                  className="px-3 py-2 text-sm bg-panel border border-hairline-2 text-ink-2 hover:bg-bg-2 rounded-lg transition-colors">
+                  Archive
+                </button>
+              )
+            )}
+            {editingProp && (
+              <button onClick={() => deletePropPermanent(editingProp.id)}
+                className="px-3 py-2 text-sm text-red-500 hover:text-red-600 border border-hairline hover:bg-bg-2 rounded-lg transition-colors"
+                title="Permanently delete (only if the property has no jobs)">
                 Delete
               </button>
             )}
@@ -333,6 +348,12 @@ export default function PropertiesTab({
                         <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${PROPERTY_TYPE_COLORS[pType] || PROPERTY_TYPE_COLORS.residential}`} aria-hidden="true" />
                         {PROPERTY_TYPE_LABELS[pType] || p.property_type}
                       </span>
+                      {(p.archived || p.active === false) && (
+                        <span className="inline-flex items-center gap-1.5 text-[10px] font-medium text-ink-3">
+                          <span className="w-1.5 h-1.5 rounded-full shrink-0 bg-ink-3" aria-hidden="true" />
+                          Archived
+                        </span>
+                      )}
                       {icalPill && (
                         <span className="inline-flex items-center gap-1.5 text-[10px] font-medium text-ink-3">
                           <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${icalPill.dot}`} aria-hidden="true" />
@@ -384,6 +405,15 @@ export default function PropertiesTab({
                   >
                     <Plus className="w-3 h-3" /> Job
                   </button>
+                  {(p.archived || p.active === false) && (
+                    <button
+                      onClick={(e) => { e.stopPropagation(); unarchiveProp(p.id) }}
+                      className="text-xs font-medium bg-panel border border-hairline-2 text-ink-2 hover:bg-bg-2 px-2.5 py-1.5 rounded-md transition-colors"
+                      title="Bring this property back into active use"
+                    >
+                      Unarchive
+                    </button>
+                  )}
                   <button
                     onClick={(e) => { e.stopPropagation(); openEditProp(p) }}
                     className="text-xs font-medium bg-panel border border-hairline-2 text-ink-2 hover:bg-bg-2 px-2.5 py-1.5 rounded-md transition-colors"
