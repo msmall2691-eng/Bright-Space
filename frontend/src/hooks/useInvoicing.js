@@ -7,10 +7,10 @@ import { get } from '../api'
  *  whenever `statusFilter` changes, exposes a memoized `filtered`
  *  array (client-name or invoice-number substring match) and the
  *  three headline totals the metrics bar shows: paid revenue,
- *  outstanding, overdue count. Exposes `setInvoices` too — kept for
- *  parity, though mutations always refetch instead of patching in
- *  place. `clientName` / `clientOf` helpers stay here since they
- *  key off the clients cache. */
+ *  outstanding, overdue count. Exposes `setInvoices` so the mutation
+ *  hook can patch a row optimistically (mark paid / overdue) and
+ *  reconcile with a background refetch. `clientName` / `clientOf`
+ *  helpers stay here since they key off the clients cache. */
 export function useInvoicing({ statusFilter, search }) {
   const [invoices, setInvoices] = useState([])
   const [clients, setClients]   = useState([])
