@@ -18,7 +18,7 @@ export default function Invoicing() {
   const [statusFilter, setStatusFilter] = useState('')
   const [search, setSearch]       = useState('')
   const {
-    invoices, clients,
+    invoices, setInvoices, clients,
     clientName, clientOf,
     filtered,
     totalRevenue, outstanding, overdueCount,
@@ -40,7 +40,7 @@ export default function Invoicing() {
     save, markPaid, markOverdue, deleteInvoice, sendInvoice, draftReminder,
     openChaser, updateChaserMsg, sendChaserItem,
   } = useInvoicingMutations({
-    load,
+    load, setInvoices,
     selected, setPanel,
     form, sendForm, setSendForm,
     toast,
