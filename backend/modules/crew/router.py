@@ -46,6 +46,7 @@ from modules.auth.router import (
 )
 from modules.scheduling.completion import auto_create_draft_invoice
 from utils.activity_logger import log_job_status_change
+from utils.uploads import read_capped
 from utils.dates import business_today, business_tz, coerce_date, week_monday
 
 router = APIRouter()
@@ -1428,12 +1429,10 @@ async def upload_my_document(
     if kind not in DOCUMENT_KINDS or kind == "agreement":
         raise HTTPException(status_code=422, detail="Unknown document type.")
 
-    data = await file.read()
+    data = await read_capped(file, _MAX_DOCUMENT_BYTES,
+                             detail="That file is too big — 10MB is the limit.")
     if not data:
         raise HTTPException(status_code=422, detail="That file was empty.")
-    if len(data) > _MAX_DOCUMENT_BYTES:
-        raise HTTPException(status_code=413,
-                            detail="That file is too big — 10MB is the limit.")
     ctype = (file.content_type or "").lower()
     if ctype not in ALLOWED_CONTENT_TYPES:
         raise HTTPException(status_code=422,
@@ -1784,12 +1783,10 @@ async def upload_property_photo(
     the client downscales before upload."""
     oid = resolve_org_id(org_id, db)
     _property_or_404(db, oid, property_id, current_user)
-    data = await file.read()
+    data = await read_capped(file, _MAX_PHOTO_BYTES, detail="Photo too large (5MB max).")
     ctype = _sniff_image_mime(data)
     if ctype is None:
         raise HTTPException(status_code=422, detail="JPEG, PNG or WebP only.")
-    if len(data) > _MAX_PHOTO_BYTES:
-        raise HTTPException(status_code=413, detail="Photo too large (5MB max).")
     count = db.query(PropertyPhoto).filter(PropertyPhoto.property_id == property_id).count()
     if count >= _MAX_PROP_PHOTOS:
         raise HTTPException(status_code=409, detail="This property's gallery is full — remove old photos first.")
@@ -1907,15 +1904,12 @@ async def upload_job_photo(
     oid = resolve_org_id(org_id, db)
     job = _photo_job_or_404(db, oid, job_id, current_user)
 
-    data = await file.read()
+    data = await read_capped(
+        file, _MAX_PHOTO_BYTES,
+        detail="That photo is too large (over 5MB) — try again from the app, "
+               "which resizes before uploading.")
     if not data:
         raise HTTPException(status_code=400, detail="That file is empty.")
-    if len(data) > _MAX_PHOTO_BYTES:
-        raise HTTPException(
-            status_code=413,
-            detail="That photo is too large (over 5MB) — try again from the app, "
-                   "which resizes before uploading.",
-        )
     mime = _sniff_image_mime(data)
     if not mime:
         raise HTTPException(status_code=400,
@@ -2121,14 +2115,12 @@ async def upload_my_photo(
     client's header, since this value is handed straight back to a browser.
     """
     oid = resolve_org_id(org_id, db)
-    data = await file.read()
+    data = await read_capped(
+        file, _MAX_HEADSHOT_BYTES,
+        detail="That photo is too large (over 5MB) — try again from the app, "
+               "which resizes before uploading.")
     if not data:
         raise HTTPException(status_code=400, detail="That file is empty.")
-    if len(data) > _MAX_HEADSHOT_BYTES:
-        raise HTTPException(
-            status_code=413,
-            detail="That photo is too large (over 5MB) — try again from the app, "
-                   "which resizes before uploading.")
     mime = _sniff_image_mime(data)
     if not mime:
         raise HTTPException(status_code=400,
