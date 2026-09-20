@@ -229,8 +229,9 @@ export default function OwnerDashboard() {
           icon={TrendingUp}
           chip="bg-bg-2 text-ink-2"
           label="Close rate (90d)"
-          value={loading ? '—' : closeRate?.rate_pct != null ? `${closeRate.rate_pct}%` : 'n/a'}
-          sub={loading ? 'Loading…' : closeRate
+          loading={loading}
+          value={closeRate?.rate_pct != null ? `${closeRate.rate_pct}%` : 'n/a'}
+          sub={closeRate
             ? `${closeRate.quotes_won} of ${closeRate.quotes_sent} sent`
             : null}
         />
@@ -238,8 +239,9 @@ export default function OwnerDashboard() {
           icon={Repeat}
           chip="bg-bg-2 text-ink-2"
           label="MRR estimate"
-          value={loading ? '—' : fmtMoney((mrr?.estimate_cents || 0) / 100)}
-          sub={loading ? 'Loading…' : mrr
+          loading={loading}
+          value={fmtMoney((mrr?.estimate_cents || 0) / 100)}
+          sub={mrr
             ? `${mrr.schedules_priced} priced${mrr.schedules_unpriced ? ` · ${mrr.schedules_unpriced} unpriced` : ''}`
             : null}
         />
@@ -247,8 +249,9 @@ export default function OwnerDashboard() {
           icon={DollarSign}
           chip="bg-bg-2 text-ink-2"
           label="Revenue paid (90d)"
-          value={loading ? '—' : fmtMoney(revenueTotal)}
-          sub={loading ? 'Loading…' : `${revenueByService.reduce((n, r) => n + (r.invoice_count || 0), 0)} invoices`}
+          loading={loading}
+          value={fmtMoney(revenueTotal)}
+          sub={`${revenueByService.reduce((n, r) => n + (r.invoice_count || 0), 0)} invoices`}
         />
       </div>
 

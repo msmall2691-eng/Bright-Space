@@ -176,29 +176,33 @@ export default function QuoteFunnel() {
                 icon={Inbox}
                 chip="bg-bg-2 text-ink-2"
                 label="Requests"
-                value={loading ? '—' : requests}
-                sub={loading ? 'Loading…' : `last ${days} days`}
+                loading={loading}
+                value={requests}
+                sub={`last ${days} days`}
               />
               <KpiCard
                 icon={FileText}
                 chip="bg-bg-2 text-ink-2"
                 label="Request → quote"
-                value={loading ? '—' : pctLabel(conversion.request_to_quote_pct)}
-                sub={loading ? 'Loading…' : `${quoted} of ${requests} quoted`}
+                loading={loading}
+                value={pctLabel(conversion.request_to_quote_pct)}
+                sub={`${quoted} of ${requests} quoted`}
               />
               <KpiCard
                 icon={Trophy}
                 chip="bg-bg-2 text-ink-2"
                 label="Win rate"
-                value={loading ? '—' : pctLabel(conversion.overall_pct)}
-                sub={loading ? 'Loading…' : `${won} won of ${requests}`}
+                loading={loading}
+                value={pctLabel(conversion.overall_pct)}
+                sub={`${won} won of ${requests}`}
               />
               <KpiCard
                 icon={DollarSign}
                 chip="bg-bg-2 text-ink-2"
                 label="Won value"
-                value={loading ? '—' : fmtMoney(value.won || 0)}
-                sub={loading ? 'Loading…' : `${fmtMoney(value.quoted || 0)} quoted`}
+                loading={loading}
+                value={fmtMoney(value.won || 0)}
+                sub={`${fmtMoney(value.quoted || 0)} quoted`}
               />
             </div>
 
