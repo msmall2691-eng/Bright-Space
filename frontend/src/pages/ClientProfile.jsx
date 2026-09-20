@@ -229,10 +229,44 @@ export default function ClientProfile() {
     setSavingProp(false)
   }
 
-  const deleteProp = async (propId) => {
-    if (!(await confirmDialog('Remove this property?'))) return
-    await del(`/api/properties/${propId}`)
-    await load()
+  // Property lifecycle (parity with the client one). Archive stops the
+  // property's future work but keeps history; permanent delete only works when
+  // it has no jobs (the backend 409s otherwise, so history is never destroyed).
+  const archiveProp = async (propId) => {
+    let pv = {}
+    try { pv = await get(`/api/properties/${propId}/archive-preview`) } catch { /* generic confirm */ }
+    const ok = await confirmDialog(
+      `Archive this property? Its future work stops:\n\n` +
+      `• ${pv.upcoming_visits ?? 0} upcoming visit(s) cancelled\n` +
+      `• ${pv.recurring_series ?? 0} recurring series stopped\n\n` +
+      `History is kept, and you can Unarchive anytime.`,
+      { title: 'Archive property?', confirmLabel: 'Archive' }
+    )
+    if (!ok) return
+    try { await post(`/api/properties/${propId}/archive`, {}); toast.success('Property archived') }
+    catch (e) { toast.error(e?.message || 'Could not archive property') }
+    await reloadProperties()
+  }
+  const unarchiveProp = async (propId) => {
+    try { await post(`/api/properties/${propId}/unarchive`, {}); toast.success('Property restored') }
+    catch (e) { toast.error(e?.message || 'Could not unarchive property') }
+    await reloadProperties()
+  }
+  const deletePropPermanent = async (propId) => {
+    const ok = await confirmDialog(
+      'Permanently delete this property? This removes it and its iCal feeds for good, and only ' +
+      'works if the property has no jobs — otherwise archive it instead.',
+      { title: 'Delete property?', confirmLabel: 'Delete permanently', danger: true }
+    )
+    if (!ok) return
+    try {
+      await del(`/api/properties/${propId}?permanent=true`)
+      toast.success('Property deleted')
+    } catch (e) {
+      if (e?.status === 409) toast.error('This property has jobs, so it can’t be permanently deleted — archive it instead.')
+      else toast.error(e?.message || 'Could not delete property')
+    }
+    await reloadProperties()
   }
 
   const openQuickContact = () => {
@@ -567,7 +601,8 @@ export default function ClientProfile() {
             propForm={propForm} setPropForm={setPropForm}
             showPropForm={showPropForm} setShowPropForm={setShowPropForm}
             editingProp={editingProp}
-            savingProp={savingProp} saveProp={saveProp} deleteProp={deleteProp}
+            savingProp={savingProp} saveProp={saveProp}
+            archiveProp={archiveProp} unarchiveProp={unarchiveProp} deletePropPermanent={deletePropPermanent}
             openNewProp={openNewProp} openEditProp={openEditProp}
             icalForm={icalForm} setIcalForm={setIcalForm}
             showIcalForm={showIcalForm} setShowIcalForm={setShowIcalForm}

@@ -67,7 +67,7 @@ export function useClientProfileData(id) {
           setMessages(all.filter(m => m.channel === 'sms'))
           setEmails(all.filter(m => m.channel === 'email').reverse())  // newest first
         }).catch(() => {}),
-        get(`/api/properties?client_id=${id}`).then(props => { if (!isStale()) setProperties(Array.isArray(props) ? props : []) }).catch(() => {}),
+        get(`/api/properties?client_id=${id}&include_inactive=true`).then(props => { if (!isStale()) setProperties(Array.isArray(props) ? props : []) }).catch(() => {}),
         get(`/api/recurring?client_id=${id}`).then(scheds => { if (!isStale()) setSchedules(Array.isArray(scheds) ? scheds : []) }).catch(() => {}),
         get(`/api/opportunities?client_id=${id}`).then(opps => { if (!isStale()) setOpportunities(Array.isArray(opps) ? opps : []) }).catch(() => {}),
         // Origin request(s) this client came in as — the "everything links to
@@ -90,7 +90,7 @@ export function useClientProfileData(id) {
   }, [id])
 
   const reloadProperties = useCallback(async () => {
-    const props = await get(`/api/properties?client_id=${id}`)
+    const props = await get(`/api/properties?client_id=${id}&include_inactive=true`)
     const arr = Array.isArray(props) ? props : []
     setProperties(arr)
     return arr

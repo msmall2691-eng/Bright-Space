@@ -258,6 +258,11 @@ def prop_to_dict(p: Property, include_icals: bool = True, turnovers_next_30d: Op
         "checklist_template": getattr(p, 'checklist_template', None),
         "custom_fields": getattr(p, 'custom_fields', None) or {},
         "active": p.active,
+        # Archive lifecycle (migration 119): so the UI can badge an archived
+        # property and offer Unarchive / permanent Delete. `active=False` is the
+        # predicate; archived_at records the deliberate archive.
+        "archived": getattr(p, "archived_at", None) is not None,
+        "archived_at": p.archived_at.isoformat() if getattr(p, "archived_at", None) else None,
         "created_at": p.created_at.isoformat() if p.created_at else None,
         "ical_health": _property_ical_health(p),
         "turnovers_next_30d": turnovers_next_30d,
