@@ -820,14 +820,130 @@ def _job_booking_info(db: Session, j: Job):
     return booking, next_arrival
 
 
+def _js(v):
+    """Coerce one value to something FastAPI's JSON encoder cannot choke on.
+
+    Primitives and JSON containers pass through; dates/times/datetimes become
+    ISO strings; anything else falls back to ``str()``. Used only by the
+    degraded serializer below, whose whole job is to never raise."""
+    if v is None or isinstance(v, (str, int, float, bool, list, dict)):
+        return v
+    try:
+        return v.isoformat()
+    except Exception:
+        try:
+            return str(v)
+        except Exception:
+            return None
+
+
+def _log_job_shape(where: str, j: Job) -> None:
+    """Emit the traceback plus the row's serialization-relevant field shape when
+    an otherwise-safe job read fails, so a SINGLE occurrence in the logs names
+    the offending field instead of a bare ``Internal Server Error``.
+
+    Deliberately omits access details (house_code / access_notes / wifi) —
+    BB-SEC-08…12 keep those out of logs. Values are repr-truncated so a fat
+    ``photos``/``notes`` field can't flood the log."""
+    def _r(name):
+        try:
+            v = getattr(j, name, None)
+            return f"{type(v).__name__}={repr(v)[:160]}"
+        except Exception as e:  # a broken attribute load is itself signal
+            return f"<unreadable: {e!r}>"
+
+    fields = ("job_type", "status", "property_id", "client_id", "quote_id",
+              "opportunity_id", "recurring_schedule_id", "ical_event_id",
+              "scheduled_date", "start_time", "end_time", "cleaner_ids",
+              "custom_fields", "offer_audience", "posted_rate", "price",
+              "agreed_rate", "created_at", "updated_at")
+    try:
+        shape = " ".join(f"{name}({_r(name)})" for name in fields)
+    except Exception:
+        shape = "<shape unavailable>"
+    logger.exception("[%s] serialize failed for job %s: %s",
+                     where, getattr(j, "id", "?"), shape)
+
+
+def _job_to_dict_min(j: Job) -> dict:
+    """A serializer that cannot raise: every field is read defensively and
+    coerced to a JSON-safe value, and the turnover-booking extras are left
+    empty. It mirrors ``job_to_dict``'s keys so a caller gets the full shape,
+    just without booking enrichment — the graceful-degrade payload used when the
+    normal path throws on one row's bad data."""
+    g = lambda name, default=None: getattr(j, name, default)
+    return {
+        "id": g("id"),
+        "client_id": g("client_id"),
+        "client_name": (getattr(g("client"), "name", "") or "") if g("client") else "",
+        "quote_id": g("quote_id"),
+        "opportunity_id": g("opportunity_id"),
+        "job_type": g("job_type") or "residential",
+        "property_id": g("property_id"),
+        "property_name": getattr(g("property"), "name", None) if g("property") else None,
+        "recurring_schedule_id": g("recurring_schedule_id"),
+        "calendar_invite_sent": g("calendar_invite_sent"),
+        "sms_reminder_sent": g("sms_reminder_sent"),
+        "skip_sms_reminder": bool(g("skip_sms_reminder")),
+        "title": g("title"),
+        "scheduled_date": _js(g("scheduled_date")),
+        "start_time": _js(g("start_time")),
+        "end_time": _js(g("end_time")),
+        "address": g("address"),
+        "cleaner_ids": g("cleaner_ids") or [],
+        "status": g("status"),
+        "notes": g("notes"),
+        "completed_at": _js(g("completed_at")),
+        "completed_by": g("completed_by"),
+        "completion_note": g("completion_note"),
+        "custom_fields": g("custom_fields") or {},
+        "dispatched": bool(g("dispatched")),
+        "open_for_claims": bool(g("open_for_claims") or False),
+        "offer_audience": list(g("offer_audience") or []) if isinstance(g("offer_audience"), (list, tuple)) else [],
+        "posted_rate": _js(g("posted_rate")),
+        "price": _js(g("price")),
+        "agreed_rate": _js(g("agreed_rate")),
+        "pending_claim_requests": 0,
+        "helpers": [],
+        "gcal_event_id": g("gcal_event_id"),
+        "created_at": _js(g("created_at")),
+        "updated_at": _js(g("updated_at")),
+        "customer_confirmed_at": _js(g("customer_confirmed_at")),
+        "reschedule_requested_at": _js(g("reschedule_requested_at")),
+        "reschedule_request_message": g("reschedule_request_message"),
+        "reschedule_requested_date": _js(g("reschedule_requested_date")),
+        "reschedule_requested_scope": g("reschedule_requested_scope"),
+        "is_recurring": bool(g("recurring_schedule_id")),
+        # Booking enrichment is exactly what could not be computed — leave it
+        # empty rather than guess, and flag that this row degraded so a reader
+        # (and a test) can tell an enriched payload from a fallback one.
+        "booking": None,
+        "next_arrival": None,
+        "is_immediate_turnover": False,
+        "turnover_lead_hours": None,
+        "turnover_lead_warning": False,
+        "_degraded": True,
+    }
+
+
 def _job_to_dict_enriched(db: Session, j: Job, **kwargs) -> dict:
     """job_to_dict() plus single-job booking enrichment — the wiring
     get_job/create_job/update_job/get_job_details need for a str_turnover
     job's `booking`/`next_arrival`/`is_immediate_turnover`/
-    `turnover_lead_hours` to ever be populated outside the jobs list."""
-    booking, next_arrival = _job_booking_info(db, j)
-    kwargs.setdefault("lead_buffer_hours", _get_turnover_lead_buffer_hours(db))
-    return job_to_dict(j, booking_event=booking, next_arrival=next_arrival, **kwargs)
+    `turnover_lead_hours` to ever be populated outside the jobs list.
+
+    A read endpoint must not 500 the whole job page because one row's data
+    trips serialization, so if the normal path raises we log the row's shape +
+    traceback (to pinpoint the offending field) and fall back to a serializer
+    that cannot raise. The fallback is booking-less but complete-enough to
+    render; the log is the breadcrumb for a precise root-cause fix."""
+    try:
+        booking, next_arrival = _job_booking_info(db, j)
+        kwargs.setdefault("lead_buffer_hours", _get_turnover_lead_buffer_hours(db))
+        return job_to_dict(j, booking_event=booking, next_arrival=next_arrival, **kwargs)
+    except Exception:
+        _log_job_shape("job_enrich", j)
+        return _job_to_dict_min(j)
 
 
 def _get_turnover_lead_buffer_hours(db: Session) -> float:
