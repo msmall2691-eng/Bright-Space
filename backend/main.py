@@ -251,6 +251,15 @@ app.include_router(crew_docs_router, prefix="/api/crew-docs", tags=["crew-docs"]
 # push_router sets its own /api/push prefix (like the auth webhook routers).
 app.include_router(push_router)
 
+# Public legal pages (/privacy, /terms, /sms) served server-side WITHOUT JS, so
+# an A2P/10DLC reviewer and crawlers see real policy text instead of the JS-only
+# SPA shell the catch-all returns. MUST be included before that catch-all (it is
+# — the fallback route is defined much later) and carries no /api prefix so the
+# URLs stay the ones declared to carriers. Non-/api paths are public (auth.py
+# _is_public), so no key is required.
+from modules.legal.router import router as legal_router
+app.include_router(legal_router)
+
 # Per-connection conversation histories: {connection_key: [messages]}
 # BB-CODE-03: bounded so a long chat doesn't accumulate megabytes per session
 # (Anthropic's context window is the real ceiling, but we don't need to
