@@ -130,7 +130,12 @@ export default function OpportunityDetail() {
           <ArrowLeft className="w-4 h-4" /> Back to Deals
         </button>
 
-        <div className="grid grid-cols-1 shell:grid-cols-[300px_minmax(0,1fr)_320px] gap-4">
+        {/* Two columns at shell: (fields + timeline) with related records as a
+            full-width row below — the old 3-fixed-column layout (300+320) crushed
+            the center to ~20px once the sidebar ate into the ~940px window, which
+            wrapped the timeline one letter per line. The 3rd rail returns only at
+            xl:, where there's genuinely room for it. */}
+        <div className="grid grid-cols-1 shell:grid-cols-[minmax(240px,280px)_minmax(0,1fr)] xl:grid-cols-[280px_minmax(0,1fr)_300px] gap-4">
           {/* ── Left: identity + fields ───────────────────────────── */}
           <div className="bg-panel border border-hairline rounded-xl p-4 space-y-4 self-start">
             <div>
@@ -209,8 +214,9 @@ export default function OpportunityDetail() {
             </div>
           </div>
 
-          {/* ── Right: related records ────────────────────────────── */}
-          <div className="space-y-4 self-start">
+          {/* ── Related records — a full-width 3-up row at shell:, a stacked
+                side rail only at xl: where the third column fits. ─────────── */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 xl:grid-cols-1 gap-4 self-start shell:col-span-2 xl:col-span-1">
             <RelatedList icon={FileText} title="Quotes" items={opp.quotes || []} empty="No quotes yet"
               render={(q) => (
                 <Link key={q.id} to={`/quotes/${q.id}`}
