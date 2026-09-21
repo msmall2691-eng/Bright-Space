@@ -503,8 +503,16 @@ layer(base);
   }
   .bb-modal-in { animation: bb-modal-in 0.15s ease-out; }
   .bb-backdrop-in { animation: bb-backdrop-in 0.15s ease-out; }
+  /* Home bento reveal: a single quiet fade-up as a tier paints, so the
+     command-center reads as "assembled" rather than flashing in. Held to the
+     150–350ms ease-out budget and disabled under reduced-motion. */
+  @keyframes bb-board-in {
+    from { opacity: 0; transform: translateY(6px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+  .bb-board-in { animation: bb-board-in 0.28s ease-out both; }
   @media (prefers-reduced-motion: reduce) {
-    .bb-modal-in, .bb-backdrop-in { animation: none; }
+    .bb-modal-in, .bb-backdrop-in, .bb-board-in { animation: none; }
   }
   .bb-nav-active {
     box-shadow: inset 0 0 0 1px rgba(99, 102, 241, 0.22);

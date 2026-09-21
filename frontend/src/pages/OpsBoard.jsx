@@ -1,27 +1,31 @@
 /**
- * Ops Board — the iOS-style triage dashboard (the new /dashboard home).
+ * Ops Board — the command-center dashboard (the /dashboard home).
  *
- * Everything that needs the operator's attention, grouped into six clearable
- * sections with one merged stat/comms band, integration-status chips,
- * per-severity filter chips, and `/`-to-search. One fetch
- * (`GET /api/dashboard/board`) drives all of that; the backend ships
- * render-ready strings, so this file is a pure view (see
- * backend/services/board_service.py). Primary sections cap at
- * PRIMARY_ROW_CAP rows on-screen, with a "+N more" link into the page that
- * owns the full set — the board is a triage surface, not a scroll-forever
- * list.
+ * A bento, not a vertical stack of full-width bands (owner: "worst dashboard
+ * layout ever... wasted space... useful boxes, more actions, more movement").
+ * Four tiers: a compact KPI strip; the REAL Schedule calendar beside the
+ * "needs you now" action feed, above the fold; money / crew / marketplace as
+ * equal bento boxes; then plumbing (feed, recurring & systems health) quiet at
+ * the bottom. Everything that needs the operator's attention is grouped into
+ * six clearable sections with integration-status chips, per-severity filter
+ * chips, and `/`-to-search. One fetch (`GET /api/dashboard/board`) drives all
+ * of that; the backend ships render-ready strings, so this file is a pure view
+ * (see backend/services/board_service.py). Feed sections cap at PRIMARY_ROW_CAP
+ * rows on-screen, with a "+N more" link into the page that owns the full set —
+ * the board is a triage surface, not a scroll-forever list.
  *
  * Upcoming visits are NOT one of those sections: the REAL Schedule calendar
- * renders across the top (components/board/HomeScheduleCalendar.jsx wrapping the
- * shared <CalendarView>), so Home shows the same month, same jobs and same
- * drag-to-reschedule as the Schedule page — not a diverging count grid. It runs
- * its own useScheduleData(month) fetch (/api/schedule/week, correctly paged).
+ * (components/board/HomeScheduleCalendar.jsx wrapping the shared <CalendarView>)
+ * sits in the above-the-fold row, so Home shows the same month, same jobs and
+ * same drag-to-reschedule as the Schedule page — not a diverging count grid. It
+ * runs its own useScheduleData(month) fetch (/api/schedule/week, correctly
+ * paged).
  *
- * The approval queue (components/board/ProposalsQueue.jsx) also fetches
- * itself: it lists pending ProposedActions, and on the first Home visit of a
- * business day asks Autopilot to draft the follow-ups the owner owes.
+ * The approval queue (components/board/ProposalsQueue.jsx) leads the action
+ * feed and fetches itself: it lists pending ProposedActions, and on the first
+ * Home visit of a business day asks Autopilot to draft the follow-ups owed.
  *
- * The four snapshot boxes below it (components/board/SnapshotBoxes.jsx) read
+ * The four snapshot boxes (components/board/SnapshotBoxes.jsx) read
  * `data.snapshot` out of the SAME board response — money/hours today, crew
  * today, turnover-feed health, stalled recurring series — so the whole
  * dashboard is still one request plus the calendar's own range fetch.
@@ -462,22 +466,28 @@ function WidgetGroup({ groupKey, title, children }) {
 
 /* ── Page ─────────────────────────────────────────────────────────────────── */
 
-// The owner's stated priority for Home, top to bottom: communication, staff
-// activity, schedule, then KPIs — so sections render in that order regardless
-// of payload order, split around the compact KPI band. Money/systems/noise
-// follow below the fold.
+// Home is a command-center bento, not a vertical stack of full-width bands
+// (owner: "worst dashboard layout ever... wasted space... useful boxes, more
+// actions"). Four tiers, top to bottom: a compact KPI strip; the schedule
+// beside the "needs you now" action feed, above the fold; money / crew /
+// marketplace as equal bento boxes; then plumbing (feed, recurring & systems
+// health) quiet at the bottom. SECTION_RANK still orders the cards WITHIN a
+// tier regardless of payload order.
 // `today_schedule` is deliberately absent: today's visits now render in the
 // real Schedule calendar (components/board/HomeScheduleCalendar.jsx) rather than
 // a second text list of the same jobs — the owner asked to "immediately have
 // eyes on the cal schedule", and carrying both was exactly the redundancy she
 // flagged. The backend no longer emits that section either.
-// One subject per widget, in the order she named them: who's waiting on a
-// reply, what work is coming in, whether the crew is covered, then money and
-// plumbing. The old mixed sections (Needs You Today = jobs + replies + quote
-// nudges; Real People Waiting = conversations + leads) are gone — that
+// One subject per box. The old mixed sections (Needs You Today = jobs + replies
+// + quote nudges; Real People Waiting = conversations + leads) are gone — that
 // grouping was the "chaos", not the styling.
 const SECTION_RANK = { messages: 0, requests: 1, needs_cleaner: 2, money: 3, systems: 4, safe_to_ignore: 5 }
-const PRIMARY_SECTIONS = new Set(['messages', 'requests', 'needs_cleaner'])
+// Command-center bento tiers. The FEED is the "needs you now" column that sits
+// beside the schedule above the fold — every card that wants a decision. MONEY
+// is its own bento box; SYSTEMS/noise are plumbing, quiet at the bottom.
+const FEED_SECTIONS = new Set(['messages', 'requests', 'needs_cleaner'])
+const MONEY_SECTIONS = new Set(['money'])
+const PLUMBING_SECTIONS = new Set(['systems', 'safe_to_ignore'])
 const SECTION_LINKS = {
   messages: { label: 'Inbox', to: '/comms' },
   requests: { label: 'Requests', to: '/requests' },
@@ -486,10 +496,9 @@ const SECTION_LINKS = {
   needs_cleaner: { label: 'Open to crew', to: '/schedule' },
   money: { label: 'Billing', to: '/billing' },
 }
-// Every primary section shows at most this many rows on Home before folding
-// the rest behind its header "View all" link — the owner: "not have to
-// scroll so much... it's almost a little redundant." Secondary sections
-// (money/systems/ignore-pile) are already short and stay uncapped.
+// Every section caps at this many rows on Home before folding the rest behind
+// its header "View all" link — the owner: "not have to scroll so much... it's
+// almost a little redundant." The feed sections are the ones that can grow.
 const PRIMARY_ROW_CAP = 5
 
 export default function OpsBoard() {
@@ -662,10 +671,11 @@ export default function OpsBoard() {
     }))
   }, [sections, filter, hideCleared, cleared, q])
 
-  // Communication + schedule sections above the KPI band; money/systems/noise
-  // below it — the owner's linear order for Home.
-  const primarySections = visibleBySection.filter(v => PRIMARY_SECTIONS.has(v.section.key))
-  const secondarySections = visibleBySection.filter(v => !PRIMARY_SECTIONS.has(v.section.key))
+  // Split the sections across the bento: the action feed that sits beside the
+  // schedule above the fold, the money box, and the plumbing at the bottom.
+  const feedSections = visibleBySection.filter(v => FEED_SECTIONS.has(v.section.key))
+  const moneySections = visibleBySection.filter(v => MONEY_SECTIONS.has(v.section.key))
+  const plumbingSections = visibleBySection.filter(v => PLUMBING_SECTIONS.has(v.section.key))
 
   const anyVisible = visibleBySection.some(v => v.items.length > 0)
   const filtersActive = filter !== 'all' || !!q || hideCleared
@@ -722,21 +732,18 @@ export default function OpsBoard() {
 
         <DailyBrief />
 
-        {/* The marketplace, led. The office runs on the bench claiming work and
-            her saying yes, so the home opens with who's waiting on that yes and
-            what's still open to nobody — links to the Marketplace hub to act,
-            never approves here. Draws nothing when nothing's waiting. */}
-        <div className="mt-3">
-          <MarketplaceBoard />
-        </div>
-
-        {/* The bench, once a week's worth of decisions have accumulated. Draws
-            nothing at all in a quiet week — an owner scanning this page should
-            only stop where there's something to do, and a permanent all-clear
-            box trains people to skip the spot the real thing will appear in. */}
-        <div className="mt-3">
-          <BenchDigest />
-        </div>
+        {/* Compact KPI strip up top — the old "Communication" strip and the
+            stat-tile band, merged into one dense row right under the brief
+            (owner: "smaller boxes... it's almost a little redundant"). Comms/
+            crew counts inside it are hidden for viewers — /comms, /requests and
+            crew chat are admin/manager-only, so they'd only link into 403s. */}
+        {!loading && (
+          <TopBand stats={data?.stats}
+            unreadConversations={unreadConversations}
+            crewUnreadThreads={crewUnreadThreads}
+            showComms={canComms}
+            navigate={navigate} />
+        )}
 
         {note && (
           /* Quiet hairline card + emerald check — not a tinted banner. */
@@ -746,186 +753,218 @@ export default function OpsBoard() {
           </div>
         )}
 
-        {/* 1 — Every number at a glance, right under the header: the old
-            "Communication" strip and the KPI band merged into one row.
-            Comms/crew counts inside it are hidden for viewers — /comms,
-            /requests and crew chat are admin/manager-only, so they could
-            only link into 403s. */}
-        {!loading && (
-          <TopBand stats={data?.stats}
-            unreadConversations={unreadConversations}
-            crewUnreadThreads={crewUnreadThreads}
-            showComms={canComms}
-            navigate={navigate} />
-        )}
-
-        {/* The attention header + triage machinery, folded behind one quiet
-            disclosure. Everything below it is one widget grid. */}
-        <div className="mt-6 flex items-center gap-2.5">
-          <h2 className="text-[11px] font-medium text-ink-3">Needs attention</h2>
-          <span className="text-[11px] tabular-nums text-ink-3">{clearedCount} of {total} cleared</span>
-          <button
-            onClick={() => setToolsOpen(v => !v)}
-            aria-expanded={toolsOpen}
-            className="ml-auto inline-flex h-7 items-center gap-1.5 rounded-md border border-hairline-2 bg-panel px-2 text-[11px] font-medium text-ink-2 hover:bg-bg-2">
-            <SlidersHorizontal className="h-3 w-3" />
-            Filters
-            {filtersActive && <span className="h-1.5 w-1.5 rounded-full bg-indigo-600" aria-hidden="true" />}
-            <ChevronDown className={`h-3 w-3 transition-transform ${toolsOpen ? 'rotate-180' : ''}`} />
-          </button>
-        </div>
-
-        {toolsOpen && (
-          <div className="mt-2 space-y-2.5 rounded-xl border border-hairline bg-panel p-3">
-            <div className="relative">
-              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-ink-3" />
-              <input
-                ref={searchRef}
-                value={query}
-                onChange={e => setQuery(e.target.value)}
-                placeholder="Search everything…  (press /)"
-                className="w-full rounded-lg border border-hairline bg-bg py-2 pl-9 pr-3 text-[13px] text-ink placeholder:text-ink-3 focus:border-indigo-500 focus:outline-hidden" />
-            </div>
-            {/* Zero-count severities are noise ("Good 0") — only offered while active. */}
-            <div className="flex flex-wrap gap-1.5">
-              {SEV_ORDER.filter(sev => sev === 'all' || (counts[sev] || 0) > 0 || filter === sev).map(sev => (
-                <FilterChip key={sev} sev={sev} count={counts[sev] || 0}
-                  active={filter === sev} onClick={() => setFilter(sev)} />
+        {loading ? (
+          /* Skeleton mirrors the above-the-fold split: a tall schedule panel
+             beside a short stack of feed cards. */
+          <div className="mt-4 grid grid-cols-1 gap-4 shell:grid-cols-[minmax(0,1.55fr)_minmax(0,1fr)]">
+            <div className="h-[26rem] animate-pulse rounded-2xl border border-hairline bg-panel" />
+            <div className="flex flex-col gap-4">
+              {Array.from({ length: 3 }).map((_, i) => (
+                <div key={i} className="h-40 animate-pulse rounded-2xl border border-hairline bg-panel" />
               ))}
             </div>
-            <div className="flex items-center gap-3">
-              <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-bg-2">
-                <div className="h-full rounded-full bg-emerald-500 transition-all" style={{ width: `${pct}%` }} />
-              </div>
-              <div className="flex shrink-0 items-center gap-1.5">
-                <button
-                  onClick={() => setHideCleared(v => !v)}
-                  className="inline-flex h-7 items-center gap-1 rounded-md border border-hairline-2 bg-panel px-2 text-[11px] font-medium text-ink-2 hover:bg-bg-2">
-                  {hideCleared ? <Eye className="h-3 w-3" /> : <EyeOff className="h-3 w-3" />}
-                  {hideCleared ? 'Show cleared' : 'Hide cleared'}
-                </button>
-                <button
-                  onClick={resetCleared}
-                  disabled={!clearedCount}
-                  className="inline-flex h-7 items-center gap-1 rounded-md border border-hairline-2 bg-panel px-2 text-[11px] font-medium text-ink-2 hover:bg-bg-2 disabled:opacity-40">
-                  <RotateCcw className="h-3 w-3" /> Reset
-                </button>
-              </div>
-            </div>
           </div>
-        )}
-
-        {/* ── The widget grid ────────────────────────────────────────────
-            Owner: "I would love more condensed like widgets on a dashboard."
-            One real CSS grid (not the old CSS-columns masonry, which
-            reordered cards unpredictably as content changed). Each concern
-            is its own bounded box; the schedule — the one she called "a big
-            one" — spans two columns from the shell: breakpoint up. Cards are
-            `items-start` so each keeps its natural height instead of
-            stretching to the tallest in its row. */}
-        <div className="mt-3 flex flex-col gap-4">
-          {loading ? (
-            Array.from({ length: 6 }).map((_, i) => (
-              <div key={i} className="h-56 animate-pulse rounded-2xl border border-hairline bg-panel" />
-            ))
-          ) : (
-            <>
-              {/* Schedule leads and spans the FULL width of the grid — the
-                  owner asked for the calendar across the top rather than
-                  sharing a row, and a month grid squeezed into two of three
-                  columns loses the thing that makes it useful (seeing the
-                  shape of the week/month at a glance). Rendered outside the
-                  `anyVisible` gate: an empty attention board must never hide
-                  the week's work. */}
+        ) : (
+          <>
+            {/* ── Above the fold: the schedule and what needs you now, side by
+                side ──────────────────────────────────────────────────────────
+                The owner asked to "immediately have eyes on the cal schedule"
+                AND wanted "more actions, more movement" without scrolling. So
+                the REAL Schedule calendar (drag-to-reschedule and all) sits
+                beside a single action feed — the approval queue plus every
+                attention card that wants a decision now — instead of the old
+                full-width calendar stacked on a long column of sections.
+                Collapses to one column below the shell: breakpoint. */}
+            <div data-testid="home-abovefold"
+              className="mt-4 grid grid-cols-1 gap-4 shell:grid-cols-[minmax(0,1.55fr)_minmax(0,1fr)] bb-board-in">
+              {/* Rendered regardless of the attention board: an empty feed must
+                  never hide the week's work. */}
               <div data-testid="home-calendar-slot">
                 <HomeScheduleCalendar navigate={navigate} />
               </div>
 
-              {/* The customizable widget zone: the "little boxes" she asked to
-                  arrange — quick actions, notes, the Nova chat — each draggable
-                  by its grip into whatever order she likes, saved per device.
-                  Office-only tiles fall out for a viewer, so the zone quietly
-                  shrinks rather than framing an empty box. */}
+              <div className="flex flex-col gap-4">
+                {/* The attention header + triage machinery (search / severity /
+                    cleared progress), folded behind one quiet disclosure so the
+                    feed reads calm (owner: "this is so busy"). `/` opens it. */}
+                <div className="flex items-center gap-2.5">
+                  <h2 className="text-[11px] font-medium text-ink-3">Needs you now</h2>
+                  <span className="text-[11px] tabular-nums text-ink-3">{clearedCount} of {total} cleared</span>
+                  <button
+                    onClick={() => setToolsOpen(v => !v)}
+                    aria-expanded={toolsOpen}
+                    className="ml-auto inline-flex h-7 items-center gap-1.5 rounded-md border border-hairline-2 bg-panel px-2 text-[11px] font-medium text-ink-2 hover:bg-bg-2">
+                    <SlidersHorizontal className="h-3 w-3" />
+                    Filters
+                    {filtersActive && <span className="h-1.5 w-1.5 rounded-full bg-indigo-600" aria-hidden="true" />}
+                    <ChevronDown className={`h-3 w-3 transition-transform ${toolsOpen ? 'rotate-180' : ''}`} />
+                  </button>
+                </div>
+
+                {toolsOpen && (
+                  <div className="space-y-2.5 rounded-xl border border-hairline bg-panel p-3">
+                    <div className="relative">
+                      <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-ink-3" />
+                      <input
+                        ref={searchRef}
+                        value={query}
+                        onChange={e => setQuery(e.target.value)}
+                        placeholder="Search everything…  (press /)"
+                        className="w-full rounded-lg border border-hairline bg-bg py-2 pl-9 pr-3 text-[13px] text-ink placeholder:text-ink-3 focus:border-indigo-500 focus:outline-hidden" />
+                    </div>
+                    {/* Zero-count severities are noise ("Good 0") — only offered while active. */}
+                    <div className="flex flex-wrap gap-1.5">
+                      {SEV_ORDER.filter(sev => sev === 'all' || (counts[sev] || 0) > 0 || filter === sev).map(sev => (
+                        <FilterChip key={sev} sev={sev} count={counts[sev] || 0}
+                          active={filter === sev} onClick={() => setFilter(sev)} />
+                      ))}
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-bg-2">
+                        <div className="h-full rounded-full bg-emerald-500 transition-all" style={{ width: `${pct}%` }} />
+                      </div>
+                      <div className="flex shrink-0 items-center gap-1.5">
+                        <button
+                          onClick={() => setHideCleared(v => !v)}
+                          className="inline-flex h-7 items-center gap-1 rounded-md border border-hairline-2 bg-panel px-2 text-[11px] font-medium text-ink-2 hover:bg-bg-2">
+                          {hideCleared ? <Eye className="h-3 w-3" /> : <EyeOff className="h-3 w-3" />}
+                          {hideCleared ? 'Show cleared' : 'Hide cleared'}
+                        </button>
+                        <button
+                          onClick={resetCleared}
+                          disabled={!clearedCount}
+                          className="inline-flex h-7 items-center gap-1 rounded-md border border-hairline-2 bg-panel px-2 text-[11px] font-medium text-ink-2 hover:bg-bg-2 disabled:opacity-40">
+                          <RotateCcw className="h-3 w-3" /> Reset
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Waiting on her yes: drafted follow-ups + structural approvals. */}
+                <ProposalsQueue />
+
+                {/* The action feed — messages, incoming work, coverage gaps —
+                    one concern per box, each capped with a "+N more" into the
+                    page that owns the full set. */}
+                {feedSections.map(({ section, items }) => (
+                  <Section key={section.key} section={section} items={items}
+                    clearedSet={cleared} onToggle={toggleCleared}
+                    onAction={runAction} actioningKey={actioningKey} confirmingKey={confirmingKey}
+                    headerLink={SECTION_LINKS[section.key]} navigate={navigate}
+                    onClearAll={clearAllInSection} clearingSection={clearingSection}
+                    setConfirmingKey={setConfirmingKey} filtersActive={filtersActive}
+                    maxRows={PRIMARY_ROW_CAP} />
+                ))}
+
+                {!anyVisible && (
+                  <div className="flex flex-col items-center justify-center rounded-2xl border border-hairline bg-panel px-4 py-10 text-center">
+                    <div className="grid h-12 w-12 place-items-center rounded-full bg-emerald-500/10">
+                      <Check className="h-6 w-6 text-emerald-500" strokeWidth={2.5} />
+                    </div>
+                    <p className="mt-3 text-sm font-semibold text-ink">
+                      {total === 0 ? "You're all caught up" : query || filter !== 'all' ? 'No matches' : 'Everything cleared'}
+                    </p>
+                    <p className="mt-0.5 text-[12px] text-ink-3">
+                      {total === 0
+                        ? 'Nothing needs your attention right now.'
+                        : query || filter !== 'all'
+                          ? 'Try a different search or filter.'
+                          : 'Nice work. Hit Reset to bring cleared items back.'}
+                    </p>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* ── Equal bento boxes: money · crew · marketplace ───────────────
+                One subject per column, and each column is its OWN flex stack so
+                a short box sits directly on the next instead of stretching to
+                the tallest in a row-locked grid (owner: "too much empty spaces
+                lol"). A column whose subject is quiet renders nothing. */}
+            <div data-testid="home-bento"
+              className="mt-4 grid grid-cols-1 gap-4 shell:grid-cols-3 bb-board-in"
+              style={{ animationDelay: '40ms' }}>
+              <div className="flex flex-col gap-4">
+                <MoneyToday snap={snapshot.money_today} />
+                {moneySections.map(({ section, items }) => (
+                  <Section key={section.key} section={section} items={items}
+                    clearedSet={cleared} onToggle={toggleCleared}
+                    onAction={runAction} actioningKey={actioningKey} confirmingKey={confirmingKey}
+                    headerLink={SECTION_LINKS[section.key]} navigate={navigate}
+                    onClearAll={clearAllInSection} clearingSection={clearingSection}
+                    setConfirmingKey={setConfirmingKey} filtersActive={filtersActive}
+                    maxRows={PRIMARY_ROW_CAP} />
+                ))}
+                {(snapshot.money_trend || snapshot.lead_funnel) && (
+                  <WidgetGroup groupKey="trends" title="Trends">
+                    <MoneyTrend snap={snapshot.money_trend} />
+                    <LeadFunnel snap={snapshot.lead_funnel} />
+                  </WidgetGroup>
+                )}
+              </div>
+
+              <div className="flex flex-col gap-4">
+                <CrewToday snap={snapshot.crew} />
+                {canComms && <CrewActivity navigate={navigate} />}
+              </div>
+
+              <div className="flex flex-col gap-4">
+                {/* The office runs on the bench claiming work and her saying yes:
+                    who's waiting on that yes, and the week's bench round-up. Both
+                    link out to act — neither approves here (marketplace guard). */}
+                <MarketplaceBoard />
+                <BenchDigest />
+              </div>
+            </div>
+
+            {/* The customizable "little boxes" she asked to arrange — quick
+                actions, notes, the Nova chat — each draggable by its grip into
+                whatever order she likes, saved per device. Office-only tiles
+                fall out for a viewer, so the zone quietly shrinks. */}
+            <div className="mt-4">
               <HomeWidgets items={[
                 canComms && { key: 'quick', label: 'Quick actions', node: <QuickActions navigate={navigate} /> },
                 { key: 'notes', label: 'Notes', node: <StickyNotes /> },
                 canComms && { key: 'nova', label: 'Ask Nova', node: <NovaChat navigate={navigate} /> },
               ].filter(Boolean)} />
-
-              {/* TWO COLUMNS THAT PACK, not a grid.
-                  Home used a CSS grid, which ties every card in a row to the
-                  height of the tallest one — a four-number "Today" box beside
-                  a five-row "Recurring" box left a card's worth of dead space
-                  under the short one (owner: "too much empty spaces lol").
-                  Each column is its own flex stack, so cards sit directly on
-                  top of each other and a tall card only pushes down its OWN
-                  column.
-
-                  Columns are assigned by subject, not round-robin: money with
-                  money, work with work. Round-robin looks tidy until a box
-                  hides itself and everything after it hops columns. */}
-              <div className="grid grid-cols-1 gap-4 shell:grid-cols-2">
-                <div className="flex flex-col gap-4">
-                  <MoneyToday snap={snapshot.money_today} />
-                  {(snapshot.money_trend || snapshot.lead_funnel) && (
-                    <WidgetGroup groupKey="trends" title="Trends">
-                      <MoneyTrend snap={snapshot.money_trend} />
-                      <LeadFunnel snap={snapshot.lead_funnel} />
-                    </WidgetGroup>
-                  )}
-                  {secondarySections.map(({ section, items }) => (
-                    <Section key={section.key} section={section} items={items}
-                      clearedSet={cleared} onToggle={toggleCleared}
-                      onAction={runAction} actioningKey={actioningKey} confirmingKey={confirmingKey}
-                      headerLink={SECTION_LINKS[section.key]} navigate={navigate}
-                      onClearAll={clearAllInSection} clearingSection={clearingSection}
-                      setConfirmingKey={setConfirmingKey} filtersActive={filtersActive}
-                      maxRows={PRIMARY_ROW_CAP} />
-                  ))}
-                </div>
-
-                <div className="flex flex-col gap-4">
-                  <CrewToday snap={snapshot.crew} />
-                  {canComms && <CrewActivity navigate={navigate} />}
-                  <ProposalsQueue />
-                  {primarySections.map(({ section, items }) => (
-                    <Section key={section.key} section={section} items={items}
-                      clearedSet={cleared} onToggle={toggleCleared}
-                      onAction={runAction} actioningKey={actioningKey} confirmingKey={confirmingKey}
-                      headerLink={SECTION_LINKS[section.key]} navigate={navigate}
-                      onClearAll={clearAllInSection} clearingSection={clearingSection}
-                      setConfirmingKey={setConfirmingKey} filtersActive={filtersActive}
-                      maxRows={PRIMARY_ROW_CAP} />
-                  ))}
-                  {(snapshot.feeds || snapshot.recurring) && (
-                    <WidgetGroup groupKey="health" title="System health">
-                      <FeedHealth snap={snapshot.feeds} />
-                      <RecurringHealth snap={snapshot.recurring} />
-                    </WidgetGroup>
-                  )}
-                </div>
-              </div>
-            </>
-          )}
-        </div>
-
-        {!loading && !anyVisible && (
-          <>
-            <div className="mt-12 flex flex-col items-center justify-center text-center">
-              <div className="grid h-12 w-12 place-items-center rounded-full bg-emerald-500/10">
-                <Check className="h-6 w-6 text-emerald-500" strokeWidth={2.5} />
-              </div>
-              <p className="mt-3 text-sm font-semibold text-ink">
-                {total === 0 ? "You're all caught up" : query || filter !== 'all' ? 'No matches' : 'Everything cleared'}
-              </p>
-              <p className="mt-0.5 text-[12px] text-ink-3">
-                {total === 0
-                  ? 'Nothing needs your attention right now.'
-                  : query || filter !== 'all'
-                    ? 'Try a different search or filter.'
-                    : 'Nice work. Hit Reset to bring cleared items back.'}
-              </p>
             </div>
+
+            {/* ── Plumbing, quiet at the bottom: feed + recurring health and
+                the systems / safe-to-ignore piles. Folds away, and renders
+                nothing at all when there's nothing to report. */}
+            {(snapshot.feeds || snapshot.recurring || plumbingSections.some(v => v.items.length)) && (
+              <div className="mt-6">
+                <WidgetGroup groupKey="health" title="System health">
+                  <div className="grid grid-cols-1 gap-4 shell:grid-cols-2">
+                    <div className="flex flex-col gap-4">
+                      <FeedHealth snap={snapshot.feeds} />
+                      {plumbingSections.filter(v => v.section.key === 'systems').map(({ section, items }) => (
+                        <Section key={section.key} section={section} items={items}
+                          clearedSet={cleared} onToggle={toggleCleared}
+                          onAction={runAction} actioningKey={actioningKey} confirmingKey={confirmingKey}
+                          headerLink={SECTION_LINKS[section.key]} navigate={navigate}
+                          onClearAll={clearAllInSection} clearingSection={clearingSection}
+                          setConfirmingKey={setConfirmingKey} filtersActive={filtersActive}
+                          maxRows={PRIMARY_ROW_CAP} />
+                      ))}
+                    </div>
+                    <div className="flex flex-col gap-4">
+                      <RecurringHealth snap={snapshot.recurring} />
+                      {plumbingSections.filter(v => v.section.key === 'safe_to_ignore').map(({ section, items }) => (
+                        <Section key={section.key} section={section} items={items}
+                          clearedSet={cleared} onToggle={toggleCleared}
+                          onAction={runAction} actioningKey={actioningKey} confirmingKey={confirmingKey}
+                          headerLink={SECTION_LINKS[section.key]} navigate={navigate}
+                          onClearAll={clearAllInSection} clearingSection={clearingSection}
+                          setConfirmingKey={setConfirmingKey} filtersActive={filtersActive}
+                          maxRows={PRIMARY_ROW_CAP} />
+                      ))}
+                    </div>
+                  </div>
+                </WidgetGroup>
+              </div>
+            )}
           </>
         )}
 

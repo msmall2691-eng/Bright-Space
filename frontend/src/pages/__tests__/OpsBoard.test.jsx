@@ -354,24 +354,29 @@ describe('OpsBoard', () => {
  * already happened rather than four new ones.
  */
 describe('OpsBoard — snapshot boxes', () => {
-  it('puts the calendar above the columns, at full width', async () => {
+  it('puts the schedule beside the needs-you-now feed, above the fold', async () => {
     renderBoard()
     const slot = await screen.findByTestId('home-calendar-slot')
-    // It's a direct child of the page's own vertical stack, not a cell inside
-    // the two-column widget block — so nothing shares its row.
-    expect(slot.parentElement.className).toContain('flex-col')
-    expect(slot.className).not.toContain('grid-cols')
+    const row = screen.getByTestId('home-abovefold')
+    // The calendar is one track of the above-the-fold grid (owner asked to
+    // "immediately have eyes on the cal schedule")...
+    expect(row.contains(slot)).toBe(true)
+    expect(row.className).toContain('grid')
+    expect(row.className).toMatch(/shell:grid-cols-/)
+    // ...and the other track is the action feed — a packing flex column.
+    expect(row.querySelector(':scope > .flex.flex-col')).toBeTruthy()
   })
 
-  it('stacks widgets in columns that pack, not a row-locked grid', async () => {
+  it('packs money/crew/marketplace in columns, not a row-locked grid', async () => {
     renderBoard()
     await screen.findByText('No cleaner assigned')
 
     // A CSS grid ties every card in a row to the tallest one, which left a
-    // card's worth of dead space under the short ones. Each column is its own
-    // flex stack now, so a tall card only pushes down its own column.
-    const cols = document.querySelectorAll('.grid.grid-cols-1 > .flex.flex-col')
-    expect(cols.length).toBe(2)
+    // card's worth of dead space under the short ones. The equal bento boxes
+    // are three flex stacks, so a tall card only pushes down its own column.
+    const bento = screen.getByTestId('home-bento')
+    const cols = bento.querySelectorAll(':scope > .flex.flex-col')
+    expect(cols.length).toBe(3)
     for (const col of cols) expect(col.className).toContain('gap-4')
   })
 
