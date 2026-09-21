@@ -100,19 +100,29 @@ export default function DataHealthCard() {
                           {f.suggestion}{f.destructive ? ' (this fix deletes data — back up first)' : ''}
                         </div>
                       )}
-                      {/* Click straight to the offending record(s). */}
-                      {ROUTE_BY_TABLE[f.table] && Array.isArray(f.sample_ids) && f.sample_ids.length > 0 && (
-                        <div className="mt-1 flex flex-wrap items-center gap-x-2.5 gap-y-0.5">
-                          <span className="text-[11px] text-ink-3">Open:</span>
-                          {f.sample_ids.map(id => (
-                            <Link key={id} to={ROUTE_BY_TABLE[f.table](id)}
-                              className="text-[11px] text-ink hover:text-indigo-600 no-underline tabular-nums">
-                              #{id}
-                            </Link>
-                          ))}
-                          {f.truncated && <span className="text-[11px] text-ink-3">+ more</span>}
-                        </div>
-                      )}
+                      {/* Click straight to the offending record(s). Some findings
+                          key their sample_ids on a value that ISN'T a record id —
+                          duplicate_client_email carries the shared email strings,
+                          not client ids — so only linkify id-shaped (numeric)
+                          entries, or the link would point at /clients/x@y.com. */}
+                      {(() => {
+                        const route = ROUTE_BY_TABLE[f.table]
+                        const ids = Array.isArray(f.sample_ids)
+                          ? f.sample_ids.filter(id => Number.isInteger(id)) : []
+                        if (!route || ids.length === 0) return null
+                        return (
+                          <div className="mt-1 flex flex-wrap items-center gap-x-2.5 gap-y-0.5">
+                            <span className="text-[11px] text-ink-3">Open:</span>
+                            {ids.map(id => (
+                              <Link key={id} to={route(id)}
+                                className="text-[11px] text-ink hover:text-indigo-600 no-underline tabular-nums">
+                                #{id}
+                              </Link>
+                            ))}
+                            {f.truncated && <span className="text-[11px] text-ink-3">+ more</span>}
+                          </div>
+                        )
+                      })()}
                     </div>
                   </div>
                 ))}

@@ -26,7 +26,7 @@ it('links each finding to the offending record', async () => {
     findings: [
       { code: 'job_no_property', severity: 'error', table: 'jobs', message: '1 jobs have no property',
         count: 1, sample_ids: [42], truncated: false, suggestion: 'Set the missing link', destructive: false },
-      { code: 'duplicate_client_email', severity: 'warn', table: 'clients', message: 'shared email',
+      { code: 'duplicate_client_phone', severity: 'warn', table: 'clients', message: 'shared phone',
         count: 2, sample_ids: [5, 9], truncated: false, suggestion: 'Merge the duplicates', destructive: true },
     ],
   })
@@ -36,6 +36,26 @@ it('links each finding to the offending record', async () => {
   expect(screen.getByText('#42').closest('a').getAttribute('href')).toBe('/jobs/42')
   expect(screen.getByText('#5').closest('a').getAttribute('href')).toBe('/clients/5')
   expect(screen.getByText('#9').closest('a').getAttribute('href')).toBe('/clients/9')
+})
+
+// duplicate_client_email keys its sample_ids on the shared EMAIL strings, not
+// client ids — those must not render as /clients/<email> links.
+it('does not linkify a finding whose sample_ids are not record ids', async () => {
+  get.mockResolvedValue({
+    healthy: false,
+    summary: { warn: 1 },
+    findings: [
+      { code: 'duplicate_client_email', severity: 'warn', table: 'clients',
+        message: '1 email addresses are shared by more than one client',
+        count: 1, sample_ids: ['sam@example.com'], truncated: false,
+        suggestion: 'Merge the duplicates', destructive: true },
+    ],
+  })
+  draw()
+  fireEvent.click(screen.getByRole('button', { name: /run scan/i }))
+  await waitFor(() => expect(screen.getByText(/shared by more than one client/)).toBeTruthy())
+  expect(screen.queryByText('Open:')).toBeNull()
+  expect(screen.queryByText('#sam@example.com')).toBeNull()
 })
 
 it('shows nothing but the button for a non-admin', () => {
