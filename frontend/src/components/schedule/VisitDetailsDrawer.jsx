@@ -62,7 +62,7 @@ export default function VisitDetailsDrawer({
               {job?.id && (
                 <button
                   onClick={() => onNavigateJob(job.id)}
-                  className="text-[12px] font-medium text-blue-500 hover:underline px-2 py-1"
+                  className="text-[12px] font-medium text-ink hover:text-indigo-600 no-underline px-2 py-1"
                 >
                   Open full page
                 </button>
@@ -102,7 +102,7 @@ export default function VisitDetailsDrawer({
               // drawer close is needed.
               const propId = property?.id ?? job?.property_id
               const asPropertyLink = (text, cls) => propId != null ? (
-                <Link to={`/properties/${propId}`} className={`${cls} text-blue-500 hover:underline`}>{text}</Link>
+                <Link to={`/properties/${propId}`} className={`${cls} text-ink hover:text-indigo-600 no-underline`}>{text}</Link>
               ) : (
                 <span className={`${cls} text-ink`}>{text}</span>
               )
@@ -161,7 +161,7 @@ export default function VisitDetailsDrawer({
                 {/* Name links to the client record — it used to be dead text,
                     forcing a detour through search to reach the client page. */}
                 {job?.client_id != null ? (
-                  <Link to={`/clients/${job.client_id}`} className="text-sm sm:text-base text-blue-500 hover:underline truncate">
+                  <Link to={`/clients/${job.client_id}`} className="text-sm sm:text-base text-ink hover:text-indigo-600 no-underline truncate">
                     {job?.client_name}
                   </Link>
                 ) : (
