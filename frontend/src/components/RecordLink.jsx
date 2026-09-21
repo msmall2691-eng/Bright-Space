@@ -46,7 +46,7 @@ export default function RecordLink({ type, id, label, icon = false, className = 
     <Link
       to={to}
       onClick={onClick}
-      className={`inline-flex items-center gap-1.5 text-blue-500 hover:underline truncate ${className}`}
+      className={`inline-flex items-center gap-1.5 text-ink hover:text-indigo-600 no-underline truncate ${className}`}
     >
       {Icon && <Icon className="w-3.5 h-3.5 shrink-0" />}
       <span className="truncate">{text}</span>

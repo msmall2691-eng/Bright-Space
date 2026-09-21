@@ -576,7 +576,7 @@ export default function PropertyDetail() {
               {property.client_id && (
                 <button
                   onClick={() => navigate(`/clients/${property.client_id}`)}
-                  className="flex items-center gap-1.5 text-sm text-blue-500 hover:underline mt-1"
+                  className="flex items-center gap-1.5 text-sm text-ink hover:text-indigo-600 no-underline mt-1"
                 >
                   <Building2 className="w-4 h-4 shrink-0" />
                   <span>View client</span>
