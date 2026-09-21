@@ -80,24 +80,32 @@ def preview_cancelled_turnovers(db: Session, org_id: Optional[int],
 
 def purge_cancelled_turnovers(db: Session, org_id: Optional[int],
                               property_id: Optional[int] = None,
-                              batch_size: int = 200) -> dict:
+                              batch_size: int = 200,
+                              max_delete: Optional[int] = None) -> dict:
     """Hard-delete the cancelled turnover ghosts. Human-confirmed only.
 
     Commits in batches — a flapping feed can leave *thousands* of ghosts on one
-    property, and a single end-of-run commit would lose everything if the
-    request timed out mid-sweep. Each batch that commits stays deleted, so a
-    re-run simply continues (the query only ever returns rows still present).
+    property (observed: 6,400+), and a single end-of-run commit would lose
+    everything if the request timed out mid-sweep. Each batch that commits stays
+    deleted, so a re-run simply continues (the query only ever returns rows still
+    present).
 
-    Returns {deleted, skipped}."""
+    `max_delete` caps how many are removed in ONE call, so the caller can keep
+    each request well inside the client's 15s timeout and loop until `remaining`
+    is 0 — the front end does exactly this, showing a live count. `remaining` is
+    how many purgeable ghosts are still present after this call.
+
+    Returns {deleted, skipped, remaining}."""
     deleted = 0
     skipped_ids: list = []
-    while True:
+    while max_delete is None or deleted < max_delete:
         q = _base_query(db, org_id, property_id)
         if skipped_ids:
             # Rows we couldn't delete (an unexpected FK child) would otherwise
             # reappear every loop — exclude them so the sweep terminates.
             q = q.filter(Job.id.notin_(skipped_ids))
-        jobs = q.limit(batch_size).all()
+        lim = batch_size if max_delete is None else min(batch_size, max_delete - deleted)
+        jobs = q.limit(lim).all()
         if not jobs:
             break
         for j in jobs:
@@ -119,4 +127,8 @@ def purge_cancelled_turnovers(db: Session, org_id: Optional[int],
                 sp.rollback()
                 skipped_ids.append(j.id)
         db.commit()
-    return {"deleted": deleted, "skipped": len(skipped_ids)}
+    remaining_q = _base_query(db, org_id, property_id)
+    if skipped_ids:
+        remaining_q = remaining_q.filter(Job.id.notin_(skipped_ids))
+    remaining = remaining_q.count()
+    return {"deleted": deleted, "skipped": len(skipped_ids), "remaining": remaining}

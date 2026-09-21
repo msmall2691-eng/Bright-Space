@@ -187,9 +187,10 @@ export function getCached(url, ttlMs = 5000) {
   return p
 }
 
-/** POST helper */
-export const post = (url, body) =>
-  api(url, { method: "POST", body: body !== undefined ? JSON.stringify(body) : undefined });
+/** POST helper. `opts` is merged into the fetch options — e.g. { timeout } to
+ *  override the default 15s cap for a deliberately long call. */
+export const post = (url, body, opts = {}) =>
+  api(url, { method: "POST", body: body !== undefined ? JSON.stringify(body) : undefined, ...opts });
 
 /** PUT helper */
 export const put = (url, body) =>
