@@ -159,7 +159,11 @@ export default function ScheduleToolbar({
         </div>
 
         {/* =========================== DESKTOP =========================== */}
-        <div className="hidden md:flex items-center gap-3">
+        {/* Wraps instead of clipping: at ~940px (owner's window, minus the
+            sidebar) this one row overflowed and cut off the primary "New Job"
+            button. flex-wrap lets the action cluster drop to a second line
+            when cramped; the sticky bar has no fixed height, so it just grows. */}
+        <div className="hidden md:flex flex-wrap items-center gap-x-3 gap-y-2">
           <div className="flex items-center gap-2 shrink-0">
             <CalendarIcon className="w-[18px] h-[18px] shrink-0 text-ink-3" />
             <h1 className="text-lg font-semibold tracking-tight text-ink">Schedule</h1>
