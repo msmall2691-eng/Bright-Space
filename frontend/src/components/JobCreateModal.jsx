@@ -59,6 +59,39 @@ function ConflictPrompt({ conflict, saving, onCancel, onOverride }) {
   )
 }
 
+/** "The series saved but added no visits" prompt. POST /api/recurring can
+ *  succeed and still return jobs_created === 0 — either the series has no
+ *  property (nothing to place visits on) or it's an STR-turnover series whose
+ *  dates in range are all already on the calendar (usually from the property's
+ *  Airbnb/VRBO feed, deduped by the per-property-per-day turnover index). We
+ *  refuse to let that close as a silent success: the owner's report was "I
+ *  created a job and nothing showed up on the schedule." Quiet hairline card +
+ *  amber dot, matching ConflictPrompt — never a solid tinted banner. */
+function EmptySeriesPrompt({ info, onDone }) {
+  if (!info) return null
+  const reason = !info.hasProperty
+    ? 'No property was selected, so it couldn’t place any visits.'
+    : info.isTurnover
+      ? 'The turnover dates in range are already on the calendar — usually from this property’s Airbnb/VRBO feed. New turnovers schedule themselves as they book.'
+      : 'Every date in range is already booked, so there was nothing new to add.'
+  return (
+    <div className="flex items-start gap-2.5 px-3 py-2.5 rounded-lg border border-hairline bg-panel text-xs">
+      <span className="w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0 mt-1" aria-hidden="true" />
+      <div className="flex-1 min-w-0">
+        <p className="font-medium text-ink mb-1">Series saved — but no visits were added</p>
+        <p className="text-ink-2 mb-2">
+          {reason} To put a single visit on the calendar right now, close this and use{' '}
+          <span className="font-medium text-ink">New Job</span> with Repeat off, then pick a date.
+        </p>
+        <button type="button" onClick={onDone}
+          className="px-3 py-1.5 rounded-md bg-panel border border-hairline-2 text-ink-2 hover:bg-bg-2 font-medium">
+          Got it
+        </button>
+      </div>
+    </div>
+  )
+}
+
 /** "This client already has a similar series" prompt. Shown when
  *  POST /api/recurring 409s with detail=similar_series_exists (the backend's
  *  pre-create duplicate guard). Mirrors ConflictPrompt's escape-hatch UX:
@@ -503,12 +536,17 @@ export default function JobCreateModal({
   // 409 (create-duplicate guard), surfaced as an "Open existing / Create
   // anyway" prompt rather than a dead-end error.
   const [dupMatches, setDupMatches] = useState(null)
+  // A recurring create can succeed but generate zero visits (no property on the
+  // series, or an STR series whose dates are all already on the calendar). We
+  // never close on that silently — holds { hasProperty, isTurnover, schedule }.
+  const [emptySeries, setEmptySeries] = useState(null)
 
   const save = async (allowConflicts = false, allowDuplicate = false) => {
     setSaving(true)
     setError(null)
     setConflict(null)
     setDupMatches(null)
+    setEmptySeries(null)
     // Park the booking before we hit the network: if the session has expired,
     // the 401 redirects to /login (this code never resumes), and this draft is
     // what gets restored after re-auth. Cleared on a confirmed success below.
@@ -565,7 +603,18 @@ export default function JobCreateModal({
         if (!sched) return  // 401 → redirecting to /login; keep the draft to restore
         try { localStorage.removeItem(JOB_DRAFT_KEY) } catch { /* ignore */ }
         await saveIcalIfNeeded()
-        onCreated?.({ kind: 'recurring', schedule: sched })
+        // The series exists now, but it may have generated no visits at all —
+        // surface that instead of a silent success. `jobs_created` is null on
+        // an older backend that didn't return it; only 0 is a real empty result.
+        if ((sched.jobs_created ?? null) === 0) {
+          setEmptySeries({
+            hasProperty: !!form.property_id,
+            isTurnover: form.job_type === 'str_turnover',
+            schedule: sched,
+          })
+          return
+        }
+        onCreated?.({ kind: 'recurring', schedule: sched, jobsCreated: sched.jobs_created })
         onClose?.()
         return
       }
@@ -957,6 +1006,10 @@ export default function JobCreateModal({
             onCancel={() => setConflict(null)} onOverride={() => save(true)} />
           <DuplicateSeriesPrompt matches={dupMatches} saving={saving}
             onCancel={() => setDupMatches(null)} onOverride={() => save(false, true)} />
+          <EmptySeriesPrompt info={emptySeries} onDone={() => {
+            onCreated?.({ kind: 'recurring', schedule: emptySeries?.schedule, jobsCreated: 0 })
+            onClose?.()
+          }} />
 
           {/* ── More options — Property picker (inline expansion) ─────────── */}
           {showMore && (<>

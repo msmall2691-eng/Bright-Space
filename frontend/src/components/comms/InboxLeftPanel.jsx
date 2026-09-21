@@ -122,12 +122,19 @@ export function InboxLeftPanel({
           {header || <h1 className="text-[15px] font-semibold tracking-tight text-ink">Inbox</h1>}
           <div className="flex items-center gap-1.5">
             <NotifPermissionButton />
-            {/* Mobile-only filters trigger — opens the sheet with channel + chips. */}
-            <button onClick={() => setFiltersOpen(true)}
-              className="shell:hidden relative w-8 h-8 rounded-md border border-hairline-2 bg-panel hover:bg-bg-2 text-ink-2 flex items-center justify-center transition-colors">
+            {/* Filters trigger. Channel + quick-filters live behind this on
+                every size — a bottom sheet on mobile, an inline reveal on
+                desktop — so the list starts near the top instead of below
+                three stacked filter rows. */}
+            <button onClick={() => setFiltersOpen(o => !o)}
+              aria-expanded={filtersOpen}
+              className={`relative h-8 px-2 shell:px-2.5 rounded-md border bg-panel hover:bg-bg-2 flex items-center gap-1.5 text-[12px] font-medium transition-colors ${
+                filtersOpen || activeFilterCount > 0 ? 'border-ink/30 text-ink' : 'border-hairline-2 text-ink-2'
+              }`}>
               <SlidersHorizontal className="w-4 h-4" />
+              <span className="hidden shell:inline">Filter</span>
               {activeFilterCount > 0 && (
-                <span className="absolute top-1 right-1 w-2 h-2 rounded-full bg-indigo-600 ring-2 ring-panel" aria-label={`${activeFilterCount} filters active`} />
+                <span className="text-[10px] font-bold tabular-nums text-indigo-600" aria-label={`${activeFilterCount} filters active`}>{activeFilterCount}</span>
               )}
             </button>
             <button onClick={onCompose}
@@ -165,10 +172,15 @@ export function InboxLeftPanel({
         </div>
       </div>
 
-      {/* Channel + chips: inline on desktop only. On mobile they live in the
-          Filters sheet so the list starts near the top. */}
-      <ChannelTabs className="hidden shell:flex mx-4 mb-2" />
-      {visibleChips.length > 0 && <Chips className="hidden shell:flex px-4 pb-3" />}
+      {/* Channel + chips: collapsed behind the Filter button on every size.
+          On desktop they reveal inline here; on mobile they open in the sheet
+          below — so by default the list starts right under the folder tabs. */}
+      {filtersOpen && (
+        <div className="hidden shell:block">
+          <ChannelTabs className="flex mx-4 mb-2" />
+          {visibleChips.length > 0 && <Chips className="flex px-4 pb-3" />}
+        </div>
+      )}
       <div className="border-b border-hairline" />
 
       {/* Conversation list */}

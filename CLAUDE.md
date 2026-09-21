@@ -12,6 +12,11 @@ already been litigated:
   (office or crew). Quiet dot+word labels; the owner has vetoed SaaS pill
   bubbles, tinted banners, and count bubbles — twice. Also: `shell:` (900px)
   breakpoint, per-role layout rules, access-details UI constraints.
+- **`brightbase-ui-revamp`** — load before redesigning a whole office page,
+  dashboard, or list (not for a one-widget tweak). The positive target that
+  sits on top of `brightbase-design-language`: how to make a page modern,
+  dense, and actionable (bento boxes, inline actions, purposeful motion, a
+  command bar) WITHOUT tripping the veto. The `ui-reviser` agent applies it.
 - **`brightbase-economy`** — load before adding any fetch, sync, background
   tick, or external API call. No polling where events work, one fetch per
   screen per need, metered APIs cached at the row, crew payloads light
