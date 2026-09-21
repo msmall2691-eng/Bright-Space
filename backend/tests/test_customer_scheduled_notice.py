@@ -15,8 +15,13 @@ quote case) call it — but not on an unrelated edit, and not when the operator
 unticked "notify customer".
 """
 import uuid
-from datetime import date, time
+from datetime import date, time, timedelta
 from unittest.mock import patch, MagicMock
+
+# Relative to today: create_job's _validate_job_timing rejects a past date, so a
+# hardcoded calendar date silently rots into a failing test the day it passes.
+_FUTURE = date.today() + timedelta(days=7)
+_FUTURE_STR = _FUTURE.isoformat()
 
 import pytest
 
@@ -43,7 +48,7 @@ def ctx():
                      property_type="residential", active=True, org_id=1)
         db.add(p); db.commit(); db.refresh(p)
         j = Job(client_id=c.id, property_id=p.id, title="Visit", job_type="residential",
-                scheduled_date=date(2026, 9, 15) if scheduled else None,
+                scheduled_date=_FUTURE if scheduled else None,
                 start_time=time(9, 0), end_time=time(12, 0), status=status, org_id=1)
         db.add(j); db.commit(); db.refresh(j)
         return j
@@ -128,7 +133,7 @@ def test_scheduling_an_unscheduled_job_notifies(ctx):
     db, client, job = ctx
     j = job(client(), status="unscheduled", scheduled=False)
     with patch("services.scheduled_notice.notify_customer_scheduled") as notice:
-        update_job(j.id, JobUpdate(scheduled_date="2026-09-20", allow_conflicts=True),
+        update_job(j.id, JobUpdate(scheduled_date=_FUTURE_STR, allow_conflicts=True),
                    db=db, org_id=1)
     assert notice.call_count == 1
     assert notice.call_args.args[1].id == j.id
@@ -147,7 +152,7 @@ def test_notify_customer_false_suppresses(ctx):
     db, client, job = ctx
     j = job(client(), status="unscheduled", scheduled=False)
     with patch("services.scheduled_notice.notify_customer_scheduled") as notice:
-        update_job(j.id, JobUpdate(scheduled_date="2026-09-20", notify_customer=False,
+        update_job(j.id, JobUpdate(scheduled_date=_FUTURE_STR, notify_customer=False,
                                    allow_conflicts=True), db=db, org_id=1)
     assert notice.call_count == 0
 
@@ -158,7 +163,7 @@ def test_creating_a_scheduled_job_notifies(ctx):
     db, client, job = ctx
     c = client()
     with patch("services.scheduled_notice.notify_customer_scheduled") as notice:
-        create_job(JobCreate(client_id=c.id, title="Visit", scheduled_date="2026-09-20",
+        create_job(JobCreate(client_id=c.id, title="Visit", scheduled_date=_FUTURE_STR,
                              start_time="09:00", end_time="12:00"),
                    db=db, org_id=1)
     assert notice.call_count == 1
@@ -172,7 +177,7 @@ def test_creating_with_notify_customer_false_suppresses(ctx):
     db, client, job = ctx
     c = client()
     with patch("services.scheduled_notice.notify_customer_scheduled") as notice:
-        create_job(JobCreate(client_id=c.id, title="Visit", scheduled_date="2026-09-20",
+        create_job(JobCreate(client_id=c.id, title="Visit", scheduled_date=_FUTURE_STR,
                              start_time="09:00", end_time="12:00", notify_customer=False),
                    db=db, org_id=1)
     assert notice.call_count == 0

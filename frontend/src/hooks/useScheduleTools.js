@@ -16,6 +16,7 @@ import { get, post } from '../api'
 export function useScheduleTools({ toast, refresh }) {
   const [autoAssign, setAutoAssign] = useState(null)
   const [fixTimes, setFixTimes] = useState(null)
+  const [ghosts, setGhosts] = useState(null)
 
   // NOTE: the old "Push now" / "Fix sync" actions were removed — the
   // SyncHealthPill in the toolbar now owns the (rarely-needed) manual
@@ -83,8 +84,44 @@ export function useScheduleTools({ toast, refresh }) {
     }
   }
 
+  // Remove cancelled turnover "ghosts" — the piles of cancelled duplicate
+  // turnovers a flapping iCal feed leaves stacked on one date. Preview (with a
+  // per-property breakdown) then confirm; the server only ever deletes
+  // cancelled str_turnover rows and never one that carries an invoice.
+  const previewGhosts = async () => {
+    setGhosts({ loading: true })
+    try {
+      const res = await post('/api/jobs/purge-cancelled-turnovers?dry_run=true', {})
+      if (!res?.count) {
+        setGhosts(null)
+        toast.info('No cancelled turnover clutter to clear')
+        return
+      }
+      setGhosts({ preview: res })
+    } catch (e) {
+      setGhosts(null)
+      toast.error(e.message || 'Could not check for cancelled turnovers')
+    }
+  }
+
+  const runGhosts = async () => {
+    setGhosts(g => ({ ...g, running: true }))
+    try {
+      const res = await post('/api/jobs/purge-cancelled-turnovers', {})
+      const n = res?.deleted || 0
+      toast.success(`Removed ${n} cancelled turnover${n === 1 ? '' : 's'}`)
+      if (res?.skipped) toast.info(`${res.skipped} left in place (they carry an invoice)`)
+      setGhosts(null)
+      refresh()
+    } catch (e) {
+      toast.error(e.message || 'Cleanup failed')
+      setGhosts(g => ({ ...g, running: false }))
+    }
+  }
+
   return {
     autoAssign, setAutoAssign, previewAutoAssign, runAutoAssign,
     fixTimes, setFixTimes, previewFixTimes, runFixTimes,
+    ghosts, setGhosts, previewGhosts, runGhosts,
   }
 }
