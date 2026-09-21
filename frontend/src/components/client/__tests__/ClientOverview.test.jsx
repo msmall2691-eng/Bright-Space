@@ -16,15 +16,18 @@ const baseProps = {
     { id: 11, invoice_number: 'INV-2', total: 200, status: 'paid' },
   ],
   quotes: [
-    { id: 20, quote_number: 'Q-1', total: 450, status: 'viewed', viewed_at: '2026-07-18T14:00:00Z' },
-    { id: 21, quote_number: 'Q-2', total: 100, status: 'accepted' },
+    { id: 20, quote_number: 'Q-1', total: 450, status: 'viewed', created_at: '2026-07-18T14:00:00Z' },
+    { id: 21, quote_number: 'Q-2', total: 100, status: 'accepted', created_at: '2026-07-12T14:00:00Z' },
+    { id: 22, quote_number: 'Q-3', total: 160, status: 'draft', created_at: '2026-07-10T14:00:00Z' },
   ],
+  opportunities: [{ id: 60, title: 'Cobb Cottage', amount: 280, stage: 'quoted' }],
+  intakes: [{ id: 49, source: 'website', service_type: 'custom', created_at: '2026-07-08' }],
   upcomingJobs: [
-    { id: 30, title: 'Biweekly clean', scheduled_date: '2026-07-25', address: '18 Kerryman Cir' },
+    { id: 30, title: 'Biweekly clean', scheduled_date: '2026-07-25', address: '18 Kerryman Cir', status: 'scheduled' },
   ],
-  pastJobs: [{ id: 31 }, { id: 32 }],
+  pastJobs: [{ id: 31, scheduled_date: '2026-07-01', status: 'completed' }],
   schedules: [{ id: 40, active: true }, { id: 41, active: false }],
-  properties: [{ id: 50, name: 'Home', address: '18 Kerryman Cir' }],
+  properties: [{ id: 50, name: 'Home', address: '18 Kerryman Cir', property_type: 'residential' }],
   visitStats: { completed: 7 },
   allActivity: [
     { type: 'invoice', date: '2026-07-18', data: { invoice_number: 'INV-1', status: 'overdue' } },
@@ -42,19 +45,27 @@ describe('ClientOverview', () => {
     expect(screen.getByText('Recurring')).toBeTruthy()
   })
 
-  it('surfaces only OPEN quotes and UNPAID invoices under needs-attention', () => {
+  it('surfaces ALL quotes including drafts (the fix — nothing hidden)', () => {
     render(<ClientOverview {...baseProps} />)
-    // Open (viewed) quote and overdue invoice appear; accepted quote / paid invoice do not.
-    // (Q-1 / INV-1 also show in the recent-activity feed, hence getAllByText.)
-    expect(screen.getAllByText(/Quote Q-1/).length).toBeGreaterThan(0)
-    expect(screen.getAllByText(/Invoice INV-1/).length).toBeGreaterThan(0)
-    expect(screen.queryByText(/Quote Q-2/)).toBeNull()
-    expect(screen.queryByText(/Invoice INV-2/)).toBeNull()
-    expect(screen.getByText('Opened — awaiting reply')).toBeTruthy()
+    // Every quote shows on the landing now, not just the "open" ones — a draft
+    // used to be invisible here, which is why the quote couldn't be found.
+    expect(screen.getByText(/Q-3 · \$160/)).toBeTruthy()   // draft, previously hidden
+    expect(screen.getByText(/Q-2 · \$100/)).toBeTruthy()   // accepted
+    expect(screen.getAllByText(/Q-1/).length).toBeGreaterThan(0)  // viewed (also in activity)
   })
 
-  it('shows the next upcoming visit and recent activity', () => {
+  it('shows the deal / pipeline card with amount and stage', () => {
     render(<ClientOverview {...baseProps} />)
+    expect(screen.getByText('Cobb Cottage')).toBeTruthy()
+    expect(screen.getByText('$280')).toBeTruthy()
+    expect(screen.getByText('quoted')).toBeTruthy()
+    expect(screen.getByText('Request #49')).toBeTruthy()   // origin tie-back
+  })
+
+  it('shows all invoices (paid and unpaid), the upcoming visit and activity', () => {
+    render(<ClientOverview {...baseProps} />)
+    expect(screen.getByText(/INV-1 · \$300/)).toBeTruthy()
+    expect(screen.getByText(/INV-2 · \$200/)).toBeTruthy()   // paid still listed
     expect(screen.getAllByText(/Biweekly clean/).length).toBeGreaterThan(0)
     expect(screen.getByText('Recent activity')).toBeTruthy()
   })
@@ -66,8 +77,10 @@ describe('ClientOverview', () => {
     expect(setTab).toHaveBeenCalledWith('invoices')
   })
 
-  it('shows an all-caught-up state when nothing is open', () => {
-    render(<ClientOverview {...baseProps} quotes={[]} invoices={[]} />)
-    expect(screen.getByText(/All caught up/)).toBeTruthy()
+  it('renders clean empty states when the client has nothing yet', () => {
+    render(<ClientOverview {...baseProps} quotes={[]} invoices={[]} upcomingJobs={[]} pastJobs={[]} />)
+    expect(screen.getByText('No quotes yet.')).toBeTruthy()
+    expect(screen.getByText('No invoices yet.')).toBeTruthy()
+    expect(screen.getByText('No visits yet.')).toBeTruthy()
   })
 })

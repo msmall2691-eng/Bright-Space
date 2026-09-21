@@ -551,7 +551,7 @@ export default function ClientProfile() {
             upcomingJobs={upcomingJobs} pastJobs={pastJobs}
             schedules={schedules} properties={properties}
             visitStats={visitStats} allActivity={allActivity}
-            intakes={intakes}
+            intakes={intakes} opportunities={opportunities}
           />
         )}
 
