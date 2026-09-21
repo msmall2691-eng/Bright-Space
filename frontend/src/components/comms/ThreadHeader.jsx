@@ -34,9 +34,10 @@ export function ThreadHeader({
 
       {/* Thread header */}
       <div className="border-b border-hairline px-5 py-2.5 flex items-center gap-3 bg-panel">
-        {/* Mobile back button */}
+        {/* Back-to-list button — only below shell:, where the inbox is a single
+            pane. At shell+ the list sits beside the thread, so it's hidden. */}
         <button onClick={() => setMobileView('list')}
-          className="w-9 h-9 -ml-1 rounded-lg hover:bg-bg-2 flex items-center justify-center text-ink-3 lg:hidden">
+          className="w-9 h-9 -ml-1 rounded-lg hover:bg-bg-2 flex items-center justify-center text-ink-3 shell:hidden">
           <ArrowLeft className="w-4 h-4" />
         </button>
 

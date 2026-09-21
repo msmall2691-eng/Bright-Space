@@ -354,7 +354,7 @@ export default function Comms() {
       <PageHeader
         title="Messages"
         icon={MessageSquare}
-        className="hidden lg:block pt-4 pb-3 sm:pt-4 sm:pb-3 shrink-0"
+        className="hidden shell:block pt-4 pb-3 sm:pt-4 sm:pb-3 shrink-0"
         actions={
           <div className="flex items-center gap-2">
             <HeaderStat n={summary.open || 0} label="active" />
@@ -391,9 +391,11 @@ export default function Comms() {
 
 
       {/* ═══ CENTER PANEL: Thread View ═══ */}
-      {/* Mobile shows exactly one pane at a time: list / thread / contact.
-          On lg+ the thread is always visible alongside the list. */}
-      <div className={`flex-1 flex flex-col min-w-0 ${mobileView === 'thread' ? 'flex' : 'hidden lg:flex'}`}>
+      {/* Below shell: one pane at a time (list / thread / contact). At shell+
+          (the owner's ~940px window) the thread sits beside the list — the
+          two-pane inbox. The breakpoint was lg: (1024), so at 940px the desktop
+          layout never engaged and the inbox rendered as the cramped phone view. */}
+      <div className={`flex-1 flex flex-col min-w-0 ${mobileView === 'thread' ? 'flex' : 'hidden shell:flex'}`}>
         {!detail ? (
           /* Empty state */
           <div className="flex-1 flex items-center justify-center bg-bg/50">

@@ -101,11 +101,14 @@ export function ContactPanel({ detail, context, onRemind, onClose, onDraftQuote,
   const hasMoney = openQuotes.length > 0 || unpaidInvoices.length > 0
 
   return (
-    <div className={`${mobileActive ? 'flex' : 'hidden'} ${desktopOpen ? 'lg:flex' : 'lg:hidden'}
-      fixed inset-0 z-40 lg:static lg:inset-auto lg:z-auto
-      w-full lg:w-[340px] border-l border-hairline bg-panel flex-col overflow-hidden shrink-0`}>
-      {/* Mobile back bar — this pane is full-screen on a phone (< lg). */}
-      <div className="lg:hidden flex items-center gap-2 px-3 h-12 border-b border-hairline shrink-0">
+    <div className={`${mobileActive ? 'flex' : 'hidden'} ${desktopOpen ? 'xl:flex' : 'xl:hidden'}
+      fixed inset-0 z-40 xl:static xl:inset-auto xl:z-auto
+      w-full xl:w-[340px] border-l border-hairline bg-panel flex-col overflow-hidden shrink-0`}>
+      {/* Back bar — the panel is a full-screen overlay below xl: (phone AND the
+          owner's ~940px window, where the inbox is two-pane and contact info
+          slides over). It becomes an inline third column only at xl:, where
+          there's room for three panes. */}
+      <div className="xl:hidden flex items-center gap-2 px-3 h-12 border-b border-hairline shrink-0">
         <button onClick={onBack} className="w-9 h-9 rounded-lg hover:bg-bg-2 flex items-center justify-center text-ink-2">
           <ArrowLeft className="w-5 h-5" />
         </button>
@@ -131,7 +134,7 @@ export function ContactPanel({ detail, context, onRemind, onClose, onDraftQuote,
               )}
             </div>
           </div>
-          <button onClick={onClose} className="w-9 h-9 rounded-lg hover:bg-bg-2 flex items-center justify-center text-ink-3 hover:text-ink-2 transition-colors lg:hidden">
+          <button onClick={onClose} className="w-9 h-9 rounded-lg hover:bg-bg-2 flex items-center justify-center text-ink-3 hover:text-ink-2 transition-colors xl:hidden">
             <X className="w-4 h-4" />
           </button>
         </div>

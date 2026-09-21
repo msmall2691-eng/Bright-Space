@@ -111,8 +111,8 @@ export function InboxLeftPanel({
   )
 
   return (
-    <div className={`w-full lg:w-[340px] border-r border-hairline bg-panel flex flex-col shrink-0
-      ${mobileView === 'list' ? 'flex' : 'hidden lg:flex'}`}>
+    <div className={`w-full shell:w-[340px] border-r border-hairline bg-panel flex flex-col shrink-0
+      ${mobileView === 'list' ? 'flex' : 'hidden shell:flex'}`}>
 
       {/* Header */}
       <div className="px-4 pt-3 pb-2.5">
@@ -124,7 +124,7 @@ export function InboxLeftPanel({
             <NotifPermissionButton />
             {/* Mobile-only filters trigger — opens the sheet with channel + chips. */}
             <button onClick={() => setFiltersOpen(true)}
-              className="lg:hidden relative w-8 h-8 rounded-md border border-hairline-2 bg-panel hover:bg-bg-2 text-ink-2 flex items-center justify-center transition-colors">
+              className="shell:hidden relative w-8 h-8 rounded-md border border-hairline-2 bg-panel hover:bg-bg-2 text-ink-2 flex items-center justify-center transition-colors">
               <SlidersHorizontal className="w-4 h-4" />
               {activeFilterCount > 0 && (
                 <span className="absolute top-1 right-1 w-2 h-2 rounded-full bg-indigo-600 ring-2 ring-panel" aria-label={`${activeFilterCount} filters active`} />
@@ -167,8 +167,8 @@ export function InboxLeftPanel({
 
       {/* Channel + chips: inline on desktop only. On mobile they live in the
           Filters sheet so the list starts near the top. */}
-      <ChannelTabs className="hidden lg:flex mx-4 mb-2" />
-      {visibleChips.length > 0 && <Chips className="hidden lg:flex px-4 pb-3" />}
+      <ChannelTabs className="hidden shell:flex mx-4 mb-2" />
+      {visibleChips.length > 0 && <Chips className="hidden shell:flex px-4 pb-3" />}
       <div className="border-b border-hairline" />
 
       {/* Conversation list */}
@@ -225,7 +225,7 @@ export function InboxLeftPanel({
 
       {/* Mobile filters bottom sheet */}
       {filtersOpen && (
-        <div className="lg:hidden fixed inset-0 z-40 flex flex-col justify-end" onClick={() => setFiltersOpen(false)}>
+        <div className="shell:hidden fixed inset-0 z-40 flex flex-col justify-end" onClick={() => setFiltersOpen(false)}>
           <div className="absolute inset-0 bg-black/30 backdrop-blur-sm" />
           <div className="relative bg-panel rounded-t-2xl border-t border-hairline p-4 pb-8 space-y-4" onClick={e => e.stopPropagation()}>
             <div className="flex items-center justify-between">
