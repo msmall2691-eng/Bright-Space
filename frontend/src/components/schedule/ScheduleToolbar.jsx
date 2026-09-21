@@ -1,6 +1,6 @@
 import {
   ChevronLeft, ChevronRight, Plus, Filter, Clock,
-  Calendar as CalendarIcon, Wand2, Wrench, ChevronDown, SlidersHorizontal,
+  Calendar as CalendarIcon, Wand2, Wrench, ChevronDown, SlidersHorizontal, Trash2,
 } from 'lucide-react'
 import Button from '../ui/Button'
 import SyncHealthPill from './SyncHealthPill'
@@ -55,6 +55,7 @@ export default function ScheduleToolbar({
   onCloseTools,
   onPreviewAutoAssign,
   onPreviewFixTimes,
+  onPreviewGhosts,
   onOpenSyncSettings,
   onNewJob,
   // Passive sync-health pill: reads /api/jobs/sync-health and shows a calm
@@ -82,6 +83,7 @@ export default function ScheduleToolbar({
       onClose={onCloseTools}
       onPreviewAutoAssign={onPreviewAutoAssign}
       onPreviewFixTimes={onPreviewFixTimes}
+      onPreviewGhosts={onPreviewGhosts}
       onOpenSyncSettings={onOpenSyncSettings}
     />
   )
@@ -309,7 +311,7 @@ function IconButton({ onClick, label, active, children }) {
 /** The "Tools" dropdown, shared by the phone and desktop triggers so its
  *  contents never diverge. Rendered inside a `relative` trigger wrapper; the
  *  backdrop closes it on outside tap. */
-function ToolsMenu({ open, onClose, onPreviewAutoAssign, onPreviewFixTimes, onOpenSyncSettings }) {
+function ToolsMenu({ open, onClose, onPreviewAutoAssign, onPreviewFixTimes, onPreviewGhosts, onOpenSyncSettings }) {
   if (!open) return null
   return (
     <>
@@ -327,6 +329,12 @@ function ToolsMenu({ open, onClose, onPreviewAutoAssign, onPreviewFixTimes, onOp
           className="w-full flex items-center gap-2.5 px-3 py-2.5 text-sm text-ink-2 hover:bg-bg transition-colors">
           <Clock className="w-4 h-4" /> Fix missing times
         </button>
+        {onPreviewGhosts && (
+          <button onClick={() => { onClose(); onPreviewGhosts() }}
+            className="w-full flex items-center gap-2.5 px-3 py-2.5 text-sm text-ink-2 hover:bg-bg transition-colors">
+            <Trash2 className="w-4 h-4" /> Remove cancelled turnover clutter
+          </button>
+        )}
         {onOpenSyncSettings && (
           <>
             <div className="my-1 border-t border-hairline" />

@@ -23,7 +23,7 @@ import ScheduleToolbar from '../components/schedule/ScheduleToolbar'
 import SubNav from '../components/ui/SubNav'
 import GoogleCalendarView from '../components/schedule/GoogleCalendarView'
 import ScheduleSyncSettings from '../components/schedule/ScheduleSyncSettings'
-import { AutoAssignModal, FixTimesModal, OpenToCrewModal } from '../components/schedule/PowerToolModals'
+import { AutoAssignModal, FixTimesModal, OpenToCrewModal, PurgeGhostsModal } from '../components/schedule/PowerToolModals'
 import { ScheduleHealthStrip } from '../components/schedule/ScheduleSections'
 import { AvailabilityPanel } from '../components/schedule/ScheduleTabs'
 import { VISIT_STATUS_CONFIG, shortDate, cleanerInitials } from '../components/schedule/constants'
@@ -215,6 +215,7 @@ export default function Schedule() {
   const {
     autoAssign, setAutoAssign, previewAutoAssign, runAutoAssign,
     fixTimes, setFixTimes, previewFixTimes, runFixTimes,
+    ghosts, setGhosts, previewGhosts, runGhosts,
   } = useScheduleTools({ toast, refresh })
 
   const dateStr = toLocalYMD(currentDate)
@@ -531,6 +532,7 @@ export default function Schedule() {
         onCloseTools={() => setToolsOpen(false)}
         onPreviewAutoAssign={previewAutoAssign}
         onPreviewFixTimes={previewFixTimes}
+        onPreviewGhosts={previewGhosts}
         onOpenSyncSettings={() => setSyncSettingsOpen(true)}
         onNewJob={() => { setNewJobDate(dateStr); setShowNewJob(true) }}
         healthRefreshKey={calRefresh}
@@ -764,6 +766,13 @@ export default function Schedule() {
         state={fixTimes}
         onCancel={() => setFixTimes(null)}
         onRun={runFixTimes}
+      />
+
+      {/* Remove cancelled turnover ghosts — preview (count by property) then confirm */}
+      <PurgeGhostsModal
+        state={ghosts}
+        onCancel={() => setGhosts(null)}
+        onRun={runGhosts}
       />
 
       {/* Open to crew — asks for the rate before posting (price before post) */}

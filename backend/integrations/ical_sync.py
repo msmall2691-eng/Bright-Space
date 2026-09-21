@@ -652,28 +652,34 @@ def _sync_ical_url(db: Session, prop: Property, ical_url: str, ical_source_label
                     )
                 event.job_id = None
             elif _linked.status != "completed":
-                # Case 3: the linked turnover is active but lost its date. Old
-                # data resets / the VARCHAR→DATE migration left some linked jobs
-                # with a NULL or stale scheduled_date — "linked" but invisible on
-                # the calendar. Reconcile it to the feed checkout (source of
-                # truth) and re-fill a missing start time so it shows up.
+                # Case 3: the linked turnover is active but has NO date of its
+                # own. Old data resets / the VARCHAR→DATE migration left some
+                # linked jobs with a NULL scheduled_date — "linked" but invisible
+                # on the calendar. Fill it from the feed checkout (source of
+                # truth) so it shows up, and re-fill a missing start time.
+                #
+                # We fill ONLY when the turnover has no date. A turnover the
+                # office deliberately MOVED off the checkout has a real, different
+                # date, and the feed is an inbox — it must never drag a canonical
+                # human decision back onto the booking's checkout (scheduling-
+                # invariants Rule 0). Before this guard the sync reverted every
+                # manual move on the next tick — the "I moved the cleaning day and
+                # it came back" bug, which also spun off piles of cancelled
+                # duplicate turnovers on the original date. A genuine guest
+                # reschedule (the feed's checkout actually changing) still moves
+                # the job — that's the date-change path above, which is untouched.
                 want = _to_date(checkout_date)
-                if want and _linked.scheduled_date != want:
+                if want and _linked.scheduled_date is None:
                     log.info(
-                        f"Reconciling turnover {_linked.id} for {prop.name} ({uid}): "
-                        f"scheduled_date {_linked.scheduled_date} → {want}"
+                        f"Filling missing date on turnover {_linked.id} for "
+                        f"{prop.name} ({uid}): scheduled_date None → {want}"
                     )
                     _linked.scheduled_date = want
-                    if not _linked.start_time:
-                        _linked.start_time = _to_time(
-                            (property_ical.checkout_time if property_ical else None)
-                            or prop.check_out_time or "10:00"
-                        )
-                    # Push the corrected date to Google Calendar — otherwise the
+                    # Push the filled date to Google Calendar — otherwise the
                     # next GCal sync (which treats its event as authoritative)
-                    # would write the stale date straight back onto the job.
+                    # would write the empty date straight back onto the job.
                     _push_turnover_to_gcal(db, prop, _linked, checkout_date)
-                elif not _linked.start_time:
+                if not _linked.start_time:
                     _linked.start_time = _to_time(
                         (property_ical.checkout_time if property_ical else None)
                         or prop.check_out_time or "10:00"

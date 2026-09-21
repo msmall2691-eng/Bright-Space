@@ -2247,6 +2247,26 @@ def auto_assign_turnovers(dry_run: bool = False, db: Session = Depends(get_db),
                                             org_id=resolve_org_id(org_id, db))
 
 
+@router.post("/purge-cancelled-turnovers", dependencies=[Depends(require_role("admin", "manager"))])
+def purge_cancelled_turnovers_endpoint(dry_run: bool = False, property_id: Optional[int] = None,
+                                       db: Session = Depends(get_db),
+                                       org_id: int = Depends(current_org_id)):
+    """Remove cancelled STR-turnover *ghosts* — the piles of cancelled duplicate
+    turnovers a flapping iCal feed leaves stacked on one date.
+
+    Pass ?dry_run=true to preview the count (by property) without deleting.
+    Human-confirmed cleanup, scoped to this org (MT-2); only ever touches
+    cancelled str_turnover rows, and never one that carries an invoice. See
+    services/turnover_cleanup.py for the safety rails."""
+    from services.turnover_cleanup import (
+        preview_cancelled_turnovers, purge_cancelled_turnovers,
+    )
+    oid = resolve_org_id(org_id, db)
+    if dry_run:
+        return preview_cancelled_turnovers(db, oid, property_id)
+    return purge_cancelled_turnovers(db, oid, property_id)
+
+
 class BulkRescheduleRequest(BaseModel):
     job_ids: List[int]
     # Bounded to ±10 years: a legitimate weather-/sick-day move is a handful of

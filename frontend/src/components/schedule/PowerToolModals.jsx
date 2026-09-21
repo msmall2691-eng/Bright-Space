@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
-import { Wand2, Clock, Sparkles } from 'lucide-react'
+import { Wand2, Clock, Sparkles, Trash2 } from 'lucide-react'
 import Button from '../ui/Button'
 import Modal from '../ui/Modal'
 import { get } from '../../api'
@@ -137,6 +137,70 @@ export function FixTimesModal({ state, onCancel, onRun }) {
         <Button variant="primary" size="sm" onClick={onRun}
           disabled={state.loading || state.running || !state.preview?.count}>
           {state.running ? 'Fixing…' : `Fix ${state.preview?.count || 0}`}
+        </Button>
+      </Modal.Footer>
+    </Modal>
+  )
+}
+
+
+/** Remove cancelled turnover "ghosts" — the piles of cancelled duplicate
+ *  turnovers a flapping iCal feed leaves stacked on one date. Preview-then-
+ *  confirm like the other maintenance tools: shows the count with a per-property
+ *  breakdown so the office sees exactly what's being cleared. The server only
+ *  deletes cancelled str_turnover rows and never one that carries an invoice. */
+export function PurgeGhostsModal({ state, onCancel, onRun }) {
+  if (!state) return null
+  const count = state.preview?.count || 0
+  const byProperty = state.preview?.by_property || []
+  return (
+    <Modal
+      open
+      onClose={onCancel}
+      dismissable={!state.running}
+      maxWidth="md"
+      ariaLabel="Remove cancelled turnover clutter"
+      title={
+        <div className="flex items-center gap-2.5 min-w-0">
+          <Trash2 className="w-5 h-5 text-indigo-600 shrink-0" />
+          <div className="min-w-0">
+            <div className="text-sm font-semibold text-ink">Remove cancelled turnover clutter</div>
+            <div className="text-[12px] font-normal text-ink-3 mt-0.5">Deletes cancelled duplicate turnovers a flapping feed left behind. Live jobs and anything with an invoice are never touched.</div>
+          </div>
+        </div>
+      }
+    >
+      <Modal.Body className="space-y-3 scrollbar-thin">
+        {state.loading ? (
+          <div className="py-12 text-center text-[13px] text-ink-3">Counting cancelled turnovers…</div>
+        ) : (
+          <>
+            <p className="text-[13px] text-ink-2">
+              {count} cancelled turnover{count === 1 ? '' : 's'} will be permanently removed.
+            </p>
+            {byProperty.length > 0 && (
+              <div className="space-y-1">
+                {byProperty.map(p => (
+                  <div key={p.property_id} className="flex items-center justify-between gap-2 rounded-lg border border-hairline bg-bg px-3 py-2">
+                    <div className="text-[13px] text-ink truncate">{p.property}</div>
+                    <span className="text-[11px] font-medium text-ink-2 shrink-0 tabular-nums">{p.count}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+            <p className="flex items-start gap-1.5 text-[11.5px] text-ink-3">
+              <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-amber-500" aria-hidden="true" />
+              <span>This can't be undone. It only removes cancelled turnovers — your live cleanings stay exactly where they are.</span>
+            </p>
+          </>
+        )}
+      </Modal.Body>
+
+      <Modal.Footer>
+        <Button variant="secondary" size="sm" onClick={onCancel} disabled={state.running}>Cancel</Button>
+        <Button variant="primary" size="sm" onClick={onRun}
+          disabled={state.loading || state.running || !count}>
+          {state.running ? 'Removing…' : `Remove ${count}`}
         </Button>
       </Modal.Footer>
     </Modal>
