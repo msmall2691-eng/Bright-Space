@@ -170,8 +170,9 @@ export default function QuoteFunnel() {
             onRetry={() => setReloadKey(k => k + 1)} />
         ) : (
           <>
-            {/* KPI row */}
-            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+            {/* KPI row — 4-up at shell: (the owner's ~940px window), not lg:
+                (1024), so her window gets the full row instead of a 2×2 block. */}
+            <div className="grid grid-cols-2 shell:grid-cols-4 gap-3">
               <KpiCard
                 icon={Inbox}
                 chip="bg-bg-2 text-ink-2"
@@ -211,7 +212,7 @@ export default function QuoteFunnel() {
               {loading ? <TileLoading /> : <FunnelBars funnel={funnel} conversion={conversion} />}
             </Tile>
 
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+            <div className="grid grid-cols-1 shell:grid-cols-2 gap-5">
               {/* Outcomes */}
               <Tile icon={Layers} iconColor="text-purple-500" title="Quote outcomes">
                 {loading ? <TileLoading /> : quotedTotal === 0 ? (
