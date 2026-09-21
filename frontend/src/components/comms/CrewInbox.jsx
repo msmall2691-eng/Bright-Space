@@ -41,8 +41,8 @@ export function CrewInbox({ viewToggle }) {
   return (
     <div className="flex flex-1 min-h-0">
       {/* ── Left: cleaner thread list ── */}
-      <div className={`w-full lg:w-[340px] border-r border-hairline bg-panel flex flex-col shrink-0
-        ${mobileView === 'list' ? 'flex' : 'hidden lg:flex'}`}>
+      <div className={`w-full shell:w-[340px] border-r border-hairline bg-panel flex flex-col shrink-0
+        ${mobileView === 'list' ? 'flex' : 'hidden shell:flex'}`}>
         <div className="px-4 pt-3 pb-2.5 flex items-center justify-between">
           {viewToggle}
           <button onClick={() => setShowBroadcast(true)}
@@ -122,7 +122,7 @@ export function CrewInbox({ viewToggle }) {
       </div>
 
       {/* ── Center: selected thread ── */}
-      <div className={`flex-1 flex-col min-w-0 ${mobileView === 'thread' ? 'flex' : 'hidden lg:flex'}`}>
+      <div className={`flex-1 flex-col min-w-0 ${mobileView === 'thread' ? 'flex' : 'hidden shell:flex'}`}>
         {!selected ? (
           <div className="flex-1 flex items-center justify-center bg-bg/50">
             <div className="text-center max-w-xs">
@@ -139,7 +139,7 @@ export function CrewInbox({ viewToggle }) {
           <>
             <div className="px-4 py-3 border-b border-hairline bg-panel flex items-center gap-3">
               <button onClick={() => setMobileView('list')} aria-label="Back to list"
-                className="lg:hidden grid place-items-center w-9 h-9 rounded-lg bg-bg-2 text-ink-2">
+                className="shell:hidden grid place-items-center w-9 h-9 rounded-lg bg-bg-2 text-ink-2">
                 <ArrowLeft className="w-5 h-5" />
               </button>
               <div className="min-w-0 flex-1">

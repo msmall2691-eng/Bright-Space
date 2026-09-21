@@ -331,7 +331,10 @@ export default function QuoteDetail() {
           )}
         </div>
 
-        <div className="grid grid-cols-1 shell:grid-cols-[300px_minmax(0,1fr)_320px] gap-4">
+        {/* 2 columns at shell: (fields + body), linked records as a full-width
+            row below; 3rd rail only at xl:. The old 3-fixed-column grid
+            (300+320) crushed the center at the ~940px window. */}
+        <div className="grid grid-cols-1 shell:grid-cols-[minmax(240px,280px)_minmax(0,1fr)] xl:grid-cols-[280px_minmax(0,1fr)_300px] gap-4">
           {/* ── Left: fields ──────────────────────────────────────── */}
           <div className="bg-panel border border-hairline rounded-xl p-4 space-y-4 self-start">
             <div>
@@ -449,8 +452,8 @@ export default function QuoteDetail() {
             </div>
           </div>
 
-          {/* ── Right: related ────────────────────────────────────── */}
-          <div className="space-y-4 self-start">
+          {/* ── Related — full-width row at shell:, side rail only at xl:. ── */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 shell:grid-cols-3 xl:grid-cols-1 gap-3 self-start shell:col-span-2 xl:col-span-1">
             {/* The original request behind this quote — expanded so staff can
                 see what the customer asked for while reviewing/sending. */}
             <OriginalRequestCard intake={quote.intake} defaultOpen className="bg-panel" />
