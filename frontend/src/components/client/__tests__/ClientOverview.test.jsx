@@ -77,6 +77,23 @@ describe('ClientOverview', () => {
     expect(setTab).toHaveBeenCalledWith('invoices')
   })
 
+  it('cues an accepted quote to Book and routes straight into the booking flow', () => {
+    const navigate = vi.fn()
+    render(<ClientOverview {...baseProps} navigate={navigate} />)
+    // The accepted quote (Q-2) shows a Book cue instead of a status badge...
+    expect(screen.getByText('Book')).toBeTruthy()
+    // ...and its row opens the quote with the booking modal already armed.
+    fireEvent.click(screen.getByText(/Q-2 · \$100/))
+    expect(navigate).toHaveBeenCalledWith('/quotes/21?book=1')
+  })
+
+  it('leaves a non-accepted quote as a plain link, no booking flag', () => {
+    const navigate = vi.fn()
+    render(<ClientOverview {...baseProps} navigate={navigate} />)
+    fireEvent.click(screen.getByText(/Q-3 · \$160/))   // draft
+    expect(navigate).toHaveBeenCalledWith('/quotes/22')
+  })
+
   it('renders clean empty states when the client has nothing yet', () => {
     render(<ClientOverview {...baseProps} quotes={[]} invoices={[]} upcomingJobs={[]} pastJobs={[]} />)
     expect(screen.getByText('No quotes yet.')).toBeTruthy()

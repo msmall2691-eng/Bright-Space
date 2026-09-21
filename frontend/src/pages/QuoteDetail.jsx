@@ -290,6 +290,25 @@ export default function QuoteDetail() {
     ? `A ${quote.status} quote can't be sent.`
     : emptyQuote ? 'Add at least one line item and a total over $0 before sending.' : undefined
 
+  // ── Booking: the one clear next step once a quote is a yes ────────────────
+  // Unifies the old split, quiet sidebar buttons ("Convert to job" / "Set up
+  // schedule") into a single primary "Book" CTA in the toolbar. A dateless job
+  // (auto-converted on accept) just needs a date → the edit modal; an
+  // un-converted quote opens the create modal pre-filled from the quote. The
+  // create modal now defaults to a one-off dated job unless the quote itself
+  // carries a cadence (see defaultRecurring below) — so the common case is one
+  // confirm, and the STR-turnover recurring trap can't bite a single booking.
+  const hasJob = !!quote.job
+  const jobDateless = hasJob && !quote.job.scheduled_date && quote.job.status !== 'cancelled'
+  // Booking is *available* for any un-converted quote or a dateless job...
+  const canBook = editable && quote.status !== 'archived' && (jobDateless || (!hasJob && quote.status !== 'converted'))
+  // ...but it only *leads* (becomes the primary CTA over Send) once the quote
+  // is a yes — accepted, or already a job that just needs a date. On a draft,
+  // Send stays primary and Book rides along as a secondary shortcut.
+  const bookIsPrimary = canBook && (jobDateless || quote.status === 'accepted')
+  const bookLabel = jobDateless ? 'Book — set a date' : 'Book this job'
+  const onBook = () => { jobDateless ? openScheduleJob() : openConvertModal() }
+
   const ToolbarButton = ({ icon: Icon, label, onClick, disabled, title, primary }) => (
     <button onClick={onClick} disabled={disabled} title={title}
       className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-[12px] font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${
@@ -307,7 +326,13 @@ export default function QuoteDetail() {
           </button>
           {editable && (
             <div className="flex flex-wrap items-center gap-2">
-              <ToolbarButton icon={Send} label={quote.status === 'draft' ? 'Send' : quote.status === 'changes_requested' ? 'Send revised' : 'Resend'} onClick={openSend} primary
+              {/* Once a quote is a yes, booking is the clear next step — lead
+                  with it. Send stays available (disabled for accepted quotes)
+                  but steps down from primary so there's one primary per view. */}
+              {canBook && (
+                <ToolbarButton icon={Calendar} label={bookLabel} onClick={onBook} primary={bookIsPrimary} />
+              )}
+              <ToolbarButton icon={Send} label={quote.status === 'draft' ? 'Send' : quote.status === 'changes_requested' ? 'Send revised' : 'Resend'} onClick={openSend} primary={!bookIsPrimary}
                 disabled={sendDisabled}
                 title={sendTitle} />
               {['sent', 'viewed'].includes(quote.status) && (
@@ -375,23 +400,10 @@ export default function QuoteDetail() {
               ) : <span className="text-[12px] text-ink-3 italic">No client linked</span>}
             </div>
 
-            {canEdit() && !quote.job && quote.status !== 'converted' && (
-              <div className="border-t border-hairline pt-3">
-                <button onClick={openConvertModal}
-                  className="w-full flex items-center justify-center gap-1.5 bg-bg-2 hover:bg-bg-3 border border-hairline text-ink-2 px-3 py-2 rounded-lg text-[12px] font-medium transition-colors">
-                  <Calendar className="w-3.5 h-3.5" /> Convert to job
-                </button>
-              </div>
-            )}
-            {canEdit() && quote.job && !quote.job.scheduled_date && quote.job.status !== 'cancelled' && (
-              <div className="border-t border-hairline pt-3">
-                <button onClick={openScheduleJob}
-                  title="The job exists but has no date yet"
-                  className="w-full flex items-center justify-center gap-1.5 bg-bg-2 hover:bg-bg-3 border border-hairline text-ink-2 px-3 py-2 rounded-lg text-[12px] font-medium transition-colors">
-                  <Calendar className="w-3.5 h-3.5" /> Set up schedule
-                </button>
-              </div>
-            )}
+            {/* Booking moved to the toolbar's single primary "Book" CTA — the
+                old split "Convert to job" / "Set up schedule" buttons lived
+                here, quiet and easy to miss. A booked job links from the
+                Related rail. */}
           </div>
           {scheduleJob && (
             <JobEditModal
@@ -411,7 +423,7 @@ export default function QuoteDetail() {
               initialTitle={quote.title || `${quote.client_name} — Clean`}
               initialQuoteId={quote.id}
               initialFrequency={quote.frequency || null}
-              defaultRecurring
+              defaultRecurring={!!quote.frequency}
               onClose={() => setConvertModalOpen(false)}
               onCreated={async (result) => {
                 try { await patch(`/api/quotes/${quote.id}`, { status: 'converted' }) } catch { /* non-fatal */ }
