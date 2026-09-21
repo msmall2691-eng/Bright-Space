@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { Link, useLocation } from 'react-router-dom'
 import { ChevronDown } from 'lucide-react'
 import { tabsForPath } from '../../nav/routes'
@@ -26,13 +27,36 @@ export default function SubNav({ className = '' }) {
   const { pathname } = useLocation()
   const tabs = tabsForPath(pathname)
   const [moreOpen, setMoreOpen] = useState(false)
-  const moreRef = useRef(null)
+  // The dropdown is portalled to <body> and positioned from the button's rect.
+  // It CANNOT live inside the nav: that strip is `overflow-x-auto` (so it
+  // scrolls at phone width), and per spec overflow-x:auto also clips overflow-y,
+  // which swallowed the dropdown whole — "More" opened but nothing showed.
+  const [menuPos, setMenuPos] = useState(null)
+  const moreRef = useRef(null)     // the button
+  const menuRef = useRef(null)     // the portalled dropdown
+
+  const openMore = () => {
+    if (moreOpen) { setMoreOpen(false); return }
+    const r = moreRef.current?.getBoundingClientRect()
+    if (r) setMenuPos({ left: r.left, top: r.bottom + 4 })
+    setMoreOpen(true)
+  }
 
   useEffect(() => {
     if (!moreOpen) return
-    const onDoc = (e) => { if (moreRef.current && !moreRef.current.contains(e.target)) setMoreOpen(false) }
+    const onDoc = (e) => {
+      if (moreRef.current?.contains(e.target) || menuRef.current?.contains(e.target)) return
+      setMoreOpen(false)
+    }
+    const onDismiss = () => setMoreOpen(false)   // scroll/resize detaches it
     document.addEventListener('mousedown', onDoc)
-    return () => document.removeEventListener('mousedown', onDoc)
+    window.addEventListener('scroll', onDismiss, true)
+    window.addEventListener('resize', onDismiss)
+    return () => {
+      document.removeEventListener('mousedown', onDoc)
+      window.removeEventListener('scroll', onDismiss, true)
+      window.removeEventListener('resize', onDismiss)
+    }
   }, [moreOpen])
 
   // A single visible tab is just the page's own name — chrome for nothing.
@@ -67,33 +91,38 @@ export default function SubNav({ className = '' }) {
       ))}
 
       {secondary.length > 0 && (
-        <div className="relative shrink-0" ref={moreRef}>
-          <button
-            type="button"
-            onClick={() => setMoreOpen(o => !o)}
-            aria-expanded={moreOpen}
-            className={`inline-flex items-center gap-1 ${tabClass(moreActive)}`}
-          >
-            More <ChevronDown className={`h-3.5 w-3.5 transition-transform ${moreOpen ? 'rotate-180' : ''}`} />
-          </button>
-          {moreOpen && (
-            <div className="absolute left-0 top-full z-30 mt-1 min-w-[180px] rounded-lg border border-hairline bg-panel py-1 shadow-lg">
-              {secondary.map(tab => (
-                <Link
-                  key={tab.to}
-                  to={tab.to}
-                  onClick={() => setMoreOpen(false)}
-                  aria-current={isActive(tab.to) ? 'page' : undefined}
-                  className={`block px-3 py-2 text-[13px] no-underline transition-colors ${
-                    isActive(tab.to) ? 'bg-bg-2 font-medium text-ink' : 'text-ink-2 hover:bg-bg-2'
-                  }`}
-                >
-                  {tab.label}
-                </Link>
-              ))}
-            </div>
-          )}
-        </div>
+        <button
+          type="button"
+          ref={moreRef}
+          onClick={openMore}
+          aria-expanded={moreOpen}
+          className={`shrink-0 inline-flex items-center gap-1 ${tabClass(moreActive)}`}
+        >
+          More <ChevronDown className={`h-3.5 w-3.5 transition-transform ${moreOpen ? 'rotate-180' : ''}`} />
+        </button>
+      )}
+
+      {moreOpen && menuPos && createPortal(
+        <div
+          ref={menuRef}
+          style={{ position: 'fixed', left: menuPos.left, top: menuPos.top }}
+          className="z-50 min-w-[180px] rounded-lg border border-hairline bg-panel py-1 shadow-lg"
+        >
+          {secondary.map(tab => (
+            <Link
+              key={tab.to}
+              to={tab.to}
+              onClick={() => setMoreOpen(false)}
+              aria-current={isActive(tab.to) ? 'page' : undefined}
+              className={`block px-3 py-2 text-[13px] no-underline transition-colors ${
+                isActive(tab.to) ? 'bg-bg-2 font-medium text-ink' : 'text-ink-2 hover:bg-bg-2'
+              }`}
+            >
+              {tab.label}
+            </Link>
+          ))}
+        </div>,
+        document.body,
       )}
     </nav>
   )

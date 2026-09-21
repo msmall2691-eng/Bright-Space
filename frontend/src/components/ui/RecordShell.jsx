@@ -62,11 +62,13 @@ export default function RecordShell({
           {actions && <div className="flex items-center gap-2 shrink-0">{actions}</div>}
         </div>
 
-        {/* Body: main column + related rail */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-5 items-start">
-          <div className="lg:col-span-2 space-y-5 min-w-0">{children}</div>
+        {/* Body: main column + related rail. shell: (900px), not lg: (1024),
+            so the owner's ~940px window gets the two-column layout instead of a
+            single stacked column. Flexible tracks — no fixed-width crush. */}
+        <div className="grid grid-cols-1 shell:grid-cols-3 gap-5 items-start">
+          <div className="shell:col-span-2 space-y-5 min-w-0">{children}</div>
           {related.length > 0 && (
-            <div className="space-y-4 lg:sticky lg:top-4">
+            <div className="space-y-4 shell:sticky shell:top-4">
               {related.map((group) => (
                 <RelatedCard key={group.label} label={group.label} items={group.items} />
               ))}
