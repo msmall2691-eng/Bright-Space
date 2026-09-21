@@ -137,9 +137,9 @@ class TestPurgeCancelledTurnovers:
             assert preview["count"] == 2                       # only the two pure ghosts
             assert set(preview["sample_ids"]) == {ghost1.id, ghost2.id}
 
-            res = purge_cancelled_turnovers(db, org_id=None, property_id=prop.id)
+            # batch_size=1 exercises the multi-batch commit loop.
+            res = purge_cancelled_turnovers(db, org_id=None, property_id=prop.id, batch_size=1)
             assert res["deleted"] == 2
-            assert set(res["deleted_ids"]) == {ghost1.id, ghost2.id}
 
             # Ghosts gone; everything else survives.
             assert db.query(Job).filter(Job.id.in_([ghost1.id, ghost2.id])).count() == 0

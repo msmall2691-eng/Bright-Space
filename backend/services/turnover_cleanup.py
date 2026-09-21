@@ -79,32 +79,44 @@ def preview_cancelled_turnovers(db: Session, org_id: Optional[int],
 
 
 def purge_cancelled_turnovers(db: Session, org_id: Optional[int],
-                              property_id: Optional[int] = None) -> dict:
+                              property_id: Optional[int] = None,
+                              batch_size: int = 200) -> dict:
     """Hard-delete the cancelled turnover ghosts. Human-confirmed only.
 
-    Returns {deleted, skipped, deleted_ids}. Commits once at the end."""
-    jobs = _base_query(db, org_id, property_id).all()
-    deleted_ids: list = []
-    skipped: list = []
-    for j in jobs:
-        sp = db.begin_nested()
-        try:
-            # Null the un-cascaded FK children so the delete can't dangle.
-            # (Invoices are already excluded by _base_query.)
-            db.query(ICalEvent).filter(ICalEvent.job_id == j.id).update(
-                {ICalEvent.job_id: None}, synchronize_session=False)
-            db.query(Activity).filter(Activity.job_id == j.id).update(
-                {Activity.job_id: None}, synchronize_session=False)
-            db.query(Message).filter(Message.job_id == j.id).update(
-                {Message.job_id: None}, synchronize_session=False)
-            db.delete(j)
-            db.flush()
-            sp.commit()
-            deleted_ids.append(j.id)
-        except IntegrityError:
-            sp.rollback()
-            skipped.append(j.id)
-    if deleted_ids:
+    Commits in batches — a flapping feed can leave *thousands* of ghosts on one
+    property, and a single end-of-run commit would lose everything if the
+    request timed out mid-sweep. Each batch that commits stays deleted, so a
+    re-run simply continues (the query only ever returns rows still present).
+
+    Returns {deleted, skipped}."""
+    deleted = 0
+    skipped_ids: list = []
+    while True:
+        q = _base_query(db, org_id, property_id)
+        if skipped_ids:
+            # Rows we couldn't delete (an unexpected FK child) would otherwise
+            # reappear every loop — exclude them so the sweep terminates.
+            q = q.filter(Job.id.notin_(skipped_ids))
+        jobs = q.limit(batch_size).all()
+        if not jobs:
+            break
+        for j in jobs:
+            sp = db.begin_nested()
+            try:
+                # Null the un-cascaded FK children so the delete can't dangle.
+                # (Invoices are already excluded by _base_query.)
+                db.query(ICalEvent).filter(ICalEvent.job_id == j.id).update(
+                    {ICalEvent.job_id: None}, synchronize_session=False)
+                db.query(Activity).filter(Activity.job_id == j.id).update(
+                    {Activity.job_id: None}, synchronize_session=False)
+                db.query(Message).filter(Message.job_id == j.id).update(
+                    {Message.job_id: None}, synchronize_session=False)
+                db.delete(j)
+                db.flush()
+                sp.commit()
+                deleted += 1
+            except IntegrityError:
+                sp.rollback()
+                skipped_ids.append(j.id)
         db.commit()
-    return {"deleted": len(deleted_ids), "skipped": len(skipped),
-            "deleted_ids": deleted_ids}
+    return {"deleted": deleted, "skipped": len(skipped_ids)}
