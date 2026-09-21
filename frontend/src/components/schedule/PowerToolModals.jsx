@@ -173,6 +173,13 @@ export function PurgeGhostsModal({ state, onCancel, onRun }) {
       <Modal.Body className="space-y-3 scrollbar-thin">
         {state.loading ? (
           <div className="py-12 text-center text-[13px] text-ink-3">Counting cancelled turnovers…</div>
+        ) : state.running ? (
+          <div className="py-10 text-center space-y-2">
+            <div className="text-[15px] font-semibold text-ink tabular-nums">
+              {state.removed || 0} / {state.total || count}
+            </div>
+            <div className="text-[12px] text-ink-3">Removing in batches — this can take a moment for a big pile. Leave this open.</div>
+          </div>
         ) : (
           <>
             <p className="text-[13px] text-ink-2">

@@ -151,3 +151,25 @@ class TestPurgeCancelledTurnovers:
             assert act is not None and act.job_id is None
         finally:
             db.close()
+
+    def test_max_delete_caps_one_call_and_reports_remaining(self):
+        # Thousands of ghosts can't be deleted inside the client's 15s timeout,
+        # so a call caps at max_delete and reports how many are still left; the
+        # caller loops until remaining == 0.
+        db = SessionLocal()
+        try:
+            client, prop = _seed_str_property(db, name="Capped")
+            co = date.today() + timedelta(days=5)
+            for _ in range(5):
+                db.add(Job(client_id=client.id, property_id=prop.id, job_type="str_turnover",
+                           title="x", scheduled_date=co, status="cancelled", address="a"))
+            db.commit()
+
+            r1 = purge_cancelled_turnovers(db, org_id=None, property_id=prop.id, max_delete=2)
+            assert r1["deleted"] == 2 and r1["remaining"] == 3
+            r2 = purge_cancelled_turnovers(db, org_id=None, property_id=prop.id, max_delete=2)
+            assert r2["deleted"] == 2 and r2["remaining"] == 1
+            r3 = purge_cancelled_turnovers(db, org_id=None, property_id=prop.id, max_delete=2)
+            assert r3["deleted"] == 1 and r3["remaining"] == 0
+        finally:
+            db.close()
