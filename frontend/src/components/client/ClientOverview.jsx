@@ -186,13 +186,24 @@ export default function ClientOverview({
             action={quotes.length > 4 ? viewAll(() => setTab('quotes')) : null} />
           {sortedQuotes.length === 0
             ? <Empty icon={FileText}>No quotes yet.</Empty>
-            : sortedQuotes.slice(0, 4).map(q => (
-              <Row key={q.id} icon={FileText} tone="text-indigo-500"
-                title={`${q.quote_number || `Quote ${q.id}`} · ${money(q.total)}`}
-                meta={q.created_at ? formatDateShort(q.created_at) : null}
-                right={<Status map={QUOTE_COLORS} value={q.status} />}
-                onClick={() => navigate(`/quotes/${q.id}`)} />
-            ))}
+            : sortedQuotes.slice(0, 4).map(q => {
+              // An accepted quote's clear next step is booking it — send the row
+              // straight into the booking flow (?book=1 auto-opens the modal on
+              // the quote) and cue it, so it's one tap from the client page
+              // instead of hunting for the quote and a buried button.
+              const bookable = q.status === 'accepted'
+              return (
+                <Row key={q.id} icon={FileText} tone="text-indigo-500"
+                  title={`${q.quote_number || `Quote ${q.id}`} · ${money(q.total)}`}
+                  meta={q.created_at ? formatDateShort(q.created_at) : null}
+                  right={bookable
+                    ? <span className="inline-flex items-center gap-1 text-[12px] font-semibold text-indigo-600">
+                        <CalendarCheck className="w-3.5 h-3.5" /> Book
+                      </span>
+                    : <Status map={QUOTE_COLORS} value={q.status} />}
+                  onClick={() => navigate(`/quotes/${q.id}${bookable ? '?book=1' : ''}`)} />
+              )
+            })}
         </Card>
 
         {/* Jobs */}
