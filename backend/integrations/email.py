@@ -2,7 +2,7 @@
 Email sending via SMTP (Gmail or any SMTP provider).
 
 Required env vars:
-  SMTP_USER     — Gmail address (e.g. hello@maineclean.co)
+  SMTP_USER     — Gmail address (e.g. office@mainecleaningco.com)
   SMTP_PASS     — Gmail App Password (not your regular password)
   SMTP_HOST     — default smtp.gmail.com
   SMTP_PORT     — default 587

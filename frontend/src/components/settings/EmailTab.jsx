@@ -137,7 +137,7 @@ export default function EmailTab({ toast, active }) {
           <div>
             <label className={lbl}>Gmail Address</label>
             <input value={emailConfig.smtp_user} onChange={e => setEmailConfig(c => ({ ...c, smtp_user: e.target.value }))}
-              placeholder="hello@maineclean.co"
+              placeholder="office@mainecleaningco.com"
               className={inp} />
           </div>
 
@@ -202,7 +202,7 @@ export default function EmailTab({ toast, active }) {
             <div>
               <label className={lbl}>From Email</label>
               <input value={emailConfig.from_email} onChange={e => setEmailConfig(c => ({ ...c, from_email: e.target.value }))}
-                placeholder="hello@maineclean.co"
+                placeholder="office@mainecleaningco.com"
                 className={inp} />
             </div>
           </div>

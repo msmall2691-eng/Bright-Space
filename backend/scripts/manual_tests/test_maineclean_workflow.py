@@ -210,9 +210,9 @@ with patch("integrations.email.smtplib.SMTP") as mock_smtp:
     mock_smtp.return_value.__exit__ = MagicMock(return_value=False)
 
     # Set env vars for email
-    os.environ["SMTP_USER"] = "hello@maineclean.co"
+    os.environ["SMTP_USER"] = "office@mainecleaningco.com"
     os.environ["SMTP_PASS"] = "test-app-password"
-    os.environ["FROM_EMAIL"] = "hello@maineclean.co"
+    os.environ["FROM_EMAIL"] = "office@mainecleaningco.com"
     os.environ["FROM_NAME"] = "Maine Cleaning Co"
 
     r = client.post(f"/api/quotes/{quote_id}/send", json={
