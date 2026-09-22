@@ -25,7 +25,7 @@ export const CLIENT_COLUMNS = [
   { id: 'city', label: 'City', render: (c) => <span className="text-[12px] text-ink-3">{c.city || '—'}</span> },
   { id: 'state', label: 'State', render: (c) => <span className="text-[12px] text-ink-3">{c.state || '—'}</span> },
   { id: 'source', label: 'Source', render: (c) => <span className="text-[12px] text-ink-3">{c.source || '—'}</span> },
-  { id: 'created', label: 'Added', render: (c) => <span className="text-[12px] text-ink-3">{c.created_at ? new Date(c.created_at).toLocaleDateString() : '—'}</span> },
+  { id: 'created', label: 'Added', render: (c) => <span className="text-[12px] text-ink-3 tabular-nums">{c.created_at ? new Date(c.created_at).toLocaleDateString() : '—'}</span> },
   { id: 'status', label: 'Status', render: (c, h) => (
     <div className="flex items-center gap-2">
       <InlineSelect value={c.status} options={STATUS_OPTIONS} onSelect={(s) => h.updateStatus(c, s)} />
