@@ -413,9 +413,15 @@ export default function Clients() {
           bulkDeleting={bulkDeleting}
         />
 
-        {/* Client rows — Card view */}
+        {/* List region — a single quiet fade-up as the rows paint, matching
+            the Home board / Customer 360 reveal (held to the 150–350ms
+            ease-out budget, disabled under reduced-motion via .bb-board-in). */}
+        <div className="flex-1 flex flex-col min-h-0 bb-board-in">
+        {/* Client rows — Card view: a dense packing grid (two-up on wide) so
+            the cards sit side by side instead of a tall stack of full-width
+            bands. */}
         {viewMode === 'cards' && (
-          <div className="space-y-1.5 overflow-y-auto flex-1">
+          <div className="grid grid-cols-1 shell:grid-cols-2 gap-2 content-start overflow-y-auto flex-1">
             {filtered.map(c => (
               <ClientCardRow
                 key={c.id}
@@ -429,11 +435,13 @@ export default function Clients() {
               />
             ))}
             {filtered.length === 0 && (
-              <EmptyState icon={Users} title={search || statusFilter ? 'No matching clients' : 'No clients yet'}
-                description={search || statusFilter ? 'Try a different search or filter.' : undefined}
-                action={!search && !statusFilter && (
-                  <button onClick={openNew} className="text-xs font-semibold text-indigo-600 hover:text-indigo-700">Add your first client →</button>
-                )} />
+              <div className="shell:col-span-2">
+                <EmptyState icon={Users} title={search || statusFilter ? 'No matching clients' : 'No clients yet'}
+                  description={search || statusFilter ? 'Try a different search or filter.' : undefined}
+                  action={!search && !statusFilter && (
+                    <button onClick={openNew} className="text-xs font-semibold text-indigo-600 hover:text-indigo-700">Add your first client →</button>
+                  )} />
+              </div>
             )}
           </div>
         )}
@@ -458,6 +466,7 @@ export default function Clients() {
             deleteClient={deleteClient}
           />
         )}
+        </div>
         </div>
       </div>
 
