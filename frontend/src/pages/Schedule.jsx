@@ -5,7 +5,7 @@ import Button from '../components/ui/Button'
 import ErrorState from '../components/ui/ErrorState'
 import JobEditModal from '../components/JobEditModal'
 import JobCreateModal from '../components/JobCreateModal'
-import NeedsDateStrip from '../components/schedule/NeedsDateStrip'
+import ScheduleCommandBar from '../components/schedule/ScheduleCommandBar'
 import CalendarView from '../components/CalendarView'
 import { toast } from '../utils/toastBus'
 import { confirmDialog } from '../utils/confirmBus'
@@ -24,7 +24,6 @@ import SubNav from '../components/ui/SubNav'
 import GoogleCalendarView from '../components/schedule/GoogleCalendarView'
 import ScheduleSyncSettings from '../components/schedule/ScheduleSyncSettings'
 import { AutoAssignModal, FixTimesModal, OpenToCrewModal, PurgeGhostsModal } from '../components/schedule/PowerToolModals'
-import { ScheduleHealthStrip } from '../components/schedule/ScheduleSections'
 import { AvailabilityPanel } from '../components/schedule/ScheduleTabs'
 import { VISIT_STATUS_CONFIG, shortDate, cleanerInitials } from '../components/schedule/constants'
 import { useScheduleData } from '../hooks/useScheduleData'
@@ -547,24 +546,32 @@ export default function Schedule() {
         onToggleGuestStays={toggleGuestStays}
       />
 
-      {/* The today/this-week count strip is redundant in the agenda view —
-          AgendaHero's OpsSummary already shows the day count there, and two
-          count strips stacked is exactly the "way too busy" the owner flagged.
-          Keep it for week/month/desktop-day where there's no OpsSummary. */}
-      {effectiveView !== 'agenda' && (
-        <ScheduleHealthStrip
-          stats={scheduleStats}
-          weekLabel={viewMode === 'month' ? 'This month' : 'This week'}
-        />
-      )}
-
-      {/* Jobs with no date (quote accepted, day not picked yet). Office
-          views only: the phone agenda is already the "way too busy" surface
-          and crew never receive this list. "Schedule" opens the same edit
-          modal as the drawer's Edit; saving a date lands the job on the
+      {/* Command bar — the compact packing header above the calendar on the
+          office views (Day / Week / Month). It merges what used to be two
+          stacked full-width bands (the today/this-week count strip and the
+          "Needs a date" list) into one dense bento, and brings the actionable
+          OpsAlerts (needs-crew / subs-waiting, with "Open to crew") to the
+          desktop — they previously only rendered in the phone AgendaHero.
+          Suppressed in agenda (AgendaHero already carries the summary, alerts
+          and needs-date; two of each stacked is the "way too busy" the owner
+          flagged). On the wide Day view (dispatch) the KPI line is hidden —
+          DayBoard owns the big date header + OpsSummary there — so this bar
+          contributes only the alerts + needs-date. "Schedule" opens the same
+          edit modal as the drawer's Edit; saving a date lands the job on the
           calendar (and the PATCH sends the customer's booked-in notice). */}
       {effectiveView !== 'agenda' && (
-        <NeedsDateStrip jobs={unscheduled} onSchedule={handleEditJob} />
+        <ScheduleCommandBar
+          stats={scheduleStats}
+          weekLabel={viewMode === 'month' ? 'This month' : 'This week'}
+          showKpis={effectiveView !== 'dispatch'}
+          todayStats={todayStats}
+          unassignedToday={unassignedToday}
+          awaitingReply={awaitingReply}
+          unscheduled={unscheduled}
+          onSchedule={handleEditJob}
+          onFocusUnassigned={() => setUnassignedOnly(v => !v)}
+          onOpenToCrew={handleOpenToCrew}
+        />
       )}
 
       {/* Render branch: agenda (mobile day + hero) / dispatch (desktop
