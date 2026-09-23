@@ -36,7 +36,9 @@ export function useClients(statusFilter, search) {
       .catch(err => console.error('[Clients counts]', err))
 
   const _buildUrl = (q) => {
-    const params = new URLSearchParams({ limit: String(LOOKUP_LIMIT) })
+    // with_stats: the Clients page wants each row's outstanding balance + next
+    // visit (batched server-side). Other client-book preloaders omit it.
+    const params = new URLSearchParams({ limit: String(LOOKUP_LIMIT), with_stats: 'true' })
     if (statusFilter === 'archived') {
       // The Archived view: fetch archived clients (default already includes
       // them) and narrow to archived rows in `filtered` below.

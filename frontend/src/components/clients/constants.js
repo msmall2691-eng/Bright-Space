@@ -44,4 +44,4 @@ export const EMPTY = {
 
 /** Default visible-columns list for the table view. Saved views can
  *  override this by storing their own `columns` array. */
-export const DEFAULT_CLIENT_COLUMNS = ['name', 'phone', 'email', 'city', 'source', 'status']
+export const DEFAULT_CLIENT_COLUMNS = ['name', 'phone', 'email', 'city', 'balance', 'next_visit', 'status']

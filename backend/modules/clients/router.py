@@ -456,7 +456,7 @@ def _derive_property_type(client: Client) -> str:
     return "mixed"
 
 
-def client_to_dict(c: Client) -> dict:
+def client_to_dict(c: Client, balance: Optional[float] = None, next_visit=None) -> dict:
     return {
         "id": c.id,
         "name": c.name,
@@ -484,6 +484,13 @@ def client_to_dict(c: Client) -> dict:
         # "Archived" dot+word and offer Unarchive instead of Archive.
         "archived_at": c.archived_at.isoformat() if getattr(c, "archived_at", None) else None,
         "archived": getattr(c, "archived_at", None) is not None,
+        # Populated only by the Clients list when with_stats=true (computed in
+        # two batched aggregates there, never a query per client — see
+        # get_clients). Outstanding balance = this client's sent+overdue invoice
+        # totals (the board's "outstanding" definition); next_visit = their
+        # earliest upcoming scheduled visit. Null everywhere else.
+        "balance": balance,
+        "next_visit": next_visit.isoformat() if hasattr(next_visit, "isoformat") else next_visit,
     }
 
 
@@ -510,6 +517,11 @@ def get_clients(
     # 200 cap would silently drop rows in a workspace with more clients.
     limit: int = Query(50, ge=1, le=1000),
     offset: int = Query(0, ge=0),
+    # The Clients PAGE passes with_stats=true to get each row's outstanding
+    # balance + next upcoming visit. OFF by default so the many client-book
+    # preloaders (Properties, Schedule, Quoting, compose…) that only need
+    # id→name don't pay for the two extra aggregate queries.
+    with_stats: bool = False,
     db: Session = Depends(get_db),
     org_id: int = Depends(current_org_id),
 ):
@@ -527,7 +539,37 @@ def get_clients(
     if search and search.strip():
         like = f"%{search.strip()}%"
         q = q.filter(or_(Client.name.ilike(like), Client.email.ilike(like), Client.phone.ilike(like)))
-    return [client_to_dict(c) for c in q.order_by(Client.created_at.desc()).offset(offset).limit(limit).all()]
+    rows = q.order_by(Client.created_at.desc()).offset(offset).limit(limit).all()
+    if not with_stats or not rows:
+        return [client_to_dict(c) for c in rows]
+
+    # Two batched aggregates for the whole page — never a query per client
+    # (brightbase-economy). balance = sent+overdue invoice totals (matches the
+    # board's "outstanding"); next_visit = earliest upcoming scheduled visit.
+    ids = [c.id for c in rows]
+    bal = dict(
+        db.query(Invoice.client_id, func.coalesce(func.sum(Invoice.total), 0.0))
+        .filter(Invoice.client_id.in_(ids),
+                or_(Invoice.org_id == org_id, Invoice.org_id.is_(None)),
+                Invoice.status.in_(("sent", "overdue")))
+        .group_by(Invoice.client_id)
+        .all()
+    )
+    today = business_today()
+    nxt = dict(
+        db.query(Job.client_id, func.min(Job.scheduled_date))
+        .filter(Job.client_id.in_(ids),
+                or_(Job.org_id == org_id, Job.org_id.is_(None)),
+                Job.status.in_(("scheduled", "in_progress")),
+                Job.scheduled_date.isnot(None),
+                Job.scheduled_date >= today)
+        .group_by(Job.client_id)
+        .all()
+    )
+    return [
+        client_to_dict(c, balance=round(bal.get(c.id) or 0.0, 2), next_visit=nxt.get(c.id))
+        for c in rows
+    ]
 
 
 class BulkStatusRequest(BaseModel):

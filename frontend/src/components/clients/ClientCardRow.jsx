@@ -2,6 +2,11 @@ import { Phone, Mail, MapPin, Calendar, Pencil, Trash2 } from 'lucide-react'
 import { displayContactName } from '../../utils/display'
 import { STATUS_COLORS, avatarColor } from './constants'
 
+// balance / next_visit are present only when the list was loaded with_stats
+// (the Clients page). null = not loaded, 0 = nothing owed → shown as nothing.
+const money = (n) => `$${Number(n || 0).toLocaleString(undefined, { maximumFractionDigits: 0 })}`
+const fmtVisit = (d) => new Date(`${d}T00:00:00`).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
+
 /** Card-view row for a single client — a dense, packable card (two-up on
  *  wide) matching the Customer 360 rhythm: avatar + record-link name, one
  *  quiet dot+word status, a single line of phone/email/city meta, and the
@@ -41,6 +46,21 @@ export function ClientCardRow({ c, selected, toggleSelect, setJobClient, navigat
           {c.city && <span className="text-[11px] text-ink-3 flex items-center gap-1 shrink-0"><MapPin className="w-3 h-3 shrink-0" />{c.city}</span>}
           {!c.phone && !c.email && !c.city && <span className="text-[11px] text-ink-3">No contact details</span>}
         </div>
+        {/* Balance + next visit — only render when there's something to say
+            (nonzero owed, or an upcoming visit), so a client with neither adds
+            no empty line. */}
+        {((c.balance || 0) > 0 || c.next_visit) && (
+          <div className="flex items-center gap-x-3 mt-0.5">
+            {(c.balance || 0) > 0 && (
+              <span className="text-[11px] font-medium text-ink tabular-nums">{money(c.balance)} due</span>
+            )}
+            {c.next_visit && (
+              <span className="text-[11px] text-ink-3 flex items-center gap-1">
+                <Calendar className="w-3 h-3 shrink-0" />next {fmtVisit(c.next_visit)}
+              </span>
+            )}
+          </div>
+        )}
       </div>
       {/* Quick actions — quiet at rest on pointer devices, revealed on hover
           or keyboard focus; always visible on touch where there's no hover. */}

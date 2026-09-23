@@ -3,6 +3,11 @@ import InlineSelect from '../InlineSelect'
 import { displayContactName } from '../../utils/display'
 import { STATUS_OPTIONS, avatarColor } from './constants'
 
+// Balance / next-visit come from the list payload only when with_stats=true
+// (useClients sends it). `null` means "not loaded"; 0 means "nothing owed".
+const money = (n) => `$${Number(n || 0).toLocaleString(undefined, { maximumFractionDigits: 0 })}`
+const fmtVisit = (d) => (d ? new Date(`${d}T00:00:00`).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) : '—')
+
 /** Configurable table columns for the Clients table view.
  *
  *  Each entry has `id`, `label`, and `render(c, h)` — the second
@@ -26,6 +31,14 @@ export const CLIENT_COLUMNS = [
   { id: 'state', label: 'State', render: (c) => <span className="text-[12px] text-ink-3">{c.state || '—'}</span> },
   { id: 'source', label: 'Source', render: (c) => <span className="text-[12px] text-ink-3">{c.source || '—'}</span> },
   { id: 'created', label: 'Added', render: (c) => <span className="text-[12px] text-ink-3 tabular-nums">{c.created_at ? new Date(c.created_at).toLocaleDateString() : '—'}</span> },
+  { id: 'balance', label: 'Balance', render: (c) => (
+    <span className={`text-[12px] tabular-nums ${(c.balance || 0) > 0 ? 'font-medium text-ink' : 'text-ink-3'}`}>
+      {(c.balance || 0) > 0 ? money(c.balance) : '—'}
+    </span>
+  ) },
+  { id: 'next_visit', label: 'Next visit', render: (c) => (
+    <span className="text-[12px] text-ink-3 tabular-nums">{fmtVisit(c.next_visit)}</span>
+  ) },
   { id: 'status', label: 'Status', render: (c, h) => (
     <div className="flex items-center gap-2">
       <InlineSelect value={c.status} options={STATUS_OPTIONS} onSelect={(s) => h.updateStatus(c, s)} />
