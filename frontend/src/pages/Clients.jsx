@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useMemo } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { Users } from 'lucide-react'
 import { post } from '../api'
@@ -17,6 +17,22 @@ import { CLIENT_COLUMNS } from '../components/clients/columns'
 import { ClientForm } from '../components/clients/ClientForm'
 import { MergeModal } from '../components/clients/MergeModal'
 import { BulkActionBar } from '../components/clients/BulkActionBar'
+
+// Sort accessors per column id (must match the ids in components/clients/columns).
+// Strings compare case-insensitively; created/next_visit are ISO dates (sort
+// lexically); balance is numeric. Anything not here isn't sortable.
+const SORT_VALUE = {
+  name: (c) => (c.name || '').toLowerCase(),
+  phone: (c) => (c.phone || '').toLowerCase(),
+  email: (c) => (c.email || '').toLowerCase(),
+  city: (c) => (c.city || '').toLowerCase(),
+  state: (c) => (c.state || '').toLowerCase(),
+  source: (c) => (c.source || '').toLowerCase(),
+  status: (c) => (c.status || '').toLowerCase(),
+  created: (c) => c.created_at || '',
+  balance: (c) => Number(c.balance || 0),
+  next_visit: (c) => c.next_visit || '',
+}
 
 // Group the duplicate-bucket rows into review pairs the automatic
 // email-merge can't touch (both members have a real, non-placeholder
@@ -207,9 +223,31 @@ export default function Clients() {
   // means "no bucket filter"; empty array means the bucket has no rows
   // (still narrows, showing nothing).
   const [bucketFilter, setBucketFilter] = useState(null) // { key, label, ids: Set }
-  const filtered = bucketFilter
-    ? baseFiltered.filter(c => bucketFilter.ids.has(c.id))
-    : baseFiltered
+  // Column sort (client-side, over the already-loaded page). null key = the
+  // server's default order (created desc). Sorting `filtered` — the one ordered
+  // array — keeps the table, the cards, peek ↑/↓ nav and select-all consistent.
+  // Missing values (no balance/next visit) always sink to the bottom.
+  const [sort, setSort] = useState({ key: null, dir: 'asc' })
+  const toggleSort = (key) =>
+    setSort(s => (s.key === key ? { key, dir: s.dir === 'asc' ? 'desc' : 'asc' } : { key, dir: 'asc' }))
+  const filtered = useMemo(() => {
+    const base = bucketFilter
+      ? baseFiltered.filter(c => bucketFilter.ids.has(c.id))
+      : baseFiltered
+    const getv = SORT_VALUE[sort.key]
+    if (!getv) return base
+    const dir = sort.dir === 'desc' ? -1 : 1
+    const empty = (v) => v === '' || v == null
+    return [...base].sort((a, b) => {
+      const av = getv(a), bv = getv(b)
+      if (empty(av) && empty(bv)) return 0
+      if (empty(av)) return 1          // no value → bottom, both directions
+      if (empty(bv)) return -1
+      if (av < bv) return -1 * dir
+      if (av > bv) return 1 * dir
+      return 0
+    })
+  }, [bucketFilter, baseFiltered, sort])
   // Real-named duplicate review workflow. `pairQueue` is the remaining
   // pairs still to visit (stored as [idA, idB] so we can re-resolve them
   // after each merge shrinks the list). `reviewTotal` is fixed at start
@@ -451,6 +489,8 @@ export default function Clients() {
           <ClientTableView
             filtered={filtered}
             visibleColumns={visibleColumns}
+            sort={sort}
+            onSort={toggleSort}
             selectedIds={selectedIds}
             toggleSelect={toggleSelect}
             toggleSelectAll={toggleSelectAll}
