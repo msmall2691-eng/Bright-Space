@@ -1,4 +1,4 @@
-import { Users, Pencil, Trash2 } from 'lucide-react'
+import { Users, Pencil, Trash2, ChevronUp, ChevronDown } from 'lucide-react'
 import { EmptyState } from '../ui'
 
 /** Table view for the clients list — the app's archetype list table
@@ -9,6 +9,8 @@ import { EmptyState } from '../ui'
 export function ClientTableView({
   filtered,
   visibleColumns,
+  sort,
+  onSort,
   selectedIds,
   toggleSelect,
   toggleSelectAll,
@@ -41,9 +43,23 @@ export function ClientTableView({
                 aria-label="Select all rows"
               />
             </th>
-            {visibleColumns.map(col => (
-              <th key={col.id} className="bb-th">{col.label}</th>
-            ))}
+            {visibleColumns.map(col => {
+              const active = sort?.key === col.id
+              return (
+                <th key={col.id} className="bb-th">
+                  {onSort ? (
+                    <button type="button" onClick={() => onSort(col.id)}
+                      aria-label={`Sort by ${col.label}`}
+                      className="inline-flex items-center gap-1 hover:text-ink transition-colors">
+                      {col.label}
+                      {active && (sort.dir === 'desc'
+                        ? <ChevronDown className="w-3 h-3 shrink-0" />
+                        : <ChevronUp className="w-3 h-3 shrink-0" />)}
+                    </button>
+                  ) : col.label}
+                </th>
+              )
+            })}
             <th className="bb-th w-16 px-2!"><span className="sr-only">Actions</span></th>
           </tr>
         </thead>
