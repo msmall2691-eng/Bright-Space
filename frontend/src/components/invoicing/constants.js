@@ -21,6 +21,12 @@ export function avatar(name = '') {
   return { color: 'bg-bg-2 text-ink-2', initials: name.slice(0, 2).toUpperCase() }
 }
 
+/** Full dollar amount, rounded to whole dollars with thousands separators —
+ *  the KPI band + AR-aging breakdown read as plain money ($12,340). Pair with
+ *  `tabular-nums` in the markup so the digits line up. Money is float dollars
+ *  (matches the schema); this only rounds for display. */
+export const usd = (n) => `$${Math.round(n || 0).toLocaleString()}`
+
 /** Blank line-item scaffold used to seed a new draft invoice and to
  *  append rows to an existing form. */
 export const EMPTY_ITEM = { name: '', description: '', qty: 1, unit_price: 0 }

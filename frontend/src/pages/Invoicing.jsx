@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { FileText } from 'lucide-react'
-import { EmptyState } from '../components/ui'
+import { EmptyState, ListSkeleton } from '../components/ui'
 import { useInvoicing } from '../hooks/useInvoicing'
 import { useInvoicingMutations } from '../hooks/useInvoicingMutations'
 import { EMPTY_ITEM, STATUS_FILTERS } from '../components/invoicing/constants'
@@ -18,10 +18,10 @@ export default function Invoicing() {
   const [statusFilter, setStatusFilter] = useState('')
   const [search, setSearch]       = useState('')
   const {
-    invoices, setInvoices, clients,
+    invoices, setInvoices, clients, loading,
     clientName, clientOf,
     filtered,
-    totalRevenue, outstanding, overdueCount,
+    totalRevenue, outstanding, overdueCount, overdueTotal, aging,
     load,
   } = useInvoicing({ statusFilter, search })
   const [panel, setPanel]         = useState(null)   // null | 'edit' | 'send'
@@ -108,49 +108,66 @@ export default function Invoicing() {
           invoiceCount={invoices.length}
           totalRevenue={totalRevenue}
           outstanding={outstanding}
+          overdueTotal={overdueTotal}
           overdueCount={overdueCount}
+          aging={aging}
           search={search} setSearch={setSearch}
           statusFilter={statusFilter} setStatusFilter={setStatusFilter}
           openChaser={openChaser}
           openNew={openNew}
         />
 
-        {/* Table */}
-        <div className="flex-1 overflow-y-auto scrollbar-thin px-4 sm:px-8 pb-6">
-          {/* Column headers */}
-          <div className="hidden sm:grid grid-cols-[2fr_1fr_1fr_1fr_auto] gap-4 px-3 mb-2">
-            {['Client', 'Amount', 'Due', 'Status', ''].map(h => (
-              <div key={h} className="text-[11px] font-medium text-ink-3">{h}</div>
-            ))}
-          </div>
+        {/* Table — the workhorse. */}
+        <div className="flex-1 overflow-y-auto scrollbar-thin px-4 pt-4 pb-6 sm:px-8">
+          {loading ? (
+            <ListSkeleton rows={6} />
+          ) : (
+            <div className="bb-board-in">
+              {/* Column headers — Amount right-aligned to sit over the figures. */}
+              <div className="mb-2 hidden grid-cols-[2fr_1fr_1fr_1fr_auto] gap-4 px-3 sm:grid">
+                {[
+                  { key: 'client', label: 'Client' },
+                  { key: 'amount', label: 'Amount', align: 'text-right' },
+                  { key: 'due', label: 'Due' },
+                  { key: 'status', label: 'Status' },
+                  { key: 'actions', label: '' },
+                ].map(h => (
+                  <div key={h.key} className={`text-[11px] font-medium text-ink-3 ${h.align || ''}`}>{h.label}</div>
+                ))}
+              </div>
 
-          <div className="rounded-xl border border-hairline overflow-hidden bg-panel">
-            {filtered.length === 0 ? (
-              <EmptyState
-                icon={FileText}
-                title={search ? 'No matching invoices' : 'No invoices yet'}
-                action={!search && (
-                  <button onClick={openNew}
-                    className="text-xs font-semibold text-indigo-600 hover:text-indigo-700">
-                    Create one →
-                  </button>
-                )}
-              />
-            ) : filtered.map((inv, idx) => (
-              <InvoiceRow
-                key={inv.id}
-                inv={inv}
-                isSelected={selected?.id === inv.id}
-                isLast={idx === filtered.length - 1}
-                clientName={clientName}
-                openEdit={openEdit}
-                openSend={openSend}
-                markPaid={markPaid}
-                markOverdue={markOverdue}
-                navigate={navigate}
-              />
-            ))}
-          </div>
+              <div className="overflow-hidden rounded-xl border border-hairline bg-panel">
+                {filtered.length === 0 ? (
+                  <EmptyState
+                    icon={FileText}
+                    title={search ? 'No matching invoices' : 'No invoices yet'}
+                    description={search
+                      ? 'Try a different client name or invoice number.'
+                      : 'Invoices you create or send will show up here.'}
+                    action={!search && (
+                      <button onClick={openNew}
+                        className="text-xs font-semibold text-indigo-600 hover:text-indigo-700">
+                        Create one →
+                      </button>
+                    )}
+                  />
+                ) : filtered.map((inv, idx) => (
+                  <InvoiceRow
+                    key={inv.id}
+                    inv={inv}
+                    isSelected={selected?.id === inv.id}
+                    isLast={idx === filtered.length - 1}
+                    clientName={clientName}
+                    openEdit={openEdit}
+                    openSend={openSend}
+                    markPaid={markPaid}
+                    markOverdue={markOverdue}
+                    navigate={navigate}
+                  />
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       </div>
 

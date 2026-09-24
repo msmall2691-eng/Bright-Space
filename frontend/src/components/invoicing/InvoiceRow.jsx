@@ -55,8 +55,8 @@ export function InvoiceRow({
         </div>
       </div>
 
-      {/* Amount */}
-      <div className="text-sm font-medium text-ink">${inv.total?.toFixed(2)}</div>
+      {/* Amount — right-aligned tabular figures so columns of money line up. */}
+      <div className="text-sm font-medium tabular-nums text-ink sm:text-right">${inv.total?.toFixed(2)}</div>
 
       {/* Due date */}
       <div>

@@ -1,13 +1,13 @@
 import os
 import secrets
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import or_
+from sqlalchemy import or_, func
 from sqlalchemy.orm import Session
 from pydantic import BaseModel, Field
 from typing import Optional, List, Literal
 from datetime import datetime, date, timezone
 
-from utils.dates import business_tz
+from utils.dates import business_tz, business_today, coerce_date
 
 from database.db import get_db
 from database.models import Invoice, Client, Message
@@ -135,6 +135,60 @@ def get_invoices(
     if status:
         q = q.filter(Invoice.status == status)
     return [invoice_to_dict(i) for i in q.order_by(Invoice.created_at.desc()).offset(offset).limit(limit).all()]
+
+
+@router.get("/summary", dependencies=[Depends(require_role("admin", "manager", "viewer"))])
+def invoice_summary(
+    db: Session = Depends(get_db),
+    org_id: int = Depends(current_org_id),
+):
+    """Accurate money headline across ALL of the org's invoices — independent of
+    the list endpoint's page (default 50) and status filter, so the KPI tiles and
+    AR aging never mislead. One aggregate query for the per-status totals + a
+    second over just the unpaid rows for the aging buckets (brightbase-economy:
+    this is the screen's one 'headline' need, distinct from the paginated list).
+    'outstanding' and the aging match the board's definition (sent + overdue)."""
+    scope = or_(Invoice.org_id == org_id, Invoice.org_id.is_(None))
+    rows = (
+        db.query(Invoice.status, func.coalesce(func.sum(Invoice.total), 0.0), func.count())
+        .filter(scope)
+        .group_by(Invoice.status)
+        .all()
+    )
+    by_status = {s: (float(tot or 0.0), int(cnt)) for s, tot, cnt in rows}
+    collected = by_status.get("paid", (0.0, 0))[0]
+    sent_tot = by_status.get("sent", (0.0, 0))[0]
+    overdue_tot, overdue_cnt = by_status.get("overdue", (0.0, 0))
+
+    # Aging: split the outstanding (sent + overdue) balance by days past due.
+    # due_date is a stored string, so bucket in Python over just the unpaid rows.
+    today = business_today()
+    aging = {"current": 0.0, "d1_30": 0.0, "d31_60": 0.0, "d60_plus": 0.0}
+    unpaid = (
+        db.query(Invoice.total, Invoice.due_date)
+        .filter(scope, Invoice.status.in_(("sent", "overdue")))
+        .all()
+    )
+    for total, due in unpaid:
+        amt = float(total or 0.0)
+        dd = coerce_date(due)
+        days = (today - dd).days if dd else 0
+        if days <= 0:
+            aging["current"] += amt
+        elif days <= 30:
+            aging["d1_30"] += amt
+        elif days <= 60:
+            aging["d31_60"] += amt
+        else:
+            aging["d60_plus"] += amt
+
+    return {
+        "collected": round(collected, 2),
+        "outstanding": round(sent_tot + overdue_tot, 2),
+        "overdue_total": round(overdue_tot, 2),
+        "overdue_count": overdue_cnt,
+        "aging": {k: round(v, 2) for k, v in aging.items()},
+    }
 
 
 def _business_month_start_utc() -> datetime:
