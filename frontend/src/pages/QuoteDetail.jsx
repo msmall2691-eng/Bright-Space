@@ -149,7 +149,10 @@ export default function QuoteDetail() {
       custom_message: '',
       subject: `Your Quote ${quote.quote_number} from ${company.company_name || 'us'}`,
       greeting: isPlaceholderName(name) ? '' : name.split(/\s+/)[0],
-      copy_to: company.company_email || '',
+      // Blank by default: a quote only BCCs someone when the sender deliberately
+      // types an address. Previously this pre-filled with the company email, which
+      // silently copied that mailbox on every quote (e.g. an office/alias address).
+      copy_to: '',
     })
     setSendOpen(true)
   }

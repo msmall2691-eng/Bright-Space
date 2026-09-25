@@ -416,9 +416,11 @@ export default function Quoting() {
       subject: `Your Quote ${q.quote_number} from ${companyName}`,
       // First name only — friendlier and matches the email/SMS greeting.
       greeting: isPlaceholderName(clientName) ? '' : clientName.split(/\s+/)[0],
-      // Owner copy: default to the business email so you always get a copy of
-      // what the customer received. Editable/clearable below.
-      copy_to: company.company_email || '',
+      // Owner copy: blank by default. A quote only BCCs someone when the sender
+      // deliberately types an address. This used to pre-fill with the company
+      // email, which silently copied that mailbox (e.g. an office/alias address)
+      // on every quote.
+      copy_to: '',
     })
     setSelected(q)
     setPanel('send')
