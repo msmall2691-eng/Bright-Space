@@ -60,13 +60,6 @@ DAILY_ACCOUNT_CAP = 200
 # did book twice; it is never worth sending five times.
 DAILY_PER_NUMBER_CAP = 3
 
-_DIGITS = re.compile(r"\D")
-# Premium-rate (900), carrier-specific (700) and personal-communications
-# (5XX) area codes — inside the numbering plan, never a customer's phone.
-_NON_GEOGRAPHIC_AREAS = frozenset({
-    "900", "700",
-    "500", "521", "522", "533", "544", "566", "577", "588",
-})
 # Name characters only: letters (any script), space, hyphen, apostrophe, dot.
 # Everything else — digits, colons, slashes — is how a URL or a shortcode gets
 # into a message that is otherwise fixed text.
@@ -76,37 +69,15 @@ _NOT_NAME = re.compile(r"[^\w \-'.]", re.UNICODE)
 def nanp_number(raw: Optional[str]) -> Optional[str]:
     """`raw` as +1XXXXXXXXXX, or None if it is not a plausible NANP number.
 
-    Structural validation, not just length: a NANP area code and exchange both
-    begin 2-9, and N11 area codes (411, 911) are service codes. Everything
-    outside the plan — every other country, every premium short code — returns
-    None and is never dialled. That is the property that makes toll fraud
-    impossible here rather than merely expensive.
+    The implementation moved to `utils.phone.nanp_e164` so that
+    `integrations/twilio_client.py` can apply the same rule at the one place
+    every outbound SMS funnels through — an integration importing a service
+    would be a layering inversion. This alias stays because it is the name the
+    booking path and its tests use, and because WHERE the rule lives is not
+    worth a rename across call sites.
     """
-    if not raw:
-        return None
-    s = str(raw).strip()
-    digits = _DIGITS.sub("", s)
-    # An explicit non-+1 country code is a foreign number even at 11+ digits.
-    if s.startswith("+") and not digits.startswith("1"):
-        return None
-    if len(digits) == 11 and digits.startswith("1"):
-        digits = digits[1:]
-    if len(digits) != 10:
-        return None
-    area, exch = digits[:3], digits[3:6]
-    if area[0] in "01" or exch[0] in "01":
-        return None
-    if area[1:] == "11":          # 211/311/411/611/911 and friends
-        return None
-    # Non-geographic NANP ranges, which are inside the plan and still the
-    # expensive ones: 900 is premium-rate billed to the CALLER's carrier and
-    # 500/521-followers are personal-communications numbers that forward
-    # anywhere, both long-standing toll-fraud destinations. 700 is
-    # carrier-specific and not a customer's phone. A cleaning customer in
-    # Maine has none of these.
-    if area in _NON_GEOGRAPHIC_AREAS or exch == "976":
-        return None
-    return f"+1{digits}"
+    from utils.phone import nanp_e164
+    return nanp_e164(raw)
 
 
 def safe_first_name(raw: Optional[str]) -> str:
