@@ -887,7 +887,7 @@ def _send_quote_sms(db, quote, client, body, quote_link) -> tuple:
     """Text the customer the public accept-link. Same (result, errors) contract
     and best-effort logging as _send_quote_email. Extracted from send_quote."""
     to_phone = (body.phone or client.phone or "").strip()
-    from utils.phone import is_deliverable_sms_number, normalize_e164
+    from utils.phone import is_deliverable_sms_number
     if not to_phone:
         return "no phone number on file", ["no phone number"]
     if not is_deliverable_sms_number(to_phone):
@@ -905,7 +905,10 @@ def _send_quote_sms(db, quote, client, body, quote_link) -> tuple:
             quote=quote, client=client, company_name=company_name,
             quote_link=quote_link, custom_message=body.custom_message,
         )
-        sms_result = send_sms(to=(normalize_e164(to_phone) or to_phone), body=msg)
+        # No `or to_phone` fallback: "if we can't normalise it, send it raw"
+        # is how the malformed numbers got to Twilio in the first place.
+        # send_sms validates and normalises the destination itself now.
+        sms_result = send_sms(to=to_phone, body=msg)
         _log_integration(db, entity_type="quote", entity_id=quote.id, org_id=quote.org_id, provider="sms",
                          action="send", status="ok", external_id=sms_result.get("sid"),
                          recipient=to_phone, commit=False)
