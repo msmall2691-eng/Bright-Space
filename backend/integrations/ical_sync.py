@@ -1020,6 +1020,25 @@ def sync_property(db: Session, prop: Property, only_ical_id: int = None,
     ``allow_unchanged_skip``: passed through to the per-feed fetch; only the
     background tick sets True (economy audit H5) — manual syncs stay full.
     """
+    # scheduling-invariants: the iCal feed is an INBOX — it must never promote
+    # bookings into canonical Jobs (or invite the customer via the GCal
+    # projection) for a property or client that has been taken out of service.
+    # The hourly tick already filters Property.active, but sync_property is the
+    # shared entry point for "Sync now", per-feed retry and the GCal backfill
+    # too, so the gate lives here to cover every caller. It also closes a
+    # reported bug: setting a client to status="inactive" (a sales sub-stage,
+    # NOT an archive) left its STR feed silently generating turnovers and
+    # emailing the customer GCal invites. Archiving (property or client) or
+    # marking the client inactive stops the feed; unarchiving, or setting the
+    # client active again, resumes it.
+    if not prop.active:
+        return {"skipped": True, "reason": "property_inactive", "property_id": prop.id}
+    if prop.client_id:
+        _client = db.query(Client).filter_by(id=prop.client_id).first()
+        if _client is not None and (_client.archived_at is not None
+                                    or _client.status == "inactive"):
+            return {"skipped": True, "reason": "client_inactive", "property_id": prop.id}
+
     if not prop.property_icals:
         return {"error": "No iCal URLs configured for this property"}
 

@@ -353,6 +353,28 @@ export default function ClientProfile() {
   const openEditProp = (p) => { setPropForm({ ...p }); setEditingProp(p); setShowIcalForm(false); setIcalForm(EMPTY_ICAL); setShowPropForm(true) }
 
   const save = async () => {
+    // Marking a client "Inactive" is a sales sub-stage only — it does NOT stop
+    // their short-term-rental iCal feed from creating turnover jobs or emailing
+    // the customer Google Calendar invites. "Archive client" is the action that
+    // stops the feed. If we're flipping to Inactive while a property still has a
+    // live feed, spell that out so the two aren't confused (the "Spin Drift" bug,
+    // where an inactivated client kept generating turnovers + calendar invites).
+    const goingInactive = form.status === 'inactive' && client?.status !== 'inactive'
+    const hasLiveFeed = (properties || []).some(
+      p => p.active && (p.ical_health === 'healthy' || p.ical_health === 'stale'))
+    if (goingInactive && hasLiveFeed) {
+      const ok = await confirmDialog(
+        `Marking this client Inactive is just a label — it will NOT stop their ` +
+        `short-term-rental calendar from creating turnover jobs or sending the ` +
+        `customer Google Calendar invites.\n\n` +
+        `To actually stop the feed — cancel upcoming turnovers, take them off ` +
+        `Google Calendar, and keep them from coming back — use "Archive client" ` +
+        `instead (the lifecycle card lower on this tab).\n\n` +
+        `Save as Inactive anyway?`,
+        { title: 'Inactive won’t stop the calendar', confirmLabel: 'Save as Inactive' }
+      )
+      if (!ok) return
+    }
     setSaving(true)
     try {
       const payload = { ...form }
