@@ -27,7 +27,21 @@ export function useClientForm({ setSelected, loadPhones, resetPhones }) {
   useEffect(() => { setDupes([]) }, [form.first_name, form.last_name, form.phone, form.email])
 
   const openNew = () => {
-    setForm(EMPTY); setSelected(null); resetPhones(); setDupes([])
+    // Create-only extras (underscore-prefixed so useClientMutations strips them
+    // from the client POST and consumes them itself): buffered extra phone
+    // numbers, and a first-property block so a client + their property (+ an STR
+    // iCal feed) can be added in one flow instead of three screens. New clients
+    // default to Active — a manually added client is a customer, not a lead.
+    setForm({
+      ...EMPTY,
+      status: 'active',
+      _extraPhones: [],
+      _addProperty: true,
+      _propertyType: 'residential',
+      _icalSource: 'airbnb',
+      _icalUrl: '',
+    })
+    setSelected(null); resetPhones(); setDupes([])
     setShowBilling(false); setShowForm(true)
   }
 
