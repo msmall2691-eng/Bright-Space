@@ -62,14 +62,58 @@ export function useClientMutations({
           if (res?.duplicates?.length) { setDupes(res.duplicates); setSaving(false); return }
         }
       }
-      const url = selected
-        ? `/api/clients/${selected.id}`
-        // POST bypasses the server-side dedup guard when the operator has
-        // already reviewed the matches on this create attempt (dupes.length > 0).
-        // Without force the server 409s on a duplicate hit — that path is what
-        // catches webhooks / API callers that skip check-duplicate.
-        : `/api/clients${dupes.length ? '?force=true' : ''}`
-      selected ? await patch(url, form) : await post(url, form)
+      if (selected) {
+        await patch(`/api/clients/${selected.id}`, form)
+      } else {
+        // Create flow: one submit creates the client, then (best-effort) its
+        // extra phone numbers and a first property + STR iCal feed, so the
+        // operator isn't bounced across three screens. The client POST is the
+        // only hard requirement; the follow-ups are non-fatal so a hiccup on
+        // one never loses the client that was just created.
+        //
+        // ?force=true bypasses the server-side dedup guard once the operator has
+        // reviewed the matches on this attempt (dupes.length > 0). Underscore-
+        // prefixed keys are create-only UI state and must not reach ClientCreate.
+        const clientPayload = Object.fromEntries(
+          Object.entries(form).filter(([k]) => !k.startsWith('_')))
+        const created = await post(`/api/clients${dupes.length ? '?force=true' : ''}`, clientPayload)
+        const cid = created?.id
+
+        if (cid && Array.isArray(form._extraPhones)) {
+          for (const ph of form._extraPhones) {
+            const num = (ph?.phone || '').trim()
+            if (!num) continue
+            try { await post(`/api/clients/${cid}/phones`, { phone: num, phone_type: ph.phone_type || 'mobile' }) }
+            catch (err) { console.error('[Clients] extra phone add failed', err) }
+          }
+        }
+
+        const addr = (form.address || '').trim()
+        if (cid && form._addProperty && addr) {
+          try {
+            const prop = await post('/api/properties', {
+              client_id: cid,
+              name: addr,
+              address: addr,
+              city: form.city || null,
+              state: form.state || null,
+              zip_code: form.zip_code || null,
+              property_type: form._propertyType || 'residential',
+            })
+            const icalUrl = (form._icalUrl || '').trim()
+            if (prop?.id && form._propertyType === 'str' && icalUrl) {
+              try { await post(`/api/properties/${prop.id}/icals`, { url: icalUrl, source: form._icalSource || 'airbnb' }) }
+              catch (err) {
+                console.error('[Clients] iCal feed add failed', err)
+                toast.error('Client + property added, but the calendar feed didn’t save — add it from the property.')
+              }
+            }
+          } catch (err) {
+            console.error('[Clients] property create failed', err)
+            toast.error('Client added, but the property didn’t save — add it from the client page.')
+          }
+        }
+      }
       await load(); setShowForm(false); setSelected(null); setForm(EMPTY); resetPhones(); setDupes([])
     } catch (e) {
       // Server-side dedup 409 — the client-side check missed something (a
