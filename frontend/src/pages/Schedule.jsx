@@ -496,7 +496,7 @@ export default function Schedule() {
   // no cached data yet.
 
   return (
-    <div className="flex flex-col h-full bg-bg">
+    <div className="flex flex-col h-full overflow-y-auto bg-bg">
       {/* Schedule / Recurring / Calendar sync. This page has no PageHeader
           (the toolbar below is its header), so the strip is its own slim row
           above it — kept to ~30px because this page is calendar-first. */}
@@ -580,6 +580,14 @@ export default function Schedule() {
           strip stay live during initial load — audit §12. Once visits
           arrive (even an empty week), the real branch takes over so
           filters/empty-states get to render. */}
+      {/* Calendar region. `flex-1` fills the viewport on a normal window (each
+          view keeps its own internal scroll), but `min-h-[420px]` guarantees the
+          calendar a usable height even when the toolbar + command bar are tall
+          (many "needs a date" jobs, a narrow ~940px window). Combined with the
+          root's `overflow-y-auto` + the shrink-0 header rows, that means the
+          WHOLE PAGE scrolls as a fallback instead of the calendar being squeezed
+          to nothing — the "can't scroll / can't use Schedule" bug. */}
+      <div className="flex-1 flex flex-col min-h-[420px]">
       {loading && (visits?.length ?? 0) === 0 ? (
         <ScheduleSkeleton viewMode={effectiveView} />
       ) : effectiveView === 'agenda' ? (
@@ -706,6 +714,7 @@ export default function Schedule() {
            date-nav is hidden for this view. */
         <GoogleCalendarView reloadKey={calRefresh} />
       ) : null /* VALID_VIEWS is fully covered above; no fallback branch needed */}
+      </div>
 
       {/* Visit Details Drawer */}
       <VisitDetailsDrawer
