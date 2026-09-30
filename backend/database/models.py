@@ -725,9 +725,19 @@ class Job(Base):
     custom_fields = Column(JSON, default=dict)
     dispatched = Column(Boolean, default=False, nullable=False)
     # Crew app Phase 3: the office flips this to put the job "up for grabs" on
-    # every cleaner's Schedule tab (owner decision #2: ONLY office-marked jobs
-    # are claimable — an unassigned job is not automatically open). The first
-    # successful claim adds the claimer to cleaner_ids and flips this back off.
+    # every cleaner's Schedule tab. The first successful claim adds the claimer
+    # to cleaner_ids and flips this back off.
+    #
+    # Owner decision #2 (original): ONLY office-marked jobs are claimable — an
+    # unassigned job is not automatically open. NARROWED by the owner in writing
+    # (Sept 2026) FOR RECURRING WORK: an UNASSIGNED RECURRING occurrence (one
+    # with recurring_schedule_id, cleaner_ids empty, not a route job) is now
+    # auto-posted here at generation (modules/recurring/router.py) and backfilled
+    # for existing rows (migration 121), so a repeating visit with no crew — or a
+    # date its regular can't cover — reaches the bench without the office posting
+    # each one. It stays an offer: the sub requests, the office approves. The
+    # rule still holds for one-off and turnover jobs, which the office opens by
+    # hand (turnovers via a property's standing cleaner, migration 120).
     open_for_claims = Column(Boolean, default=False, nullable=False)
     # Marketplace (migration 117): limit WHO among the cleared bench sees this
     # open offer. A list of cleaner_ids; NULL or [] means every cleared sub sees
