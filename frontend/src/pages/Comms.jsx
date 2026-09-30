@@ -26,7 +26,7 @@ import {
   MessageCircle, PenLine,
 } from 'lucide-react'
 import PageHeader from '../components/ui/PageHeader'
-import { post } from '../api'
+import { get, post } from '../api'
 import { dayLabel, contactDisplay, firstNameOf, apptReminderText } from '../components/comms/utils'
 import { DaySeparator } from '../components/comms/primitives'
 import { MessageBubble } from '../components/comms/MessageBubble'
@@ -170,11 +170,18 @@ export default function Comms() {
     detail, loadDetail, loadList, loadSummary,
   })
 
-  const sendReply = async () => {
+  // Teammates who can be @mentioned in an internal note (office + crew/subs).
+  // Fetched once; the composer filters this list as you type @.
+  const [mentionables, setMentionables] = useState([])
+  useEffect(() => {
+    get('/api/comms/assignees').then(rows => setMentionables(rows || [])).catch(() => {})
+  }, [])
+
+  const sendReply = async (mentions) => {
     if (!reply.trim() || !detail) return
     setSending(true); setFlash(null)
     try {
-      await sendReplyOrNote({ body: reply, subject: replySubject, isNote: noteMode })
+      await sendReplyOrNote({ body: reply, subject: replySubject, isNote: noteMode, mentions })
       setReply(''); setReplySubject('')
       setFlash({ ok: true, msg: noteMode ? 'Note saved' : 'Sent!' })
     } catch (e) { setFlash({ ok: false, msg: String(e.message || e) }) }
@@ -474,6 +481,7 @@ export default function Comms() {
               noteMode={noteMode} setNoteMode={setNoteMode}
               sending={sending}
               flash={flash}
+              mentionables={mentionables}
               onSend={sendReply}
               onDraftAI={draftWithAI}
               draftingAI={draftingAI}

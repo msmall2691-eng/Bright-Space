@@ -12,6 +12,7 @@ const OFFICE_CATEGORY_LABELS = {
   messages: 'Client messages',
   quotes: 'Quote activity',
   crew: 'Crew activity',
+  mentions: 'When I’m @mentioned',
 }
 
 /** Which event categories reach this account at all — account-wide, so it's
