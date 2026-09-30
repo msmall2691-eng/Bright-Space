@@ -361,6 +361,21 @@ class Property(Base):
     default_duration_hours = Column(Float, default=3.0)  # turnover duration
     default_crew_size = Column(Integer, nullable=True)    # default crew size for jobs
 
+    # The one cleaner the office has designated to do this property's turnovers
+    # (migration 120). A cleaner_id (same String id space as User.cleaner_id,
+    # Job.cleaner_ids and Route.owner_cleaner_id), NULL = none designated.
+    #
+    # This is NOT an assignment: everyone on the book is a subcontractor now
+    # (see brightbase-marketplace), and a sub is offered work, never assigned
+    # it. So a generated turnover for a property with a standing cleaner is
+    # posted as a TARGETED OFFER only that cleaner sees (open_for_claims +
+    # offer_audience=[this id]); they still tap to accept and the office still
+    # approves. It lets a cleaner "own" a rental — see all its turnovers grouped
+    # in their My Properties view and claim them in one tap — without crossing
+    # the offered-never-assigned line (Rule 0). Access details stay assigned-
+    # only: they surface only once the turnover is actually theirs.
+    standing_cleaner_id = Column(String, nullable=True, index=True)
+
     access_notes = Column(Text, nullable=True)      # "Side door, lockbox 4251"
     parking_notes = Column(Text, nullable=True)     # Parking information
     # Guest WiFi (migration 090): on crew job cards AND in the offline cache,

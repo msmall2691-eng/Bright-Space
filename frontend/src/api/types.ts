@@ -725,6 +725,72 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/clients/{client_id}/archive-preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Client Archive Preview
+         * @description Counts of what archiving this client will do — the confirm shows these
+         *     ('this will cancel N upcoming visits…') before the operator commits.
+         */
+        get: operations["client_archive_preview_api_clients__client_id__archive_preview_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/clients/{client_id}/archive": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Archive Client Endpoint
+         * @description Archive a client: hide them from active workflows and stop their work
+         *     (recurring off, upcoming visits cancelled, future turnover bookings
+         *     dismissed, open offers closed, open quotes archived) while keeping all
+         *     history and invoices intact. Reversible via unarchive.
+         */
+        post: operations["archive_client_endpoint_api_clients__client_id__archive_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/clients/{client_id}/unarchive": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Unarchive Client Endpoint
+         * @description Bring an archived client back into active workflows. Restores the client
+         *     and their properties and resumes the booking feed; it does NOT resurrect
+         *     cancelled visits or recurring series (a human re-adds those).
+         */
+        post: operations["unarchive_client_endpoint_api_clients__client_id__unarchive_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/clients/{client_id}/phones": {
         parameters: {
             query?: never;
@@ -1755,6 +1821,34 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/jobs/purge-cancelled-turnovers": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Purge Cancelled Turnovers Endpoint
+         * @description Remove cancelled STR-turnover *ghosts* — the piles of cancelled duplicate
+         *     turnovers a flapping iCal feed leaves stacked on one date.
+         *
+         *     Pass ?dry_run=true to preview the count (by property) without deleting.
+         *     `max_delete` caps one call so it finishes inside the client timeout even
+         *     with thousands of ghosts; the caller loops until the response's `remaining`
+         *     is 0. Human-confirmed cleanup, scoped to this org (MT-2); only ever touches
+         *     cancelled str_turnover rows, and never one that carries an invoice. See
+         *     services/turnover_cleanup.py for the safety rails.
+         */
+        post: operations["purge_cancelled_turnovers_endpoint_api_jobs_purge_cancelled_turnovers_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/jobs/bulk-reschedule": {
         parameters: {
             query?: never;
@@ -2454,6 +2548,31 @@ export interface paths {
         put?: never;
         /** Create Invoice */
         post: operations["create_invoice_api_invoices_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/invoices/summary": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Invoice Summary
+         * @description Accurate money headline across ALL of the org's invoices — independent of
+         *     the list endpoint's page (default 50) and status filter, so the KPI tiles and
+         *     AR aging never mislead. One aggregate query for the per-status totals + a
+         *     second over just the unpaid rows for the aging buckets (brightbase-economy:
+         *     this is the screen's one 'headline' need, distinct from the paginated list).
+         *     'outstanding' and the aging match the board's definition (sent + overdue).
+         */
+        get: operations["invoice_summary_api_invoices_summary_get"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -3330,7 +3449,17 @@ export interface paths {
         get: operations["get_property_api_properties__property_id__get"];
         put?: never;
         post?: never;
-        /** Delete Property */
+        /**
+         * Delete Property
+         * @description Remove a property. Default is ARCHIVE (soft + reversible): the property
+         *     drops out of active lists and its future work stops (recurring off, upcoming
+         *     visits cancelled, future turnover bookings dismissed) while history stays.
+         *
+         *     `?permanent=true` hard-deletes the property and its iCal feeds/bookings — but
+         *     only when it has NO linked jobs, so job history is never destroyed (jobs
+         *     require a property, so a property with jobs must be archived, not deleted).
+         *     A property with jobs 409s with the count.
+         */
         delete: operations["delete_property_api_properties__property_id__delete"];
         options?: never;
         head?: never;
@@ -3488,6 +3617,57 @@ export interface paths {
         get: operations["ical_preview_api_properties__property_id__ical_preview_get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/properties/{property_id}/archive-preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Property Archive Preview */
+        get: operations["property_archive_preview_api_properties__property_id__archive_preview_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/properties/{property_id}/archive": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Archive Property Endpoint */
+        post: operations["archive_property_endpoint_api_properties__property_id__archive_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/properties/{property_id}/unarchive": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Unarchive Property Endpoint */
+        post: operations["unarchive_property_endpoint_api_properties__property_id__unarchive_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -7025,6 +7205,42 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/crew/my-properties": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * My Properties
+         * @description The rentals the office designated THIS cleaner to do — their turnovers
+         *     grouped by house (migration 120). "I gave one of my cleaners an Airbnb, and
+         *     they can see all the turnovers that come in for it, organized."
+         *
+         *     A property lists here when its standing_cleaner_id is the caller's crew ID.
+         *     The house IDENTITY is shown — they're the designated cleaner, not the
+         *     anonymous bench, so the address the offer board hides is exactly what this
+         *     view is for. But it stays an OFFER until accepted: a turnover they haven't
+         *     taken shows a claim affordance, never a work order. ACCESS DETAILS
+         *     deliberately do NOT ride this overview at all (schema-guardian §5,
+         *     BB-SEC-08…12) — gate codes and WiFi live on the day-of job card (my-day),
+         *     served only for a turnover that is already theirs. This is a schedule, not
+         *     a key ring.
+         *
+         *     One query for the houses, one for their upcoming turnovers, one for the
+         *     caller's own claim requests — three round trips total, not one per house
+         *     (brightbase-economy: this rides rural cell data).
+         */
+        get: operations["my_properties_api_crew_my_properties_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/crew/jobs/{job_id}/claim": {
         parameters: {
             query?: never;
@@ -8339,6 +8555,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/crew/preview/{user_id}/my-properties": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Preview My Properties
+         * @description The rentals this sub is the standing cleaner for (My Properties).
+         */
+        get: operations["preview_my_properties_api_crew_preview__user_id__my_properties_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/crew/preview/{user_id}/schedule-month": {
         parameters: {
             query?: never;
@@ -9601,6 +9837,8 @@ export interface components {
             body: string;
             /** Author */
             author?: string | null;
+            /** Mentions */
+            mentions?: number[] | null;
         };
         /** InviteUser */
         InviteUser: {
@@ -10153,6 +10391,8 @@ export interface components {
             turnover_rate?: number | null;
             /** Default Price */
             default_price?: number | null;
+            /** Standing Cleaner Id */
+            standing_cleaner_id?: string | null;
             /** Bedrooms */
             bedrooms?: number | null;
             /** Bathrooms */
@@ -10252,6 +10492,8 @@ export interface components {
             turnover_rate?: number | null;
             /** Default Price */
             default_price?: number | null;
+            /** Standing Cleaner Id */
+            standing_cleaner_id?: string | null;
             /** Bedrooms */
             bedrooms?: number | null;
             /** Bathrooms */
@@ -11820,8 +12062,10 @@ export interface operations {
                 status?: string | null;
                 search?: string | null;
                 include_inactive?: boolean;
+                include_archived?: boolean;
                 limit?: number;
                 offset?: number;
+                with_stats?: boolean;
             };
             header?: never;
             path?: never;
@@ -12177,6 +12421,99 @@ export interface operations {
                 "application/json": components["schemas"]["ClientMergeRequest"];
             };
         };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    client_archive_preview_api_clients__client_id__archive_preview_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                client_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    archive_client_endpoint_api_clients__client_id__archive_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                client_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    unarchive_client_endpoint_api_clients__client_id__unarchive_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                client_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
         responses: {
             /** @description Successful Response */
             200: {
@@ -13830,6 +14167,39 @@ export interface operations {
             };
         };
     };
+    purge_cancelled_turnovers_endpoint_api_jobs_purge_cancelled_turnovers_post: {
+        parameters: {
+            query?: {
+                dry_run?: boolean;
+                property_id?: number | null;
+                max_delete?: number | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     bulk_reschedule_api_jobs_bulk_reschedule_post: {
         parameters: {
             query?: never;
@@ -14801,6 +15171,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    invoice_summary_api_invoices_summary_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
                 };
             };
         };
@@ -16042,7 +16432,9 @@ export interface operations {
     };
     delete_property_api_properties__property_id__delete: {
         parameters: {
-            query?: never;
+            query?: {
+                permanent?: boolean;
+            };
             header?: never;
             path: {
                 property_id: number;
@@ -16273,6 +16665,99 @@ export interface operations {
         };
     };
     ical_preview_api_properties__property_id__ical_preview_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                property_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    property_archive_preview_api_properties__property_id__archive_preview_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                property_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    archive_property_endpoint_api_properties__property_id__archive_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                property_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    unarchive_property_endpoint_api_properties__property_id__unarchive_post: {
         parameters: {
             query?: never;
             header?: never;
@@ -21552,6 +22037,26 @@ export interface operations {
             };
         };
     };
+    my_properties_api_crew_my_properties_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
     claim_job_api_crew_jobs__job_id__claim_post: {
         parameters: {
             query?: never;
@@ -23549,6 +24054,37 @@ export interface operations {
         };
     };
     preview_my_routes_api_crew_preview__user_id__my_routes_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                user_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    preview_my_properties_api_crew_preview__user_id__my_properties_get: {
         parameters: {
             query?: never;
             header?: never;

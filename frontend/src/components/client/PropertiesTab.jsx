@@ -8,6 +8,7 @@ import {
 } from './constants'
 import PropertyPhoto from '../PropertyPhoto'
 import RentalSummary from './RentalSummary'
+import StandingCleanerField from './StandingCleanerField'
 
 export default function PropertiesTab({
   properties, navigate, setJobModal,
@@ -146,6 +147,13 @@ export default function PropertiesTab({
                       placeholder="What we charge here"
                       className={`${INPUT_CLASS} pl-7`} />
                   </div>
+                </div>
+
+                <div className="mt-3">
+                  <StandingCleanerField
+                    value={propForm.standing_cleaner_id}
+                    onChange={cid => setPropForm(f => ({ ...f, standing_cleaner_id: cid }))}
+                    className={INPUT_CLASS} />
                 </div>
               </div>
 
