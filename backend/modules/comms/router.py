@@ -115,6 +115,12 @@ class SendReplyRequest(BaseModel):
 class InternalNoteRequest(BaseModel):
     body: str
     author: Optional[str] = None
+    # @mentions: user ids the composer tagged in this note. The office writes an
+    # internal note like "@Sarah can you cover this?"; each tagged teammate
+    # (office, crew, or sub) is notified through their normal channel (push,
+    # SMS fallback) and can mute the "mentions" category. The note itself stays
+    # internal — the customer never sees it.
+    mentions: Optional[List[int]] = None
 
 
 class AssignRequest(BaseModel):
@@ -721,6 +727,49 @@ def add_internal_note(conv_id: int, data: InternalNoteRequest, db: Session = Dep
     db.add(msg)
     db.commit()
     db.refresh(msg)
+
+    # @mentions: notify each tagged teammate (best-effort, never blocks the note).
+    # push first, SMS fallback, honouring the "mentions" mute — same one-person
+    # policy the crew marketplace uses. Only real, active, non-client users; the
+    # author is skipped so you don't ping yourself. The note body stays internal;
+    # the notification carries just the author + a short excerpt for context.
+    mention_ids = [int(m) for m in (data.mentions or []) if m is not None]
+    if mention_ids:
+        try:
+            from database.models import User
+            from services.crew_notify import notify_user_or_sms
+            targets = (db.query(User)
+                       .filter(User.id.in_(mention_ids),
+                               User.role != "client",
+                               User.status != "disabled")
+                       .all())
+            author_name = "A teammate"
+            if data.author:
+                if str(data.author).isdigit():
+                    au = db.query(User).filter(User.id == int(data.author)).first()
+                    if au:
+                        author_name = au.full_name or au.email or author_name
+                else:
+                    author_name = str(data.author)  # already a display name / username
+            client = db.query(Client).filter(Client.id == conv.client_id).first() if conv.client_id else None
+            who = (client.name.split()[0] if client and client.name else None)
+            excerpt = (data.body or "").strip().replace("\n", " ")
+            if len(excerpt) > 120:
+                excerpt = excerpt[:117] + "…"
+            title = f"{author_name} mentioned you"
+            body = f"{author_name}{f' · {who}' if who else ''}: {excerpt}"
+            url = f"/comms?conversation={conv.id}"
+            for u in targets:
+                if data.author and str(u.id) == str(data.author):
+                    continue  # don't notify yourself
+                try:
+                    notify_user_or_sms(u.id, title, body, category="mentions",
+                                       url=url, tag=f"mention:{msg.id}")
+                except Exception:
+                    logger.warning("[comms] mention notify failed for user %s", u.id, exc_info=True)
+        except Exception:
+            logger.warning("[comms] mention notify block failed", exc_info=True)
+
     return msg_to_dict(msg)
 
 
@@ -761,7 +810,7 @@ def list_assignees(db: Session = Depends(get_db)):
     rows = (db.query(User)
             .filter(User.role != "client", User.status != "disabled")
             .all())
-    out = [{"id": u.id, "name": u.full_name or u.email, "email": u.email} for u in rows]
+    out = [{"id": u.id, "name": u.full_name or u.email, "email": u.email, "role": u.role} for u in rows]
     out.sort(key=lambda r: (r["name"] or "").lower())
     return out
 
