@@ -1,3 +1,4 @@
+import logging
 import os
 import secrets
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -15,6 +16,8 @@ from modules.auth.router import require_role, current_org_id, resolve_org_id
 from utils.activity_logger import log_invoice_created, log_invoice_paid
 from ratelimit import rate_limit
 
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -493,11 +496,103 @@ def send_invoice(invoice_id: int, data: SendInvoiceRequest, db: Session = Depend
 # internal notes, custom_fields, or any other invoice. The token is a stored,
 # per-row credential (revocable one invoice at a time by nulling the column).
 #
-# Taking money (a Square Payments charge + a signature-verified webhook that
-# flips the invoice to paid) is the WRITE side and is intentionally NOT here
-# yet — it is gated on authorizing Square with a Payments scope. Until then the
-# page is a read-only invoice view with a clearly-labelled "pay online coming
-# soon" seam, and the office still records payments via `process_payment` below.
+# Taking money IS now here: `start_checkout` opens a hosted Stripe Checkout
+# session and a signature-verified webhook flips the invoice to paid. It is
+# STRIPE and not Square because the charge credits TMCC's own Stripe balance —
+# the same balance services/sub_payouts.StripeRail spends from when it pays the
+# bench, which previously started at zero and had to be funded by hand. See
+# integrations/stripe_payments.py for that reasoning in full.
+#
+# With no STRIPE_SECRET_KEY the page degrades to the old read-only "call/text
+# us" seam rather than a dead button — an integration nobody has finished
+# configuring must not present as a button the customer commits to and then
+# watches fail.
+
+def _online_payment_enabled() -> bool:
+    """Whether the public page should offer to take money."""
+    from integrations.stripe_payments import configured
+    return configured()
+
+
+def _amount_due(inv: Invoice) -> float:
+    """What is still owed on this invoice.
+
+    There are no partial payments in this schema — an invoice is open for its
+    full total or it is settled — so this is `total`, or zero once it is paid
+    or void. It is a named function rather than an inline `inv.total` so the
+    checkout path and the office path share ONE answer to "how much", and so
+    part-payment, if it is ever added, has one place to land.
+    """
+    if (inv.status or "") in ("paid", "void"):
+        return 0.0
+    return round(float(inv.total or 0), 2)
+
+
+def _record_payment(db: Session, inv: Invoice, *, from_addr: str = "",
+                    to_addr: str = "", body: Optional[str] = None,
+                    payment_intent_id: Optional[str] = None) -> dict:
+    """THE one place an invoice becomes paid. Idempotent.
+
+    Both ways money arrives funnel through here — the office writing down a
+    cheque (`process_payment`) and Stripe confirming a card or bank debit
+    (`record_checkout_payment`) — for the same reason
+    `services/claim_approval.py` is the single approve implementation: two
+    copies of "mark it paid" drift, and the half that drifts is the half that
+    writes the revenue figure.
+
+    BB-INV-03 lives here now. Recording a payment on an already-paid invoice
+    used to overwrite `paid_at` with a fresh now() — moving the real payment
+    date, so a cheque banked last month jumped into this month's revenue — and
+    wrote a SECOND "payment received" message, double-recording money that came
+    in once. A double-click did both; so does a webhook Stripe retries, which
+    it will. Recording a payment twice must change nothing.
+    """
+    already = (inv.status or "") == "paid"
+
+    # Fill the Stripe reference if we learned it, never replace one already
+    # recorded. An invoice paid by hand and later matched to a Stripe payment
+    # is worth stamping; a retry is not worth relabelling.
+    if payment_intent_id and not inv.stripe_payment_intent_id:
+        inv.stripe_payment_intent_id = payment_intent_id
+
+    if already:
+        # Heal a legacy paid row that never got a date, and NEVER move a date
+        # that is already there — that is the BB-INV-03 bug (a cheque banked
+        # last month jumping into this month's revenue).
+        if inv.paid_at is None:
+            inv.paid_at = datetime.now(timezone.utc)
+        db.commit()
+        return {"status": "success", "message": "Invoice already recorded as paid",
+                "invoice_id": inv.id, "already_paid": True}
+
+    inv.status = "paid"
+    # A GENUINE transition stamps now, unconditionally. An invoice that was
+    # paid, reopened to `sent`, and is being paid again carries a stale
+    # `paid_at`; the date of the payment being recorded is today's, not the old
+    # one. (Only setting this when it was NULL quietly backdated that case.)
+    inv.paid_at = datetime.now(timezone.utc)
+
+    # Create a payment message record
+    msg = Message(
+        client_id=inv.client_id,
+        channel="payment",
+        direction="inbound",
+        from_addr=from_addr,
+        to_addr=to_addr,
+        body=body or f"Payment received: ${inv.total}",
+        status="received",
+        org_id=inv.org_id,  # BB-MT-01
+    )
+    db.add(msg)
+    # Timeline: log the paid transition alongside the payment message. The
+    # already-paid case returned above, so this is always the first time.
+    log_invoice_paid(db, inv)
+    db.commit()
+
+    return {"status": "success",
+            "message": f"Payment of ${inv.total} received and recorded",
+            "invoice_id": inv.id}
+
 
 def _public_invoice_dict(inv: Invoice, db: Session) -> dict:
     """The MINIMAL customer-facing shape for /pay/{token}. Deliberately omits
@@ -522,10 +617,11 @@ def _public_invoice_dict(inv: Invoice, db: Session) -> dict:
         "notes": inv.notes,          # customer-facing invoice note (shown on the email too)
         "company_name": company_name,
         "company_phone": company_phone,
-        # The write path isn't built yet. The page reads this to show a
-        # "pay online is coming soon — reply/call to pay" state instead of a
-        # dead button. Flip to True when the Square charge endpoint ships.
-        "online_payment_enabled": False,
+        # Whether to show a pay button or the "call/text us" fallback. False
+        # when Stripe isn't configured, so an unfinished integration reads as
+        # "not available" rather than as a button that fails after the customer
+        # has decided to pay.
+        "online_payment_enabled": _online_payment_enabled(),
     }
 
 
@@ -557,47 +653,169 @@ def process_payment(invoice_id: int, data: dict, db: Session = Depends(get_db)):
     if not inv:
         raise HTTPException(status_code=404, detail="Invoice not found")
 
-    # BB-INV-03: idempotent. Recording a payment on an ALREADY-paid invoice used
-    # to overwrite paid_at with a fresh now() — moving the real payment date, so
-    # a cheque banked last month could jump into this month's revenue — and to
-    # write a SECOND "payment received" message, double-recording money that came
-    # in once. A double-click or a retry did both. Recording a payment twice must
-    # change nothing; the only thing worth doing is healing a paid invoice whose
-    # date was never set (legacy status=paid, paid_at NULL), without a duplicate
-    # message.
-    if inv.status == "paid":
-        if inv.paid_at is None:
-            inv.paid_at = datetime.now(timezone.utc)
-            db.commit()
-        return {
-            "status": "success",
-            "message": "Invoice already recorded as paid",
-            "invoice_id": invoice_id,
-            "already_paid": True,
-        }
+    # BB-INV-03 (idempotency) now lives in _record_payment, shared with the
+    # Stripe webhook so both paths cannot disagree about what "paid" does.
+    return _record_payment(db, inv,
+                           from_addr=data.get("email", "") or "",
+                           to_addr=data.get("phone", "") or "")
 
-    inv.status = "paid"
-    inv.paid_at = datetime.now(timezone.utc)
 
-    # Create a payment message record
-    msg = Message(
-        client_id=inv.client_id,
-        channel="payment",
-        direction="inbound",
-        from_addr=data.get("email", ""),
-        to_addr=data.get("phone", ""),
-        body=f"Payment received: ${inv.total}",
-        status="received",
-        org_id=inv.org_id,  # BB-MT-01
+# ── Online payment: hosted Stripe Checkout ───────────────────────────────────
+#
+# The write side of the public page. Two pieces, and the split is the point:
+# the browser can only ever OPEN a payment, and only a signature-verified
+# webhook can mark one paid. Nothing a customer can send to this app decides
+# that an invoice is settled.
+
+
+def _checkout_urls(token: str) -> tuple:
+    """Where Stripe sends the customer back to. Both land on the invoice's own
+    public page, which re-reads status from the server — so the "paid" the
+    customer sees after returning is the invoice's real state, not a claim
+    carried in the URL."""
+    from config import app_base_url
+    base = app_base_url().rstrip("/")
+    return (f"{base}/pay/{token}?paid=1", f"{base}/pay/{token}?cancelled=1")
+
+
+@router.post("/public/{token}/checkout",
+             dependencies=[Depends(rate_limit(20, 3600, "invoice_checkout"))])
+def start_checkout(token: str, db: Session = Depends(get_db)):
+    """Open (or re-open) the hosted payment page for one invoice.
+
+    PUBLIC: the unguessable token in the path is the credential, same as the
+    read endpoint above. It is a POST that reaches Stripe, so it is metered —
+    without a limit the token doubles as a free Stripe-session generator.
+
+    ONE LIVE SESSION PER INVOICE. Two tabs on the same invoice must not become
+    two payments, so an existing open session is handed back rather than a
+    second one minted. The cached `stripe_checkout_expires_at` is a fast
+    negative check — once it has passed, go straight to creating a new session
+    instead of asking Stripe about a session we know is dead
+    (brightbase-economy).
+
+    It refuses rather than guesses on anything unexpected: a draft isn't
+    collectable yet, a void invoice isn't owed, and a paid one is already
+    settled — each is a 409 with a sentence the customer can act on, not a
+    checkout for $0.
+    """
+    from integrations import stripe_payments as sp
+
+    inv = db.query(Invoice).filter(Invoice.public_token == token).first()
+    if not inv:
+        raise HTTPException(status_code=404, detail="Invoice not found")
+
+    if not sp.configured():
+        # 503, not 400: nothing is wrong with the request. The server isn't set
+        # up, and the page should fall back to "call/text us".
+        raise HTTPException(status_code=503,
+                            detail="Online payment isn't set up yet.")
+
+    status = (inv.status or "").lower()
+    if status == "paid":
+        raise HTTPException(status_code=409, detail="This invoice is already paid.")
+    if status == "void":
+        raise HTTPException(status_code=409, detail="This invoice was cancelled.")
+    if status == "draft":
+        raise HTTPException(status_code=409,
+                            detail="This invoice hasn't been sent yet.")
+
+    due = _amount_due(inv)
+    if due <= 0:
+        raise HTTPException(status_code=409, detail="There's nothing left to pay.")
+
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    if inv.stripe_checkout_session_id and inv.stripe_checkout_expires_at \
+            and inv.stripe_checkout_expires_at > now:
+        existing = sp.retrieve_session(inv.stripe_checkout_session_id)
+        # Only reuse a session Stripe still calls open AND still has a URL for.
+        # `None` here means the read failed, which is "unknown" — fall through
+        # and mint a fresh session rather than refuse to take the money.
+        if existing and existing.get("status") == "open" and existing.get("url"):
+            return {"url": existing["url"], "reused": True}
+
+    success_url, cancel_url = _checkout_urls(token)
+    res = sp.create_checkout_session(
+        amount_cents=sp.dollars_to_cents(due),
+        invoice_number=inv.invoice_number or f"#{inv.id}",
+        invoice_id=inv.id,
+        success_url=success_url,
+        cancel_url=cancel_url,
+        metadata={"brightbase_org_id": str(inv.org_id or "")},
     )
-    db.add(msg)
-    # Timeline: log the paid transition alongside the payment message. The
-    # already-paid case returned above, so this is always the first time.
-    log_invoice_paid(db, inv)
-    db.commit()
+    if not res["ok"]:
+        logger.warning("[stripe] checkout refused for invoice %s: %s",
+                       inv.id, res["error"])
+        raise HTTPException(status_code=502,
+                            detail="Couldn't open the payment page just now. "
+                                   "Please try again, or call us.")
 
-    return {
-        "status": "success",
-        "message": f"Payment of ${inv.total} received and recorded",
-        "invoice_id": invoice_id,
-    }
+    inv.stripe_checkout_session_id = res["id"]
+    inv.stripe_checkout_expires_at = res["expires_at"]
+    db.commit()
+    return {"url": res["url"], "reused": False}
+
+
+def record_checkout_payment(db: Session, session_obj: dict, *,
+                            event_type: str = "") -> dict:
+    """Apply a VERIFIED Stripe Checkout event to its invoice.
+
+    Called only from the webhook, after the signature has been checked. It is
+    not an endpoint: there is no route by which a browser can reach this.
+
+    PAYMENT_STATUS IS THE GATE, NOT THE EVENT NAME, and that distinction is
+    the whole correctness of the ACH path. `checkout.session.completed` fires
+    the moment the customer finishes the form — for a card that means the money
+    is captured, but for a bank debit it means a multi-day debit has been
+    *initiated*, and the session arrives with `payment_status: "unpaid"`.
+    Marking an invoice paid on the event name would book ACH money that has not
+    settled and can still fail, which is the worst kind of wrong number: the
+    revenue figure says collected and the bank disagrees. So the invoice flips
+    on `payment_status == "paid"` only — which is true immediately for a card,
+    and arrives later for a bank debit as
+    `checkout.session.async_payment_succeeded`.
+
+    Resolves the invoice from `client_reference_id` (what we sent, echoed back
+    on a signature-verified request), then falls back to the stored session id.
+    An unknown session is logged and ignored, not an error — the same Stripe
+    account can serve more than one thing.
+    """
+    sess_id = session_obj.get("id")
+    ref = session_obj.get("client_reference_id")
+    pi = session_obj.get("payment_intent")
+    pi = pi if isinstance(pi, str) else (pi or {}).get("id")
+
+    inv = None
+    if ref:
+        try:
+            inv = db.query(Invoice).filter(Invoice.id == int(ref)).first()
+        except (TypeError, ValueError):
+            inv = None
+    if inv is None and sess_id:
+        inv = (db.query(Invoice)
+               .filter(Invoice.stripe_checkout_session_id == sess_id).first())
+    if inv is None:
+        logger.info("[stripe] %s for an unknown invoice (session=%s, ref=%s)",
+                    event_type or "checkout event", sess_id, ref)
+        return {"ok": True, "ignored": True}
+
+    paid = (session_obj.get("payment_status") or "").lower() == "paid"
+    if not paid:
+        # Initiated, not settled. Record the handle so the money can be traced
+        # and the later async event matched, and leave the invoice alone.
+        if pi and not inv.stripe_payment_intent_id:
+            inv.stripe_payment_intent_id = pi
+            db.commit()
+        logger.info("[stripe] %s for invoice %s is not settled yet "
+                    "(payment_status=%s) — invoice left open",
+                    event_type or "checkout event", inv.id,
+                    session_obj.get("payment_status"))
+        return {"ok": True, "invoice_id": inv.id, "paid": False}
+
+    res = _record_payment(
+        db, inv,
+        body=f"Payment received: ${inv.total} (online, Stripe)",
+        payment_intent_id=pi,
+    )
+    return {"ok": True, "invoice_id": inv.id, "paid": True,
+            "already_paid": bool(res.get("already_paid"))}

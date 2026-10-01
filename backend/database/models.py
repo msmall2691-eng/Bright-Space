@@ -1622,6 +1622,23 @@ class Invoice(Base):
     dunning_stage = Column(Integer, nullable=False, default=0, server_default="0")
     dunning_last_sent_at = Column(DateTime(timezone=True), nullable=True)
 
+    # Online card/ACH payment via a hosted Stripe Checkout Session (migration 122).
+    # The session is minted on demand from the public /pay/{token} page and
+    # REUSED while it is still open, which is what keeps one invoice to one
+    # live session: two tabs on the same invoice must not become two payments.
+    # `expires_at` is the cached half of that decision, so deciding whether to
+    # reuse costs no Stripe call (brightbase-economy).
+    #
+    # Naive UTC, deliberately, matching `paid_at` on this same table rather than
+    # the tz-aware `dunning_*` fields above. It is only ever compared against
+    # "now", and a naive/aware mix is a TypeError at runtime on the path a
+    # customer is trying to pay through.
+    stripe_checkout_session_id = Column(String(128), nullable=True, index=True)
+    stripe_checkout_expires_at = Column(DateTime, nullable=True)
+    # The "which payment was that" answer, same job `external_ref` does for a
+    # payout. Written by the webhook, never by a client.
+    stripe_payment_intent_id = Column(String(128), nullable=True, index=True)
+
     client = relationship("Client", back_populates="invoices")
     opportunity = relationship("Opportunity", back_populates="invoices")
 

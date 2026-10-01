@@ -2725,6 +2725,42 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/invoices/public/{token}/checkout": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Start Checkout
+         * @description Open (or re-open) the hosted payment page for one invoice.
+         *
+         *     PUBLIC: the unguessable token in the path is the credential, same as the
+         *     read endpoint above. It is a POST that reaches Stripe, so it is metered —
+         *     without a limit the token doubles as a free Stripe-session generator.
+         *
+         *     ONE LIVE SESSION PER INVOICE. Two tabs on the same invoice must not become
+         *     two payments, so an existing open session is handed back rather than a
+         *     second one minted. The cached `stripe_checkout_expires_at` is a fast
+         *     negative check — once it has passed, go straight to creating a new session
+         *     instead of asking Stripe about a session we know is dead
+         *     (brightbase-economy).
+         *
+         *     It refuses rather than guesses on anything unexpected: a draft isn't
+         *     collectable yet, a void invoice isn't owed, and a paid one is already
+         *     settled — each is a 409 with a sentence the customer can act on, not a
+         *     checkout for $0.
+         */
+        post: operations["start_checkout_api_invoices_public__token__checkout_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/dispatch/employees": {
         parameters: {
             query?: never;
@@ -5437,7 +5473,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/settings/square-status": {
+    "/api/settings/stripe-status": {
         parameters: {
             query?: never;
             header?: never;
@@ -5445,56 +5481,24 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * Square Status
-         * @description Whether Square is wired up + a masked token hint, for the Settings card.
-         *     Also returns cached locations from the last successful /square/test so the
-         *     location picker survives reloads without re-hitting Square.
+         * Stripe Status
+         * @description Whether Stripe is wired up, for the Settings card.
+         *
+         *     READ-ONLY, and there is no matching POST on purpose. Stripe is configured
+         *     by environment variable (STRIPE_SECRET_KEY / STRIPE_WEBHOOK_SECRET), not by
+         *     an app_settings row, so there is nothing here for an operator to type —
+         *     which is also why the key never passes through the browser the way the old
+         *     Square access token did.
+         *
+         *     Reports the two halves separately because they fail differently: with a
+         *     secret key but no webhook secret, a customer can complete a payment and the
+         *     invoice will never be marked paid (the webhook handler refuses an event it
+         *     cannot verify, same posture as the Twilio webhook). That is the one
+         *     half-configured state worth naming on screen.
          */
-        get: operations["square_status_api_settings_square_status_get"];
+        get: operations["stripe_status_api_settings_stripe_status_get"];
         put?: never;
         post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/settings/square": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Save Square Settings
-         * @description Save (or clear) Square credentials. A masked token from the status
-         *     endpoint is ignored so re-saving without retyping doesn't wipe the token.
-         */
-        post: operations["save_square_settings_api_settings_square_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/settings/square/test": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Test Square
-         * @description Verify the Square token and return the account's locations (so the
-         *     operator can pick the right Location ID) + a team-member count.
-         */
-        post: operations["test_square_api_settings_square_test_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -11153,21 +11157,6 @@ export interface components {
             /** To */
             to?: string | null;
         };
-        /** SquareConfig */
-        SquareConfig: {
-            /** Access Token */
-            access_token?: string | null;
-            /** Location Id */
-            location_id?: string | null;
-            /** Environment */
-            environment?: string | null;
-            /** Job Residential */
-            job_residential?: string | null;
-            /** Job Rental */
-            job_rental?: string | null;
-            /** Job Weekend */
-            job_weekend?: string | null;
-        };
         /** StatusRequest */
         StatusRequest: {
             /** Status */
@@ -15457,6 +15446,37 @@ export interface operations {
             };
         };
     };
+    start_checkout_api_invoices_public__token__checkout_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                token: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     list_employees_api_dispatch_employees_get: {
         parameters: {
             query?: never;
@@ -19638,60 +19658,7 @@ export interface operations {
             };
         };
     };
-    square_status_api_settings_square_status_get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-        };
-    };
-    save_square_settings_api_settings_square_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["SquareConfig"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    test_square_api_settings_square_test_post: {
+    stripe_status_api_settings_stripe_status_get: {
         parameters: {
             query?: never;
             header?: never;

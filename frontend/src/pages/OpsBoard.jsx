@@ -978,7 +978,7 @@ export default function OpsBoard() {
         {/* Provenance footnote — mirrors the artifact's honesty about data sources. */}
         <p className="mt-3 text-[10.5px] leading-relaxed text-ink-3">
           Live from BrightBase — jobs, invoices, quotes, conversations and integration health.
-          Check-offs are saved on this device. Twilio balance and Square deposits aren't live yet.
+          Check-offs are saved on this device. Twilio balance isn't live yet.
         </p>
 
         <BoardAssistant open={assistantOpen} onClose={() => setAssistantOpen(false)}
