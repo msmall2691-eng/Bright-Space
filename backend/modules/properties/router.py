@@ -57,6 +57,10 @@ class PropertyCreate(BaseModel):
     # of turnover_rate above, which is what a cleaner is PAID. Seeds
     # Job.price on every visit created for this house (migration 110).
     default_price: Optional[float] = None
+    # The cleaner designated to do this property's turnovers (migration 120).
+    # A cleaner_id string; generated turnovers become a targeted offer only they
+    # see. Validated against the workspace's real cleaners in the route.
+    standing_cleaner_id: Optional[str] = None
     # Structured specs — pre-fillable from public property records via the
     # "look up specs" action, or entered by hand. NULL = unknown.
     bedrooms: Optional[int] = None
@@ -97,6 +101,9 @@ class PropertyUpdate(BaseModel):
     # of turnover_rate above, which is what a cleaner is PAID. Seeds
     # Job.price on every visit created for this house (migration 110).
     default_price: Optional[float] = None
+    # The cleaner designated to do this property's turnovers (migration 120).
+    # "" clears it. Validated against real cleaners in the route.
+    standing_cleaner_id: Optional[str] = None
     bedrooms: Optional[int] = None
     bathrooms: Optional[float] = None
     square_footage: Optional[int] = None
@@ -247,6 +254,7 @@ def prop_to_dict(p: Property, include_icals: bool = True, turnovers_next_30d: Op
         "hours_of_operation": getattr(p, 'hours_of_operation', None),
         "turnover_rate": getattr(p, 'turnover_rate', None),
         "default_price": getattr(p, 'default_price', None),
+        "standing_cleaner_id": getattr(p, 'standing_cleaner_id', None),
         "notes": p.notes,
         # Structured specs (enrichment Phase 1). Previously stored but never
         # surfaced — the columns existed since migration 025/056 yet the API
@@ -325,11 +333,37 @@ def get_properties(
     ]
 
 
+def _validate_standing_cleaner(db: Session, org_id: int, value):
+    """Normalize + validate a property's standing_cleaner_id. "" / whitespace →
+    None (clears it). A non-empty value must name a real cleaner in THIS
+    workspace — a User with role='cleaner' and that cleaner_id — so a typo or a
+    cross-tenant id can't silently point a property's turnovers at nobody (or
+    someone else's crew). Returns the normalized value or raises 422."""
+    if value is None:
+        return None
+    cid = str(value).strip()
+    if not cid:
+        return None
+    match = db.query(User).filter(
+        User.cleaner_id == cid,
+        User.role == "cleaner",
+        or_(User.org_id == org_id, User.org_id.is_(None)),  # MT-2 tenant scope
+    ).first()
+    if not match:
+        raise HTTPException(
+            status_code=422,
+            detail="That cleaner isn't in this workspace.",
+        )
+    return cid
+
+
 @router.post("", status_code=201, dependencies=[Depends(require_role("admin", "manager"))])
 def create_property(data: PropertyCreate, db: Session = Depends(get_db), org_id: int = Depends(current_org_id)):
     d = data.model_dump()
     if not d.get("address"):
         d["address"] = ""
+    if "standing_cleaner_id" in d:
+        d["standing_cleaner_id"] = _validate_standing_cleaner(db, org_id, d.get("standing_cleaner_id"))
     # Normalize/validate property_type BEFORE it reaches the DB: the schema
     # accepted any string, so a caller passing a JOB type (e.g. 'str_turnover'
     # from the Schedule Job modal) sailed through Pydantic and died on
@@ -492,6 +526,8 @@ def update_property(property_id: int, data: PropertyUpdate, db: Session = Depend
     # or cross-tenant id would set a dangling/leaking FK. A property always
     # belongs to a client, so an explicit null is rejected rather than orphaning
     # it further.
+    if "standing_cleaner_id" in fields:
+        fields["standing_cleaner_id"] = _validate_standing_cleaner(db, org_id, fields.get("standing_cleaner_id"))
     old_client_id = prop.client_id
     reassigned_to = None
     if "client_id" in fields:

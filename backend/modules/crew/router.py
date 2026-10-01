@@ -37,7 +37,7 @@ from ratelimit import rate_limit
 from database.models import (
     CleanerAvailability, CleanerTimeOff, CleanerWeekAvailability, CrewDoc,
     CrewMessage, CrewPeerMessage, CrewPhoto, Job, JobClaimRequest, JobHelper, JobPhoto, JobResponse,
-    PropertyCrewNote,
+    Property, PropertyCrewNote,
     PropertyPhoto, SubAgreement, SubDocument, User,
 )
 from modules.auth.router import (
@@ -455,6 +455,14 @@ def my_day(
         audience = getattr(j, "offer_audience", None) or []
         if audience and current_user.cleaner_id not in audience:
             continue
+        # A standing-property turnover (migration 120) is shown to its
+        # designated cleaner in the richer My Properties view — grouped by house,
+        # with the identity they're entrusted with — not anonymized on the open
+        # board. Skip it here so it isn't double-listed (stripped) for the one
+        # person who should see it in full.
+        _sp = getattr(j, "property", None)
+        if _sp is not None and getattr(_sp, "standing_cleaner_id", None) == current_user.cleaner_id:
+            continue
         row = _job_row(j, names, current_user.cleaner_id,
                        my_claim_request=my_requests_by_job.get(j.id))
         # An offer says enough to bid on and no more. The house internals were
@@ -530,6 +538,17 @@ def my_day(
         # second call on a rural connection (brightbase-economy), without
         # making every my-day refresh carry a route detail nobody opened.
         "routes": _my_routes_summary(db, current_user, oid),
+        # Does this cleaner have any rental the office designated them to do the
+        # turnovers for (migration 120)? A one-row existence check so the crew
+        # app can show a "Rentals" segment ONLY for cleaners who own one —
+        # a permanent tab for a thing most of the crew doesn't have is chrome.
+        # The grouped detail rides GET /api/crew/my-properties, fetched only if
+        # they tap through (brightbase-economy), never on every my-day refresh.
+        "has_rentals": db.query(Property.id).filter(
+            org_scope(Property),
+            Property.standing_cleaner_id == current_user.cleaner_id,
+            Property.active.is_(True),
+        ).first() is not None,
         # Unread office messages, so the crew app's Chat tab can badge without
         # a second request. Reading the thread (GET /messages) marks them read.
         "unread_messages": (
@@ -1051,6 +1070,104 @@ def remove_my_helper(
     if not row:
         raise HTTPException(status_code=404, detail="Not found.")
     db.delete(row); db.commit()
+
+
+@router.get("/my-properties")
+def my_properties(
+    db: Session = Depends(get_db),
+    org_id: int = Depends(current_org_id),
+    current_user: User = Depends(require_role("cleaner")),
+):
+    """The rentals the office designated THIS cleaner to do — their turnovers
+    grouped by house (migration 120). "I gave one of my cleaners an Airbnb, and
+    they can see all the turnovers that come in for it, organized."
+
+    A property lists here when its standing_cleaner_id is the caller's crew ID.
+    The house IDENTITY is shown — they're the designated cleaner, not the
+    anonymous bench, so the address the offer board hides is exactly what this
+    view is for. But it stays an OFFER until accepted: a turnover they haven't
+    taken shows a claim affordance, never a work order. ACCESS DETAILS
+    deliberately do NOT ride this overview at all (schema-guardian §5,
+    BB-SEC-08…12) — gate codes and WiFi live on the day-of job card (my-day),
+    served only for a turnover that is already theirs. This is a schedule, not
+    a key ring.
+
+    One query for the houses, one for their upcoming turnovers, one for the
+    caller's own claim requests — three round trips total, not one per house
+    (brightbase-economy: this rides rural cell data).
+    """
+    _require_crew_id(current_user)
+    oid = resolve_org_id(org_id, db)
+    org_scope = lambda model: or_(model.org_id == oid, model.org_id.is_(None))
+    cid = current_user.cleaner_id
+    today = business_today()
+
+    props = (db.query(Property)
+             .filter(org_scope(Property),
+                     Property.standing_cleaner_id == cid,
+                     Property.active.is_(True))
+             .order_by(Property.name).all())
+    if not props:
+        return {"properties": []}
+
+    prop_ids = [p.id for p in props]
+    jobs = (db.query(Job)
+            .filter(org_scope(Job),
+                    Job.property_id.in_(prop_ids),
+                    Job.job_type == "str_turnover",
+                    Job.scheduled_date >= today,
+                    Job.status.in_(("scheduled", "in_progress")))
+            .order_by(Job.scheduled_date, Job.start_time).all())
+
+    my_reqs = {
+        r.job_id: r
+        for r in db.query(JobClaimRequest).filter(
+            JobClaimRequest.job_id.in_([j.id for j in jobs] or [0]),
+            JobClaimRequest.cleaner_id == cid,
+        ).all()
+    }
+
+    by_prop: dict = {}
+    for j in jobs:
+        by_prop.setdefault(j.property_id, []).append(j)
+
+    def _hm(t):
+        return t.strftime("%H:%M") if hasattr(t, "strftime") else (str(t)[:5] if t else None)
+
+    out = []
+    for p in props:
+        turnovers = []
+        for j in by_prop.get(p.id, []):
+            mine = cid in (j.cleaner_ids or [])
+            req = my_reqs.get(j.id)
+            turnovers.append({
+                "job_id": j.id,
+                "date": j.scheduled_date.isoformat() if j.scheduled_date else None,
+                "start_time": _hm(j.start_time),
+                "end_time": _hm(j.end_time),
+                "status": j.status,
+                # Already accepted and assigned to me vs. still an offer I can take.
+                "mine": mine,
+                "claimable": bool(getattr(j, "open_for_claims", False)) and not mine and j.status == "scheduled",
+                "posted_rate": j.posted_rate,
+                "agreed_rate": j.agreed_rate if mine else None,
+                "my_claim_request": (
+                    {"status": req.status, "requested_rate": req.requested_rate, "message": req.message}
+                    if req else None
+                ),
+            })
+        out.append({
+            "property_id": p.id,
+            "name": p.name,
+            "address": p.address,
+            "city": p.city,
+            "state": p.state,
+            "timezone": getattr(p, "timezone", None),
+            "turnover_rate": getattr(p, "turnover_rate", None),
+            "upcoming_count": len(turnovers),
+            "turnovers": turnovers,
+        })
+    return {"properties": out}
 
 
 # ── Open jobs: request to claim (marketplace pivot, migration 097) ──────────
@@ -4137,6 +4254,17 @@ def preview_my_routes(user_id: int, db: Session = Depends(get_db),
     oid = resolve_org_id(org_id, db)
     target = _preview_target(db, oid, user_id, viewer, "My routes")
     return my_routes(db=db, org_id=oid, current_user=target)
+
+
+@router.get("/preview/{user_id}/my-properties",
+            dependencies=[Depends(require_role("admin", "manager"))])
+def preview_my_properties(user_id: int, db: Session = Depends(get_db),
+                          org_id: int = Depends(current_org_id),
+                          viewer: User = Depends(get_current_user)):
+    """The rentals this sub is the standing cleaner for (My Properties)."""
+    oid = resolve_org_id(org_id, db)
+    target = _preview_target(db, oid, user_id, viewer, "My properties")
+    return my_properties(db=db, org_id=oid, current_user=target)
 
 
 @router.get("/preview/{user_id}/schedule-month",

@@ -361,6 +361,21 @@ class Property(Base):
     default_duration_hours = Column(Float, default=3.0)  # turnover duration
     default_crew_size = Column(Integer, nullable=True)    # default crew size for jobs
 
+    # The one cleaner the office has designated to do this property's turnovers
+    # (migration 120). A cleaner_id (same String id space as User.cleaner_id,
+    # Job.cleaner_ids and Route.owner_cleaner_id), NULL = none designated.
+    #
+    # This is NOT an assignment: everyone on the book is a subcontractor now
+    # (see brightbase-marketplace), and a sub is offered work, never assigned
+    # it. So a generated turnover for a property with a standing cleaner is
+    # posted as a TARGETED OFFER only that cleaner sees (open_for_claims +
+    # offer_audience=[this id]); they still tap to accept and the office still
+    # approves. It lets a cleaner "own" a rental — see all its turnovers grouped
+    # in their My Properties view and claim them in one tap — without crossing
+    # the offered-never-assigned line (Rule 0). Access details stay assigned-
+    # only: they surface only once the turnover is actually theirs.
+    standing_cleaner_id = Column(String, nullable=True, index=True)
+
     access_notes = Column(Text, nullable=True)      # "Side door, lockbox 4251"
     parking_notes = Column(Text, nullable=True)     # Parking information
     # Guest WiFi (migration 090): on crew job cards AND in the offline cache,
@@ -710,9 +725,19 @@ class Job(Base):
     custom_fields = Column(JSON, default=dict)
     dispatched = Column(Boolean, default=False, nullable=False)
     # Crew app Phase 3: the office flips this to put the job "up for grabs" on
-    # every cleaner's Schedule tab (owner decision #2: ONLY office-marked jobs
-    # are claimable — an unassigned job is not automatically open). The first
-    # successful claim adds the claimer to cleaner_ids and flips this back off.
+    # every cleaner's Schedule tab. The first successful claim adds the claimer
+    # to cleaner_ids and flips this back off.
+    #
+    # Owner decision #2 (original): ONLY office-marked jobs are claimable — an
+    # unassigned job is not automatically open. NARROWED by the owner in writing
+    # (Sept 2026) FOR RECURRING WORK: an UNASSIGNED RECURRING occurrence (one
+    # with recurring_schedule_id, cleaner_ids empty, not a route job) is now
+    # auto-posted here at generation (modules/recurring/router.py) and backfilled
+    # for existing rows (migration 121), so a repeating visit with no crew — or a
+    # date its regular can't cover — reaches the bench without the office posting
+    # each one. It stays an offer: the sub requests, the office approves. The
+    # rule still holds for one-off and turnover jobs, which the office opens by
+    # hand (turnovers via a property's standing cleaner, migration 120).
     open_for_claims = Column(Boolean, default=False, nullable=False)
     # Marketplace (migration 117): limit WHO among the cleared bench sees this
     # open offer. A list of cleaner_ids; NULL or [] means every cleared sub sees

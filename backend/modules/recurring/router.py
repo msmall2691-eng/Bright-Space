@@ -852,6 +852,26 @@ def generate_jobs(db: Session, sched: RecurringSchedule) -> int:
             job.agreed_rate = route_share      # the flat-rate path payroll pays
             job.agreed_cleaner_id = route_owner  # ...and who it belongs to (106)
             job.open_for_claims = False        # a route job never goes on the board
+        elif not job.cleaner_ids:
+            # Owner decision (Sept 2026), reversing the older "only office-marked
+            # jobs are claimable" rule FOR RECURRING WORK: an occurrence that came
+            # out unassigned — a series with no standing crew, or a date whose
+            # regular is off/over-capacity so _available_cleaners dropped everyone
+            # — goes straight on the bench for any cleared sub to grab this ONE
+            # visit. Still an OFFER, not an assignment: the sub requests and the
+            # office approves (brightbase-marketplace Rule 0); open to everyone
+            # (no offer_audience). Rate seeded like the office's manual post
+            # (BB-CLAIM-04): the visit's billed price × the owner's default pay %.
+            # A brand-new occurrence has no invoice yet, so job.price IS its
+            # billed amount — no invoice lookup needed. NULL when default pay %
+            # is off, so the sub simply names their price on claim. This is the
+            # marketplace-visibility flag only; time/assignment/existence are
+            # untouched (scheduling-invariants: no new tick, no writeback).
+            job.open_for_claims = True
+            from services.standing_rules import claim_default_pay_pct
+            _pct = claim_default_pay_pct(db)
+            if _pct and job.price:
+                job.posted_rate = round(float(job.price) * _pct / 100.0, 2)
         # Race-safe: if a concurrent /generate-all already inserted this row,
         # the partial unique index added in migration 004 raises IntegrityError;
         # roll back the savepoint and treat as already-exists.
