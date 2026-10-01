@@ -312,14 +312,23 @@ def build_invoice_email(invoice: dict, client_name: str, company_phone: str = ""
     # link at all rather than a broken one.
     _pay_token = invoice.get("public_token")
     _pay_url = f"{app_base_url().rstrip('/')}/pay/{_pay_token}" if _pay_token else ""
-    _owes = (status or "").lower() not in ("paid", "void")
+    try:
+        _total_f = float(invoice.get("total", 0) or 0)
+    except (TypeError, ValueError):
+        _total_f = 0.0
+    # STATUS IS NOT ENOUGH: a `sent` invoice can total zero (no items, or a
+    # discount that cancels it out — nothing constrains the computed total), and
+    # `start_checkout` refuses `due <= 0` with "There's nothing left to pay".
+    # Offering "Pay $0.00 online" would be a button that always 409s, so the
+    # same positive-amount test checkout uses gates the offer here.
+    _owes = (status or "").lower() not in ("paid", "void") and _total_f > 0
     try:
         from integrations.stripe_payments import can_take_payments
         _can_pay = can_take_payments()
     except Exception:  # pragma: no cover - never let an invoice email fail on this
         _can_pay = False
     _pay_online = bool(_pay_url and _owes and _can_pay)
-    _total_str = f"${float(invoice.get('total', 0)):.2f}"
+    _total_str = f"${_total_f:.2f}"
 
     if _pay_online:
         _cta_button = (
@@ -482,7 +491,8 @@ def build_invoice_sms(invoice: dict, client_name: str, company_phone: str = "") 
             can_pay = can_take_payments()
         except Exception:  # pragma: no cover - never fail an invoice SMS on this
             can_pay = False
-        owes = (status or "").lower() not in ("paid", "void")
+        # Same positive-amount gate as the email and as `start_checkout`.
+        owes = (status or "").lower() not in ("paid", "void") and total > 0
         lines += ["", f"{'Pay online' if (can_pay and owes) else 'View invoice'}: {url}"]
 
     lines += ["", "Reply to this message with any questions."]
