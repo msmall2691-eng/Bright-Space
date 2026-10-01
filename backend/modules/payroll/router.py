@@ -325,4 +325,26 @@ async def stripe_webhook(request: Request, db: Session = Depends(get_db)):
                        p.id, tr_id)
         return {"ok": True, "reopened": p.id}
 
+    # ── Customer invoice payments (migration 122) ───────────────────────────
+    #
+    # THIS IS THE APP'S ONE STRIPE WEBHOOK, and the path is historical rather
+    # than meaningful — it predates there being anything but payouts. Stripe
+    # issues a separate signing secret per endpoint, so a second endpoint would
+    # mean a second secret to configure and rotate for a business run by about
+    # one person. One endpoint, one secret, dispatched by event type.
+    #
+    # The invoice logic itself lives in the invoicing module, imported rather
+    # than reimplemented here: this function owns "is this event real", and
+    # what a payment DOES to an invoice belongs next to the invoice. The import
+    # is local to keep payroll from importing invoicing at module scope.
+    #
+    # All three checkout events route to the same recorder, which gates on
+    # `payment_status` rather than the event name — see its docstring for why
+    # that is what keeps unsettled ACH money out of the revenue figure.
+    if kind in ("checkout.session.completed",
+                "checkout.session.async_payment_succeeded",
+                "checkout.session.async_payment_failed"):
+        from modules.invoicing.router import record_checkout_payment
+        return record_checkout_payment(db, obj, event_type=kind)
+
     return {"ok": True, "ignored": True}

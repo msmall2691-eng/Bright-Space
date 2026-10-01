@@ -91,9 +91,15 @@ _PUBLIC_PREFIXES = (
     "/api/portal/",
     # Customer-facing invoice / pay page — passwordless. The per-invoice token
     # in the path is the credential (revocable by nulling invoices.public_token);
-    # the endpoint returns a minimal, PII-free payload. Read-only today; the
-    # Square payment write path is gated on Square auth — see
-    # modules/invoicing/router.py.
+    # the GET returns a minimal, PII-free payload.
+    #
+    # NOT read-only any more: this prefix also covers
+    # POST /api/invoices/public/{token}/checkout, which opens a hosted Stripe
+    # Checkout session for that one invoice (migration 122). It is metered
+    # (20/hour) because otherwise a leaked token is a free Stripe-session
+    # generator. It CANNOT mark anything paid — only the signature-verified
+    # webhook at /api/payroll/stripe/webhook does that — so the worst a token
+    # holder can do is offer to pay somebody else's invoice.
     "/api/invoices/public/",
     # Company logo image — loaded unauthenticated by the quote email (<img>),
     # the PDF generator, and the public quote page. Read-only; serves bytes only.

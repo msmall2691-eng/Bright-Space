@@ -209,15 +209,24 @@ def test_the_public_invoice_endpoint_is_token_gated_and_leaks_no_pii():
     the payload and 404 behavior.
 
     The office still marks an invoice paid through POST /api/invoices/{id}/pay,
-    which is admin/manager-gated and unaffected — taking money online (Square)
-    is a separate, not-yet-built write path.
+    which is admin/manager-gated and unaffected.
+
+    Taking money online IS now built, on Stripe (migration 122), so there are
+    two public invoice routes rather than one. The pay route is deliberately
+    the weaker half: it can only OPEN a Stripe Checkout session for the invoice
+    its token names, and nothing reachable from a browser can mark an invoice
+    paid — only the signature-verified webhook does that. This assertion is
+    kept exact rather than loosened to a prefix check, so a THIRD public route
+    still has to be argued for here before it ships.
     """
     from modules.invoicing.router import router as inv_router
     public_invoice_routes = sorted(
         r.path for r in inv_router.routes if r.path.startswith("/public")
     )
-    # Exactly the one read endpoint — no write/pay route slipped in with it.
-    assert public_invoice_routes == ["/public/{token}"], public_invoice_routes
+    assert public_invoice_routes == [
+        "/public/{token}",
+        "/public/{token}/checkout",
+    ], public_invoice_routes
 
     # The middleware waves that prefix through (passwordless, token-gated).
     import auth as auth_mw

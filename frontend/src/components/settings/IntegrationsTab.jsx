@@ -6,8 +6,8 @@ import { get, post } from '../../api'
  *  external tools" hub, reorganized into two sections:
  *    - Google        — GoogleAccountCard (per-user grant) + business GCal
  *                      status with the embed URL inline + Gmail per-account health.
- *    - Other         — Square Payroll, plus "Coming soon" chips for
- *                      Stripe / Zapier.
+ *    - Other         — Stripe status (online payment + subcontractor direct
+ *                      deposit), plus a "Coming soon" chip for Zapier.
  *
  *  Customer-messaging toggle and iCal Turnover Sync used to live here too but
  *  they're automation switches, not integrations — moved to AutomationTab. */
@@ -247,16 +247,15 @@ export default function IntegrationsTab({ toast, active }) {
           </div>
 
           <div className="space-y-3">
-            <SquareCard toast={toast} active={active} />
+            <StripeCard active={active} />
 
-            {/* Stripe / Zapier — not built yet. The "Connect" button here
-                used to be an orphaned <button> with no onClick — clicking it
-                did literally nothing, which set operators up to click and
-                click waiting for a modal that would never appear. Downgraded
-                to a "Coming soon" chip so the roadmap is visible without
-                looking like a live action. */}
+            {/* Zapier — not built. Stripe used to sit in this list as a
+                "Coming soon" chip; it is built now, so it graduated to the
+                real status card above. The chip stays a chip (and not a
+                "Connect" button) because the button here was once an orphaned
+                <button> with no onClick — operators clicked and clicked
+                waiting for a modal that would never appear. */}
             {[
-              { name: 'Stripe', icon: '💳', desc: 'Accept online payments' },
               { name: 'Zapier', icon: '⚡', desc: 'Automate workflows with 5000+ apps' },
             ].map((integration, idx) => (
               <div key={idx} className="bg-panel rounded-xl border border-hairline p-4 flex items-center justify-between opacity-70">
@@ -469,163 +468,56 @@ function SmsCard({ toast, active }) {
   )
 }
 
-// Square — paste an access token, pick a location, test. Enables the Payroll
-// page's "Send to Square" (creates Labor API timecards Square Payroll imports).
-function SquareCard({ toast, active }) {
+// Stripe — read-only status. Deliberately has no form: Stripe is configured by
+// environment variable (STRIPE_SECRET_KEY / STRIPE_WEBHOOK_SECRET) on the
+// server, so there is nothing to type here and the key never passes through the
+// browser the way the old Square access token did.
+//
+// This replaced SquareCard. That card collected a Square access token for the
+// Labor API timecard export, which was deleted in Sept 2026 — a timecard
+// asserts an hourly wage and an employment relationship, which is the one thing
+// a subcontractor arrangement cannot say. The card outlived the feature, so it
+// was a connect form for something that could no longer do anything.
+function StripeCard({ active }) {
   const [st, setSt] = useState({ loading: true })
-  const [form, setForm] = useState({ access_token: '', location_id: '', environment: 'production', open: false,
-    job_residential: 'Residential', job_rental: 'Rental', job_weekend: 'Rate Pay' })
-  const [busy, setBusy] = useState('')
 
-  const refresh = () => {
-    setSt(s => ({ ...s, loading: true }))
-    return get('/api/settings/square-status')
-      .then(r => {
-        setSt({ loading: false, ...r })
-        const j = r.jobs || {}
-        setForm(f => ({ ...f, location_id: r.location_id || '', environment: r.environment || 'production',
-          job_residential: j.residential || 'Residential', job_rental: j.rental || 'Rental', job_weekend: j.weekend || 'Rate Pay' }))
-      })
-      .catch(e => setSt({ loading: false, configured: false, error: e?.message || 'Could not check status' }))
-  }
-  useEffect(() => { if (active) refresh() }, [active])
+  useEffect(() => {
+    if (!active) return
+    setSt({ loading: true })
+    get('/api/settings/stripe-status')
+      .then(r => setSt({ loading: false, ...r }))
+      .catch(e => setSt({ loading: false, configured: false, detail: e?.message || 'Could not check status' }))
+  }, [active])
 
-  const save = async () => {
-    setBusy('save')
-    try {
-      const payload = { location_id: form.location_id.trim(), environment: form.environment,
-        job_residential: form.job_residential.trim(), job_rental: form.job_rental.trim(), job_weekend: form.job_weekend.trim() }
-      if (form.access_token.trim()) payload.access_token = form.access_token.trim()
-      const r = await post('/api/settings/square', payload)
-      setSt({ loading: false, ...r })
-      setForm(f => ({ ...f, access_token: '', open: false, location_id: r.location_id || f.location_id }))
-      toast('Square settings saved')
-    } catch (e) { toast(e?.detail || e?.message || 'Could not save Square settings', 'error') }
-    finally { setBusy('') }
-  }
-
-  const test = async () => {
-    setBusy('test')
-    try {
-      const r = await post('/api/settings/square/test', {})
-      setSt(s => ({ ...s, locations: r.locations || [] }))
-      toast(`Square OK — ${r.locations?.length || 0} location${r.locations?.length === 1 ? '' : 's'}, ${r.team_count || 0} team members`)
-    } catch (e) { toast(e?.detail || e?.message || 'Square test failed', 'error') }
-    finally { setBusy('') }
-  }
-
-  const formVisible = !st.loading && (!st.configured || form.open)
-  const locations = Array.isArray(st.locations) ? st.locations : []
+  // Three states, not two: connected-but-no-webhook is the one that silently
+  // takes money and never marks the invoice paid, so it reads as needs-
+  // attention (amber) rather than connected.
+  const tone = st.loading ? 'bg-ink-3'
+    : !st.configured ? 'bg-ink-3'
+    : !st.webhook_configured ? 'bg-amber-500'
+    : 'bg-emerald-500'
+  const word = st.loading ? 'Checking…'
+    : !st.configured ? 'Not connected'
+    : !st.webhook_configured ? 'Needs webhook'
+    : 'Connected'
 
   return (
     <div className="bg-panel rounded-xl border border-hairline p-4">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between gap-4">
         <div className="flex items-center gap-4">
-          <span className="text-2xl">◼️</span>
+          <span className="text-2xl">💳</span>
           <div>
-            <h3 className="font-semibold text-ink">Square Payroll</h3>
-            <p className="text-xs text-ink-3">
-              {!st.loading && st.configured
-                ? <>Token {st.token_masked} · {st.environment}{st.location_id ? ` · location ${st.location_id}` : ''}</>
-                : 'Send payroll hours to Square as timecards'}
-            </p>
+            <h3 className="font-semibold text-ink">Stripe</h3>
+            <p className="text-xs text-ink-3">Online invoice payment and subcontractor direct deposit</p>
           </div>
         </div>
-        <span className="inline-flex h-6 items-center gap-1.5 rounded-sm border border-hairline-2 bg-panel px-2 text-[11px] font-medium text-ink-2 shrink-0">
-          <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${st.loading ? 'bg-ink-3' : st.configured ? 'bg-emerald-500' : 'bg-ink-3'}`} aria-hidden="true" />
-          {st.loading ? 'Checking…' : st.configured ? 'Connected' : 'Not connected'}
-        </span>
+        <div className="flex items-center gap-2 shrink-0">
+          <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${tone}`} aria-hidden="true" />
+          <span className="text-xs text-ink-2">{word}</span>
+        </div>
       </div>
-
-      {formVisible && (
-        <div className="mt-4 space-y-3 border-t border-hairline pt-4">
-          <div>
-            <label className="block text-xs font-medium text-ink-2 mb-1">Access Token</label>
-            <input type="password" autoComplete="off" value={form.access_token}
-              onChange={e => setForm(f => ({ ...f, access_token: e.target.value }))}
-              placeholder={st.has_token ? 'Enter a new token to replace the saved one' : 'Paste your Square access token'}
-              className="w-full bg-bg border border-hairline rounded-lg px-3 py-2 text-sm text-ink placeholder-ink-3 font-mono focus:outline-hidden focus:border-blue-400" />
-          </div>
-          <div className="flex gap-3">
-            <div className="flex-1">
-              <label className="block text-xs font-medium text-ink-2 mb-1">Location</label>
-              {locations.length > 0 ? (
-                <select value={form.location_id} onChange={e => setForm(f => ({ ...f, location_id: e.target.value }))}
-                  className="w-full bg-bg border border-hairline rounded-lg px-3 py-2 text-sm text-ink focus:outline-hidden focus:border-blue-400">
-                  <option value="">— pick a location —</option>
-                  {locations.map(l => <option key={l.id} value={l.id}>{l.name} ({l.id})</option>)}
-                </select>
-              ) : (
-                <input type="text" value={form.location_id} onChange={e => setForm(f => ({ ...f, location_id: e.target.value }))}
-                  placeholder="location id — or hit Test to load a picker"
-                  className="w-full bg-bg border border-hairline rounded-lg px-3 py-2 text-sm text-ink placeholder-ink-3 font-mono focus:outline-hidden focus:border-blue-400" />
-              )}
-            </div>
-            <div>
-              <label className="block text-xs font-medium text-ink-2 mb-1">Environment</label>
-              <select value={form.environment} onChange={e => setForm(f => ({ ...f, environment: e.target.value }))}
-                className="bg-bg border border-hairline rounded-lg px-3 py-2 text-sm text-ink focus:outline-hidden focus:border-blue-400">
-                <option value="production">Production</option>
-                <option value="sandbox">Sandbox</option>
-              </select>
-            </div>
-          </div>
-          <div>
-            <label className="block text-xs font-medium text-ink-2 mb-1">Square job titles to tag timecards with</label>
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-              {[
-                ['job_residential', 'Residential hours'],
-                ['job_rental', 'Rental hours'],
-                ['job_weekend', 'Weekend rate pay'],
-              ].map(([key, lbl]) => (
-                <div key={key}>
-                  <div className="text-[10.5px] text-ink-3 mb-0.5">{lbl}</div>
-                  <input type="text" list="square-job-titles" value={form[key]}
-                    onChange={e => setForm(f => ({ ...f, [key]: e.target.value }))}
-                    className="w-full bg-bg border border-hairline rounded-lg px-2.5 py-1.5 text-sm text-ink focus:outline-hidden focus:border-blue-400" />
-                </div>
-              ))}
-            </div>
-            {Array.isArray(st.job_titles) && st.job_titles.length > 0 && (
-              <datalist id="square-job-titles">
-                {st.job_titles.map(t => <option key={t} value={t} />)}
-              </datalist>
-            )}
-            <p className="text-[10.5px] text-ink-3 mt-1">
-              Match these to the wage jobs on your Square employees so hours land in the right bucket. Hit Test connection to load your Square job titles as suggestions.
-            </p>
-          </div>
-          <p className="text-[11px] text-ink-3">
-            Get an access token from the <b>Square Developer dashboard</b> (an app with Timecards + Team read/write). Save the token, hit <b>Test connection</b>, then pick your location.
-          </p>
-          <div className="flex items-center gap-2">
-            <button onClick={save} disabled={busy === 'save' || (!form.access_token.trim() && !st.has_token)}
-              className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-xs font-semibold transition-colors disabled:opacity-50">
-              {busy === 'save' ? 'Saving…' : 'Save'}
-            </button>
-            <button onClick={test} disabled={busy === 'test' || !st.has_token}
-              className="px-3 py-2 rounded-lg text-xs font-medium bg-bg-2 hover:bg-hairline text-ink-2 transition-colors disabled:opacity-50">
-              {busy === 'test' ? 'Testing…' : 'Test connection'}
-            </button>
-            {form.open && (
-              <button onClick={() => setForm(f => ({ ...f, open: false, access_token: '' }))}
-                className="px-3 py-2 rounded-lg text-xs font-medium bg-bg-2 hover:bg-hairline text-ink-2 transition-colors">Cancel</button>
-            )}
-          </div>
-        </div>
-      )}
-
-      {!st.loading && st.configured && !form.open && (
-        <div className="mt-4 flex flex-wrap items-center gap-2 border-t border-hairline pt-4">
-          <button onClick={test} disabled={busy === 'test'}
-            className="px-3 py-2 rounded-lg text-xs font-medium bg-bg-2 hover:bg-hairline text-ink-2 transition-colors disabled:opacity-50">
-            {busy === 'test' ? 'Testing…' : 'Test connection'}
-          </button>
-          <button onClick={() => setForm(f => ({ ...f, open: true, access_token: '' }))}
-            className="px-3 py-2 rounded-lg text-xs font-medium bg-bg-2 hover:bg-hairline text-ink-2 transition-colors">
-            Update token / location
-          </button>
-        </div>
+      {st.detail && (
+        <p className="text-xs text-ink-3 mt-3 pt-3 border-t border-hairline">{st.detail}</p>
       )}
     </div>
   )

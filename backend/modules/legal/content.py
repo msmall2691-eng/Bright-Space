@@ -42,7 +42,7 @@ send you.</p>
       voicemails between you and us, so we can respond and keep a record of the
       service.</li>
   <li><strong>Payment information</strong> — payments are processed by our
-      payment provider (Square). We receive confirmation and basic transaction
+      payment provider (Stripe). We receive confirmation and basic transaction
       details; we do not store full card numbers.</li>
   <li><strong>Website usage</strong> — basic technical data (such as IP address
       and pages viewed) needed to operate and secure the site.</li>
@@ -66,7 +66,8 @@ it with third parties for their own marketing.</strong> We share information onl
 with service providers who help us run the business, and only as needed to do so:</p>
 <ul>
   <li><strong>Twilio</strong> — to send and receive text messages and calls.</li>
-  <li><strong>Square</strong> — to process payments.</li>
+  <li><strong>Stripe</strong> — to process card and bank payments, and to
+      pay our cleaning contractors.</li>
   <li><strong>Google / Gmail</strong> — to send and receive email and manage
       scheduling.</li>
   <li>Our vetted cleaning contractors — limited to the details needed to perform
@@ -127,7 +128,7 @@ are set out in your quote or booking confirmation.</p>
   <li>Quotes are estimates based on the information you provide and may be
       adjusted if the actual scope differs materially.</li>
   <li>Payment is due as stated on your invoice. Payments are processed securely
-      by Square.</li>
+      by Stripe.</li>
   <li>Prices, taxes, and fees are as shown in your quote or invoice.</li>
 </ul>
 
