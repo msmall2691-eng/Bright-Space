@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { del, get, patch, post, upload } from '../api'
 import { EMPTY } from '../components/clients/constants'
 import { confirmDialog } from '../utils/confirmBus'
+import { duplicatesFrom409 } from '../utils/clientCreate'
 
 /** Owns every server-hitting mutation on the Clients list page:
  *  save / delete a single client (with optimistic status inline-edit
@@ -117,10 +118,12 @@ export function useClientMutations({
       await load(); setShowForm(false); setSelected(null); setForm(EMPTY); resetPhones(); setDupes([])
     } catch (e) {
       // Server-side dedup 409 — the client-side check missed something (a
-      // ContactPhone match, a race). Surface the same dupes UI so the operator
-      // can review and retry with force.
-      const serverDupes = e?.detail?.duplicates || e?.body?.duplicates
-      if (Array.isArray(serverDupes) && serverDupes.length) {
+      // ContactPhone match, a race). api.js flattens the error so `detail` is a
+      // JSON *string*; duplicatesFrom409 parses it (the old `e?.detail?.duplicates`
+      // read a property off a string and silently never matched). Surface the
+      // same dupes UI so the operator can review and retry with force.
+      const serverDupes = duplicatesFrom409(e)
+      if (serverDupes.length) {
         setDupes(serverDupes)
         setSaveError('')
       } else {

@@ -9,6 +9,8 @@ import { useEmployees } from '../hooks/useEmployees'
 import { normalizeEmployee } from '../utils/employees'
 import EndsPicker from './schedule/EndsPicker'
 import { ErrorNote } from './ui'
+import { createClientChecked } from '../utils/clientCreate'
+import DuplicateClientPrompt from './clients/DuplicateClientPrompt'
 
 // Where an in-progress booking is parked if the session expires mid-submit, so
 // it can be restored after re-login instead of being silently lost.
@@ -262,6 +264,7 @@ export default function JobCreateModal({
   const [newClient, setNewClient] = useState({ name: '', phone: '', email: '' })
   const [creatingClient, setCreatingClient] = useState(false)
   const [clientErr, setClientErr] = useState('')
+  const [clientDupes, setClientDupes] = useState([])
   // Searchable typeahead state (replaces the old preload-everything dropdown,
   // which silently 422'd on limit=1000 and rendered empty).
   const [clientQuery, setClientQuery] = useState('')
@@ -420,22 +423,32 @@ export default function JobCreateModal({
   const beginCreateClient = (prefillName = '') => {
     setNewClient(n => ({ ...n, name: prefillName || n.name || '' }))
     setClientErr('')
+    setClientDupes([])
     setAddingClient(true)
   }
 
-  const createInlineClient = async () => {
+  const pickCreatedClient = (created) => {
+    chooseClient(created)
+    setAddingClient(false)
+    setClientDupes([])
+    setNewClient({ name: '', phone: '', email: '' })
+  }
+
+  // force=false: dedup-checks first and shows the duplicate prompt on a match.
+  // force=true: "Create anyway" from that prompt. Shared with every other
+  // inline "+ New client" via createClientChecked (utils/clientCreate).
+  const createInlineClient = async (force = false) => {
     if (!newClient.name.trim()) { setClientErr('Name is required'); return }
     setCreatingClient(true); setClientErr('')
     try {
-      const created = await post('/api/clients', {
+      const res = await createClientChecked({
         name: newClient.name.trim(),
         phone: newClient.phone.trim() || null,
         email: newClient.email.trim() || null,
         status: 'active',
-      })
-      chooseClient(created)
-      setAddingClient(false)
-      setNewClient({ name: '', phone: '', email: '' })
+      }, { force })
+      if (res.status === 'duplicates') { setClientDupes(res.duplicates); setCreatingClient(false); return }
+      pickCreatedClient(res.client)
     } catch (e) {
       setClientErr(e.message || 'Failed to create client')
     }
@@ -711,7 +724,7 @@ export default function JobCreateModal({
               <div className="flex items-center justify-between mb-1">
                 <label className="block text-xs text-ink-2 font-medium">Client *</label>
                 <button type="button"
-                  onClick={() => { addingClient ? setAddingClient(false) : beginCreateClient(clientQuery.trim()); setClientErr('') }}
+                  onClick={() => { addingClient ? setAddingClient(false) : beginCreateClient(clientQuery.trim()); setClientErr(''); setClientDupes([]) }}
                   className="text-xs text-indigo-600 hover:text-indigo-700 font-medium">
                   {addingClient ? 'Cancel' : '+ New client'}
                 </button>
@@ -818,10 +831,20 @@ export default function JobCreateModal({
                       className="w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-hidden focus:border-blue-400" />
                   </div>
                   {clientErr && <div className="text-xs text-red-600">{clientErr}</div>}
-                  <button type="button" onClick={createInlineClient} disabled={creatingClient || !newClient.name.trim()}
-                    className="w-full bg-indigo-600 hover:bg-indigo-700 text-white disabled:bg-bg-2 disabled:text-ink-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors">
-                    {creatingClient ? 'Creating…' : 'Create & select client'}
-                  </button>
+                  {clientDupes.length > 0 ? (
+                    <DuplicateClientPrompt
+                      duplicates={clientDupes}
+                      busy={creatingClient}
+                      onUseExisting={pickCreatedClient}
+                      onCreateAnyway={() => createInlineClient(true)}
+                      onDismiss={() => setClientDupes([])}
+                    />
+                  ) : (
+                    <button type="button" onClick={() => createInlineClient(false)} disabled={creatingClient || !newClient.name.trim()}
+                      className="w-full bg-indigo-600 hover:bg-indigo-700 text-white disabled:bg-bg-2 disabled:text-ink-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors">
+                      {creatingClient ? 'Creating…' : 'Create & select client'}
+                    </button>
+                  )}
                 </div>
               )}
             </div>

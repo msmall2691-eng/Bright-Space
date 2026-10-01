@@ -8,6 +8,7 @@ import OriginalRequestCard from './OriginalRequestCard'
 import AiInsight from '../AiInsight'
 import { get } from '../../api'
 import { EMPTY_ITEM, isPlaceholderName, serviceOptions, scopeForService } from './constants'
+import DuplicateClientPrompt from '../clients/DuplicateClientPrompt'
 
 /** Right-side (bottom-sheet on mobile) quote-editor panel.
  *
@@ -41,6 +42,9 @@ export default function QuoteEditPanel({
   setShowQuoteAdvanced,
   selectClient,
   createInlineClient,
+  clientDupes = [],
+  setClientDupes,
+  pickClient,
   updateItem,
   onSave,
   onClose,
@@ -115,14 +119,21 @@ export default function QuoteEditPanel({
     })
   }
 
-  const handleCreateClient = async () => {
+  const handleCreateClient = async (force = false) => {
     setClientErr('')
     try {
-      await createInlineClient()
-      setAddingClient(false)
+      const res = await createInlineClient({ force })
+      // A duplicate match keeps the form open and shows the prompt; only an
+      // actual create closes it.
+      if (res?.status !== 'duplicates') setAddingClient(false)
     } catch (e) {
       setClientErr(e?.message || 'Could not create client')
     }
+  }
+
+  const handleUseExisting = (client) => {
+    pickClient?.(client)
+    setAddingClient(false)
   }
 
   return (
@@ -224,7 +235,7 @@ export default function QuoteEditPanel({
             <div className="flex items-center justify-between mb-1">
               <label className="block text-xs text-ink-3">Client *</label>
               <button type="button"
-                onClick={() => { setAddingClient(a => !a); setClientErr('') }}
+                onClick={() => { setAddingClient(a => !a); setClientErr(''); setClientDupes?.([]) }}
                 className="text-xs text-indigo-600 hover:text-indigo-700 font-medium">
                 {addingClient ? 'Cancel' : '+ New client'}
               </button>
@@ -243,10 +254,20 @@ export default function QuoteEditPanel({
                     className="w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-hidden focus:border-blue-400" />
                 </div>
                 {clientErr && <div className="text-xs text-red-600">{clientErr}</div>}
-                <button type="button" onClick={handleCreateClient} disabled={creatingClient || !newClient.name.trim()}
-                  className="w-full bg-indigo-600 hover:bg-indigo-700 text-white disabled:bg-bg-2 disabled:text-ink-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors">
-                  {creatingClient ? 'Creating…' : 'Create & select client'}
-                </button>
+                {clientDupes.length > 0 ? (
+                  <DuplicateClientPrompt
+                    duplicates={clientDupes}
+                    busy={creatingClient}
+                    onUseExisting={handleUseExisting}
+                    onCreateAnyway={() => handleCreateClient(true)}
+                    onDismiss={() => setClientDupes?.([])}
+                  />
+                ) : (
+                  <button type="button" onClick={() => handleCreateClient(false)} disabled={creatingClient || !newClient.name.trim()}
+                    className="w-full bg-indigo-600 hover:bg-indigo-700 text-white disabled:bg-bg-2 disabled:text-ink-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors">
+                    {creatingClient ? 'Creating…' : 'Create & select client'}
+                  </button>
+                )}
               </div>
             )}
             <select value={form.client_id} onChange={e => selectClient(e.target.value)}
