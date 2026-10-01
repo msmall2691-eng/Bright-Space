@@ -212,7 +212,8 @@ def test_checkout_502s_when_stripe_refuses(inv_ctx, monkeypatch):
 
 # ── the webhook ─────────────────────────────────────────────────────────────
 
-def _session(inv, *, payment_status="paid", pi="pi_test_1", amount_total=None):
+def _session(inv, *, payment_status="paid", pi="pi_test_1", amount_total=None,
+             currency="usd"):
     """A checkout.session payload. `amount_total` defaults to the invoice's
     own total in cents — the normal case, where what Stripe charged and what
     the invoice wants are the same number."""
@@ -220,7 +221,7 @@ def _session(inv, *, payment_status="paid", pi="pi_test_1", amount_total=None):
         amount_total = int(round(float(inv.total) * 100))
     return {"id": "cs_test_1", "client_reference_id": str(inv.id),
             "payment_status": payment_status, "payment_intent": pi,
-            "amount_total": amount_total}
+            "amount_total": amount_total, "currency": currency}
 
 
 def test_a_paid_session_settles_the_invoice(inv_ctx):
@@ -522,6 +523,39 @@ def test_checkout_claims_the_invoice_row_under_a_lock():
     src = inspect.getsource(inv_router.start_checkout)
     assert "with_for_update()" in src, \
         "start_checkout must lock the invoice row for the whole decision"
+
+
+def test_a_non_usd_payment_is_refused_rather_than_converted(inv_ctx):
+    """Belt-and-braces, and deliberately so.
+
+    Every session this app creates is `usd` with no branch that varies it, so
+    this is unreachable today — which is the reason to assert it rather than
+    assume it. The day a second currency appears, `amount_total` quietly stops
+    being comparable to a dollar total and 500 CAD would settle a $500 invoice.
+    There is no rate to convert with, so refuse and leave it to a person.
+    """
+    db, c, inv = inv_ctx
+    out = record_checkout_payment(db, _session(inv, currency="cad"),
+                                  event_type="checkout.session.completed")
+    assert out["paid"] is False
+    assert out["currency_mismatch"] == "cad"
+    db.refresh(inv)
+    assert inv.status == "sent"
+    assert inv.paid_at is None
+    # The handle is still kept so the payment can be traced.
+    assert inv.stripe_payment_intent_id == "pi_test_1"
+
+
+def test_a_missing_currency_does_not_block_settlement(inv_ctx):
+    """Absent is not wrong. An older event shape, or a hand-built replay,
+    should not be refused for a field it never carried."""
+    db, _c, inv = inv_ctx
+    sess = _session(inv)
+    del sess["currency"]
+    out = record_checkout_payment(db, sess, event_type="checkout.session.completed")
+    assert out["paid"] is True
+    db.refresh(inv)
+    assert inv.status == "paid"
 
 
 # ── amount due ──────────────────────────────────────────────────────────────

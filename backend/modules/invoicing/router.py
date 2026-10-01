@@ -434,21 +434,43 @@ def send_invoice(invoice_id: int, data: SendInvoiceRequest, db: Session = Depend
 
     client = db.query(Client).filter(Client.id == inv.client_id).first()
     client_name = client.name if client else f"Client #{inv.client_id}"
+
+    # EVERY DESTINATION IS VALIDATED BEFORE ANYTHING LEAVES. These checks used
+    # to sit inside their own send blocks, so `channel="both"` with an email but
+    # no phone number sent the email and THEN raised 400 on the missing phone —
+    # a half-delivered send where the failure says nothing about what already
+    # went out. Validate first, send second: an impossible request now fails
+    # having done nothing.
+    to_email = to_phone = None
+    if data.channel in ("email", "both"):
+        to_email = data.email or (client.email if client else None)
+        if not to_email:
+            raise HTTPException(status_code=400, detail="No email address available")
+    if data.channel in ("sms", "both"):
+        to_phone = data.phone or (client.phone if client else None)
+        if not to_phone:
+            raise HTTPException(status_code=400, detail="No phone number available")
+
     # Heal invoices auto-created without a number (older completions) so the
-    # customer never receives an email/SMS titled "Invoice None". The set value
-    # persists on the db.commit() at the end of this handler.
+    # customer never receives an email/SMS titled "Invoice None".
     inv_num = assign_invoice_number(db, inv)
-    # Mint the public pay-page token now, so a sent invoice always has a stable
-    # /pay/{token} link (persisted on the db.commit() at the end of this handler).
+    # Mint the public pay-page token.
     _ensure_invoice_public_token(inv)
+
+    # COMMITTED BEFORE THE FIRST SEND, and that ordering is the whole point.
+    # These used to persist on the commit at the END of the handler, so any
+    # raise or crash between here and there rolled the token back — while the
+    # customer had already been emailed a /pay/{token} URL that now 404s
+    # forever. A token that has left the building must already be in the
+    # database; the link outlives this request whatever happens to it.
+    db.commit()
+    db.refresh(inv)
+
     inv_dict = invoice_to_dict(inv)
     company_phone = os.getenv("TWILIO_PHONE_NUMBER", "")
     results = {}
 
     if data.channel in ("email", "both"):
-        to_email = data.email or (client.email if client else None)
-        if not to_email:
-            raise HTTPException(status_code=400, detail="No email address available")
         html, plain = build_invoice_email(inv_dict, client_name, company_phone)
         # A custom note (e.g. an AI-drafted payment reminder) is prepended to
         # both the HTML and plain-text bodies, mirroring the SMS path below.
@@ -472,9 +494,6 @@ def send_invoice(invoice_id: int, data: SendInvoiceRequest, db: Session = Depend
             results["email"] = f"failed: {str(e)}"
 
     if data.channel in ("sms", "both"):
-        to_phone = data.phone or (client.phone if client else None)
-        if not to_phone:
-            raise HTTPException(status_code=400, detail="No phone number available")
         sms_body = build_invoice_sms(inv_dict, client_name, company_phone)
         if data.custom_message:
             sms_body = data.custom_message + "\n\n" + sms_body
@@ -917,6 +936,24 @@ def record_checkout_payment(db: Session, session_obj: dict, *,
     # covered it, and the surplus is a refund decision for a person, not a
     # reason to leave the invoice open.
     from integrations import stripe_payments as sp
+
+    # CURRENCY FIRST, and it is belt-and-braces by design. Every session this
+    # app creates is `usd` with no branch that varies it, so a mismatch is not
+    # reachable without a code change — which is exactly why it is worth
+    # asserting rather than assuming: the day somebody adds a second currency,
+    # `amount_total` silently stops being comparable to a dollar total and
+    # 500 CAD would settle a $500 invoice. Refuse instead of guessing at a
+    # conversion we have no rate for.
+    currency = (session_obj.get("currency") or "").lower()
+    if currency and currency != "usd":
+        db.commit()   # keep the payment_intent handle recorded above
+        logger.error("[stripe] invoice %s got a %s payment; this app only "
+                     "prices in USD, so it cannot be reconciled automatically "
+                     "— invoice left open for a person",
+                     inv.id, currency.upper())
+        return {"ok": True, "invoice_id": inv.id, "paid": False,
+                "currency_mismatch": currency}
+
     amount_total = session_obj.get("amount_total")
     expected_cents = sp.dollars_to_cents(inv.total)
     actual_cents = None
