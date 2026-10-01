@@ -46,11 +46,20 @@ def app_base_url() -> str:
 # the environment that drops these silently breaks CORS preflight, so the browser
 # blocks the POST and inbound leads are lost (live-run #2 incident, 2026-06-14).
 # These are force-merged into the allow-list so a misconfigured env can't kill it.
-REQUIRED_CORS_ORIGINS = ("https://www.maineclean.co", "https://maineclean.co")
+# app.maineclean.co is where the SPA itself is served from as of the custom-domain
+# switch, so it belongs here too: same-origin calls need no CORS, but a browser
+# that lands on the app host and talks to the Railway host (or vice versa during
+# the cutover) does, and a partial ALLOWED_ORIGINS override must not drop it.
+REQUIRED_CORS_ORIGINS = (
+    "https://www.maineclean.co",
+    "https://maineclean.co",
+    "https://app.maineclean.co",
+)
 
 DEFAULT_CORS_ORIGINS = (
     "http://localhost:5173,http://localhost:3000,"
     "https://www.maineclean.co,https://maineclean.co,"
+    "https://app.maineclean.co,"
     "https://brightbase-production.up.railway.app"
 )
 
