@@ -18,6 +18,7 @@ vi.mock('../../api', () => ({
 }))
 
 import { useClients } from '../useClients'
+import { DEFAULT_CLIENT_STATUS } from '../../components/clients/constants'
 import { get } from '../../api'
 
 const _urls = () => get.mock.calls.map(c => c[0])
@@ -55,6 +56,18 @@ describe('useClients', () => {
     await act(async () => { await vi.runAllTimersAsync() })
     const clientsUrl = _clientsUrls()[0]
     expect(clientsUrl).toContain('status=lead')
+  })
+
+  it('the Clients-list default lands on Active, not the lead pile', async () => {
+    // Guardrail #5: opening Clients shows real customers, not the ~100 import
+    // leads. The page seeds statusFilter with DEFAULT_CLIENT_STATUS, so the
+    // first fetch must scope to active and never to leads.
+    expect(DEFAULT_CLIENT_STATUS).toBe('active')
+    renderHook(() => useClients(DEFAULT_CLIENT_STATUS, ''))
+    await act(async () => { await vi.runAllTimersAsync() })
+    const clientsUrl = _clientsUrls()[0]
+    expect(clientsUrl).toContain('status=active')
+    expect(clientsUrl).not.toContain('status=lead')
   })
 
   it('forwards the search string to the server', async () => {

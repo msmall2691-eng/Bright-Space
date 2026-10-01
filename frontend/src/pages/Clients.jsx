@@ -15,6 +15,7 @@ import { useClientView } from '../hooks/useClientView'
 import { useSelectionSet } from '../hooks/useSelectionSet'
 import { useIsMobile } from '../hooks/useIsMobile'
 import { CLIENT_COLUMNS } from '../components/clients/columns'
+import { DEFAULT_CLIENT_STATUS } from '../components/clients/constants'
 import { ClientForm } from '../components/clients/ClientForm'
 import { MergeModal } from '../components/clients/MergeModal'
 import { BulkActionBar } from '../components/clients/BulkActionBar'
@@ -217,7 +218,9 @@ export default function Clients() {
   // instead of navigating away (↑/↓ move through the filtered list).
   const [peekId, setPeekId] = useState(null)
   const [search, setSearch] = useState('')
-  const [statusFilter, setStatusFilter] = useState('')
+  // Land on Active, not All — the book is mostly leads and the office works
+  // with its real customers (DEFAULT_CLIENT_STATUS). Leads stay one tap away.
+  const [statusFilter, setStatusFilter] = useState(DEFAULT_CLIENT_STATUS)
   const { clients, setClients, filtered: baseFiltered, statusCounts, load } = useClients(statusFilter, search)
   // CRM Health "bucket" filter — when a bucket badge in CRMHealthPanel is
   // clicked we narrow the visible list to just those client IDs. Null
@@ -390,10 +393,13 @@ export default function Clients() {
             subtitle="Search, filter, and manage your customer list"
             icon={Users}
             pods={[
-              { label: 'All', value: statusCounts[''] ?? clients.length },
-              { label: 'Active', value: statusCounts.active ?? 0, tone: 'text-emerald-300' },
-              { label: 'Leads', value: statusCounts.lead ?? 0, tone: 'text-indigo-200' },
-              { label: 'Inactive', value: statusCounts.inactive ?? 0, tone: 'text-white/70' },
+              // Clickable so the default Active view can still reach the other
+              // buckets in one tap — the status tabs otherwise sit behind the
+              // collapsed Filters panel.
+              { label: 'All', value: statusCounts[''] ?? clients.length, onClick: () => setStatusFilter('') },
+              { label: 'Active', value: statusCounts.active ?? 0, tone: 'text-emerald-300', onClick: () => setStatusFilter('active') },
+              { label: 'Leads', value: statusCounts.lead ?? 0, tone: 'text-indigo-200', onClick: () => setStatusFilter('lead') },
+              { label: 'Inactive', value: statusCounts.inactive ?? 0, tone: 'text-white/70', onClick: () => setStatusFilter('inactive') },
             ]}
           >
             <SubNav />
