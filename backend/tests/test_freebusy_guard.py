@@ -72,7 +72,8 @@ def test_freebusy_fails_open_on_error(monkeypatch):
 @pytest.fixture
 def bare_client():
     db = SessionLocal()
-    c = Client(name="FreeBusy Test", email="fb@example.com", status="active", org_id=None)
+    c = Client(name="FreeBusy Test", email="fb@example.com", status="active", org_id=None,
+               address="3 Freebusy Way")   # create_job auto-makes the property from this
     db.add(c); db.commit(); db.refresh(c)
     yield db, c
     db.query(Job).filter(Job.client_id == c.id).delete(synchronize_session=False)

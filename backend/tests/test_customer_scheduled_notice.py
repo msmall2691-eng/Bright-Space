@@ -38,7 +38,8 @@ def ctx():
 
     def client(*, phone="207-555-0100", email="cust@example.com"):
         c = Client(name=f"Casey {uuid.uuid4().hex[:5]}", first_name="Casey",
-                   status="active", org_id=1, phone=phone, email=email)
+                   status="active", org_id=1, phone=phone, email=email,
+                   address="5 Notice Rd")   # create_job auto-makes the property from this
         db.add(c); db.commit(); db.refresh(c)
         made["clients"].append(c.id)
         return c

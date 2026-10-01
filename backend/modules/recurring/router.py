@@ -1103,6 +1103,17 @@ def create_schedule(data: ScheduleCreate, db: Session = Depends(get_db),
                     detail=f"Over capacity on {first_date}: {who} would exceed the daily limit "
                            f"of {CAPACITY_PER_CLEANER_PER_DAY}. Resubmit with allow_conflicts=true to override.",
                 )
+    # Every series hangs off a property (workflow guardrail) — the same resolver
+    # create_job uses: supplied property → client's existing → auto-create from
+    # address, else 422. Without this a series (and every visit it generates,
+    # which clone sched.property_id) floated free of an address — the root of
+    # most duplicate/stale-visit drift the audit found.
+    from services.property_resolve import resolve_property_for_client
+    payload["property_id"] = resolve_property_for_client(
+        db, client_id=payload["client_id"], org_id=oid,
+        property_id=payload.get("property_id"), address=payload.get("address"),
+        job_type=payload.get("job_type"),
+    )
     sched = RecurringSchedule(**payload)
     sched.org_id = oid  # MT-2: stamp the caller's workspace
     _apply_ends_fields(sched, ends_fields)
