@@ -421,7 +421,16 @@ export default function Workspace() {
 
             Both render nothing when there's nothing to say, so the chat sits
             at the top of a quiet day exactly as it did before. */}
-        <div className="shrink-0">
+        {/* BOUNDED, and it has to be. This column is a fixed height, the
+            message list below it is `flex-1 min-h-0 overflow-y-auto`, and
+            ProposalsQueue renders EVERY pending proposal (no cap) with a
+            multi-line textarea on each drafted one. Left to grow, a busy
+            morning's queue pushes the free space negative, the message list
+            resolves to zero height, and the chat becomes unreachable even
+            though the queue itself looks fine. So: capped, with its own
+            scroll, leaving the rest of the column for the chat this page is
+            named after. */}
+        <div className="shrink-0 max-h-[38vh] overflow-y-auto overscroll-contain">
           <DailyBrief />
           <div className="mt-3 empty:mt-0">
             <ProposalsQueue />
