@@ -917,6 +917,24 @@ def record_checkout_payment(db: Session, session_obj: dict, *,
     # covered it, and the surplus is a refund decision for a person, not a
     # reason to leave the invoice open.
     from integrations import stripe_payments as sp
+
+    # CURRENCY FIRST, and it is belt-and-braces by design. Every session this
+    # app creates is `usd` with no branch that varies it, so a mismatch is not
+    # reachable without a code change — which is exactly why it is worth
+    # asserting rather than assuming: the day somebody adds a second currency,
+    # `amount_total` silently stops being comparable to a dollar total and
+    # 500 CAD would settle a $500 invoice. Refuse instead of guessing at a
+    # conversion we have no rate for.
+    currency = (session_obj.get("currency") or "").lower()
+    if currency and currency != "usd":
+        db.commit()   # keep the payment_intent handle recorded above
+        logger.error("[stripe] invoice %s got a %s payment; this app only "
+                     "prices in USD, so it cannot be reconciled automatically "
+                     "— invoice left open for a person",
+                     inv.id, currency.upper())
+        return {"ok": True, "invoice_id": inv.id, "paid": False,
+                "currency_mismatch": currency}
+
     amount_total = session_obj.get("amount_total")
     expected_cents = sp.dollars_to_cents(inv.total)
     actual_cents = None

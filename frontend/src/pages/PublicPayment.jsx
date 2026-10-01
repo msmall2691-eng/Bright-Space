@@ -123,6 +123,11 @@ export default function PublicPayment() {
   const paid = inv.status === 'paid'
   const voided = inv.status === 'void'
   const owes = !paid && !voided
+  // Back from Stripe, money taken, invoice not yet flipped by the webhook.
+  // The page must not keep saying "Due" at the top while the panel below says
+  // we have their payment — a customer who has just paid reading "Total due"
+  // reasonably concludes it failed, and the next thing they do is pay again.
+  const awaitingConfirmation = justPaid && owes
 
   return (
     <div className="min-h-screen py-8 px-4">
@@ -144,13 +149,15 @@ export default function PublicPayment() {
                 <><span className="w-1.5 h-1.5 rounded-full bg-emerald-500" /><span className="text-ink-2">Paid{inv.paid_at ? ` on ${new Date(inv.paid_at).toLocaleDateString()}` : ''}</span></>
               ) : voided ? (
                 <><span className="w-1.5 h-1.5 rounded-full bg-ink-3" /><span className="text-ink-3">Void</span></>
+              ) : awaitingConfirmation ? (
+                <><span className="w-1.5 h-1.5 rounded-full bg-ink-3" /><span className="text-ink-2">Payment processing</span></>
               ) : inv.status === 'overdue' ? (
                 <><span className="w-1.5 h-1.5 rounded-full bg-red-500" /><span className="text-ink-2">Overdue</span></>
               ) : (
                 <><span className="w-1.5 h-1.5 rounded-full bg-amber-500" /><span className="text-ink-2">Due</span></>
               )}
             </div>
-            {inv.due_date && !paid && !voided && (
+            {inv.due_date && !paid && !voided && !awaitingConfirmation && (
               <div className="text-sm text-ink-2">Due by <span className="font-medium text-ink">{inv.due_date}</span></div>
             )}
           </div>
@@ -191,7 +198,7 @@ export default function PublicPayment() {
                 <div className="flex justify-between text-emerald-600"><span>Discount</span><span>-{money(inv.discount)}</span></div>
               )}
               <div className="flex justify-between pt-2 mt-1 border-t border-hairline text-ink font-bold text-base">
-                <span>{paid ? 'Total paid' : 'Total due'}</span><span>{money(inv.total)}</span>
+                <span>{paid ? 'Total paid' : awaitingConfirmation ? 'Total' : 'Total due'}</span><span>{money(inv.total)}</span>
               </div>
             </div>
           </div>

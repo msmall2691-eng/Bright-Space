@@ -298,6 +298,49 @@ def build_invoice_email(invoice: dict, client_name: str, company_phone: str = ""
     from config import app_base_url
     _portal_url = f"{app_base_url().rstrip('/')}/portal"
 
+    # THE PAY LINK, and its absence was the gap that made online payment
+    # unreachable. `send_invoice` mints `public_token` so /pay/{token} resolves,
+    # but nothing the customer receives ever carried that URL — the email
+    # pointed only at /portal (magic-link sign-in) and the SMS at nothing. A
+    # pay page nobody is given the address of is a pay page nobody uses.
+    #
+    # The wording follows what the server can actually do, so the button never
+    # promises more than it delivers: with Stripe configured and a balance
+    # owed it is "Pay now", otherwise it is "View invoice" — the same page,
+    # which falls back to "call/text us" on its own when payment is off. No
+    # token (an older invoice, or a caller passing a minimal dict) means no
+    # link at all rather than a broken one.
+    _pay_token = invoice.get("public_token")
+    _pay_url = f"{app_base_url().rstrip('/')}/pay/{_pay_token}" if _pay_token else ""
+    _owes = (status or "").lower() not in ("paid", "void")
+    try:
+        from integrations.stripe_payments import can_take_payments
+        _can_pay = can_take_payments()
+    except Exception:  # pragma: no cover - never let an invoice email fail on this
+        _can_pay = False
+    _pay_online = bool(_pay_url and _owes and _can_pay)
+    _total_str = f"${float(invoice.get('total', 0)):.2f}"
+
+    if _pay_online:
+        _cta_button = (
+            f'<div style="margin-bottom:14px;">'
+            f'<a href="{_pay_url}" style="display:inline-block;background:#4f46e5;'
+            f'color:#ffffff;text-decoration:none;font-weight:600;font-size:15px;'
+            f'padding:12px 28px;border-radius:8px;">Pay {_total_str} online</a>'
+            f'</div>'
+            f'<div style="font-size:12px;color:#6b7280;margin-bottom:10px;">'
+            f'Card or bank transfer. Secure checkout — we never see your card details.</div>'
+        )
+    elif _pay_url:
+        _cta_button = (
+            f'<div style="margin-bottom:14px;">'
+            f'<a href="{_pay_url}" style="color:#4f46e5;text-decoration:none;'
+            f'font-weight:600;font-size:14px;">View this invoice online</a>'
+            f'</div>'
+        )
+    else:
+        _cta_button = ""
+
     html = f"""<!DOCTYPE html>
 <html>
 <head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
@@ -357,7 +400,8 @@ def build_invoice_email(invoice: dict, client_name: str, company_phone: str = ""
 
     <!-- CTA -->
     <div style="margin:0 32px 32px;padding:20px;background:#eff6ff;border-radius:10px;text-align:center;">
-      <div style="font-size:15px;color:#1e40af;font-weight:600;margin-bottom:8px;">Payment due by {due_date}</div>
+      <div style="font-size:15px;color:#1e40af;font-weight:600;margin-bottom:12px;">Payment due by {due_date}</div>
+      {_cta_button}
       <div style="font-size:14px;color:#3b82f6;margin-bottom:4px;">Reply to this email with any questions.</div>
       {f'<div style="font-size:14px;color:#3b82f6;">Or call/text us at {company_phone}</div>' if company_phone else ''}
     </div>
@@ -397,6 +441,8 @@ Due by: {due_date}
 
 {f'Notes: {notes}' if notes else ''}
 
+{f"Pay online ({_total_str}): {_pay_url}" if _pay_online else (f"View this invoice: {_pay_url}" if _pay_url else "")}
+
 Reply to this email with any questions.
 {f'You can also call or text us at {company_phone}.' if company_phone else ''}
 
@@ -421,9 +467,25 @@ def build_invoice_sms(invoice: dict, client_name: str, company_phone: str = "") 
         f"{from_name} — {prefix}Invoice {inv_num}",
         f"Amount due: ${total:.2f}",
         f"Due by: {due_date}",
-        "",
-        "Reply to this message with any questions.",
     ]
+
+    # The link, which this message never carried. An SMS is the one place a
+    # customer cannot "find it in their email", so the whole message is useless
+    # for paying without it. Kept to one short line because every character is
+    # billed and a long SMS splits into two segments.
+    token = invoice.get("public_token")
+    if token:
+        from config import app_base_url
+        url = f"{app_base_url().rstrip('/')}/pay/{token}"
+        try:
+            from integrations.stripe_payments import can_take_payments
+            can_pay = can_take_payments()
+        except Exception:  # pragma: no cover - never fail an invoice SMS on this
+            can_pay = False
+        owes = (status or "").lower() not in ("paid", "void")
+        lines += ["", f"{'Pay online' if (can_pay and owes) else 'View invoice'}: {url}"]
+
+    lines += ["", "Reply to this message with any questions."]
     if company_phone:
         lines.append(f"Call/text: {company_phone}")
     return "\n".join(lines)
