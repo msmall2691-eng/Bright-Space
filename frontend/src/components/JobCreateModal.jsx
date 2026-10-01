@@ -874,6 +874,72 @@ export default function JobCreateModal({
           {!standalone && clientName && (
             <div className="text-xs text-ink-3">Scheduling for <span className="font-medium text-ink-2">{clientName}</span></div>
           )}
+
+          {/* Property — field #2, right after the client. Auto-fills when the
+              client has exactly one (the load effect calls applyProperty), so
+              the common case needs no interaction; was previously buried in the
+              "More options" disclosure, which is why jobs kept landing without a
+              property. */}
+          <div>
+            <div className="flex items-center justify-between mb-1">
+              <label className="block text-xs text-ink-2 font-medium">Property</label>
+              <button type="button"
+                onClick={() => { setAddingProp(a => !a); setPropErr('') }}
+                className="text-xs text-indigo-600 hover:text-indigo-700 font-medium">
+                {addingProp ? 'Cancel' : '+ New property'}
+              </button>
+            </div>
+            {!addingProp ? (
+              <select
+                value={form.property_id}
+                onChange={onPropertyChange}
+                data-testid="job-create-property-select"
+                className="w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-hidden focus:border-blue-400 disabled:bg-bg-2 disabled:text-ink-3"
+                disabled={loadingProps || !activeClientId}
+              >
+                <option value="">
+                  {!activeClientId
+                    ? 'Pick a client first'
+                    : loadingProps
+                      ? 'Loading properties...'
+                      : properties.length === 0
+                        ? 'No properties for this client yet'
+                        : 'Select a property (optional)'}
+                </option>
+                {properties.map(p => (
+                  <option key={p.id} value={p.id}>
+                    {p.name}{p.address ? ` — ${p.address}` : ''}
+                  </option>
+                ))}
+              </select>
+            ) : null}
+            {!addingProp && !loadingProps && properties.length === 0 && clientAddress?.address && (
+              <button type="button" onClick={createPropertyFromClientAddress} disabled={creatingProp}
+                data-testid="job-create-use-client-address"
+                className="mt-1.5 text-xs text-indigo-600 hover:text-indigo-700 font-medium disabled:opacity-50">
+                {creatingProp ? 'Creating…' : `Use their address — create “${clientAddress.address}”`}
+              </button>
+            )}
+            {addingProp && (
+              <div className="rounded-lg border border-hairline bg-bg-2 p-2.5 space-y-2">
+                <input autoFocus value={newProp.name} onChange={e => setNewProp(n => ({ ...n, name: e.target.value }))}
+                  placeholder="Property name * (e.g. 4 Red Barn Circle)"
+                  className="w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-hidden focus:border-blue-400" />
+                <AddressAutocomplete
+                  value={newProp.address}
+                  onChange={v => setNewProp(n => ({ ...n, address: v }))}
+                  onSelect={p => setNewProp(n => ({ ...n, address: p.address || n.address }))}
+                  placeholder="Address"
+                  className="w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-hidden focus:border-blue-400" />
+                {propErr && <div className="text-xs text-red-600">{propErr}</div>}
+                <button type="button" onClick={createInlineProperty} disabled={creatingProp || !newProp.name.trim()}
+                  className="w-full bg-indigo-600 hover:bg-indigo-700 text-white disabled:bg-bg-2 disabled:text-ink-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors">
+                  {creatingProp ? 'Creating…' : 'Create & select property'}
+                </button>
+              </div>
+            )}
+          </div>
+
           <div>
             <label className="block text-xs text-ink-2 font-medium mb-1">Service type</label>
             <div className="flex gap-2">
@@ -1036,8 +1102,8 @@ export default function JobCreateModal({
               address override, right below the compact form on the same page. */}
           <button type="button" onClick={() => setShowMore(v => !v)}
             className="w-full flex items-center justify-center gap-1.5 text-center text-xs text-ink-3 hover:text-ink-2 pt-1 border-t border-hairline mt-1">
-            {recurring ? 'More options (property, repeat details, address)'
-              : 'More options (property, address)'}
+            {recurring ? 'More options (title, repeat details, calendar feed)'
+              : 'More options (title, calendar feed)'}
             <span className={`transition-transform inline-block ${showMore ? 'rotate-180' : ''}`}>▾</span>
           </button>
 
@@ -1051,68 +1117,7 @@ export default function JobCreateModal({
             onClose?.()
           }} />
 
-          {/* ── More options — Property picker (inline expansion) ─────────── */}
           {showMore && (<>
-          <div>
-            <div className="flex items-center justify-between mb-1">
-              <label className="block text-xs text-ink-2 font-medium">Property</label>
-              <button type="button"
-                onClick={() => { setAddingProp(a => !a); setPropErr('') }}
-                className="text-xs text-indigo-600 hover:text-indigo-700 font-medium">
-                {addingProp ? 'Cancel' : '+ New property'}
-              </button>
-            </div>
-            {!addingProp ? (
-              <select
-                value={form.property_id}
-                onChange={onPropertyChange}
-                data-testid="job-create-property-select"
-                className="w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-hidden focus:border-blue-400 disabled:bg-bg-2 disabled:text-ink-3"
-                disabled={loadingProps || !activeClientId}
-              >
-                <option value="">
-                  {!activeClientId
-                    ? 'Pick a client first'
-                    : loadingProps
-                      ? 'Loading properties...'
-                      : properties.length === 0
-                        ? 'No properties for this client yet'
-                        : 'Select a property (optional)'}
-                </option>
-                {properties.map(p => (
-                  <option key={p.id} value={p.id}>
-                    {p.name}{p.address ? ` — ${p.address}` : ''}
-                  </option>
-                ))}
-              </select>
-            ) : null}
-            {!addingProp && !loadingProps && properties.length === 0 && clientAddress?.address && (
-              <button type="button" onClick={createPropertyFromClientAddress} disabled={creatingProp}
-                data-testid="job-create-use-client-address"
-                className="mt-1.5 text-xs text-indigo-600 hover:text-indigo-700 font-medium disabled:opacity-50">
-                {creatingProp ? 'Creating…' : `Use their address — create “${clientAddress.address}”`}
-              </button>
-            )}
-            {addingProp && (
-              <div className="rounded-lg border border-hairline bg-bg-2 p-2.5 space-y-2">
-                <input autoFocus value={newProp.name} onChange={e => setNewProp(n => ({ ...n, name: e.target.value }))}
-                  placeholder="Property name * (e.g. 4 Red Barn Circle)"
-                  className="w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-hidden focus:border-blue-400" />
-                <AddressAutocomplete
-                  value={newProp.address}
-                  onChange={v => setNewProp(n => ({ ...n, address: v }))}
-                  onSelect={p => setNewProp(n => ({ ...n, address: p.address || n.address }))}
-                  placeholder="Address"
-                  className="w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-hidden focus:border-blue-400" />
-                {propErr && <div className="text-xs text-red-600">{propErr}</div>}
-                <button type="button" onClick={createInlineProperty} disabled={creatingProp || !newProp.name.trim()}
-                  className="w-full bg-indigo-600 hover:bg-indigo-700 text-white disabled:bg-bg-2 disabled:text-ink-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors">
-                  {creatingProp ? 'Creating…' : 'Create & select property'}
-                </button>
-              </div>
-            )}
-          </div>
-
           {/* Title override (auto-generated from the client name; edit here
               to override). Service Type stays in the compact form above so
               it isn't duplicated. */}
