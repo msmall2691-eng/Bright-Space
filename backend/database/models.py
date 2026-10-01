@@ -285,7 +285,10 @@ class Client(Base):
     # — the office still opens them by hand. This scopes the Sept 2026 owner
     # decision to specific customers rather than the whole book; it never touches
     # turnovers (standing cleaner, migration 120) or one-off jobs.
-    recurring_open_to_crew = Column(Boolean, default=False, nullable=False)
+    # server_default so a raw INSERT that omits this column (the Postgres RLS/
+    # tenancy tests insert clients with bare SQL) fills False instead of
+    # tripping the NOT NULL — a Python-side default alone emits no DDL default.
+    recurring_open_to_crew = Column(Boolean, default=False, server_default="false", nullable=False)
     custom_fields = Column(JSON, default=dict)
     created_at = Column(DateTime, default=_utcnow)
     # Audit actor metadata (Twenty's ActorMetadata): who/what created and last
