@@ -98,34 +98,51 @@ function EmptySeriesPrompt({ info, onDone }) {
  *  POST /api/recurring 409s with detail=similar_series_exists (the backend's
  *  pre-create duplicate guard). Mirrors ConflictPrompt's escape-hatch UX:
  *  link to the existing series, or resubmit with allow_duplicate=true. */
-function DuplicateSeriesPrompt({ matches, saving, onCancel, onOverride }) {
+// Shown when the similar-series guard (services/recurring_guards.find_similar_series)
+// 409s on a recurring create: this client already has a live series with the
+// same property + cadence + time. The point of the guardrail is to steer the
+// office to EDIT the existing series rather than stack a second one on the same
+// slot (two crews, one booking), so "Edit this series" is the prominent action
+// here and "create a separate series anyway" is the quiet, deliberate escape
+// hatch — not a co-equal button you click past. Exported for a focused test.
+export function DuplicateSeriesPrompt({ matches, saving, onCancel, onOverride }) {
   if (!matches || !matches.length) return null
+  const one = matches.length === 1
   return (
     <div className="flex items-start gap-2.5 px-3 py-2.5 rounded-lg border border-hairline bg-panel text-xs"
       data-testid="job-create-duplicate-series-prompt">
       <span className="w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0 mt-1" aria-hidden="true" />
       <div className="flex-1 min-w-0">
-        <p className="font-medium text-ink mb-1">Similar recurring series already exists</p>
-        <ul className="text-ink-2 mb-2 space-y-1">
+        <p className="font-medium text-ink mb-0.5">
+          {one ? 'This client already has a matching recurring series'
+               : 'This client already has matching recurring series'}
+        </p>
+        <p className="text-ink-3 mb-2">
+          Edit the existing {one ? 'one' : 'series'} instead of starting a second — two series on the
+          same slot put two crews on one booking.
+        </p>
+        <ul className="space-y-1.5 mb-2.5">
           {matches.map(m => (
-            <li key={m.id}>
-              This client already has: {m.cadence}
-              {m.property_name ? ` at ${m.property_name}` : m.address ? ` at ${m.address}` : ''}
-              {` — ${m.upcoming_job_count || 0} upcoming`}
-              {' · '}
+            <li key={m.id} className="flex items-center justify-between gap-2">
+              <span className="min-w-0 truncate text-ink-2">
+                {m.cadence}
+                {m.property_name ? ` · ${m.property_name}` : m.address ? ` · ${m.address}` : ''}
+                {` · ${m.upcoming_job_count || 0} upcoming`}
+              </span>
               <a href={`/recurring?series=${m.id}`}
-                className="font-medium underline text-ink hover:text-indigo-600">
-                Open existing
+                data-testid="job-create-duplicate-edit"
+                className="shrink-0 px-2.5 py-1 rounded-md bg-panel border border-hairline-2 text-ink-2 hover:bg-bg-2 font-medium no-underline">
+                Edit this series
               </a>
             </li>
           ))}
         </ul>
-        <div className="flex gap-2">
+        <div className="flex items-center gap-3">
           <button type="button" onClick={onCancel}
             className="px-3 py-1.5 rounded-md bg-bg-2 border border-hairline-2 text-ink-2 hover:bg-hairline">Never mind</button>
           <button type="button" onClick={onOverride} disabled={saving}
-            className="px-3 py-1.5 rounded-md bg-panel border border-hairline-2 text-ink-2 hover:bg-bg-2 font-medium disabled:opacity-50">
-            {saving ? 'Creating…' : 'Create anyway'}
+            className="text-ink-3 hover:text-ink underline disabled:opacity-50">
+            {saving ? 'Creating…' : 'Create a separate series anyway'}
           </button>
         </div>
       </div>
