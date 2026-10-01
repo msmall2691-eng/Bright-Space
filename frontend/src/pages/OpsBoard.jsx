@@ -49,6 +49,7 @@ import { TAG_TONE, SEV_DOT, SEV_LABEL, STAT_TONE, INT_DOT, SEV_ORDER } from '../
 import BoardAssistant from '../components/board/BoardAssistant'
 import HomeScheduleCalendar from '../components/board/HomeScheduleCalendar'
 import HomeWidgets from '../components/board/HomeWidgets'
+import WhenVisible from '../components/board/WhenVisible'
 import StickyNotes from '../components/board/StickyNotes'
 import QuickActions from '../components/board/QuickActions'
 import ProposalsQueue, { relTime } from '../components/board/ProposalsQueue'
@@ -906,15 +907,23 @@ export default function OpsBoard() {
 
               <div className="flex flex-col gap-4">
                 <CrewToday snap={snapshot.crew} />
-                {canComms && <CrewActivity navigate={navigate} />}
+                {canComms && (
+                  <WhenVisible minHeight="0">
+                    <CrewActivity navigate={navigate} />
+                  </WhenVisible>
+                )}
               </div>
 
               <div className="flex flex-col gap-4">
                 {/* The office runs on the bench claiming work and her saying yes:
                     who's waiting on that yes, and the week's bench round-up. Both
                     link out to act — neither approves here (marketplace guard). */}
-                <MarketplaceBoard />
-                <BenchDigest />
+                <WhenVisible minHeight="12rem">
+                  <MarketplaceBoard />
+                </WhenVisible>
+                <WhenVisible minHeight="8rem">
+                  <BenchDigest />
+                </WhenVisible>
               </div>
             </div>
 
@@ -923,11 +932,13 @@ export default function OpsBoard() {
                 whatever order she likes, saved per device. Office-only tiles
                 fall out for a viewer, so the zone quietly shrinks. */}
             <div className="mt-4">
+              <WhenVisible minHeight="14rem">
               <HomeWidgets items={[
                 canComms && { key: 'quick', label: 'Quick actions', node: <QuickActions navigate={navigate} /> },
                 { key: 'notes', label: 'Notes', node: <StickyNotes /> },
                 canComms && { key: 'nova', label: 'Ask Nova', node: <NovaChat navigate={navigate} /> },
               ].filter(Boolean)} />
+              </WhenVisible>
             </div>
 
             {/* ── Plumbing, quiet at the bottom: feed + recurring health and
