@@ -1,15 +1,12 @@
-"""Unassigned recurring occurrences go on the bench (owner decision, Sept 2026).
+"""Unassigned recurring visits go on the bench — SCOPED to opted-in customers.
 
-Reversing the older "only office-marked jobs are claimable" rule FOR RECURRING
-work: a repeating visit generated with no cleaner — a series with no crew, or a
-date its regular can't cover — is auto-posted (open_for_claims=True) so any
-cleared sub can grab that one visit. It stays an offer: the sub requests and the
-office approves (brightbase-marketplace Rule 0). An ASSIGNED occurrence is not
-posted (it's already someone's), and a route occurrence never hits the board.
-
-posted_rate is seeded from the visit's price × the owner's default-pay %
-(BB-CLAIM-04); with that setting off (the default), it stays NULL and the sub
-names their price on claim.
+Owner decision (Sept 2026), then scoped (migration 122): a repeating visit that
+generates with no cleaner is offered to the crew board ONLY when its customer is
+opted in (Client.recurring_open_to_crew). Opted-in → open_for_claims=True, open
+to everyone, still an offer (sub requests, office approves). Not opted in → the
+occurrence generates unassigned-and-hidden, exactly as before. An ASSIGNED
+occurrence is never posted, opted in or not; route occurrences never hit the
+board.
 """
 import uuid
 from datetime import time
@@ -49,6 +46,12 @@ def seeded():
     db.commit(); db.close()
 
 
+def _opt_in(db, client_id, on=True):
+    db.query(Client).filter(Client.id == client_id).update(
+        {"recurring_open_to_crew": on}, synchronize_session=False)
+    db.commit()
+
+
 def _payload(client, prop, today, **overrides):
     payload = {
         "client_id": client.id, "job_type": "residential", "title": "Weekly clean",
@@ -67,30 +70,49 @@ def _occurrences(db, client_id):
             .all())
 
 
-def test_unassigned_recurring_occurrences_go_on_the_board(seeded):
+def test_opted_in_customer_unassigned_occurrences_go_on_the_board(seeded):
     db, c, p, today = seeded
+    _opt_in(db, c.id, True)
     r = api.post("/api/recurring", json=_payload(c, p, today, cleaner_ids=[]))
     assert r.status_code == 201, r.text
     occ = _occurrences(db, c.id)
     assert occ, "expected generated occurrences"
     for j in occ:
-        assert (j.cleaner_ids or []) == []          # nobody assigned
-        assert j.open_for_claims is True            # ...so it's offered to the bench
-        assert (j.offer_audience or []) == []       # open to everyone, not targeted
-        # default-pay % is off by default → no rate seeded, sub names their price
-        assert j.posted_rate is None
+        assert (j.cleaner_ids or []) == []
+        assert j.open_for_claims is True
+        assert (j.offer_audience or []) == []
+        assert j.posted_rate is None          # default-pay % off → sub names price
 
 
-def test_assigned_recurring_occurrences_stay_off_the_board(seeded):
+def test_customer_not_opted_in_stays_hidden(seeded):
     db, c, p, today = seeded
-    cid = f"CT-{uuid.uuid4().hex[:6]}"           # fresh cleaner, no conflicts
-    r = api.post("/api/recurring", json=_payload(c, p, today, cleaner_ids=[cid]))
+    # c.recurring_open_to_crew defaults False — do not opt in.
+    r = api.post("/api/recurring", json=_payload(c, p, today, cleaner_ids=[]))
     assert r.status_code == 201, r.text
     occ = _occurrences(db, c.id)
     assert occ, "expected generated occurrences"
-    # At least the near-term occurrences assign cleanly (cleaner is free), and an
-    # assigned occurrence is never posted — it's already someone's.
-    assigned = [j for j in occ if cid in (j.cleaner_ids or [])]
+    for j in occ:
+        assert (j.cleaner_ids or []) == []
+        assert j.open_for_claims is False      # unassigned but NOT on the board
+        assert j.posted_rate is None
+
+
+def test_assigned_occurrences_stay_off_the_board_even_when_opted_in(seeded):
+    db, c, p, today = seeded
+    _opt_in(db, c.id, True)
+    cid = f"CT-{uuid.uuid4().hex[:6]}"          # fresh cleaner, no conflicts
+    r = api.post("/api/recurring", json=_payload(c, p, today, cleaner_ids=[cid]))
+    assert r.status_code == 201, r.text
+    assigned = [j for j in _occurrences(db, c.id) if cid in (j.cleaner_ids or [])]
     assert assigned, "expected the free cleaner to be assigned"
     for j in assigned:
         assert j.open_for_claims is False
+
+
+def test_client_open_to_crew_flag_patch_and_read(seeded):
+    db, c, p, today = seeded
+    assert api.patch(f"/api/clients/{c.id}", json={"recurring_open_to_crew": True}).status_code == 200
+    assert api.get(f"/api/clients/{c.id}").json().get("recurring_open_to_crew") is True
+    # ...and it turns back off (False is sent, not dropped as None).
+    api.patch(f"/api/clients/{c.id}", json={"recurring_open_to_crew": False})
+    assert api.get(f"/api/clients/{c.id}").json().get("recurring_open_to_crew") is False

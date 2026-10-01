@@ -9343,6 +9343,8 @@ export interface components {
             notes?: string | null;
             /** Source */
             source?: string | null;
+            /** Recurring Open To Crew */
+            recurring_open_to_crew?: boolean | null;
             /** Custom Fields */
             custom_fields?: {
                 [key: string]: unknown;
