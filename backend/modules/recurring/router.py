@@ -811,6 +811,14 @@ def generate_jobs(db: Session, sched: RecurringSchedule) -> int:
     sched_property = (db.query(Property).filter(Property.id == sched.property_id).first()
                       if sched.property_id else None)
 
+    # Per-customer opt-in for offering unassigned recurring visits to the crew
+    # (migration 122). Read ONCE for the batch. Only this customer's uncovered
+    # occurrences go on the bench; everyone else's stay hidden as before — the
+    # owner scoped the Sept 2026 decision to specific customers.
+    _client = (db.query(Client).filter(Client.id == sched.client_id).first()
+               if sched.client_id else None)
+    _open_to_crew = bool(getattr(_client, "recurring_open_to_crew", False))
+
     for d in dates:
         if d in cancelled_dates:
             # User cancelled this occurrence already; do not resurrect it.
@@ -852,21 +860,24 @@ def generate_jobs(db: Session, sched: RecurringSchedule) -> int:
             job.agreed_rate = route_share      # the flat-rate path payroll pays
             job.agreed_cleaner_id = route_owner  # ...and who it belongs to (106)
             job.open_for_claims = False        # a route job never goes on the board
-        elif not job.cleaner_ids:
+        elif _open_to_crew and not job.cleaner_ids:
             # Owner decision (Sept 2026), reversing the older "only office-marked
-            # jobs are claimable" rule FOR RECURRING WORK: an occurrence that came
-            # out unassigned — a series with no standing crew, or a date whose
-            # regular is off/over-capacity so _available_cleaners dropped everyone
-            # — goes straight on the bench for any cleared sub to grab this ONE
-            # visit. Still an OFFER, not an assignment: the sub requests and the
-            # office approves (brightbase-marketplace Rule 0); open to everyone
-            # (no offer_audience). Rate seeded like the office's manual post
+            # jobs are claimable" rule FOR RECURRING WORK — SCOPED to customers
+            # the office has opted in (Client.recurring_open_to_crew, migration
+            # 122): an occurrence that came out unassigned — a series with no
+            # standing crew, or a date whose regular is off/over-capacity so
+            # _available_cleaners dropped everyone — goes on the bench for any
+            # cleared sub to grab this ONE visit. Still an OFFER, not an
+            # assignment: the sub requests and the office approves
+            # (brightbase-marketplace Rule 0); open to everyone (no
+            # offer_audience). Rate seeded like the office's manual post
             # (BB-CLAIM-04): the visit's billed price × the owner's default pay %.
             # A brand-new occurrence has no invoice yet, so job.price IS its
             # billed amount — no invoice lookup needed. NULL when default pay %
-            # is off, so the sub simply names their price on claim. This is the
-            # marketplace-visibility flag only; time/assignment/existence are
-            # untouched (scheduling-invariants: no new tick, no writeback).
+            # is off, so the sub simply names their price on claim. Marketplace-
+            # visibility flag only; time/assignment/existence untouched
+            # (scheduling-invariants: no new tick, no writeback). A customer NOT
+            # opted in generates the occurrence unassigned-and-hidden as before.
             job.open_for_claims = True
             from services.standing_rules import claim_default_pay_pct
             _pct = claim_default_pay_pct(db)
