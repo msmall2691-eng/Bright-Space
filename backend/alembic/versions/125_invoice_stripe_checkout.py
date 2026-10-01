@@ -35,25 +35,34 @@ DOWNGRADE restores the columns' shape and NOT the Square rows. A deleted secret
 is not recoverable from a downgrade, and it should not be: rotate the token in
 Square's dashboard instead of trying to put this one back.
 
-RENUMBERED 122 -> 124. This was written as 122 off 121, and #1001 landed its
-own 122 + 123 off the same 121 while this branch was in flight — two files
-claiming 122 and, worse, a FORK in the revision graph. Each branch was a clean
-linear chain on its own, so both passed CI; merged, `alembic upgrade head`
-fails with "Multiple head revisions are present", and it fails during the
-Railway deploy rather than on anybody's machine. Linearized by rewiring
-`down_revision` (not `alembic merge`, which would keep the graph forked
-forever): #1001's migrations are already on main, so they go first and this
-one chains behind them. Nothing about the change itself moved.
+RENUMBERED TWICE: 122 -> 124 -> 125, and the second time says something the
+first did not.
 
-Alembic version: 124
+Written as 122 off 121. #1001 landed its own 122 + 123 off that same 121 while
+this branch was in flight, so it became 124 behind 123. Then #1006 landed its
+own 124 off 123 as well, and the fork was back. Each branch is a clean linear
+chain alone, so every side passes CI; the merge is where `alembic upgrade head`
+dies with "Multiple head revisions are present", and on a quiet day that is
+discovered during the Railway deploy rather than on anybody's machine.
+
+So the sequential number is not a property of this migration — it is a claim
+about what is at the tip of main at the moment of merge, and on a repo landing
+several PRs an hour that claim expires fast. Any long-running branch that adds
+a migration should expect to renumber on the way in, and `test_schema_drift.py`
+is what catches it when you forget. Linearized by rewiring `down_revision`
+rather than `alembic merge`, which would keep the history a graph instead of a
+list forever: #1006's 124 is already on main, so it goes first and this chains
+behind it. Nothing about the change itself has moved through any of this.
+
+Alembic version: 125
 """
 
 from alembic import op
 import sqlalchemy as sa
 
 
-revision = "124_invoice_stripe_checkout"
-down_revision = "123_rehide_unopted_recurring"
+revision = "125_invoice_stripe_checkout"
+down_revision = "124_backfill_job_property"
 branch_labels = None
 depends_on = None
 
