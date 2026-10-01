@@ -82,25 +82,25 @@ export function InvoiceRow({
       <div className="flex items-center gap-1 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity"
         onClick={e => e.stopPropagation()}>
         <button onClick={() => navigate(`/invoices/${inv.id}`)}
-          className="text-[11px] px-2 py-1 rounded-md bg-bg text-ink-3 hover:bg-bg-2 transition-colors"
+          className="text-[11px] px-2.5 py-2 sm:px-2 sm:py-1 rounded-md bg-bg text-ink-3 hover:bg-bg-2 transition-colors"
           title="Open full page">
           Open
         </button>
         {inv.status !== 'paid' && (
           <button onClick={() => openSend(inv)}
-            className="flex items-center gap-1 text-[11px] px-2 py-1 rounded-md bg-bg text-ink-3 hover:bg-bg-2 transition-colors">
+            className="flex items-center gap-1 text-[11px] px-2.5 py-2 sm:px-2 sm:py-1 rounded-md bg-bg text-ink-3 hover:bg-bg-2 transition-colors">
             <Send className="w-3 h-3" /> Send
           </button>
         )}
         {inv.status !== 'paid' && inv.status !== 'overdue' && days && (
           <button onClick={() => markOverdue(inv.id)}
-            className="text-[11px] px-2 py-1 rounded-md bg-bg text-red-500 hover:bg-bg-2 transition-colors">
+            className="text-[11px] px-2.5 py-2 sm:px-2 sm:py-1 rounded-md bg-bg text-red-500 hover:bg-bg-2 transition-colors">
             Mark overdue
           </button>
         )}
         {inv.status !== 'paid' && (
           <button onClick={() => markPaid(inv.id)}
-            className="flex items-center gap-1 text-[11px] px-2 py-1 rounded-md bg-bg text-emerald-600 hover:bg-bg-2 transition-colors">
+            className="flex items-center gap-1 text-[11px] px-2.5 py-2 sm:px-2 sm:py-1 rounded-md bg-bg text-emerald-600 hover:bg-bg-2 transition-colors">
             <CheckCircle className="w-3 h-3" /> Paid
           </button>
         )}

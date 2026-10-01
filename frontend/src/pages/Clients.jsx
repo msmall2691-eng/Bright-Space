@@ -13,6 +13,7 @@ import { useClientMutations } from '../hooks/useClientMutations'
 import { useClientForm } from '../hooks/useClientForm'
 import { useClientView } from '../hooks/useClientView'
 import { useSelectionSet } from '../hooks/useSelectionSet'
+import { useIsMobile } from '../hooks/useIsMobile'
 import { CLIENT_COLUMNS } from '../components/clients/columns'
 import { ClientForm } from '../components/clients/ClientForm'
 import { MergeModal } from '../components/clients/MergeModal'
@@ -268,6 +269,13 @@ export default function Clients() {
     columns, setColumns, visibleColumns,
     viewConfig, applyView,
   } = useClientView({ statusFilter, setStatusFilter })
+  // On a phone the desktop table side-scrolls and its row actions are 24px
+  // taps; the card grid is the mobile-correct view. The view toggle is already
+  // hidden below sm (640), so force cards there regardless of the stored
+  // (desktop) preference — otherwise a saved 'table' lands the phone on the
+  // unusable table.
+  const isPhone = useIsMobile(640)
+  const effectiveViewMode = isPhone ? 'cards' : viewMode
   const fileInputRef = useRef(null)
   const {
     phoneNumbers,
@@ -458,7 +466,7 @@ export default function Clients() {
         {/* Client rows — Card view: a dense packing grid (two-up on wide) so
             the cards sit side by side instead of a tall stack of full-width
             bands. */}
-        {viewMode === 'cards' && (
+        {effectiveViewMode === 'cards' && (
           <div className="grid grid-cols-1 shell:grid-cols-2 gap-2 content-start overflow-y-auto flex-1">
             {filtered.map(c => (
               <ClientCardRow
@@ -485,7 +493,7 @@ export default function Clients() {
         )}
 
         {/* Client rows — Table view (Twenty CRM-inspired) */}
-        {viewMode === 'table' && (
+        {effectiveViewMode === 'table' && (
           <ClientTableView
             filtered={filtered}
             visibleColumns={visibleColumns}
