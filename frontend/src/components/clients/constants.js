@@ -39,7 +39,12 @@ export const EMPTY = {
   first_name: '', last_name: '', email: '', phone: '',
   address: '', city: '', state: '', zip_code: '',
   billing_address: '', billing_city: '', billing_state: '', billing_zip: '',
-  status: 'lead', source: '', notes: '', custom_fields: {},
+  // A client you add by hand is someone you're working with — start them
+  // Active, not as a lead. Website/intake leads come in through Requests and
+  // are promoted to a client on conversion; this form is the office entering a
+  // real customer, and defaulting to lead is what regrew the lead pile that
+  // guardrail #5 had to hide. (Still editable in the form's status field.)
+  status: 'active', source: '', notes: '', custom_fields: {},
 }
 
 /** Default visible-columns list for the table view. Saved views can
