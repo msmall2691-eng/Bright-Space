@@ -45,3 +45,10 @@ export const EMPTY = {
 /** Default visible-columns list for the table view. Saved views can
  *  override this by storing their own `columns` array. */
 export const DEFAULT_CLIENT_COLUMNS = ['name', 'phone', 'email', 'city', 'balance', 'next_visit', 'status']
+
+/** The status tab the Clients list lands on. Active, not "" (All) — the book
+ *  is mostly leads (an import left ~100 lead rows against ~40 real customers),
+ *  and the old All default buried the people the office actually works with
+ *  under that pile. Leads stay one tap away (the Leads tab / the clickable
+ *  "Leads" stat), and website leads live on their own Requests page. */
+export const DEFAULT_CLIENT_STATUS = 'active'
