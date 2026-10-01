@@ -59,7 +59,7 @@ export default function RecordShell({
               {subtitle && <p className="text-[13px] text-ink-3 mt-0.5">{subtitle}</p>}
             </div>
           </div>
-          {actions && <div className="flex items-center gap-2 shrink-0">{actions}</div>}
+          {actions && <div className="flex items-center flex-wrap justify-end gap-2">{actions}</div>}
         </div>
 
         {/* Body: main column + related rail. shell: (900px), not lg: (1024),
