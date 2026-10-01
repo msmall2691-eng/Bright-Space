@@ -35,15 +35,25 @@ DOWNGRADE restores the columns' shape and NOT the Square rows. A deleted secret
 is not recoverable from a downgrade, and it should not be: rotate the token in
 Square's dashboard instead of trying to put this one back.
 
-Alembic version: 122
+RENUMBERED 122 -> 124. This was written as 122 off 121, and #1001 landed its
+own 122 + 123 off the same 121 while this branch was in flight — two files
+claiming 122 and, worse, a FORK in the revision graph. Each branch was a clean
+linear chain on its own, so both passed CI; merged, `alembic upgrade head`
+fails with "Multiple head revisions are present", and it fails during the
+Railway deploy rather than on anybody's machine. Linearized by rewiring
+`down_revision` (not `alembic merge`, which would keep the graph forked
+forever): #1001's migrations are already on main, so they go first and this
+one chains behind them. Nothing about the change itself moved.
+
+Alembic version: 124
 """
 
 from alembic import op
 import sqlalchemy as sa
 
 
-revision = "122_invoice_stripe_checkout"
-down_revision = "121_open_unassigned_recurring"
+revision = "124_invoice_stripe_checkout"
+down_revision = "123_rehide_unopted_recurring"
 branch_labels = None
 depends_on = None
 
