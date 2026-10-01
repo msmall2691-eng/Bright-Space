@@ -13,6 +13,7 @@ import AiInsight from '../components/AiInsight'
 import GlassCard from '../components/ui/GlassCard'
 import { ICAL_SOURCES } from '../components/properties/constants'
 import { isStaleSync, relTimeAgo } from '../components/properties/utils'
+import { groupJobsByService } from '../utils/services'
 // Normalize API responses — some endpoints return raw arrays, others return
 // paginated envelopes like { items, total, limit, offset }.
 const toArray = (res) => Array.isArray(res) ? res : (res?.items ?? res?.data ?? [])
@@ -502,6 +503,11 @@ export default function PropertyDetail() {
     return a.start_time > b.start_time ? 1 : -1
   })
 
+  // Roll this property's work up into service sections (Recurring clean /
+  // Turnovers / Deep clean / Commercial / One-time) — the Jobber-style
+  // "services under this property" view. Preserves the date sort within each.
+  const serviceGroups = groupJobsByService(sortedJobs)
+
   return (
     <div className="flex flex-col h-full bg-bg">
       {/* Header */}
@@ -668,8 +674,16 @@ export default function PropertyDetail() {
               </div>
             </GlassCard>
           ) : (
-            <div className="space-y-3">
-              {sortedJobs.map((job) => {
+            <div className="space-y-6">
+              {serviceGroups.map((group) => (
+                <section key={group.key}>
+                  <div className="flex items-center gap-2 mb-2">
+                    <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${group.dot}`} aria-hidden="true" />
+                    <h2 className="text-sm font-semibold text-ink">{group.label}</h2>
+                    <span className="text-xs text-ink-3 tabular-nums">{group.jobs.length}</span>
+                  </div>
+                  <div className="space-y-3">
+                    {group.jobs.map((job) => {
                 const jobVisits = getJobVisits(job.id)
                 const statusConfig = JOB_STATUS_CONFIG[job.status] || JOB_STATUS_CONFIG.scheduled
                 const hasCleaners = job.cleaner_ids?.length > 0
@@ -737,7 +751,10 @@ export default function PropertyDetail() {
                     )}
                   </div>
                 )
-              })}
+                    })}
+                  </div>
+                </section>
+              ))}
             </div>
           )}
         </div>
