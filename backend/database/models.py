@@ -278,6 +278,17 @@ class Client(Base):
     status = Column(String, default="lead", index=True)  # lead, active, inactive
     notes = Column(Text)
     source = Column(String)  # canonical: website|sms|email|referral|manual|ical|phone|unknown
+    # Per-customer opt-in (migration 122): when True, this customer's RECURRING
+    # visits that generate with no cleaner are offered to the crew board for any
+    # cleared sub to grab, one visit at a time (modules/recurring/router.py).
+    # When False (the default), they stay unassigned-and-hidden exactly as before
+    # — the office still opens them by hand. This scopes the Sept 2026 owner
+    # decision to specific customers rather than the whole book; it never touches
+    # turnovers (standing cleaner, migration 120) or one-off jobs.
+    # server_default so a raw INSERT that omits this column (the Postgres RLS/
+    # tenancy tests insert clients with bare SQL) fills False instead of
+    # tripping the NOT NULL — a Python-side default alone emits no DDL default.
+    recurring_open_to_crew = Column(Boolean, default=False, server_default="false", nullable=False)
     custom_fields = Column(JSON, default=dict)
     created_at = Column(DateTime, default=_utcnow)
     # Audit actor metadata (Twenty's ActorMetadata): who/what created and last
@@ -730,14 +741,17 @@ class Job(Base):
     #
     # Owner decision #2 (original): ONLY office-marked jobs are claimable — an
     # unassigned job is not automatically open. NARROWED by the owner in writing
-    # (Sept 2026) FOR RECURRING WORK: an UNASSIGNED RECURRING occurrence (one
-    # with recurring_schedule_id, cleaner_ids empty, not a route job) is now
-    # auto-posted here at generation (modules/recurring/router.py) and backfilled
-    # for existing rows (migration 121), so a repeating visit with no crew — or a
-    # date its regular can't cover — reaches the bench without the office posting
-    # each one. It stays an offer: the sub requests, the office approves. The
-    # rule still holds for one-off and turnover jobs, which the office opens by
-    # hand (turnovers via a property's standing cleaner, migration 120).
+    # (Sept 2026) FOR RECURRING WORK, then SCOPED to specific customers: an
+    # UNASSIGNED RECURRING occurrence (recurring_schedule_id set, cleaner_ids
+    # empty, not a route job) is auto-posted here at generation
+    # (modules/recurring/router.py) ONLY when its customer opted in
+    # (Client.recurring_open_to_crew, migration 122), so a repeating visit with
+    # no crew — or a date its regular can't cover — reaches the bench without the
+    # office posting each one. It stays an offer: the sub requests, the office
+    # approves. Migration 121 opened these globally; migration 123 re-hid the
+    # ones whose customer isn't opted in (preserving any with a pending claim).
+    # The rule still holds for one-off and turnover jobs, which the office opens
+    # by hand (turnovers via a property's standing cleaner, migration 120).
     open_for_claims = Column(Boolean, default=False, nullable=False)
     # Marketplace (migration 117): limit WHO among the cleared bench sees this
     # open offer. A list of cleaner_ids; NULL or [] means every cleared sub sees
