@@ -4,6 +4,8 @@ import PageHeader from '../components/ui/PageHeader'
 import SubNav from '../components/ui/SubNav'
 import { EmptyState, Skeleton } from '../components/ui'
 import AgentAvatar from '../components/workspace/AgentAvatar'
+import DailyBrief from '../components/board/DailyBrief'
+import ProposalsQueue from '../components/board/ProposalsQueue'
 import MarkdownContent from '../components/workspace/MarkdownContent'
 import { get, post, wsUrl } from '../api'
 import { todayYMD } from '../utils/format'
@@ -409,6 +411,23 @@ export default function Workspace() {
       </PageHeader>
 
       <div className="flex-1 min-h-0 flex flex-col px-4 sm:px-8 pb-4 w-full max-w-4xl mx-auto">
+        {/* What the agents produced while she was away, above the chat that
+            produces more of it. Both moved here off the Ops Board (Oct 2026):
+            the landing page's job is the calendar and what needs a decision,
+            and these two were an AI paragraph and an approval list sitting in
+            front of it — plus two AI calls racing the real data on first paint.
+            Reading and approving agent output is what this page is FOR, so
+            here they're the point rather than an interruption.
+
+            Both render nothing when there's nothing to say, so the chat sits
+            at the top of a quiet day exactly as it did before. */}
+        <div className="shrink-0">
+          <DailyBrief />
+          <div className="mt-3 empty:mt-0">
+            <ProposalsQueue />
+          </div>
+        </div>
+
         {/* Agent picker strip */}
         <div className="shrink-0 flex items-center gap-2 overflow-x-auto pb-3 -mx-1 px-1 scrollbar-thin">
           <button

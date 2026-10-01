@@ -1,40 +1,52 @@
 /**
- * Ops Board — the command-center dashboard (the /dashboard home).
+ * Ops Board — the /dashboard home.
  *
- * A bento, not a vertical stack of full-width bands (owner: "worst dashboard
- * layout ever... wasted space... useful boxes, more actions, more movement").
- * Four tiers: a compact KPI strip; the REAL Schedule calendar beside the
- * "needs you now" action feed, above the fold; money / crew / marketplace as
- * equal bento boxes; then plumbing (feed, recurring & systems health) quiet at
- * the bottom. Everything that needs the operator's attention is grouped into
- * six clearable sections with integration-status chips, per-severity filter
- * chips, and `/`-to-search. One fetch (`GET /api/dashboard/board`) drives all
- * of that; the backend ships render-ready strings, so this file is a pure view
- * (see backend/services/board_service.py). Feed sections cap at PRIMARY_ROW_CAP
- * rows on-screen, with a "+N more" link into the page that owns the full set —
- * the board is a triage surface, not a scroll-forever list.
+ * THREE THINGS, IN ORDER. A compact KPI band; the REAL Schedule calendar
+ * beside ONE "needs you now" feed, above the fold; then the bench below it,
+ * and her own arrangeable widgets last. That is the whole page.
  *
- * Upcoming visits are NOT one of those sections: the REAL Schedule calendar
- * (components/board/HomeScheduleCalendar.jsx wrapping the shared <CalendarView>)
- * sits in the above-the-fold row, so Home shows the same month, same jobs and
- * same drag-to-reschedule as the Schedule page — not a diverging count grid. It
+ * IT GOT THERE BY SUBTRACTION (Oct 2026). The owner's report was all four of
+ * "too much at once", "slow", "dated" and "can't find what I need", which is
+ * one problem wearing four hats: the page had accreted to ~17 zones across
+ * three prior passes, each of which ADDED. So this pass only removed. Cut from
+ * the landing page, by her call, box by box:
+ *
+ *   - the AI daily brief and the approval queue → the Assistant tab
+ *     (pages/Workspace.jsx). Reading and approving agent output is what that
+ *     page is for; in front of the calendar they were an interruption, and two
+ *     AI completions racing the real data on first paint;
+ *   - the money / crew / feed-health / recurring snapshot boxes and the two
+ *     trend charts. The KPI band already answers "is today OK" in one row;
+ *   - the crew-activity list and the foldable "System health" group.
+ *
+ * WHAT A CUT BOX MUST NOT TAKE WITH IT. Those boxes sat above real work: the
+ * money and systems ATTENTION ITEMS. An overdue invoice does not stop
+ * mattering because its box was cut, so every section now renders in ONE feed
+ * in SECTION_RANK order (messages → requests → needs_cleaner → money →
+ * systems → safe_to_ignore) beside the calendar. The old FEED/MONEY/PLUMBING
+ * split dealt those same sections across three places on the page, which is
+ * exactly how a thing you were looking for ended up in a column you had
+ * stopped scrolling to. There is a test pinning this; keep it green.
+ *
+ * ONE FETCH, PLUS WHAT SCROLLS INTO VIEW. `GET /api/dashboard/board` drives
+ * the band and the whole feed; the backend ships render-ready strings, so this
+ * file is a pure view (see backend/services/board_service.py). The calendar
  * runs its own useScheduleData(month) fetch (/api/schedule/week, correctly
- * paged).
+ * paged). The self-fetching boxes below the fold are wrapped in <WhenVisible>,
+ * so their requests happen when they're scrolled to rather than all at once on
+ * load. Don't add an eager fetch here — nine of them racing is what "slow and
+ * janky" was.
  *
- * The approval queue (components/board/ProposalsQueue.jsx) leads the action
- * feed and fetches itself: it lists pending ProposedActions, and on the first
- * Home visit of a business day asks Autopilot to draft the follow-ups owed.
- *
- * The four snapshot boxes (components/board/SnapshotBoxes.jsx) read
- * `data.snapshot` out of the SAME board response — money/hours today, crew
- * today, turnover-feed health, stalled recurring series — so the whole
- * dashboard is still one request plus the calendar's own range fetch.
+ * Feed sections cap at PRIMARY_ROW_CAP rows with a "+N more" into the page
+ * that owns the full set: this is a triage surface, not a scroll-forever list.
+ * Cleared-state persists in localStorage. `/` opens search; severity filters
+ * and the cleared-progress meter live behind the Filters disclosure.
  *
  * Design: built entirely on the app's semantic tokens (bg / panel / ink /
  * hairline + the indigo accent), so it re-skins with the active theme and
  * lands the dark iOS look under `theme-console`. Sections are flat panels with
  * a header and hairline-divided rows; color is reserved for status, never
- * decoration. Cleared-state persists in localStorage (survives reload).
+ * decoration.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
@@ -52,10 +64,7 @@ import HomeWidgets from '../components/board/HomeWidgets'
 import WhenVisible from '../components/board/WhenVisible'
 import StickyNotes from '../components/board/StickyNotes'
 import QuickActions from '../components/board/QuickActions'
-import ProposalsQueue, { relTime } from '../components/board/ProposalsQueue'
 import NovaChat from '../components/board/NovaChat'
-import { MoneyToday, CrewToday, FeedHealth, RecurringHealth } from '../components/board/SnapshotBoxes'
-import { MoneyTrend, LeadFunnel } from '../components/board/Charts'
 import BenchDigest from '../components/BenchDigest'
 import MarketplaceBoard from '../components/board/MarketplaceBoard'
 import SubNav from '../components/ui/SubNav'
@@ -73,20 +82,6 @@ function persistCleared(set) {
   try { localStorage.setItem(CLEARED_KEY, JSON.stringify([...set])) } catch { /* ignore */ }
 }
 
-/* ── collapsible widget groups ────────────────────────────────────────────────
-   Owner declutter (Sept 2026): the secondary widget clusters (trends, system
-   health) can be folded away so the landing isn't a wall. Only CLOSED groups
-   are stored (default is open), so a slimmed-down dashboard stays slim per
-   device without hiding anything by default. */
-const GROUPS_KEY = 'brightbase_board_groups_closed'
-function loadClosedGroups() {
-  try { return new Set(JSON.parse(localStorage.getItem(GROUPS_KEY) || '[]')) }
-  catch { return new Set() }
-}
-function persistClosedGroups(set) {
-  try { localStorage.setItem(GROUPS_KEY, JSON.stringify([...set])) } catch { /* ignore */ }
-}
-
 function fmtRefreshed(iso) {
   if (!iso) return ''
   try {
@@ -100,60 +95,6 @@ function matchesQuery(it, q) {
   if (!q) return true
   const hay = `${it.title} ${it.body || ''} ${(it.tags || []).map(t => t.label).join(' ')}`.toLowerCase()
   return hay.includes(q)
-}
-
-function fmtBriefTime(iso) {
-  if (!iso) return ''
-  try {
-    return new Date(iso).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })
-  } catch { return '' }
-}
-
-/* ── Daily brief strip ────────────────────────────────────────────────────── */
-/** Quiet one-paragraph AI morning brief. Self-contained on purpose: it does
- *  its own fetch (once, on mount — the backend caches the prose per business
- *  day, so this is cheap) and on ANY failure renders nothing at all. The
- *  board's real data must never sit behind, or visually blame, a nicety. */
-function DailyBrief() {
-  const [brief, setBrief] = useState(null)     // { brief, generated_at }
-  const [state, setState] = useState('loading') // loading | ready | hidden
-  const [refreshing, setRefreshing] = useState(false)
-
-  const fetchBrief = useCallback(async (refresh) => {
-    try {
-      const res = await get(`/api/ai/daily-brief${refresh ? '?refresh=1' : ''}`)
-      if (res?.brief) { setBrief(res); setState('ready') } else { setState('hidden') }
-    } catch {
-      setState('hidden')
-    }
-  }, [])
-
-  useEffect(() => { fetchBrief(false) }, [fetchBrief])
-
-  if (state === 'hidden') return null
-  return (
-    <div className="mt-3 flex items-start gap-2.5 rounded-lg border border-hairline bg-panel px-4 py-3">
-      <Sparkles className="mt-0.5 h-3.5 w-3.5 shrink-0 text-ink-3" />
-      {state === 'loading' ? (
-        <div className="h-3.5 w-full max-w-xl animate-pulse self-center rounded bg-bg-2" />
-      ) : (
-        <>
-          <p className="min-w-0 flex-1 text-[13px] leading-relaxed text-ink-2">{brief.brief}</p>
-          <div className="flex shrink-0 items-center gap-2 pt-px">
-            <span className="text-[11px] tabular-nums text-ink-3">{fmtBriefTime(brief.generated_at)}</span>
-            <button
-              onClick={async () => { setRefreshing(true); await fetchBrief(true); setRefreshing(false) }}
-              disabled={refreshing}
-              aria-label="Refresh brief"
-              title="Regenerate today's brief"
-              className="text-ink-3 transition-colors hover:text-ink disabled:opacity-50">
-              <RefreshCw className={`h-3 w-3 ${refreshing ? 'animate-spin' : ''}`} />
-            </button>
-          </div>
-        </>
-      )}
-    </div>
-  )
 }
 
 /* ── Top stats band ───────────────────────────────────────────────────────── */
@@ -200,55 +141,6 @@ function TopBand({ stats, unreadConversations, crewUnreadThreads, showComms, nav
         </button>
       ))}
     </div>
-  )
-}
-
-/* ── Crew activity ────────────────────────────────────────────────────────── */
-/** Staff activity, right under communication: the latest crew↔office chatter
- *  from /api/crew/threads (who said what, unread as dot + number), linking
- *  into the Messages page's Crew view. Self-contained like DailyBrief — its
- *  own fetch, renders nothing on failure/emptiness (viewers 403 here, and a
- *  quiet page beats an error card for a nicety). */
-function CrewActivity({ navigate }) {
-  const [threads, setThreads] = useState(null)
-  useEffect(() => {
-    get('/api/crew/threads')
-      .then(t => setThreads(Array.isArray(t) ? t : []))
-      .catch(() => setThreads([]))
-  }, [])
-  const recent = (threads || []).filter(t => t.last_message).slice(0, 4)
-  if (recent.length === 0) return null
-  return (
-    <section className="overflow-hidden rounded-2xl border border-hairline bg-panel">
-      <header className="flex items-center gap-2 border-b border-hairline px-3.5 py-2.5">
-        <span className="text-[13px] leading-none">👷</span>
-        <h2 className="text-[11px] font-medium text-ink-3">Crew</h2>
-        <button onClick={() => navigate('/comms?view=crew')}
-          className="ml-auto inline-flex items-center gap-0.5 text-[11px] font-semibold text-indigo-600 transition-all hover:gap-1 dark:text-indigo-400">
-          Open crew chat<ArrowRight className="h-3 w-3" />
-        </button>
-      </header>
-      <div className="divide-y divide-hairline">
-        {recent.map(t => (
-          <button key={t.user_id} onClick={() => navigate('/comms?view=crew')}
-            className="flex w-full items-baseline gap-2 px-3.5 py-2 text-left transition-colors hover:bg-bg-2">
-            <span className={`shrink-0 text-[12.5px] ${t.unread > 0 ? 'font-semibold text-ink' : 'font-medium text-ink-2'}`}>
-              {t.name}
-            </span>
-            <span className="min-w-0 flex-1 truncate text-[12px] text-ink-3">
-              {t.last_message.sender === 'office' && 'You: '}{t.last_message.body}
-            </span>
-            {t.unread > 0 && (
-              <span className="flex shrink-0 items-center gap-1">
-                <span className="h-1.5 w-1.5 rounded-full bg-indigo-600" aria-hidden="true" />
-                <span className="text-[10px] font-bold tabular-nums text-ink">{t.unread}</span>
-              </span>
-            )}
-            <span className="shrink-0 text-[10.5px] tabular-nums text-ink-3">{relTime(t.last_activity)}</span>
-          </button>
-        ))}
-      </div>
-    </section>
   )
 }
 
@@ -439,32 +331,6 @@ function Section({ section, items, clearedSet, onToggle, onAction, actioningKey,
   )
 }
 
-/** A quiet, foldable label above a cluster of dashboard widgets. Open by
- *  default (nothing is hidden on first load); folding one persists per device,
- *  so someone who slims their dashboard keeps it that way. It's a section
- *  header + toggle, NOT a wrapping panel — the child widgets keep their own
- *  card borders, so there's no box-in-box. */
-function WidgetGroup({ groupKey, title, children }) {
-  const [open, setOpen] = useState(() => !loadClosedGroups().has(groupKey))
-  const toggle = () => setOpen(o => {
-    const next = !o
-    const closed = loadClosedGroups()
-    if (next) closed.delete(groupKey); else closed.add(groupKey)
-    persistClosedGroups(closed)
-    return next
-  })
-  return (
-    <div className="flex flex-col gap-4">
-      <button type="button" onClick={toggle} aria-expanded={open}
-        className="flex items-center gap-1.5 text-[11px] font-medium uppercase tracking-wide text-ink-3 transition-colors hover:text-ink-2">
-        <ChevronDown className={`h-3 w-3 shrink-0 transition-transform ${open ? '' : '-rotate-90'}`} />
-        {title}
-      </button>
-      {open && children}
-    </div>
-  )
-}
-
 /* ── Page ─────────────────────────────────────────────────────────────────── */
 
 // Home is a command-center bento, not a vertical stack of full-width bands
@@ -483,12 +349,10 @@ function WidgetGroup({ groupKey, title, children }) {
 // + quote nudges; Real People Waiting = conversations + leads) are gone — that
 // grouping was the "chaos", not the styling.
 const SECTION_RANK = { messages: 0, requests: 1, needs_cleaner: 2, money: 3, systems: 4, safe_to_ignore: 5 }
-// Command-center bento tiers. The FEED is the "needs you now" column that sits
-// beside the schedule above the fold — every card that wants a decision. MONEY
-// is its own bento box; SYSTEMS/noise are plumbing, quiet at the bottom.
-const FEED_SECTIONS = new Set(['messages', 'requests', 'needs_cleaner'])
-const MONEY_SECTIONS = new Set(['money'])
-const PLUMBING_SECTIONS = new Set(['systems', 'safe_to_ignore'])
+// SECTION_RANK above is now the only tiering: every section renders in that
+// order in ONE feed beside the schedule. The old FEED/MONEY/PLUMBING split
+// dealt the same sections across three places on the page, which is how a
+// thing you were looking for ended up in a column you'd stopped scrolling to.
 const SECTION_LINKS = {
   messages: { label: 'Inbox', to: '/comms' },
   requests: { label: 'Requests', to: '/requests' },
@@ -672,11 +536,16 @@ export default function OpsBoard() {
     }))
   }, [sections, filter, hideCleared, cleared, q])
 
-  // Split the sections across the bento: the action feed that sits beside the
-  // schedule above the fold, the money box, and the plumbing at the bottom.
-  const feedSections = visibleBySection.filter(v => FEED_SECTIONS.has(v.section.key))
-  const moneySections = visibleBySection.filter(v => MONEY_SECTIONS.has(v.section.key))
-  const plumbingSections = visibleBySection.filter(v => PLUMBING_SECTIONS.has(v.section.key))
+  // ONE feed, not three. The sections used to be dealt across the page — some
+  // beside the schedule, money in its own bento column, systems folded away at
+  // the bottom — which is how "I can't find what I need" happens: the thing you
+  // were looking for was in a column you'd stopped scrolling to. visibleBySection
+  // is already ordered by SECTION_RANK (messages → requests → needs_cleaner →
+  // money → systems → safe_to_ignore), so this is simply that order, in one
+  // place, beside the calendar. Nothing is dropped by the cut: the money and
+  // systems ATTENTION ITEMS still appear here even though their snapshot boxes
+  // are gone from the landing page.
+  const feedSections = visibleBySection
 
   const anyVisible = visibleBySection.some(v => v.items.length > 0)
   const filtersActive = filter !== 'all' || !!q || hideCleared
@@ -730,8 +599,6 @@ export default function OpsBoard() {
         <div className="mt-3">
           <SubNav />
         </div>
-
-        <DailyBrief />
 
         {/* Compact KPI strip up top — the old "Communication" strip and the
             stat-tile band, merged into one dense row right under the brief
@@ -842,9 +709,6 @@ export default function OpsBoard() {
                   </div>
                 )}
 
-                {/* Waiting on her yes: drafted follow-ups + structural approvals. */}
-                <ProposalsQueue />
-
                 {/* The action feed — messages, incoming work, coverage gaps —
                     one concern per box, each capped with a "+N more" into the
                     page that owns the full set. */}
@@ -878,53 +742,24 @@ export default function OpsBoard() {
               </div>
             </div>
 
-            {/* ── Equal bento boxes: money · crew · marketplace ───────────────
-                One subject per column, and each column is its OWN flex stack so
-                a short box sits directly on the next instead of stretching to
-                the tallest in a row-locked grid (owner: "too much empty spaces
-                lol"). A column whose subject is quiet renders nothing. */}
+            {/* ── The bench, below the fold ──────────────────────────────────
+                Who's asking for work and the week's round-up. Money and crew
+                snapshot boxes used to sit beside these in a three-column bento;
+                the owner cut both from the landing page (Oct 2026) — the top
+                band already carries the day's numbers, and the attention items
+                that lived under those boxes moved into the one feed above. Both
+                boxes here fetch themselves, so both wait until scrolled to. */}
             <div data-testid="home-bento"
-              className="mt-4 grid grid-cols-1 gap-4 shell:grid-cols-3 bb-board-in"
+              className="mt-4 grid grid-cols-1 gap-4 shell:grid-cols-2 bb-board-in"
               style={{ animationDelay: '40ms' }}>
-              <div className="flex flex-col gap-4">
-                <MoneyToday snap={snapshot.money_today} />
-                {moneySections.map(({ section, items }) => (
-                  <Section key={section.key} section={section} items={items}
-                    clearedSet={cleared} onToggle={toggleCleared}
-                    onAction={runAction} actioningKey={actioningKey} confirmingKey={confirmingKey}
-                    headerLink={SECTION_LINKS[section.key]} navigate={navigate}
-                    onClearAll={clearAllInSection} clearingSection={clearingSection}
-                    setConfirmingKey={setConfirmingKey} filtersActive={filtersActive}
-                    maxRows={PRIMARY_ROW_CAP} />
-                ))}
-                {(snapshot.money_trend || snapshot.lead_funnel) && (
-                  <WidgetGroup groupKey="trends" title="Trends">
-                    <MoneyTrend snap={snapshot.money_trend} />
-                    <LeadFunnel snap={snapshot.lead_funnel} />
-                  </WidgetGroup>
-                )}
-              </div>
-
-              <div className="flex flex-col gap-4">
-                <CrewToday snap={snapshot.crew} />
-                {canComms && (
-                  <WhenVisible minHeight="0">
-                    <CrewActivity navigate={navigate} />
-                  </WhenVisible>
-                )}
-              </div>
-
-              <div className="flex flex-col gap-4">
-                {/* The office runs on the bench claiming work and her saying yes:
-                    who's waiting on that yes, and the week's bench round-up. Both
-                    link out to act — neither approves here (marketplace guard). */}
-                <WhenVisible minHeight="12rem">
-                  <MarketplaceBoard />
-                </WhenVisible>
-                <WhenVisible minHeight="8rem">
-                  <BenchDigest />
-                </WhenVisible>
-              </div>
+              {/* Neither approves here — the office says yes on the marketplace
+                  page itself (brightbase-marketplace guard). */}
+              <WhenVisible minHeight="12rem">
+                <MarketplaceBoard />
+              </WhenVisible>
+              <WhenVisible minHeight="12rem">
+                <BenchDigest />
+              </WhenVisible>
             </div>
 
             {/* The customizable "little boxes" she asked to arrange — quick
@@ -941,41 +776,6 @@ export default function OpsBoard() {
               </WhenVisible>
             </div>
 
-            {/* ── Plumbing, quiet at the bottom: feed + recurring health and
-                the systems / safe-to-ignore piles. Folds away, and renders
-                nothing at all when there's nothing to report. */}
-            {(snapshot.feeds || snapshot.recurring || plumbingSections.some(v => v.items.length)) && (
-              <div className="mt-6">
-                <WidgetGroup groupKey="health" title="System health">
-                  <div className="grid grid-cols-1 gap-4 shell:grid-cols-2">
-                    <div className="flex flex-col gap-4">
-                      <FeedHealth snap={snapshot.feeds} />
-                      {plumbingSections.filter(v => v.section.key === 'systems').map(({ section, items }) => (
-                        <Section key={section.key} section={section} items={items}
-                          clearedSet={cleared} onToggle={toggleCleared}
-                          onAction={runAction} actioningKey={actioningKey} confirmingKey={confirmingKey}
-                          headerLink={SECTION_LINKS[section.key]} navigate={navigate}
-                          onClearAll={clearAllInSection} clearingSection={clearingSection}
-                          setConfirmingKey={setConfirmingKey} filtersActive={filtersActive}
-                          maxRows={PRIMARY_ROW_CAP} />
-                      ))}
-                    </div>
-                    <div className="flex flex-col gap-4">
-                      <RecurringHealth snap={snapshot.recurring} />
-                      {plumbingSections.filter(v => v.section.key === 'safe_to_ignore').map(({ section, items }) => (
-                        <Section key={section.key} section={section} items={items}
-                          clearedSet={cleared} onToggle={toggleCleared}
-                          onAction={runAction} actioningKey={actioningKey} confirmingKey={confirmingKey}
-                          headerLink={SECTION_LINKS[section.key]} navigate={navigate}
-                          onClearAll={clearAllInSection} clearingSection={clearingSection}
-                          setConfirmingKey={setConfirmingKey} filtersActive={filtersActive}
-                          maxRows={PRIMARY_ROW_CAP} />
-                      ))}
-                    </div>
-                  </div>
-                </WidgetGroup>
-              </div>
-            )}
           </>
         )}
 
