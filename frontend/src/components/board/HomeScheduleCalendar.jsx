@@ -21,6 +21,13 @@ import { toLocalYMD } from '../../utils/format'
  * patch that keeps a dragged chip from snapping back before the refetch, and
  * onRefresh reconciles — both mirrored from Schedule.jsx.
  *
+ * The 3-minute poll (vs the hook's 45s default) is because Home is a glance
+ * surface, not where two admins edit against each other — that's the Schedule
+ * page, which keeps the default. At 45s this re-fetched the whole month 80
+ * times an hour while the dashboard sat open. The hook refetches on returning
+ * to the tab, so the slower interval costs no freshness at the moment anyone
+ * actually looks (brightbase-economy).
+ *
  * stackDayDetail is why the month grid stays legible here. Home puts this
  * calendar in a ~420px column at the owner's ~940px window; CalendarView's
  * day rail is a fixed 320px and gates itself on the VIEWPORT (useIsMobile /
@@ -38,7 +45,7 @@ export default function HomeScheduleCalendar({ navigate }) {
   const [currentDate, setCurrentDate] = useState(() => new Date())
   const {
     jobs, setJobs, setVisits, refresh, range, loadError,
-  } = useScheduleData(currentDate, 'month')
+  } = useScheduleData(currentDate, 'month', { pollMs: 180000 })
 
   // CalendarView reads parentJobs as an array; the hook holds them as a map.
   const parentJobs = useMemo(() => Object.values(jobs || {}), [jobs])
