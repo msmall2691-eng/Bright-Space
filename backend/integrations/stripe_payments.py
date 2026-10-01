@@ -51,9 +51,34 @@ logger = logging.getLogger(__name__)
 
 def configured() -> bool:
     """True when Stripe is usable. Shares one definition with the payout side
-    so the two cannot disagree about whether Stripe is set up."""
+    so the two cannot disagree about whether Stripe is set up.
+
+    This is the SECRET KEY only. Taking a customer's money needs more than
+    that — see `can_take_payments`.
+    """
     from integrations.stripe_connect import configured as _c
     return _c()
+
+
+def can_take_payments() -> bool:
+    """Both halves, because the missing half charges people and tells no one.
+
+    A secret key alone is enough to open a Checkout session and take the
+    money. It is NOT enough to learn that the money arrived: the webhook
+    handler refuses an event it cannot verify (503, same fail-closed posture as
+    the Twilio webhook), so with STRIPE_WEBHOOK_SECRET unset every payment
+    completes at Stripe and no invoice is ever marked paid. The customer is
+    charged, the invoice chases them by email, and the office finds out from a
+    phone call.
+
+    So the pay button is gated on BOTH. A warning on the settings screen was
+    the first attempt at this and is not a control — it tells the operator
+    about a state it still allows. "Not available" is the right answer while
+    half-configured; the payout rail, which needs no webhook to send a
+    transfer, keeps using `configured()` and is unaffected.
+    """
+    from integrations.stripe_connect import configured as _c, webhook_secret
+    return bool(_c() and webhook_secret())
 
 
 def dollars_to_cents(amount) -> int:

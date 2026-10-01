@@ -344,11 +344,25 @@ def update_invoice(invoice_id: int, data: InvoiceUpdate, db: Session = Depends(g
         tax_rate = data.tax_rate if data.tax_rate is not None else inv.tax_rate
         discount = data.discount if data.discount is not None else (inv.discount or 0)
         subtotal, tax, total = calc_totals(items, tax_rate or 0, discount)
+        old_total = inv.total
         inv.items = items
         inv.subtotal = subtotal
         inv.tax = tax
         inv.discount = discount
         inv.total = total
+        # REPRICING KILLS THE PAYMENT LINK. A Stripe Checkout session is
+        # created for the total at the moment it was opened and cannot be
+        # amended; leaving it live after the price changes means the customer
+        # can still pay the OLD amount against the NEW invoice. Dropping the
+        # stored session means the next tap mints one for the real total, and
+        # the webhook's amount check (see `record_checkout_payment`) catches a
+        # session that was already in flight when this edit landed.
+        #
+        # Only when the number actually moved: a no-op edit should not
+        # invalidate a link the customer may have open.
+        if total != old_total:
+            inv.stripe_checkout_session_id = None
+            inv.stripe_checkout_expires_at = None
     for field in ["tax_rate", "status", "due_date", "notes", "custom_fields"]:
         val = getattr(data, field)
         if val is not None:
@@ -509,9 +523,14 @@ def send_invoice(invoice_id: int, data: SendInvoiceRequest, db: Session = Depend
 # watches fail.
 
 def _online_payment_enabled() -> bool:
-    """Whether the public page should offer to take money."""
-    from integrations.stripe_payments import configured
-    return configured()
+    """Whether the public page should offer to take money.
+
+    Needs the webhook secret as well as the API key: without it the payment
+    succeeds at Stripe and the invoice is never marked paid. See
+    `stripe_payments.can_take_payments`.
+    """
+    from integrations.stripe_payments import can_take_payments
+    return can_take_payments()
 
 
 def _amount_due(inv: Invoice) -> float:
@@ -701,15 +720,31 @@ def start_checkout(token: str, db: Session = Depends(get_db)):
     """
     from integrations import stripe_payments as sp
 
-    inv = db.query(Invoice).filter(Invoice.public_token == token).first()
-    if not inv:
-        raise HTTPException(status_code=404, detail="Invoice not found")
-
-    if not sp.configured():
+    if not sp.can_take_payments():
         # 503, not 400: nothing is wrong with the request. The server isn't set
-        # up, and the page should fall back to "call/text us".
+        # up, and the page should fall back to "call/text us". Checked BEFORE
+        # the row is locked so a misconfigured server doesn't take locks.
         raise HTTPException(status_code=503,
                             detail="Online payment isn't set up yet.")
+
+    # LOCKED FOR THE WHOLE DECISION, and this is the only thing that makes
+    # one-live-session-per-invoice true. Reading the row, asking Stripe about
+    # the existing session, creating a new one and writing its id are four
+    # steps; without the lock two concurrent taps both read "no live session",
+    # both create one at Stripe, and the second write overwrites the first id
+    # while BOTH urls stay chargeable. The columns are not unique and could not
+    # fix this anyway — the duplicate is created at Stripe, not in this table.
+    # SQLite ignores FOR UPDATE (it serializes writers anyway).
+    #
+    # The lock is held across a network call, which is not free: it pins the
+    # row for up to the Stripe timeout (30s). Accepted deliberately — it is one
+    # rarely-contended row, the endpoint is metered at 20/hour, and the thing
+    # being prevented is charging somebody twice.
+    inv = (db.query(Invoice)
+           .filter(Invoice.public_token == token)
+           .populate_existing().with_for_update().first())
+    if not inv:
+        raise HTTPException(status_code=404, detail="Invoice not found")
 
     status = (inv.status or "").lower()
     if status == "paid":
@@ -728,11 +763,50 @@ def start_checkout(token: str, db: Session = Depends(get_db)):
     if inv.stripe_checkout_session_id and inv.stripe_checkout_expires_at \
             and inv.stripe_checkout_expires_at > now:
         existing = sp.retrieve_session(inv.stripe_checkout_session_id)
-        # Only reuse a session Stripe still calls open AND still has a URL for.
-        # `None` here means the read failed, which is "unknown" — fall through
-        # and mint a fresh session rather than refuse to take the money.
-        if existing and existing.get("status") == "open" and existing.get("url"):
+
+        # A FAILED READ IS "UNKNOWN", NOT "GONE". Minting a fresh session here
+        # is how a bank debit already in flight becomes a second bank debit, so
+        # this refuses and asks them to try again instead. The earlier version
+        # fell through on purpose ("don't refuse to take the money"), which is
+        # the wrong side to err on: a customer retrying in a minute is a
+        # nuisance, a customer debited twice is a refund and a phone call.
+        if existing is None:
+            raise HTTPException(
+                status_code=503,
+                detail="We couldn't check on this invoice's payment just now. "
+                       "Please try again in a moment.")
+
+        sess_status = (existing.get("status") or "").lower()
+        pay_status = (existing.get("payment_status") or "").lower()
+
+        if sess_status == "open" and existing.get("url"):
             return {"url": existing["url"], "reused": True}
+
+        # COMPLETE BUT NOT PAID is the ACH window, and it is days long. Stripe
+        # flips a session to `complete` the moment the customer submits the
+        # form; for a bank debit the money then takes days to clear, so the
+        # session is neither open (not reusable) nor paid (invoice still owed).
+        # Treating that as "no live session" and minting a new one is exactly
+        # the double-debit this endpoint exists to prevent — both would settle.
+        # So it is a hold, released by `expires_at` passing or by the
+        # async_payment_failed event clearing the stored session.
+        if sess_status == "complete" and pay_status != "paid":
+            raise HTTPException(
+                status_code=409,
+                detail="A payment for this invoice is still going through. "
+                       "Bank transfers can take a few business days to clear — "
+                       "you won't be charged twice, and there's nothing more to "
+                       "do. Call us if it hasn't cleared in a week.")
+
+        # Paid at Stripe but the invoice hasn't caught up (webhook in flight or
+        # lost). Never a reason to charge them again.
+        if sess_status == "complete" and pay_status == "paid":
+            raise HTTPException(
+                status_code=409,
+                detail="This invoice has been paid — we're just confirming it. "
+                       "Nothing more to do.")
+
+        # Anything else (expired) falls through to a fresh session.
 
     success_url, cancel_url = _checkout_urls(token)
     res = sp.create_checkout_session(
@@ -799,18 +873,83 @@ def record_checkout_payment(db: Session, session_obj: dict, *,
                     event_type or "checkout event", sess_id, ref)
         return {"ok": True, "ignored": True}
 
+    if pi and not inv.stripe_payment_intent_id:
+        inv.stripe_payment_intent_id = pi
+
+    # THE BANK DEBIT FAILED. Release the hold: `start_checkout` refuses to mint
+    # a new session while a completed-but-unsettled one is on the row, which is
+    # right while the debit is in flight and wrong once it has bounced — it
+    # would lock the customer out of paying at all. Clearing the stored session
+    # is what lets them try again with a different method.
+    if event_type == "checkout.session.async_payment_failed":
+        inv.stripe_checkout_session_id = None
+        inv.stripe_checkout_expires_at = None
+        db.commit()
+        logger.warning("[stripe] the bank payment for invoice %s failed — "
+                       "invoice left open and the checkout hold released",
+                       inv.id)
+        return {"ok": True, "invoice_id": inv.id, "paid": False, "failed": True}
+
     paid = (session_obj.get("payment_status") or "").lower() == "paid"
     if not paid:
-        # Initiated, not settled. Record the handle so the money can be traced
-        # and the later async event matched, and leave the invoice alone.
-        if pi and not inv.stripe_payment_intent_id:
-            inv.stripe_payment_intent_id = pi
-            db.commit()
+        # Initiated, not settled. The handle is already recorded above so the
+        # money can be traced and the later async event matched; the invoice is
+        # deliberately left alone.
+        db.commit()
         logger.info("[stripe] %s for invoice %s is not settled yet "
                     "(payment_status=%s) — invoice left open",
                     event_type or "checkout event", inv.id,
                     session_obj.get("payment_status"))
         return {"ok": True, "invoice_id": inv.id, "paid": False}
+
+    # WHAT THEY ACTUALLY PAID, against what the invoice now says it wants.
+    #
+    # These can differ, and the way they differ loses money silently. A session
+    # is created for the total at that moment; if the office then edits the
+    # items, tax or discount, Stripe keeps charging the OLD amount while the
+    # row carries the new one. Checking only `payment_status` would mark a
+    # repriced $600 invoice fully paid on a $450 charge and write "$600
+    # received" to the timeline — the invoice reads collected and the shortfall
+    # is invisible. Repricing now clears the session (see `update_invoice`), so
+    # this is the backstop for one already in flight.
+    #
+    # Over-payment (the invoice was repriced DOWN) still settles: they have
+    # covered it, and the surplus is a refund decision for a person, not a
+    # reason to leave the invoice open.
+    from integrations import stripe_payments as sp
+    amount_total = session_obj.get("amount_total")
+    expected_cents = sp.dollars_to_cents(inv.total)
+    actual_cents = None
+    try:
+        actual_cents = int(amount_total) if amount_total is not None else None
+    except (TypeError, ValueError):
+        actual_cents = None
+
+    if actual_cents is not None and actual_cents < expected_cents:
+        # Money arrived, but not enough. Record the REAL figure and leave the
+        # invoice owed: booking a short payment as full collection is the one
+        # outcome nobody can spot later. A person decides whether to accept it
+        # or bill the difference.
+        short = (expected_cents - actual_cents) / 100.0
+        db.add(Message(
+            client_id=inv.client_id,
+            channel="payment",
+            direction="inbound",
+            from_addr="", to_addr="",
+            body=(f"Partial payment received: ${actual_cents / 100:,.2f} of "
+                  f"${inv.total:,.2f} (online, Stripe) — ${short:,.2f} still "
+                  f"owed. The invoice was repriced after the payment link was "
+                  f"sent; this invoice is NOT marked paid."),
+            status="received",
+            org_id=inv.org_id,  # BB-MT-01
+        ))
+        db.commit()
+        logger.warning("[stripe] invoice %s was paid %s cents but wants %s — "
+                       "left open, partial payment recorded",
+                       inv.id, actual_cents, expected_cents)
+        return {"ok": True, "invoice_id": inv.id, "paid": False,
+                "underpaid": True, "paid_cents": actual_cents,
+                "expected_cents": expected_cents}
 
     res = _record_payment(
         db, inv,

@@ -5490,11 +5490,14 @@ export interface paths {
          *     which is also why the key never passes through the browser the way the old
          *     Square access token did.
          *
-         *     Reports the two halves separately because they fail differently: with a
-         *     secret key but no webhook secret, a customer can complete a payment and the
-         *     invoice will never be marked paid (the webhook handler refuses an event it
-         *     cannot verify, same posture as the Twilio webhook). That is the one
-         *     half-configured state worth naming on screen.
+         *     Reports the two halves separately because they mean different things. With
+         *     a secret key but no webhook secret, online invoice payment stays OFF — a
+         *     payment would complete at Stripe and the invoice would never be marked
+         *     paid (the webhook handler refuses an event it cannot verify, same posture
+         *     as the Twilio webhook), so `stripe_payments.can_take_payments` requires
+         *     both and the pay button does not appear. Payouts need no webhook to send a
+         *     transfer, so they work on the key alone. Naming the halves is what turns
+         *     "why is there no pay button" into one obvious missing variable.
          */
         get: operations["stripe_status_api_settings_stripe_status_get"];
         put?: never;

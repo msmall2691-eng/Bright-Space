@@ -714,11 +714,14 @@ def stripe_status():
     which is also why the key never passes through the browser the way the old
     Square access token did.
 
-    Reports the two halves separately because they fail differently: with a
-    secret key but no webhook secret, a customer can complete a payment and the
-    invoice will never be marked paid (the webhook handler refuses an event it
-    cannot verify, same posture as the Twilio webhook). That is the one
-    half-configured state worth naming on screen.
+    Reports the two halves separately because they mean different things. With
+    a secret key but no webhook secret, online invoice payment stays OFF — a
+    payment would complete at Stripe and the invoice would never be marked
+    paid (the webhook handler refuses an event it cannot verify, same posture
+    as the Twilio webhook), so `stripe_payments.can_take_payments` requires
+    both and the pay button does not appear. Payouts need no webhook to send a
+    transfer, so they work on the key alone. Naming the halves is what turns
+    "why is there no pay button" into one obvious missing variable.
     """
     from integrations.stripe_connect import configured, webhook_secret
     ok = configured()
@@ -732,8 +735,9 @@ def stripe_status():
             "Not connected — set STRIPE_SECRET_KEY to take online payments "
             "and pay subcontractors by direct deposit."
             if not ok else
-            "Connected, but STRIPE_WEBHOOK_SECRET is missing — payments would "
-            "be taken and never marked paid. Add it before sending invoices."
+            "Connected for payouts, but STRIPE_WEBHOOK_SECRET is missing, so "
+            "online invoice payment is off — without it a payment could never "
+            "be confirmed. Add it to switch the pay button on."
             if not hook else
             "Connected. Online invoice payment is on, and payouts can settle "
             "to subcontractors' own accounts."

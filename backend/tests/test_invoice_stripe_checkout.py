@@ -24,7 +24,8 @@ from database.db import SessionLocal
 from database.models import Activity, Client, Invoice, Message
 from integrations import stripe_payments as sp
 from modules.invoicing.router import (
-    _amount_due, public_view_invoice, record_checkout_payment, start_checkout,
+    InvoiceItem, InvoiceUpdate, _amount_due, public_view_invoice,
+    record_checkout_payment, start_checkout, update_invoice,
 )
 
 
@@ -74,6 +75,7 @@ def stripe_on(monkeypatch):
                 "expires_at": _naive_now() + timedelta(hours=24), "error": None}
 
     monkeypatch.setattr(sp, "configured", lambda: True)
+    monkeypatch.setattr(sp, "can_take_payments", lambda: True)
     monkeypatch.setattr(sp, "create_checkout_session", _create)
     monkeypatch.setattr(sp, "retrieve_session", lambda sid: None)
     return calls
@@ -86,7 +88,7 @@ def test_online_payment_is_off_until_stripe_is_configured(inv_ctx, monkeypatch):
     state a half-finished deploy is in, and the page must show "call us" rather
     than a button that 503s after the customer commits."""
     db, _c, inv = inv_ctx
-    monkeypatch.setattr(sp, "configured", lambda: False)
+    monkeypatch.setattr(sp, "can_take_payments", lambda: False)
     assert public_view_invoice(inv.public_token, db=db)["online_payment_enabled"] is False
 
 
@@ -99,7 +101,7 @@ def test_online_payment_turns_on_with_stripe(inv_ctx, stripe_on):
 
 def test_checkout_refuses_when_stripe_is_not_configured(inv_ctx, monkeypatch):
     db, _c, inv = inv_ctx
-    monkeypatch.setattr(sp, "configured", lambda: False)
+    monkeypatch.setattr(sp, "can_take_payments", lambda: False)
     with pytest.raises(HTTPException) as e:
         start_checkout(inv.public_token, db=db)
     # 503, not 400: nothing is wrong with the request.
@@ -194,7 +196,7 @@ def test_a_dead_session_is_replaced_not_reused(inv_ctx, stripe_on, monkeypatch):
 
 def test_checkout_502s_when_stripe_refuses(inv_ctx, monkeypatch):
     db, _c, inv = inv_ctx
-    monkeypatch.setattr(sp, "configured", lambda: True)
+    monkeypatch.setattr(sp, "can_take_payments", lambda: True)
     monkeypatch.setattr(sp, "create_checkout_session", lambda **kw: {
         "ok": False, "id": None, "url": None, "expires_at": None,
         "error": "card_declined",
@@ -210,9 +212,15 @@ def test_checkout_502s_when_stripe_refuses(inv_ctx, monkeypatch):
 
 # ── the webhook ─────────────────────────────────────────────────────────────
 
-def _session(inv, *, payment_status="paid", pi="pi_test_1"):
+def _session(inv, *, payment_status="paid", pi="pi_test_1", amount_total=None):
+    """A checkout.session payload. `amount_total` defaults to the invoice's
+    own total in cents — the normal case, where what Stripe charged and what
+    the invoice wants are the same number."""
+    if amount_total is None:
+        amount_total = int(round(float(inv.total) * 100))
     return {"id": "cs_test_1", "client_reference_id": str(inv.id),
-            "payment_status": payment_status, "payment_intent": pi}
+            "payment_status": payment_status, "payment_intent": pi,
+            "amount_total": amount_total}
 
 
 def test_a_paid_session_settles_the_invoice(inv_ctx):
@@ -320,6 +328,200 @@ def test_a_reopened_invoice_gets_todays_payment_date_not_the_old_one(inv_ctx):
     assert inv.status == "paid"
     assert inv.paid_at != stale, "a re-payment was backdated to the old date"
     assert inv.paid_at > stale
+
+
+# ── Codex review P1s. Each of these four was a real way to take money wrong. ──
+
+def test_a_secret_key_without_a_webhook_secret_takes_no_payments(inv_ctx, monkeypatch):
+    """P1: a secret key alone is enough to CHARGE and not enough to CONFIRM.
+
+    The webhook handler refuses an event it cannot verify, so with no
+    STRIPE_WEBHOOK_SECRET every payment completes at Stripe and no invoice is
+    ever marked paid — charged customer, invoice still chasing them. The pay
+    button must not appear in that state. Patched at the stripe_connect layer
+    so this exercises the real `can_take_payments`, not a stub of it.
+    """
+    db, _c, inv = inv_ctx
+    import integrations.stripe_connect as sc
+    monkeypatch.setattr(sc, "configured", lambda: True)
+    monkeypatch.setattr(sc, "webhook_secret", lambda: None)
+
+    assert sp.can_take_payments() is False
+    assert public_view_invoice(inv.public_token, db=db)["online_payment_enabled"] is False
+    with pytest.raises(HTTPException) as e:
+        start_checkout(inv.public_token, db=db)
+    assert e.value.status_code == 503
+
+    # Both halves present → on. (Payouts keep working on the key alone, which
+    # is why `configured` stays a separate question.)
+    monkeypatch.setattr(sc, "webhook_secret", lambda: "whsec_test")
+    assert sp.can_take_payments() is True
+
+
+def test_a_completed_but_unsettled_session_blocks_a_second_one(inv_ctx, stripe_on, monkeypatch):
+    """P1, and the nastiest of the four. Stripe flips a session to `complete`
+    the moment the customer submits — for a bank debit the money then takes
+    DAYS to clear, so the session is neither open nor paid. Reusing only `open`
+    sessions meant this window minted a second payable session, and both debits
+    would settle."""
+    db, _c, inv = inv_ctx
+    start_checkout(inv.public_token, db=db)
+    monkeypatch.setattr(sp, "retrieve_session", lambda sid: {
+        "id": sid, "status": "complete", "payment_status": "unpaid",
+        "url": None, "payment_intent": "pi_test_1",
+        "expires_at": _naive_now() + timedelta(hours=20),
+    })
+    with pytest.raises(HTTPException) as e:
+        start_checkout(inv.public_token, db=db)
+    assert e.value.status_code == 409
+    assert "still going through" in e.value.detail
+    assert len(stripe_on) == 1, "a second payable session was created"
+
+
+def test_a_session_paid_but_awaiting_the_webhook_blocks_a_second_one(inv_ctx, stripe_on, monkeypatch):
+    """Paid at Stripe, invoice not caught up yet. Never a reason to charge
+    again."""
+    db, _c, inv = inv_ctx
+    start_checkout(inv.public_token, db=db)
+    monkeypatch.setattr(sp, "retrieve_session", lambda sid: {
+        "id": sid, "status": "complete", "payment_status": "paid",
+        "url": None, "payment_intent": "pi_test_1",
+        "expires_at": _naive_now() + timedelta(hours=20),
+    })
+    with pytest.raises(HTTPException) as e:
+        start_checkout(inv.public_token, db=db)
+    assert e.value.status_code == 409
+    assert len(stripe_on) == 1
+
+
+def test_a_failed_session_read_refuses_rather_than_risking_a_second_charge(inv_ctx, stripe_on, monkeypatch):
+    """A read that failed is UNKNOWN, not "no session".
+
+    The first cut fell through here on the reasoning "don't refuse to take the
+    money". That errs on the wrong side: a customer retrying in a minute is a
+    nuisance, a customer debited twice is a refund and a phone call.
+    """
+    db, _c, inv = inv_ctx
+    start_checkout(inv.public_token, db=db)
+    monkeypatch.setattr(sp, "retrieve_session", lambda sid: None)
+    with pytest.raises(HTTPException) as e:
+        start_checkout(inv.public_token, db=db)
+    assert e.value.status_code == 503
+    assert len(stripe_on) == 1, "a second session was created on an unknown state"
+
+
+def test_an_async_failure_releases_the_hold(inv_ctx, stripe_on, monkeypatch):
+    """The other half of the ACH hold. Blocking a new session while the debit
+    is in flight is right; still blocking after it BOUNCED would lock the
+    customer out of paying at all."""
+    db, _c, inv = inv_ctx
+    start_checkout(inv.public_token, db=db)
+    db.refresh(inv)
+    assert inv.stripe_checkout_session_id is not None
+
+    out = record_checkout_payment(
+        db, _session(inv, payment_status="unpaid"),
+        event_type="checkout.session.async_payment_failed")
+    assert out["failed"] is True
+    db.refresh(inv)
+    assert inv.stripe_checkout_session_id is None
+    assert inv.stripe_checkout_expires_at is None
+    assert inv.status == "sent", "a failed debit must not mark the invoice paid"
+
+    # They can now try again with a different method.
+    monkeypatch.setattr(sp, "retrieve_session", lambda sid: None)
+    out2 = start_checkout(inv.public_token, db=db)
+    assert out2["reused"] is False
+    assert len(stripe_on) == 2
+
+
+def test_an_underpayment_is_not_booked_as_full_collection(inv_ctx):
+    """P1: a session charges the total it was CREATED with. If the office
+    reprices the invoice afterwards, Stripe still collects the old amount while
+    the row wants the new one — and checking only `payment_status` would mark a
+    $600 invoice paid on a $450 charge and write "$600 received" to the
+    timeline. The shortfall would be invisible forever."""
+    db, c, inv = inv_ctx
+    inv.total = 600.0           # repriced up after the session was created
+    db.commit()
+
+    out = record_checkout_payment(db, _session(inv, amount_total=45000),
+                                  event_type="checkout.session.completed")
+    assert out["paid"] is False
+    assert out["underpaid"] is True
+    db.refresh(inv)
+    assert inv.status == "sent", "a short payment was booked as full collection"
+    assert inv.paid_at is None
+    # The money that DID arrive is recorded, at its real figure.
+    msgs = db.query(Message).filter(Message.client_id == c.id,
+                                    Message.channel == "payment").all()
+    assert len(msgs) == 1
+    assert "450.00" in msgs[0].body and "150.00" in msgs[0].body
+
+
+def test_an_overpayment_still_settles_the_invoice(inv_ctx):
+    """Repriced DOWN. They have covered it; the surplus is a refund decision
+    for a person, not a reason to leave the invoice owed."""
+    db, _c, inv = inv_ctx
+    inv.total = 300.0
+    db.commit()
+    out = record_checkout_payment(db, _session(inv, amount_total=45000),
+                                  event_type="checkout.session.completed")
+    assert out["paid"] is True
+    db.refresh(inv)
+    assert inv.status == "paid"
+
+
+def test_repricing_an_invoice_kills_its_payment_link(inv_ctx, stripe_on):
+    """P1 root cause. A Checkout session cannot be amended, so the only way the
+    old amount stops being payable is for the link to stop existing."""
+    db, _c, inv = inv_ctx
+    start_checkout(inv.public_token, db=db)
+    db.refresh(inv)
+    assert inv.stripe_checkout_session_id is not None
+
+    update_invoice(inv.id, InvoiceUpdate(
+        items=[InvoiceItem(name="Deep clean", qty=1, unit_price=600)],
+    ), db=db, org_id=inv.org_id)
+
+    db.refresh(inv)
+    assert inv.total == 600
+    assert inv.stripe_checkout_session_id is None, "the old-price link is still live"
+    assert inv.stripe_checkout_expires_at is None
+
+
+def test_a_reprice_that_changes_nothing_keeps_the_link(inv_ctx, stripe_on):
+    """A no-op edit shouldn't invalidate a link the customer may have open."""
+    db, _c, inv = inv_ctx
+    start_checkout(inv.public_token, db=db)
+    db.refresh(inv)
+    sid = inv.stripe_checkout_session_id
+
+    update_invoice(inv.id, InvoiceUpdate(
+        items=[InvoiceItem(name="Deep clean", qty=1, unit_price=450)],
+    ), db=db, org_id=inv.org_id)
+
+    db.refresh(inv)
+    assert inv.total == 450
+    assert inv.stripe_checkout_session_id == sid
+
+
+def test_checkout_claims_the_invoice_row_under_a_lock():
+    """P1: the one-live-session invariant rests on a row lock, and the columns
+    cannot enforce it — the duplicate is created at STRIPE, not in this table.
+
+    Asserted against the source because the failure needs two genuinely
+    concurrent transactions, which SQLite (one writer, FOR UPDATE ignored)
+    cannot stage. It is a crude test that exists for one reason: if somebody
+    drops the lock while tidying, the invariant goes silently and the symptom
+    is a customer charged twice. Same posture as the route-list assertion in
+    test_portal.py.
+    """
+    import inspect
+    from modules.invoicing import router as inv_router
+    src = inspect.getsource(inv_router.start_checkout)
+    assert "with_for_update()" in src, \
+        "start_checkout must lock the invoice row for the whole decision"
 
 
 # ── amount due ──────────────────────────────────────────────────────────────
