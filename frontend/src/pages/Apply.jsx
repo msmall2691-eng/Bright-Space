@@ -124,7 +124,9 @@ function Fold({ title, summary, children, defaultOpen = false }) {
           <span className="min-w-0 flex-1">
             <span className="block text-[15px] font-medium text-ink">{title}</span>
             {summary && !open && (
-              <span className="mt-0.5 block text-[13px] leading-relaxed text-ink-3">{summary}</span>
+              // font-normal: this span lives inside the <h2>, which is bold by
+              // default, and a bold summary reads as a second heading.
+              <span className="mt-0.5 block text-[13px] font-normal leading-relaxed text-ink-3">{summary}</span>
             )}
           </span>
           <ChevronDown aria-hidden="true"
