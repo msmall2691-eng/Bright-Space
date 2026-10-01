@@ -3,6 +3,7 @@ import { X, Sparkles, Loader2 } from 'lucide-react'
 import { get } from '../../api'
 import { CustomFieldsForm } from '../CustomFields'
 import { PROPERTY_TYPE_CONFIG } from './constants'
+import DuplicateClientPrompt from '../clients/DuplicateClientPrompt'
 
 const BASIC_FIELDS = [
   { label: 'Property Name *', key: 'name', placeholder: 'e.g. 4 Red Barn Circle' },
@@ -25,8 +26,10 @@ export function PropertyForm({
   newClient, setNewClient,
   creatingClient,
   clientErr, setClientErr,
+  clientDupes, setClientDupes,
   selectClient,
   createInlineClient,
+  pickClient,
   saving,
   onClose,
   onSave,
@@ -120,7 +123,7 @@ export function PropertyForm({
           <div className="flex items-center justify-between mb-1">
             <label className="block text-xs text-ink-3">Client *</label>
             <button type="button"
-              onClick={() => { setAddingClient(a => !a); setClientErr('') }}
+              onClick={() => { setAddingClient(a => !a); setClientErr(''); setClientDupes?.([]) }}
               className="text-xs text-indigo-600 hover:text-indigo-700 font-medium">
               {addingClient ? 'Cancel' : '+ New client'}
             </button>
@@ -145,10 +148,20 @@ export function PropertyForm({
                   className="w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-hidden focus:border-indigo-400" />
               </div>
               {clientErr && <div className="text-xs text-red-600">{clientErr}</div>}
-              <button type="button" onClick={createInlineClient} disabled={creatingClient || !newClient.name.trim()}
-                className="w-full bg-indigo-600 hover:bg-indigo-700 text-white disabled:bg-bg-2 disabled:text-ink-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors">
-                {creatingClient ? 'Creating…' : 'Create & select client'}
-              </button>
+              {clientDupes?.length > 0 ? (
+                <DuplicateClientPrompt
+                  duplicates={clientDupes}
+                  busy={creatingClient}
+                  onUseExisting={pickClient}
+                  onCreateAnyway={() => createInlineClient(true)}
+                  onDismiss={() => setClientDupes?.([])}
+                />
+              ) : (
+                <button type="button" onClick={() => createInlineClient(false)} disabled={creatingClient || !newClient.name.trim()}
+                  className="w-full bg-indigo-600 hover:bg-indigo-700 text-white disabled:bg-bg-2 disabled:text-ink-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors">
+                  {creatingClient ? 'Creating…' : 'Create & select client'}
+                </button>
+              )}
             </div>
           )}
         </div>
