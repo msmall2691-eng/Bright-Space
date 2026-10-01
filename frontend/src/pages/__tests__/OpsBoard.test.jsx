@@ -367,53 +367,72 @@ describe('OpsBoard — snapshot boxes', () => {
     expect(row.querySelector(':scope > .flex.flex-col')).toBeTruthy()
   })
 
-  it('packs money/crew/marketplace in columns, not a row-locked grid', async () => {
+  it('puts the bench below the fold, in two packing columns', async () => {
     renderBoard()
     await screen.findByText('No cleaner assigned')
 
-    // A CSS grid ties every card in a row to the tallest one, which left a
-    // card's worth of dead space under the short ones. The equal bento boxes
-    // are three flex stacks, so a tall card only pushes down its own column.
+    // Money and crew used to be the first two of three columns here; the owner
+    // cut both from the landing page (Oct 2026), leaving marketplace + bench.
+    // Still flex stacks, not a row-locked grid: a CSS grid ties every card in a
+    // row to the tallest one, which left a card's worth of dead space under the
+    // short ones.
     const bento = screen.getByTestId('home-bento')
-    const cols = bento.querySelectorAll(':scope > .flex.flex-col')
-    expect(cols.length).toBe(3)
-    for (const col of cols) expect(col.className).toContain('gap-4')
+    expect(bento.className).toMatch(/shell:grid-cols-2/)
   })
 
-  it('renders all four boxes from the board payload, with no extra requests', async () => {
-    mockGet(WITH_SNAPSHOT)
+  it('keeps money and systems ITEMS in the feed after cutting their boxes', async () => {
+    // The load-bearing assertion of the declutter. The money snapshot box and
+    // the system-health group are gone from the landing page, but the
+    // attention items that used to sit under them are real work — an overdue
+    // invoice does not stop mattering because its box was cut. They now ride
+    // the one feed in SECTION_RANK order, after messages/requests/needs_cleaner.
+    // If this ever goes red, the declutter has started losing the operator's
+    // actual to-do list.
+    mockGet({
+      ...WITH_SNAPSHOT,
+      sections: WITH_SNAPSHOT.sections.map(s => s.key === 'systems'
+        ? { ...s, items: [{ id: 'sys:1', severity: 'urgent', title: 'iCal feed stalled',
+                            body: 'Wells rental, 3 days', meta: '3d', tags: [], actions: [] }] }
+        : s),
+    })
     renderBoard()
 
-    expect(await screen.findByText('$480')).toBeTruthy()        // money today
-    expect(screen.getByText('Dana')).toBeTruthy()               // crew today
-    expect(screen.getByText('9 Lakeshore Dr')).toBeTruthy()     // feed health
-    expect(screen.getByText('Weekly kitchen + baths')).toBeTruthy()  // recurring
-    expect(screen.getByText('Money, last 12 weeks')).toBeTruthy()    // trend chart
-    expect(screen.getByText('Requests, last 30 days')).toBeTruthy()  // lead funnel
+    // Money: was its own bento column.
+    expect(await screen.findByText('$250 outstanding')).toBeTruthy()
+    // Systems: was folded into "System health" at the very bottom.
+    expect(screen.getByText('iCal feed stalled')).toBeTruthy()
+  })
 
-    // The boxes cost nothing: one board fetch, and none of the endpoints
-    // these four would otherwise each have to call for themselves.
+  it('no longer renders the snapshot boxes or AI strips on the landing page', async () => {
+    mockGet(WITH_SNAPSHOT)
+    renderBoard()
+    await screen.findByText('No cleaner assigned')
+
+    // Cut by the owner: the four snapshot boxes and the two charts...
+    expect(screen.queryByText('$480')).toBeNull()                   // money today
+    expect(screen.queryByText('Dana')).toBeNull()                   // crew today
+    expect(screen.queryByText('9 Lakeshore Dr')).toBeNull()         // feed health
+    expect(screen.queryByText('Weekly kitchen + baths')).toBeNull() // recurring
+    expect(screen.queryByText('Money, last 12 weeks')).toBeNull()   // trend chart
+    expect(screen.queryByText('Requests, last 30 days')).toBeNull() // lead funnel
+
+    // ...and both AI strips, which moved to the Assistant tab. Their endpoints
+    // are the point: each was a completion racing the real data on first paint.
+    const urls = get.mock.calls.map(c => String(c[0]))
+    expect(urls.some(u => u.startsWith('/api/ai/daily-brief'))).toBe(false)
+    expect(urls.some(u => u.startsWith('/api/ai/proposals'))).toBe(false)
+  })
+
+  it('still costs exactly one board fetch', async () => {
+    mockGet(WITH_SNAPSHOT)
+    renderBoard()
+    await screen.findByText('No cleaner assigned')
+
     const urls = get.mock.calls.map(c => String(c[0]))
     expect(urls.filter(u => u === '/api/dashboard/board')).toHaveLength(1)
     for (const owned of ['/api/recurring/cleanup/health', '/api/jobs/time-off',
                          '/api/properties', '/api/jobs/sync-overview']) {
       expect(urls.some(u => u.startsWith(owned))).toBe(false)
     }
-  })
-
-  it('keeps the board usable when a snapshot box fails to build server-side', async () => {
-    mockGet({ ...WITH_SNAPSHOT, snapshot: { ...WITH_SNAPSHOT.snapshot, feeds: null } })
-    renderBoard()
-
-    expect(await screen.findByText('No cleaner assigned')).toBeTruthy()
-    expect(screen.getByText('$480')).toBeTruthy()
-    expect(screen.queryByText('9 Lakeshore Dr')).toBeNull()
-  })
-
-  it('shows no snapshot boxes at all on an older payload without them', async () => {
-    renderBoard()   // PAYLOAD has no `snapshot` key
-    await screen.findByText('No cleaner assigned')
-    expect(screen.queryByText('Crew today')).toBeNull()
-    expect(screen.queryByText('Turnover feeds')).toBeNull()
   })
 })
