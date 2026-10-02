@@ -105,11 +105,14 @@ describe('the nav stays small', () => {
     expect(rows).toHaveLength(7)
     expect(SETTINGS_ITEM.to).toBe('/settings')
     expect(SETTINGS_ITEM.tabs).toBeUndefined()
-    // 20 after Marketplace; +2 here are /quotes and /quotes/accepted — the
-    // quote list and its Accepted view, which MOVED into the Requests hub from
-    // an internal ?view= tab of "Money" (so quotes aren't listed in two places),
-    // not new pages invented from nothing. Still zero new sidebar rows.
-    expect(reachable().size).toBe(22)
+    // 20 after Marketplace; +2 were /quotes and /quotes/accepted — the quote
+    // list and its Accepted view, which MOVED into the Requests hub from an
+    // internal ?view= tab of "Money". +1 is /flow — the lead→cash pipeline, the
+    // landing tab of the Leads hub, built from pages that already exist (it's a
+    // view OVER requests/quotes/jobs/invoices, not a new destination). Still
+    // zero new sidebar rows.
+    expect(reachable().size).toBe(23)
+    expect(reachable().has('/flow')).toBe(true)
     expect(reachable().has('/marketplace')).toBe(true)
     expect(reachable().has('/quotes')).toBe(true)
     expect(reachable().has('/quotes/accepted')).toBe(true)

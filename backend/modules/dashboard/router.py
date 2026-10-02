@@ -26,6 +26,7 @@ from database.models import (
 from modules.auth.router import require_role, current_org_id, resolve_org_id, get_current_user
 from utils.dates import business_today
 from services.board_service import build_board
+from services.pipeline_service import build_pipeline
 
 router = APIRouter()
 
@@ -42,6 +43,16 @@ def dashboard_board(db: Session = Depends(get_db), org_id: int = Depends(current
     # buttons that deterministically 403 (member acts like manager).
     can_act = getattr(user, "role", None) in ("admin", "manager", "member")
     return build_board(db, oid, can_act=can_act)
+
+
+@router.get("/pipeline", dependencies=[Depends(require_role("admin", "manager", "viewer"))])
+def dashboard_pipeline(db: Session = Depends(get_db), org_id: int = Depends(current_org_id)):
+    """The lead→cash pipeline as one prioritized, stage-grouped list — new
+    requests, quotes out, accepted-and-ready-to-book, booked jobs, invoices to
+    send, and unpaid invoices — in one org-scoped round trip. Read-only; each
+    row deep-links to the page that owns its next step. Backs /pipeline."""
+    oid = resolve_org_id(org_id, db)
+    return build_pipeline(db, oid)
 
 
 @router.get("/summary", dependencies=[Depends(require_role("admin", "manager", "viewer"))])
