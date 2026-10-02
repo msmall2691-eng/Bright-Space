@@ -79,6 +79,14 @@ export default function CalendarView({
   // persists the operator's choice). When off, skip the fetch entirely
   // rather than fetching-then-hiding.
   showGuestStays = false,
+  // Stack the selected day's agenda UNDER the month grid instead of beside it
+  // in a 320px rail. The rail's own gate is the VIEWPORT (useIsMobile / md:),
+  // which is right for the full-width Schedule page and wrong for a calendar
+  // embedded in a column: on Home at a ~940px window that column is ~420px, so
+  // a 320px rail left ~100px of month grid and the weekday headers collided
+  // into "SunMonTue". A caller that knows its container is narrow says so
+  // here, because the viewport can't tell.
+  stackDayDetail = false,
 }) {
   const now = anchorDate ? new Date(anchorDate) : new Date()
   const [year,  setYear]  = useState(now.getFullYear())
@@ -912,7 +920,7 @@ export default function CalendarView({
           <div className="text-center py-8 text-ink-3 text-sm">Nothing scheduled</div>
         )}
 
-        {!selected && !isMobile && (
+        {!selected && !isMobile && !stackDayDetail && (
           <div className="text-center py-8 text-ink-3 text-sm">Click a day to see details</div>
         )}
       </div>
@@ -1047,7 +1055,7 @@ export default function CalendarView({
             the visible viewport on iOS and its scroll was trapped ("I click
             on the day, and then I can't scroll"). Auto-selected above, so
             today's jobs are visible without any tap. */}
-        {isMobile && selected && (
+        {(isMobile || stackDayDetail) && selected && (
           <div
             ref={dayPanelRef}
             className="mt-3 mb-2 bg-panel border border-hairline rounded-xl scroll-mt-2"
@@ -1061,7 +1069,7 @@ export default function CalendarView({
       {/* Day rail only exists once a day is picked — an empty "Select a day"
           panel was stealing ~45% of the cells' width for nothing (the month
           chips truncated to bare times). Close (X) gives the space back. */}
-      {!isMobile && selected && (
+      {!isMobile && !stackDayDetail && selected && (
         <div className="w-80 bg-bg border-l border-hairline flex flex-col shrink-0">
           {renderDayDetail(false)}
         </div>

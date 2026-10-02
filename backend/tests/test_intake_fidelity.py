@@ -386,6 +386,77 @@ def test_idempotency_key_collapses_two_posts_into_one_lead():
         _cleanup_email(email)
 
 
+# --- The same key is also used for PROGRESSIVE submission, not just replays ---
+
+def test_idempotency_key_folds_in_the_second_stage_payload():
+    """The twin of the test above: same key, but a RICHER second post.
+
+    maineclean.co's /book flow posts twice for one visit under ONE key —
+    step 1-2 is a thin intake (contact + specs + estimate, no date), step 3 is
+    the actual booking carrying requestedDate and the six on-site essentials.
+    The key is shared deliberately so the two collapse into a single Lead.
+
+    Collapsing must not mean DISCARDING. The short-circuit used to return the
+    existing row untouched, so the operator's Requests card kept the thin
+    step-1 intake and silently lost the date and every essential — while the
+    website still got a 201 and logged the forward as delivered.
+
+    The test above pins that a stale replay can't overwrite good data; this one
+    pins that genuinely new information still lands.
+    """
+    email = _uniq_email()
+    key = f"idem-{uuid.uuid4().hex}"
+    try:
+        # Stage 1 — the intake forward. No date, no essentials.
+        r1 = client.post("/api/booking/submit", json={
+            "name": "Two Stage", "email": email, "phone": "2075557799",
+            "address": "10 Harbor St", "serviceType": "standard",
+            "squareFeet": 1800, "bathrooms": 2, "frequency": "biweekly",
+            "idempotencyKey": key,
+        })
+        assert r1.status_code == 201, r1.text
+
+        # Stage 3 — the booking forward. Same key, strictly more information.
+        r2 = client.post("/api/booking/submit", json={
+            "name": "Two Stage", "email": email, "phone": "2075557799",
+            "address": "10 Harbor St", "serviceType": "standard",
+            "squareFeet": 1800, "bathrooms": 2, "frequency": "biweekly",
+            "idempotencyKey": key,
+            "requestedDate": "2026-10-15",
+            "entryMethod": "lockbox",
+            "parkingNotes": "Driveway, do not block the garage",
+            "petsDetail": "Two cats, keep the back door shut",
+            "focusAreas": ["kitchen", "bathrooms"],
+            "specialInstructions": "Please use the fragrance-free products",
+            "arrivalWindow": "morning",
+        })
+        assert r2.status_code == 201, r2.text
+        assert r2.json()["bookingId"] == r1.json()["bookingId"], "should stay one lead"
+
+        db = SessionLocal()
+        try:
+            rows = db.query(LeadIntake).filter(LeadIntake.idempotency_key == key).all()
+            assert len(rows) == 1, f"expected 1 Lead, got {len(rows)}"
+            lead = rows[0]
+            cf = dict(lead.custom_fields or {})
+
+            # The date the customer actually booked.
+            assert lead.requested_date == "2026-10-15", (
+                f"requested_date lost: {lead.requested_date!r}"
+            )
+            # The six essentials the cleaner needs on site.
+            assert cf.get("entry_method") == "lockbox"
+            assert cf.get("parking_notes") == "Driveway, do not block the garage"
+            assert cf.get("pets_detail") == "Two cats, keep the back door shut"
+            assert cf.get("focus_areas") == ["kitchen", "bathrooms"]
+            assert cf.get("special_instructions") == "Please use the fragrance-free products"
+            assert cf.get("arrival_window") == "morning"
+        finally:
+            db.close()
+    finally:
+        _cleanup_email(email)
+
+
 # --- Inbox-only: client/property dedup happens at CONVERSION, not intake ---
 
 def _convert_request(db, intake_id, org_id=1):
@@ -509,3 +580,84 @@ def test_convert_matches_legacy_client_by_phone_no_duplicate():
     finally:
         _cleanup_email(new_email)
         _cleanup_email(old_email)
+
+
+# --- ...and the alerts have to follow the information, not just the row ---
+
+def test_second_stage_notifies_and_a_pure_replay_stays_silent(monkeypatch):
+    """The alert half of the two-stage /book flow.
+
+    Dedup suppression exists for a real reason: a double-tapped form used to
+    page the owner twenty times for one lead. But "deduped" was too blunt a
+    silence condition. Stage 2 of /book is deduped BY DESIGN, and it is the
+    post that carries the requested date and — critically — the customer's
+    manage/cancel link. The confirmation SMS is the only channel that carries
+    that link (the email template has no field for it), so suppressing stage 2
+    meant the customer never received it at all, and the owner's alert said
+    "no date requested" for a booking that had a date.
+
+    So: an enriching dedup re-alerts, a replay does not. Three posts here —
+    thin, rich, then the rich one again (the website's retry sweep) — must
+    produce exactly two owner alerts and two customer texts, not three.
+    """
+    from modules.booking import router as booking_router
+
+    owner_alerts, customer_texts, customer_emails = [], [], []
+    monkeypatch.setattr(
+        booking_router, "_send_booking_owner_alert",
+        lambda db, data, intake_id, lo, hi: owner_alerts.append(data.requestedDate) or True,
+    )
+    monkeypatch.setattr(
+        booking_router, "_send_owner_email",
+        lambda db, subject, lines, intake_id: True,
+    )
+    monkeypatch.setattr(
+        booking_router, "_send_booking_customer_sms",
+        lambda db, data, intake_id: customer_texts.append(data.manageUrl),
+    )
+    monkeypatch.setattr(
+        booking_router, "_send_booking_customer_confirmation",
+        lambda data, intake_id, lo, hi: customer_emails.append(intake_id),
+    )
+
+    email = _uniq_email()
+    key = f"idem-{uuid.uuid4().hex}"
+    thin = {
+        "name": "Alert Stage", "email": email, "phone": "2075557744",
+        "address": "88 Beach Ave", "serviceType": "standard",
+        "squareFeet": 1600, "bathrooms": 2, "frequency": "biweekly",
+        "idempotencyKey": key,
+    }
+    rich = {
+        **thin,
+        "requestedDate": "2026-11-02",
+        "entryMethod": "lockbox",
+        "manageUrl": "https://www.maineclean.co/booking/manage/abc-123",
+    }
+    try:
+        assert client.post("/api/booking/submit", json=thin).status_code == 201
+        assert client.post("/api/booking/submit", json=rich).status_code == 201
+        # The retry sweep re-posting stage 2. Back-fills nothing this time.
+        assert client.post("/api/booking/submit", json=rich).status_code == 201
+
+        assert len(owner_alerts) == 2, (
+            f"expected the thin post and the enriching one to alert, got {owner_alerts}"
+        )
+        # The second alert is the one that finally names the date.
+        assert owner_alerts[0] is None
+        assert owner_alerts[1] == "2026-11-02"
+
+        assert len(customer_texts) == 2, (
+            f"expected one text per informative post, got {customer_texts}"
+        )
+        # The whole point: the manage/cancel link reaches the customer.
+        assert customer_texts[0] is None
+        assert customer_texts[1] == "https://www.maineclean.co/booking/manage/abc-123"
+
+        # The receipt is not worth duplicating — they had it seconds ago and it
+        # carries no manage link.
+        assert len(customer_emails) == 1, (
+            f"receipt should not be resent on a dedup, got {len(customer_emails)}"
+        )
+    finally:
+        _cleanup_email(email)

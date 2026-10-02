@@ -7,7 +7,8 @@ starlette==1.6.0
 uvicorn[standard]==0.52.4
 sqlalchemy==2.0.52
 psycopg2-binary==2.9.12
-anthropic==0.40.0
+anthropic==1.11.0
+google-genai==2.23.0
 python-dotenv==1.2.3
 pyyaml==6.0.3
 twilio==9.11.0
@@ -27,8 +28,8 @@ apscheduler==3.11.3
 # dropped its pytz dependency, so it must be declared explicitly or a fresh
 # install (CI, Docker) has no pytz and every import of main fails at collection.
 pytz==2026.3.post1
-bcrypt==4.2.0
-PyJWT==2.13.0
+bcrypt==5.0.0
+PyJWT==2.15.0
 slowapi==0.1.10
 reportlab==5.0.1
 

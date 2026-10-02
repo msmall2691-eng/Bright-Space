@@ -1,7 +1,6 @@
 import logging
 import os
 from datetime import datetime, timezone
-from html import escape as _esc
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request
 from sqlalchemy.orm import Session
@@ -170,70 +169,27 @@ def _send_booking_customer_sms(db: Session, data: "BookingSubmit", intake_id: in
             pass
 
 
+# Owner alert channels live in services/owner_alerts.py now — intake and
+# quoting send the same "ping the owner" alerts, and a shared service beats
+# three copies (or a router importing a router). These thin wrappers keep the
+# booking-local names (tests patch `modules.booking.router._send_owner_*`).
+from services import owner_alerts as _owner_alerts
+
+
 def _owner_notify_setting(db: Session, key: str, env_var: str) -> Optional[str]:
-    """Owner-notification destination: the Settings row first (operator can
-    edit it in BrightBase without a redeploy), then the env var as the
-    deploy-time fallback. Shared by the owner SMS (owner_alert_phone /
-    OWNER_ALERT_PHONE) and owner email (owner_alert_email / OWNER_ALERT_EMAIL)
-    paths so the two channels can't drift on lookup rules."""
-    value = None
-    try:
-        from database.models import AppSetting
-        row = db.query(AppSetting).filter(AppSetting.key == key).first()
-        if row and (row.value or "").strip():
-            value = row.value.strip()
-    except Exception:
-        pass
-    return value or (os.getenv(env_var) or "").strip() or None
+    return _owner_alerts.owner_notify_setting(db, key, env_var)
 
 
 def _send_owner_sms(db: Session, body: str, intake_id: int) -> bool:
-    """Text the owner. Uses the same integrations.twilio_client the quote-SMS
-    path uses, so the same TWILIO_ACCOUNT_SID / TWILIO_AUTH_TOKEN /
-    TWILIO_PHONE_NUMBER configuration covers this path — no extra env work
-    needed to enable.
-
-    Returns True only when a message was actually handed to Twilio, so
-    callers can tell "nothing configured" apart from success and escalate
-    when no owner channel worked at all. Raises on send failure — callers
-    wrap in try/except (best-effort contract).
-    """
-    to_number = _owner_notify_setting(db, "owner_alert_phone", "OWNER_ALERT_PHONE")
-    if not to_number:
-        logger.info("[booking] owner SMS skipped — no owner_alert_phone / OWNER_ALERT_PHONE set")
-        return False
-    from integrations.twilio_client import send_sms
-    send_sms(to=to_number, body=body)
-    logger.info("[booking] owner SMS sent for intake=%s", intake_id)
-    return True
+    """Text the owner. True = handed to Twilio, False = not configured,
+    raises on send failure (callers wrap — best-effort contract)."""
+    return _owner_alerts.send_owner_sms(db, body, ref=f"for intake={intake_id}", tag="booking",
+                                        entity_type="intake", entity_id=intake_id)
 
 
 def _send_owner_email(db: Session, subject: str, lines: list, intake_id: int) -> bool:
-    """Email the owner a booking-event summary (new booking / update / cancel).
-
-    Recipient comes from Settings ("owner_alert_email") first, then the
-    OWNER_ALERT_EMAIL env var — the same settings-then-env pattern as the
-    owner SMS phone. Deliberately plain (short lines, no template): this is
-    an internal operator ping, not the branded customer receipt in
-    services.booking_email_service.
-
-    Same return/raise contract as _send_owner_sms: True = actually sent,
-    False = not configured, raises = send failed.
-    """
-    to_email = _owner_notify_setting(db, "owner_alert_email", "OWNER_ALERT_EMAIL")
-    if not to_email:
-        logger.info("[booking] owner email skipped — no owner_alert_email / OWNER_ALERT_EMAIL set")
-        return False
-    from integrations.email import send_email
-    text_lines = [str(l) for l in lines if l]
-    html_body = (
-        '<div style="font-family:Arial,sans-serif;font-size:14px;line-height:1.6;">'
-        + "<br>".join(_esc(l) for l in text_lines)
-        + "</div>"
-    )
-    send_email(to=to_email, subject=subject, html_body=html_body, text_body="\n".join(text_lines))
-    logger.info("[booking] owner email sent for intake=%s", intake_id)
-    return True
+    """Email the owner a booking-event summary. Same contract as _send_owner_sms."""
+    return _owner_alerts.send_owner_email(db, subject, lines, ref=f"for intake={intake_id}", tag="booking")
 
 
 def _send_booking_owner_alert(
@@ -260,24 +216,13 @@ def _send_booking_owner_alert(
     return _send_owner_sms(db, body, intake_id)
 
 
-# ---------------------------------------------------------------------------
-# Maps website serviceType values to our internal service_type
-# ---------------------------------------------------------------------------
-BOOKING_SERVICE_MAP = {
-    "airbnb-turnover": "str",
-    "vrbo-turnover": "str",
-    "vacation-rental": "str",
-    "str-turnover": "str",
-    "str": "str",   # bare "str" is what the maineclean.co bookingMutation sends
-    "residential-cleaning": "residential",
-    "residential": "residential",
-    "standard": "residential",
-    "deep": "residential",
-    "deep-cleaning": "residential",
-    "move-in-out": "residential",
-    "commercial-cleaning": "commercial",
-    "commercial": "commercial",
-}
+# Service-type mapping lives in modules.intake.normalize.SERVICE_TYPE_MAP /
+# canonical_service_type — the single canonical map every intake path uses.
+# A second, drifting copy used to live here (it recognized a few more STR
+# spellings than the canonical one but was wired to nothing), which meant the
+# codebase disagreed with itself about what "vrbo-turnover" was. Those spellings
+# are now folded into the canonical map; submit_booking passes the raw
+# serviceType straight through build_intake, which maps it once.
 
 
 class BookingSubmit(BaseModel):
@@ -557,14 +502,34 @@ def submit_booking(request: Request, data: BookingSubmit, background_tasks: Back
         alert_estimate_min = payload.estimate_min if payload.estimate_min is not None else estimate_min
         alert_estimate_max = payload.estimate_max if payload.estimate_max is not None else estimate_max
 
-    # A DEDUPED SUBMISSION IS NOT A NEW LEAD. `build_intake` collapses repeat
-    # posts into one row — the same form double-tapped, a retry, a bot — but
-    # every notification below fired anyway, so 20 requests inside the hourly
-    # limit meant 20 pages to the owner's phone, 20 owner emails, and 20 texts
-    # to the customer, all for one lead that exists once in the database.
-    # The row is the record; the alerts follow the row.
-    if result.get("deduped"):
-        logger.info("[booking] deduped onto intake=%s — no alerts re-sent",
+    # A DEDUPED SUBMISSION THAT ADDS NOTHING IS NOT A NEW LEAD. `build_intake`
+    # collapses repeat posts into one row — the same form double-tapped, a
+    # retry, a bot — but every notification below fired anyway, so 20 requests
+    # inside the hourly limit meant 20 pages to the owner's phone, 20 owner
+    # emails, and 20 texts to the customer, all for one lead that exists once
+    # in the database. The row is the record; the alerts follow the row.
+    #
+    # "Deduped" was doing too much work as a silence condition, though.
+    # maineclean.co's /book flow posts here TWICE under one idempotency key by
+    # design: step 1-2 sends a thin intake, step 3 sends the real booking with
+    # the requested date, the six on-site essentials and the customer's
+    # manage/cancel link. Only the FIRST post was ever a new lead, so:
+    #
+    #   * the owner's alert came from the thin payload and said "no date
+    #     requested" for a booking that had a date, and
+    #   * the customer's confirmation SMS — the ONLY channel that carries the
+    #     self-service manage/cancel link, since the email template has no
+    #     field for it — went out before the link existed, and the post that
+    #     carried it returned here without sending anything.
+    #
+    # So the silence condition is now "this post changed nothing", which is
+    # what the original 20-pages fix was actually reaching for. upsert_lead
+    # reports what a deduped post back-filled; an empty list is a true replay.
+    # This stays retry-safe: the website's forward sweep re-posting stage 2
+    # back-fills nothing the second time and lands here silently.
+    enriched = result.get("enriched") or []
+    if result.get("deduped") and not enriched:
+        logger.info("[booking] deduped onto intake=%s, nothing new — no alerts re-sent",
                     result["intake_id"])
         return BookingResponse(
             success=True,
@@ -572,6 +537,9 @@ def submit_booking(request: Request, data: BookingSubmit, background_tasks: Back
             requestedDate=data.requestedDate,
             message="Your booking request has been submitted! We'll review and confirm within 1 business day.",
         )
+    if result.get("deduped"):
+        logger.info("[booking] deduped onto intake=%s but gained %s — re-alerting",
+                    result["intake_id"], ",".join(enriched))
 
     # Ping the owner by SMS as soon as a booking lands. Twilio-only; if the
     # env isn't configured or the send fails the booking still succeeds —
@@ -638,10 +606,16 @@ def submit_booking(request: Request, data: BookingSubmit, background_tasks: Back
     # Email the customer a receipt so they know we got it and know what
     # comes next (the Google Calendar invite once we approve). Same
     # best-effort contract as the owner SMS.
-    try:
-        _send_booking_customer_confirmation(data, result["intake_id"], alert_estimate_min, alert_estimate_max)
-    except Exception as e:
-        logger.warning("booking customer email failed: %s", e)
+    #
+    # Not resent on an enriching dedup: they had this receipt seconds ago from
+    # stage 1, and the template carries no manage link, so a second copy adds
+    # nothing but a duplicate in their inbox. The SMS below is resent, because
+    # that one IS the link.
+    if not result.get("deduped"):
+        try:
+            _send_booking_customer_confirmation(data, result["intake_id"], alert_estimate_min, alert_estimate_max)
+        except Exception as e:
+            logger.warning("booking customer email failed: %s", e)
 
     # Also text the customer a confirmation with their self-service manage link.
     # Twilio-only (maineclean.co has no SMS); same best-effort contract — the

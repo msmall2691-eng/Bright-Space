@@ -8,6 +8,7 @@ import OriginalRequestCard from './OriginalRequestCard'
 import AiInsight from '../AiInsight'
 import { get } from '../../api'
 import { EMPTY_ITEM, isPlaceholderName, serviceOptions, scopeForService } from './constants'
+import DuplicateClientPrompt from '../clients/DuplicateClientPrompt'
 
 /** Right-side (bottom-sheet on mobile) quote-editor panel.
  *
@@ -41,6 +42,9 @@ export default function QuoteEditPanel({
   setShowQuoteAdvanced,
   selectClient,
   createInlineClient,
+  clientDupes = [],
+  setClientDupes,
+  pickClient,
   updateItem,
   onSave,
   onClose,
@@ -56,6 +60,30 @@ export default function QuoteEditPanel({
   const addingClient = addingClientProp ?? addingClientLocal
   const setAddingClient = setAddingClientProp ?? setAddingClientLocal
   const [clientErr, setClientErr] = useState('')
+
+  // Would clicking Send ship what the operator currently sees? The backend
+  // builds the email + PDF from the SAVED quote, so any unsaved edit in this
+  // form (a changed price, an added line) would send the OLD numbers. Compare
+  // the send-relevant fields of the live form against the last-saved quote and
+  // block Send until they save — "Send" next to an editable form otherwise
+  // silently mails a stale quote.
+  const _num = (v) => parseFloat(v) || 0
+  const _sendShape = (src) => JSON.stringify({
+    title: (src.title || '').trim(),
+    customer_message: (src.customer_message || '').trim(),
+    address: (src.address || '').trim(),
+    service_type: src.service_type || '',
+    tax_rate: _num(src.tax_rate),
+    notes: (src.notes || '').trim(),
+    valid_until: src.valid_until || '',
+    items: (src.items || [])
+      .filter(i => (i.name || '').trim() || _num(i.unit_price) > 0)
+      .map(i => ({
+        name: (i.name || '').trim(), qty: _num(i.qty), unit_price: _num(i.unit_price),
+        unit: i.unit || '', description: (i.description || '').trim(),
+      })),
+  })
+  const sendDirty = !!selected && _sendShape(form) !== _sendShape(selected)
 
   // Property spec lookup (RentCast) — pull beds/baths/sqft from the address so
   // the admin doesn't have to research each property by hand before quoting.
@@ -91,14 +119,21 @@ export default function QuoteEditPanel({
     })
   }
 
-  const handleCreateClient = async () => {
+  const handleCreateClient = async (force = false) => {
     setClientErr('')
     try {
-      await createInlineClient()
-      setAddingClient(false)
+      const res = await createInlineClient({ force })
+      // A duplicate match keeps the form open and shows the prompt; only an
+      // actual create closes it.
+      if (res?.status !== 'duplicates') setAddingClient(false)
     } catch (e) {
       setClientErr(e?.message || 'Could not create client')
     }
+  }
+
+  const handleUseExisting = (client) => {
+    pickClient?.(client)
+    setAddingClient(false)
   }
 
   return (
@@ -200,13 +235,13 @@ export default function QuoteEditPanel({
             <div className="flex items-center justify-between mb-1">
               <label className="block text-xs text-ink-3">Client *</label>
               <button type="button"
-                onClick={() => { setAddingClient(a => !a); setClientErr('') }}
+                onClick={() => { setAddingClient(a => !a); setClientErr(''); setClientDupes?.([]) }}
                 className="text-xs text-indigo-600 hover:text-indigo-700 font-medium">
                 {addingClient ? 'Cancel' : '+ New client'}
               </button>
             </div>
             {addingClient && (
-              <div className="rounded-lg border border-blue-200 bg-blue-50/50 p-2.5 space-y-2 mb-2">
+              <div className="rounded-lg border border-hairline bg-bg-2 p-2.5 space-y-2 mb-2">
                 <input autoFocus value={newClient.name} onChange={e => setNewClient(n => ({ ...n, name: e.target.value }))}
                   placeholder="Client name *"
                   className="w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-hidden focus:border-blue-400" />
@@ -219,10 +254,20 @@ export default function QuoteEditPanel({
                     className="w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-hidden focus:border-blue-400" />
                 </div>
                 {clientErr && <div className="text-xs text-red-600">{clientErr}</div>}
-                <button type="button" onClick={handleCreateClient} disabled={creatingClient || !newClient.name.trim()}
-                  className="w-full bg-indigo-600 hover:bg-indigo-700 text-white disabled:bg-bg-2 disabled:text-ink-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors">
-                  {creatingClient ? 'Creating…' : 'Create & select client'}
-                </button>
+                {clientDupes.length > 0 ? (
+                  <DuplicateClientPrompt
+                    duplicates={clientDupes}
+                    busy={creatingClient}
+                    onUseExisting={handleUseExisting}
+                    onCreateAnyway={() => handleCreateClient(true)}
+                    onDismiss={() => setClientDupes?.([])}
+                  />
+                ) : (
+                  <button type="button" onClick={() => handleCreateClient(false)} disabled={creatingClient || !newClient.name.trim()}
+                    className="w-full bg-indigo-600 hover:bg-indigo-700 text-white disabled:bg-bg-2 disabled:text-ink-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors">
+                    {creatingClient ? 'Creating…' : 'Create & select client'}
+                  </button>
+                )}
               </div>
             )}
             <select value={form.client_id} onChange={e => selectClient(e.target.value)}
@@ -314,11 +359,11 @@ export default function QuoteEditPanel({
               </div>
             )}
             {specsState === 'done' && specs && (
-              <div className="mt-1.5 flex items-center gap-2 rounded-lg border border-blue-200 bg-blue-50 px-2.5 py-1.5">
+              <div className="mt-1.5 flex items-center gap-2 rounded-lg border border-hairline bg-bg-2 px-2.5 py-1.5">
                 <Home className="w-3.5 h-3.5 text-indigo-600 shrink-0" />
-                <span className="text-[12px] text-blue-900 flex-1 truncate">{specsSummary(specs) || 'Property found'}</span>
+                <span className="text-[12px] text-ink-2 flex-1 truncate">{specsSummary(specs) || 'Property found'}</span>
                 <button type="button" onClick={addSpecsToScope}
-                  className="text-[11px] font-semibold text-indigo-600 hover:text-blue-500 shrink-0">Add to scope</button>
+                  className="text-[11px] font-semibold text-indigo-600 hover:text-indigo-700 shrink-0">Add to scope</button>
               </div>
             )}
             {specsState === 'none' && (
@@ -436,7 +481,7 @@ export default function QuoteEditPanel({
             <ChevronRight className={`w-3.5 h-3.5 transition-transform ${showQuoteAdvanced ? 'rotate-90' : ''}`} />
             Scope, notes & customer message
             {!showQuoteAdvanced && (form.notes || form.internal_notes || form.customer_message) && (
-              <span className="w-1.5 h-1.5 rounded-full bg-blue-500" />
+              <span className="w-1.5 h-1.5 rounded-full bg-indigo-500" />
             )}
           </button>
 
@@ -489,10 +534,16 @@ export default function QuoteEditPanel({
             {saving ? 'Saving...' : selected ? 'Update Quote' : 'Create Quote'}
           </button>
           {selected && (
-            <button onClick={() => onSend(selected)}
-              className="flex items-center gap-2 bg-indigo-600 hover:bg-blue-500 px-4 py-2.5 rounded-lg text-sm font-medium transition-colors">
+            <button onClick={() => onSend(selected)} disabled={sendDirty}
+              title={sendDirty ? 'Save your changes first — Send emails the saved quote, so unsaved edits would go out as the old numbers.' : 'Send this quote to the customer'}
+              className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 disabled:bg-bg-2 disabled:text-ink-3 disabled:cursor-not-allowed px-4 py-2.5 rounded-lg text-sm font-medium transition-colors">
               <Send className="w-4 h-4" /> Send
             </button>
+          )}
+          {sendDirty && (
+            <span className="self-center text-[11px] text-amber-600 dark:text-amber-300 shrink-0">
+              Update to send
+            </span>
           )}
         </div>
       ) : (

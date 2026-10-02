@@ -6,8 +6,8 @@ import { get, post } from '../../api'
  *  external tools" hub, reorganized into two sections:
  *    - Google        — GoogleAccountCard (per-user grant) + business GCal
  *                      status with the embed URL inline + Gmail per-account health.
- *    - Other         — Square Payroll, plus "Coming soon" chips for
- *                      Stripe / Zapier.
+ *    - Other         — Stripe status (online payment + subcontractor direct
+ *                      deposit), plus a "Coming soon" chip for Zapier.
  *
  *  Customer-messaging toggle and iCal Turnover Sync used to live here too but
  *  they're automation switches, not integrations — moved to AutomationTab. */
@@ -227,6 +227,18 @@ export default function IntegrationsTab({ toast, active }) {
           </div>
         </div>
 
+        {/* Text messages — Twilio status, who gets lead/booking alerts, and a
+            recent-activity read so an operator can see why a text did or didn't
+            go out (the owner alert phone was previously env-only, unsettable in
+            the app, and owner-alert texts weren't on the audit log at all). */}
+        <div>
+          <div className="mb-4">
+            <h2 className="text-lg font-bold text-ink">Text messages (SMS)</h2>
+            <p className="text-sm text-ink-2 mt-1">Who gets alerted when a lead or booking comes in, and whether texts are going out.</p>
+          </div>
+          <SmsCard toast={toast} active={active} />
+        </div>
+
         {/* Other integrations — payments + external workflows. */}
         <div>
           <div className="mb-4">
@@ -235,16 +247,15 @@ export default function IntegrationsTab({ toast, active }) {
           </div>
 
           <div className="space-y-3">
-            <SquareCard toast={toast} active={active} />
+            <StripeCard active={active} />
 
-            {/* Stripe / Zapier — not built yet. The "Connect" button here
-                used to be an orphaned <button> with no onClick — clicking it
-                did literally nothing, which set operators up to click and
-                click waiting for a modal that would never appear. Downgraded
-                to a "Coming soon" chip so the roadmap is visible without
-                looking like a live action. */}
+            {/* Zapier — not built. Stripe used to sit in this list as a
+                "Coming soon" chip; it is built now, so it graduated to the
+                real status card above. The chip stays a chip (and not a
+                "Connect" button) because the button here was once an orphaned
+                <button> with no onClick — operators clicked and clicked
+                waiting for a modal that would never appear. */}
             {[
-              { name: 'Stripe', icon: '💳', desc: 'Accept online payments' },
               { name: 'Zapier', icon: '⚡', desc: 'Automate workflows with 5000+ apps' },
             ].map((integration, idx) => (
               <div key={idx} className="bg-panel rounded-xl border border-hairline p-4 flex items-center justify-between opacity-70">
@@ -267,163 +278,246 @@ export default function IntegrationsTab({ toast, active }) {
   )
 }
 
-// Square — paste an access token, pick a location, test. Enables the Payroll
-// page's "Send to Square" (creates Labor API timecards Square Payroll imports).
-function SquareCard({ toast, active }) {
+// Text messages — Twilio status, owner-alert destinations (phone + email that
+// get pinged on a new lead/booking), and a recent-activity read. The owner
+// alert phone in particular was previously only settable as a Railway env var;
+// here it saves to an AppSetting the backend prefers over the env var.
+function SmsCard({ toast, active }) {
   const [st, setSt] = useState({ loading: true })
-  const [form, setForm] = useState({ access_token: '', location_id: '', environment: 'production', open: false,
-    job_residential: 'Residential', job_rental: 'Rental', job_weekend: 'Rate Pay' })
-  const [busy, setBusy] = useState('')
+  const [form, setForm] = useState({ phone: '', email: '' })
+  const [busy, setBusy] = useState(false)
+  const [events, setEvents] = useState(null)
+  const [testing, setTesting] = useState(false)
+  const [testResult, setTestResult] = useState(null)
 
   const refresh = () => {
     setSt(s => ({ ...s, loading: true }))
-    return get('/api/settings/square-status')
+    return get('/api/settings/sms-status')
       .then(r => {
         setSt({ loading: false, ...r })
-        const j = r.jobs || {}
-        setForm(f => ({ ...f, location_id: r.location_id || '', environment: r.environment || 'production',
-          job_residential: j.residential || 'Residential', job_rental: j.rental || 'Rental', job_weekend: j.weekend || 'Rate Pay' }))
+        setForm({ phone: r.owner_alert_phone?.value || '', email: r.owner_alert_email?.value || '' })
       })
-      .catch(e => setSt({ loading: false, configured: false, error: e?.message || 'Could not check status' }))
+      .catch(e => setSt({ loading: false, error: e?.message || 'Could not check status' }))
   }
-  useEffect(() => { if (active) refresh() }, [active])
+  const refreshEvents = () => get('/api/integration-events?provider=sms&limit=15')
+    .then(setEvents).catch(() => setEvents([]))
+
+  useEffect(() => { if (active) { refresh(); refreshEvents() } }, [active])
 
   const save = async () => {
-    setBusy('save')
+    setBusy(true)
     try {
-      const payload = { location_id: form.location_id.trim(), environment: form.environment,
-        job_residential: form.job_residential.trim(), job_rental: form.job_rental.trim(), job_weekend: form.job_weekend.trim() }
-      if (form.access_token.trim()) payload.access_token = form.access_token.trim()
-      const r = await post('/api/settings/square', payload)
+      const r = await post('/api/settings/notifications', {
+        owner_alert_phone: form.phone.trim(),
+        owner_alert_email: form.email.trim(),
+      })
       setSt({ loading: false, ...r })
-      setForm(f => ({ ...f, access_token: '', open: false, location_id: r.location_id || f.location_id }))
-      toast('Square settings saved')
-    } catch (e) { toast(e?.detail || e?.message || 'Could not save Square settings', 'error') }
-    finally { setBusy('') }
+      setForm({ phone: r.owner_alert_phone?.value || '', email: r.owner_alert_email?.value || '' })
+      toast('Alert destinations saved')
+    } catch (e) {
+      toast(e?.detail || e?.message || 'Could not save', 'error')
+    } finally { setBusy(false) }
   }
 
-  const test = async () => {
-    setBusy('test')
+  const sendTest = async () => {
+    setTesting(true); setTestResult(null)
     try {
-      const r = await post('/api/settings/square/test', {})
-      setSt(s => ({ ...s, locations: r.locations || [] }))
-      toast(`Square OK — ${r.locations?.length || 0} location${r.locations?.length === 1 ? '' : 's'}, ${r.team_count || 0} team members`)
-    } catch (e) { toast(e?.detail || e?.message || 'Square test failed', 'error') }
-    finally { setBusy('') }
+      const r = await post('/api/settings/sms-test', { to: form.phone.trim() })
+      setTestResult(r)
+      if (r.ok) toast('Test text sent')
+      refreshEvents()   // the attempt lands in the activity log
+    } catch (e) {
+      setTestResult({ ok: false, error: e?.detail || e?.message || 'Could not send test' })
+    } finally { setTesting(false) }
   }
 
-  const formVisible = !st.loading && (!st.configured || form.open)
-  const locations = Array.isArray(st.locations) ? st.locations : []
+  const twilioOk = !st.loading && st.twilio_configured
+  const srcLabel = { database: 'saved here', env: 'from server config', none: 'not set' }
+  const ACTIONS = {
+    owner_alert: 'Owner alert', booking_confirm: 'Booking confirmation',
+    reminder: 'Reminder', invoice: 'Invoice', notice: 'Notice',
+    client_text: 'Text to client', comms: 'Message', comms_forward: 'Forward',
+    offer: 'Job offer', crew: 'Crew alert', test: 'Test text',
+  }
+  const fmt = (iso) => { try { return new Date(iso).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) } catch { return '' } }
+  // Turn a raw Twilio error into a plain-English cause + next step. Matches on
+  // the error code that Twilio embeds in the message (e.g. "...error 30034...").
+  const errorHint = (msg) => {
+    const m = /\b(2\d{4}|3\d{4}|6\d{4})\b/.exec(msg || '')
+    const code = m && m[1]
+    const HINTS = {
+      '30034': "This number isn't registered for A2P 10DLC — US carriers block texts from unregistered numbers. Finish the Sole-Proprietor brand + campaign in Twilio, then attach this number.",
+      '30007': 'Carrier filtered this as spam — almost always A2P 10DLC registration not being complete.',
+      '30003': 'The handset was unreachable (off, or no longer in service).',
+      '30005': 'Unknown or unreachable number.',
+      '30006': 'That number is a landline or unreachable carrier — it can’t receive texts.',
+      '21610': 'This person replied STOP and is unsubscribed. They must text START to opt back in.',
+      '21614': "That number can't receive SMS.",
+      '21408': "Your Twilio account isn't permitted to text this region yet.",
+    }
+    if (code && HINTS[code]) return HINTS[code]
+    if (/not configured|credentials/i.test(msg || '')) return 'Twilio isn’t configured on the server.'
+    return null
+  }
 
   return (
-    <div className="bg-panel rounded-xl border border-hairline p-4">
-      <div className="flex items-center justify-between">
+    <div className="bg-panel rounded-xl border border-hairline p-4 space-y-4">
+      {/* Twilio connection status */}
+      <div className="flex items-center justify-between gap-4">
         <div className="flex items-center gap-4">
-          <span className="text-2xl">◼️</span>
+          <span className="text-2xl">💬</span>
           <div>
-            <h3 className="font-semibold text-ink">Square Payroll</h3>
-            <p className="text-xs text-ink-3">
-              {!st.loading && st.configured
-                ? <>Token {st.token_masked} · {st.environment}{st.location_id ? ` · location ${st.location_id}` : ''}</>
-                : 'Send payroll hours to Square as timecards'}
-            </p>
+            <h3 className="font-semibold text-ink">Twilio</h3>
+            <p className="text-xs text-ink-3">The number every BrightBase text is sent from</p>
           </div>
         </div>
         <span className="inline-flex h-6 items-center gap-1.5 rounded-sm border border-hairline-2 bg-panel px-2 text-[11px] font-medium text-ink-2 shrink-0">
-          <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${st.loading ? 'bg-ink-3' : st.configured ? 'bg-emerald-500' : 'bg-ink-3'}`} aria-hidden="true" />
-          {st.loading ? 'Checking…' : st.configured ? 'Connected' : 'Not connected'}
+          <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${st.loading ? 'bg-ink-3' : twilioOk ? 'bg-emerald-500' : 'bg-red-500'}`} aria-hidden="true" />
+          {st.loading ? 'Checking…' : twilioOk ? 'Configured' : 'Not configured'}
         </span>
       </div>
-
-      {formVisible && (
-        <div className="mt-4 space-y-3 border-t border-hairline pt-4">
-          <div>
-            <label className="block text-xs font-medium text-ink-2 mb-1">Access Token</label>
-            <input type="password" autoComplete="off" value={form.access_token}
-              onChange={e => setForm(f => ({ ...f, access_token: e.target.value }))}
-              placeholder={st.has_token ? 'Enter a new token to replace the saved one' : 'Paste your Square access token'}
-              className="w-full bg-bg border border-hairline rounded-lg px-3 py-2 text-sm text-ink placeholder-ink-3 font-mono focus:outline-hidden focus:border-blue-400" />
-          </div>
-          <div className="flex gap-3">
-            <div className="flex-1">
-              <label className="block text-xs font-medium text-ink-2 mb-1">Location</label>
-              {locations.length > 0 ? (
-                <select value={form.location_id} onChange={e => setForm(f => ({ ...f, location_id: e.target.value }))}
-                  className="w-full bg-bg border border-hairline rounded-lg px-3 py-2 text-sm text-ink focus:outline-hidden focus:border-blue-400">
-                  <option value="">— pick a location —</option>
-                  {locations.map(l => <option key={l.id} value={l.id}>{l.name} ({l.id})</option>)}
-                </select>
-              ) : (
-                <input type="text" value={form.location_id} onChange={e => setForm(f => ({ ...f, location_id: e.target.value }))}
-                  placeholder="location id — or hit Test to load a picker"
-                  className="w-full bg-bg border border-hairline rounded-lg px-3 py-2 text-sm text-ink placeholder-ink-3 font-mono focus:outline-hidden focus:border-blue-400" />
-              )}
-            </div>
-            <div>
-              <label className="block text-xs font-medium text-ink-2 mb-1">Environment</label>
-              <select value={form.environment} onChange={e => setForm(f => ({ ...f, environment: e.target.value }))}
-                className="bg-bg border border-hairline rounded-lg px-3 py-2 text-sm text-ink focus:outline-hidden focus:border-blue-400">
-                <option value="production">Production</option>
-                <option value="sandbox">Sandbox</option>
-              </select>
-            </div>
-          </div>
-          <div>
-            <label className="block text-xs font-medium text-ink-2 mb-1">Square job titles to tag timecards with</label>
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-              {[
-                ['job_residential', 'Residential hours'],
-                ['job_rental', 'Rental hours'],
-                ['job_weekend', 'Weekend rate pay'],
-              ].map(([key, lbl]) => (
-                <div key={key}>
-                  <div className="text-[10.5px] text-ink-3 mb-0.5">{lbl}</div>
-                  <input type="text" list="square-job-titles" value={form[key]}
-                    onChange={e => setForm(f => ({ ...f, [key]: e.target.value }))}
-                    className="w-full bg-bg border border-hairline rounded-lg px-2.5 py-1.5 text-sm text-ink focus:outline-hidden focus:border-blue-400" />
-                </div>
-              ))}
-            </div>
-            {Array.isArray(st.job_titles) && st.job_titles.length > 0 && (
-              <datalist id="square-job-titles">
-                {st.job_titles.map(t => <option key={t} value={t} />)}
-              </datalist>
-            )}
-            <p className="text-[10.5px] text-ink-3 mt-1">
-              Match these to the wage jobs on your Square employees so hours land in the right bucket. Hit Test connection to load your Square job titles as suggestions.
-            </p>
-          </div>
-          <p className="text-[11px] text-ink-3">
-            Get an access token from the <b>Square Developer dashboard</b> (an app with Timecards + Team read/write). Save the token, hit <b>Test connection</b>, then pick your location.
-          </p>
-          <div className="flex items-center gap-2">
-            <button onClick={save} disabled={busy === 'save' || (!form.access_token.trim() && !st.has_token)}
-              className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-xs font-semibold transition-colors disabled:opacity-50">
-              {busy === 'save' ? 'Saving…' : 'Save'}
-            </button>
-            <button onClick={test} disabled={busy === 'test' || !st.has_token}
-              className="px-3 py-2 rounded-lg text-xs font-medium bg-bg-2 hover:bg-hairline text-ink-2 transition-colors disabled:opacity-50">
-              {busy === 'test' ? 'Testing…' : 'Test connection'}
-            </button>
-            {form.open && (
-              <button onClick={() => setForm(f => ({ ...f, open: false, access_token: '' }))}
-                className="px-3 py-2 rounded-lg text-xs font-medium bg-bg-2 hover:bg-hairline text-ink-2 transition-colors">Cancel</button>
-            )}
-          </div>
+      {!st.loading && !twilioOk && (
+        <div className="text-xs bg-panel border border-hairline rounded-lg p-3 leading-relaxed text-ink-2">
+          Twilio credentials aren't set on the server, so no texts can be sent. Set <code className="bg-bg-2 px-1 rounded">TWILIO_ACCOUNT_SID</code>, <code className="bg-bg-2 px-1 rounded">TWILIO_AUTH_TOKEN</code> and <code className="bg-bg-2 px-1 rounded">TWILIO_PHONE_NUMBER</code> on the BrightBase service.
         </div>
       )}
 
-      {!st.loading && st.configured && !form.open && (
-        <div className="mt-4 flex flex-wrap items-center gap-2 border-t border-hairline pt-4">
-          <button onClick={test} disabled={busy === 'test'}
-            className="px-3 py-2 rounded-lg text-xs font-medium bg-bg-2 hover:bg-hairline text-ink-2 transition-colors disabled:opacity-50">
-            {busy === 'test' ? 'Testing…' : 'Test connection'}
+      {/* Owner-alert destinations */}
+      <div className="border-t border-hairline pt-4">
+        <div className="text-xs font-semibold text-ink-2 mb-1">Where new-lead & booking alerts go</div>
+        <p className="text-[11px] text-ink-3 mb-3">The office gets a text and an email whenever a request comes in. Leave a field blank to turn that channel off (or fall back to the server's configured value).</p>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div>
+            <label className="flex items-center justify-between text-[11px] font-medium text-ink-2 mb-1">
+              <span>Alert phone (text)</span>
+              {!st.loading && <span className="text-[10px] text-ink-3">{srcLabel[st.owner_alert_phone?.source] || ''}</span>}
+            </label>
+            <input type="tel" value={form.phone} onChange={e => setForm(f => ({ ...f, phone: e.target.value }))}
+              placeholder="(207) 555-0142"
+              className="w-full bg-bg border border-hairline rounded-lg px-3 py-2 text-sm text-ink placeholder-ink-3 focus:outline-hidden focus:border-blue-400" />
+          </div>
+          <div>
+            <label className="flex items-center justify-between text-[11px] font-medium text-ink-2 mb-1">
+              <span>Alert email</span>
+              {!st.loading && <span className="text-[10px] text-ink-3">{srcLabel[st.owner_alert_email?.source] || ''}</span>}
+            </label>
+            <input type="email" value={form.email} onChange={e => setForm(f => ({ ...f, email: e.target.value }))}
+              placeholder="office@example.com"
+              className="w-full bg-bg border border-hairline rounded-lg px-3 py-2 text-sm text-ink placeholder-ink-3 focus:outline-hidden focus:border-blue-400" />
+          </div>
+        </div>
+        <div className="mt-3 flex flex-wrap items-center gap-2">
+          <button onClick={save} disabled={busy || st.loading}
+            className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-xs font-semibold transition-colors disabled:opacity-50">
+            {busy ? 'Saving…' : 'Save alert destinations'}
           </button>
-          <button onClick={() => setForm(f => ({ ...f, open: true, access_token: '' }))}
-            className="px-3 py-2 rounded-lg text-xs font-medium bg-bg-2 hover:bg-hairline text-ink-2 transition-colors">
-            Update token / location
+          <button onClick={sendTest} disabled={testing || st.loading}
+            className="px-3 py-2 rounded-lg text-xs font-medium bg-bg-2 hover:bg-hairline text-ink-2 transition-colors disabled:opacity-50">
+            {testing ? 'Sending…' : 'Send test text'}
           </button>
         </div>
+        {testResult && (
+          <div className="mt-2 flex items-start gap-1.5 text-[12px]">
+            <span className={`mt-[5px] h-1.5 w-1.5 shrink-0 rounded-full ${testResult.ok ? 'bg-emerald-500' : 'bg-red-500'}`} aria-hidden="true" />
+            <span className={testResult.ok ? 'text-ink-2' : 'text-ink'}>
+              {testResult.ok
+                ? `Test text sent to ${testResult.to}${testResult.status ? ` (${testResult.status})` : ''} — check that phone.`
+                : <>Couldn't send{testResult.to ? ` to ${testResult.to}` : ''}: <span className="text-red-600 break-words">{testResult.error}</span></>}
+            </span>
+          </div>
+        )}
+      </div>
+
+      {/* Recent SMS activity — the audit read, so "did a text go out?" is
+          answerable without server logs. */}
+      <div className="border-t border-hairline pt-4">
+        <div className="flex items-center justify-between mb-2">
+          <div className="text-xs font-semibold text-ink-2">Recent text activity</div>
+          <button onClick={refreshEvents} className="text-[11px] text-ink-3 hover:text-ink-2">Refresh</button>
+        </div>
+        {events === null && <p className="text-[11px] text-ink-3">Loading…</p>}
+        {events !== null && events.length === 0 && (
+          <p className="text-[11px] text-ink-3">No text messages recorded yet.</p>
+        )}
+        {events !== null && events.length > 0 && (
+          <div className="space-y-1.5">
+            {events.map(e => (
+              <div key={e.id} className="flex items-start gap-2 text-[11.5px]">
+                <span className={`mt-[5px] h-1.5 w-1.5 shrink-0 rounded-full ${e.status === 'ok' ? 'bg-emerald-500' : e.status === 'failed' ? 'bg-red-500' : 'bg-ink-3'}`} aria-hidden="true" />
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-2">
+                    <span className="text-ink-2 font-medium">{ACTIONS[e.action] || e.action}</span>
+                    <span className="text-ink-3">{(e.request_payload || '').replace(/^to /, '') || ''}</span>
+                    <span className="text-ink-3 ml-auto shrink-0">{fmt(e.created_at)}</span>
+                  </div>
+                  {e.status === 'failed' && e.error_message && (
+                    <div className="mt-0.5">
+                      <div className="text-red-600 break-words">{e.error_message}</div>
+                      {errorHint(e.error_message) && (
+                        <div className="text-ink-2 mt-0.5">{errorHint(e.error_message)}</div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
+// Stripe — read-only status. Deliberately has no form: Stripe is configured by
+// environment variable (STRIPE_SECRET_KEY / STRIPE_WEBHOOK_SECRET) on the
+// server, so there is nothing to type here and the key never passes through the
+// browser the way the old Square access token did.
+//
+// This replaced SquareCard. That card collected a Square access token for the
+// Labor API timecard export, which was deleted in Sept 2026 — a timecard
+// asserts an hourly wage and an employment relationship, which is the one thing
+// a subcontractor arrangement cannot say. The card outlived the feature, so it
+// was a connect form for something that could no longer do anything.
+function StripeCard({ active }) {
+  const [st, setSt] = useState({ loading: true })
+
+  useEffect(() => {
+    if (!active) return
+    setSt({ loading: true })
+    get('/api/settings/stripe-status')
+      .then(r => setSt({ loading: false, ...r }))
+      .catch(e => setSt({ loading: false, configured: false, detail: e?.message || 'Could not check status' }))
+  }, [active])
+
+  // Three states, not two: connected-but-no-webhook is the one that silently
+  // takes money and never marks the invoice paid, so it reads as needs-
+  // attention (amber) rather than connected.
+  const tone = st.loading ? 'bg-ink-3'
+    : !st.configured ? 'bg-ink-3'
+    : !st.webhook_configured ? 'bg-amber-500'
+    : 'bg-emerald-500'
+  const word = st.loading ? 'Checking…'
+    : !st.configured ? 'Not connected'
+    : !st.webhook_configured ? 'Needs webhook'
+    : 'Connected'
+
+  return (
+    <div className="bg-panel rounded-xl border border-hairline p-4">
+      <div className="flex items-center justify-between gap-4">
+        <div className="flex items-center gap-4">
+          <span className="text-2xl">💳</span>
+          <div>
+            <h3 className="font-semibold text-ink">Stripe</h3>
+            <p className="text-xs text-ink-3">Online invoice payment and subcontractor direct deposit</p>
+          </div>
+        </div>
+        <div className="flex items-center gap-2 shrink-0">
+          <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${tone}`} aria-hidden="true" />
+          <span className="text-xs text-ink-2">{word}</span>
+        </div>
+      </div>
+      {st.detail && (
+        <p className="text-xs text-ink-3 mt-3 pt-3 border-t border-hairline">{st.detail}</p>
       )}
     </div>
   )

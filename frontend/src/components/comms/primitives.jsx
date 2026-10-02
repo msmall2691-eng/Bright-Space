@@ -20,7 +20,7 @@ export function NotifPermissionButton() {
         setPermission(result)
       }}
       title="Enable desktop notifications for new messages"
-      className="w-8 h-8 rounded-xl bg-bg-2 hover:bg-bg-2 text-ink-2 flex items-center justify-center transition-colors"
+      className="w-8 h-8 rounded-lg bg-bg-2 hover:bg-hairline text-ink-2 flex items-center justify-center transition-colors"
     >
       <Bell className="w-4 h-4" />
     </button>

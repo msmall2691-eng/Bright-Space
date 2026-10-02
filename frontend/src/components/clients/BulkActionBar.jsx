@@ -26,11 +26,11 @@ export function BulkActionBar({
           />
           <span>Select all</span>
         </label>
-        <span>{filtered.length} client{filtered.length !== 1 ? 's' : ''}</span>
+        <span className="tabular-nums">{filtered.length} client{filtered.length !== 1 ? 's' : ''}</span>
       </div>
       {selectedIds.size > 0 && (
         <div className="flex items-center gap-2" data-testid="clients-bulk-actions">
-          <span className="text-[11px] text-ink-2 font-medium">{selectedIds.size} selected</span>
+          <span className="text-[11px] text-ink-2 font-medium tabular-nums">{selectedIds.size} selected</span>
           <button onClick={clearSelection}
             className="text-[11px] text-ink-3 hover:text-ink-2 px-2 py-1 rounded">
             Clear

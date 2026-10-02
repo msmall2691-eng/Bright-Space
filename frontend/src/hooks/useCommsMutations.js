@@ -50,11 +50,14 @@ export function useCommsMutations({ detail, loadDetail, loadList, loadSummary })
   /** Send an outbound message or save an internal note. Caller passes
    *  { body, subject, isNote }; email subject only sticks when the
    *  conversation channel is 'email'. */
-  const sendReplyOrNote = useCallback(async ({ body, subject, isNote }) => {
+  const sendReplyOrNote = useCallback(async ({ body, subject, isNote, mentions }) => {
     if (!body?.trim() || !detail) return
     const author = currentUsername()
     if (isNote) {
-      await post(`/api/comms/conversations/${detail.id}/notes`, { body, author })
+      // `mentions` = user ids the composer tagged with @; the backend notifies
+      // each one (push, SMS fallback) and keeps the note internal.
+      await post(`/api/comms/conversations/${detail.id}/notes`,
+        { body, author, mentions: (mentions && mentions.length) ? mentions : undefined })
     } else {
       await post(`/api/comms/conversations/${detail.id}/messages`, {
         body,

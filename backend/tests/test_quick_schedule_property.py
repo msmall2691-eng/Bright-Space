@@ -1,8 +1,10 @@
 """Tests for property defaulting on POST /api/jobs (Quick-schedule support).
 
-The one-screen booking flow lets the user skip Property, but the column is
-NOT NULL — so create_job must resolve to the client's existing property or
-create a sensible default. Otherwise a fast booking would 500.
+The one-screen booking flow lets the user skip Property. create_job resolves to
+the client's existing property, or auto-creates one from the client's/job's
+address (workflow guardrail — a job always hangs off a property). A client with
+no property AND no address now 422s instead of silently making an empty-address
+property; that case is covered in test_require_property.py.
 """
 import pytest
 
@@ -14,7 +16,10 @@ from modules.scheduling.router import create_job, JobCreate
 @pytest.fixture
 def bare_client():
     db = SessionLocal()
-    c = Client(name="Quick Sched Test", email="quick@example.com", status="active", org_id=None)
+    # Has an address but no Property yet — the real quick-schedule case, where
+    # create_job auto-creates the property from that address.
+    c = Client(name="Quick Sched Test", email="quick@example.com", status="active",
+               address="100 Quick St", org_id=None)
     db.add(c); db.commit(); db.refresh(c)
     yield db, c
     db.query(Job).filter(Job.client_id == c.id).delete(synchronize_session=False)

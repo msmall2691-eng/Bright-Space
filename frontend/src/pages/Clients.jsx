@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useMemo } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { Users } from 'lucide-react'
 import { post } from '../api'
@@ -13,10 +13,28 @@ import { useClientMutations } from '../hooks/useClientMutations'
 import { useClientForm } from '../hooks/useClientForm'
 import { useClientView } from '../hooks/useClientView'
 import { useSelectionSet } from '../hooks/useSelectionSet'
+import { useIsMobile } from '../hooks/useIsMobile'
 import { CLIENT_COLUMNS } from '../components/clients/columns'
+import { DEFAULT_CLIENT_STATUS } from '../components/clients/constants'
 import { ClientForm } from '../components/clients/ClientForm'
 import { MergeModal } from '../components/clients/MergeModal'
 import { BulkActionBar } from '../components/clients/BulkActionBar'
+
+// Sort accessors per column id (must match the ids in components/clients/columns).
+// Strings compare case-insensitively; created/next_visit are ISO dates (sort
+// lexically); balance is numeric. Anything not here isn't sortable.
+const SORT_VALUE = {
+  name: (c) => (c.name || '').toLowerCase(),
+  phone: (c) => (c.phone || '').toLowerCase(),
+  email: (c) => (c.email || '').toLowerCase(),
+  city: (c) => (c.city || '').toLowerCase(),
+  state: (c) => (c.state || '').toLowerCase(),
+  source: (c) => (c.source || '').toLowerCase(),
+  status: (c) => (c.status || '').toLowerCase(),
+  created: (c) => c.created_at || '',
+  balance: (c) => Number(c.balance || 0),
+  next_visit: (c) => c.next_visit || '',
+}
 
 // Group the duplicate-bucket rows into review pairs the automatic
 // email-merge can't touch (both members have a real, non-placeholder
@@ -200,16 +218,40 @@ export default function Clients() {
   // instead of navigating away (↑/↓ move through the filtered list).
   const [peekId, setPeekId] = useState(null)
   const [search, setSearch] = useState('')
-  const [statusFilter, setStatusFilter] = useState('')
+  // Land on Active, not All — the book is mostly leads and the office works
+  // with its real customers (DEFAULT_CLIENT_STATUS). Leads stay one tap away.
+  const [statusFilter, setStatusFilter] = useState(DEFAULT_CLIENT_STATUS)
   const { clients, setClients, filtered: baseFiltered, statusCounts, load } = useClients(statusFilter, search)
   // CRM Health "bucket" filter — when a bucket badge in CRMHealthPanel is
   // clicked we narrow the visible list to just those client IDs. Null
   // means "no bucket filter"; empty array means the bucket has no rows
   // (still narrows, showing nothing).
   const [bucketFilter, setBucketFilter] = useState(null) // { key, label, ids: Set }
-  const filtered = bucketFilter
-    ? baseFiltered.filter(c => bucketFilter.ids.has(c.id))
-    : baseFiltered
+  // Column sort (client-side, over the already-loaded page). null key = the
+  // server's default order (created desc). Sorting `filtered` — the one ordered
+  // array — keeps the table, the cards, peek ↑/↓ nav and select-all consistent.
+  // Missing values (no balance/next visit) always sink to the bottom.
+  const [sort, setSort] = useState({ key: null, dir: 'asc' })
+  const toggleSort = (key) =>
+    setSort(s => (s.key === key ? { key, dir: s.dir === 'asc' ? 'desc' : 'asc' } : { key, dir: 'asc' }))
+  const filtered = useMemo(() => {
+    const base = bucketFilter
+      ? baseFiltered.filter(c => bucketFilter.ids.has(c.id))
+      : baseFiltered
+    const getv = SORT_VALUE[sort.key]
+    if (!getv) return base
+    const dir = sort.dir === 'desc' ? -1 : 1
+    const empty = (v) => v === '' || v == null
+    return [...base].sort((a, b) => {
+      const av = getv(a), bv = getv(b)
+      if (empty(av) && empty(bv)) return 0
+      if (empty(av)) return 1          // no value → bottom, both directions
+      if (empty(bv)) return -1
+      if (av < bv) return -1 * dir
+      if (av > bv) return 1 * dir
+      return 0
+    })
+  }, [bucketFilter, baseFiltered, sort])
   // Real-named duplicate review workflow. `pairQueue` is the remaining
   // pairs still to visit (stored as [idA, idB] so we can re-resolve them
   // after each merge shrinks the list). `reviewTotal` is fixed at start
@@ -230,6 +272,13 @@ export default function Clients() {
     columns, setColumns, visibleColumns,
     viewConfig, applyView,
   } = useClientView({ statusFilter, setStatusFilter })
+  // On a phone the desktop table side-scrolls and its row actions are 24px
+  // taps; the card grid is the mobile-correct view. The view toggle is already
+  // hidden below sm (640), so force cards there regardless of the stored
+  // (desktop) preference — otherwise a saved 'table' lands the phone on the
+  // unusable table.
+  const isPhone = useIsMobile(640)
+  const effectiveViewMode = isPhone ? 'cards' : viewMode
   const fileInputRef = useRef(null)
   const {
     phoneNumbers,
@@ -344,10 +393,13 @@ export default function Clients() {
             subtitle="Search, filter, and manage your customer list"
             icon={Users}
             pods={[
-              { label: 'All', value: statusCounts[''] ?? clients.length },
-              { label: 'Active', value: statusCounts.active ?? 0, tone: 'text-emerald-300' },
-              { label: 'Leads', value: statusCounts.lead ?? 0, tone: 'text-indigo-200' },
-              { label: 'Inactive', value: statusCounts.inactive ?? 0, tone: 'text-white/70' },
+              // Clickable so the default Active view can still reach the other
+              // buckets in one tap — the status tabs otherwise sit behind the
+              // collapsed Filters panel.
+              { label: 'All', value: statusCounts[''] ?? clients.length, onClick: () => setStatusFilter('') },
+              { label: 'Active', value: statusCounts.active ?? 0, tone: 'text-emerald-300', onClick: () => setStatusFilter('active') },
+              { label: 'Leads', value: statusCounts.lead ?? 0, tone: 'text-indigo-200', onClick: () => setStatusFilter('lead') },
+              { label: 'Inactive', value: statusCounts.inactive ?? 0, tone: 'text-white/70', onClick: () => setStatusFilter('inactive') },
             ]}
           >
             <SubNav />
@@ -413,9 +465,15 @@ export default function Clients() {
           bulkDeleting={bulkDeleting}
         />
 
-        {/* Client rows — Card view */}
-        {viewMode === 'cards' && (
-          <div className="space-y-1.5 overflow-y-auto flex-1">
+        {/* List region — a single quiet fade-up as the rows paint, matching
+            the Home board / Customer 360 reveal (held to the 150–350ms
+            ease-out budget, disabled under reduced-motion via .bb-board-in). */}
+        <div className="flex-1 flex flex-col min-h-0 bb-board-in">
+        {/* Client rows — Card view: a dense packing grid (two-up on wide) so
+            the cards sit side by side instead of a tall stack of full-width
+            bands. */}
+        {effectiveViewMode === 'cards' && (
+          <div className="grid grid-cols-1 shell:grid-cols-2 gap-2 content-start overflow-y-auto flex-1">
             {filtered.map(c => (
               <ClientCardRow
                 key={c.id}
@@ -429,20 +487,24 @@ export default function Clients() {
               />
             ))}
             {filtered.length === 0 && (
-              <EmptyState icon={Users} title={search || statusFilter ? 'No matching clients' : 'No clients yet'}
-                description={search || statusFilter ? 'Try a different search or filter.' : undefined}
-                action={!search && !statusFilter && (
-                  <button onClick={openNew} className="text-xs font-semibold text-indigo-600 hover:text-indigo-700">Add your first client →</button>
-                )} />
+              <div className="shell:col-span-2">
+                <EmptyState icon={Users} title={search || statusFilter ? 'No matching clients' : 'No clients yet'}
+                  description={search || statusFilter ? 'Try a different search or filter.' : undefined}
+                  action={!search && !statusFilter && (
+                    <button onClick={openNew} className="text-xs font-semibold text-indigo-600 hover:text-indigo-700">Add your first client →</button>
+                  )} />
+              </div>
             )}
           </div>
         )}
 
         {/* Client rows — Table view (Twenty CRM-inspired) */}
-        {viewMode === 'table' && (
+        {effectiveViewMode === 'table' && (
           <ClientTableView
             filtered={filtered}
             visibleColumns={visibleColumns}
+            sort={sort}
+            onSort={toggleSort}
             selectedIds={selectedIds}
             toggleSelect={toggleSelect}
             toggleSelectAll={toggleSelectAll}
@@ -458,6 +520,7 @@ export default function Clients() {
             deleteClient={deleteClient}
           />
         )}
+        </div>
         </div>
       </div>
 

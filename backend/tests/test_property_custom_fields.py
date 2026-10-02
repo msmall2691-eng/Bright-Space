@@ -39,6 +39,23 @@ def test_property_create_persists_custom_fields(client_row):
     assert fresh.custom_fields == {"gate_code": "0508", "wifi": "guest123"}
 
 
+def test_property_create_persists_wifi(client_row):
+    """Regression: PropertyCreate had no wifi fields, so WiFi typed on a new
+    property was silently dropped (Pydantic ignored the unknown keys) and could
+    only be added later from a job's page. Create must persist it now, and it
+    round-trips to the crew-facing dict."""
+    c, db = client_row
+    out = create_property(PropertyCreate(
+        client_id=c.id, name="Seaside Cottage", address="7 Shore Rd",
+        wifi_ssid="SeasideGuest", wifi_password="sandy123",
+    ), db=db, org_id=1)
+    assert out["wifi_ssid"] == "SeasideGuest"
+    assert out["wifi_password"] == "sandy123"
+    fresh = db.query(Property).filter(Property.id == out["id"]).first()
+    assert fresh.wifi_ssid == "SeasideGuest"
+    assert fresh.wifi_password == "sandy123"
+
+
 def test_property_update_sets_custom_fields(client_row):
     c, db = client_row
     out = create_property(PropertyCreate(client_id=c.id, name="P2", address="2 Rd"), db=db, org_id=1)

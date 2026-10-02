@@ -5,7 +5,10 @@ import SavedViewsBar from '../components/SavedViewsBar'
 import PageHero from '../components/ui/PageHero'
 import InlineSelect from '../components/InlineSelect'
 import JobCreateModal from '../components/JobCreateModal'
+import JobEditModal from '../components/JobEditModal'
+import { jobPropertyOption } from '../utils/jobPropertyOption'
 import { get, post, patch } from "../api"
+import { createClientChecked } from '../utils/clientCreate'
 import { formatDate, combineAddress } from '../utils/format'
 import { pushToast } from '../utils/toastBus'
 import QuoteRow from '../components/quoting/QuoteRow'
@@ -84,6 +87,9 @@ export default function Quoting() {
   // flag stay here because `save()` reads them when auto-creating on save.
   const [newClient, setNewClient] = useState({ name: '', phone: '', email: '' })
   const [creatingClient, setCreatingClient] = useState(false)
+  // Duplicate matches surfaced by the shared create helper; the panel shows the
+  // "Use this / Create anyway" prompt from them.
+  const [clientDupes, setClientDupes] = useState([])
   // Whether the "Add client inline" form is expanded in QuoteEditPanel.
   // Lifted from the panel so openFromIntake can auto-expand it when a
   // request has no matched client — previously called an undefined
@@ -136,14 +142,23 @@ export default function Quoting() {
     }
   }
 
-  // Create a client without leaving the quote form, then select it.
-  // Returns the created client on success or throws. The QuoteEditPanel owns
-  // the addingClient/clientErr UI state and clears itself after this resolves.
-  const createInlineClient = async () => {
+  // Select a created-or-chosen client back into the quote form.
+  const pickClient = (client) => {
+    setClients(cs => (cs.some(c => String(c.id) === String(client.id)) ? cs : [client, ...cs]))
+    selectClient(String(client.id))
+    setNewClient({ name: '', phone: '', email: '' })
+    setClientDupes([])
+  }
+
+  // Create a client without leaving the quote form, then select it. Returns a
+  // {status:'created'|'duplicates'} result (throws only on an unexpected error)
+  // so the panel can show the shared duplicate prompt instead of silently
+  // making a second record. force=true is the prompt's "Create anyway".
+  const createInlineClient = async ({ force = false } = {}) => {
     if (!newClient.name.trim()) throw new Error('Name is required')
     setCreatingClient(true)
     try {
-      const created = await post('/api/clients', {
+      const res = await createClientChecked({
         name: newClient.name.trim(),
         phone: newClient.phone.trim() || null,
         email: newClient.email.trim() || null,
@@ -153,11 +168,10 @@ export default function Quoting() {
         // one-tap property fallback work later instead of silently failing.
         address: form.address?.trim() || null,
         status: 'active',
-      })
-      setClients(cs => [created, ...cs])
-      selectClient(String(created.id))
-      setNewClient({ name: '', phone: '', email: '' })
-      return created
+      }, { force })
+      if (res.status === 'duplicates') { setClientDupes(res.duplicates); return res }
+      pickClient(res.client)
+      return res
     } finally {
       setCreatingClient(false)
     }
@@ -185,6 +199,17 @@ export default function Quoting() {
       navigate({ pathname: location.pathname, search: sp.toString() ? `?${sp}` : '' }, { replace: true })
     }
   }, [location.search])
+
+  // The "Accepted" hub tab is this same page at /quotes/accepted — the Quotes
+  // list pre-filtered to accepted-but-not-yet-converted quotes (the "said yes,
+  // still needs booking" set). Keyed on pathname so it applies on entry without
+  // fighting the user if they then change the status dropdown.
+  useEffect(() => {
+    if (location.pathname.endsWith('/quotes/accepted')) {
+      setTab('quotes')
+      setQuoteStatusFilter('accepted')
+    }
+  }, [location.pathname])
 
   useEffect(() => {
     if (location.state?.quoteId) {
@@ -403,9 +428,11 @@ export default function Quoting() {
       subject: `Your Quote ${q.quote_number} from ${companyName}`,
       // First name only — friendlier and matches the email/SMS greeting.
       greeting: isPlaceholderName(clientName) ? '' : clientName.split(/\s+/)[0],
-      // Owner copy: default to the business email so you always get a copy of
-      // what the customer received. Editable/clearable below.
-      copy_to: company.company_email || '',
+      // Owner copy: blank by default. A quote only BCCs someone when the sender
+      // deliberately types an address. This used to pre-fill with the company
+      // email, which silently copied that mailbox (e.g. an office/alias address)
+      // on every quote.
+      copy_to: '',
     })
     setSelected(q)
     setPanel('send')
@@ -457,7 +484,12 @@ export default function Quoting() {
       } else {
         setSaving(true)
         try {
-          const created = await post('/api/clients', {
+          // Route through the shared dedup helper — a name-only match (the
+          // email/phone re-match above wouldn't catch) stops here and surfaces
+          // the duplicate prompt in the panel instead of quietly making a
+          // second record. The operator picks the existing client or "Create
+          // anyway", then hits Create Quote again.
+          const res = await createClientChecked({
             name: newClient.name.trim(),
             phone: newClient.phone.trim() || null,
             email: newClient.email.trim() || null,
@@ -466,6 +498,14 @@ export default function Quoting() {
             address: form.address?.trim() || null,
             status: 'active',
           })
+          if (res.status === 'duplicates') {
+            setSaving(false)
+            setClientDupes(res.duplicates)
+            setAddingClient(true)
+            showToast('Possible duplicate — choose the existing client or create anyway')
+            return
+          }
+          const created = res.client
           setClients(cs => [created, ...cs])
           clientId = created.id
           setForm(f => ({ ...f, client_id: created.id }))
@@ -575,6 +615,7 @@ export default function Quoting() {
   } = useQuotingMutations({
     toast: showToast,
     loadQuotes, loadIntakes, loadFollowUps, loadArchived,
+    setQuotes, setIntakes,
     selectedIds, clearSelection,
     currentSelectedId: selected?.id,
     onSelectedCleared: () => { setSelected(null); setPanel(null) },
@@ -593,6 +634,27 @@ export default function Quoting() {
     setScheduleQuote(null)
     await loadQuotes()
     showToast('Client onboarded — schedule created ✓')
+  }
+  // A quote that auto-converted on accept ALREADY has a job (date-less,
+  // status 'unscheduled'). POST /api/jobs with that quote_id is idempotent and
+  // hands back the existing job untouched — so the create modal would be a
+  // dead end. Put the date on the existing job instead: one fetch on click,
+  // then the same JobEditModal the Schedule page uses (its PATCH also sends
+  // the customer's "you're booked in" notice on the transition to scheduled).
+  const [scheduleJob, setScheduleJob] = useState(null)
+  const openSchedule = async (q) => {
+    if (q.job_id) {
+      try {
+        const job = await get(`/api/jobs/${q.job_id}`)
+        setScheduleJob(job)
+        return
+      } catch { /* fall through to the create modal */ }
+    }
+    setScheduleQuote(q)
+  }
+  const finishScheduleJob = async () => {
+    setScheduleJob(null)
+    await loadQuotes()
   }
 
 
@@ -763,7 +825,7 @@ export default function Quoting() {
                 onNavigate={navigate}
                 onSend={openSendPanel}
                 onCopyLink={copyPublicLink}
-                onSchedule={setScheduleQuote}
+                onSchedule={openSchedule}
                 onArchive={archiveQuote}
                 onUpdateStatus={updateStatus}
                 copiedQuoteId={copiedQuoteId}
@@ -864,6 +926,9 @@ export default function Quoting() {
           setShowQuoteAdvanced={setShowQuoteAdvanced}
           selectClient={selectClient}
           createInlineClient={createInlineClient}
+          clientDupes={clientDupes}
+          setClientDupes={setClientDupes}
+          pickClient={pickClient}
           updateItem={updateItem}
           onSave={save}
           onClose={() => setPanel(null)}
@@ -894,6 +959,15 @@ export default function Quoting() {
         />
       )}
 
+      {scheduleJob && (
+        <JobEditModal
+          job={scheduleJob}
+          properties={jobPropertyOption(scheduleJob)}
+          onClose={() => setScheduleJob(null)}
+          onSave={finishScheduleJob}
+          notify={(m) => showToast(m)}
+        />
+      )}
       {scheduleQuote && (
         <JobCreateModal
           clientId={scheduleQuote.client_id}

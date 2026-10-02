@@ -1,20 +1,23 @@
 import csv
 import io
 import logging
+import os
 from typing import Optional, List
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
 from sqlalchemy.orm import Session
 from sqlalchemy import text
 from pydantic import BaseModel
 
+from config import app_base_url
 from database.db import get_db
 from database.models import (
     Client, Property, PropertyIcal, ICalEvent, RecurringSchedule,
     Job, LeadIntake, Quote, Invoice, Conversation, Message,
     Opportunity, ContactEmail, ContactPhone, Activity,
 )
-from modules.auth.router import require_role, current_org_id
+from modules.auth.router import require_role, current_org_id, resolve_org_id
 from utils.phone import normalize_e164, phone_tail
+from services.data_doctor import run_data_scan
 
 log = logging.getLogger(__name__)
 
@@ -382,7 +385,12 @@ def get_settings(db: Session = Depends(get_db)):
             "email": os.getenv("SMTP_USER", ""),
             "phone": os.getenv("TWILIO_PHONE_NUMBER", ""),
             "notify_email": os.getenv("NOTIFY_EMAIL", ""),
-            "app_url": os.getenv("APP_URL", "https://maineclean.co"),
+            # APP_BASE_URL is the single source of truth for the app's own
+            # host (config.app_base_url) — the one the invite, portal and quote
+            # links are built from. The old APP_URL default pointed at the
+            # marketing site, which is a different host now that the app lives
+            # at app.maineclean.co, so this panel was showing the wrong URL.
+            "app_url": os.getenv("APP_URL") or app_base_url(),
         },
         "gcal_calendar_ids": {
             "residential": os.getenv("GCAL_RESIDENTIAL_CALENDAR_ID", ""),
@@ -429,3 +437,105 @@ def scheduler_health():
         "summary": tick_health.summary(jobs),
         **detail,
     }
+
+
+@router.get("/data-health", dependencies=[Depends(require_role("admin", "manager"))])
+def data_health(db: Session = Depends(get_db), org_id: int = Depends(current_org_id)):
+    """Read-only, whole-schema data-quality scan (the sibling of the recurring
+    health scan). Scoped to the caller's workspace. Never writes — it reports
+    dangling references, missing-required drift, money anomalies, stuck
+    lifecycle rows, and duplicate contacts, each with a suggested fix. See
+    services/data_doctor.py and the data-doctor skill."""
+    return run_data_scan(db, resolve_org_id(org_id, db))
+
+
+@router.get("/ai-health", dependencies=[Depends(require_role("admin", "manager"))])
+def ai_health(probe: bool = False):
+    """Which LLM is BrightBase actually using, and does it work?
+
+    Reports the active provider (``LLM_PROVIDER``), whether that provider's key
+    is present, and the model id resolved for each tier. With ``?probe=1`` it
+    runs two live self-tests and surfaces the REAL provider exception (admin
+    only) instead of the calm end-user fallback the chat shows:
+
+      * ``completion`` — a one-shot text call (basic provider connectivity).
+      * ``tool_loop``  — a bounded tool-using loop, the path the Workspace
+        agents use. This is where a tool-result-continuation bug shows up, so
+        it reproduces the "assistant ran into a problem" failure directly.
+
+    Admin/manager only; the probe spends a few tokens, so it is opt-in. Never
+    writes and never returns a key value — only whether one is set."""
+    from services import llm
+
+    info = {
+        "provider": llm.provider(),
+        "available": llm.available(),
+        "anthropic_key_present": bool(os.getenv("ANTHROPIC_API_KEY")),
+        "gemini_key_present": bool(os.getenv("GEMINI_API_KEY")),
+        "models": {t: llm.model_for_tier(t) for t in ("haiku", "sonnet", "opus")},
+    }
+    if not probe:
+        return info
+
+    def _probe(fn):
+        try:
+            return {"ok": True, "result": fn()}
+        except Exception as e:  # noqa: BLE001 — surfacing the real error is the point
+            return {"ok": False, "error_type": type(e).__name__, "error": str(e)[:800]}
+
+    def _completion():
+        txt = llm.complete_text(
+            system="You are a health check. Reply with exactly: OK",
+            user_content="Reply with OK.", tier="haiku", max_tokens=16)
+        return (txt or "")[:120]
+
+    # A trivial tool whose result carries a date + number, so the tool-result
+    # continuation (the failing step) is exercised the same way a real tool is.
+    _PING_TOOL = [{
+        "name": "ping",
+        "description": "Health-check tool. Call it once, then reply DONE.",
+        "input_schema": {"type": "object", "properties": {}},
+    }]
+
+    def _ping_exec(name, args):
+        from datetime import date
+        return {"pong": True, "count": 1, "as_of": date.today().isoformat()}
+
+    def _tool_loop():
+        used = []
+
+        def _exec(name, args):
+            used.append(name)
+            return _ping_exec(name, args)
+
+        txt = llm.run_tool_loop(
+            system="Call the ping tool exactly once, then reply with exactly: DONE",
+            user_content="Ping, then say DONE.", tools=_PING_TOOL,
+            execute=_exec, tier="haiku", max_tokens=64, max_iters=3)
+        return {"text": (txt or "")[:120], "tools_used": used}
+
+    def _tool_loop_reasoning():
+        # A reasoning-heavy tool call — the real assistant path. On a thinking
+        # model the model emits a reasoning step before the tool call, so this
+        # exercises the tool-result continuation that was failing. Runs at the
+        # standard tier (the tier the Workspace agents use).
+        used = []
+
+        def _exec(name, args):
+            used.append(name)
+            return _ping_exec(name, args)
+
+        txt = llm.run_tool_loop(
+            system=("Reason step by step. First work out which is larger and by "
+                    "how much: 17 times 23, or 400. Then call the ping tool once. "
+                    "Then reply with exactly: DONE"),
+            user_content="Do the reasoning, call ping, then say DONE.",
+            tools=_PING_TOOL, execute=_exec, tier="sonnet", max_tokens=512, max_iters=3)
+        return {"text": (txt or "")[:120], "tools_used": used}
+
+    info["probes"] = {
+        "completion": _probe(_completion),
+        "tool_loop": _probe(_tool_loop),
+        "tool_loop_reasoning": _probe(_tool_loop_reasoning),
+    }
+    return info

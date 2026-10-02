@@ -51,6 +51,61 @@ def normalize_e164(phone: Optional[str]) -> Optional[str]:
         return None
 
 
+# Premium-rate (900), carrier-specific (700) and personal-communications
+# (5XX) area codes — inside the numbering plan, never a customer's phone.
+_NON_GEOGRAPHIC_AREAS = frozenset({
+    "900", "700",
+    "500", "521", "522", "533", "544", "566", "577", "588",
+})
+
+
+def nanp_e164(raw: Optional[str]) -> Optional[str]:
+    """`raw` as +1XXXXXXXXXX, or None if it is not a plausible NANP number.
+
+    The canonical destination validator: `normalize_e164` above only reshapes
+    a string and will happily return `+20743299492` for a mistyped 11-digit
+    number, because reshaping is all it claims to do. This one decides whether
+    a number may be DIALLED, which is a different question and the one every
+    outbound SMS path actually needs to ask.
+
+    Structural validation, not just length: a NANP area code and exchange both
+    begin 2-9, and N11 area codes (411, 911) are service codes. Everything
+    outside the plan — every other country, every premium short code — returns
+    None and is never dialled. That is the property that makes toll fraud
+    impossible here rather than merely expensive.
+
+    Lives in utils/ rather than services/sms_guard.py (its original home) so
+    that integrations/twilio_client.py can import it without a layering
+    inversion; `sms_guard.nanp_number` is now a thin alias over this, so the
+    public booking path's behaviour is unchanged by construction.
+    """
+    if not raw:
+        return None
+    s = str(raw).strip()
+    digits = _NON_DIGITS.sub("", s)
+    # An explicit non-+1 country code is a foreign number even at 11+ digits.
+    if s.startswith("+") and not digits.startswith("1"):
+        return None
+    if len(digits) == 11 and digits.startswith("1"):
+        digits = digits[1:]
+    if len(digits) != 10:
+        return None
+    area, exch = digits[:3], digits[3:6]
+    if area[0] in "01" or exch[0] in "01":
+        return None
+    if area[1:] == "11":          # 211/311/411/611/911 and friends
+        return None
+    # Non-geographic NANP ranges, which are inside the plan and still the
+    # expensive ones: 900 is premium-rate billed to the CALLER's carrier and
+    # 500/521-followers are personal-communications numbers that forward
+    # anywhere, both long-standing toll-fraud destinations. 700 is
+    # carrier-specific and not a customer's phone. A cleaning customer in
+    # Maine has none of these.
+    if area in _NON_GEOGRAPHIC_AREAS or exch == "976":
+        return None
+    return f"+1{digits}"
+
+
 _PLACEHOLDER_PHONE_MARKER = re.compile(r"\b(placeholder|tbd|unknown)\b", re.IGNORECASE)
 
 

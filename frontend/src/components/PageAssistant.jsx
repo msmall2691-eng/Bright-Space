@@ -49,9 +49,9 @@ const SUGGESTIONS = {
 // on ?new=1); `run` calls an endpoint and reports back.
 const ACTIONS = {
   finn:  [{ label: 'Draft overdue reminders', run: 'overdue' }, { label: 'New invoice', to: '/billing?view=invoices&new=1' }],
-  scout: [{ label: 'New quote', to: '/billing?view=quotes&new=1' }, { label: 'Log a lead', to: '/requests?new=1' }],
+  scout: [{ label: 'New quote', to: '/quotes?new=1' }, { label: 'Log a lead', to: '/requests?new=1' }],
   mia:   [{ label: 'New job', to: '/schedule?new=1' }, { label: 'New client', to: '/clients?new=1' }],
-  nova:  [{ label: 'New quote', to: '/billing?view=quotes&new=1' }, { label: 'New client', to: '/clients?new=1' }],
+  nova:  [{ label: 'New quote', to: '/quotes?new=1' }, { label: 'New client', to: '/clients?new=1' }],
 }
 
 export default function PageAssistant() {

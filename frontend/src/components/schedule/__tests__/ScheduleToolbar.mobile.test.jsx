@@ -35,10 +35,20 @@ const baseProps = {
 }
 
 describe('ScheduleToolbar — phone layout', () => {
-  it('gives the phone a dedicated icon-only New Job button', () => {
+  it('drops the phone toolbar "+" — the bottom-right FAB is the one mobile primary', () => {
+    // De-clutter: the icon-only "New job" (aria-label) that used to sit in the
+    // phone toolbar was removed so there is ONE primary on a phone — the
+    // bottom-right StickyActionBar FAB (its own component/test). The desktop
+    // "New Job" text button (no aria-label) is the only New-Job control left in
+    // this toolbar, so the phone-unique aria-label is gone.
+    render(<ScheduleToolbar {...baseProps} />)
+    expect(screen.queryByLabelText('New job')).toBeNull()
+  })
+
+  it('keeps the desktop New Job button wired to onNewJob', () => {
     const onNewJob = vi.fn()
     render(<ScheduleToolbar {...baseProps} onNewJob={onNewJob} />)
-    fireEvent.click(screen.getByLabelText('New job'))
+    fireEvent.click(screen.getByText('New Job'))
     expect(onNewJob).toHaveBeenCalled()
   })
 
@@ -50,8 +60,18 @@ describe('ScheduleToolbar — phone layout', () => {
 
   it('shows the date-nav in a non-month view and steps weeks', () => {
     const onNextWeek = vi.fn()
-    render(<ScheduleToolbar {...baseProps} viewMode="agenda" onNextWeek={onNextWeek} />)
+    // showDateNav defaults on; week view has no DateStrip so it keeps the arrows.
+    render(<ScheduleToolbar {...baseProps} viewMode="week" onNextWeek={onNextWeek} />)
     fireEvent.click(screen.getByLabelText('Next'))
     expect(onNextWeek).toHaveBeenCalled()
+  })
+
+  it('hides the week date-nav when showDateNav is off (agenda view has DateStrip)', () => {
+    // In the narrow-day "agenda" view the parent passes showDateNav={false}
+    // because AgendaHero's DateStrip already carries day/week nav — the toolbar
+    // arrows would be a redundant second nav row (owner: "way too busy").
+    render(<ScheduleToolbar {...baseProps} viewMode="week" showDateNav={false} />)
+    expect(screen.queryByLabelText('Previous')).toBeNull()
+    expect(screen.queryByLabelText('Next')).toBeNull()
   })
 })

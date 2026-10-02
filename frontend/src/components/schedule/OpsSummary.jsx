@@ -8,13 +8,19 @@
  * state below can carry the day on its own.
  */
 
-export default function OpsSummary({ stats, isToday }) {
+export default function OpsSummary({ stats, isToday, compact = false }) {
   if (!stats || stats.jobs === 0) return null
+  // `compact` (the phone/agenda hero) shows only the two the dispatcher acts
+  // on — how many jobs, and how many still need a crew. capacity% and crews-out
+  // are desktop-DayBoard context, and on a phone they turned this into a stat
+  // row (owner: "way too busy").
   const items = [
     { key: 'jobs', value: stats.jobs, label: 'jobs' },
     { key: 'unassigned', value: stats.unassigned, label: 'need a crew', warn: stats.unassigned > 0 },
-    { key: 'capacity', value: `${stats.capacityPct}%`, label: 'capacity' },
-    { key: 'crews', value: stats.crewsOut, label: stats.crewsOut === 1 ? 'crew out' : 'crews out' },
+    ...(compact ? [] : [
+      { key: 'capacity', value: `${stats.capacityPct}%`, label: 'capacity' },
+      { key: 'crews', value: stats.crewsOut, label: stats.crewsOut === 1 ? 'crew out' : 'crews out' },
+    ]),
   ]
   return (
     <div className="px-4 pt-1 pb-3">

@@ -12,6 +12,10 @@ export default function QuotePreview({ form, quoteNumber, company = {} }) {
   const subtotal = items.reduce((s, i) => s + (parseFloat(i.qty) || 0) * (parseFloat(i.unit_price) || 0), 0)
   const rate = parseFloat(form.tax_rate) || 0
   const tax = subtotal * rate / 100
+  // Match the backend's total (subtotal + tax − discount) so the owner's preview
+  // shows the same figure the customer's QuoteDocument renders. Was subtotal+tax,
+  // which silently diverged the moment a discount was set.
+  const discount = parseFloat(form.discount) || 0
   // Match the public page's "June 30, 2026" date format, parsing parts
   // explicitly so the day isn't shifted by UTC-midnight interpretation.
   const fmtDate = (d) => {
@@ -37,7 +41,8 @@ export default function QuotePreview({ form, quoteNumber, company = {} }) {
     subtotal,
     tax_rate: rate,
     tax,
-    total: subtotal + tax,
+    discount,
+    total: subtotal + tax - discount,
     valid_until: fmtDate(form.valid_until),
   }
 

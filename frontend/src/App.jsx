@@ -14,6 +14,7 @@ import Requests from './pages/Requests'
 import Deals from './pages/Deals'
 import PublicQuote from './pages/PublicQuote'
 import PublicJobConfirm from './pages/PublicJobConfirm'
+import PublicPayment from './pages/PublicPayment'
 import CustomerPortal from './pages/CustomerPortal'
 import PortalVerify from './pages/PortalVerify'
 import AcceptInvite from './pages/AcceptInvite'
@@ -171,6 +172,9 @@ const QuoteDetail = lazy(() => import('./pages/QuoteDetail'))
 const InvoiceDetail = lazy(() => import('./pages/InvoiceDetail'))
 const Schedule = lazy(() => import('./pages/Schedule'))
 const Billing = lazy(() => import('./pages/Billing'))
+// Quotes now have their own route under the Requests hub (out of the Billing
+// shell), so the quote list is reachable directly, not only via ?view=quotes.
+const Quoting = lazy(() => import('./pages/Quoting'))
 const Payroll = lazy(() => import('./pages/Payroll'))
 const Comms = lazy(() => import('./pages/Comms'))
 const Properties = lazy(() => import('./pages/Properties'))
@@ -250,6 +254,7 @@ export default function App() {
 
   const isPublicRoute = location.pathname.startsWith('/quote/')
     || location.pathname.startsWith('/job/') || location.pathname.startsWith('/portal')
+    || location.pathname.startsWith('/pay/')
     || location.pathname.startsWith('/accept-invite')
     // Applying to join the bench. No token in the path — this one is meant to
     // be shared as a plain link, on a card or in a job ad.
@@ -267,6 +272,7 @@ export default function App() {
       <Routes>
         <Route path="/quote/:token" element={<PublicQuote />} />
         <Route path="/job/:token" element={<PublicJobConfirm />} />
+        <Route path="/pay/:token" element={<PublicPayment />} />
         <Route path="/portal/verify" element={<PortalVerify />} />
         <Route path="/portal" element={<CustomerPortal />} />
         <Route path="/accept-invite" element={<AcceptInvite />} />
@@ -368,11 +374,15 @@ export default function App() {
               <Route path="/deals" element={<Deals />} />
               <Route path="/opportunities/:id" element={<OpportunityDetail />} />
               <Route path="/jobs/:id" element={<JobDetail />} />
+              {/* Quotes list + the Accepted view live under the Requests hub.
+                  Static paths, so they rank above /quotes/:id in the router. */}
+              <Route path="/quotes" element={<Quoting />} />
+              <Route path="/quotes/accepted" element={<Quoting />} />
               <Route path="/quotes/:id" element={<QuoteDetail />} />
               <Route path="/invoices/:id" element={<InvoiceDetail />} />
-              {/* Quoting + Invoicing consolidated under one Billing surface. */}
+              {/* Money is invoices + payments now; quotes moved to /quotes. */}
               <Route path="/billing" element={<Billing />} />
-              <Route path="/quoting" element={<Navigate to="/billing?view=quotes" replace />} />
+              <Route path="/quoting" element={<Navigate to="/quotes" replace />} />
               <Route path="/invoicing" element={<Navigate to="/billing?view=invoices" replace />} />
               <Route path="/schedule" element={<Schedule />} />
               <Route path="/scheduling" element={<Navigate to="/schedule" replace />} />

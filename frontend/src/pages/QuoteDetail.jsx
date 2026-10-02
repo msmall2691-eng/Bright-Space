@@ -15,19 +15,21 @@ import QuoteLineEditor from '../components/quoting/QuoteLineEditor'
 import RecordSkeleton from '../components/record/RecordSkeleton'
 import { EmptyState } from '../components/ui'
 import JobCreateModal from '../components/JobCreateModal'
+import JobEditModal from '../components/JobEditModal'
+import { jobPropertyOption } from '../utils/jobPropertyOption'
 import SendQuotePanel from '../components/quoting/SendQuotePanel'
 import OriginalRequestCard from '../components/quoting/OriginalRequestCard'
 import { isPlaceholderName } from '../components/quoting/constants'
 
 const STATUS_OPTIONS = [
-  { value: 'draft',     label: 'draft',     chipClass: 'bg-bg-2 text-ink-3 border-hairline',                    dot: 'bg-ink-3' },
-  { value: 'sent',      label: 'sent',      chipClass: 'bg-blue-500/15 text-blue-500 border-blue-500/20',       dot: 'bg-blue-500' },
-  { value: 'viewed',    label: 'viewed',    chipClass: 'bg-cyan-500/15 text-cyan-500 border-cyan-500/20',       dot: 'bg-cyan-500' },
-  { value: 'accepted',  label: 'accepted',  chipClass: 'bg-emerald-500/15 text-emerald-500 border-emerald-500/20', dot: 'bg-emerald-500' },
-  { value: 'declined',  label: 'declined',  chipClass: 'bg-red-500/15 text-red-500 border-red-500/20',          dot: 'bg-red-500' },
-  { value: 'converted', label: 'converted', chipClass: 'bg-violet-500/15 text-violet-500 border-violet-500/20', dot: 'bg-violet-500' },
-  { value: 'expired',   label: 'expired',   chipClass: 'bg-amber-500/15 text-amber-500 border-amber-500/20',    dot: 'bg-amber-500' },
-  { value: 'archived',  label: 'archived',  chipClass: 'bg-bg-2 text-ink-3 border-hairline',                    dot: 'bg-ink-3' },
+  { value: 'draft',     label: 'draft',     dot: 'bg-ink-3' },
+  { value: 'sent',      label: 'sent',      dot: 'bg-blue-500' },
+  { value: 'viewed',    label: 'viewed',    dot: 'bg-cyan-500' },
+  { value: 'accepted',  label: 'accepted',  dot: 'bg-emerald-500' },
+  { value: 'declined',  label: 'declined',  dot: 'bg-red-500' },
+  { value: 'converted', label: 'converted', dot: 'bg-violet-500' },
+  { value: 'expired',   label: 'expired',   dot: 'bg-amber-500' },
+  { value: 'archived',  label: 'archived',  dot: 'bg-ink-3' },
 ]
 const SERVICE_OPTIONS = [
   { value: 'residential', label: 'residential' },
@@ -46,7 +48,7 @@ function LinkedCard({ icon: Icon, label, to, primary, secondary }) {
       <div className="flex items-center gap-1.5 text-[10px] uppercase tracking-wide text-ink-3 mb-1">
         <Icon className="w-3.5 h-3.5" /> {label}
       </div>
-      <div className={`text-[13px] truncate ${to ? 'text-blue-500 hover:underline' : 'text-ink-2'}`}>{primary}</div>
+      <div className={`text-[13px] truncate ${to ? 'text-ink hover:text-indigo-600 no-underline' : 'text-ink-2'}`}>{primary}</div>
       {secondary && <div className="text-[11px] text-ink-3 truncate">{secondary}</div>}
     </div>
   )
@@ -147,7 +149,10 @@ export default function QuoteDetail() {
       custom_message: '',
       subject: `Your Quote ${quote.quote_number} from ${company.company_name || 'us'}`,
       greeting: isPlaceholderName(name) ? '' : name.split(/\s+/)[0],
-      copy_to: company.company_email || '',
+      // Blank by default: a quote only BCCs someone when the sender deliberately
+      // types an address. Previously this pre-filled with the company email, which
+      // silently copied that mailbox on every quote (e.g. an office/alias address).
+      copy_to: '',
     })
     setSendOpen(true)
   }
@@ -207,7 +212,7 @@ export default function QuoteDetail() {
     try {
       await del(`/api/quotes/${id}`)
       toast.success('Quote archived')
-      navigate('/billing?view=quotes&tab=quotes')
+      navigate('/quotes')
     } catch (e) {
       // e.message carries the backend's 409 detail ("…Cancel/delete the job first.")
       toast.error(e?.message || 'Could not archive quote')
@@ -220,26 +225,51 @@ export default function QuoteDetail() {
   const [convertModalOpen, setConvertModalOpen] = useState(false)
   const openConvertModal = () => setConvertModalOpen(true)
 
+  // Auto-convert on accept creates the job WITHOUT a date, so a converted
+  // quote can still need scheduling. The create modal can't help here (POST
+  // /api/jobs with this quote_id idempotently returns the existing job), so
+  // put the date on the existing job via JobEditModal — one fetch on click.
+  const [scheduleJob, setScheduleJob] = useState(null)
+  const openScheduleJob = async () => {
+    if (!quote?.job?.id) return
+    try { setScheduleJob(await get(`/api/jobs/${quote.job.id}`)) }
+    catch (e) { toast.error(e?.message || 'Could not open the job') }
+  }
+
   // /quotes/:id?book=1 opens the booking modal straight away. Home's
   // "Accepted, not booked" card links here, and the whole point of that card
   // is that the visit was never scheduled — landing on the quote and making
   // the operator hunt for the button would waste the trip. The param is
   // stripped after use so a refresh doesn't reopen it.
+  //
+  // Resolved once the quote has loaded: a quote that already has a date-less
+  // job (auto-convert on accept) opens the edit modal on THAT job; anything
+  // else opens the convert modal as before. Deciding before the quote is in
+  // hand always picked the convert modal, which POST /api/jobs turns into a
+  // silent no-op for an already-converted quote.
   const [searchParams, setSearchParams] = useSearchParams()
+  const [bookIntent, setBookIntent] = useState(false)
   useEffect(() => {
     if (searchParams.get('book') === '1') {
-      setConvertModalOpen(true)
+      setBookIntent(true)
       const next = new URLSearchParams(searchParams)
       next.delete('book')
       setSearchParams(next, { replace: true })
     }
   }, [searchParams, setSearchParams])
+  useEffect(() => {
+    if (!bookIntent || !quote) return
+    setBookIntent(false)
+    if (quote.job?.id && !quote.job.scheduled_date) openScheduleJob()
+    else if (!quote.job) setConvertModalOpen(true)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [bookIntent, quote])
 
   if (loading) return <RecordSkeleton />
   if (notFound || !quote) {
     return (
       <div className="p-6">
-        <button onClick={() => navigate('/billing?view=quotes&tab=quotes')} className="flex items-center gap-1.5 text-[13px] text-ink-3 hover:text-ink-2 mb-4">
+        <button onClick={() => navigate('/quotes')} className="flex items-center gap-1.5 text-[13px] text-ink-3 hover:text-ink-2 mb-4">
           <ArrowLeft className="w-4 h-4" /> Back to Quotes
         </button>
         <EmptyState icon={FileText} title="Quote not found" description="It may have been archived or moved to another workspace." />
@@ -263,6 +293,25 @@ export default function QuoteDetail() {
     ? `A ${quote.status} quote can't be sent.`
     : emptyQuote ? 'Add at least one line item and a total over $0 before sending.' : undefined
 
+  // ── Booking: the one clear next step once a quote is a yes ────────────────
+  // Unifies the old split, quiet sidebar buttons ("Convert to job" / "Set up
+  // schedule") into a single primary "Book" CTA in the toolbar. A dateless job
+  // (auto-converted on accept) just needs a date → the edit modal; an
+  // un-converted quote opens the create modal pre-filled from the quote. The
+  // create modal now defaults to a one-off dated job unless the quote itself
+  // carries a cadence (see defaultRecurring below) — so the common case is one
+  // confirm, and the STR-turnover recurring trap can't bite a single booking.
+  const hasJob = !!quote.job
+  const jobDateless = hasJob && !quote.job.scheduled_date && quote.job.status !== 'cancelled'
+  // Booking is *available* for any un-converted quote or a dateless job...
+  const canBook = editable && quote.status !== 'archived' && (jobDateless || (!hasJob && quote.status !== 'converted'))
+  // ...but it only *leads* (becomes the primary CTA over Send) once the quote
+  // is a yes — accepted, or already a job that just needs a date. On a draft,
+  // Send stays primary and Book rides along as a secondary shortcut.
+  const bookIsPrimary = canBook && (jobDateless || quote.status === 'accepted')
+  const bookLabel = jobDateless ? 'Book — set a date' : 'Book this job'
+  const onBook = () => { jobDateless ? openScheduleJob() : openConvertModal() }
+
   const ToolbarButton = ({ icon: Icon, label, onClick, disabled, title, primary }) => (
     <button onClick={onClick} disabled={disabled} title={title}
       className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-[12px] font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${
@@ -275,12 +324,18 @@ export default function QuoteDetail() {
     <div className="h-full overflow-y-auto">
       <div className="p-4 sm:p-6 max-w-[1400px] mx-auto">
         <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
-          <button onClick={() => navigate('/billing?view=quotes&tab=quotes')} className="flex items-center gap-1.5 text-[13px] text-ink-3 hover:text-ink-2">
+          <button onClick={() => navigate('/quotes')} className="flex items-center gap-1.5 text-[13px] text-ink-3 hover:text-ink-2">
             <ArrowLeft className="w-4 h-4" /> Back to Quotes
           </button>
           {editable && (
             <div className="flex flex-wrap items-center gap-2">
-              <ToolbarButton icon={Send} label={quote.status === 'draft' ? 'Send' : quote.status === 'changes_requested' ? 'Send revised' : 'Resend'} onClick={openSend} primary
+              {/* Once a quote is a yes, booking is the clear next step — lead
+                  with it. Send stays available (disabled for accepted quotes)
+                  but steps down from primary so there's one primary per view. */}
+              {canBook && (
+                <ToolbarButton icon={Calendar} label={bookLabel} onClick={onBook} primary={bookIsPrimary} />
+              )}
+              <ToolbarButton icon={Send} label={quote.status === 'draft' ? 'Send' : quote.status === 'changes_requested' ? 'Send revised' : 'Resend'} onClick={openSend} primary={!bookIsPrimary}
                 disabled={sendDisabled}
                 title={sendTitle} />
               {['sent', 'viewed'].includes(quote.status) && (
@@ -304,14 +359,15 @@ export default function QuoteDetail() {
           )}
         </div>
 
-        <div className="grid grid-cols-1 shell:grid-cols-[300px_minmax(0,1fr)_320px] gap-4">
+        {/* 2 columns at shell: (fields + body), linked records as a full-width
+            row below; 3rd rail only at xl:. The old 3-fixed-column grid
+            (300+320) crushed the center at the ~940px window. */}
+        <div className="grid grid-cols-1 shell:grid-cols-[minmax(240px,280px)_minmax(0,1fr)] xl:grid-cols-[280px_minmax(0,1fr)_300px] gap-4">
           {/* ── Left: fields ──────────────────────────────────────── */}
           <div className="bg-panel border border-hairline rounded-xl p-4 space-y-4 self-start">
             <div>
               <div className="flex items-center gap-2 mb-2">
-                <div className="w-10 h-10 rounded-lg bg-indigo-600/15 text-blue-500 flex items-center justify-center shrink-0">
-                  <FileText className="w-5 h-5" />
-                </div>
+                <FileText className="w-5 h-5 text-ink-3 shrink-0" />
                 <InlineSelect value={quote.status} options={statusOptions} onSelect={setStatus} />
               </div>
               {quote.viewed_at && (
@@ -341,21 +397,26 @@ export default function QuoteDetail() {
             <div className="border-t border-hairline pt-3">
               <div className="text-[10px] uppercase tracking-wide text-ink-3 mb-1">Client</div>
               {quote.client_id ? (
-                <Link to={`/clients/${quote.client_id}`} className="flex items-center gap-2 text-[13px] text-blue-500 hover:underline">
+                <Link to={`/clients/${quote.client_id}`} className="flex items-center gap-2 text-[13px] text-ink hover:text-indigo-600 no-underline">
                   <Building2 className="w-3.5 h-3.5 shrink-0" /> {quote.client_name || `Client #${quote.client_id}`}
                 </Link>
               ) : <span className="text-[12px] text-ink-3 italic">No client linked</span>}
             </div>
 
-            {canEdit() && !quote.job && quote.status !== 'converted' && (
-              <div className="border-t border-hairline pt-3">
-                <button onClick={openConvertModal}
-                  className="w-full flex items-center justify-center gap-1.5 bg-bg-2 hover:bg-bg-3 border border-hairline text-ink-2 px-3 py-2 rounded-lg text-[12px] font-medium transition-colors">
-                  <Calendar className="w-3.5 h-3.5" /> Convert to job
-                </button>
-              </div>
-            )}
+            {/* Booking moved to the toolbar's single primary "Book" CTA — the
+                old split "Convert to job" / "Set up schedule" buttons lived
+                here, quiet and easy to miss. A booked job links from the
+                Related rail. */}
           </div>
+          {scheduleJob && (
+            <JobEditModal
+              job={scheduleJob}
+              properties={jobPropertyOption(scheduleJob)}
+              onClose={() => setScheduleJob(null)}
+              onSave={() => { setScheduleJob(null); load() }}
+              notify={(m) => toast.success(m)}
+            />
+          )}
           {convertModalOpen && (
             <JobCreateModal
               clientId={quote.client_id}
@@ -365,7 +426,7 @@ export default function QuoteDetail() {
               initialTitle={quote.title || `${quote.client_name} — Clean`}
               initialQuoteId={quote.id}
               initialFrequency={quote.frequency || null}
-              defaultRecurring
+              defaultRecurring={!!quote.frequency}
               onClose={() => setConvertModalOpen(false)}
               onCreated={async (result) => {
                 try { await patch(`/api/quotes/${quote.id}`, { status: 'converted' }) } catch { /* non-fatal */ }
@@ -406,8 +467,8 @@ export default function QuoteDetail() {
             </div>
           </div>
 
-          {/* ── Right: related ────────────────────────────────────── */}
-          <div className="space-y-4 self-start">
+          {/* ── Related — full-width row at shell:, side rail only at xl:. ── */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 shell:grid-cols-3 xl:grid-cols-1 gap-3 self-start shell:col-span-2 xl:col-span-1">
             {/* The original request behind this quote — expanded so staff can
                 see what the customer asked for while reviewing/sending. */}
             <OriginalRequestCard intake={quote.intake} defaultOpen className="bg-panel" />

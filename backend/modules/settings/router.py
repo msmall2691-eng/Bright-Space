@@ -219,10 +219,93 @@ DEFAULT_QUOTE_POLICIES = (
 )
 
 
-def quote_policies_text(db: Session) -> str:
-    """The configured service policies, or the sensible default when unset."""
-    v = get_setting(db, "quote_policies")
-    return v if (v is not None and v.strip()) else DEFAULT_QUOTE_POLICIES
+# STR turnovers and commercial jobs need different prep notes than a home
+# clean. On an Airbnb turnover the guest isn't the customer, so residential
+# lines ("pick up your personal items and clutter", "secure pets during the
+# visit") read wrong — which is exactly the mismatch the owner flagged on a
+# real STR quote. The defaults below are therefore service-specific; a saved
+# override (per-service, or the legacy global one for home cleans) still wins.
+DEFAULT_QUOTE_POLICIES_STR = (
+    "Please share the lockbox code, smart-lock PIN, or key location, along with "
+    "the checkout and next check-in times, so we can turn the unit in the window "
+    "between guests.\n"
+    "Let us know where fresh linens, cleaning supplies, and restock items (paper "
+    "goods, toiletries, coffee) are kept — or if you'd like us to provide them.\n"
+    "Tell us about any on-site pets and any owner closets or areas that are "
+    "off-limits.\n"
+    "Need to change a turnover date? Give us as much notice as you can — "
+    "back-to-back bookings can make same-day changes impossible.\n"
+    "Laundry isn't included in the base turnover price; on-site or off-site "
+    "laundry is confirmed once we know the number of loads."
+)
+
+DEFAULT_QUOTE_POLICIES_COMMERCIAL = (
+    "Please confirm access for the scheduled time — a key, code, lockbox, or an "
+    "after-hours on-site contact.\n"
+    "Let us know which areas are in scope and any rooms that stay locked or "
+    "off-limits.\n"
+    "Point us to where supplies and consumables are stored, or let us know if "
+    "we're providing them.\n"
+    "Need to cancel or reschedule? Please give us at least 24 hours' notice; "
+    "same-day changes may be subject to a fee.\n"
+    "Invoicing is per the terms of your service agreement."
+)
+
+# service_type -> its per-service override setting key (a saved value wins).
+_POLICY_KEYS = {
+    "str": "quote_policies_str",
+    "commercial": "quote_policies_commercial",
+    "residential": "quote_policies_residential",
+}
+# service_type -> its default block. Home-clean variants (residential, deep,
+# move_in_out, unknown) share the residential default.
+_DEFAULT_POLICIES_BY_TYPE = {
+    "str": DEFAULT_QUOTE_POLICIES_STR,
+    "commercial": DEFAULT_QUOTE_POLICIES_COMMERCIAL,
+}
+
+
+def quote_policies_text(db: Session, service_type: Optional[str] = None) -> str:
+    """The customer-facing prep policies for a quote, resolved by service type.
+
+    Order of precedence:
+      1. a per-service override the operator saved (quote_policies_<type>),
+      2. the legacy single global override — but only for home cleans, since
+         its wording is residential and applying it to an STR/commercial quote
+         is the bug we're fixing,
+      3. the service-appropriate default.
+    """
+    st = (service_type or "").strip().lower()
+    key = _POLICY_KEYS.get(st)
+    if key:
+        v = get_setting(db, key)
+        if v is not None and v.strip():
+            return v
+    if st not in ("str", "commercial"):
+        v = get_setting(db, "quote_policies")
+        if v is not None and v.strip():
+            return v
+    return _DEFAULT_POLICIES_BY_TYPE.get(st, DEFAULT_QUOTE_POLICIES)
+
+
+# Default terms shown at the bottom of every customer-facing quote surface
+# (public page, email, PDF) when Settings → General → Quote terms is blank.
+# Without one, a quote carried no estimate / non-binding language at all, so
+# a customer could read the number as a fixed contract price. Owner-set text
+# overrides this entirely.
+DEFAULT_QUOTE_TERMS = (
+    "This quote is a good-faith estimate based on the information provided. "
+    "Final pricing may be adjusted if the home or scope differs from what was "
+    "described. Accepting this quote simply reserves a spot on our schedule — "
+    "there is no contract or long-term commitment, and you can cancel or "
+    "reschedule any time."
+)
+
+
+def quote_terms_text(db: Session) -> str:
+    """The configured quote terms, or the sensible default when unset."""
+    v = get_setting(db, "quote_terms")
+    return v if (v is not None and v.strip()) else DEFAULT_QUOTE_TERMS
 
 
 @router.get("/general", dependencies=[Depends(require_role("admin", "manager"))])
@@ -263,6 +346,120 @@ def save_general_settings(config: GeneralSettings, db: Session = Depends(get_db)
             set_setting(db, key, value.strip())
     db.commit()
     return {k: get_setting(db, k) for k in _GENERAL_KEYS}
+
+
+# ── Owner alerts + SMS status ────────────────────────────────────────────────
+# The owner-alert destinations (who gets a text/email when a lead or booking
+# comes in) live in AppSetting rows the app already prefers over the
+# OWNER_ALERT_* env vars — but nothing wrote those rows, so they were only ever
+# settable as env vars on Railway. This adds the UI's read/write path, plus a
+# status read the Integrations tab uses to show whether Twilio is configured and
+# where each destination is coming from (database / env / none).
+
+_EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+
+
+class OwnerAlertConfig(BaseModel):
+    owner_alert_phone: Optional[str] = None
+    owner_alert_email: Optional[str] = None
+
+
+def _setting_source(db: Session, key: str, env_var: str) -> str:
+    """Where the effective value comes from — the same precedence the alert
+    code uses (AppSetting row first, env var fallback)."""
+    import os
+    if (get_setting(db, key) or "").strip():
+        return "database"
+    if (os.getenv(env_var) or "").strip():
+        return "env"
+    return "none"
+
+
+@router.get("/sms-status", dependencies=[Depends(require_role("admin", "manager"))])
+def sms_status(db: Session = Depends(get_db)):
+    """Is Twilio configured, and where are the owner-alert destinations set?
+    Feeds the Integrations tab's Text messages card so an operator can see at a
+    glance why a lead text did or didn't go out."""
+    from integrations.twilio_client import configured as twilio_configured
+    from services.owner_alerts import owner_alert_phone, owner_alert_email
+    return {
+        "twilio_configured": twilio_configured(),
+        "owner_alert_phone": {
+            "value": owner_alert_phone(db) or "",
+            "source": _setting_source(db, "owner_alert_phone", "OWNER_ALERT_PHONE"),
+        },
+        "owner_alert_email": {
+            "value": owner_alert_email(db) or "",
+            "source": _setting_source(db, "owner_alert_email", "OWNER_ALERT_EMAIL"),
+        },
+    }
+
+
+@router.post("/notifications", dependencies=[Depends(require_role("admin"))])
+def save_notifications(config: OwnerAlertConfig, db: Session = Depends(get_db)):
+    """Set who gets the owner alerts. Stored as AppSetting rows the alert code
+    prefers over the OWNER_ALERT_* env vars, so this takes effect without a
+    redeploy. A blank value clears the row (the env var, if any, takes over)."""
+    if config.owner_alert_phone is not None:
+        raw = config.owner_alert_phone.strip()
+        if raw:
+            from services.sms_guard import nanp_number
+            norm = nanp_number(raw)
+            if not norm:
+                raise HTTPException(400, "Owner alert phone must be a US or Canada mobile number.")
+            set_setting(db, "owner_alert_phone", norm)
+        else:
+            set_setting(db, "owner_alert_phone", "")   # clear → fall back to env
+    if config.owner_alert_email is not None:
+        raw = config.owner_alert_email.strip()
+        if raw and not _EMAIL_RE.match(raw):
+            raise HTTPException(400, "Owner alert email must be a valid email address.")
+        set_setting(db, "owner_alert_email", raw)
+    db.commit()
+    return sms_status(db)
+
+
+class SmsTestBody(BaseModel):
+    to: Optional[str] = None
+
+
+@router.post("/sms-test", dependencies=[Depends(require_role("admin"))])
+def send_test_sms(body: SmsTestBody, db: Session = Depends(get_db)):
+    """Send one test text so an operator can verify Twilio end to end — and see
+    the EXACT provider error if it fails (e.g. A2P 10DLC rejection 30034),
+    instead of guessing from "no text arrived". Defaults to the owner-alert
+    phone. The attempt is written to the SMS audit log like any other send, so
+    it shows up in the recent-activity read too. Returns a structured result
+    (never a 500 on a Twilio rejection) so the UI can render the error."""
+    from services.sms_guard import nanp_number
+    raw = (body.to or "").strip()
+    if not raw:
+        from services.owner_alerts import owner_alert_phone
+        raw = owner_alert_phone(db) or ""
+    to = nanp_number(raw)
+    if not to:
+        raise HTTPException(400, "Enter a US or Canada mobile number to test (or set the owner alert phone first).")
+
+    from integrations.twilio_client import configured as twilio_configured
+    if not twilio_configured():
+        return {"ok": False, "error": "Twilio isn't configured on the server "
+                "(TWILIO_ACCOUNT_SID / TWILIO_AUTH_TOKEN / TWILIO_PHONE_NUMBER)."}
+
+    from integrations.twilio_client import send_sms
+    from utils.integration_log import log_integration_event
+    msg = "BrightBase test — your text messaging is working. No action needed."
+    try:
+        res = send_sms(to=to, body=msg)
+    except Exception as e:
+        log_integration_event(db, entity_type="settings", entity_id=0,
+                              provider="sms", action="test", status="failed",
+                              recipient=to, detail=str(e), commit=True)
+        return {"ok": False, "to": to, "error": str(e)}
+    log_integration_event(db, entity_type="settings", entity_id=0,
+                          provider="sms", action="test", status="ok",
+                          recipient=to, external_id=(res or {}).get("sid"), commit=True)
+    return {"ok": True, "to": to, "sid": (res or {}).get("sid"),
+            "status": (res or {}).get("status")}
 
 
 # Logo upload. The logo is consumed by three unauthenticated surfaces — the
@@ -486,130 +683,66 @@ def gmail_status(db: Session = Depends(get_db)):
     return {"connected": any_ok, "accounts": accounts}
 
 
-# ─── Square (payroll export) ────────────────────────────────────────────────
+# ─── Square: REMOVED ────────────────────────────────────────────────────────
+#
+# `integrations/square.py` was a Labor API **timecard** client — the Square
+# Payroll export. That export was deleted in Sept 2026 because a timecard
+# asserts an hourly wage and an employment relationship, which is the one
+# thing a subcontractor arrangement cannot say (modules/payroll/router.py has
+# the full reasoning). The settings card, the /square + /square/test endpoints
+# and the client itself outlived it by a release, which left a live Square
+# access token in app_settings that nothing could legitimately read — a
+# credential nobody would think to rotate because nothing appeared to use it.
+#
+# Migration 122 deletes those app_settings rows. `square_access_token` stays
+# listed in utils/app_secrets.py deliberately: it is an encrypt-at-rest
+# allowlist, and leaving a retired key name in it means a row restored from an
+# old backup still decrypts instead of reading back as ciphertext.
+#
+# Taking customer payments now happens on Stripe — see
+# integrations/stripe_payments.py for why that is the same decision as paying
+# subcontractors through Stripe rather than a second processor.
 
-class SquareConfig(BaseModel):
-    access_token: Optional[str] = None
-    location_id: Optional[str] = None
-    environment: Optional[str] = None  # "production" | "sandbox"
-    # Square wage "job" titles to tag timecards with, so hours land in the right
-    # bucket the operator runs payroll from.
-    job_residential: Optional[str] = None
-    job_rental: Optional[str] = None
-    job_weekend: Optional[str] = None
 
+@router.get("/stripe-status", dependencies=[Depends(require_role("admin", "manager"))])
+def stripe_status():
+    """Whether Stripe is wired up, for the Settings card.
 
-_SQUARE_JOB_DEFAULTS = {
-    "square_job_residential": "Residential",
-    "square_job_rental": "Rental",
-    "square_job_weekend": "Rate Pay",
-}
+    READ-ONLY, and there is no matching POST on purpose. Stripe is configured
+    by environment variable (STRIPE_SECRET_KEY / STRIPE_WEBHOOK_SECRET), not by
+    an app_settings row, so there is nothing here for an operator to type —
+    which is also why the key never passes through the browser the way the old
+    Square access token did.
 
-
-def _square_jobs(db: Session) -> dict:
+    Reports the two halves separately because they mean different things. With
+    a secret key but no webhook secret, online invoice payment stays OFF — a
+    payment would complete at Stripe and the invoice would never be marked
+    paid (the webhook handler refuses an event it cannot verify, same posture
+    as the Twilio webhook), so `stripe_payments.can_take_payments` requires
+    both and the pay button does not appear. Payouts need no webhook to send a
+    transfer, so they work on the key alone. Naming the halves is what turns
+    "why is there no pay button" into one obvious missing variable.
+    """
+    from integrations.stripe_connect import configured, webhook_secret
+    ok = configured()
+    hook = bool(webhook_secret())
     return {
-        "residential": get_setting(db, "square_job_residential") or _SQUARE_JOB_DEFAULTS["square_job_residential"],
-        "rental": get_setting(db, "square_job_rental") or _SQUARE_JOB_DEFAULTS["square_job_rental"],
-        "weekend": get_setting(db, "square_job_weekend") or _SQUARE_JOB_DEFAULTS["square_job_weekend"],
+        "configured": ok,
+        "webhook_configured": hook,
+        # One sentence the operator can act on, rather than two booleans to
+        # interpret.
+        "detail": (
+            "Not connected — set STRIPE_SECRET_KEY to take online payments "
+            "and pay subcontractors by direct deposit."
+            if not ok else
+            "Connected for payouts, but STRIPE_WEBHOOK_SECRET is missing, so "
+            "online invoice payment is off — without it a payment could never "
+            "be confirmed. Add it to switch the pay button on."
+            if not hook else
+            "Connected. Online invoice payment is on, and payouts can settle "
+            "to subcontractors' own accounts."
+        ),
     }
-
-
-_SQUARE_JOB_TITLES_CACHE_KEY = "square_job_titles_cache"
-
-
-def _read_cached_square_job_titles(db: Session) -> list:
-    import json as _json
-    raw = get_setting(db, _SQUARE_JOB_TITLES_CACHE_KEY) or ""
-    try:
-        parsed = _json.loads(raw) if raw else []
-        return parsed if isinstance(parsed, list) else []
-    except Exception:
-        return []
-
-
-@router.get("/square-status", dependencies=[Depends(require_role("admin", "manager"))])
-def square_status(db: Session = Depends(get_db)):
-    """Whether Square is wired up + a masked token hint, for the Settings card.
-    Also returns cached locations from the last successful /square/test so the
-    location picker survives reloads without re-hitting Square."""
-    import os
-    tok = (get_setting(db, "square_access_token") or os.getenv("SQUARE_ACCESS_TOKEN", "")).strip()
-    loc = (get_setting(db, "square_location_id") or os.getenv("SQUARE_LOCATION_ID", "")).strip()
-    env = (get_setting(db, "square_environment") or os.getenv("SQUARE_ENVIRONMENT", "production")).strip() or "production"
-    locations = _read_cached_square_locations(db)
-    return {
-        "configured": bool(tok and loc),
-        "has_token": bool(tok),
-        "location_id": loc,
-        "environment": env,
-        "token_masked": _mask_key(tok),
-        "locations": locations,
-        "jobs": _square_jobs(db),
-        "job_titles": _read_cached_square_job_titles(db),
-    }
-
-
-_SQUARE_LOCATIONS_CACHE_KEY = "square_locations_cache"
-
-
-def _read_cached_square_locations(db: Session) -> list:
-    import json as _json
-    raw = get_setting(db, _SQUARE_LOCATIONS_CACHE_KEY) or ""
-    if not raw:
-        return []
-    try:
-        parsed = _json.loads(raw)
-        return parsed if isinstance(parsed, list) else []
-    except Exception:
-        return []
-
-
-@router.post("/square", dependencies=[Depends(require_role("admin"))])
-def save_square_settings(config: SquareConfig, db: Session = Depends(get_db)):
-    """Save (or clear) Square credentials. A masked token from the status
-    endpoint is ignored so re-saving without retyping doesn't wipe the token."""
-    if config.access_token is not None:
-        v = config.access_token.strip()
-        if v and not v.startswith("••••"):
-            set_setting(db, "square_access_token", v)
-        elif v == "":
-            set_setting(db, "square_access_token", "")
-    if config.location_id is not None:
-        set_setting(db, "square_location_id", config.location_id.strip())
-    if config.environment is not None and config.environment.strip() in ("production", "sandbox"):
-        set_setting(db, "square_environment", config.environment.strip())
-    for field, key in (("job_residential", "square_job_residential"),
-                       ("job_rental", "square_job_rental"),
-                       ("job_weekend", "square_job_weekend")):
-        v = getattr(config, field)
-        if v is not None:
-            set_setting(db, key, v.strip())
-    db.commit()
-    return square_status(db)
-
-
-@router.post("/square/test", dependencies=[Depends(require_role("admin", "manager"))])
-def test_square(db: Session = Depends(get_db)):
-    """Verify the Square token and return the account's locations (so the
-    operator can pick the right Location ID) + a team-member count."""
-    import asyncio, json as _json
-    from integrations.square import has_token, verify, SquareAuthError
-    if not has_token():
-        raise HTTPException(400, "Add a Square access token first.")
-    try:
-        res = asyncio.run(verify())
-        if res.get("locations"):
-            set_setting(db, _SQUARE_LOCATIONS_CACHE_KEY, _json.dumps(res["locations"]))
-        if res.get("job_titles"):
-            set_setting(db, _SQUARE_JOB_TITLES_CACHE_KEY, _json.dumps(res["job_titles"]))
-        if res.get("locations") or res.get("job_titles"):
-            db.commit()
-        return res
-    except SquareAuthError:
-        raise HTTPException(401, "Square rejected the access token. Rotate it and try again.")
-    except Exception as e:
-        logger.warning(f"Square test call failed: {e}")
-        raise HTTPException(502, "Square call failed — check server logs for the underlying error.")
 
 
 # ── Self-serve Google OAuth ── connect an admin's work Google account in-app.
@@ -628,16 +761,20 @@ def google_connect(request: Request, db: Session = Depends(get_db)):
                    "/api/settings/google/callback.",
         )
     state = secrets.token_urlsafe(24)
-    set_setting(db, "google_oauth_state", state)
-    # Remember where to send the operator back to (the app origin they came from).
-    set_setting(db, "google_oauth_return", request.headers.get("referer") or "")
-    db.commit()
     flow = build_flow(request, state=state)
     auth_url, _ = flow.authorization_url(
         access_type="offline",          # get a refresh token
         include_granted_scopes="true",
         prompt="consent",               # ensure a refresh token is returned
     )
+    set_setting(db, "google_oauth_state", state)
+    # Persist the PKCE verifier authorization_url() generated so the callback's
+    # fresh Flow can complete the exchange it committed to — otherwise Google
+    # rejects it ("Missing code verifier"). (BB-AUTH-PKCE)
+    set_setting(db, "google_oauth_verifier", flow.code_verifier or "")
+    # Remember where to send the operator back to (the app origin they came from).
+    set_setting(db, "google_oauth_return", request.headers.get("referer") or "")
+    db.commit()
     return {"auth_url": auth_url}
 
 
@@ -651,9 +788,13 @@ def google_callback(request: Request, code: str = "", state: str = "", db: Sessi
     saved = get_setting(db, "google_oauth_state")
     if not state or not saved or state != saved:
         raise HTTPException(status_code=400, detail="Invalid or expired OAuth state.")
+    # Verifier stored with the state at /google/connect (BB-AUTH-PKCE).
+    code_verifier = get_setting(db, "google_oauth_verifier") or ""
 
     try:
         flow = build_flow(request, state=state)
+        if code_verifier:
+            flow.code_verifier = code_verifier
         # Bounded timeout — same rationale as the auth-router callbacks: a
         # hung Google token endpoint shouldn't wedge this worker forever.
         flow.fetch_token(code=code, timeout=10)
@@ -664,6 +805,7 @@ def google_callback(request: Request, code: str = "", state: str = "", db: Sessi
 
     set_setting(db, "google_token", creds.to_json())
     set_setting(db, "google_oauth_state", "")
+    set_setting(db, "google_oauth_verifier", "")
     ret = get_setting(db, "google_oauth_return") or "/"
     db.commit()
 

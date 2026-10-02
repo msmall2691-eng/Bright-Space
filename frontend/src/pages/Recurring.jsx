@@ -7,11 +7,11 @@ import {
 } from 'lucide-react'
 import { get, post, put, patch, del } from '../api'
 import Button from '../components/ui/Button'
-import GlassCard from '../components/ui/GlassCard'
 import EmptyState from '../components/ui/EmptyState'
 import PageHeader from '../components/ui/PageHeader'
 import ErrorNote from '../components/ui/ErrorNote'
 import SubNav from '../components/ui/SubNav'
+import ListSkeleton from '../components/ui/ListSkeleton'
 import { toast } from '../utils/toastBus'
 import { confirmDialog } from '../utils/confirmBus'
 import {
@@ -454,7 +454,7 @@ function EditSeriesModal({ schedule, onClose, onDone }) {
               const sel = form.days_of_week.includes(i)
               return (
                 <button key={i} type="button" onClick={() => toggleDay(i)}
-                  className={'px-3 py-1.5 rounded-full border text-sm ' + (sel
+                  className={'px-3 py-1.5 rounded-md border text-sm ' + (sel
                     ? 'bg-indigo-600 text-white border-indigo-600'
                     : 'bg-panel text-ink-2 border-hairline')}>
                   {lbl}
@@ -488,7 +488,7 @@ function EditSeriesModal({ schedule, onClose, onDone }) {
               const sel = form.cleaner_ids.includes(c.id)
               return (
                 <button key={c.id} type="button" onClick={() => toggleCleaner(c.id)}
-                  className={'px-3 py-1.5 rounded-full border text-sm ' + (sel
+                  className={'px-3 py-1.5 rounded-md border text-sm ' + (sel
                     ? 'bg-emerald-600 text-white border-emerald-600'
                     : 'bg-panel text-ink-2 border-hairline')}>
                   {c.name}
@@ -568,7 +568,7 @@ function SeriesRow({ s, clientName, onOpen, isDuplicate }) {
     <li>
       <button
         onClick={() => onOpen(s.id)}
-        className="w-full text-left bg-panel border border-hairline rounded-2xl px-4 py-2.5 hover:bg-bg-2/60 transition"
+        className="w-full text-left bg-panel border border-hairline rounded-lg px-4 py-2.5 hover:bg-bg-2/60 transition"
       >
         <div className="flex items-start justify-between gap-3 flex-wrap">
           <div className="min-w-0 flex-1">
@@ -991,7 +991,7 @@ function SeriesDetail({ id, onBack, onChanged, toast }) {
     }
   }
 
-  if (loading) return <div className="p-6 text-sm text-ink-3">Loading…</div>
+  if (loading) return <div className="p-6"><ListSkeleton rows={4} /></div>
   if (error) return (
     <div className="p-6">
       <ErrorNote>{error}</ErrorNote>
@@ -1042,7 +1042,7 @@ function SeriesDetail({ id, onBack, onChanged, toast }) {
       </div>
 
       {/* Rule summary + edit-future */}
-      <GlassCard className="p-4 mt-4">
+      <div className="bg-panel border border-hairline rounded-lg p-4 mt-4">
         <div className="flex items-start justify-between gap-3 flex-wrap">
           <div>
             <div className="text-xs font-semibold text-ink-3 uppercase tracking-wide mb-1">Recurring rule</div>
@@ -1058,7 +1058,7 @@ function SeriesDetail({ id, onBack, onChanged, toast }) {
             <Pencil className="w-4 h-4 mr-1" /> Edit rule (future visits)
           </Button>
         </div>
-      </GlassCard>
+      </div>
 
       {/* Upcoming visits */}
       <div className="mt-5">
@@ -1092,7 +1092,7 @@ function SeriesDetail({ id, onBack, onChanged, toast }) {
             <ul className="space-y-1.5">
             {upcoming.map((u) => (
               <li key={u.date}
-                className="flex items-center justify-between gap-3 px-3 py-2 rounded-xl border bg-panel border-hairline">
+                className="flex items-center justify-between gap-3 px-3 py-2 rounded-lg border bg-panel border-hairline">
                 <div className="min-w-0">
                   <div className="text-sm font-semibold text-ink">
                     {fmtDate(u.date)}
@@ -1140,7 +1140,7 @@ function SeriesDetail({ id, onBack, onChanged, toast }) {
               .sort((a, b) => (b.exception_date || '').localeCompare(a.exception_date || ''))
               .map((ex) => (
               <li key={ex.id}
-                className="flex items-center justify-between gap-3 px-3 py-2 rounded-xl bg-panel border border-hairline">
+                className="flex items-center justify-between gap-3 px-3 py-2 rounded-lg bg-panel border border-hairline">
                 <div className="min-w-0 text-sm">
                   <div>
                     <span className="font-semibold text-ink capitalize">{ex.exception_type}</span>
@@ -1556,7 +1556,27 @@ export default function Recurring() {
   // JobCreateModal loads properties itself, scoped to whichever client gets
   // picked inside it — no page-level preload needed (the old RecurringCreateModal
   // required properties up front for its own picker; this modal doesn't).
-  const openCreate = useCallback(() => setShowCreate(true), [])
+  const openCreate = useCallback(() => { setCreatePrefill(null); setShowCreate(true) }, [])
+
+  // A "do this next" handoff from elsewhere (e.g. a paid invoice → "Set up
+  // recurring") opens the create modal prefilled for that client/property via
+  // ?new=1&client=&property=&name=. One-shot: the params are cleared so a
+  // refresh doesn't reopen it.
+  const [createPrefill, setCreatePrefill] = useState(null)
+  useEffect(() => {
+    if (params.get('new') === '1') {
+      const cid = params.get('client')
+      const pid = params.get('property')
+      setCreatePrefill({
+        clientId: cid ? Number(cid) : undefined,
+        clientName: params.get('name') || undefined,
+        initialPropertyId: pid ? Number(pid) : null,
+      })
+      setShowCreate(true)
+      setParams({}, { replace: true })
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   const openSeries = (id) => setParams({ series: String(id) })
   const backToList = () => setParams({})
@@ -1705,7 +1725,7 @@ export default function Recurring() {
         </div>
 
         {dupGroupCount > 0 && (
-          <div className="flex items-center gap-2.5 mb-4 px-3 py-2.5 rounded-xl bg-panel border border-hairline text-ink-2 text-sm">
+          <div className="flex items-center gap-2.5 mb-4 px-3 py-2.5 rounded-lg bg-panel border border-hairline text-ink-2 text-sm">
             <span className="w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0" aria-hidden="true" />
             <span className="flex-1 min-w-0">
               {dupGroupCount} possible duplicate group{dupGroupCount === 1 ? '' : 's'} — same client,
@@ -1721,7 +1741,7 @@ export default function Recurring() {
         <ErrorNote className="mb-3">{error}</ErrorNote>
 
         {loading ? (
-          <div className="text-center text-ink-3 py-12 text-sm">Loading…</div>
+          <ListSkeleton rows={6} />
         ) : filtered.length === 0 ? (
           <EmptyState
             icon={Repeat}
@@ -1773,8 +1793,11 @@ export default function Recurring() {
       {showCreate && (
         <JobCreateModal
           defaultRecurring
-          onClose={() => setShowCreate(false)}
-          onCreated={() => { setShowCreate(false); loadList() }}
+          clientId={createPrefill?.clientId}
+          clientName={createPrefill?.clientName}
+          initialPropertyId={createPrefill?.initialPropertyId ?? null}
+          onClose={() => { setShowCreate(false); setCreatePrefill(null) }}
+          onCreated={() => { setShowCreate(false); setCreatePrefill(null); loadList() }}
         />
       )}
     </>

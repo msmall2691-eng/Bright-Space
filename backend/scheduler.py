@@ -275,7 +275,7 @@ def sync_gmail_inbox_tick() -> dict:
     endpoint returns an {"error": ...} envelope rather than raising — so we
     surface it as a skip, not a failure.
     """
-    from modules.gmail.router import run_inbox_sync, run_account_inbox_sync
+    from modules.gmail.router import run_inbox_sync, run_account_inbox_sync, run_account_sent_sync
     db = SessionLocal()
     try:
         if not _db_flag(db, "gmail_auto_sync_enabled", env_flag("GMAIL_AUTO_SYNC_ENABLED", True)):
@@ -316,6 +316,11 @@ def sync_gmail_inbox_tick() -> dict:
                 acct_summary = run_account_inbox_sync(db, acct, max_results=60).get("summary") or {}
                 summary["total"] = summary.get("total", 0) + acct_summary.get("total", 0)
                 summary["threaded"] = summary.get("threaded", 0) + acct_summary.get("threaded", 0)
+                # Same poll, no new tick: also thread the owner's Gmail-composed
+                # replies to known clients (SENT) as outbound messages, so a
+                # reply written straight from Gmail isn't invisible here.
+                sent_summary = run_account_sent_sync(db, acct)
+                summary["threaded"] = summary.get("threaded", 0) + sent_summary.get("threaded", 0)
         except Exception as e:
             log.error(f"Per-account Gmail sync pass failed: {e}")
 

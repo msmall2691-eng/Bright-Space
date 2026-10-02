@@ -25,7 +25,13 @@ import { useEmployees } from './useEmployees'
  *  Tier 5 roadmap #16 "realtime refresh": also polls every `pollMs` (default
  *  45s) so a second admin's edits show up without a manual Refresh click.
  *  Paused while the tab is hidden (Page Visibility API) so background tabs
- *  don't burn requests. This is deliberately last-write-wins, same as a
+ *  don't burn requests, AND refetched on the way back in when the data has
+ *  gone stale — so freshness tracks looking at the page rather than the
+ *  interval alone. That's what lets a caller run a lazy interval without
+ *  serving stale work: the Ops Board passes 3 minutes (20 requests an hour
+ *  while you sit on it, down from 80) because it's a glance surface, while
+ *  Schedule.jsx keeps the 45s default since it's where two admins actually
+ *  edit against each other. This is deliberately last-write-wins, same as a
  *  manual refresh — no optimistic locking — it just shortens the staleness
  *  window between two people editing the same schedule.
  *
@@ -40,6 +46,9 @@ export function useScheduleData(currentDate, viewMode = 'week', { pollMs = 45000
   const [jobs, setJobs] = useState({})
   const [properties, setProperties] = useState({})
   const [clients, setClients] = useState({})
+  // Date-less open jobs (office roles only; the backend sends [] to crew).
+  // Rides the same week payload — see NeedsDateStrip for why it exists.
+  const [unscheduled, setUnscheduled] = useState([])
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState(false)
   const [refreshKey, setRefreshKey] = useState(0)
@@ -71,6 +80,10 @@ export function useScheduleData(currentDate, viewMode = 'week', { pollMs = 45000
   // and it never fights an optimistic local edit: an unchanged server payload
   // means "leave local state alone," which preserves the optimistic move.
   const lastSigRef = useRef(null)
+  // When the last successful load landed, so returning to the tab can tell
+  // stale from fresh. 0 means "never loaded" — a return before the first load
+  // completes refetches, which is the right side to err on.
+  const lastLoadedAtRef = useRef(0)
 
   useEffect(() => {
     if (!enabled) return
@@ -121,7 +134,8 @@ export function useScheduleData(currentDate, viewMode = 'week', { pollMs = 45000
         // trigger the full re-render/re-layout cascade every 45s. JSON.stringify
         // of the four lists runs once per poll (45s cadence), which is trivial
         // next to the render work it saves.
-        const sig = JSON.stringify([week?.visits, week?.jobs, week?.properties, week?.clients])
+        lastLoadedAtRef.current = Date.now()
+        const sig = JSON.stringify([week?.visits, week?.jobs, week?.properties, week?.clients, week?.unscheduled])
         if (backgroundPoll && sig === lastSigRef.current) return
         lastSigRef.current = sig
 
@@ -142,6 +156,7 @@ export function useScheduleData(currentDate, viewMode = 'week', { pollMs = 45000
         setJobs(jobsMap)
         setProperties(propsMap)
         setClients(clientsMap)
+        setUnscheduled(Array.isArray(week?.unscheduled) ? week.unscheduled : [])
       } catch (err) {
         console.error('[Schedule]', err)
       }
@@ -156,6 +171,33 @@ export function useScheduleData(currentDate, viewMode = 'week', { pollMs = 45000
   }, [rangeKey, refreshKey, enabled])
 
   const refresh = () => setRefreshKey(k => k + 1)
+
+  // Coming BACK to the tab refetches at once when the data has gone stale.
+  //
+  // Without this, the poll below skips every tick while the tab is hidden and
+  // then waits for the next one, so returning to a backgrounded dashboard
+  // showed up to a full interval of stale schedule before it caught up. That
+  // made the interval a tug-of-war: short enough to be fresh on return, or
+  // long enough not to burn requests while you sit there. Refreshing on return
+  // settles it — freshness is tied to LOOKING at the page, which is when it
+  // matters, so the interval is free to be lazy (Home runs it at 3 minutes).
+  //
+  // Guarded on elapsed time so alt-tabbing twice in a row is one fetch, not
+  // two, and flagged as a background poll so a failure keeps the schedule on
+  // screen instead of blanking it into an error state.
+  useEffect(() => {
+    if (!enabled || !pollMs) return
+    if (typeof document === 'undefined') return
+    const onVisible = () => {
+      if (document.hidden) return
+      if (Date.now() - lastLoadedAtRef.current < pollMs) return
+      isBackgroundPollRef.current = true
+      refresh()
+    }
+    document.addEventListener('visibilitychange', onVisible)
+    return () => document.removeEventListener('visibilitychange', onVisible)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pollMs, enabled])
 
   useEffect(() => {
     if (!enabled || !pollMs) return
@@ -173,6 +215,7 @@ export function useScheduleData(currentDate, viewMode = 'week', { pollMs = 45000
     jobs, setJobs,
     properties,
     clients,
+    unscheduled, setUnscheduled,
     loading, loadError,
     refresh,
     employees, empName,

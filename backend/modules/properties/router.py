@@ -10,7 +10,9 @@ import logging
 from database.db import get_db
 from database.models import Property, ICalEvent, PropertyIcal, Client, Job
 from integrations.ical_sync import sync_property
-from modules.auth.router import require_role, current_org_id
+from modules.auth.router import require_role, current_org_id, resolve_org_id, get_current_user
+from database.models import User
+from sqlalchemy import func
 from utils.dates import business_today
 from utils.address import combine_address
 
@@ -41,6 +43,11 @@ class PropertyCreate(BaseModel):
     check_in_time: Optional[str] = None  # "14:00"
     check_out_time: Optional[str] = None  # "10:00"
     house_code: Optional[str] = None
+    # Access codes settable at create time. These were update-only, so a new
+    # property could not carry WiFi until a later edit — and the only editor
+    # that exposed WiFi was a job's page. (PropertyUpdate already had them.)
+    wifi_ssid: Optional[str] = None
+    wifi_password: Optional[str] = None
     timezone: Optional[str] = None
     business_name: Optional[str] = None
     hours_of_operation: Optional[str] = None
@@ -50,6 +57,10 @@ class PropertyCreate(BaseModel):
     # of turnover_rate above, which is what a cleaner is PAID. Seeds
     # Job.price on every visit created for this house (migration 110).
     default_price: Optional[float] = None
+    # The cleaner designated to do this property's turnovers (migration 120).
+    # A cleaner_id string; generated turnovers become a targeted offer only they
+    # see. Validated against the workspace's real cleaners in the route.
+    standing_cleaner_id: Optional[str] = None
     # Structured specs — pre-fillable from public property records via the
     # "look up specs" action, or entered by hand. NULL = unknown.
     bedrooms: Optional[int] = None
@@ -60,6 +71,12 @@ class PropertyCreate(BaseModel):
 
 
 class PropertyUpdate(BaseModel):
+    # Reassign a property to a different client. Absent from PropertyUpdate
+    # before, so the property form's client picker sent client_id and the PATCH
+    # silently dropped it — a property mis-linked to the wrong client (or an
+    # orphan whose client was merged/removed) could not be re-pointed by hand at
+    # all. Validated in update_property against the caller's workspace.
+    client_id: Optional[int] = None
     name: Optional[str] = None
     address: Optional[str] = None
     city: Optional[str] = None
@@ -84,6 +101,9 @@ class PropertyUpdate(BaseModel):
     # of turnover_rate above, which is what a cleaner is PAID. Seeds
     # Job.price on every visit created for this house (migration 110).
     default_price: Optional[float] = None
+    # The cleaner designated to do this property's turnovers (migration 120).
+    # "" clears it. Validated against real cleaners in the route.
+    standing_cleaner_id: Optional[str] = None
     bedrooms: Optional[int] = None
     bathrooms: Optional[float] = None
     square_footage: Optional[int] = None
@@ -234,6 +254,7 @@ def prop_to_dict(p: Property, include_icals: bool = True, turnovers_next_30d: Op
         "hours_of_operation": getattr(p, 'hours_of_operation', None),
         "turnover_rate": getattr(p, 'turnover_rate', None),
         "default_price": getattr(p, 'default_price', None),
+        "standing_cleaner_id": getattr(p, 'standing_cleaner_id', None),
         "notes": p.notes,
         # Structured specs (enrichment Phase 1). Previously stored but never
         # surfaced — the columns existed since migration 025/056 yet the API
@@ -245,6 +266,11 @@ def prop_to_dict(p: Property, include_icals: bool = True, turnovers_next_30d: Op
         "checklist_template": getattr(p, 'checklist_template', None),
         "custom_fields": getattr(p, 'custom_fields', None) or {},
         "active": p.active,
+        # Archive lifecycle (migration 119): so the UI can badge an archived
+        # property and offer Unarchive / permanent Delete. `active=False` is the
+        # predicate; archived_at records the deliberate archive.
+        "archived": getattr(p, "archived_at", None) is not None,
+        "archived_at": p.archived_at.isoformat() if getattr(p, "archived_at", None) else None,
         "created_at": p.created_at.isoformat() if p.created_at else None,
         "ical_health": _property_ical_health(p),
         "turnovers_next_30d": turnovers_next_30d,
@@ -307,11 +333,37 @@ def get_properties(
     ]
 
 
+def _validate_standing_cleaner(db: Session, org_id: int, value):
+    """Normalize + validate a property's standing_cleaner_id. "" / whitespace →
+    None (clears it). A non-empty value must name a real cleaner in THIS
+    workspace — a User with role='cleaner' and that cleaner_id — so a typo or a
+    cross-tenant id can't silently point a property's turnovers at nobody (or
+    someone else's crew). Returns the normalized value or raises 422."""
+    if value is None:
+        return None
+    cid = str(value).strip()
+    if not cid:
+        return None
+    match = db.query(User).filter(
+        User.cleaner_id == cid,
+        User.role == "cleaner",
+        or_(User.org_id == org_id, User.org_id.is_(None)),  # MT-2 tenant scope
+    ).first()
+    if not match:
+        raise HTTPException(
+            status_code=422,
+            detail="That cleaner isn't in this workspace.",
+        )
+    return cid
+
+
 @router.post("", status_code=201, dependencies=[Depends(require_role("admin", "manager"))])
 def create_property(data: PropertyCreate, db: Session = Depends(get_db), org_id: int = Depends(current_org_id)):
     d = data.model_dump()
     if not d.get("address"):
         d["address"] = ""
+    if "standing_cleaner_id" in d:
+        d["standing_cleaner_id"] = _validate_standing_cleaner(db, org_id, d.get("standing_cleaner_id"))
     # Normalize/validate property_type BEFORE it reaches the DB: the schema
     # accepted any string, so a caller passing a JOB type (e.g. 'str_turnover'
     # from the Schedule Job modal) sailed through Pydantic and died on
@@ -468,12 +520,59 @@ def update_property(property_id: int, data: PropertyUpdate, db: Session = Depend
     # never persisted — the save looked successful and the old value came back
     # on reload. Fields the client omits stay untouched, so partial PATCHes still
     # work. (Codex review on #657.)
-    for field, value in data.model_dump(exclude_unset=True).items():
+    fields = data.model_dump(exclude_unset=True)
+    # Reassigning to another client is a real move (fix a mis-linked/orphaned
+    # property), but it must land on a real client IN THIS WORKSPACE — a stray
+    # or cross-tenant id would set a dangling/leaking FK. A property always
+    # belongs to a client, so an explicit null is rejected rather than orphaning
+    # it further.
+    if "standing_cleaner_id" in fields:
+        fields["standing_cleaner_id"] = _validate_standing_cleaner(db, org_id, fields.get("standing_cleaner_id"))
+    old_client_id = prop.client_id
+    reassigned_to = None
+    if "client_id" in fields:
+        new_client_id = fields["client_id"]
+        if new_client_id is None:
+            raise HTTPException(status_code=422, detail="A property must belong to a client.")
+        target = db.query(Client).filter(
+            Client.id == new_client_id,
+            or_(Client.org_id == org_id, Client.org_id.is_(None)),  # MT-2 tenant scope
+        ).first()
+        if not target:
+            raise HTTPException(status_code=404, detail="That client isn't in this workspace.")
+        reassigned_to = new_client_id
+    for field, value in fields.items():
         setattr(prop, field, value)
+
+    # When the property changes hands, its LIVE work must follow — otherwise
+    # job.client_id drifts out of sync with property.client_id and the crew /
+    # invoices / calendar attribute the visit to the previous owner. Re-point
+    # the property's non-completed, non-cancelled jobs and its recurring
+    # schedules to the new client; COMPLETED and CANCELLED jobs stay on the old
+    # client so past records remain accurate (owner's policy). Only the jobs
+    # still on the OLD client move, so a job already correctly re-pointed (or on
+    # a third client) is left alone.
+    repointed = {"jobs": 0, "recurring": 0}
+    if reassigned_to is not None and reassigned_to != old_client_id:
+        from database.models import Job, RecurringSchedule
+        repointed["jobs"] = db.query(Job).filter(
+            Job.property_id == prop.id,
+            Job.client_id == old_client_id,
+            Job.status.notin_(["completed", "cancelled"]),
+        ).update({Job.client_id: reassigned_to}, synchronize_session=False)
+        repointed["recurring"] = db.query(RecurringSchedule).filter(
+            RecurringSchedule.property_id == prop.id,
+            RecurringSchedule.client_id == old_client_id,
+        ).update({RecurringSchedule.client_id: reassigned_to}, synchronize_session=False)
+
     db.commit()
     db.refresh(prop)
     n30 = _turnovers_next_30d(db, prop.id) if prop.property_type == "str" else None
-    return prop_to_dict(prop, turnovers_next_30d=n30)
+    result = prop_to_dict(prop, turnovers_next_30d=n30)
+    if reassigned_to is not None and reassigned_to != old_client_id:
+        # Tell the operator what followed the property to the new client.
+        result["reassigned"] = repointed
+    return result
 
 
 @router.post("/{property_id}/sync", dependencies=[Depends(require_role("admin", "manager"))])
@@ -819,16 +918,69 @@ def ical_preview(property_id: int, db: Session = Depends(get_db)):
     return out
 
 
-@router.delete("/{property_id}", status_code=204, dependencies=[Depends(require_role("admin", "manager"))])
-def delete_property(property_id: int, db: Session = Depends(get_db), org_id: int = Depends(current_org_id)):
+def _property_or_404(db, property_id, org_id):
+    org_id = resolve_org_id(org_id, db)
     prop = db.query(Property).filter(
         Property.id == property_id,
         or_(Property.org_id == org_id, Property.org_id.is_(None)),  # MT-2 tenant scope
     ).first()
     if not prop:
         raise HTTPException(status_code=404, detail="Property not found")
-    prop.active = False
-    db.commit()
+    return prop
+
+
+@router.delete("/{property_id}", status_code=204, dependencies=[Depends(require_role("admin", "manager"))])
+def delete_property(property_id: int, permanent: bool = False,
+                    db: Session = Depends(get_db), org_id: int = Depends(current_org_id),
+                    current_user: User = Depends(get_current_user)):
+    """Remove a property. Default is ARCHIVE (soft + reversible): the property
+    drops out of active lists and its future work stops (recurring off, upcoming
+    visits cancelled, future turnover bookings dismissed) while history stays.
+
+    `?permanent=true` hard-deletes the property and its iCal feeds/bookings — but
+    only when it has NO linked jobs, so job history is never destroyed (jobs
+    require a property, so a property with jobs must be archived, not deleted).
+    A property with jobs 409s with the count."""
+    prop = _property_or_404(db, property_id, org_id)
+    if permanent:
+        job_count = db.query(func.count(Job.id)).filter(Job.property_id == prop.id).scalar() or 0
+        if job_count:
+            raise HTTPException(status_code=409, detail={
+                "code": "property_has_jobs",
+                "message": "This property has jobs on it, so it can't be permanently "
+                           "deleted (that would lose job history). Archive it instead.",
+                "counts": {"jobs": job_count},
+            })
+        db.delete(prop)   # ical_events + property_icals cascade with it
+        db.commit()
+        return
+    # Soft delete == archive with the full cascade (scheduling-invariants R7:
+    # future visits are cancel-pending, never hard-deleted).
+    from services.client_lifecycle import archive_property
+    archive_property(db, prop, actor_id=getattr(current_user, "id", None))
+
+
+@router.get("/{property_id}/archive-preview", dependencies=[Depends(require_role("admin", "manager"))])
+def property_archive_preview(property_id: int, db: Session = Depends(get_db),
+                             org_id: int = Depends(current_org_id)):
+    from services.client_lifecycle import preview_property_archive
+    return preview_property_archive(db, _property_or_404(db, property_id, org_id))
+
+
+@router.post("/{property_id}/archive", dependencies=[Depends(require_role("admin", "manager"))])
+def archive_property_endpoint(property_id: int, db: Session = Depends(get_db),
+                              org_id: int = Depends(current_org_id),
+                              current_user: User = Depends(get_current_user)):
+    from services.client_lifecycle import archive_property
+    return archive_property(db, _property_or_404(db, property_id, org_id),
+                            actor_id=getattr(current_user, "id", None))
+
+
+@router.post("/{property_id}/unarchive", dependencies=[Depends(require_role("admin", "manager"))])
+def unarchive_property_endpoint(property_id: int, db: Session = Depends(get_db),
+                                org_id: int = Depends(current_org_id)):
+    from services.client_lifecycle import unarchive_property
+    return unarchive_property(db, _property_or_404(db, property_id, org_id))
 
 
 # Multiple iCal management endpoints

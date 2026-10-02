@@ -5,6 +5,7 @@ import Button from '../components/ui/Button'
 import ErrorState from '../components/ui/ErrorState'
 import JobEditModal from '../components/JobEditModal'
 import JobCreateModal from '../components/JobCreateModal'
+import ScheduleCommandBar from '../components/schedule/ScheduleCommandBar'
 import CalendarView from '../components/CalendarView'
 import { toast } from '../utils/toastBus'
 import { confirmDialog } from '../utils/confirmBus'
@@ -22,15 +23,13 @@ import ScheduleToolbar from '../components/schedule/ScheduleToolbar'
 import SubNav from '../components/ui/SubNav'
 import GoogleCalendarView from '../components/schedule/GoogleCalendarView'
 import ScheduleSyncSettings from '../components/schedule/ScheduleSyncSettings'
-import { AutoAssignModal, FixTimesModal, OpenToCrewModal } from '../components/schedule/PowerToolModals'
-import { ScheduleHealthStrip, ScheduleBulkBar } from '../components/schedule/ScheduleSections'
+import { AutoAssignModal, FixTimesModal, OpenToCrewModal, PurgeGhostsModal } from '../components/schedule/PowerToolModals'
 import { AvailabilityPanel } from '../components/schedule/ScheduleTabs'
 import { VISIT_STATUS_CONFIG, shortDate, cleanerInitials } from '../components/schedule/constants'
 import { useScheduleData } from '../hooks/useScheduleData'
 import { useScheduleAnalytics } from '../hooks/useScheduleAnalytics'
 import { useScheduleTools } from '../hooks/useScheduleTools'
 import { useScheduleFilters } from '../hooks/useScheduleFilters'
-import { useVisitSelection } from '../hooks/useVisitSelection'
 import { useIsMobile } from '../hooks/useIsMobile'
 import { toLocalYMD, todayYMD } from '../utils/format'
 
@@ -112,6 +111,7 @@ export default function Schedule() {
     visits, setVisits,
     jobs, setJobs,
     properties, clients,
+    unscheduled, setUnscheduled,
     loading, loadError,
     refresh,
     employees, empName,
@@ -214,6 +214,7 @@ export default function Schedule() {
   const {
     autoAssign, setAutoAssign, previewAutoAssign, runAutoAssign,
     fixTimes, setFixTimes, previewFixTimes, runFixTimes,
+    ghosts, setGhosts, previewGhosts, runGhosts,
   } = useScheduleTools({ toast, refresh })
 
   const dateStr = toLocalYMD(currentDate)
@@ -224,7 +225,6 @@ export default function Schedule() {
     unassignedOnly, setUnassignedOnly,
     noGcalOnly, setNoGcalOnly,
     filteredVisits, unassignedCount, visitsByDate, scheduleStats,
-    currentlyVisibleVisits,
   } = useScheduleFilters({ visits, jobs, properties, viewMode, dateStr })
 
   const handleEdit = (visit, job, property) => {
@@ -361,18 +361,6 @@ export default function Schedule() {
     }
   }
 
-  const {
-    selectedVisitIds, toggleVisitSelect, selectAllVisible,
-    clearVisitSelection, bulkDeleteVisits, bulkDeleting,
-    bulkShiftVisits, bulkShifting,
-  } = useVisitSelection({
-    visits, setVisits, currentlyVisibleVisits, toast,
-    // Shifted visits land on a different date — the month grid caches its
-    // own jobs list keyed off calRefresh, so bump it the same way a job
-    // save/delete does (handleJobSave above) to pick up the moved jobs.
-    onAfterShift: () => setCalRefresh(k => k + 1),
-  })
-
   const handleEditJob = (job) => {
     setEditingJob(job)
     setShowJobModal(true)
@@ -416,6 +404,12 @@ export default function Schedule() {
 
   const handleJobSave = async (envelope) => {
     if (envelope && envelope.action && envelope.jobId != null) {
+      // Keep the "Needs a date" strip honest without a week refetch: a
+      // deleted job leaves it, and so does one that just got a date.
+      setUnscheduled(prev => prev.filter(j =>
+        j.id !== envelope.jobId
+        || (envelope.action !== 'delete' && envelope.job && !envelope.job.scheduled_date)
+      ))
       if (envelope.action === 'delete') {
         setVisits(prev => prev.filter(v => (v.job_id ?? v.id) !== envelope.jobId))
       } else if (envelope.job) {
@@ -502,7 +496,7 @@ export default function Schedule() {
   // no cached data yet.
 
   return (
-    <div className="flex flex-col h-full bg-bg">
+    <div className="flex flex-col h-full overflow-y-auto bg-bg">
       {/* Schedule / Recurring / Calendar sync. This page has no PageHeader
           (the toolbar below is its header), so the strip is its own slim row
           above it — kept to ~30px because this page is calendar-first. */}
@@ -518,7 +512,11 @@ export default function Schedule() {
       <ScheduleToolbar
         viewMode={viewMode}
         onViewChange={setViewMode}
-        showDateNav={true}
+        // Agenda (narrow day view) has AgendaHero's DateStrip for day/week nav,
+        // so the toolbar's prev/next-week arrows are a redundant second nav there
+        // (owner: "way too busy"). Keep them for week + the wide dispatch board,
+        // which have no DateStrip.
+        showDateNav={effectiveView !== 'agenda'}
         currentDate={currentDate}
         onPrevWeek={prevWeek}
         onNextWeek={nextWeek}
@@ -533,6 +531,7 @@ export default function Schedule() {
         onCloseTools={() => setToolsOpen(false)}
         onPreviewAutoAssign={previewAutoAssign}
         onPreviewFixTimes={previewFixTimes}
+        onPreviewGhosts={previewGhosts}
         onOpenSyncSettings={() => setSyncSettingsOpen(true)}
         onNewJob={() => { setNewJobDate(dateStr); setShowNewJob(true) }}
         healthRefreshKey={calRefresh}
@@ -547,28 +546,31 @@ export default function Schedule() {
         onToggleGuestStays={toggleGuestStays}
       />
 
-      <ScheduleHealthStrip
-        stats={scheduleStats}
-        weekLabel={viewMode === 'month' ? 'This month' : 'This week'}
-      />
-
-      {/* Selection / bulk-action bar — agenda view only. In month view the
-          grid has no per-job checkbox to individually deselect, and the
-          "visible" set is the whole week (not just what's rendered), so
-          "Select all visible → Cancel N" would mass-cancel jobs the user
-          can't see. Keep bulk operations to the list surface where every
-          row is individually selectable. */}
-      {effectiveView === 'agenda' && (
-        <ScheduleBulkBar
-          visibleCount={currentlyVisibleVisits.length}
-          allSelected={currentlyVisibleVisits.length > 0 && currentlyVisibleVisits.every(v => selectedVisitIds.has(v.id))}
-          onSelectAllVisible={selectAllVisible}
-          selectedCount={selectedVisitIds.size}
-          onClear={clearVisitSelection}
-          onBulkDelete={bulkDeleteVisits}
-          bulkDeleting={bulkDeleting}
-          onBulkShift={bulkShiftVisits}
-          bulkShifting={bulkShifting}
+      {/* Command bar — the compact packing header above the calendar on the
+          office views (Day / Week / Month). It merges what used to be two
+          stacked full-width bands (the today/this-week count strip and the
+          "Needs a date" list) into one dense bento, and brings the actionable
+          OpsAlerts (needs-crew / subs-waiting, with "Open to crew") to the
+          desktop — they previously only rendered in the phone AgendaHero.
+          Suppressed in agenda (AgendaHero already carries the summary, alerts
+          and needs-date; two of each stacked is the "way too busy" the owner
+          flagged). On the wide Day view (dispatch) the KPI line is hidden —
+          DayBoard owns the big date header + OpsSummary there — so this bar
+          contributes only the alerts + needs-date. "Schedule" opens the same
+          edit modal as the drawer's Edit; saving a date lands the job on the
+          calendar (and the PATCH sends the customer's booked-in notice). */}
+      {effectiveView !== 'agenda' && (
+        <ScheduleCommandBar
+          stats={scheduleStats}
+          weekLabel={viewMode === 'month' ? 'This month' : 'This week'}
+          showKpis={effectiveView !== 'dispatch'}
+          todayStats={todayStats}
+          unassignedToday={unassignedToday}
+          awaitingReply={awaitingReply}
+          unscheduled={unscheduled}
+          onSchedule={handleEditJob}
+          onFocusUnassigned={() => setUnassignedOnly(v => !v)}
+          onOpenToCrew={handleOpenToCrew}
         />
       )}
 
@@ -578,6 +580,14 @@ export default function Schedule() {
           strip stay live during initial load — audit §12. Once visits
           arrive (even an empty week), the real branch takes over so
           filters/empty-states get to render. */}
+      {/* Calendar region. `flex-1` fills the viewport on a normal window (each
+          view keeps its own internal scroll), but `min-h-[420px]` guarantees the
+          calendar a usable height even when the toolbar + command bar are tall
+          (many "needs a date" jobs, a narrow ~940px window). Combined with the
+          root's `overflow-y-auto` + the shrink-0 header rows, that means the
+          WHOLE PAGE scrolls as a fallback instead of the calendar being squeezed
+          to nothing — the "can't scroll / can't use Schedule" bug. */}
+      <div className="flex-1 flex flex-col min-h-[420px]">
       {loading && (visits?.length ?? 0) === 0 ? (
         <ScheduleSkeleton viewMode={effectiveView} />
       ) : effectiveView === 'agenda' ? (
@@ -704,6 +714,7 @@ export default function Schedule() {
            date-nav is hidden for this view. */
         <GoogleCalendarView reloadKey={calRefresh} />
       ) : null /* VALID_VIEWS is fully covered above; no fallback branch needed */}
+      </div>
 
       {/* Visit Details Drawer */}
       <VisitDetailsDrawer
@@ -771,6 +782,13 @@ export default function Schedule() {
         state={fixTimes}
         onCancel={() => setFixTimes(null)}
         onRun={runFixTimes}
+      />
+
+      {/* Remove cancelled turnover ghosts — preview (count by property) then confirm */}
+      <PurgeGhostsModal
+        state={ghosts}
+        onCancel={() => setGhosts(null)}
+        onRun={runGhosts}
       />
 
       {/* Open to crew — asks for the rate before posting (price before post) */}

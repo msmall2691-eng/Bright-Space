@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
 from pydantic import BaseModel
 from typing import Optional, List
+from calendar import monthrange
 from datetime import date, datetime, timedelta, timezone
 
 logger = logging.getLogger(__name__)
@@ -410,9 +411,17 @@ def _occurs_on(sched: RecurringSchedule, d: date, today: date) -> bool:
     hand-copied branch ladders before; the biweekly-anchor bug had to be patched
     in each.)"""
     if sched.frequency == "monthly":
-        # No clamping: a month without day `dom` (e.g. Feb 30) simply has no
-        # occurrence, matching the old generator's date()-ValueError skip.
-        return d.day == (sched.day_of_month or 1)
+        # Clamp the requested day-of-month to the month's LAST day, so a series
+        # set to the 29th/30th/31st still lands — on the last day — in shorter
+        # months instead of silently generating NOTHING there. Before this, a
+        # "clean on the 31st, monthly" series produced no visit in Feb/Apr/Jun/
+        # Sep/Nov (~5 months a year); a day_of_month of 31 plainly means "end of
+        # month", which is what the clamp delivers. Only the last calendar day of
+        # a short month satisfies a too-large dom, so at most one occurrence per
+        # month still holds — no doubling. dom is bounded into 1..31 defensively
+        # (the column is documented 1-28 but never enforced on input).
+        dom = min(max(sched.day_of_month or 1, 1), 31)
+        return d.day == min(dom, monthrange(d.year, d.month)[1])
     interval = max(1, sched.interval_weeks or 1)
     if sched.frequency == "daily":
         # interval_weeks is reused as the day step; empty days_of_week = every day.
@@ -802,6 +811,14 @@ def generate_jobs(db: Session, sched: RecurringSchedule) -> int:
     sched_property = (db.query(Property).filter(Property.id == sched.property_id).first()
                       if sched.property_id else None)
 
+    # Per-customer opt-in for offering unassigned recurring visits to the crew
+    # (migration 122). Read ONCE for the batch. Only this customer's uncovered
+    # occurrences go on the bench; everyone else's stay hidden as before — the
+    # owner scoped the Sept 2026 decision to specific customers.
+    _client = (db.query(Client).filter(Client.id == sched.client_id).first()
+               if sched.client_id else None)
+    _open_to_crew = bool(getattr(_client, "recurring_open_to_crew", False))
+
     for d in dates:
         if d in cancelled_dates:
             # User cancelled this occurrence already; do not resurrect it.
@@ -843,6 +860,29 @@ def generate_jobs(db: Session, sched: RecurringSchedule) -> int:
             job.agreed_rate = route_share      # the flat-rate path payroll pays
             job.agreed_cleaner_id = route_owner  # ...and who it belongs to (106)
             job.open_for_claims = False        # a route job never goes on the board
+        elif _open_to_crew and not job.cleaner_ids:
+            # Owner decision (Sept 2026), reversing the older "only office-marked
+            # jobs are claimable" rule FOR RECURRING WORK — SCOPED to customers
+            # the office has opted in (Client.recurring_open_to_crew, migration
+            # 122): an occurrence that came out unassigned — a series with no
+            # standing crew, or a date whose regular is off/over-capacity so
+            # _available_cleaners dropped everyone — goes on the bench for any
+            # cleared sub to grab this ONE visit. Still an OFFER, not an
+            # assignment: the sub requests and the office approves
+            # (brightbase-marketplace Rule 0); open to everyone (no
+            # offer_audience). Rate seeded like the office's manual post
+            # (BB-CLAIM-04): the visit's billed price × the owner's default pay %.
+            # A brand-new occurrence has no invoice yet, so job.price IS its
+            # billed amount — no invoice lookup needed. NULL when default pay %
+            # is off, so the sub simply names their price on claim. Marketplace-
+            # visibility flag only; time/assignment/existence untouched
+            # (scheduling-invariants: no new tick, no writeback). A customer NOT
+            # opted in generates the occurrence unassigned-and-hidden as before.
+            job.open_for_claims = True
+            from services.standing_rules import claim_default_pay_pct
+            _pct = claim_default_pay_pct(db)
+            if _pct and job.price:
+                job.posted_rate = round(float(job.price) * _pct / 100.0, 2)
         # Race-safe: if a concurrent /generate-all already inserted this row,
         # the partial unique index added in migration 004 raises IntegrityError;
         # roll back the savepoint and treat as already-exists.
@@ -1063,6 +1103,17 @@ def create_schedule(data: ScheduleCreate, db: Session = Depends(get_db),
                     detail=f"Over capacity on {first_date}: {who} would exceed the daily limit "
                            f"of {CAPACITY_PER_CLEANER_PER_DAY}. Resubmit with allow_conflicts=true to override.",
                 )
+    # Every series hangs off a property (workflow guardrail) — the same resolver
+    # create_job uses: supplied property → client's existing → auto-create from
+    # address, else 422. Without this a series (and every visit it generates,
+    # which clone sched.property_id) floated free of an address — the root of
+    # most duplicate/stale-visit drift the audit found.
+    from services.property_resolve import resolve_property_for_client
+    payload["property_id"] = resolve_property_for_client(
+        db, client_id=payload["client_id"], org_id=oid,
+        property_id=payload.get("property_id"), address=payload.get("address"),
+        job_type=payload.get("job_type"),
+    )
     sched = RecurringSchedule(**payload)
     sched.org_id = oid  # MT-2: stamp the caller's workspace
     _apply_ends_fields(sched, ends_fields)

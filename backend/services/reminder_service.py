@@ -28,7 +28,7 @@ from utils.dates import business_date, business_now
 from sqlalchemy.orm import Session
 
 from database.models import Job, Client, Conversation, Message
-from integrations.twilio_client import send_sms
+from services.sms_send import send_and_log
 from config import app_base_url
 
 logger = logging.getLogger(__name__)
@@ -225,7 +225,9 @@ def send_due_reminders(db: Session, *, lead_hours: int | None = None, now: datet
 
         body = build_reminder_body(job, client, crew_names.get(job.id))
         try:
-            result = send_sms(to=client.phone, body=body)
+            result = send_and_log(to=client.phone, body=body, action="reminder",
+                                  entity_type="job", entity_id=job.id,
+                                  org_id=getattr(job, "org_id", None))
         except (ValueError, RuntimeError) as e:
             # Config/Twilio errors are environmental — log and move on so one
             # bad number/outage doesn't block the rest of the batch. Leave the

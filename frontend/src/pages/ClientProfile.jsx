@@ -229,10 +229,44 @@ export default function ClientProfile() {
     setSavingProp(false)
   }
 
-  const deleteProp = async (propId) => {
-    if (!(await confirmDialog('Remove this property?'))) return
-    await del(`/api/properties/${propId}`)
-    await load()
+  // Property lifecycle (parity with the client one). Archive stops the
+  // property's future work but keeps history; permanent delete only works when
+  // it has no jobs (the backend 409s otherwise, so history is never destroyed).
+  const archiveProp = async (propId) => {
+    let pv = {}
+    try { pv = await get(`/api/properties/${propId}/archive-preview`) } catch { /* generic confirm */ }
+    const ok = await confirmDialog(
+      `Archive this property? Its future work stops:\n\n` +
+      `• ${pv.upcoming_visits ?? 0} upcoming visit(s) cancelled\n` +
+      `• ${pv.recurring_series ?? 0} recurring series stopped\n\n` +
+      `History is kept, and you can Unarchive anytime.`,
+      { title: 'Archive property?', confirmLabel: 'Archive' }
+    )
+    if (!ok) return
+    try { await post(`/api/properties/${propId}/archive`, {}); toast.success('Property archived') }
+    catch (e) { toast.error(e?.message || 'Could not archive property') }
+    await reloadProperties()
+  }
+  const unarchiveProp = async (propId) => {
+    try { await post(`/api/properties/${propId}/unarchive`, {}); toast.success('Property restored') }
+    catch (e) { toast.error(e?.message || 'Could not unarchive property') }
+    await reloadProperties()
+  }
+  const deletePropPermanent = async (propId) => {
+    const ok = await confirmDialog(
+      'Permanently delete this property? This removes it and its iCal feeds for good, and only ' +
+      'works if the property has no jobs — otherwise archive it instead.',
+      { title: 'Delete property?', confirmLabel: 'Delete permanently', danger: true }
+    )
+    if (!ok) return
+    try {
+      await del(`/api/properties/${propId}?permanent=true`)
+      toast.success('Property deleted')
+    } catch (e) {
+      if (e?.status === 409) toast.error('This property has jobs, so it can’t be permanently deleted — archive it instead.')
+      else toast.error(e?.message || 'Could not delete property')
+    }
+    await reloadProperties()
   }
 
   const openQuickContact = () => {
@@ -319,6 +353,28 @@ export default function ClientProfile() {
   const openEditProp = (p) => { setPropForm({ ...p }); setEditingProp(p); setShowIcalForm(false); setIcalForm(EMPTY_ICAL); setShowPropForm(true) }
 
   const save = async () => {
+    // Marking a client "Inactive" is a sales sub-stage only — it does NOT stop
+    // their short-term-rental iCal feed from creating turnover jobs or emailing
+    // the customer Google Calendar invites. "Archive client" is the action that
+    // stops the feed. If we're flipping to Inactive while a property still has a
+    // live feed, spell that out so the two aren't confused (the "Spin Drift" bug,
+    // where an inactivated client kept generating turnovers + calendar invites).
+    const goingInactive = form.status === 'inactive' && client?.status !== 'inactive'
+    const hasLiveFeed = (properties || []).some(
+      p => p.active && (p.ical_health === 'healthy' || p.ical_health === 'stale'))
+    if (goingInactive && hasLiveFeed) {
+      const ok = await confirmDialog(
+        `Marking this client Inactive is just a label — it will NOT stop their ` +
+        `short-term-rental calendar from creating turnover jobs or sending the ` +
+        `customer Google Calendar invites.\n\n` +
+        `To actually stop the feed — cancel upcoming turnovers, take them off ` +
+        `Google Calendar, and keep them from coming back — use "Archive client" ` +
+        `instead (the lifecycle card lower on this tab).\n\n` +
+        `Save as Inactive anyway?`,
+        { title: 'Inactive won’t stop the calendar', confirmLabel: 'Save as Inactive' }
+      )
+      if (!ok) return
+    }
     setSaving(true)
     try {
       const payload = { ...form }
@@ -332,6 +388,39 @@ export default function ClientProfile() {
       toast.error('Could not save: ' + (e?.message || 'unknown error'))
     }
     setSaving(false)
+  }
+
+  // Client lifecycle: archive hides the client from active lists and stops
+  // future work (recurring off, upcoming visits cancelled, turnover bookings
+  // dismissed, offers closed, open quotes archived) while keeping history and
+  // invoices; it's reversible. The confirm shows the counts first.
+  const [archiving, setArchiving] = useState(false)
+  const archiveClient = async () => {
+    let pv = {}
+    try { pv = await get(`/api/clients/${id}/archive-preview`) } catch { /* show generic confirm */ }
+    const lines = [
+      `${pv.upcoming_visits ?? 0} upcoming visit(s) will be cancelled`,
+      `${pv.recurring_series ?? 0} recurring series stopped`,
+      `${pv.properties ?? 0} propert${pv.properties === 1 ? 'y' : 'ies'} archived`,
+      `${pv.open_quotes ?? 0} open quote(s) archived`,
+    ]
+    const ok = await confirmDialog(
+      `Archive ${client.name}? They drop off active lists and their future work stops:\n\n• ` +
+      lines.join('\n• ') +
+      `\n\nHistory and invoices are kept, and you can Unarchive anytime.`,
+      { title: 'Archive client?', confirmLabel: 'Archive' }
+    )
+    if (!ok) return
+    setArchiving(true)
+    try { await post(`/api/clients/${id}/archive`, {}); toast.success('Client archived'); await load() }
+    catch (e) { toast.error(e?.message || 'Could not archive client') }
+    finally { setArchiving(false) }
+  }
+  const unarchiveClient = async () => {
+    setArchiving(true)
+    try { await post(`/api/clients/${id}/unarchive`, {}); toast.success('Client restored'); await load() }
+    catch (e) { toast.error(e?.message || 'Could not unarchive client') }
+    finally { setArchiving(false) }
   }
 
   const sendSms = async () => {
@@ -423,7 +512,7 @@ export default function ClientProfile() {
           sm:inline` left bare icon pills on phones — the exact "not
           cleaned up" look the owner screenshotted). */}
       <div className="grid grid-cols-2 sm:flex sm:flex-wrap sm:items-center gap-2 px-4 sm:px-6 py-3 bg-panel/50 border-b border-hairline shrink-0">
-        <button onClick={() => navigate('/billing?view=quotes', { state: { openNew: true, clientId: parseInt(id) } })}
+        <button onClick={() => navigate('/quotes', { state: { openNew: true, clientId: parseInt(id) } })}
           data-testid="client-action-new-quote"
           className="flex items-center justify-center sm:justify-start gap-1.5 text-xs bg-bg-2 hover:bg-bg-2 border border-hairline px-3 py-2 min-h-[44px] sm:min-h-0 sm:py-1.5 rounded-lg transition-colors">
           <FileText className="w-3.5 h-3.5 text-blue-400 shrink-0" /> <span className="truncate">New Quote</span>
@@ -484,7 +573,7 @@ export default function ClientProfile() {
             upcomingJobs={upcomingJobs} pastJobs={pastJobs}
             schedules={schedules} properties={properties}
             visitStats={visitStats} allActivity={allActivity}
-            intakes={intakes}
+            intakes={intakes} opportunities={opportunities}
           />
         )}
 
@@ -534,7 +623,8 @@ export default function ClientProfile() {
             propForm={propForm} setPropForm={setPropForm}
             showPropForm={showPropForm} setShowPropForm={setShowPropForm}
             editingProp={editingProp}
-            savingProp={savingProp} saveProp={saveProp} deleteProp={deleteProp}
+            savingProp={savingProp} saveProp={saveProp}
+            archiveProp={archiveProp} unarchiveProp={unarchiveProp} deletePropPermanent={deletePropPermanent}
             openNewProp={openNewProp} openEditProp={openEditProp}
             icalForm={icalForm} setIcalForm={setIcalForm}
             showIcalForm={showIcalForm} setShowIcalForm={setShowIcalForm}
@@ -574,12 +664,43 @@ export default function ClientProfile() {
 
         {/* Details / Edit */}
         {tab === 'details' && (
-          <ClientDetailsTab
-            form={form} setForm={setForm}
-            upcomingJobs={upcomingJobs}
-            saving={saving} save={save}
-            showBilling={showBilling} setShowBilling={setShowBilling}
-          />
+          <>
+            <ClientDetailsTab
+              form={form} setForm={setForm}
+              upcomingJobs={upcomingJobs}
+              saving={saving} save={save}
+              showBilling={showBilling} setShowBilling={setShowBilling}
+            />
+            {/* Lifecycle — quiet hairline card, dot+word state (design language:
+                no tinted banners). Archive is reversible; delete lives in the
+                bulk client actions and is intentionally not a one-tap here. */}
+            <div className="px-4 sm:px-8 pb-8">
+              <div className="rounded-lg border border-hairline bg-panel p-4 flex items-center justify-between gap-3">
+                <div className="min-w-0">
+                  <div className="text-sm font-semibold text-ink flex items-center gap-2">
+                    {client.archived && <span className="h-1.5 w-1.5 rounded-full bg-ink-3 shrink-0" aria-hidden="true" />}
+                    {client.archived ? 'Archived' : 'Client status'}
+                  </div>
+                  <p className="text-xs text-ink-3 mt-0.5">
+                    {client.archived
+                      ? 'Hidden from active lists — history and invoices are kept. Bring them back anytime.'
+                      : 'Not a customer anymore? Archiving hides them from active lists and stops future work; history stays.'}
+                  </p>
+                </div>
+                {client.archived ? (
+                  <button onClick={unarchiveClient} disabled={archiving}
+                    className="shrink-0 bg-panel border border-hairline-2 text-ink-2 hover:bg-bg-2 rounded-md text-xs font-medium px-3 py-2 transition-colors disabled:opacity-50">
+                    {archiving ? 'Restoring…' : 'Unarchive'}
+                  </button>
+                ) : (
+                  <button onClick={archiveClient} disabled={archiving}
+                    className="shrink-0 bg-panel border border-hairline-2 text-ink-2 hover:bg-bg-2 rounded-md text-xs font-medium px-3 py-2 transition-colors disabled:opacity-50">
+                    {archiving ? 'Archiving…' : 'Archive client'}
+                  </button>
+                )}
+              </div>
+            </div>
+          </>
         )}
 
         {/* Opportunities */}

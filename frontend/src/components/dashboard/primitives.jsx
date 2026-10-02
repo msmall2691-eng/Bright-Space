@@ -100,16 +100,29 @@ export function Tile({ icon: Icon, iconColor, title, badge, action, onAction, ch
 
 /** KPI card — the headline stat tiles across the top of the dashboard.
  *  Quiet and data-forward: big plain number, 11px label, flat glyph —
- *  no tinted icon chip (`chip` is accepted for compatibility, unused). */
-export function KpiCard({ icon: Icon, chip, label, value, sub, accent }) { // eslint-disable-line no-unused-vars
+ *  no tinted icon chip (`chip` is accepted for compatibility, unused).
+ *
+ *  While its data loads, pass `loading` — the label and glyph stay put
+ *  (they're static and known) and only the number + sub shimmer, so a cold
+ *  or slow dashboard reads as shaped rather than a bare "Loading…" line. */
+export function KpiCard({ icon: Icon, chip, label, value, sub, accent, loading }) { // eslint-disable-line no-unused-vars
   return (
     <div className={`${SOFT_CARD} p-4`}>
       <div className="flex items-center justify-between gap-2">
         <span className="text-[11px] font-semibold text-ink-3 uppercase tracking-wide truncate">{label}</span>
         <Icon className="w-4 h-4 shrink-0 text-ink-3" />
       </div>
-      <div className={`text-2xl font-bold mt-2 tabular-nums ${accent || 'text-ink'}`}>{value}</div>
-      {sub && <div className="text-[11px] text-ink-3 mt-0.5 truncate">{sub}</div>}
+      {loading ? (
+        <>
+          <Skeleton className="h-7 w-24 mt-2" />
+          <Skeleton className="h-3 w-28 mt-2" />
+        </>
+      ) : (
+        <>
+          <div className={`text-2xl font-bold mt-2 tabular-nums ${accent || 'text-ink'}`}>{value}</div>
+          {sub && <div className="text-[11px] text-ink-3 mt-0.5 truncate">{sub}</div>}
+        </>
+      )}
     </div>
   )
 }

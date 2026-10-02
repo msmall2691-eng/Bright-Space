@@ -11,7 +11,7 @@
  * week-pay summary), not four.
  */
 import { useCallback, useEffect, useState } from 'react'
-import { MapPin, LogOut, RefreshCw, CalendarDays, Clock, Car, DollarSign, CheckCircle2, CalendarRange, CircleUserRound, Sparkles, BookOpen, MessageSquare, Sun, CalendarClock, CalendarOff, Smartphone, CalendarPlus, ShieldCheck, Landmark } from 'lucide-react'
+import { MapPin, LogOut, RefreshCw, CalendarDays, Clock, Car, DollarSign, CheckCircle2, CalendarRange, CircleUserRound, Sparkles, BookOpen, MessageSquare, Sun, CalendarClock, CalendarOff, Smartphone, CalendarPlus, ShieldCheck, Landmark, Lightbulb } from 'lucide-react'
 import { get, post as apiPost, patch as apiPatch, del as apiDel, logout } from '../api'
 import { toast } from '../utils/toastBus'
 import { EmptyState, ErrorState, Skeleton } from '../components/ui'
@@ -20,12 +20,13 @@ import CrewProfile from '../components/crew/CrewProfile'
 import CrewMyFile from '../components/crew/CrewMyFile'
 import CrewMyAsks from '../components/crew/CrewMyAsks'
 import CrewMyRoutes from '../components/crew/CrewMyRoutes'
+import CrewMyProperties from '../components/crew/CrewMyProperties'
 import CrewAvailability from '../components/crew/CrewAvailability'
 import CrewLearn from '../components/crew/CrewLearn'
 import CrewMonth from '../components/crew/CrewMonth'
 import CrewCalendarSync from '../components/crew/CrewCalendarSync'
 import CrewTimeOff from '../components/crew/CrewTimeOff'
-import { CrewThread } from '../components/crew/CrewMessages'
+import CrewChatHub from '../components/crew/CrewChat'
 import PropertySheet from '../components/crew/PropertySheet'
 // The job card lives in its own file so every crew surface (Today list,
 // schedule list, month tap-through sheet) renders the SAME details.
@@ -161,6 +162,28 @@ function DayGlance({ week, openCount, unread, onTab }) {
         </button>
       ))}
     </div>
+  )
+}
+
+/** Two rotating pro cleaning tips on the crew home — a quiet, always-there way
+ *  to train the team without a meeting. Text rides the my-day payload
+ *  (data.tips), so no extra fetch on a rural connection. */
+function ProTips({ tips }) {
+  if (!tips || tips.length === 0) return null
+  return (
+    <section>
+      <SectionLabel className="mb-2 flex items-center gap-1.5">
+        <Lightbulb className="w-3.5 h-3.5" /> Pro tips
+      </SectionLabel>
+      <div className="space-y-2.5">
+        {tips.map((t, i) => (
+          <div key={i} className="rounded-xl border border-hairline bg-panel px-4 py-3">
+            <p className="text-[13.5px] font-semibold text-ink">{t.title}</p>
+            <p className="mt-1 text-[13px] leading-relaxed text-ink-2">{t.body}</p>
+          </div>
+        ))}
+      </div>
+    </section>
   )
 }
 
@@ -466,6 +489,27 @@ export default function MyDay({ previewUserId = null }) {
     finally { setActionBusy(false) }
   }, [claimJob, claimRate, claimMessage, fetchDay])
 
+  // One-tap ACCEPT at the posted price — no modal, no price input. This is the
+  // primary way a cleaner takes an open job; bidding a different price is the
+  // secondary path (opens the claim sheet). Sends requested_rate:null = "your
+  // price is fine". Files a REQUEST — with instant claiming off (the default)
+  // the office still confirms, so res.auto_approved decides the toast rather
+  // than promising "it's yours" when it isn't.
+  const acceptJob = useCallback(async (job) => {
+    if (!job) return
+    setActionBusy(true); setActionError(null)
+    try {
+      const res = await post(`/api/crew/jobs/${job.id}/claim`, { requested_rate: null, message: null })
+      toast.success(res?.auto_approved
+        ? 'It’s yours — it’s on your schedule now.'
+        : 'Sent — the office will confirm this one.')
+      await fetchDay(true)
+    } catch (e) {
+      setActionError(e.detail || e.message || 'Could not take this job')
+      if (e.status === 409) await fetchDay(true)
+    } finally { setActionBusy(false) }
+  }, [fetchDay])
+
   // BRINGING SOMEONE (migration 107). One of the five Maine criteria for this
   // arrangement is that a subcontractor hires, pays and supervises their own
   // assistants — the app modelled one cleaner per job, so there was nowhere to
@@ -706,6 +750,7 @@ export default function MyDay({ previewUserId = null }) {
                       /* showDate: this list is the whole board, not one day —
                          without it every offer reads as today's. */
                       <JobCard key={j.id} job={j} busy={actionBusy} showDate
+                        onAccept={() => acceptJob(j)}
                         onClaim={() => { setActionError(null); setClaimRate(j.my_claim_request?.requested_rate ?? ''); setClaimMessage(j.my_claim_request?.message || ''); setClaimJob(j) }} />
                     ))}
                   </div>
@@ -743,12 +788,16 @@ export default function MyDay({ previewUserId = null }) {
                 </SectionLabel>
                 <div className="space-y-3">
                   {(data.open_jobs || []).filter(j => j.scheduled_date === data.as_of).map(j => (
-                    <JobCard key={j.id} job={j} onClaim={() => { setActionError(null); setClaimRate(j.my_claim_request?.requested_rate ?? ''); setClaimMessage(j.my_claim_request?.message || ''); setClaimJob(j) }} busy={actionBusy} />
+                    <JobCard key={j.id} job={j} onAccept={() => acceptJob(j)}
+                        onClaim={() => { setActionError(null); setClaimRate(j.my_claim_request?.requested_rate ?? ''); setClaimMessage(j.my_claim_request?.message || ''); setClaimJob(j) }} busy={actionBusy} />
                   ))}
                 </div>
               </section>
             )}
 
+
+            {/* Two rotating pro cleaning tips — quiet training on the home. */}
+            <ProTips tips={data.tips} />
 
             {/* Save-to-phone + notifications setup. Dismissible here (sticks
                 via localStorage); always reachable again from the Me tab. */}
@@ -808,6 +857,7 @@ export default function MyDay({ previewUserId = null }) {
                   <div className="space-y-3">
                     {g.jobs.map(j => (
                       <JobCard key={j.id} job={j} busy={actionBusy}
+                        onAccept={() => acceptJob(j)}
                         onClaim={() => { setActionError(null); setClaimRate(j.my_claim_request?.requested_rate ?? ''); setClaimMessage(j.my_claim_request?.message || ''); setClaimJob(j) }} />
                     ))}
                   </div>
@@ -817,28 +867,42 @@ export default function MyDay({ previewUserId = null }) {
           )
         })()}
 
-        {tab === 'schedule' && (
+        {tab === 'schedule' && (() => {
           /* Segmented control (hairline frame, solid active) — same pattern
-             as the photo sheet's Before/After toggle. */
-          /* Three segments only when this sub actually has a route — a
-             permanent tab for a thing most of the crew doesn't have is chrome. */
-          <div className={`grid ${(data?.routes || []).length ? 'grid-cols-3' : 'grid-cols-2'} rounded-lg border border-hairline overflow-hidden text-[12px] font-semibold mb-1`}>
-            {[['list', 'Next 2 weeks'], ['month', 'Month'],
-              ...((data?.routes || []).length ? [['routes', 'Routes']] : [])].map(([v, l]) => (
-              <button key={v} onClick={() => setSchedView(v)} aria-pressed={schedView === v}
-                className={`py-1.5 transition-colors ${
-                  schedView === v ? 'bg-blue-600 text-white' : 'bg-panel text-ink-2 hover:bg-bg-2'}`}>
-                {l}
-              </button>
-            ))}
-          </div>
-        )}
+             as the photo sheet's Before/After toggle. Segments beyond List /
+             Month appear only for a sub who actually has that thing — a route,
+             or a rental they're the standing cleaner for. A permanent tab for a
+             thing most of the crew doesn't have is chrome. */
+          const segs = [['list', 'Next 2 weeks'], ['month', 'Month']]
+          if ((data?.routes || []).length) segs.push(['routes', 'Routes'])
+          if (data?.has_rentals) segs.push(['rentals', 'Rentals'])
+          const cols = { 2: 'grid-cols-2', 3: 'grid-cols-3', 4: 'grid-cols-4' }[segs.length] || 'grid-cols-2'
+          return (
+            <div className={`grid ${cols} rounded-lg border border-hairline overflow-hidden text-[12px] font-semibold mb-1`}>
+              {segs.map(([v, l]) => (
+                <button key={v} onClick={() => setSchedView(v)} aria-pressed={schedView === v}
+                  className={`py-1.5 transition-colors ${
+                    schedView === v ? 'bg-blue-600 text-white' : 'bg-panel text-ink-2 hover:bg-bg-2'}`}>
+                  {l}
+                </button>
+              ))}
+            </div>
+          )
+        })()}
 
         {tab === 'schedule' && schedView === 'month' && <CrewMonth previewUserId={previewUserId} />}
 
         {/* The full route detail — its houses and their shares — is fetched
             here and not in my-day, so an unopened tab costs nothing. */}
         {tab === 'schedule' && schedView === 'routes' && <CrewMyRoutes previewUserId={previewUserId} />}
+
+        {/* My rentals — the standing-cleaner turnovers, grouped by house. Its
+            data is fetched inside the component only when this segment is open;
+            tapping a turnover opens the job-detail sheet MyDay already owns. */}
+        {tab === 'schedule' && schedView === 'rentals' && (
+          <CrewMyProperties previewUserId={previewUserId} onOpenJob={setSheetJobId}
+            onClaim={(j) => { setActionError(null); setClaimRate(j.my_claim_request?.requested_rate ?? ''); setClaimMessage(j.my_claim_request?.message || ''); setClaimJob(j) }} />
+        )}
 
         {tab === 'schedule' && schedView === 'list' && !loading && !error && data && (data.open_jobs || []).length > 0 && (
           <section>
@@ -847,7 +911,8 @@ export default function MyDay({ previewUserId = null }) {
             </SectionLabel>
             <div className="space-y-3">
               {(data.open_jobs || []).map(j => (
-                <JobCard key={j.id} job={j} showDate onClaim={() => { setActionError(null); setClaimRate(j.my_claim_request?.requested_rate ?? ''); setClaimMessage(j.my_claim_request?.message || ''); setClaimJob(j) }} busy={actionBusy} />
+                <JobCard key={j.id} job={j} showDate onAccept={() => acceptJob(j)}
+                        onClaim={() => { setActionError(null); setClaimRate(j.my_claim_request?.requested_rate ?? ''); setClaimMessage(j.my_claim_request?.message || ''); setClaimJob(j) }} busy={actionBusy} />
               ))}
             </div>
           </section>
@@ -878,10 +943,13 @@ export default function MyDay({ previewUserId = null }) {
           )
         )}
 
-        {/* Chat is a full-screen thread (the office side pushes replies).
-            Closing it re-fetches my-day so the unread badge clears. */}
+        {/* Chat opens the Messages hub — the office thread on top, teammates
+            below (crew-to-crew). Closing it re-fetches my-day so the unread
+            badge clears. */}
         {tab === 'chat' && (
-          <CrewThread previewUserId={previewUserId} onClose={() => { setTab('today'); fetchDay(true) }} />
+          <CrewChatHub previewUserId={previewUserId}
+            officeUnread={data?.unread_messages || 0}
+            onClose={() => { setTab('today'); fetchDay(true) }} />
         )}
 
         {tab === 'learn' && <CrewLearn previewUserId={previewUserId} />}
@@ -966,7 +1034,8 @@ export default function MyDay({ previewUserId = null }) {
         )}
       </div>
 
-      <CrewTabBar tab={tab} setTab={setTab} chatUnread={data?.unread_messages || 0} />
+      <CrewTabBar tab={tab} setTab={setTab}
+        chatUnread={(data?.unread_messages || 0) + (data?.unread_peer_messages || 0)} />
 
       {sheetJobId && (
         <CrewJobSheet jobId={sheetJobId} onClose={() => setSheetJobId(null)} />
@@ -1158,8 +1227,8 @@ export default function MyDay({ previewUserId = null }) {
           <div>
             <div className="text-base font-bold text-ink">
               {willBeInstant ? 'Claim this job'
-                : posted == null || abovePosted ? 'Make an offer'
-                : 'Ask for this job'}
+                : posted == null ? 'Make an offer'
+                : 'Offer a different price'}
             </div>
             <div className="text-[13px] text-ink-3 mt-0.5 truncate">
               {claimJob.property_name || claimJob.title}
@@ -1190,7 +1259,7 @@ export default function MyDay({ previewUserId = null }) {
             <input
               type="number" inputMode="decimal" min="1" step="1"
               value={claimRate} onChange={e => setClaimRate(e.target.value)}
-              autoFocus={posted == null}
+              autoFocus
               placeholder={posted != null ? `${Number(posted)}` : 'e.g. 120'}
               className="mt-1.5 w-full rounded-lg border border-hairline bg-bg px-3 py-2.5 text-base text-ink placeholder-ink-3 focus:outline-hidden focus:border-blue-400"
             />

@@ -24,7 +24,7 @@
 import { useEffect, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import {
-  TrendingUp, DollarSign, Repeat, AlertTriangle, PieChart, Users, Building2,
+  TrendingUp, DollarSign, Repeat, AlertTriangle, PieChart, Users, Building2, Sparkles,
 } from 'lucide-react'
 import { get } from '../api'
 import { toLocalYMD } from '../utils/format'
@@ -88,6 +88,95 @@ function currentWeekRange() {
   return { start: toLocalYMD(mon), end: toLocalYMD(sun) }
 }
 
+/** AI provider status + live self-test. Answers "which LLM is BrightBase on
+ *  and does it work?" — reads /api/admin/ai-health, and "Run self-test" hits
+ *  ?probe=1 to run a real completion + a real tool-using loop (the path the
+ *  Workspace assistant uses) and surface the actual error if one fails. */
+function AiHealthTile() {
+  const [info, setInfo] = useState(null)
+  const [err, setErr] = useState(false)
+  const [probing, setProbing] = useState(false)
+  const [probe, setProbe] = useState(null)
+
+  useEffect(() => {
+    let off = false
+    get('/api/admin/ai-health')
+      .then(d => { if (!off) setInfo(d) })
+      .catch(() => { if (!off) setErr(true) })
+    return () => { off = true }
+  }, [])
+
+  const runProbe = async () => {
+    setProbing(true); setProbe(null)
+    try {
+      const d = await get('/api/admin/ai-health?probe=1')
+      setInfo(d); setProbe(d.probes || {})
+    } catch {
+      setProbe({ _fatal: true })
+    } finally {
+      setProbing(false)
+    }
+  }
+
+  const Row = ({ label, children }) => (
+    <div className="flex items-center justify-between gap-3 py-1">
+      <span className="text-sm text-ink-2">{label}</span>
+      <span className="text-sm text-ink tabular-nums">{children}</span>
+    </div>
+  )
+
+  const ProbeResult = ({ name, r }) => {
+    if (!r) return null
+    return (
+      <div className="flex items-start gap-2 py-1.5">
+        <span className={`mt-1 w-1.5 h-1.5 rounded-full shrink-0 ${r.ok ? 'bg-emerald-500' : 'bg-red-500'}`} aria-hidden="true" />
+        <div className="min-w-0 flex-1">
+          <div className="text-sm text-ink-2">{name}</div>
+          {r.ok
+            ? <div className="text-[12px] text-ink-3 break-words">OK — {typeof r.result === 'string' ? r.result : JSON.stringify(r.result)}</div>
+            : <div className="text-[12px] text-red-600 dark:text-red-300 break-words"><span className="font-semibold">{r.error_type}</span>: {r.error}</div>}
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <Tile icon={Sparkles} iconColor="violet" title="AI assistant health">
+      {err ? (
+        <div className="px-5 py-6 text-sm text-ink-3">Couldn't load AI status.</div>
+      ) : !info ? (
+        <TileLoading />
+      ) : (
+        <div className="px-5 py-4">
+          <Row label="Provider">{info.provider}</Row>
+          <Row label="Key configured">
+            <span className="inline-flex items-center gap-1.5">
+              <span className={`w-1.5 h-1.5 rounded-full ${info.available ? 'bg-emerald-500' : 'bg-red-500'}`} aria-hidden="true" />
+              {info.available ? 'yes' : 'no'}
+            </span>
+          </Row>
+          <Row label="Model (standard)">{info.models?.sonnet}</Row>
+          <div className="mt-3 pt-3 border-t border-hairline">
+            {probe && !probe._fatal && (
+              <div className="mb-2">
+                <ProbeResult name="Text completion" r={probe.completion} />
+                <ProbeResult name="Tool-using loop (simple)" r={probe.tool_loop} />
+                <ProbeResult name="Tool loop with reasoning (assistant path)" r={probe.tool_loop_reasoning} />
+              </div>
+            )}
+            {probe?._fatal && <div className="mb-2 text-[12px] text-red-600 dark:text-red-300">Self-test request failed.</div>}
+            <button onClick={runProbe} disabled={probing}
+              className="inline-flex items-center gap-1.5 rounded-md border border-hairline-2 bg-panel px-3 py-1.5 text-xs font-medium text-ink-2 hover:bg-bg-2 disabled:opacity-50 transition-colors">
+              {probing ? 'Testing…' : 'Run self-test'}
+            </button>
+            <p className="mt-1.5 text-[11px] text-ink-3">Runs a live check on the AI provider and shows the real error if a call fails.</p>
+          </div>
+        </div>
+      )}
+    </Tile>
+  )
+}
+
 export default function OwnerDashboard() {
   const navigate = useNavigate()
   const week = currentWeekRange()
@@ -140,8 +229,9 @@ export default function OwnerDashboard() {
           icon={TrendingUp}
           chip="bg-bg-2 text-ink-2"
           label="Close rate (90d)"
-          value={loading ? '—' : closeRate?.rate_pct != null ? `${closeRate.rate_pct}%` : 'n/a'}
-          sub={loading ? 'Loading…' : closeRate
+          loading={loading}
+          value={closeRate?.rate_pct != null ? `${closeRate.rate_pct}%` : 'n/a'}
+          sub={closeRate
             ? `${closeRate.quotes_won} of ${closeRate.quotes_sent} sent`
             : null}
         />
@@ -149,8 +239,9 @@ export default function OwnerDashboard() {
           icon={Repeat}
           chip="bg-bg-2 text-ink-2"
           label="MRR estimate"
-          value={loading ? '—' : fmtMoney((mrr?.estimate_cents || 0) / 100)}
-          sub={loading ? 'Loading…' : mrr
+          loading={loading}
+          value={fmtMoney((mrr?.estimate_cents || 0) / 100)}
+          sub={mrr
             ? `${mrr.schedules_priced} priced${mrr.schedules_unpriced ? ` · ${mrr.schedules_unpriced} unpriced` : ''}`
             : null}
         />
@@ -158,8 +249,9 @@ export default function OwnerDashboard() {
           icon={DollarSign}
           chip="bg-bg-2 text-ink-2"
           label="Revenue paid (90d)"
-          value={loading ? '—' : fmtMoney(revenueTotal)}
-          sub={loading ? 'Loading…' : `${revenueByService.reduce((n, r) => n + (r.invoice_count || 0), 0)} invoices`}
+          loading={loading}
+          value={fmtMoney(revenueTotal)}
+          sub={`${revenueByService.reduce((n, r) => n + (r.invoice_count || 0), 0)} invoices`}
         />
       </div>
 
@@ -279,6 +371,10 @@ export default function OwnerDashboard() {
           </div>
         )}
       </Tile>
+
+      {/* AI provider status + live self-test — surfaces which LLM is active
+          and the real error when the assistant fails. */}
+      <AiHealthTile />
       </div>
     </div>
   )

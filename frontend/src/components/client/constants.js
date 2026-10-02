@@ -71,17 +71,9 @@ export const INPUT_CLASS = 'w-full bg-panel border border-hairline rounded-lg px
 export const MINI_DAYS = ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa']
 export const MONTH_NAMES = ['January','February','March','April','May','June','July','August','September','October','November','December']
 
-export const JOB_TYPE_DOT = {
-  residential:  'bg-blue-500',
-  commercial:   'bg-green-500',
-  str_turnover: 'bg-orange-500',
-}
-
-export const JOB_TYPE_LABEL = {
-  residential:  'Residential',
-  commercial:   'Commercial',
-  str_turnover: 'STR Turnover',
-}
+// Job-type label + dot now come from the one canonical service vocabulary
+// (src/utils/services.js) so every screen agrees and "deep_clean" has a label.
+export { JOB_TYPE_DOT, JOB_TYPE_LABEL } from '../../utils/services'
 
 // Same dot-not-tint rule for the calendar tab's status chips.
 export const STATUS_PILL = {

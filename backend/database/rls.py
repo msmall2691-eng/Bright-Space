@@ -18,7 +18,7 @@ TENANT_TABLES = [
     "recurrence_exceptions", "jobs", "lead_intakes", "invoices",
     "conversations", "messages", "opportunities", "contact_emails", "contact_phones",
     "activities", "quotes", "cleaner_time_off",
-    "integration_events", "saved_views",
+    "integration_events", "saved_views", "sticky_notes",
     # Phase 2 scheduling redesign (migration 068): the append-only event log and
     # per-target projection bookkeeping. Both carry org_id.
     "schedule_events", "projection_state",
@@ -39,6 +39,9 @@ TENANT_TABLES = [
     "cleaner_week_availability",
     # Cleaner↔office message threads (migration 089), org-scoped.
     "crew_messages",
+    # Cleaner↔cleaner direct threads (migration 116), org-scoped. Added with
+    # the table, not in a later audit (see 095 for why that matters).
+    "crew_peer_messages",
     # Property crew notes + reference photos (migration 090), org-scoped.
     "property_crew_notes",
     "property_photos",

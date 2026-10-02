@@ -3,6 +3,7 @@ import { X, Sparkles, Loader2 } from 'lucide-react'
 import { get } from '../../api'
 import { CustomFieldsForm } from '../CustomFields'
 import { PROPERTY_TYPE_CONFIG } from './constants'
+import DuplicateClientPrompt from '../clients/DuplicateClientPrompt'
 
 const BASIC_FIELDS = [
   { label: 'Property Name *', key: 'name', placeholder: 'e.g. 4 Red Barn Circle' },
@@ -25,8 +26,10 @@ export function PropertyForm({
   newClient, setNewClient,
   creatingClient,
   clientErr, setClientErr,
+  clientDupes, setClientDupes,
   selectClient,
   createInlineClient,
+  pickClient,
   saving,
   onClose,
   onSave,
@@ -120,7 +123,7 @@ export function PropertyForm({
           <div className="flex items-center justify-between mb-1">
             <label className="block text-xs text-ink-3">Client *</label>
             <button type="button"
-              onClick={() => { setAddingClient(a => !a); setClientErr('') }}
+              onClick={() => { setAddingClient(a => !a); setClientErr(''); setClientDupes?.([]) }}
               className="text-xs text-indigo-600 hover:text-indigo-700 font-medium">
               {addingClient ? 'Cancel' : '+ New client'}
             </button>
@@ -145,10 +148,20 @@ export function PropertyForm({
                   className="w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-hidden focus:border-indigo-400" />
               </div>
               {clientErr && <div className="text-xs text-red-600">{clientErr}</div>}
-              <button type="button" onClick={createInlineClient} disabled={creatingClient || !newClient.name.trim()}
-                className="w-full bg-indigo-600 hover:bg-indigo-700 text-white disabled:bg-bg-2 disabled:text-ink-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors">
-                {creatingClient ? 'Creating…' : 'Create & select client'}
-              </button>
+              {clientDupes?.length > 0 ? (
+                <DuplicateClientPrompt
+                  duplicates={clientDupes}
+                  busy={creatingClient}
+                  onUseExisting={pickClient}
+                  onCreateAnyway={() => createInlineClient(true)}
+                  onDismiss={() => setClientDupes?.([])}
+                />
+              ) : (
+                <button type="button" onClick={() => createInlineClient(false)} disabled={creatingClient || !newClient.name.trim()}
+                  className="w-full bg-indigo-600 hover:bg-indigo-700 text-white disabled:bg-bg-2 disabled:text-ink-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors">
+                  {creatingClient ? 'Creating…' : 'Create & select client'}
+                </button>
+              )}
             </div>
           )}
         </div>
@@ -163,19 +176,49 @@ export function PropertyForm({
           </div>
         ))}
 
-        {/* Common fields */}
-        <div>
-          <label className="block text-xs text-ink-3 mb-1">Access Notes</label>
-          <textarea value={form.access_notes || ''} onChange={e => setForm(f => ({ ...f, access_notes: e.target.value }))} rows={2}
-            placeholder="e.g. Side door, lockbox 4251"
-            className="w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-hidden resize-none" />
-        </div>
-
-        <div>
-          <label className="block text-xs text-ink-3 mb-1">Parking Notes</label>
-          <input value={form.parking_notes || ''} onChange={e => setForm(f => ({ ...f, parking_notes: e.target.value }))}
-            placeholder="Where to park"
-            className="w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-hidden focus:border-blue-400" />
+        {/* Access & codes — everything the crew needs to get in, in one place.
+            The door/gate code and WiFi apply to ANY property type; before this,
+            house_code was buried in the STR-only block and WiFi was editable
+            only from a job's page, so a residential gate code or a WiFi password
+            had nowhere to be entered from the property itself. All of these save
+            to the property, so every job there shows them on the crew card and
+            in the offline cache. */}
+        <div className="border-t border-hairline pt-4">
+          <h3 className="text-xs font-semibold text-ink-2 uppercase mb-3">Access &amp; codes</h3>
+          <div className="space-y-3">
+            <div>
+              <label className="block text-xs text-ink-3 mb-1">Door / gate code</label>
+              <input value={form.house_code || ''} onChange={e => setForm(f => ({ ...f, house_code: e.target.value }))}
+                placeholder="e.g. 4251# or front-door keypad"
+                className="w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-hidden focus:border-blue-400" />
+            </div>
+            <div>
+              <label className="block text-xs text-ink-3 mb-1">Access notes</label>
+              <textarea value={form.access_notes || ''} onChange={e => setForm(f => ({ ...f, access_notes: e.target.value }))} rows={2}
+                placeholder="e.g. Side door, lockbox 4251"
+                className="w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-hidden resize-none" />
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs text-ink-3 mb-1">WiFi network</label>
+                <input value={form.wifi_ssid || ''} onChange={e => setForm(f => ({ ...f, wifi_ssid: e.target.value }))}
+                  placeholder="e.g. SeasideCottage"
+                  className="w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-hidden focus:border-blue-400" />
+              </div>
+              <div>
+                <label className="block text-xs text-ink-3 mb-1">WiFi password</label>
+                <input value={form.wifi_password || ''} onChange={e => setForm(f => ({ ...f, wifi_password: e.target.value }))}
+                  placeholder="shown on crew cards + offline"
+                  className="w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-hidden focus:border-blue-400" />
+              </div>
+            </div>
+            <div>
+              <label className="block text-xs text-ink-3 mb-1">Parking notes</label>
+              <input value={form.parking_notes || ''} onChange={e => setForm(f => ({ ...f, parking_notes: e.target.value }))}
+                placeholder="Where to park"
+                className="w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-hidden focus:border-blue-400" />
+            </div>
+          </div>
         </div>
 
         <div className="grid grid-cols-2 gap-3">
@@ -258,13 +301,8 @@ export function PropertyForm({
                   className="w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-hidden" />
               </div>
             </div>
-
-            <div>
-              <label className="block text-xs text-ink-3 mb-1">House Code</label>
-              <input value={form.house_code || ''} onChange={e => setForm(f => ({ ...f, house_code: e.target.value }))}
-                placeholder="e.g. 1234 or Front door code"
-                className="w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-hidden focus:border-blue-400" />
-            </div>
+            {/* Door code moved to the shared "Access & codes" section above so
+                it's editable for every property type, not just STR. */}
           </div>
         )}
 

@@ -7,16 +7,18 @@
  *
  *   1. Big weekday+date header (replaces AgendaDay's own header for the
  *      mobile agenda view)
- *   2. OpsSummary chip strip (jobs · need a crew · capacity · crews out)
- *   3. RouteRibbon — 6a–8p horizontal timeline
- *   4. DateStrip — 7-day chip strip with load bars
- *   5. OpsAlerts — actionable warnings (unassigned + capacity)
+ *   2. OpsSummary chip strip — compact here (jobs · need a crew)
+ *   3. DateStrip — 7-day chip strip with load bars
+ *   4. OpsAlerts — actionable warnings (unassigned + capacity)
+ *
+ * The 6a–8p RouteRibbon timeline that used to sit between 2 and 3 was pulled
+ * from this view in the phone de-clutter — it was the largest block and served
+ * none of the dispatcher's phone priorities (coverage / problems / day nav).
  *
  * All of these render as no-ops or hide chrome when they have no signal to
  * add, so an empty day reads clean instead of scaffolded.
  */
 import OpsSummary from './OpsSummary'
-import RouteRibbon from './RouteRibbon'
 import DateStrip from './DateStrip'
 import OpsAlerts from './OpsAlerts'
 import DayActionButtons from './DayActionButtons'
@@ -64,15 +66,20 @@ export default function AgendaHero({
             </span>
           </div>
         </div>
-        <DayActionButtons visits={todayVisits} jobs={jobs} properties={properties} className="mt-1" />
+        <DayActionButtons visits={todayVisits} jobs={jobs} properties={properties}
+          showPrint={false} className="mt-1" />
       </div>
 
       {/* Dashboard-y sub-sections — not useful on a printed day sheet, so
           they're hidden there; the weekday header + AgendaDay's job list
-          below are what should actually print. */}
+          below are what should actually print.
+          Decluttered for the phone/agenda view (owner: "way too busy"): the
+          6a–8p RouteRibbon timeline was removed (biggest block, and it served
+          none of coverage/problems/nav), OpsSummary runs `compact` (just
+          jobs · need a crew), and Print is dropped from the day header — so the
+          view leads with the day, coverage, the day/week strip, then alerts. */}
       <div className="no-print">
-        <OpsSummary stats={todayStats} isToday={isToday} />
-        <RouteRibbon visits={todayVisits} jobs={jobs} properties={properties} />
+        <OpsSummary stats={todayStats} isToday={isToday} compact />
         <DateStrip
           weekDates={weekDates}
           loadByDate={loadByDate}

@@ -28,7 +28,7 @@ from typing import List, Optional
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, Response, UploadFile
 from pydantic import BaseModel
-from sqlalchemy import or_, func
+from sqlalchemy import or_, and_, func
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, joinedload
 
@@ -36,8 +36,8 @@ from database.db import get_db
 from ratelimit import rate_limit
 from database.models import (
     CleanerAvailability, CleanerTimeOff, CleanerWeekAvailability, CrewDoc,
-    CrewMessage, CrewPhoto, Job, JobClaimRequest, JobHelper, JobPhoto, JobResponse,
-    PropertyCrewNote,
+    CrewMessage, CrewPeerMessage, CrewPhoto, Job, JobClaimRequest, JobHelper, JobPhoto, JobResponse,
+    Property, PropertyCrewNote,
     PropertyPhoto, SubAgreement, SubDocument, User,
 )
 from modules.auth.router import (
@@ -46,6 +46,7 @@ from modules.auth.router import (
 )
 from modules.scheduling.completion import auto_create_draft_invoice
 from utils.activity_logger import log_job_status_change
+from utils.uploads import read_capped
 from utils.dates import business_today, business_tz, coerce_date, week_monday
 
 router = APIRouter()
@@ -76,7 +77,8 @@ def _job_row(job: Job, names_by_cid: dict | None = None, self_cid: str | None = 
              my_response: "JobResponse | None" = None,
              house_notes: "list | None" = None,
              my_claim_request: "JobClaimRequest | None" = None,
-             my_helpers: "list | None" = None) -> dict:
+             my_helpers: "list | None" = None,
+             photos: "list | None" = None) -> dict:
     prop = job.property
     client = job.client
     return {
@@ -115,6 +117,10 @@ def _job_row(job: Job, names_by_cid: dict | None = None, self_cid: str | None = 
         # Office-SHARED house notes ("upstairs drain clogs") inline so
         # they're readable offline too. Author-only notes don't ride here.
         "house_notes": house_notes or [],
+        # Reference photos of the house ("how the beds are staged") — metadata
+        # only (id/url/caption); the card lazy-loads the images so a cleaner can
+        # see what the house looks like without opening the house sheet.
+        "photos": photos or [],
         # Who I said I'm bringing (migration 107). Mine only — never another
         # sub's, on a job we share.
         "my_helpers": my_helpers or [],
@@ -126,6 +132,13 @@ def _job_row(job: Job, names_by_cid: dict | None = None, self_cid: str | None = 
         # logged in the conversation — never a personal phone-to-phone line.
         "client_name": client.name if client else None,
         "can_text_client": bool(client and (client.phone or "").strip()),
+        # Did the customer confirm this visit? A cleaner seeing "confirmed"
+        # knows the door will be open without calling the office. Set by the
+        # tap-to-confirm link in the reminder text or (on manual-invite jobs)
+        # the customer's Google Calendar "Yes"; cleared automatically if the
+        # visit is rescheduled. A bool, not the timestamp — the crew payload
+        # rides rural cell data and only needs the yes/no.
+        "customer_confirmed": job.customer_confirmed_at is not None,
         "crew_size": len(job.cleaner_ids or []),
         # The OTHER people on this job, as display names (crew-ID strings mean
         # nothing to a human). Resolved from the map my-day builds in one query.
@@ -175,6 +188,32 @@ def _shared_notes_by_property(db: Session, jobs) -> dict:
         bucket = out.setdefault(n.property_id, [])
         if len(bucket) < 5:
             bucket.append({"body": n.body, "author_name": n.author_name})
+    return out
+
+
+def _photos_by_property(db: Session, jobs) -> dict:
+    """property_id → [{id, url, caption}] reference photos, one batched query,
+    newest first, capped at 4 per property. METADATA ONLY — the image bytes
+    load lazily through the authenticated per-photo endpoint when the card
+    renders (frontend AuthImage), so this stays light on rural cell data
+    (brightbase-economy). Lets the crew see what the house looks like right on
+    the job card instead of two taps deep in the house sheet."""
+    pids = {j.property_id for j in jobs if j.property_id}
+    if not pids:
+        return {}
+    rows = (db.query(PropertyPhoto)
+            .filter(PropertyPhoto.property_id.in_(pids))
+            .order_by(PropertyPhoto.created_at.desc())
+            .all())
+    out: dict = {}
+    for p in rows:
+        bucket = out.setdefault(p.property_id, [])
+        if len(bucket) < 4:
+            bucket.append({
+                "id": p.id,
+                "url": f"/api/crew/properties/{p.property_id}/photos/{p.id}",
+                "caption": (p.caption or "").strip() or None,
+            })
     return out
 
 
@@ -320,6 +359,9 @@ def my_day(
     # today's payload is what the offline cache keeps). Upcoming rows travel
     # light — see the "upcoming" comment below.
     house_notes = _shared_notes_by_property(db, today_jobs)
+    # Reference photos for today's jobs only (metadata; images lazy-load). Kept
+    # off the 13-day upcoming preview to keep that payload light.
+    photos_by_prop = _photos_by_property(db, today_jobs)
     # The caller's own accept/decline answers for the window, one query.
     my_responses = {
         r.job_id: r
@@ -406,6 +448,21 @@ def my_day(
             continue
         if current_user.cleaner_id in (j.cleaner_ids or []):
             continue
+        # Targeted offer (migration 117): if the office limited this offer to
+        # specific cleaners, only they see it. Empty/absent = everyone. This is
+        # visibility only — a targeted sub still asks and the office still
+        # decides (brightbase-marketplace: offered, never assigned).
+        audience = getattr(j, "offer_audience", None) or []
+        if audience and current_user.cleaner_id not in audience:
+            continue
+        # A standing-property turnover (migration 120) is shown to its
+        # designated cleaner in the richer My Properties view — grouped by house,
+        # with the identity they're entrusted with — not anonymized on the open
+        # board. Skip it here so it isn't double-listed (stripped) for the one
+        # person who should see it in full.
+        _sp = getattr(j, "property", None)
+        if _sp is not None and getattr(_sp, "standing_cleaner_id", None) == current_user.cleaner_id:
+            continue
         row = _job_row(j, names, current_user.cleaner_id,
                        my_claim_request=my_requests_by_job.get(j.id))
         # An offer says enough to bid on and no more. The house internals were
@@ -458,7 +515,8 @@ def my_day(
                        or (getattr(current_user, "email", "") or "").split("@")[0]),
         "today": [_job_row(j, names, current_user.cleaner_id, my_responses.get(j.id),
                            house_notes=house_notes.get(j.property_id),
-                           my_helpers=my_helpers.get(j.id))
+                           my_helpers=my_helpers.get(j.id),
+                           photos=photos_by_prop.get(j.property_id))
                   for j in today_jobs],
         # Upcoming rows are a 13-day preview and the bulk of the payload, so
         # the heavy per-house fields stay off them (rural cell data): no
@@ -480,6 +538,17 @@ def my_day(
         # second call on a rural connection (brightbase-economy), without
         # making every my-day refresh carry a route detail nobody opened.
         "routes": _my_routes_summary(db, current_user, oid),
+        # Does this cleaner have any rental the office designated them to do the
+        # turnovers for (migration 120)? A one-row existence check so the crew
+        # app can show a "Rentals" segment ONLY for cleaners who own one —
+        # a permanent tab for a thing most of the crew doesn't have is chrome.
+        # The grouped detail rides GET /api/crew/my-properties, fetched only if
+        # they tap through (brightbase-economy), never on every my-day refresh.
+        "has_rentals": db.query(Property.id).filter(
+            org_scope(Property),
+            Property.standing_cleaner_id == current_user.cleaner_id,
+            Property.active.is_(True),
+        ).first() is not None,
         # Unread office messages, so the crew app's Chat tab can badge without
         # a second request. Reading the thread (GET /messages) marks them read.
         "unread_messages": (
@@ -487,6 +556,14 @@ def my_day(
             .filter(CrewMessage.user_id == current_user.id,
                     CrewMessage.sender == "office",
                     CrewMessage.read_at.is_(None))
+            .scalar() or 0
+        ),
+        # Unread messages from OTHER cleaners (crew-to-crew chat), so the Team
+        # tab badges without a second request — same idea as unread_messages.
+        "unread_peer_messages": (
+            db.query(func.count(CrewPeerMessage.id))
+            .filter(CrewPeerMessage.to_user_id == current_user.id,
+                    CrewPeerMessage.read_at.is_(None))
             .scalar() or 0
         ),
         # This week in money — just the totals (earned so far + still booked),
@@ -497,7 +574,47 @@ def my_day(
         # isn't linked to a crew ID yet (nothing to total).
         "week": (_week_earnings(db, oid, current_user.cleaner_id, today)
                  if current_user.cleaner_id else None),
+        # Two pro cleaning tips on the home screen — a quiet, always-there way
+        # to train the team, rotating daily. Built-in text, so it rides this
+        # payload with no extra fetch and no per-house weight (brightbase-economy).
+        "tips": _daily_tips(today),
     }
+
+
+# A small library of professional cleaning tips shown on the crew home. Two
+# rotate in per day (deterministic by date, so it's stable within a day and
+# changes daily) — the owner's "little training pro tips that train quietly".
+# Plain text, phone-readable, no links; the Learn tab holds the office's own
+# longer-form docs.
+_PRO_TIPS = [
+    {"title": "Top to bottom, dry to wet",
+     "body": "Dust and cobwebs first, floors last — debris that falls lands on a surface you haven't cleaned yet. Dry-wipe (dust, crumbs) before you wet-clean."},
+    {"title": "Let the cleaner do the work",
+     "body": "Spray the toilet, tub, and any degreaser and give it 3–5 minutes while you do something else. Dwell time does the scrubbing for you."},
+    {"title": "Two cloths in every bathroom",
+     "body": "One cloth (or color) for the toilet, a different one for sinks and counters — never the same cloth. It's the #1 way germs travel."},
+    {"title": "Get 8 sides out of a microfiber",
+     "body": "Fold a microfiber into quarters — that's 8 clean faces. Flip to a fresh one when a side gets dirty instead of smearing what you picked up."},
+    {"title": "Glass without streaks",
+     "body": "Buff glass and mirrors dry in an S-pattern, and not in direct sun — sunlight dries the cleaner before you can wipe it, and that's what streaks."},
+    {"title": "Start the longest job first",
+     "body": "Walk into a room and start what takes longest (oven, shower, a soaking pan), then clean around it while it works. You finish as it finishes."},
+    {"title": "Once around, one direction",
+     "body": "Work one way around a room and don't backtrack — you'll never miss a wall or double-clean a counter, and you always know what's done."},
+    {"title": "High-touch points last",
+     "body": "Right before you leave, sanitize switches, handles, knobs, remotes, and faucets — the spots that actually spread germs and that customers notice."},
+    {"title": "Vacuum before you mop",
+     "body": "Always sweep or vacuum first — mopping over grit grinds it into the floor and just pushes dirt around in dirty water."},
+    {"title": "Make the bed like a listing photo",
+     "body": "Pull the sheets tight, corner the base, stand the pillows up front. It's the first thing a guest photographs and the first thing they judge."},
+]
+
+
+def _daily_tips(today) -> list:
+    """Two pro tips for the crew home, rotating by date."""
+    n = len(_PRO_TIPS)
+    i = today.toordinal() % n
+    return [_PRO_TIPS[i], _PRO_TIPS[(i + 1) % n]]
 
 
 def _week_earnings(db: Session, oid: int, cleaner_id: str, today, *,
@@ -955,6 +1072,104 @@ def remove_my_helper(
     db.delete(row); db.commit()
 
 
+@router.get("/my-properties")
+def my_properties(
+    db: Session = Depends(get_db),
+    org_id: int = Depends(current_org_id),
+    current_user: User = Depends(require_role("cleaner")),
+):
+    """The rentals the office designated THIS cleaner to do — their turnovers
+    grouped by house (migration 120). "I gave one of my cleaners an Airbnb, and
+    they can see all the turnovers that come in for it, organized."
+
+    A property lists here when its standing_cleaner_id is the caller's crew ID.
+    The house IDENTITY is shown — they're the designated cleaner, not the
+    anonymous bench, so the address the offer board hides is exactly what this
+    view is for. But it stays an OFFER until accepted: a turnover they haven't
+    taken shows a claim affordance, never a work order. ACCESS DETAILS
+    deliberately do NOT ride this overview at all (schema-guardian §5,
+    BB-SEC-08…12) — gate codes and WiFi live on the day-of job card (my-day),
+    served only for a turnover that is already theirs. This is a schedule, not
+    a key ring.
+
+    One query for the houses, one for their upcoming turnovers, one for the
+    caller's own claim requests — three round trips total, not one per house
+    (brightbase-economy: this rides rural cell data).
+    """
+    _require_crew_id(current_user)
+    oid = resolve_org_id(org_id, db)
+    org_scope = lambda model: or_(model.org_id == oid, model.org_id.is_(None))
+    cid = current_user.cleaner_id
+    today = business_today()
+
+    props = (db.query(Property)
+             .filter(org_scope(Property),
+                     Property.standing_cleaner_id == cid,
+                     Property.active.is_(True))
+             .order_by(Property.name).all())
+    if not props:
+        return {"properties": []}
+
+    prop_ids = [p.id for p in props]
+    jobs = (db.query(Job)
+            .filter(org_scope(Job),
+                    Job.property_id.in_(prop_ids),
+                    Job.job_type == "str_turnover",
+                    Job.scheduled_date >= today,
+                    Job.status.in_(("scheduled", "in_progress")))
+            .order_by(Job.scheduled_date, Job.start_time).all())
+
+    my_reqs = {
+        r.job_id: r
+        for r in db.query(JobClaimRequest).filter(
+            JobClaimRequest.job_id.in_([j.id for j in jobs] or [0]),
+            JobClaimRequest.cleaner_id == cid,
+        ).all()
+    }
+
+    by_prop: dict = {}
+    for j in jobs:
+        by_prop.setdefault(j.property_id, []).append(j)
+
+    def _hm(t):
+        return t.strftime("%H:%M") if hasattr(t, "strftime") else (str(t)[:5] if t else None)
+
+    out = []
+    for p in props:
+        turnovers = []
+        for j in by_prop.get(p.id, []):
+            mine = cid in (j.cleaner_ids or [])
+            req = my_reqs.get(j.id)
+            turnovers.append({
+                "job_id": j.id,
+                "date": j.scheduled_date.isoformat() if j.scheduled_date else None,
+                "start_time": _hm(j.start_time),
+                "end_time": _hm(j.end_time),
+                "status": j.status,
+                # Already accepted and assigned to me vs. still an offer I can take.
+                "mine": mine,
+                "claimable": bool(getattr(j, "open_for_claims", False)) and not mine and j.status == "scheduled",
+                "posted_rate": j.posted_rate,
+                "agreed_rate": j.agreed_rate if mine else None,
+                "my_claim_request": (
+                    {"status": req.status, "requested_rate": req.requested_rate, "message": req.message}
+                    if req else None
+                ),
+            })
+        out.append({
+            "property_id": p.id,
+            "name": p.name,
+            "address": p.address,
+            "city": p.city,
+            "state": p.state,
+            "timezone": getattr(p, "timezone", None),
+            "turnover_rate": getattr(p, "turnover_rate", None),
+            "upcoming_count": len(turnovers),
+            "turnovers": turnovers,
+        })
+    return {"properties": out}
+
+
 # ── Open jobs: request to claim (marketplace pivot, migration 097) ──────────
 
 class ClaimRequestBody(BaseModel):
@@ -1331,12 +1546,10 @@ async def upload_my_document(
     if kind not in DOCUMENT_KINDS or kind == "agreement":
         raise HTTPException(status_code=422, detail="Unknown document type.")
 
-    data = await file.read()
+    data = await read_capped(file, _MAX_DOCUMENT_BYTES,
+                             detail="That file is too big — 10MB is the limit.")
     if not data:
         raise HTTPException(status_code=422, detail="That file was empty.")
-    if len(data) > _MAX_DOCUMENT_BYTES:
-        raise HTTPException(status_code=413,
-                            detail="That file is too big — 10MB is the limit.")
     ctype = (file.content_type or "").lower()
     if ctype not in ALLOWED_CONTENT_TYPES:
         raise HTTPException(status_code=422,
@@ -1687,12 +1900,10 @@ async def upload_property_photo(
     the client downscales before upload."""
     oid = resolve_org_id(org_id, db)
     _property_or_404(db, oid, property_id, current_user)
-    data = await file.read()
+    data = await read_capped(file, _MAX_PHOTO_BYTES, detail="Photo too large (5MB max).")
     ctype = _sniff_image_mime(data)
     if ctype is None:
         raise HTTPException(status_code=422, detail="JPEG, PNG or WebP only.")
-    if len(data) > _MAX_PHOTO_BYTES:
-        raise HTTPException(status_code=413, detail="Photo too large (5MB max).")
     count = db.query(PropertyPhoto).filter(PropertyPhoto.property_id == property_id).count()
     if count >= _MAX_PROP_PHOTOS:
         raise HTTPException(status_code=409, detail="This property's gallery is full — remove old photos first.")
@@ -1810,15 +2021,12 @@ async def upload_job_photo(
     oid = resolve_org_id(org_id, db)
     job = _photo_job_or_404(db, oid, job_id, current_user)
 
-    data = await file.read()
+    data = await read_capped(
+        file, _MAX_PHOTO_BYTES,
+        detail="That photo is too large (over 5MB) — try again from the app, "
+               "which resizes before uploading.")
     if not data:
         raise HTTPException(status_code=400, detail="That file is empty.")
-    if len(data) > _MAX_PHOTO_BYTES:
-        raise HTTPException(
-            status_code=413,
-            detail="That photo is too large (over 5MB) — try again from the app, "
-                   "which resizes before uploading.",
-        )
     mime = _sniff_image_mime(data)
     if not mime:
         raise HTTPException(status_code=400,
@@ -2024,14 +2232,12 @@ async def upload_my_photo(
     client's header, since this value is handed straight back to a browser.
     """
     oid = resolve_org_id(org_id, db)
-    data = await file.read()
+    data = await read_capped(
+        file, _MAX_HEADSHOT_BYTES,
+        detail="That photo is too large (over 5MB) — try again from the app, "
+               "which resizes before uploading.")
     if not data:
         raise HTTPException(status_code=400, detail="That file is empty.")
-    if len(data) > _MAX_HEADSHOT_BYTES:
-        raise HTTPException(
-            status_code=413,
-            detail="That photo is too large (over 5MB) — try again from the app, "
-                   "which resizes before uploading.")
     mime = _sniff_image_mime(data)
     if not mime:
         raise HTTPException(status_code=400,
@@ -2141,8 +2347,9 @@ def crew_job_detail(
     # Shared house notes ride the single-job payload too, so the month-view
     # tap-through shows the same card my-day renders (nothing silently missing).
     house_notes = _shared_notes_by_property(db, [job]).get(job.property_id)
+    photos = _photos_by_property(db, [job]).get(job.property_id)
     return _job_row(job, _names_by_cleaner_id(db, [job]), current_user.cleaner_id, my_resp,
-                    house_notes=house_notes)
+                    house_notes=house_notes, photos=photos)
 
 
 # ── Weather (Today-tab greeting) ─────────────────────────────────────────────
@@ -2199,7 +2406,7 @@ def crew_weather(current_user: User = Depends(require_role("cleaner"))):
     return data
 
 
-# ── Month schedule (own jobs; whole crew for flagged leads) ──────────────────
+# ── Month schedule (whole-month SHAPE for everyone; owner: "shape only, no PII") ─
 
 @router.get("/schedule-month")
 def schedule_month(
@@ -2211,11 +2418,20 @@ def schedule_month(
 ):
     """One calendar month of jobs for the crew app's Month view.
 
-    Everyone sees their OWN jobs. A lead the admin flagged
-    (can_view_full_schedule) also sees everyone else's — but those rows are
-    NAMES/TIMES ONLY: no door codes, no access notes, no client phone, no
-    office notes. Access details stay need-to-know, scoped to the jobs
-    you're actually on (security-roles: gate codes are the crown jewels).
+    Every cleaner sees the SHAPE of the whole month — which days and slots are
+    busy, and the town — so the crew can read the rhythm of the week rather than
+    only their own handful of jobs (owner's call: "shape only, no PII"). Only
+    the jobs that are actually YOURS carry identity: the property name and your
+    teammates. Every other job is stripped to town + time. A street address is
+    never on a job that isn't yours — not in a field, and not smuggled through
+    the title (a Property's `name` IS its address; that's why the non-owned
+    title is rebuilt via _offer_title, the same trap the open board hit). Access
+    details (door codes, access notes, office notes, client phone) were never on
+    a month row and still aren't — those keys are simply absent.
+
+    can_view_full_schedule (a lead the admin flagged) now adds exactly one thing
+    on top of the shape: WHO is covering each job — teammate names, never the
+    customer. It no longer gates whether you can see the schedule at all.
     """
     _require_crew_id(current_user)
     if not (1 <= month <= 12):
@@ -2223,7 +2439,7 @@ def schedule_month(
     oid = resolve_org_id(org_id, db)
     first = date(year, month, 1)
     last = date(year + (month == 12), (month % 12) + 1, 1) - timedelta(days=1)
-    see_all = bool(getattr(current_user, "can_view_full_schedule", False))
+    show_cover = bool(getattr(current_user, "can_view_full_schedule", False))
 
     jobs = (db.query(Job)
             .options(joinedload(Job.property))
@@ -2232,25 +2448,46 @@ def schedule_month(
                     Job.scheduled_date <= last,
                     Job.status.notin_(("cancelled",)))
             .all())
-    if not see_all:
-        jobs = [j for j in jobs if current_user.cleaner_id in (j.cleaner_ids or [])]
     names = _names_by_cleaner_id(db, jobs)
 
     out = []
     for j in sorted(jobs, key=lambda x: (x.scheduled_date, x.start_time is None, x.start_time)):
         mine = current_user.cleaner_id in (j.cleaner_ids or [])
-        out.append({
+        row = {
             "id": j.id,
             "date": j.scheduled_date.isoformat(),
             "start_time": _fmt_time(j.start_time),
             "end_time": _fmt_time(j.end_time),
-            "title": j.title,
-            "property_name": j.property.name if j.property else None,
             "status": j.status,
             "mine": mine,
-            "cleaners": sorted(names.get(str(c), str(c)) for c in (j.cleaner_ids or [])),
-        })
-    return {"year": year, "month": month, "see_all": see_all, "jobs": out}
+        }
+        if mine:
+            # Your own job — you already hold the address, so show it in full.
+            row.update({
+                "title": j.title,
+                "property_name": j.property.name if j.property else None,
+                "cleaners": sorted(names.get(str(c), str(c)) for c in (j.cleaner_ids or [])),
+            })
+        else:
+            # Someone else's job — SHAPE ONLY: town + time, a generic title, no
+            # property name and no client identity. Coverage names ride only for
+            # a flagged lead, and even then they are teammates, never customers.
+            prop = getattr(j, "property", None)
+            area = " ".join(x for x in [getattr(prop, "city", None),
+                                        getattr(prop, "state", None)] if x) or None
+            row.update({
+                "title": _offer_title(j, area),
+                "property_name": None,
+                "area": area,
+                "cleaners": (sorted(names.get(str(c), str(c)) for c in (j.cleaner_ids or []))
+                             if show_cover else []),
+            })
+        out.append(row)
+    # see_all: this view always includes other people's jobs now (as shape), so
+    # the frontend's "gray = others" affordance is always on. show_cover says
+    # whether the non-owned rows name who's covering.
+    return {"year": year, "month": month, "see_all": True,
+            "show_cover": show_cover, "jobs": out}
 
 
 # ── Personal calendar feed (subscribe from Google/Apple Calendar) ────────────
@@ -2755,6 +2992,159 @@ def office_reply(
     return _msg_dict(m)
 
 
+# ── Crew-to-crew chat (cleaner ↔ cleaner direct threads) ─────────────────────
+# Separate from the office thread above: a cleaner messages a teammate directly
+# (swap a day, arrange a ride, "bring the blue caddy"). One thread per pair,
+# either direction. The system never injects access details — plain peer chat.
+# Name only in the directory; no email, no phone.
+
+def _peer_msg_dict(m: CrewPeerMessage, me_id: int) -> dict:
+    return {"id": m.id, "mine": m.from_user_id == me_id,
+            "sender_name": m.sender_name, "body": m.body,
+            "created_at": _iso_utc(m.created_at)}
+
+
+def _peer_or_404(db, peer_id: int, oid: int, me_id: int) -> User:
+    """The other cleaner in a thread: a real cleaner in this org, and not the
+    caller. 404 (never 403) so the endpoint reveals nothing about who exists."""
+    if peer_id == me_id:
+        raise HTTPException(status_code=404, detail="Cleaner not found.")
+    peer = (db.query(User)
+            .filter(User.id == peer_id, User.role == "cleaner",
+                    or_(User.org_id == oid, User.org_id.is_(None)))
+            .first())
+    if not peer:
+        raise HTTPException(status_code=404, detail="Cleaner not found.")
+    return peer
+
+
+@router.get("/chat/peers")
+def crew_chat_peers(
+    db: Session = Depends(get_db),
+    org_id: int = Depends(current_org_id),
+    current_user: User = Depends(require_role("cleaner")),
+):
+    """The other cleaners this cleaner can message, newest conversation first
+    (never-messaged ones sort last, alphabetically). Name only, plus an
+    unread-from-them count so the Team tab can badge without opening a thread."""
+    oid = resolve_org_id(org_id, db)
+    me = current_user.id
+    peers = (db.query(User)
+             .filter(User.role == "cleaner", User.id != me,
+                     or_(User.org_id == oid, User.org_id.is_(None)),
+                     or_(User.status.is_(None), User.status != "disabled"))
+             .all())
+    ids = [u.id for u in peers]
+    unread_by_peer: dict = {}
+    last_msg_by_peer: dict = {}   # pid -> the newest CrewPeerMessage in the pair
+    if ids:
+        unread_by_peer = dict(
+            db.query(CrewPeerMessage.from_user_id, func.count(CrewPeerMessage.id))
+              .filter(CrewPeerMessage.to_user_id == me,
+                      CrewPeerMessage.from_user_id.in_(ids),
+                      CrewPeerMessage.read_at.is_(None))
+              .group_by(CrewPeerMessage.from_user_id).all())
+        # Newest message per pair via MAX(id) each direction (ids are monotonic
+        # with insert order, so the higher id is the newer message — same idea
+        # as the office thread list), then ONE fetch for the chosen rows. That
+        # single query powers both the sort order and the preview line, so the
+        # two per-direction MAX(created_at) queries are gone (brightbase-economy).
+        out_mid = dict(
+            db.query(CrewPeerMessage.to_user_id, func.max(CrewPeerMessage.id))
+              .filter(CrewPeerMessage.from_user_id == me,
+                      CrewPeerMessage.to_user_id.in_(ids))
+              .group_by(CrewPeerMessage.to_user_id).all())
+        in_mid = dict(
+            db.query(CrewPeerMessage.from_user_id, func.max(CrewPeerMessage.id))
+              .filter(CrewPeerMessage.to_user_id == me,
+                      CrewPeerMessage.from_user_id.in_(ids))
+              .group_by(CrewPeerMessage.from_user_id).all())
+        want = {}
+        for pid in ids:
+            mids = [m for m in (out_mid.get(pid), in_mid.get(pid)) if m]
+            if mids:
+                want[pid] = max(mids)
+        if want:
+            by_id = {m.id: m for m in db.query(CrewPeerMessage)
+                     .filter(CrewPeerMessage.id.in_(list(want.values()))).all()}
+            last_msg_by_peer = {pid: by_id[mid] for pid, mid in want.items() if mid in by_id}
+    rows = []
+    for u in peers:
+        lm = last_msg_by_peer.get(u.id)
+        rows.append({
+            "user_id": u.id,
+            "name": u.full_name or u.email,
+            "unread": int(unread_by_peer.get(u.id, 0)),
+            "last_activity": _iso_utc(lm.created_at) if lm else None,
+            # A one-line preview of the newest message so the directory reads
+            # like an inbox. `mine` lets the app prefix "You: ". Body only —
+            # still no phone/email/access detail.
+            "last_message": ({"mine": lm.from_user_id == me,
+                              "preview": (lm.body or "").strip()[:80]} if lm else None),
+        })
+    active = sorted([r for r in rows if r["last_activity"]],
+                    key=lambda r: r["last_activity"], reverse=True)
+    empty = sorted([r for r in rows if not r["last_activity"]],
+                   key=lambda r: (r["name"] or "").lower())
+    return active + empty
+
+
+@router.get("/chat/{peer_id}")
+def crew_chat_thread(
+    peer_id: int,
+    db: Session = Depends(get_db),
+    org_id: int = Depends(current_org_id),
+    current_user: User = Depends(require_role("cleaner")),
+):
+    """The thread between the caller and one other cleaner (oldest first).
+    Loading it marks the peer's messages to the caller read."""
+    oid = resolve_org_id(org_id, db)
+    me = current_user.id
+    _peer_or_404(db, peer_id, oid, me)
+    rows = (db.query(CrewPeerMessage)
+            .filter(or_(
+                and_(CrewPeerMessage.from_user_id == me, CrewPeerMessage.to_user_id == peer_id),
+                and_(CrewPeerMessage.from_user_id == peer_id, CrewPeerMessage.to_user_id == me)))
+            .order_by(CrewPeerMessage.created_at.asc())
+            .limit(200).all())
+    now = _now_naive_utc()
+    dirty = False
+    for m in rows:
+        if m.to_user_id == me and m.read_at is None:
+            m.read_at = now; dirty = True
+    if dirty:
+        db.commit()
+    return [_peer_msg_dict(m, me) for m in rows]
+
+
+@router.post("/chat/{peer_id}", status_code=201)
+def crew_chat_send(
+    peer_id: int,
+    body: MessageBody,
+    db: Session = Depends(get_db),
+    org_id: int = Depends(current_org_id),
+    current_user: User = Depends(require_role("cleaner")),
+):
+    oid = resolve_org_id(org_id, db)
+    me = current_user.id
+    peer = _peer_or_404(db, peer_id, oid, me)
+    text = _sanitize_note(body.body)
+    if not text:
+        raise HTTPException(status_code=422, detail="Say something first.")
+    who = getattr(current_user, "full_name", None) or current_user.email
+    m = CrewPeerMessage(org_id=oid, from_user_id=me, to_user_id=peer.id,
+                        sender_name=who, body=text, created_at=_now_naive_utc())
+    db.add(m); db.commit(); db.refresh(m)
+    try:
+        from services.push_service import notify_user
+        notify_user(peer.id, f"Message from {who}",
+                    text if len(text) <= 120 else text[:117] + "…",
+                    url="/my-day", tag=f"crew-peer-{me}", category="crew")
+    except Exception:
+        log.exception("push notify failed on crew_chat_send")
+    return _peer_msg_dict(m, me)
+
+
 # ── Structured client texts (no numbers on crew phones) ──────────────────────
 # The owner's updated call (Aug 2026, reversing Phase 1): crew never see the
 # customer's number. Instead they send TEMPLATED texts from the BUSINESS
@@ -2843,14 +3233,16 @@ def text_client(
                  or "Your cleaner")
     msg_body = _compose_client_text(template, job, who_first, note)
 
-    from integrations.twilio_client import send_sms
+    from services.sms_send import send_and_log
     from modules.comms.router import (
         _normalize_contact, find_or_create_conversation, _apply_outbound,
     )
     from database.models import Message
     to = _normalize_contact(phone)
     try:
-        result = send_sms(to=to, body=msg_body)
+        result = send_and_log(to=to, body=msg_body, action="client_text",
+                              entity_type="job", entity_id=getattr(job, "id", 0) or 0,
+                              org_id=getattr(job, "org_id", None))
     except ValueError as e:
         raise HTTPException(status_code=409, detail="Texting isn't set up yet — tell the office.")
     except Exception:
@@ -3862,6 +4254,17 @@ def preview_my_routes(user_id: int, db: Session = Depends(get_db),
     oid = resolve_org_id(org_id, db)
     target = _preview_target(db, oid, user_id, viewer, "My routes")
     return my_routes(db=db, org_id=oid, current_user=target)
+
+
+@router.get("/preview/{user_id}/my-properties",
+            dependencies=[Depends(require_role("admin", "manager"))])
+def preview_my_properties(user_id: int, db: Session = Depends(get_db),
+                          org_id: int = Depends(current_org_id),
+                          viewer: User = Depends(get_current_user)):
+    """The rentals this sub is the standing cleaner for (My Properties)."""
+    oid = resolve_org_id(org_id, db)
+    target = _preview_target(db, oid, user_id, viewer, "My properties")
+    return my_properties(db=db, org_id=oid, current_user=target)
 
 
 @router.get("/preview/{user_id}/schedule-month",

@@ -12,6 +12,11 @@ already been litigated:
   (office or crew). Quiet dot+word labels; the owner has vetoed SaaS pill
   bubbles, tinted banners, and count bubbles — twice. Also: `shell:` (900px)
   breakpoint, per-role layout rules, access-details UI constraints.
+- **`brightbase-ui-revamp`** — load before redesigning a whole office page,
+  dashboard, or list (not for a one-widget tweak). The positive target that
+  sits on top of `brightbase-design-language`: how to make a page modern,
+  dense, and actionable (bento boxes, inline actions, purposeful motion, a
+  command bar) WITHOUT tripping the veto. The `ui-reviser` agent applies it.
 - **`brightbase-economy`** — load before adding any fetch, sync, background
   tick, or external API call. No polling where events work, one fetch per
   screen per need, metered APIs cached at the row, crew payloads light
@@ -26,6 +31,17 @@ already been litigated:
 - **`recurring-doctor`** — load when recurring-series data looks wrong
   (duplicates, ghosts, ended-but-active). Points at the health scan and the
   root causes already identified; don't re-diagnose from scratch.
+- **`data-doctor`** — load when the data underneath the app looks wrong, or
+  before a migration. The whole-schema read-only scan
+  (`GET /api/admin/data-health`, `scripts/data_doctor.py`) for the tables
+  recurring-doctor doesn't cover: dangling FKs, missing-required drift, money
+  anomalies, totals that don't add up, stuck lifecycle rows, duplicate contacts.
+- **`schema-guardian`** — load BEFORE editing `database/models.py` or writing a
+  migration. The authoring-time design checklist: tenant tables get
+  `org_id` + `TENANT_TABLES` + `apply_org_rls` + a tenancy test in one migration
+  (enforced by `tests/test_schema_guardrails.py`), money is float dollars,
+  calendar days are `Date`, FK columns get an index, access details stay put.
+  Design only — `brightbase-migrations` owns Alembic mechanics.
 
 User-level skills that also govern work here when present: `brightbase-build`
 (conventions, security checklist), `brightbase-migrations` (Alembic

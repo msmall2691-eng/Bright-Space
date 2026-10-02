@@ -57,8 +57,10 @@ export default function Properties() {
     newClient, setNewClient,
     creatingClient,
     clientErr, setClientErr,
+    clientDupes, setClientDupes,
     selectClient,
     createInlineClient,
+    pickClient,
     openEdit,
     openNew,
     confirmNewProperty,
@@ -321,8 +323,10 @@ export default function Properties() {
           newClient={newClient} setNewClient={setNewClient}
           creatingClient={creatingClient}
           clientErr={clientErr} setClientErr={setClientErr}
+          clientDupes={clientDupes} setClientDupes={setClientDupes}
           selectClient={selectClient}
           createInlineClient={createInlineClient}
+          pickClient={pickClient}
           saving={saving}
           onClose={() => setShowForm(false)}
           onSave={save}

@@ -115,9 +115,11 @@ def _deliver_sms(db: Session, job, client, body: str) -> None:
     """Send `body` and thread it into the customer's SMS conversation. Shared
     by every notice here; best-effort — an unconfigured Twilio or bad number
     just logs, and a failed inbox thread never loses the send."""
-    from integrations.twilio_client import send_sms
+    from services.sms_send import send_and_log
     try:
-        result = send_sms(to=client.phone, body=body)
+        result = send_and_log(to=client.phone, body=body, action="notice",
+                              entity_type="job", entity_id=getattr(job, "id", 0) or 0,
+                              org_id=getattr(job, "org_id", None))
     except (ValueError, RuntimeError) as e:
         logger.info("[scheduled-notice] SMS skipped for job %s: %s", job.id, e)
         return

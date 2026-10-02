@@ -89,6 +89,32 @@ def advance_for_quote(db: Session, quote, stage, **kwargs):
     return advance_opportunity(db, opp, stage, **kwargs)
 
 
+def sync_opportunity_amount(db: Session, quote):
+    """Keep the linked deal's amount in step with its quote's current total.
+
+    The deal amount is seeded once (from the intake estimate, then from the
+    quote total at quote-create time) and used to be left to drift: editing a
+    quote's line items recomputed the quote total but never the deal, so the
+    Pipeline card could show $150 while its attached quote read $135. This
+    re-points the deal at the quote you just touched (latest-quote-wins, the
+    same intent as the create-time write) without changing its stage. A deal
+    with several linked quotes therefore reflects the most recently edited one.
+
+    Best-effort and stage-neutral: a board write must never break the quote
+    operation (same contract as the rest of this module)."""
+    opp_id = getattr(quote, "opportunity_id", None)
+    if not opp_id:
+        return None
+    try:
+        opp = db.query(Opportunity).filter(Opportunity.id == opp_id).first()
+        if opp is not None and quote.total is not None and opp.amount != quote.total:
+            opp.amount = quote.total
+        return opp
+    except Exception as e:  # pragma: no cover - safety net
+        logger.warning("sync_opportunity_amount failed for quote %s: %s", getattr(quote, "id", "?"), e)
+        return None
+
+
 def reconcile_lead_quote_links(db: Session) -> dict:
     """Make the two lead↔quote links agree (P4 decision 4).
 

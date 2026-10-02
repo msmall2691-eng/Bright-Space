@@ -106,6 +106,34 @@ def test_my_day_returns_only_this_cleaners_jobs(ids):
         app.dependency_overrides.pop(current_org_id, None)
 
 
+def test_customer_confirmed_flag_reflects_the_visit_confirmation(ids):
+    """A cleaner sees whether the customer confirmed the visit — the payload
+    carries a bool derived from Job.customer_confirmed_at, not the timestamp."""
+    from datetime import datetime, timezone
+
+    cid = _mk_client(ids)
+    pid = _mk_str_property(ids, cid)
+    confirmed = _mk_job(ids, cid, pid, ["CT-777"], offset_days=0)
+    pid2 = _mk_str_property(ids, cid)
+    unconfirmed = _mk_job(ids, cid, pid2, ["CT-777"], offset_days=0)
+
+    db = SessionLocal()
+    db.query(Job).filter(Job.id == confirmed).update(
+        {Job.customer_confirmed_at: datetime.now(timezone.utc)})
+    db.commit(); db.close()
+
+    app.dependency_overrides[get_current_user] = lambda: _Cleaner(9010, "CT-777")
+    app.dependency_overrides[current_org_id] = lambda: 1
+    api = TestClient(app)
+    try:
+        rows = {j["id"]: j for j in api.get("/api/crew/my-day").json()["today"]}
+        assert rows[confirmed]["customer_confirmed"] is True
+        assert rows[unconfirmed]["customer_confirmed"] is False
+    finally:
+        app.dependency_overrides.pop(get_current_user, None)
+        app.dependency_overrides.pop(current_org_id, None)
+
+
 def test_upcoming_rows_travel_light(ids):
     """The 13-day upcoming preview skips the heavy per-house fields
     (checklist_template, house_notes) — they're served on tap by the per-job

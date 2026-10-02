@@ -19,6 +19,7 @@ import json
 import logging
 import os
 from datetime import date, timedelta
+from types import SimpleNamespace
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -40,6 +41,7 @@ from services.proposals import (PROPOSAL_STATUSES, dismiss_proposal,
 from modules.properties.router import _property_ical_health
 from services.turnover_coverage import compute_turnover_coverage
 from agents.tools import get_tools_for_agent, execute_tool, load_agent_roster
+from services import llm
 from utils.dates import business_today
 
 logger = logging.getLogger(__name__)
@@ -73,14 +75,71 @@ class QuickQuery(BaseModel):
     record_id: Optional[int] = None
 
 
+def _tier_for_model(model_id: str | None) -> str:
+    """Map a concrete model id back to its tier name, so a call site that asks
+    for a specific Anthropic model gets the equivalently-sized model on
+    whichever provider is configured. Unrecognized ids fall to sonnet."""
+    for tier, mid in _TIER_MODEL_IDS.items():
+        if mid == model_id:
+            return tier
+    return "sonnet"
+
+
+class _GeminiChatShim:
+    """The sliver of the Anthropic client the non-tool call sites use —
+    ``client.messages.create(model=, max_tokens=, system=, messages=)`` — routed
+    through ``services.llm`` so those sites run unchanged when
+    ``LLM_PROVIDER=gemini``. Only text completions come here; the agentic tool
+    loop is handled directly in ``_run_tool_loop`` and never touches this shim.
+
+    Multi-turn ``messages`` (the crew ask helper sends a short history) are
+    flattened into one labelled transcript, since the one-shot ``complete_text``
+    entry point takes a single user string; a role-less single user message —
+    every other caller — passes through as just its text."""
+
+    def __init__(self):
+        self.messages = self
+
+    @staticmethod
+    def _flatten(messages) -> str:
+        msgs = [m for m in (messages or []) if isinstance(m.get("content"), str)]
+        if len(msgs) == 1 and msgs[0].get("role") == "user":
+            return msgs[0]["content"]
+        return "\n\n".join(
+            f"{(m.get('role') or 'user').capitalize()}: {m['content']}" for m in msgs
+        )
+
+    def create(self, *, model=None, max_tokens=1024, system="", messages=None,
+               tools=None, **_):
+        text = llm.complete_text(
+            system=system or "", user_content=self._flatten(messages),
+            tier=_tier_for_model(model), max_tokens=max_tokens,
+        )
+        return SimpleNamespace(
+            content=[SimpleNamespace(type="text", text=text)],
+            stop_reason="end_turn",
+        )
+
+
 def _anthropic_client():
-    """Return an Anthropic client, or None if the key/SDK isn't available."""
-    key = os.getenv("ANTHROPIC_API_KEY")
-    if not key:
+    """Return a chat client for the configured LLM provider, or None if it
+    isn't usable (missing key/SDK) so callers keep their existing
+    ``if client is None: <fallback>`` guard.
+
+    Default is Anthropic and its path is unchanged — when ``LLM_PROVIDER`` is
+    unset (every deploy today) this returns the real Anthropic SDK client
+    exactly as before, and nothing downstream behaves differently. When the
+    flag is flipped to ``gemini`` it returns a thin shim that presents the same
+    ``.messages.create`` surface, backed by ``services.llm``. The name stays
+    ``_anthropic_client`` because several modules import it; the shim keeps them
+    working without a churn of call-site renames."""
+    if not llm.available():
         return None
+    if llm.provider() == "gemini":
+        return _GeminiChatShim()
     try:
         import anthropic
-        return anthropic.Anthropic(api_key=key)
+        return anthropic.Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
     except Exception as e:  # pragma: no cover - import/config guard
         logger.warning("Anthropic client unavailable: %s", e)
         return None
@@ -103,6 +162,18 @@ def _run_tool_loop(client, system: str, user_content: str, *, max_tokens: int = 
     of iterations.
     """
     tools = get_tools_for_agent(_AGENT, allow_operations=allow_operations)
+    if llm.provider() == "gemini":
+        # Same bounded, org-scoped, read-only loop, run through the provider
+        # seam. `client` (the shim) is unused here — the loop lives in the
+        # adapter — but execute keeps org-scoping and the operations gate.
+        return llm.run_tool_loop(
+            system=system, user_content=user_content, tools=tools,
+            execute=lambda name, args: execute_tool(
+                name, args, _AGENT, org_id=org_id,
+                allow_operations=allow_operations),
+            tier=_tier_for_model(MODEL), max_tokens=max_tokens,
+            max_iters=max_iters,
+        )
     messages = [{"role": "user", "content": user_content}]
     for _ in range(max_iters):
         resp = client.messages.create(

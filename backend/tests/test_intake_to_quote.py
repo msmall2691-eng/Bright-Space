@@ -112,6 +112,29 @@ def test_create_quote_stamps_source_intake_as_quoted(intake_ctx):
     assert intake.converted_quote_id == out["id"]
 
 
+def test_create_quote_backlinks_lead_to_client_and_opportunity(intake_ctx):
+    """The composer path must link the LEAD back to the client + opportunity it
+    just converted into — not only converted_quote_id. Otherwise the request
+    keeps client_id=NULL and never appears under the client's Requests tab (the
+    orphaned-lead case data-doctor flags)."""
+    db, intake = intake_ctx
+    intake.client_id = None
+    intake.opportunity_id = None
+    db.commit()
+    client = Client(name="Web Lead 2", email="lead2@example.com", status="lead")
+    db.add(client); db.commit(); db.refresh(client)
+
+    user = SimpleNamespace(id=None)
+    out = create_quote(
+        QuoteCreate(client_id=client.id, intake_id=intake.id, title="T", items=[]),
+        db=db, current_user=user,
+    )
+    db.refresh(intake)
+    assert intake.client_id == client.id, "converted lead must link back to its client"
+    assert intake.opportunity_id is not None, "converted lead must link to its opportunity"
+    assert intake.opportunity_id == out.get("opportunity_id")
+
+
 def test_create_quote_does_not_reassign_an_already_converted_intake(intake_ctx):
     """A second quote created against an intake that's already linked to one
     (however that happened) must not silently repoint converted_quote_id at

@@ -27,6 +27,11 @@ export function ConvItem({ conv, active, onClick }) {
   const lastOut = conv.last_outbound_at ? Date.parse(conv.last_outbound_at) : 0
   const lastIn = conv.last_inbound_at ? Date.parse(conv.last_inbound_at) : 0
   const lastIsOutbound = lastOut > 0 && lastOut >= lastIn
+  // Waiting on us: the customer spoke last, the thread isn't resolved, and it
+  // hasn't yet tipped into Overdue. This is the "which ones need a reply?"
+  // signal the inbox was missing — a handled thread (we replied last) stays
+  // quiet, an unanswered one is marked.
+  const awaitingReply = !overdue && conv.status !== 'resolved' && lastIn > 0 && lastIn > lastOut
 
   const nameCls = `text-[14px] truncate ${unread ? 'font-semibold text-ink' : 'font-medium text-ink-2'}`
 
@@ -83,14 +88,20 @@ export function ConvItem({ conv, active, onClick }) {
           </p>
 
           {/* Status line — show at most ONE signal so the list doesn't become
-              a wall of tags. "Overdue" (needs a reply) is the actionable one
-              and wins; "Unassigned" is secondary and rendered as quiet muted
-              text (it's also a filter), so an all-unassigned inbox doesn't
-              light up amber on every row. */}
+              a wall of tags. Order of precedence: "Overdue" (SLA breached) is
+              most urgent and wins; then "Needs reply" (customer spoke last,
+              not yet overdue); then "Unassigned", quiet muted text (it's also
+              a filter) so an all-unassigned inbox doesn't light up every row. */}
           {overdue ? (
             <div className="mt-1.5">
               <span className="inline-flex h-5 items-center gap-1.5 rounded-sm border border-hairline-2 bg-panel px-2 text-[11px] font-medium text-ink-2">
                 <span className="h-1.5 w-1.5 rounded-full bg-red-500" /> Overdue
+              </span>
+            </div>
+          ) : awaitingReply ? (
+            <div className="mt-1.5">
+              <span className="inline-flex h-5 items-center gap-1.5 rounded-sm border border-hairline-2 bg-panel px-2 text-[11px] font-medium text-ink-2">
+                <span className="h-1.5 w-1.5 rounded-full bg-amber-500" /> Needs reply
               </span>
             </div>
           ) : unassigned ? (

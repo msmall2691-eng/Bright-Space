@@ -87,7 +87,8 @@ def notify_user_or_sms(user_id, title: str, body: str, *, category: str,
     if sent:
         return sent
     try:
-        from integrations.twilio_client import configured as sms_configured, send_sms
+        from integrations.twilio_client import configured as sms_configured
+        from services.sms_send import send_and_log
         if not sms_configured():
             return 0
         from database.db import SessionLocal
@@ -108,7 +109,8 @@ def notify_user_or_sms(user_id, title: str, body: str, *, category: str,
         e164 = normalize_e164(phone)
         if not e164:
             return 0
-        send_sms(to=e164, body=(sms_body or f"{title} {body}").strip())
+        send_and_log(to=e164, body=(sms_body or f"{title} {body}").strip(),
+                     action="crew", entity_type="user", entity_id=user_id)
         return 1
     except Exception:  # pragma: no cover - a text must never break the caller
         logger.warning("SMS fallback failed for user %s", user_id, exc_info=True)
@@ -365,6 +367,15 @@ def notify_jobs_posted(db: Session, jobs, org_id=None) -> int:
             # skips these rows for the same reason.
             on_it = {str(c) for c in (getattr(job, "cleaner_ids", None) or [])}
             people = [p for p in people if p.get("cleaner_id") not in on_it]
+            # Targeted offer (migration 117): if the office limited who this
+            # offer shows for, notify only those cleaners — the same set the
+            # board reveals it to. An empty/absent audience is everyone, so this
+            # is a no-op for an untargeted post. Pushing "new job" to someone
+            # who can't see or claim it is the same dead-end notification the
+            # `on_it` and `cleared` filters exist to avoid.
+            audience = {str(c) for c in (getattr(job, "offer_audience", None) or [])}
+            if audience:
+                people = [p for p in people if p.get("cleaner_id") in audience]
         else:
             title = f"{len(jobs)} jobs on the board"
             body = _batch_line(jobs)
@@ -432,7 +443,8 @@ def _sms_offer(user_ids: list, phones: dict, title: str, body: str) -> int:
     """
     if not user_ids:
         return 0
-    from integrations.twilio_client import configured as sms_configured, send_sms
+    from integrations.twilio_client import configured as sms_configured
+    from services.sms_send import send_and_log
 
     if not sms_configured():
         # Same posture as push with no VAPID keys: quietly do nothing rather
@@ -457,7 +469,8 @@ def _sms_offer(user_ids: list, phones: dict, title: str, body: str) -> int:
         if not phone:
             continue
         try:
-            send_sms(to=phone, body=text)
+            send_and_log(to=phone, body=text, action="offer",
+                         entity_type="user", entity_id=uid)
             sent += 1
         except (ValueError, RuntimeError) as e:
             # One bad number or a Twilio outage must not cost the rest of the

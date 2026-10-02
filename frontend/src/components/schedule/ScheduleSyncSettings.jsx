@@ -124,14 +124,14 @@ export default function ScheduleSyncSettings({ open, onClose }) {
               </div>
               <div className="px-4 pb-4">
                 <Link to="/recurring" onClick={onClose}
-                  className="inline-flex items-center gap-1.5 text-xs text-blue-500 hover:underline">
+                  className="inline-flex items-center gap-1.5 text-xs text-ink hover:text-indigo-600 no-underline">
                   Manage recurring series <ExternalLink className="w-3 h-3" />
                 </Link>
               </div>
             </div>
 
             <div className="px-4 py-3 text-[11px] text-ink-3">
-              Changes save automatically. More options (customer reminders, invites) live in <Link to="/settings" onClick={onClose} className="text-blue-500 hover:underline">Settings → Automation</Link>.
+              Changes save automatically. More options (customer reminders, invites) live in <Link to="/settings" onClick={onClose} className="text-ink hover:text-indigo-600 no-underline">Settings → Automation</Link>.
             </div>
           </div>
         )}

@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Plus, Search, Phone, Mail, Inbox, SlidersHorizontal, X, Check, RotateCcw, UserPlus } from 'lucide-react'
+import { Plus, Search, Phone, Mail, Voicemail, Inbox, SlidersHorizontal, X, Check, RotateCcw, UserPlus } from 'lucide-react'
 import { NotifPermissionButton } from './primitives'
 import { ConvItem } from './ConvItem'
 import { SwipeRow } from './SwipeRow'
@@ -8,6 +8,11 @@ const CHANNEL_TABS = [
   { key: '', label: 'All' },
   { key: 'sms', label: 'SMS', icon: Phone },
   { key: 'email', label: 'Email', icon: Mail },
+  // Inbound calls and voicemail transcripts, written by the Twilio voice
+  // webhook (backend/modules/comms/router.py). Its own tab rather than a
+  // filter inside SMS: a missed call is a different kind of unread, and the
+  // one thing you want to scan on its own after a day away from the phone.
+  { key: 'voice', label: 'Voicemail', icon: Voicemail },
 ]
 
 /** Whole left column of the Comms page. Pure presentational — every piece
@@ -106,8 +111,8 @@ export function InboxLeftPanel({
   )
 
   return (
-    <div className={`w-full lg:w-[340px] border-r border-hairline bg-panel flex flex-col shrink-0
-      ${mobileView === 'list' ? 'flex' : 'hidden lg:flex'}`}>
+    <div className={`w-full shell:w-[340px] border-r border-hairline bg-panel flex flex-col shrink-0
+      ${mobileView === 'list' ? 'flex' : 'hidden shell:flex'}`}>
 
       {/* Header */}
       <div className="px-4 pt-3 pb-2.5">
@@ -117,12 +122,19 @@ export function InboxLeftPanel({
           {header || <h1 className="text-[15px] font-semibold tracking-tight text-ink">Inbox</h1>}
           <div className="flex items-center gap-1.5">
             <NotifPermissionButton />
-            {/* Mobile-only filters trigger — opens the sheet with channel + chips. */}
-            <button onClick={() => setFiltersOpen(true)}
-              className="lg:hidden relative w-8 h-8 rounded-md border border-hairline-2 bg-panel hover:bg-bg-2 text-ink-2 flex items-center justify-center transition-colors">
+            {/* Filters trigger. Channel + quick-filters live behind this on
+                every size — a bottom sheet on mobile, an inline reveal on
+                desktop — so the list starts near the top instead of below
+                three stacked filter rows. */}
+            <button onClick={() => setFiltersOpen(o => !o)}
+              aria-expanded={filtersOpen}
+              className={`relative h-8 px-2 shell:px-2.5 rounded-md border bg-panel hover:bg-bg-2 flex items-center gap-1.5 text-[12px] font-medium transition-colors ${
+                filtersOpen || activeFilterCount > 0 ? 'border-ink/30 text-ink' : 'border-hairline-2 text-ink-2'
+              }`}>
               <SlidersHorizontal className="w-4 h-4" />
+              <span className="hidden shell:inline">Filter</span>
               {activeFilterCount > 0 && (
-                <span className="absolute top-1 right-1 w-2 h-2 rounded-full bg-indigo-600 ring-2 ring-panel" aria-label={`${activeFilterCount} filters active`} />
+                <span className="text-[10px] font-bold tabular-nums text-indigo-600" aria-label={`${activeFilterCount} filters active`}>{activeFilterCount}</span>
               )}
             </button>
             <button onClick={onCompose}
@@ -160,10 +172,15 @@ export function InboxLeftPanel({
         </div>
       </div>
 
-      {/* Channel + chips: inline on desktop only. On mobile they live in the
-          Filters sheet so the list starts near the top. */}
-      <ChannelTabs className="hidden lg:flex mx-4 mb-2" />
-      {visibleChips.length > 0 && <Chips className="hidden lg:flex px-4 pb-3" />}
+      {/* Channel + chips: collapsed behind the Filter button on every size.
+          On desktop they reveal inline here; on mobile they open in the sheet
+          below — so by default the list starts right under the folder tabs. */}
+      {filtersOpen && (
+        <div className="hidden shell:block">
+          <ChannelTabs className="flex mx-4 mb-2" />
+          {visibleChips.length > 0 && <Chips className="flex px-4 pb-3" />}
+        </div>
+      )}
       <div className="border-b border-hairline" />
 
       {/* Conversation list */}
@@ -190,6 +207,7 @@ export function InboxLeftPanel({
             <div className="text-sm font-semibold text-ink-3 mb-1">
               {channelFilter === 'sms' ? 'No SMS conversations'
                 : channelFilter === 'email' ? 'No email conversations'
+                : channelFilter === 'voice' ? 'No calls or voicemail'
                 : 'No conversations'}
             </div>
             <p className="text-[12px] text-ink-3 text-center leading-relaxed">
@@ -219,7 +237,7 @@ export function InboxLeftPanel({
 
       {/* Mobile filters bottom sheet */}
       {filtersOpen && (
-        <div className="lg:hidden fixed inset-0 z-40 flex flex-col justify-end" onClick={() => setFiltersOpen(false)}>
+        <div className="shell:hidden fixed inset-0 z-40 flex flex-col justify-end" onClick={() => setFiltersOpen(false)}>
           <div className="absolute inset-0 bg-black/30 backdrop-blur-sm" />
           <div className="relative bg-panel rounded-t-2xl border-t border-hairline p-4 pb-8 space-y-4" onClick={e => e.stopPropagation()}>
             <div className="flex items-center justify-between">
