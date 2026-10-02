@@ -697,18 +697,18 @@ class Job(Base):
 
     # Links — only set for the relevant type
     property_id = Column(Integer, ForeignKey("properties.id"), nullable=False)  # PR 2: Every job must have a property
-    recurring_schedule_id = Column(Integer, ForeignKey("recurring_schedules.id"), nullable=True)
+    recurring_schedule_id = Column(Integer, ForeignKey("recurring_schedules.id"), nullable=True, index=True)
     ical_event_id = Column(Integer, ForeignKey("ical_events.id"), nullable=True, index=True)
     # Job.assigned_cleaner_user_id was dropped by migration 040 — it was a
     # never-used placeholder ("Future: replace cleaner_ids JSON") that had
     # sat unread since 001. Job.cleaner_ids is the single assignment source.
 
     # Notification tracking
-    calendar_invite_sent = Column(Boolean, default=False, nullable=False)
-    sms_reminder_sent = Column(Boolean, default=False, nullable=False)
+    calendar_invite_sent = Column(Boolean, default=False, server_default=text("false"), nullable=False)
+    sms_reminder_sent = Column(Boolean, default=False, server_default=text("false"), nullable=False)
     # Hybrid reminder opt-out: reminders are sent by default; staff can set this
     # True to suppress the 24h SMS for a single job without disabling the system.
-    skip_sms_reminder = Column(Boolean, default=False, nullable=False)
+    skip_sms_reminder = Column(Boolean, default=False, server_default=text("false"), nullable=False)
     gcal_event_id = Column(String, nullable=True)   # Google Calendar event ID for two-way sync
     # Whose connected Google account owns the calendar event (NULL = legacy
     # shared business calendar token).
@@ -734,7 +734,7 @@ class Job(Base):
     # date-less jobs as "Scheduled".
     notes = Column(Text)
     custom_fields = Column(JSON, default=dict)
-    dispatched = Column(Boolean, default=False, nullable=False)
+    dispatched = Column(Boolean, default=False, server_default=text("false"), nullable=False)
     # Crew app Phase 3: the office flips this to put the job "up for grabs" on
     # every cleaner's Schedule tab. The first successful claim adds the claimer
     # to cleaner_ids and flips this back off.
@@ -752,7 +752,7 @@ class Job(Base):
     # ones whose customer isn't opted in (preserving any with a pending claim).
     # The rule still holds for one-off and turnover jobs, which the office opens
     # by hand (turnovers via a property's standing cleaner, migration 120).
-    open_for_claims = Column(Boolean, default=False, nullable=False)
+    open_for_claims = Column(Boolean, default=False, server_default=text("false"), nullable=False)
     # Marketplace (migration 117): limit WHO among the cleared bench sees this
     # open offer. A list of cleaner_ids; NULL or [] means every cleared sub sees
     # it (the default and prior behavior). This narrows the audience the office
@@ -1636,7 +1636,7 @@ class Invoice(Base):
     dunning_stage = Column(Integer, nullable=False, default=0, server_default="0")
     dunning_last_sent_at = Column(DateTime(timezone=True), nullable=True)
 
-    # Online card/ACH payment via a hosted Stripe Checkout Session (migration 122).
+    # Online card/ACH payment via a hosted Stripe Checkout Session (migration 125).
     # The session is minted on demand from the public /pay/{token} page and
     # REUSED while it is still open, which is what keeps one invoice to one
     # live session: two tabs on the same invoice must not become two payments.
