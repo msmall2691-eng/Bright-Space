@@ -18,6 +18,7 @@ nobody can regenerate, and the migration discipline here is additive-only (R8).
 Unused columns cost nothing; a dropped table with history in it cannot be
 undone. That is a separate decision for when nobody wants the history.
 """
+import json
 import logging
 from datetime import datetime, timezone
 from typing import Optional
@@ -246,22 +247,69 @@ async def stripe_webhook(request: Request, db: Session = Depends(get_db)):
     retries non-2xx for days, and retrying an event we deliberately do not
     handle is noise for both sides.
     """
-    from integrations.stripe_connect import summarize, webhook_secret
+    from integrations.stripe_connect import (
+        connect_webhook_secret, summarize, webhook_secret,
+    )
 
-    secret = webhook_secret()
-    if not secret:
-        logger.error("[stripe] rejecting webhook — STRIPE_WEBHOOK_SECRET not set, "
-                     "cannot verify the signature")
+    # TWO SECRETS, ONE URL. Stripe signs each delivery with the signing secret
+    # of the endpoint it was sent to, and a connected account's
+    # `account.updated` is only ever delivered to an endpoint that listens to
+    # connected accounts — a separate endpoint, with a separate secret, even
+    # when both point here. So verification tries each secret we hold and
+    # accepts the first that validates.
+    #
+    # Trying both is not a weakening: a forged payload still has to carry an
+    # HMAC produced by one of OUR secrets, which is exactly the bar a single
+    # secret sets. What it buys is one webhook handler instead of two
+    # near-identical ones.
+    secrets = [s for s in (webhook_secret(), connect_webhook_secret()) if s]
+    if not secrets:
+        logger.error("[stripe] rejecting webhook — no STRIPE_WEBHOOK_SECRET or "
+                     "STRIPE_CONNECT_WEBHOOK_SECRET set, cannot verify the signature")
         raise HTTPException(status_code=503, detail="Webhook not configured.")
 
     payload = await request.body()
     sig = request.headers.get("stripe-signature", "")
-    try:
-        import stripe
-        event = stripe.Webhook.construct_event(payload, sig, secret)
-    except Exception:
-        logger.warning("[stripe] rejected webhook with a bad signature")
+    import stripe
+    verified = False
+    for candidate in secrets:
+        try:
+            stripe.Webhook.construct_event(payload, sig, candidate)
+            verified = True
+            break
+        except Exception:
+            continue
+    if not verified:
+        # Refused by every secret we hold. With only the account secret set,
+        # this is also what a Connect delivery looks like — so the message
+        # names that, since "bad signature" on a correctly-configured endpoint
+        # is otherwise a baffling thing to debug.
+        logger.warning(
+            "[stripe] rejected webhook — no configured secret verified the "
+            "signature (%d tried). A connected-account event needs "
+            "STRIPE_CONNECT_WEBHOOK_SECRET.", len(secrets))
         raise HTTPException(status_code=400, detail="Bad signature.")
+
+    # THE VERIFIED BYTES, RE-READ AS A PLAIN DICT — and the return value of
+    # `construct_event` is deliberately discarded to get here.
+    #
+    # It returns a `stripe.Event`, which since stripe-python 15 is NOT a dict:
+    # `event.get("type")` raises AttributeError ("'get' is a dict method, but a
+    # Event is not a dict"), so this handler 500'd on every genuinely-signed
+    # delivery — a payment taken and never marked paid, which is the exact
+    # failure the two-secret gate exists to prevent. It survived because every
+    # test stubbed `construct_event` to hand back `json.loads(payload)`, so the
+    # real return type was never once exercised.
+    #
+    # Signature verification is what the SDK is for; the shape of the data is
+    # ours. Parsing the same bytes it just authenticated keeps every downstream
+    # `.get()` working — here and in `record_checkout_payment`, whose session
+    # object would otherwise be a StripeObject with the same problem.
+    try:
+        event = json.loads(payload)
+    except Exception:
+        logger.warning("[stripe] verified signature but unparseable body")
+        raise HTTPException(status_code=400, detail="Bad payload.")
 
     kind = event.get("type")
     obj = (event.get("data") or {}).get("object") or {}

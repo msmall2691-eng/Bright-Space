@@ -833,6 +833,61 @@ def my_payout_account(
     return {**_stripe_state(current_user), "available": configured()}
 
 
+@router.post("/me/payouts/refresh",
+             dependencies=[Depends(rate_limit(6, 3600, "crew_payout_refresh"))])
+def refresh_my_payout_account(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_role("cleaner")),
+):
+    """Ask Stripe for my payout state right now, instead of waiting to be told.
+
+    THE BACKUP, NOT THE MECHANISM. `account.updated` on the Connect endpoint is
+    how this normally stays current; this exists for the delivery that goes
+    missing, and for the gap before that second endpoint is configured at all.
+
+    Without it the sub is stuck in a loop that looks like a bug: they finish
+    at Stripe, come back to a screen still saying "Stripe needs a bit more from
+    you", tap "Finish setting it up", get told by Stripe they're already done,
+    and return to the same amber line. Nothing they can do from inside the app
+    changes it, because the only writer of that flag is an event that never
+    arrived.
+
+    USER-INITIATED ONLY — one Stripe call per deliberate tap, never on render
+    and never on a tick (brightbase-economy, scheduling-invariants R1). Metered
+    at 6/hour because a button that costs an API call is a button somebody will
+    lean on.
+
+    Writes the same three cached columns the webhook writes, so both paths
+    agree about what "current" means.
+    """
+    from integrations.stripe_connect import account_status, configured
+
+    u = db.query(User).filter(User.id == current_user.id).first()
+    if not u:
+        raise HTTPException(status_code=404, detail="Not found.")
+    if not configured() or not u.stripe_account_id:
+        # Nothing to refresh: either Stripe is off, or they have never started
+        # setup. Return the current state rather than an error — the screen
+        # renders the same three states either way.
+        return {**_stripe_state(u), "available": configured(), "refreshed": False}
+
+    state = account_status(u.stripe_account_id)
+    if state is None:
+        # The read failed. Say so plainly rather than reporting stale data as
+        # fresh — a sub who taps refresh and sees no change deserves to know
+        # whether that means "still pending" or "we could not ask".
+        raise HTTPException(
+            status_code=502,
+            detail="Couldn't check with Stripe just now. Please try again in a moment.")
+
+    u.stripe_payouts_enabled = state["payouts_enabled"]
+    u.stripe_requirements = state["requirements"]
+    u.stripe_synced_at = datetime.now(timezone.utc).replace(tzinfo=None)
+    db.commit()
+    db.refresh(u)
+    return {**_stripe_state(u), "available": True, "refreshed": True}
+
+
 @router.get("/me/earnings")
 def my_earnings(
     db: Session = Depends(get_db),

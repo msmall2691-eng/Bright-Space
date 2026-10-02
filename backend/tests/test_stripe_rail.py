@@ -20,6 +20,7 @@ finished onboarding is reported and skipped, never sent and never silently
 dropped; a reversed transfer puts the row back to `due` and clears `paid_at`,
 because a ledger that says "paid" about money that came home is a wrong 1099.
 """
+import json
 import uuid
 from datetime import date, datetime
 
@@ -389,13 +390,20 @@ def _webhook(monkeypatch, kind, obj):
     The signature itself is pinned in test_stripe_connect.py — including that a
     MISSING secret rejects. Repeating it here would test the same guard twice
     and hide what these cases are actually about.
+
+    THE EVENT GOES IN THE BODY, not just in the stub's return value. The
+    handler reads the verified BYTES and discards what `construct_event`
+    hands back, because the real thing returns a `stripe.Event` and a
+    `stripe.Event` has no `.get` (see modules/payroll/router.py). A stub that
+    returned the dict while the body stayed `{}` passed against a handler
+    that would have raised in production.
     """
     import stripe
+    body = json.dumps({"type": kind, "data": {"object": obj}}).encode()
     monkeypatch.setenv("STRIPE_WEBHOOK_SECRET", "whsec_test")
     monkeypatch.setattr(stripe.Webhook, "construct_event",
-                        staticmethod(lambda payload, sig, secret: {
-                            "type": kind, "data": {"object": obj}}))
-    r = _api().post("/api/payroll/stripe/webhook", content=b"{}",
+                        staticmethod(lambda payload, sig, secret: None))
+    r = _api().post("/api/payroll/stripe/webhook", content=body,
                     headers={"stripe-signature": "t=1,v1=x"})
     assert r.status_code == 200, r.text
     return r.json()

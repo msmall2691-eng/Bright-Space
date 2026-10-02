@@ -7105,6 +7105,45 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/crew/me/payouts/refresh": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Refresh My Payout Account
+         * @description Ask Stripe for my payout state right now, instead of waiting to be told.
+         *
+         *     THE BACKUP, NOT THE MECHANISM. `account.updated` on the Connect endpoint is
+         *     how this normally stays current; this exists for the delivery that goes
+         *     missing, and for the gap before that second endpoint is configured at all.
+         *
+         *     Without it the sub is stuck in a loop that looks like a bug: they finish
+         *     at Stripe, come back to a screen still saying "Stripe needs a bit more from
+         *     you", tap "Finish setting it up", get told by Stripe they're already done,
+         *     and return to the same amber line. Nothing they can do from inside the app
+         *     changes it, because the only writer of that flag is an event that never
+         *     arrived.
+         *
+         *     USER-INITIATED ONLY — one Stripe call per deliberate tap, never on render
+         *     and never on a tick (brightbase-economy, scheduling-invariants R1). Metered
+         *     at 6/hour because a button that costs an API call is a button somebody will
+         *     lean on.
+         *
+         *     Writes the same three cached columns the webhook writes, so both paths
+         *     agree about what "current" means.
+         */
+        post: operations["refresh_my_payout_account_api_crew_me_payouts_refresh_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/crew/me/earnings": {
         parameters: {
             query?: never;
@@ -21854,6 +21893,26 @@ export interface operations {
         };
     };
     my_payout_account_api_crew_me_payouts_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    refresh_my_payout_account_api_crew_me_payouts_refresh_post: {
         parameters: {
             query?: never;
             header?: never;
