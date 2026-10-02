@@ -1,52 +1,45 @@
 /**
  * Ops Board — the /dashboard home.
  *
- * THREE THINGS, IN ORDER. A compact KPI band; the REAL Schedule calendar
- * beside ONE "needs you now" feed, above the fold; then the bench below it,
- * and her own arrangeable widgets last. That is the whole page.
+ * ABOVE THE FOLD IS A BUDGET (Oct 2026 declutter). At ~940px the first paint is
+ * exactly three things: a trimmed KPI strip, the REAL Schedule calendar, and
+ * the Messages box (overdue replies — the #1 office surface). Everything else
+ * packs below without a long scroll.
  *
- * IT GOT THERE BY SUBTRACTION (Oct 2026). The owner's report was all four of
- * "too much at once", "slow", "dated" and "can't find what I need", which is
- * one problem wearing four hats: the page had accreted to ~17 zones across
- * three prior passes, each of which ADDED. So this pass only removed. Cut from
- * the landing page, by her call, box by box:
+ * THIS PASS CUT THE DUPLICATION, NOT THE COLOR. Home had become a second copy
+ * of a page that now exists on its own: the new Flow page (/flow) is the
+ * lead→cash pipeline — New requests → Quote out → Ready to book → Booked →
+ * To send → Unpaid, each row with its next action. So Home's feed sections that
+ * listed the SAME records — "Requests & quotes", "Needs a cleaner", "Money" —
+ * were redundant with Flow. Each is now a SHORT summary card (the top line +
+ * the count) that links OUT to the surface that owns the full list (Flow for
+ * incoming work and coverage, Billing for money) instead of repeating every
+ * row. That single change removed most of the scroll.
  *
- *   - the AI daily brief and the approval queue → the Assistant tab
- *     (pages/Workspace.jsx). Reading and approving agent output is what that
- *     page is for; in front of the calendar they were an interruption, and two
- *     AI completions racing the real data on first paint;
- *   - the money / crew / feed-health / recurring snapshot boxes and the two
- *     trend charts. The KPI band already answers "is today OK" in one row;
- *   - the crew-activity list and the foldable "System health" group.
+ * WHAT STAYED A LIST. Messages: the office answers texts/emails from here, so
+ * it keeps a tight capped list with inline Resolve/Reply (runAction) + Inbox →.
+ * Systems and Safe-to-Ignore stay on the board but collapsed to one quiet line
+ * each (plumbing + inbox noise — present, never front and centre). Notes and
+ * Ask Nova dropped to the smallest, last zone so they stop dominating.
  *
- * WHAT A CUT BOX MUST NOT TAKE WITH IT. Those boxes sat above real work: the
- * money and systems ATTENTION ITEMS. An overdue invoice does not stop
- * mattering because its box was cut, so every section now renders in ONE feed
- * in SECTION_RANK order (messages → requests → needs_cleaner → money →
- * systems → safe_to_ignore) beside the calendar. The old FEED/MONEY/PLUMBING
- * split dealt those same sections across three places on the page, which is
- * exactly how a thing you were looking for ended up in a column you had
- * stopped scrolling to. There is a test pinning this; keep it green.
+ * ONE FETCH, PLUS WHAT SCROLLS INTO VIEW. `GET /api/dashboard/board` drives the
+ * strip, the Messages list AND the summary counts (derived client-side from the
+ * section item lists it already ships — no new field, no new request). The
+ * backend ships render-ready strings, so this file is a pure view (see
+ * backend/services/board_service.py). The calendar runs its own
+ * useScheduleData(month) fetch. The self-fetching boxes below the fold are
+ * wrapped in <WhenVisible> so their requests happen when scrolled to. Don't add
+ * an eager fetch here.
  *
- * ONE FETCH, PLUS WHAT SCROLLS INTO VIEW. `GET /api/dashboard/board` drives
- * the band and the whole feed; the backend ships render-ready strings, so this
- * file is a pure view (see backend/services/board_service.py). The calendar
- * runs its own useScheduleData(month) fetch (/api/schedule/week, correctly
- * paged). The self-fetching boxes below the fold are wrapped in <WhenVisible>,
- * so their requests happen when they're scrolled to rather than all at once on
- * load. Don't add an eager fetch here — nine of them racing is what "slow and
- * janky" was.
- *
- * Feed sections cap at PRIMARY_ROW_CAP rows with a "+N more" into the page
- * that owns the full set: this is a triage surface, not a scroll-forever list.
  * Cleared-state persists in localStorage. `/` opens search; severity filters
- * and the cleared-progress meter live behind the Filters disclosure.
+ * and the cleared-progress meter live behind the Filters disclosure, scoped to
+ * the Messages list (the only full list left on the page).
  *
  * Design: built entirely on the app's semantic tokens (bg / panel / ink /
  * hairline + the indigo accent), so it re-skins with the active theme and
  * lands the dark iOS look under `theme-console`. Sections are flat panels with
  * a header and hairline-divided rows; color is reserved for status, never
- * decoration.
+ * decoration — no filled pills, tinted resting banners, or count bubbles.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
@@ -98,23 +91,30 @@ function matchesQuery(it, q) {
 }
 
 /* ── Top stats band ───────────────────────────────────────────────────────── */
-/** ONE compact, quiet KPI row at the very top of Home. Used to be two
- *  separate bordered boxes — a "Communication" strip up here, and a second
- *  stat-tile band lower down the page (StatBand) whose "People waiting" and
- *  "New leads" tiles duplicated numbers the top strip already showed. The
- *  owner: "smaller boxes... it's almost a little redundant." Now it's one
- *  band, once, right under the header where it's seen without scrolling —
- *  client-side comms counts (unread messages, crew chats — from the shared
- *  summary poll) first since they're the most time-sensitive, then the
- *  board's own stat tiles. Comms/crew entries are admin+manager only (those
- *  pages 403 for other roles); the rest of the stats stay visible to
- *  everyone, matching the old StatBand's role-agnostic behavior. */
+// Trim to the handful that actually moves the needle (owner: "smaller boxes...
+// it's almost a little redundant"). The board ships six tiles; two were low
+// signal next to the rest of Home — "This weekend" repeats what the calendar
+// right below already shows at a glance, and "People waiting" repeats the
+// unread-messages comms count AND the Messages box directly beneath it. We keep
+// the four that nothing else on first paint answers.
+const STAT_KEEP = new Set(['unassigned', 'overdue', 'leads', 'collected'])
+
+/** ONE compact, quiet KPI row at the very top of Home. Comms counts (from the
+ *  shared summary poll — no extra request) lead since they're the most
+ *  time-sensitive, then the board's trimmed stat tiles. "Crew chats" only
+ *  appears when there's actually one waiting (it read "0" most of the time —
+ *  pure noise). Comms entries are admin+manager only (those pages 403 for other
+ *  roles); the stat tiles stay visible to everyone. */
 function TopBand({ stats, unreadConversations, crewUnreadThreads, showComms, navigate }) {
   const commsEntries = showComms ? [
     { key: 'unread', n: unreadConversations, label: 'unread messages', to: '/comms' },
-    { key: 'crew', n: crewUnreadThreads, label: 'crew chats', to: '/comms?view=crew' },
+    // Only when it's non-zero — a "crew chats: 0" tile was dead weight.
+    ...(crewUnreadThreads > 0
+      ? [{ key: 'crew', n: crewUnreadThreads, label: 'crew chats', to: '/comms?view=crew' }]
+      : []),
   ] : []
-  if (!commsEntries.length && !stats?.length) return null
+  const tiles = (stats || []).filter(s => STAT_KEEP.has(s.key))
+  if (!commsEntries.length && !tiles.length) return null
   return (
     <div className="mt-4 flex items-stretch divide-x divide-hairline overflow-x-auto rounded-xl border border-hairline bg-panel">
       {commsEntries.map(e => (
@@ -129,7 +129,7 @@ function TopBand({ stats, unreadConversations, crewUnreadThreads, showComms, nav
           <span className="whitespace-nowrap text-[10.5px] text-ink-3">{e.label}</span>
         </button>
       ))}
-      {(stats || []).map(stat => (
+      {tiles.map(stat => (
         <button key={stat.key}
           onClick={() => stat.href && navigate(stat.href)}
           title={stat.sub || undefined}
@@ -244,14 +244,25 @@ function BoardRow({ item, cleared, onToggle, onAction, actioningKey, confirmingK
   )
 }
 
-// Owner report: the inbox-triage pile (marketing email, delivery-failure
-// notices — literally named "Safe to Ignore" by the backend) rendered fully
-// expanded by default, so Home read as "so busy... full of spam." The bulk
-// "Clear the noise" action already existed but only inside the separate Ask
-// panel, disconnected from the pile it clears. This section now collapses to
-// one quiet line by default with the clear action right there — reviewing
-// individual items is still one tap away, nothing is deleted automatically.
-const COLLAPSED_BY_DEFAULT = new Set(['safe_to_ignore'])
+// Plumbing + inbox noise fold to one quiet line each by default. Systems
+// (integration health, duplicate-client nudges) and Safe-to-Ignore (marketing
+// email, delivery-failure notices) are useful but never front-and-centre — Home
+// read as "so busy... full of spam" when they rendered expanded. Reviewing the
+// individual rows is one tap away; nothing is deleted automatically.
+const COLLAPSED_BY_DEFAULT = new Set(['systems', 'safe_to_ignore'])
+
+// Only Safe-to-Ignore has a server-side bulk clear (the Gmail-triage
+// delete-all endpoint). Systems rows are integration-health items the triage
+// endpoint doesn't own, so no "Clear all" is offered there — it would silently
+// miss them.
+const BULK_CLEARABLE = new Set(['safe_to_ignore'])
+
+// The collapsed one-liner reads as what the section IS, not a generic count.
+function collapsedHeading(key, n) {
+  if (key === 'safe_to_ignore') return `${n} item${n === 1 ? '' : 's'} you can ignore`
+  if (key === 'systems') return `${n} system notice${n === 1 ? '' : 's'}`
+  return `${n} item${n === 1 ? '' : 's'}`
+}
 
 function Section({ section, items, clearedSet, onToggle, onAction, actioningKey, confirmingKey, setConfirmingKey, headerLink, navigate, onClearAll, clearingSection, filtersActive, maxRows }) {
   const [open, setOpen] = useState(() => !COLLAPSED_BY_DEFAULT.has(section.key))
@@ -269,7 +280,7 @@ function Section({ section, items, clearedSet, onToggle, onAction, actioningKey,
   // "Clear all" while filtered would silently delete cards never shown. Only
   // offer the bulk action with nothing narrowing the view; per-row Delete
   // still works on whatever IS visible.
-  const canClearAll = collapsible && !filtersActive
+  const canClearAll = BULK_CLEARABLE.has(section.key) && !filtersActive
   const clearKey = `clear-section:${section.key}`
   const confirmingClear = confirmingKey === clearKey
   return (
@@ -280,7 +291,7 @@ function Section({ section, items, clearedSet, onToggle, onAction, actioningKey,
           <button onClick={() => setOpen(v => !v)}
             className="flex min-w-0 flex-1 items-center gap-1.5 text-left">
             <h2 className="text-[11px] font-medium text-ink-3">
-              {items.length} item{items.length === 1 ? '' : 's'} you can ignore
+              {collapsedHeading(section.key, items.length)}
             </h2>
             <ChevronDown className={`h-3 w-3 shrink-0 text-ink-3 transition-transform ${open ? 'rotate-180' : ''}`} />
           </button>
@@ -331,40 +342,72 @@ function Section({ section, items, clearedSet, onToggle, onAction, actioningKey,
   )
 }
 
+// A section that now lives on its own page (Flow / Billing) collapses to this:
+// the top line + the count, linking OUT instead of repeating every row. Home
+// used to re-list "Requests & quotes", "Needs a cleaner" and "Money" in full —
+// the same records the Flow pipeline already owns — which was most of the
+// scroll. The count and preview are derived from the section's item list the
+// board payload already ships (no new field, no new fetch). Renders nothing
+// when the section is empty (no all-clear furniture).
+function SummaryCard({ meta, items, navigate }) {
+  if (!items.length) return null
+  const [top, ...rest] = items
+  const go = () => navigate(meta.link.to)
+  return (
+    <section className="flex flex-col overflow-hidden rounded-2xl border border-hairline bg-panel transition-colors hover:border-hairline-2">
+      <header className="flex items-center gap-2 border-b border-hairline px-3.5 py-2.5">
+        <span className="text-[13px] leading-none" aria-hidden="true">{meta.icon}</span>
+        <h2 className="text-[11px] font-medium text-ink-3">{meta.title}</h2>
+        {/* Plain number, not a count bubble (owner veto). */}
+        <span className="ml-auto text-[11px] font-semibold tabular-nums text-ink-3">{items.length}</span>
+      </header>
+      <button onClick={go}
+        className="flex flex-1 flex-col items-start gap-1 px-3.5 py-3 text-left transition-colors hover:bg-bg-2">
+        <p className="line-clamp-2 text-[13px] font-semibold leading-snug text-ink">{top.title}</p>
+        {top.body && <p className="line-clamp-1 text-[11.5px] leading-snug text-ink-2">{top.body}</p>}
+        {rest.length > 0 && <p className="text-[11px] text-ink-3">+{rest.length} more</p>}
+      </button>
+      <footer className="flex border-t border-hairline px-3.5 py-2">
+        <button onClick={go}
+          className="inline-flex items-center gap-0.5 text-[11px] font-semibold text-indigo-600 transition-all hover:gap-1 dark:text-indigo-400">
+          {meta.link.label}<ArrowRight className="h-3 w-3" />
+        </button>
+      </footer>
+    </section>
+  )
+}
+
 /* ── Page ─────────────────────────────────────────────────────────────────── */
 
 // Home is a command-center bento, not a vertical stack of full-width bands
 // (owner: "worst dashboard layout ever... wasted space... useful boxes, more
-// actions"). Four tiers, top to bottom: a compact KPI strip; the schedule
-// beside the "needs you now" action feed, above the fold; money / crew /
-// marketplace as equal bento boxes; then plumbing (feed, recurring & systems
-// health) quiet at the bottom. SECTION_RANK still orders the cards WITHIN a
-// tier regardless of payload order.
-// `today_schedule` is deliberately absent: today's visits now render in the
-// real Schedule calendar (components/board/HomeScheduleCalendar.jsx) rather than
-// a second text list of the same jobs — the owner asked to "immediately have
-// eyes on the cal schedule", and carrying both was exactly the redundancy she
-// flagged. The backend no longer emits that section either.
-// One subject per box. The old mixed sections (Needs You Today = jobs + replies
-// + quote nudges; Real People Waiting = conversations + leads) are gone — that
-// grouping was the "chaos", not the styling.
-const SECTION_RANK = { messages: 0, requests: 1, needs_cleaner: 2, money: 3, systems: 4, safe_to_ignore: 5 }
-// SECTION_RANK above is now the only tiering: every section renders in that
-// order in ONE feed beside the schedule. The old FEED/MONEY/PLUMBING split
-// dealt the same sections across three places on the page, which is how a
-// thing you were looking for ended up in a column you'd stopped scrolling to.
+// actions"). `today_schedule` is deliberately absent: today's visits render in
+// the real Schedule calendar (HomeScheduleCalendar.jsx), not a second text list.
+//
+// Three groups of sections now, by how they render:
+//   - messages → stays a tight capped LIST above the fold (the office answers
+//     from here; inline Resolve/Reply);
+//   - requests / needs_cleaner / money → SUMMARY CARDS that link to the page
+//     that owns the full list (Flow / Billing), because that page now exists
+//     and re-listing every row here was the duplication;
+//   - systems / safe_to_ignore → one quiet COLLAPSED line each, below the fold.
+const SUMMARY_SECTIONS = ['requests', 'needs_cleaner', 'money']
+
+// Each summary card's header + the surface it hands off to. Requests/quotes and
+// coverage gaps both live on the Flow pipeline now; money lives on Billing.
+const SUMMARY_META = {
+  requests: { icon: '📋', title: 'Requests & quotes', link: { label: 'Open Flow', to: '/flow' } },
+  needs_cleaner: { icon: '🧹', title: 'Needs a cleaner', link: { label: 'Open Flow', to: '/flow' } },
+  money: { icon: '💵', title: 'Money', link: { label: 'Billing', to: '/billing' } },
+}
+
 const SECTION_LINKS = {
   messages: { label: 'Inbox', to: '/comms' },
-  requests: { label: 'Requests', to: '/requests' },
-  // The office doesn't dispatch — a job with nobody on it gets OPENED to the
-  // bench for a cleaner to claim. The label says the action she actually takes.
-  needs_cleaner: { label: 'Open to crew', to: '/schedule' },
-  money: { label: 'Billing', to: '/billing' },
 }
-// Every section caps at this many rows on Home before folding the rest behind
-// its header "View all" link — the owner: "not have to scroll so much... it's
-// almost a little redundant." The feed sections are the ones that can grow.
-const PRIMARY_ROW_CAP = 5
+// The Messages list caps tight before folding the rest behind "+N more → Inbox"
+// — it's a glance at what's overdue, not the whole inbox (owner: "not have to
+// scroll so much").
+const MESSAGE_CAP = 4
 
 export default function OpsBoard() {
   const navigate = useNavigate()
@@ -504,51 +547,52 @@ export default function OpsBoard() {
   }, [load])
 
   const sections = data?.sections || []
-  // Never undefined: each box guards its own slice, and a box whose slice
-  // failed server-side simply doesn't render (see build_snapshot).
-  const snapshot = data?.snapshot || {}
-  const allItems = useMemo(() => sections.flatMap(s => s.items), [sections])
+  const byKey = useMemo(() => Object.fromEntries(sections.map(s => [s.key, s])), [sections])
+
+  // The Messages section is the only full LIST left on Home, so the triage
+  // machinery (search / severity filter / cleared progress) is scoped to it.
+  const messageItems = useMemo(() => byKey.messages?.items || [], [byKey])
 
   const counts = useMemo(() => {
     const c = { all: 0, urgent: 0, watch: 0, info: 0, good: 0, recurring: 0 }
-    for (const it of allItems) { c.all += 1; c[it.severity] = (c[it.severity] || 0) + 1 }
+    for (const it of messageItems) { c.all += 1; c[it.severity] = (c[it.severity] || 0) + 1 }
     return c
-  }, [allItems])
+  }, [messageItems])
 
-  const total = allItems.length
+  const total = messageItems.length
   const clearedCount = useMemo(
-    () => allItems.reduce((n, it) => n + (cleared.has(it.id) ? 1 : 0), 0),
-    [allItems, cleared],
+    () => messageItems.reduce((n, it) => n + (cleared.has(it.id) ? 1 : 0), 0),
+    [messageItems, cleared],
   )
 
   const q = query.trim().toLowerCase()
-  const visibleBySection = useMemo(() => {
-    const ordered = [...sections].sort(
-      (a, b) => (SECTION_RANK[a.key] ?? 99) - (SECTION_RANK[b.key] ?? 99))
-    return ordered.map(s => ({
-      section: s,
-      items: s.items.filter(it => {
-        if (filter !== 'all' && it.severity !== filter) return false
-        if (hideCleared && cleared.has(it.id)) return false
-        if (q && !matchesQuery(it, q)) return false
-        return true
-      }),
-    }))
-  }, [sections, filter, hideCleared, cleared, q])
-
-  // ONE feed, not three. The sections used to be dealt across the page — some
-  // beside the schedule, money in its own bento column, systems folded away at
-  // the bottom — which is how "I can't find what I need" happens: the thing you
-  // were looking for was in a column you'd stopped scrolling to. visibleBySection
-  // is already ordered by SECTION_RANK (messages → requests → needs_cleaner →
-  // money → systems → safe_to_ignore), so this is simply that order, in one
-  // place, beside the calendar. Nothing is dropped by the cut: the money and
-  // systems ATTENTION ITEMS still appear here even though their snapshot boxes
-  // are gone from the landing page.
-  const feedSections = visibleBySection
-
-  const anyVisible = visibleBySection.some(v => v.items.length > 0)
   const filtersActive = filter !== 'all' || !!q || hideCleared
+  const visibleMessages = useMemo(() => messageItems.filter(it => {
+    if (filter !== 'all' && it.severity !== filter) return false
+    if (hideCleared && cleared.has(it.id)) return false
+    if (q && !matchesQuery(it, q)) return false
+    return true
+  }), [messageItems, filter, hideCleared, cleared, q])
+
+  // The three sections that Flow / Billing now own in full. Rendered as summary
+  // cards, not row lists — the cut that removed most of the scroll. Counts and
+  // previews come straight off the board payload's own item lists.
+  const summaryData = useMemo(
+    () => SUMMARY_SECTIONS.map(key => ({ key, items: byKey[key]?.items || [] }))
+      .filter(s => s.items.length > 0),
+    [byKey],
+  )
+
+  // Plumbing + noise: present on the board, one quiet collapsed line each.
+  const systemsSection = byKey.systems
+  const safeSection = byKey.safe_to_ignore
+
+  // The whole-board caught-up check — nothing waiting anywhere.
+  const anyAttention =
+    messageItems.length > 0 ||
+    summaryData.length > 0 ||
+    (systemsSection?.items.length || 0) > 0 ||
+    (safeSection?.items.length || 0) > 0
 
   if (error && !loading) {
     return (
@@ -634,126 +678,168 @@ export default function OpsBoard() {
           </div>
         ) : (
           <>
-            {/* ── Above the fold: the schedule and what needs you now, side by
-                side ──────────────────────────────────────────────────────────
-                The owner asked to "immediately have eyes on the cal schedule"
-                AND wanted "more actions, more movement" without scrolling. So
-                the REAL Schedule calendar (drag-to-reschedule and all) sits
-                beside a single action feed — the approval queue plus every
-                attention card that wants a decision now — instead of the old
-                full-width calendar stacked on a long column of sections.
-                Collapses to one column below the shell: breakpoint. */}
+            {/* ── Above the fold: the schedule beside the Messages box ───────
+                At ~940px first paint is the trimmed KPI strip (above), the REAL
+                Schedule calendar (drag-to-reschedule and all), and Messages —
+                the three things the owner looks at first. The pipeline sections
+                moved to summary cards below; what's left beside the calendar is
+                the one list she answers from. Collapses to one column below the
+                shell: breakpoint. */}
             <div data-testid="home-abovefold"
               className="mt-4 grid grid-cols-1 gap-4 shell:grid-cols-[minmax(0,1.55fr)_minmax(0,1fr)] bb-board-in">
-              {/* Rendered regardless of the attention board: an empty feed must
-                  never hide the week's work. */}
+              {/* Rendered regardless of the feed: an empty inbox must never hide
+                  the week's work. */}
               <div data-testid="home-calendar-slot">
                 <HomeScheduleCalendar navigate={navigate} />
               </div>
 
               <div className="flex flex-col gap-4">
-                {/* The attention header + triage machinery (search / severity /
-                    cleared progress), folded behind one quiet disclosure so the
-                    feed reads calm (owner: "this is so busy"). `/` opens it. */}
-                <div className="flex items-center gap-2.5">
-                  <h2 className="text-[11px] font-medium text-ink-3">Needs you now</h2>
-                  <span className="text-[11px] tabular-nums text-ink-3">{clearedCount} of {total} cleared</span>
-                  <button
-                    onClick={() => setToolsOpen(v => !v)}
-                    aria-expanded={toolsOpen}
-                    className="ml-auto inline-flex h-7 items-center gap-1.5 rounded-md border border-hairline-2 bg-panel px-2 text-[11px] font-medium text-ink-2 hover:bg-bg-2">
-                    <SlidersHorizontal className="h-3 w-3" />
-                    Filters
-                    {filtersActive && <span className="h-1.5 w-1.5 rounded-full bg-indigo-600" aria-hidden="true" />}
-                    <ChevronDown className={`h-3 w-3 transition-transform ${toolsOpen ? 'rotate-180' : ''}`} />
-                  </button>
-                </div>
+                {messageItems.length > 0 ? (
+                  <>
+                    {/* Triage machinery (search / severity / cleared progress),
+                        scoped to the Messages list, folded behind one quiet
+                        disclosure so it reads calm (owner: "this is so busy").
+                        `/` opens it. */}
+                    <div className="flex items-center gap-2.5">
+                      <span className="text-[11px] tabular-nums text-ink-3">{clearedCount} of {total} cleared</span>
+                      <button
+                        onClick={() => setToolsOpen(v => !v)}
+                        aria-expanded={toolsOpen}
+                        className="ml-auto inline-flex h-7 items-center gap-1.5 rounded-md border border-hairline-2 bg-panel px-2 text-[11px] font-medium text-ink-2 hover:bg-bg-2">
+                        <SlidersHorizontal className="h-3 w-3" />
+                        Filters
+                        {filtersActive && <span className="h-1.5 w-1.5 rounded-full bg-indigo-600" aria-hidden="true" />}
+                        <ChevronDown className={`h-3 w-3 transition-transform ${toolsOpen ? 'rotate-180' : ''}`} />
+                      </button>
+                    </div>
 
-                {toolsOpen && (
-                  <div className="space-y-2.5 rounded-xl border border-hairline bg-panel p-3">
-                    <div className="relative">
-                      <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-ink-3" />
-                      <input
-                        ref={searchRef}
-                        value={query}
-                        onChange={e => setQuery(e.target.value)}
-                        placeholder="Search everything…  (press /)"
-                        className="w-full rounded-lg border border-hairline bg-bg py-2 pl-9 pr-3 text-[13px] text-ink placeholder:text-ink-3 focus:border-indigo-500 focus:outline-hidden" />
-                    </div>
-                    {/* Zero-count severities are noise ("Good 0") — only offered while active. */}
-                    <div className="flex flex-wrap gap-1.5">
-                      {SEV_ORDER.filter(sev => sev === 'all' || (counts[sev] || 0) > 0 || filter === sev).map(sev => (
-                        <FilterChip key={sev} sev={sev} count={counts[sev] || 0}
-                          active={filter === sev} onClick={() => setFilter(sev)} />
-                      ))}
-                    </div>
-                    <div className="flex items-center gap-3">
-                      <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-bg-2">
-                        <div className="h-full rounded-full bg-emerald-500 transition-all" style={{ width: `${pct}%` }} />
+                    {toolsOpen && (
+                      <div className="space-y-2.5 rounded-xl border border-hairline bg-panel p-3">
+                        <div className="relative">
+                          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-ink-3" />
+                          <input
+                            ref={searchRef}
+                            value={query}
+                            onChange={e => setQuery(e.target.value)}
+                            placeholder="Search messages…  (press /)"
+                            className="w-full rounded-lg border border-hairline bg-bg py-2 pl-9 pr-3 text-[13px] text-ink placeholder:text-ink-3 focus:border-indigo-500 focus:outline-hidden" />
+                        </div>
+                        {/* Zero-count severities are noise ("Good 0") — only offered while active. */}
+                        <div className="flex flex-wrap gap-1.5">
+                          {SEV_ORDER.filter(sev => sev === 'all' || (counts[sev] || 0) > 0 || filter === sev).map(sev => (
+                            <FilterChip key={sev} sev={sev} count={counts[sev] || 0}
+                              active={filter === sev} onClick={() => setFilter(sev)} />
+                          ))}
+                        </div>
+                        <div className="flex items-center gap-3">
+                          <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-bg-2">
+                            <div className="h-full rounded-full bg-emerald-500 transition-all" style={{ width: `${pct}%` }} />
+                          </div>
+                          <div className="flex shrink-0 items-center gap-1.5">
+                            <button
+                              onClick={() => setHideCleared(v => !v)}
+                              className="inline-flex h-7 items-center gap-1 rounded-md border border-hairline-2 bg-panel px-2 text-[11px] font-medium text-ink-2 hover:bg-bg-2">
+                              {hideCleared ? <Eye className="h-3 w-3" /> : <EyeOff className="h-3 w-3" />}
+                              {hideCleared ? 'Show cleared' : 'Hide cleared'}
+                            </button>
+                            <button
+                              onClick={resetCleared}
+                              disabled={!clearedCount}
+                              className="inline-flex h-7 items-center gap-1 rounded-md border border-hairline-2 bg-panel px-2 text-[11px] font-medium text-ink-2 hover:bg-bg-2 disabled:opacity-40">
+                              <RotateCcw className="h-3 w-3" /> Reset
+                            </button>
+                          </div>
+                        </div>
                       </div>
-                      <div className="flex shrink-0 items-center gap-1.5">
-                        <button
-                          onClick={() => setHideCleared(v => !v)}
-                          className="inline-flex h-7 items-center gap-1 rounded-md border border-hairline-2 bg-panel px-2 text-[11px] font-medium text-ink-2 hover:bg-bg-2">
-                          {hideCleared ? <Eye className="h-3 w-3" /> : <EyeOff className="h-3 w-3" />}
-                          {hideCleared ? 'Show cleared' : 'Hide cleared'}
-                        </button>
-                        <button
-                          onClick={resetCleared}
-                          disabled={!clearedCount}
-                          className="inline-flex h-7 items-center gap-1 rounded-md border border-hairline-2 bg-panel px-2 text-[11px] font-medium text-ink-2 hover:bg-bg-2 disabled:opacity-40">
-                          <RotateCcw className="h-3 w-3" /> Reset
-                        </button>
+                    )}
+
+                    {visibleMessages.length > 0 ? (
+                      <Section section={byKey.messages} items={visibleMessages}
+                        clearedSet={cleared} onToggle={toggleCleared}
+                        onAction={runAction} actioningKey={actioningKey} confirmingKey={confirmingKey}
+                        headerLink={SECTION_LINKS.messages} navigate={navigate}
+                        onClearAll={clearAllInSection} clearingSection={clearingSection}
+                        setConfirmingKey={setConfirmingKey} filtersActive={filtersActive}
+                        maxRows={MESSAGE_CAP} />
+                    ) : (
+                      <div className="rounded-2xl border border-hairline bg-panel px-3.5 py-6 text-center">
+                        <p className="text-[13px] font-semibold text-ink">No matches</p>
+                        <p className="mt-0.5 text-[11.5px] text-ink-3">Try a different search or filter.</p>
                       </div>
-                    </div>
+                    )}
+                  </>
+                ) : anyAttention ? (
+                  /* Inbox is clear but other work waits below — a single quiet
+                     line, not a full all-clear panel (owner veto on furniture). */
+                  <div className="flex items-center gap-2.5 rounded-2xl border border-hairline bg-panel px-3.5 py-3">
+                    <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-emerald-500" aria-hidden="true" />
+                    <span className="min-w-0 flex-1 text-[12.5px] text-ink-2">No messages waiting.</span>
+                    <button onClick={() => navigate('/comms')}
+                      className="inline-flex shrink-0 items-center gap-0.5 text-[11px] font-semibold text-indigo-600 transition-all hover:gap-1 dark:text-indigo-400">
+                      Inbox<ArrowRight className="h-3 w-3" />
+                    </button>
                   </div>
-                )}
-
-                {/* The action feed — messages, incoming work, coverage gaps —
-                    one concern per box, each capped with a "+N more" into the
-                    page that owns the full set. */}
-                {feedSections.map(({ section, items }) => (
-                  <Section key={section.key} section={section} items={items}
-                    clearedSet={cleared} onToggle={toggleCleared}
-                    onAction={runAction} actioningKey={actioningKey} confirmingKey={confirmingKey}
-                    headerLink={SECTION_LINKS[section.key]} navigate={navigate}
-                    onClearAll={clearAllInSection} clearingSection={clearingSection}
-                    setConfirmingKey={setConfirmingKey} filtersActive={filtersActive}
-                    maxRows={PRIMARY_ROW_CAP} />
-                ))}
-
-                {!anyVisible && (
-                  <div className="flex flex-col items-center justify-center rounded-2xl border border-hairline bg-panel px-4 py-10 text-center">
-                    <div className="grid h-12 w-12 place-items-center rounded-full bg-emerald-500/10">
-                      <Check className="h-6 w-6 text-emerald-500" strokeWidth={2.5} />
+                ) : (
+                  <div className="flex items-center gap-2.5 rounded-2xl border border-hairline bg-panel px-3.5 py-4">
+                    <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-emerald-500" aria-hidden="true" />
+                    <div className="min-w-0">
+                      <p className="text-[13px] font-semibold text-ink">You're all caught up</p>
+                      <p className="text-[11.5px] text-ink-3">Nothing needs your attention right now.</p>
                     </div>
-                    <p className="mt-3 text-sm font-semibold text-ink">
-                      {total === 0 ? "You're all caught up" : query || filter !== 'all' ? 'No matches' : 'Everything cleared'}
-                    </p>
-                    <p className="mt-0.5 text-[12px] text-ink-3">
-                      {total === 0
-                        ? 'Nothing needs your attention right now.'
-                        : query || filter !== 'all'
-                          ? 'Try a different search or filter.'
-                          : 'Nice work. Hit Reset to bring cleared items back.'}
-                    </p>
                   </div>
                 )}
               </div>
             </div>
 
-            {/* ── The bench, below the fold ──────────────────────────────────
-                Who's asking for work and the week's round-up. Money and crew
-                snapshot boxes used to sit beside these in a three-column bento;
-                the owner cut both from the landing page (Oct 2026) — the top
-                band already carries the day's numbers, and the attention items
-                that lived under those boxes moved into the one feed above. Both
-                boxes here fetch themselves, so both wait until scrolled to. */}
+            {/* ── The pipeline, below the fold ───────────────────────────────
+                Requests & quotes, coverage gaps and money each used to re-list
+                every row here. Those records now live on the Flow pipeline
+                (/flow) and Billing — so Home shows just the top line + the count
+                and hands off, instead of being a second copy of a page that
+                exists. This is the cut that killed the scroll. Empty sections
+                render nothing. */}
+            {summaryData.length > 0 && (
+              <div data-testid="home-summaries"
+                className="mt-4 grid grid-cols-1 items-start gap-4 shell:grid-cols-3 bb-board-in"
+                style={{ animationDelay: '40ms' }}>
+                {summaryData.map(({ key, items }) => (
+                  <SummaryCard key={key} meta={SUMMARY_META[key]} items={items} navigate={navigate} />
+                ))}
+              </div>
+            )}
+
+            {/* Quick actions — kept; the fastest way to start the things she
+                starts most. Office-only (every create flow is a write). */}
+            {canComms && (
+              <div className="mt-4 bb-board-in" style={{ animationDelay: '60ms' }}>
+                <QuickActions navigate={navigate} />
+              </div>
+            )}
+
+            {/* Systems + Safe to Ignore — present but one quiet collapsed line
+                each; plumbing and inbox noise, never front and centre. */}
+            {((systemsSection?.items.length || 0) > 0 || (safeSection?.items.length || 0) > 0) && (
+              <div className="mt-4 flex flex-col gap-4 bb-board-in" style={{ animationDelay: '80ms' }}>
+                {[systemsSection, safeSection].filter(s => s && s.items.length > 0).map(section => (
+                  <Section key={section.key} section={section} items={section.items}
+                    clearedSet={cleared} onToggle={toggleCleared}
+                    onAction={runAction} actioningKey={actioningKey} confirmingKey={confirmingKey}
+                    navigate={navigate}
+                    onClearAll={clearAllInSection} clearingSection={clearingSection}
+                    setConfirmingKey={setConfirmingKey} filtersActive={filtersActive}
+                    maxRows={6} />
+                ))}
+              </div>
+            )}
+
+            {/* ── The bench ──────────────────────────────────────────────────
+                Who's asking for work and the week's round-up. Both fetch
+                themselves, so both wait until scrolled to (WhenVisible). Neither
+                approves here — the office says yes on the marketplace page
+                itself (brightbase-marketplace guard). */}
             <div data-testid="home-bento"
               className="mt-4 grid grid-cols-1 gap-4 shell:grid-cols-2 bb-board-in"
-              style={{ animationDelay: '40ms' }}>
-              {/* Neither approves here — the office says yes on the marketplace
-                  page itself (brightbase-marketplace guard). */}
+              style={{ animationDelay: '100ms' }}>
               <WhenVisible minHeight="12rem">
                 <MarketplaceBoard />
               </WhenVisible>
@@ -762,14 +848,13 @@ export default function OpsBoard() {
               </WhenVisible>
             </div>
 
-            {/* The customizable "little boxes" she asked to arrange — quick
-                actions, notes, the Nova chat — each draggable by its grip into
-                whatever order she likes, saved per device. Office-only tiles
-                fall out for a viewer, so the zone quietly shrinks. */}
-            <div className="mt-4 bb-board-in" style={{ animationDelay: '80ms' }}>
+            {/* Notes + Ask Nova — the smallest, last zone. They used to take a
+                full section up high; now they're secondary, below everything
+                operational, still draggable to taste. Office-only Nova falls out
+                for a viewer, so the zone quietly shrinks. */}
+            <div className="mt-4 bb-board-in" style={{ animationDelay: '120ms' }}>
               <WhenVisible minHeight="14rem">
               <HomeWidgets items={[
-                canComms && { key: 'quick', label: 'Quick actions', node: <QuickActions navigate={navigate} /> },
                 { key: 'notes', label: 'Notes', node: <StickyNotes /> },
                 canComms && { key: 'nova', label: 'Ask Nova', node: <NovaChat navigate={navigate} /> },
               ].filter(Boolean)} />
