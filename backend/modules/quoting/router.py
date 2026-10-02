@@ -732,6 +732,49 @@ def delete_quote(quote_id: int, db: Session = Depends(get_db), org_id: int = Dep
     return {"status": "archived", "id": quote.id}
 
 
+class BulkArchiveRequest(BaseModel):
+    ids: list[int]
+
+
+@router.post("/bulk-archive", dependencies=[Depends(require_role("admin", "manager"))])
+def bulk_archive_quotes(payload: BulkArchiveRequest, db: Session = Depends(get_db),
+                        org_id: int = Depends(current_org_id)):
+    """Soft-delete (archive) several quotes in one call — the bulk version of
+    DELETE /{quote_id}, for clearing a pile (stale/test quotes) from the Flow
+    list in one action. Same guard per quote: one already converted into a job
+    is SKIPPED, not archived (that would orphan the revenue→job link), and
+    reported back. Only quotes in the caller's org are touched; an id that does
+    not resolve is skipped. Recoverable — status→archived, nothing destroyed."""
+    oid = resolve_org_id(org_id, db)
+    archived, skipped = [], []
+    # De-dupe while preserving the caller's order; cap to a sane batch.
+    seen = set()
+    for qid in payload.ids:
+        if qid in seen:
+            continue
+        seen.add(qid)
+        quote = (db.query(Quote)
+                 .filter(Quote.id == qid,
+                         or_(Quote.org_id == oid, Quote.org_id.is_(None)))
+                 .first())
+        if quote is None:
+            skipped.append({"id": qid, "reason": "not_found"})
+            continue
+        if quote.status == "converted" or _existing_job_for_quote(db, quote):
+            skipped.append({"id": qid, "reason": "scheduled_into_job"})
+            continue
+        if quote.status == "archived":
+            archived.append(qid)  # already there — idempotent
+            continue
+        quote.status = "archived"
+        quote.archived_at = _utcnow()
+        quote.updated_at = _utcnow()
+        archived.append(qid)
+    db.commit()
+    return {"archived": archived, "skipped": skipped,
+            "archived_count": len(archived), "skipped_count": len(skipped)}
+
+
 @router.delete("/{quote_id}/permanent", dependencies=[Depends(require_role("admin"))])
 def permanently_delete_quote(quote_id: int, db: Session = Depends(get_db),
                              org_id: int = Depends(current_org_id)):
