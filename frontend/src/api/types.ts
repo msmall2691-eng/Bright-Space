@@ -1059,6 +1059,31 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/quotes/bulk-archive": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Bulk Archive Quotes
+         * @description Soft-delete (archive) several quotes in one call — the bulk version of
+         *     DELETE /{quote_id}, for clearing a pile (stale/test quotes) from the Flow
+         *     list in one action. Same guard per quote: one already converted into a job
+         *     is SKIPPED, not archived (that would orphan the revenue→job link), and
+         *     reported back. Only quotes in the caller's org are touched; an id that does
+         *     not resolve is skipped. Recoverable — status→archived, nothing destroyed.
+         */
+        post: operations["bulk_archive_quotes_api_quotes_bulk_archive_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/quotes/{quote_id}/permanent": {
         parameters: {
             query?: never;
@@ -9283,6 +9308,11 @@ export interface components {
             /** User Ids */
             user_ids?: number[] | null;
         };
+        /** BulkArchiveRequest */
+        BulkArchiveRequest: {
+            /** Ids */
+            ids: number[];
+        };
         /** BulkIdsRequest */
         BulkIdsRequest: {
             /** Ids */
@@ -13128,6 +13158,39 @@ export interface operations {
             cookie?: never;
         };
         requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    bulk_archive_quotes_api_quotes_bulk_archive_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BulkArchiveRequest"];
+            };
+        };
         responses: {
             /** @description Successful Response */
             200: {

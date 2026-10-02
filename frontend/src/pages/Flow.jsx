@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { ArrowRight, Workflow, Loader2 } from 'lucide-react'
+import { ArrowRight, Workflow, Loader2, Check } from 'lucide-react'
 import { get, del, post } from '../api'
 import { toast } from '../utils/toastBus'
 import PageTitle from '../components/ui/PageTitle'
@@ -58,17 +58,36 @@ function Tag({ tag }) {
   )
 }
 
-function FlowRow({ item, onAction, confirmingKey, busyKey }) {
+// The archive action, if this row has one (accepted quotes) — what makes a
+// row selectable for a bulk clear.
+function archiveActionOf(item) {
+  return (item.actions || []).find(a => a.kind === 'api' && a.method === 'DELETE')
+}
+
+function FlowRow({ item, onAction, confirmingKey, busyKey, selectMode, selected, onToggleSelect }) {
   const actions = item.actions || []
   const primaryLink = actions.find(a => a.kind !== 'api')
-  // The whole row is a shortcut to the primary next step (always a link).
-  const go = () => primaryLink && onAction(item, primaryLink)
+  const selectable = selectMode && !!archiveActionOf(item)
+  const isSel = selected?.has(item.id)
+  const go = () => {
+    if (selectMode) { if (selectable) onToggleSelect(item.id); return }
+    if (primaryLink) onAction(item, primaryLink)   // row = shortcut to next step
+  }
+  const clickable = selectMode ? selectable : !!primaryLink
   return (
     <div
       onClick={go}
-      className={`flex items-start gap-2.5 px-3.5 py-2.5 transition-colors ${primaryLink ? 'cursor-pointer hover:bg-bg-2' : ''}`}
+      className={`flex items-start gap-2.5 px-3.5 py-2.5 transition-colors ${clickable ? 'cursor-pointer hover:bg-bg-2' : ''} ${selectMode && !selectable ? 'opacity-40' : ''}`}
     >
-      <span className={`mt-1 h-1.5 w-1.5 shrink-0 rounded-full ${DOT[item.severity] || 'bg-ink-3'}`} />
+      {selectMode ? (
+        <span className={`mt-0.5 grid h-[18px] w-[18px] shrink-0 place-items-center rounded-md border transition-colors ${
+          isSel ? 'border-indigo-500 bg-indigo-500 text-white' : 'border-hairline-2 text-transparent'
+        }`}>
+          <Check className="h-3 w-3" strokeWidth={3} />
+        </span>
+      ) : (
+        <span className={`mt-1 h-1.5 w-1.5 shrink-0 rounded-full ${DOT[item.severity] || 'bg-ink-3'}`} />
+      )}
       <div className="min-w-0 flex-1">
         <div className="flex items-start justify-between gap-2">
           <p className="truncate text-[13px] font-semibold leading-snug text-ink">{item.title}</p>
@@ -77,10 +96,11 @@ function FlowRow({ item, onAction, confirmingKey, busyKey }) {
           )}
         </div>
         {item.body && <p className="mt-0.5 line-clamp-2 text-[11.5px] leading-snug text-ink-2">{item.body}</p>}
-        {(item.tags?.length > 0 || actions.length > 0) && (
+        {/* In select mode, keep tags for context but hide the per-row actions. */}
+        {(item.tags?.length > 0 || (!selectMode && actions.length > 0)) && (
           <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
             {item.tags?.map((t, i) => <Tag key={i} tag={t} />)}
-            {actions.length > 0 && (
+            {!selectMode && actions.length > 0 && (
               <div className="ml-auto flex items-center gap-2">
                 {actions.map((a, i) => {
                   const key = `${item.id}:${a.label}`
@@ -120,7 +140,7 @@ function FlowRow({ item, onAction, confirmingKey, busyKey }) {
   )
 }
 
-function Stage({ stage, onAction, confirmingKey, busyKey, index }) {
+function Stage({ stage, onAction, confirmingKey, busyKey, index, selectMode, selected, onToggleSelect }) {
   return (
     <section
       className="bb-board-in overflow-hidden rounded-2xl border border-hairline bg-panel"
@@ -134,7 +154,8 @@ function Stage({ stage, onAction, confirmingKey, busyKey, index }) {
       <div className="divide-y divide-hairline">
         {stage.items.map(it => (
           <FlowRow key={it.id} item={it} onAction={onAction}
-            confirmingKey={confirmingKey} busyKey={busyKey} />
+            confirmingKey={confirmingKey} busyKey={busyKey}
+            selectMode={selectMode} selected={selected} onToggleSelect={onToggleSelect} />
         ))}
       </div>
     </section>
@@ -152,6 +173,16 @@ function removeItem(data, itemId) {
   return { ...data, stages, total_open: stages.reduce((n, s) => n + s.count, 0) }
 }
 
+// Same, for a whole set of item ids — the in-place result of a bulk archive.
+function removeMany(data, itemIds) {
+  if (!data) return data
+  const stages = data.stages
+    .map(s => ({ ...s, items: s.items.filter(it => !itemIds.has(it.id)) }))
+    .map(s => ({ ...s, count: s.items.length }))
+    .filter(s => s.items.length > 0)
+  return { ...data, stages, total_open: stages.reduce((n, s) => n + s.count, 0) }
+}
+
 export default function Flow() {
   const navigate = useNavigate()
   const [data, setData] = useState(null)
@@ -159,6 +190,11 @@ export default function Flow() {
   const [loading, setLoading] = useState(true)
   const [confirmingKey, setConfirmingKey] = useState(null)
   const [busyKey, setBusyKey] = useState(null)
+  // Bulk clear: pick several stale/test quotes and archive them in one action.
+  const [selectMode, setSelectMode] = useState(false)
+  const [selected, setSelected] = useState(() => new Set())
+  const [bulkBusy, setBulkBusy] = useState(false)
+  const [bulkConfirming, setBulkConfirming] = useState(false)
 
   const load = useCallback(() => {
     setLoading(true); setError(null)
@@ -200,6 +236,47 @@ export default function Flow() {
   }, [confirmingKey, navigate])
 
   const stages = data?.stages || []
+  // Any rows that can be archived (accepted quotes) → offer bulk select.
+  const anyArchivable = stages.some(s => s.items.some(archiveActionOf))
+
+  const toggleSelect = useCallback((itemId) => {
+    setSelected(prev => {
+      const next = new Set(prev)
+      next.has(itemId) ? next.delete(itemId) : next.add(itemId)
+      return next
+    })
+    setBulkConfirming(false)
+  }, [])
+
+  const exitSelect = useCallback(() => {
+    setSelectMode(false); setSelected(new Set()); setBulkConfirming(false)
+  }, [])
+
+  const archiveSelected = useCallback(async () => {
+    if (!bulkConfirming) { setBulkConfirming(true); return }
+    // Map the picked rows → their quote ids (from each row's archive endpoint).
+    const ids = []
+    for (const s of stages) for (const it of s.items) {
+      if (!selected.has(it.id)) continue
+      const a = archiveActionOf(it)
+      const qid = a && parseInt(String(a.endpoint).split('/').pop(), 10)
+      if (qid && !Number.isNaN(qid)) ids.push(qid)
+    }
+    if (!ids.length) { exitSelect(); return }
+    setBulkBusy(true)
+    try {
+      const res = await post('/api/quotes/bulk-archive', { ids })
+      const picked = new Set(selected)
+      setData(d => removeMany(d, picked))
+      toast.success(`Archived ${res?.archived_count ?? ids.length}`)
+      if (res?.skipped_count) toast.info(`${res.skipped_count} skipped — already booked`)
+      exitSelect()
+    } catch (e) {
+      toast.error(e?.message || 'Could not archive those')
+    } finally {
+      setBulkBusy(false)
+    }
+  }, [bulkConfirming, stages, selected, exitSelect])
 
   return (
     <div className="mx-auto w-full max-w-3xl px-4 pb-24 pt-4 shell:px-6">
@@ -208,7 +285,18 @@ export default function Flow() {
         title="Flow"
         subtitle="Every lead on its way to paid — the next step on each, top to bottom."
       />
-      <SubNav className="mb-4" />
+      <div className="flex items-center justify-between gap-2">
+        <SubNav />
+        {anyArchivable && (
+          <button
+            onClick={() => (selectMode ? exitSelect() : setSelectMode(true))}
+            className="shrink-0 text-[12px] font-semibold text-indigo-600 hover:text-indigo-700 dark:text-indigo-400"
+          >
+            {selectMode ? 'Cancel' : 'Select'}
+          </button>
+        )}
+      </div>
+      <div className="mt-4">
 
       {loading ? (
         <ListSkeleton rows={6} />
@@ -224,8 +312,36 @@ export default function Flow() {
         <div className="space-y-3">
           {stages.map((s, i) => (
             <Stage key={s.key} stage={s} index={i} onAction={onAction}
-              confirmingKey={confirmingKey} busyKey={busyKey} />
+              confirmingKey={confirmingKey} busyKey={busyKey}
+              selectMode={selectMode} selected={selected} onToggleSelect={toggleSelect} />
           ))}
+        </div>
+      )}
+      </div>
+
+      {selectMode && selected.size > 0 && (
+        <div
+          className="fixed inset-x-0 bottom-0 z-20 border-t border-hairline bg-panel/95 px-4 py-3 backdrop-blur"
+          style={{ paddingBottom: 'max(0.75rem, env(safe-area-inset-bottom, 0px))' }}
+        >
+          <div className="mx-auto flex max-w-3xl items-center gap-3">
+            <span className="text-[13px] font-medium text-ink-2">{selected.size} selected</span>
+            <button onClick={exitSelect} className="ml-auto text-[12px] font-semibold text-ink-3 hover:text-ink-2">
+              Clear
+            </button>
+            <button
+              onClick={archiveSelected}
+              disabled={bulkBusy}
+              className={`inline-flex items-center gap-1.5 rounded-lg border px-3 py-2 text-[13px] font-semibold transition-colors disabled:opacity-60 ${
+                bulkConfirming
+                  ? 'border-rose-400 text-rose-600 dark:text-rose-300'
+                  : 'border-hairline-2 text-ink-2 hover:bg-bg-2'
+              }`}
+            >
+              {bulkBusy && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+              {bulkConfirming ? `Archive ${selected.size}?` : `Archive ${selected.size}`}
+            </button>
+          </div>
         </div>
       )}
     </div>

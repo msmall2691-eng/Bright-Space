@@ -23,8 +23,9 @@ vi.mock('../../api', () => ({
   get: (...a) => get(...a), del: (...a) => del(...a), post: (...a) => post(...a),
 }))
 const toastSuccess = vi.fn()
+const toastInfo = vi.fn()
 vi.mock('../../utils/toastBus', () => ({
-  toast: { success: (...a) => toastSuccess(...a), error: vi.fn(), info: vi.fn() },
+  toast: { success: (...a) => toastSuccess(...a), error: vi.fn(), info: (...a) => toastInfo(...a) },
 }))
 
 import Flow from '../Flow'
@@ -60,7 +61,7 @@ const PAYLOAD = {
 
 const renderFlow = () => render(<MemoryRouter initialEntries={['/flow']}><Flow /></MemoryRouter>)
 
-beforeEach(() => { get.mockReset(); mockNav.mockReset(); del.mockReset(); post.mockReset(); toastSuccess.mockReset() })
+beforeEach(() => { get.mockReset(); mockNav.mockReset(); del.mockReset(); post.mockReset(); toastSuccess.mockReset(); toastInfo.mockReset() })
 afterEach(cleanup)
 
 describe('Flow pipeline list', () => {
@@ -149,5 +150,55 @@ describe('Flow in-place actions', () => {
     await waitFor(() => expect(post).toHaveBeenCalledWith('/api/invoices/9/send', { channel: 'email' }))
     await waitFor(() => expect(screen.queryByText('Pat Dune')).toBeNull())
     expect(toastSuccess).toHaveBeenCalledWith('Sent')
+  })
+})
+
+describe('Flow bulk clear', () => {
+  it('selects several accepted quotes and archives them in one call', async () => {
+    const mkAccepted = (id, name) => ({
+      id: `accepted:${id}`, severity: 'watch', title: name, body: '$200 · accepted, not booked',
+      meta: '1w ago', tags: [],
+      actions: [
+        { label: 'Book it', kind: 'link', href: `/quotes/${id}?book=1` },
+        { label: 'Archive', kind: 'api', method: 'DELETE', endpoint: `/api/quotes/${id}`,
+          confirm: 'Archive this quote?', done: 'Archived' },
+      ],
+    })
+    get.mockResolvedValue({ total_open: 2, stages: [
+      { key: 'accepted', label: 'Ready to book', tone: 'amber', count: 2,
+        items: [mkAccepted(12, 'Jane Cove'), mkAccepted(13, 'Bob Pier')] },
+    ] })
+    post.mockResolvedValue({ archived: [12, 13], skipped: [], archived_count: 2, skipped_count: 0 })
+    renderFlow()
+    await screen.findByText('Jane Cove')
+
+    // Enter select mode, pick both accepted rows (clicking the row toggles it).
+    fireEvent.click(screen.getByText('Select'))
+    fireEvent.click(screen.getByText('Jane Cove'))
+    fireEvent.click(screen.getByText('Bob Pier'))
+    expect(screen.getByText('2 selected')).toBeTruthy()
+
+    // Two taps on the bulk button: arm, then confirm.
+    fireEvent.click(screen.getByText('Archive 2'))
+    expect(post).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByText('Archive 2?'))
+    await waitFor(() => expect(post).toHaveBeenCalledWith('/api/quotes/bulk-archive', { ids: [12, 13] }))
+    await waitFor(() => expect(screen.queryByText('Jane Cove')).toBeNull())
+    expect(screen.queryByText('Bob Pier')).toBeNull()
+    expect(toastSuccess).toHaveBeenCalledWith('Archived 2')
+  })
+
+  it('does not offer Select when nothing is archivable', async () => {
+    // Only a booked job (no archive action) → no bulk affordance.
+    get.mockResolvedValue({
+      total_open: 1,
+      stages: [{ key: 'booked', label: 'Booked', tone: 'emerald', count: 1, items: [
+        { id: 'job:5', severity: 'good', title: 'Casey Reed', body: '9 Dock Ln', meta: 'Fri', tags: [],
+          actions: [{ label: 'Open job', kind: 'link', href: '/jobs/5' }] },
+      ] }],
+    })
+    renderFlow()
+    await screen.findByText('Casey Reed')
+    expect(screen.queryByText('Select')).toBeNull()
   })
 })
