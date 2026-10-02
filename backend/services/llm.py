@@ -147,7 +147,17 @@ def _anthropic_complete(system, user_content, model, max_tokens, temperature):
     kwargs = dict(model=model, max_tokens=max_tokens, system=system,
                   messages=[{"role": "user", "content": user_content}])
     if temperature is not None:
-        kwargs["temperature"] = temperature
+        # anthropic 1.x removed `temperature` from the messages.create()
+        # signature, so passing it as a keyword is a TypeError. It is gone
+        # from the SDK, not from the API, and extra_body is merged into the
+        # request JSON as-is — so the wire format is byte-for-byte what it
+        # was before the upgrade: the haiku and sonnet tiers (Haiku 4.5,
+        # Sonnet 4.6) still honour it, and the opus tier (Opus 4.8) still
+        # rejects any request carrying it with the same 400 it returned
+        # before. Deleting the line instead would have silently ignored the
+        # argument on Anthropic while Gemini kept honouring it — a
+        # provider-dependent difference with nothing on screen to explain it.
+        kwargs["extra_body"] = {"temperature": temperature}
     resp = _anthropic().messages.create(**kwargs)
     return "".join(b.text for b in resp.content if b.type == "text").strip()
 
