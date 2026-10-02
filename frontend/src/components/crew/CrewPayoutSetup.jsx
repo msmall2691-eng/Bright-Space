@@ -14,7 +14,10 @@
  * them that rather than nagging.
  *
  * Reads the cached state the webhook writes — no Stripe call to render, no
- * polling (brightbase-economy, scheduling-invariants R1).
+ * polling (brightbase-economy, scheduling-invariants R1). The one exception is
+ * "Check again", which asks Stripe directly on a deliberate tap: the backup for
+ * when an `account.updated` event goes missing and the sub would otherwise be
+ * stuck on a screen nothing they do can change.
  */
 import { useEffect, useState } from 'react'
 import { Landmark } from 'lucide-react'
@@ -24,6 +27,7 @@ import { ErrorNote } from './primitives'
 export default function CrewPayoutSetup({ previewUserId = null }) {
   const [state, setState] = useState(null)
   const [busy, setBusy] = useState(false)
+  const [checking, setChecking] = useState(false)
   const [error, setError] = useState(null)
 
   // Direct-deposit setup is a Stripe onboarding flow the cleaner completes for
@@ -51,6 +55,22 @@ export default function CrewPayoutSetup({ previewUserId = null }) {
     } catch (e) {
       setError(e.detail || e.message || 'Could not start the setup')
     } finally { setBusy(false) }
+  }
+
+  // THE LOOP THIS BREAKS: they finish at Stripe, come back to a screen that
+  // still says Stripe needs more from them, tap "Finish setting it up", get
+  // told by Stripe they're already done, and land back on the same amber line.
+  // The status only moves when an `account.updated` event arrives, so when one
+  // goes missing there is nothing they can do from inside the app. This asks
+  // Stripe directly — one call per deliberate tap, never on render.
+  const recheck = async () => {
+    if (preview) return
+    setChecking(true); setError(null)
+    try {
+      setState(await post('/api/crew/me/payouts/refresh', {}))
+    } catch (e) {
+      setError(e.detail || e.message || 'Could not check with Stripe')
+    } finally { setChecking(false) }
   }
 
   if (preview) return (
@@ -86,9 +106,13 @@ export default function CrewPayoutSetup({ previewUserId = null }) {
               {state.needs ? <span className="text-ink-3"> · {state.needs}</span> : null}
             </span>
           </p>
-          <button type="button" onClick={start} disabled={busy}
+          <button type="button" onClick={start} disabled={busy || checking}
             className="w-full text-[13px] font-medium bg-panel border border-hairline-2 text-ink-2 hover:bg-bg-2 disabled:opacity-60 py-2.5 rounded-lg transition-colors">
             {busy ? 'Opening…' : 'Finish setting it up'}
+          </button>
+          <button type="button" onClick={recheck} disabled={busy || checking}
+            className="w-full text-[12px] text-ink-3 hover:text-ink-2 disabled:opacity-60 py-2 transition-colors underline underline-offset-2">
+            {checking ? 'Checking with Stripe…' : 'Already finished? Check again'}
           </button>
         </>
       ) : (

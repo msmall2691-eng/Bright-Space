@@ -70,7 +70,32 @@ def configured() -> bool:
 
 
 def webhook_secret() -> Optional[str]:
+    """The signing secret for events on THIS account — invoice payments,
+    transfers, everything the platform itself does."""
     return (os.getenv("STRIPE_WEBHOOK_SECRET") or "").strip() or None
+
+
+def connect_webhook_secret() -> Optional[str]:
+    """The signing secret for events on CONNECTED accounts, which Stripe will
+    not deliver to the endpoint above.
+
+    `account.updated` for a subcontractor's Express account is a Connect event.
+    Stripe only sends those to an endpoint configured to listen to connected
+    accounts, and every endpoint carries its own signing secret — so a single
+    secret cannot verify both, however the URLs are arranged. Two endpoints may
+    point at the same URL; what differs is which key signed the delivery.
+
+    This matters more than a stale field. `account.updated` is the ONLY writer
+    of `User.stripe_payouts_enabled`, and `sub_payouts.StripeRail` refuses to
+    send to anyone whose flag is False. Without this secret the flag stays at
+    its default forever and the direct-deposit rail never turns on for anybody,
+    while the manual CSV rail keeps working — so nobody goes unpaid, and the
+    failure is invisible until the first Stripe payout run.
+
+    Optional: unset simply means Connect events are not expected, and the
+    account-level endpoint carries on alone.
+    """
+    return (os.getenv("STRIPE_CONNECT_WEBHOOK_SECRET") or "").strip() or None
 
 
 # A payout or balance call must not pin a worker for the SDK's default 80
