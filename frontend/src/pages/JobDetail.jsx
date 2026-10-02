@@ -463,9 +463,33 @@ export default function JobDetail() {
   return (
     <div className="h-full overflow-y-auto">
       <div className="p-4 sm:p-6 max-w-[1400px] mx-auto">
-        <button onClick={() => navigate('/schedule')} className="flex items-center gap-1.5 text-[13px] text-ink-3 hover:text-ink-2 mb-4">
-          <ArrowLeft className="w-4 h-4" /> Back to Schedule
-        </button>
+        {/* Breadcrumb: a job now links back UP its chain — Schedule › Customer ›
+            Property › this job — instead of the old bare "Back to Schedule".
+            Each segment is a real record link so the hierarchy is navigable
+            both ways (the owner's "nothing feels linked" fix). */}
+        <nav className="flex items-center gap-1.5 text-[13px] text-ink-3 mb-4 flex-wrap" aria-label="Breadcrumb">
+          <button onClick={() => navigate('/schedule')} className="inline-flex items-center gap-1 hover:text-ink-2">
+            <ArrowLeft className="w-4 h-4" /> Schedule
+          </button>
+          {job.client_id && (
+            <>
+              <span className="text-ink-3/50" aria-hidden="true">›</span>
+              <Link to={`/clients/${job.client_id}`} className="truncate max-w-[11rem] text-ink hover:text-indigo-600 no-underline">
+                {job.client_name || `Client #${job.client_id}`}
+              </Link>
+            </>
+          )}
+          {job.property_id && (
+            <>
+              <span className="text-ink-3/50" aria-hidden="true">›</span>
+              <Link to={`/properties/${job.property_id}`} className="truncate max-w-[11rem] text-ink hover:text-indigo-600 no-underline">
+                {job.property_name || 'Property'}
+              </Link>
+            </>
+          )}
+          <span className="text-ink-3/50" aria-hidden="true">›</span>
+          <span className="truncate max-w-[14rem] font-medium text-ink-2">{job.title || `Job #${job.id}`}</span>
+        </nav>
 
         {showInvoicePrompt && (
           <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-hairline bg-panel px-4 py-3">

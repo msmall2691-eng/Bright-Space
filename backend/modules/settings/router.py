@@ -683,130 +683,66 @@ def gmail_status(db: Session = Depends(get_db)):
     return {"connected": any_ok, "accounts": accounts}
 
 
-# ─── Square (payroll export) ────────────────────────────────────────────────
+# ─── Square: REMOVED ────────────────────────────────────────────────────────
+#
+# `integrations/square.py` was a Labor API **timecard** client — the Square
+# Payroll export. That export was deleted in Sept 2026 because a timecard
+# asserts an hourly wage and an employment relationship, which is the one
+# thing a subcontractor arrangement cannot say (modules/payroll/router.py has
+# the full reasoning). The settings card, the /square + /square/test endpoints
+# and the client itself outlived it by a release, which left a live Square
+# access token in app_settings that nothing could legitimately read — a
+# credential nobody would think to rotate because nothing appeared to use it.
+#
+# Migration 122 deletes those app_settings rows. `square_access_token` stays
+# listed in utils/app_secrets.py deliberately: it is an encrypt-at-rest
+# allowlist, and leaving a retired key name in it means a row restored from an
+# old backup still decrypts instead of reading back as ciphertext.
+#
+# Taking customer payments now happens on Stripe — see
+# integrations/stripe_payments.py for why that is the same decision as paying
+# subcontractors through Stripe rather than a second processor.
 
-class SquareConfig(BaseModel):
-    access_token: Optional[str] = None
-    location_id: Optional[str] = None
-    environment: Optional[str] = None  # "production" | "sandbox"
-    # Square wage "job" titles to tag timecards with, so hours land in the right
-    # bucket the operator runs payroll from.
-    job_residential: Optional[str] = None
-    job_rental: Optional[str] = None
-    job_weekend: Optional[str] = None
 
+@router.get("/stripe-status", dependencies=[Depends(require_role("admin", "manager"))])
+def stripe_status():
+    """Whether Stripe is wired up, for the Settings card.
 
-_SQUARE_JOB_DEFAULTS = {
-    "square_job_residential": "Residential",
-    "square_job_rental": "Rental",
-    "square_job_weekend": "Rate Pay",
-}
+    READ-ONLY, and there is no matching POST on purpose. Stripe is configured
+    by environment variable (STRIPE_SECRET_KEY / STRIPE_WEBHOOK_SECRET), not by
+    an app_settings row, so there is nothing here for an operator to type —
+    which is also why the key never passes through the browser the way the old
+    Square access token did.
 
-
-def _square_jobs(db: Session) -> dict:
+    Reports the two halves separately because they mean different things. With
+    a secret key but no webhook secret, online invoice payment stays OFF — a
+    payment would complete at Stripe and the invoice would never be marked
+    paid (the webhook handler refuses an event it cannot verify, same posture
+    as the Twilio webhook), so `stripe_payments.can_take_payments` requires
+    both and the pay button does not appear. Payouts need no webhook to send a
+    transfer, so they work on the key alone. Naming the halves is what turns
+    "why is there no pay button" into one obvious missing variable.
+    """
+    from integrations.stripe_connect import configured, webhook_secret
+    ok = configured()
+    hook = bool(webhook_secret())
     return {
-        "residential": get_setting(db, "square_job_residential") or _SQUARE_JOB_DEFAULTS["square_job_residential"],
-        "rental": get_setting(db, "square_job_rental") or _SQUARE_JOB_DEFAULTS["square_job_rental"],
-        "weekend": get_setting(db, "square_job_weekend") or _SQUARE_JOB_DEFAULTS["square_job_weekend"],
+        "configured": ok,
+        "webhook_configured": hook,
+        # One sentence the operator can act on, rather than two booleans to
+        # interpret.
+        "detail": (
+            "Not connected — set STRIPE_SECRET_KEY to take online payments "
+            "and pay subcontractors by direct deposit."
+            if not ok else
+            "Connected for payouts, but STRIPE_WEBHOOK_SECRET is missing, so "
+            "online invoice payment is off — without it a payment could never "
+            "be confirmed. Add it to switch the pay button on."
+            if not hook else
+            "Connected. Online invoice payment is on, and payouts can settle "
+            "to subcontractors' own accounts."
+        ),
     }
-
-
-_SQUARE_JOB_TITLES_CACHE_KEY = "square_job_titles_cache"
-
-
-def _read_cached_square_job_titles(db: Session) -> list:
-    import json as _json
-    raw = get_setting(db, _SQUARE_JOB_TITLES_CACHE_KEY) or ""
-    try:
-        parsed = _json.loads(raw) if raw else []
-        return parsed if isinstance(parsed, list) else []
-    except Exception:
-        return []
-
-
-@router.get("/square-status", dependencies=[Depends(require_role("admin", "manager"))])
-def square_status(db: Session = Depends(get_db)):
-    """Whether Square is wired up + a masked token hint, for the Settings card.
-    Also returns cached locations from the last successful /square/test so the
-    location picker survives reloads without re-hitting Square."""
-    import os
-    tok = (get_setting(db, "square_access_token") or os.getenv("SQUARE_ACCESS_TOKEN", "")).strip()
-    loc = (get_setting(db, "square_location_id") or os.getenv("SQUARE_LOCATION_ID", "")).strip()
-    env = (get_setting(db, "square_environment") or os.getenv("SQUARE_ENVIRONMENT", "production")).strip() or "production"
-    locations = _read_cached_square_locations(db)
-    return {
-        "configured": bool(tok and loc),
-        "has_token": bool(tok),
-        "location_id": loc,
-        "environment": env,
-        "token_masked": _mask_key(tok),
-        "locations": locations,
-        "jobs": _square_jobs(db),
-        "job_titles": _read_cached_square_job_titles(db),
-    }
-
-
-_SQUARE_LOCATIONS_CACHE_KEY = "square_locations_cache"
-
-
-def _read_cached_square_locations(db: Session) -> list:
-    import json as _json
-    raw = get_setting(db, _SQUARE_LOCATIONS_CACHE_KEY) or ""
-    if not raw:
-        return []
-    try:
-        parsed = _json.loads(raw)
-        return parsed if isinstance(parsed, list) else []
-    except Exception:
-        return []
-
-
-@router.post("/square", dependencies=[Depends(require_role("admin"))])
-def save_square_settings(config: SquareConfig, db: Session = Depends(get_db)):
-    """Save (or clear) Square credentials. A masked token from the status
-    endpoint is ignored so re-saving without retyping doesn't wipe the token."""
-    if config.access_token is not None:
-        v = config.access_token.strip()
-        if v and not v.startswith("••••"):
-            set_setting(db, "square_access_token", v)
-        elif v == "":
-            set_setting(db, "square_access_token", "")
-    if config.location_id is not None:
-        set_setting(db, "square_location_id", config.location_id.strip())
-    if config.environment is not None and config.environment.strip() in ("production", "sandbox"):
-        set_setting(db, "square_environment", config.environment.strip())
-    for field, key in (("job_residential", "square_job_residential"),
-                       ("job_rental", "square_job_rental"),
-                       ("job_weekend", "square_job_weekend")):
-        v = getattr(config, field)
-        if v is not None:
-            set_setting(db, key, v.strip())
-    db.commit()
-    return square_status(db)
-
-
-@router.post("/square/test", dependencies=[Depends(require_role("admin", "manager"))])
-def test_square(db: Session = Depends(get_db)):
-    """Verify the Square token and return the account's locations (so the
-    operator can pick the right Location ID) + a team-member count."""
-    import asyncio, json as _json
-    from integrations.square import has_token, verify, SquareAuthError
-    if not has_token():
-        raise HTTPException(400, "Add a Square access token first.")
-    try:
-        res = asyncio.run(verify())
-        if res.get("locations"):
-            set_setting(db, _SQUARE_LOCATIONS_CACHE_KEY, _json.dumps(res["locations"]))
-        if res.get("job_titles"):
-            set_setting(db, _SQUARE_JOB_TITLES_CACHE_KEY, _json.dumps(res["job_titles"]))
-        if res.get("locations") or res.get("job_titles"):
-            db.commit()
-        return res
-    except SquareAuthError:
-        raise HTTPException(401, "Square rejected the access token. Rotate it and try again.")
-    except Exception as e:
-        logger.warning(f"Square test call failed: {e}")
-        raise HTTPException(502, "Square call failed — check server logs for the underlying error.")
 
 
 # ── Self-serve Google OAuth ── connect an admin's work Google account in-app.

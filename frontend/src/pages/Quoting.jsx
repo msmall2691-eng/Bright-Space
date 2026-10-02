@@ -8,6 +8,7 @@ import JobCreateModal from '../components/JobCreateModal'
 import JobEditModal from '../components/JobEditModal'
 import { jobPropertyOption } from '../utils/jobPropertyOption'
 import { get, post, patch } from "../api"
+import { createClientChecked } from '../utils/clientCreate'
 import { formatDate, combineAddress } from '../utils/format'
 import { pushToast } from '../utils/toastBus'
 import QuoteRow from '../components/quoting/QuoteRow'
@@ -86,6 +87,9 @@ export default function Quoting() {
   // flag stay here because `save()` reads them when auto-creating on save.
   const [newClient, setNewClient] = useState({ name: '', phone: '', email: '' })
   const [creatingClient, setCreatingClient] = useState(false)
+  // Duplicate matches surfaced by the shared create helper; the panel shows the
+  // "Use this / Create anyway" prompt from them.
+  const [clientDupes, setClientDupes] = useState([])
   // Whether the "Add client inline" form is expanded in QuoteEditPanel.
   // Lifted from the panel so openFromIntake can auto-expand it when a
   // request has no matched client — previously called an undefined
@@ -138,14 +142,23 @@ export default function Quoting() {
     }
   }
 
-  // Create a client without leaving the quote form, then select it.
-  // Returns the created client on success or throws. The QuoteEditPanel owns
-  // the addingClient/clientErr UI state and clears itself after this resolves.
-  const createInlineClient = async () => {
+  // Select a created-or-chosen client back into the quote form.
+  const pickClient = (client) => {
+    setClients(cs => (cs.some(c => String(c.id) === String(client.id)) ? cs : [client, ...cs]))
+    selectClient(String(client.id))
+    setNewClient({ name: '', phone: '', email: '' })
+    setClientDupes([])
+  }
+
+  // Create a client without leaving the quote form, then select it. Returns a
+  // {status:'created'|'duplicates'} result (throws only on an unexpected error)
+  // so the panel can show the shared duplicate prompt instead of silently
+  // making a second record. force=true is the prompt's "Create anyway".
+  const createInlineClient = async ({ force = false } = {}) => {
     if (!newClient.name.trim()) throw new Error('Name is required')
     setCreatingClient(true)
     try {
-      const created = await post('/api/clients', {
+      const res = await createClientChecked({
         name: newClient.name.trim(),
         phone: newClient.phone.trim() || null,
         email: newClient.email.trim() || null,
@@ -155,11 +168,10 @@ export default function Quoting() {
         // one-tap property fallback work later instead of silently failing.
         address: form.address?.trim() || null,
         status: 'active',
-      })
-      setClients(cs => [created, ...cs])
-      selectClient(String(created.id))
-      setNewClient({ name: '', phone: '', email: '' })
-      return created
+      }, { force })
+      if (res.status === 'duplicates') { setClientDupes(res.duplicates); return res }
+      pickClient(res.client)
+      return res
     } finally {
       setCreatingClient(false)
     }
@@ -472,7 +484,12 @@ export default function Quoting() {
       } else {
         setSaving(true)
         try {
-          const created = await post('/api/clients', {
+          // Route through the shared dedup helper — a name-only match (the
+          // email/phone re-match above wouldn't catch) stops here and surfaces
+          // the duplicate prompt in the panel instead of quietly making a
+          // second record. The operator picks the existing client or "Create
+          // anyway", then hits Create Quote again.
+          const res = await createClientChecked({
             name: newClient.name.trim(),
             phone: newClient.phone.trim() || null,
             email: newClient.email.trim() || null,
@@ -481,6 +498,14 @@ export default function Quoting() {
             address: form.address?.trim() || null,
             status: 'active',
           })
+          if (res.status === 'duplicates') {
+            setSaving(false)
+            setClientDupes(res.duplicates)
+            setAddingClient(true)
+            showToast('Possible duplicate — choose the existing client or create anyway')
+            return
+          }
+          const created = res.client
           setClients(cs => [created, ...cs])
           clientId = created.id
           setForm(f => ({ ...f, client_id: created.id }))
@@ -901,6 +926,9 @@ export default function Quoting() {
           setShowQuoteAdvanced={setShowQuoteAdvanced}
           selectClient={selectClient}
           createInlineClient={createInlineClient}
+          clientDupes={clientDupes}
+          setClientDupes={setClientDupes}
+          pickClient={pickClient}
           updateItem={updateItem}
           onSave={save}
           onClose={() => setPanel(null)}

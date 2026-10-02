@@ -294,8 +294,17 @@ def _push_turnover_to_gcal(db, prop, linked_job, checkout_date) -> bool:
         # the change or auth is unavailable. Treat that as a failure and log
         # loudly — otherwise we'd "succeed" while Google keeps the stale date and
         # the next authoritative GCal sync reverts the reconciliation.
+        # Keep the customer on the event when they have an email — update_event
+        # is a full REPLACE, so omitting send_invite here would silently drop the
+        # customer's attendee entry on a reschedule (see update_event's docstring)
+        # and revert the event to the internal, code-bearing description. Same
+        # policy as the create path: on their calendar, no email (send_updates
+        # "none"), no access details (customer-facing description).
+        _has_email = bool(client_dict.get("email"))
         ok = update_event(linked_job.gcal_event_id, job_dict, client_dict,
-                          owner_account_id=getattr(linked_job, "gcal_account_id", None))
+                          owner_account_id=getattr(linked_job, "gcal_account_id", None),
+                          send_invite=_has_email,
+                          send_updates="none" if _has_email else None)
         if ok:
             log.info(
                 f"Updated GCal event {linked_job.gcal_event_id} for turnover "
@@ -352,7 +361,20 @@ def _push_new_turnover_to_gcal(prop, job, check_out_time, end_time, notes_text,
             "site_contact_name": prop.site_contact_name,
             "site_contact_phone": prop.site_contact_phone,
         }
-        gcal_event_id = create_event(job_dict, client_dict, property_data=property_data)
+        # Auto-invite the customer so every turnover lands on THEIR calendar too
+        # (owner request: "so they can see all of the cleanings"). send_updates
+        # is forced to "none" — they wanted the event on the customer's calendar
+        # WITHOUT an email landing every time a booking generates a turnover.
+        # send_invite=True also switches _build_event to the customer-facing
+        # description (address + secure confirm/portal links only — NO gate
+        # codes, access notes, or crew), so inviting the customer never leaks
+        # access details (BB-SEC-08…12). A property with no customer email keeps
+        # the internal, code-rich event exactly as before.
+        has_email = bool(client_dict.get("email"))
+        gcal_event_id = create_event(
+            job_dict, client_dict, property_data=property_data,
+            send_invite=has_email, send_updates="none" if has_email else None,
+        )
         if gcal_event_id:
             job.gcal_event_id = gcal_event_id
             job.calendar_invite_sent = True
@@ -568,6 +590,15 @@ def _sync_ical_url(db: Session, prop: Property, ical_url: str, ical_source_label
         # partial fetch would corrupt the baseline future ticks compare
         # against, masking the very anomaly this guard exists to catch.
         property_ical.last_events_seen = seen
+
+    # Standing cleaner (migration 120): a property Meg designated a cleaner for
+    # posts each generated turnover as a targeted offer only that cleaner sees.
+    # Collect the new job ids here and notify that one cleaner AFTER the outer
+    # commit — never mid-transaction, so a rolled-back sync can't push a "new
+    # turnover" for work that didn't persist. NULL standing cleaner → this stays
+    # empty and nothing changes.
+    _standing_cid = (prop.standing_cleaner_id or "").strip() or None
+    standing_posted_job_ids = []
 
     # Now process each event
     for event_data in all_events:
@@ -829,6 +860,17 @@ def _sync_ical_url(db: Session, prop: Property, ical_url: str, ical_source_label
                 status="scheduled",
                 ical_event_id=event.id,
                 custom_fields=guest_metadata,
+                # Standing cleaner → post as a TARGETED OFFER only they see
+                # (open board + audience of one). They still tap to accept and
+                # the office still approves — offered, never assigned
+                # (brightbase-marketplace Rule 0). posted_rate seeds from the
+                # property's turnover_rate so the cleaner can one-tap claim
+                # without naming a price; NULL rate just means they name one.
+                # No standing cleaner → all three stay falsy: the turnover is
+                # created unassigned and unposted, exactly as before.
+                open_for_claims=bool(_standing_cid),
+                offer_audience=[_standing_cid] if _standing_cid else None,
+                posted_rate=(prop.turnover_rate if _standing_cid else None),
             )
             # Race-safe insert: two overlapping feed syncs (e.g. Airbnb + VRBO
             # for one property, or the tick overlapping a manual sync) can both
@@ -860,6 +902,8 @@ def _sync_ical_url(db: Session, prop: Property, ical_url: str, ical_source_label
 
             event.job_id = job.id
             created_jobs += 1
+            if _standing_cid:
+                standing_posted_job_ids.append(job.id)
 
             # Push to Google Calendar with guest metadata + property info in description
             _push_new_turnover_to_gcal(
@@ -877,6 +921,22 @@ def _sync_ical_url(db: Session, prop: Property, ical_url: str, ical_source_label
     # against the UNION of all feeds' UIDs — see there for the actual sweep.
 
     db.commit()
+
+    # Notify the standing cleaner of any turnovers just posted to them — after
+    # the commit, so a rolled-back sync never pushes "new turnover" for work that
+    # didn't persist. One call per job so the targeted-audience filter applies
+    # (notify_jobs_posted only honors offer_audience on the single-job path).
+    # Same push-then-SMS fallback the office's manual bench post uses, but
+    # reaching one designated cleaner. Best-effort: a notify failure never fails
+    # the sync.
+    if standing_posted_job_ids:
+        try:
+            from services.crew_notify import notify_jobs_posted
+            for pj in db.query(Job).filter(Job.id.in_(standing_posted_job_ids)).all():
+                if getattr(pj, "open_for_claims", False) and pj.status == "scheduled":
+                    notify_jobs_posted(db, [pj], org_id=prop.org_id)
+        except Exception:
+            log.exception("standing-cleaner notify failed for %s", prop.name)
 
     # Coverage safety-net: after everything above, EVERY future guest booking in
     # the feed should now have an active turnover. Re-check and report any that
@@ -996,7 +1056,14 @@ def _backfill_turnover_gcal(db: Session, prop: Property) -> int:
             "notes": job.notes, "property_id": prop.id,
         }
         try:
-            eid = create_event(job_dict, client_dict, property_data=property_data)
+            # Same silent customer-invite policy as the live push above: on the
+            # customer's calendar, no email, no access details (send_invite=True
+            # selects the customer-facing description). No email → internal event.
+            _has_email = bool(client_dict.get("email"))
+            eid = create_event(
+                job_dict, client_dict, property_data=property_data,
+                send_invite=_has_email, send_updates="none" if _has_email else None,
+            )
             if eid:
                 job.gcal_event_id = eid
                 healed += 1

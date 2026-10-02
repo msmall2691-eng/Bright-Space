@@ -1300,52 +1300,17 @@ def create_job(data: JobCreate, db: Session = Depends(get_db), org_id: int = Dep
         except Exception as e:
             logger.warning(f"Free/Busy guard skipped for new job: {e}")
 
-    # ── PROPERTY DEFAULTING ──
-    # Every job needs a property (DB-level NOT NULL), but the one-screen
-    # Quick-schedule flow lets the user skip it. Resolve to the client's existing
-    # property, or create a sensible default, so a fast booking never fails here.
-    resolved_property_id = data.property_id
-    if resolved_property_id:
-        # Caller-supplied property_id — same class of issue as client_id above:
-        # verify it's this org's property before linking a new Job to it.
-        owned_property = db.query(Property).filter(
-            Property.id == resolved_property_id,
-            or_(Property.org_id == org_id, Property.org_id.is_(None)),  # MT-2 tenant scope
-        ).first()
-        if not owned_property:
-            raise HTTPException(status_code=404, detail="Property not found")
-        # Ownership consistency (mirrors the update_job guard, BB — Codex P1 on
-        # #271): a supplied property must belong to the SAME client this job is
-        # for. Without this, a job is born with client_id=A on client B's
-        # property — the exact client/property drift the update path already
-        # refuses, and which leaves the crew, invoices and calendar attributing
-        # the visit to the wrong client.
-        if owned_property.client_id and owned_property.client_id != data.client_id:
-            raise HTTPException(
-                status_code=400,
-                detail="That property belongs to a different client. Pick one of this "
-                       "client's properties.",
-            )
-    if not resolved_property_id:
-        existing_prop = (db.query(Property)
-                         .filter(Property.client_id == data.client_id)
-                         .order_by(Property.id.asc()).first())
-        if existing_prop:
-            resolved_property_id = existing_prop.id
-        else:
-            client = owned_client
-            ptype = "str" if data.job_type == "str_turnover" else (
-                data.job_type if data.job_type in ("residential", "commercial") else "residential")
-            new_prop = Property(
-                client_id=data.client_id,
-                name=f"{client.name} — Main" if client and client.name else "Main location",
-                address=data.address or (getattr(client, "address", None) if client else "") or "",
-                property_type=ptype,
-            )
-            if hasattr(new_prop, "org_id"):
-                new_prop.org_id = org_id
-            db.add(new_prop); db.commit(); db.refresh(new_prop)
-            resolved_property_id = new_prop.id
+    # ── PROPERTY (required) ──
+    # Every job hangs off a property (workflow guardrail). Resolve to the
+    # supplied one, else the client's existing property, else auto-create from
+    # the job's/client's address. Raises 422 only when the client has no
+    # property AND no address to build one from — one shared definition with the
+    # recurring series path (services/property_resolve.py).
+    from services.property_resolve import resolve_property_for_client
+    resolved_property_id = resolve_property_for_client(
+        db, client_id=data.client_id, org_id=org_id,
+        property_id=data.property_id, address=data.address, job_type=data.job_type,
+    )
 
     # allow_conflicts and notify_customer are request-only knobs, not Job
     # columns — the customer-notice suppression is read off `data` below (the

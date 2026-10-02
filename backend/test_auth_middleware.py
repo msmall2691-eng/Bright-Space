@@ -53,6 +53,9 @@ def _make_app() -> Starlette:
         Route("/api/jobs", _ok),           # gated
         Route("/api/properties", _ok),     # gated
         Route("/api/admin/foo", _ok),      # gated
+        # The two read-only scans the scoped HEALTHCHECK_API_KEY may reach.
+        Route("/api/recurring/cleanup/health", _ok),
+        Route("/api/admin/data-health", _ok),
         Route("/", _ok),                   # SPA root → public per _is_public
     ])
     app.add_middleware(APIKeyMiddleware)
@@ -185,6 +188,68 @@ def test_uses_constant_time_comparison():
         "auth.py should return JSONResponse, not raise HTTPException, "
         "to avoid the BaseHTTPMiddleware → 500 issue."
     )
+
+
+# ──────────────────────────────────────────────────────────────────────
+# BB-SEC-17: scoped read-only HEALTHCHECK_API_KEY.
+# Only the two GET health scans; a hard 403 on everything else. The master
+# key keeps full access, and the health key never widens it.
+# ──────────────────────────────────────────────────────────────────────
+
+_KEYS = {"BRIGHTBASE_API_KEY": "master123", "HEALTHCHECK_API_KEY": "health456"}
+
+
+@pytest.mark.parametrize("path", [
+    "/api/recurring/cleanup/health",
+    "/api/admin/data-health",
+])
+def test_healthcheck_key_allowed_on_the_two_get_scans(path):
+    with patch.dict(os.environ, _KEYS, clear=False):
+        client = TestClient(_make_app())
+        r = client.get(path, headers={"X-API-Key": "health456"})
+        assert r.status_code == 200, f"got {r.status_code}: {r.text}"
+        assert r.json() == {"ok": True}
+
+
+@pytest.mark.parametrize("path", [
+    "/api/jobs",
+    "/api/properties",
+    "/api/admin/foo",
+])
+def test_healthcheck_key_forbidden_everywhere_else(path):
+    """A leaked health key must not reach client data — 403, not the row."""
+    with patch.dict(os.environ, _KEYS, clear=False):
+        client = TestClient(_make_app())
+        r = client.get(path, headers={"X-API-Key": "health456"})
+        assert r.status_code == 403, f"got {r.status_code}: {r.text}"
+        assert "health-check endpoints" in r.text
+
+
+def test_healthcheck_key_is_get_only():
+    """Even on an allowed path, a non-GET method with the scoped key → 403."""
+    with patch.dict(os.environ, _KEYS, clear=False):
+        client = TestClient(_make_app())
+        r = client.post("/api/recurring/cleanup/health", headers={"X-API-Key": "health456"})
+        assert r.status_code == 403, f"got {r.status_code}: {r.text}"
+
+
+def test_master_key_still_has_full_access():
+    """The existing full-access key is unchanged — reaches a gated route AND
+    the health scans."""
+    with patch.dict(os.environ, _KEYS, clear=False):
+        client = TestClient(_make_app())
+        assert client.get("/api/jobs", headers={"X-API-Key": "master123"}).status_code == 200
+        assert client.get("/api/admin/data-health", headers={"X-API-Key": "master123"}).status_code == 200
+
+
+def test_healthcheck_value_is_just_a_wrong_key_when_feature_unset():
+    """With HEALTHCHECK_API_KEY unset, its would-be value is simply an invalid
+    key — 403, and it does NOT get the scoped health access."""
+    with patch.dict(os.environ, {"BRIGHTBASE_API_KEY": "master123", "HEALTHCHECK_API_KEY": ""}, clear=False):
+        client = TestClient(_make_app())
+        r = client.get("/api/recurring/cleanup/health", headers={"X-API-Key": "health456"})
+        assert r.status_code == 403, f"got {r.status_code}: {r.text}"
+        assert "Invalid API key" in r.text
 
 
 def test_agent_websocket_rejects_when_no_key_and_no_jwt():

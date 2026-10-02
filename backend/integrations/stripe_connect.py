@@ -121,6 +121,18 @@ def _client():
     return stripe
 
 
+def client():
+    """The configured SDK, or None — the shared accessor.
+
+    `stripe_payments` (customer invoice payments) needs exactly the same
+    configured, timeout-bounded SDK this module builds, and reaching into a
+    private from another module is how that plumbing ends up duplicated and
+    then diverging. The two concerns stay in separate files; the client does
+    not.
+    """
+    return _client()
+
+
 def create_account(*, email: str, name: Optional[str] = None) -> Optional[str]:
     """Create the sub's connected account and return its id.
 

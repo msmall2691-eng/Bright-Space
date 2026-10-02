@@ -278,6 +278,17 @@ class Client(Base):
     status = Column(String, default="lead", index=True)  # lead, active, inactive
     notes = Column(Text)
     source = Column(String)  # canonical: website|sms|email|referral|manual|ical|phone|unknown
+    # Per-customer opt-in (migration 122): when True, this customer's RECURRING
+    # visits that generate with no cleaner are offered to the crew board for any
+    # cleared sub to grab, one visit at a time (modules/recurring/router.py).
+    # When False (the default), they stay unassigned-and-hidden exactly as before
+    # — the office still opens them by hand. This scopes the Sept 2026 owner
+    # decision to specific customers rather than the whole book; it never touches
+    # turnovers (standing cleaner, migration 120) or one-off jobs.
+    # server_default so a raw INSERT that omits this column (the Postgres RLS/
+    # tenancy tests insert clients with bare SQL) fills False instead of
+    # tripping the NOT NULL — a Python-side default alone emits no DDL default.
+    recurring_open_to_crew = Column(Boolean, default=False, server_default="false", nullable=False)
     custom_fields = Column(JSON, default=dict)
     created_at = Column(DateTime, default=_utcnow)
     # Audit actor metadata (Twenty's ActorMetadata): who/what created and last
@@ -360,6 +371,21 @@ class Property(Base):
     ical_last_synced_at = Column(DateTime, nullable=True)
     default_duration_hours = Column(Float, default=3.0)  # turnover duration
     default_crew_size = Column(Integer, nullable=True)    # default crew size for jobs
+
+    # The one cleaner the office has designated to do this property's turnovers
+    # (migration 120). A cleaner_id (same String id space as User.cleaner_id,
+    # Job.cleaner_ids and Route.owner_cleaner_id), NULL = none designated.
+    #
+    # This is NOT an assignment: everyone on the book is a subcontractor now
+    # (see brightbase-marketplace), and a sub is offered work, never assigned
+    # it. So a generated turnover for a property with a standing cleaner is
+    # posted as a TARGETED OFFER only that cleaner sees (open_for_claims +
+    # offer_audience=[this id]); they still tap to accept and the office still
+    # approves. It lets a cleaner "own" a rental — see all its turnovers grouped
+    # in their My Properties view and claim them in one tap — without crossing
+    # the offered-never-assigned line (Rule 0). Access details stay assigned-
+    # only: they surface only once the turnover is actually theirs.
+    standing_cleaner_id = Column(String, nullable=True, index=True)
 
     access_notes = Column(Text, nullable=True)      # "Side door, lockbox 4251"
     parking_notes = Column(Text, nullable=True)     # Parking information
@@ -710,9 +736,22 @@ class Job(Base):
     custom_fields = Column(JSON, default=dict)
     dispatched = Column(Boolean, default=False, nullable=False)
     # Crew app Phase 3: the office flips this to put the job "up for grabs" on
-    # every cleaner's Schedule tab (owner decision #2: ONLY office-marked jobs
-    # are claimable — an unassigned job is not automatically open). The first
-    # successful claim adds the claimer to cleaner_ids and flips this back off.
+    # every cleaner's Schedule tab. The first successful claim adds the claimer
+    # to cleaner_ids and flips this back off.
+    #
+    # Owner decision #2 (original): ONLY office-marked jobs are claimable — an
+    # unassigned job is not automatically open. NARROWED by the owner in writing
+    # (Sept 2026) FOR RECURRING WORK, then SCOPED to specific customers: an
+    # UNASSIGNED RECURRING occurrence (recurring_schedule_id set, cleaner_ids
+    # empty, not a route job) is auto-posted here at generation
+    # (modules/recurring/router.py) ONLY when its customer opted in
+    # (Client.recurring_open_to_crew, migration 122), so a repeating visit with
+    # no crew — or a date its regular can't cover — reaches the bench without the
+    # office posting each one. It stays an offer: the sub requests, the office
+    # approves. Migration 121 opened these globally; migration 123 re-hid the
+    # ones whose customer isn't opted in (preserving any with a pending claim).
+    # The rule still holds for one-off and turnover jobs, which the office opens
+    # by hand (turnovers via a property's standing cleaner, migration 120).
     open_for_claims = Column(Boolean, default=False, nullable=False)
     # Marketplace (migration 117): limit WHO among the cleared bench sees this
     # open offer. A list of cleaner_ids; NULL or [] means every cleared sub sees
@@ -1596,6 +1635,23 @@ class Invoice(Base):
     # `paid` — the dunning_service handles that.
     dunning_stage = Column(Integer, nullable=False, default=0, server_default="0")
     dunning_last_sent_at = Column(DateTime(timezone=True), nullable=True)
+
+    # Online card/ACH payment via a hosted Stripe Checkout Session (migration 122).
+    # The session is minted on demand from the public /pay/{token} page and
+    # REUSED while it is still open, which is what keeps one invoice to one
+    # live session: two tabs on the same invoice must not become two payments.
+    # `expires_at` is the cached half of that decision, so deciding whether to
+    # reuse costs no Stripe call (brightbase-economy).
+    #
+    # Naive UTC, deliberately, matching `paid_at` on this same table rather than
+    # the tz-aware `dunning_*` fields above. It is only ever compared against
+    # "now", and a naive/aware mix is a TypeError at runtime on the path a
+    # customer is trying to pay through.
+    stripe_checkout_session_id = Column(String(128), nullable=True, index=True)
+    stripe_checkout_expires_at = Column(DateTime, nullable=True)
+    # The "which payment was that" answer, same job `external_ref` does for a
+    # payout. Written by the webhook, never by a client.
+    stripe_payment_intent_id = Column(String(128), nullable=True, index=True)
 
     client = relationship("Client", back_populates="invoices")
     opportunity = relationship("Opportunity", back_populates="invoices")

@@ -4,6 +4,8 @@ import PageHeader from '../components/ui/PageHeader'
 import SubNav from '../components/ui/SubNav'
 import { EmptyState, Skeleton } from '../components/ui'
 import AgentAvatar from '../components/workspace/AgentAvatar'
+import DailyBrief from '../components/board/DailyBrief'
+import ProposalsQueue from '../components/board/ProposalsQueue'
 import MarkdownContent from '../components/workspace/MarkdownContent'
 import { get, post, wsUrl } from '../api'
 import { todayYMD } from '../utils/format'
@@ -409,6 +411,32 @@ export default function Workspace() {
       </PageHeader>
 
       <div className="flex-1 min-h-0 flex flex-col px-4 sm:px-8 pb-4 w-full max-w-4xl mx-auto">
+        {/* What the agents produced while she was away, above the chat that
+            produces more of it. Both moved here off the Ops Board (Oct 2026):
+            the landing page's job is the calendar and what needs a decision,
+            and these two were an AI paragraph and an approval list sitting in
+            front of it — plus two AI calls racing the real data on first paint.
+            Reading and approving agent output is what this page is FOR, so
+            here they're the point rather than an interruption.
+
+            Both render nothing when there's nothing to say, so the chat sits
+            at the top of a quiet day exactly as it did before. */}
+        {/* BOUNDED, and it has to be. This column is a fixed height, the
+            message list below it is `flex-1 min-h-0 overflow-y-auto`, and
+            ProposalsQueue renders EVERY pending proposal (no cap) with a
+            multi-line textarea on each drafted one. Left to grow, a busy
+            morning's queue pushes the free space negative, the message list
+            resolves to zero height, and the chat becomes unreachable even
+            though the queue itself looks fine. So: capped, with its own
+            scroll, leaving the rest of the column for the chat this page is
+            named after. */}
+        <div className="shrink-0 max-h-[38vh] overflow-y-auto overscroll-contain">
+          <DailyBrief />
+          <div className="mt-3 empty:mt-0">
+            <ProposalsQueue />
+          </div>
+        </div>
+
         {/* Agent picker strip */}
         <div className="shrink-0 flex items-center gap-2 overflow-x-auto pb-3 -mx-1 px-1 scrollbar-thin">
           <button

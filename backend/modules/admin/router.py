@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import text
 from pydantic import BaseModel
 
+from config import app_base_url
 from database.db import get_db
 from database.models import (
     Client, Property, PropertyIcal, ICalEvent, RecurringSchedule,
@@ -384,7 +385,12 @@ def get_settings(db: Session = Depends(get_db)):
             "email": os.getenv("SMTP_USER", ""),
             "phone": os.getenv("TWILIO_PHONE_NUMBER", ""),
             "notify_email": os.getenv("NOTIFY_EMAIL", ""),
-            "app_url": os.getenv("APP_URL", "https://maineclean.co"),
+            # APP_BASE_URL is the single source of truth for the app's own
+            # host (config.app_base_url) — the one the invite, portal and quote
+            # links are built from. The old APP_URL default pointed at the
+            # marketing site, which is a different host now that the app lives
+            # at app.maineclean.co, so this panel was showing the wrong URL.
+            "app_url": os.getenv("APP_URL") or app_base_url(),
         },
         "gcal_calendar_ids": {
             "residential": os.getenv("GCAL_RESIDENTIAL_CALENDAR_ID", ""),
