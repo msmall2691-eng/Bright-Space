@@ -106,7 +106,19 @@ def build_pipeline(db: Session, oid: int) -> dict:
             f"accepted:{q.id}", "watch",
             _client_name(q) or (q.title or "Quote"),
             f"{_fmt_money(q.total)} · accepted, not booked", _ago(q.accepted_at),
-            actions=[_link("Book it", f"/quotes/{q.id}?book=1")],
+            # Book it leads; Archive is the quiet escape hatch for a dead or
+            # test quote that will never become work (soft-delete — recoverable
+            # — via the existing DELETE /api/quotes/{id}). Lets the stranded
+            # pile be cleared from right here instead of a trip to each quote.
+            actions=[
+                _link("Book it", f"/quotes/{q.id}?book=1"),
+                {
+                    "label": "Archive", "kind": "api", "method": "DELETE",
+                    "endpoint": f"/api/quotes/{q.id}",
+                    "confirm": "Archive this quote? You can restore it later.",
+                    "done": "Archived",
+                },
+            ],
         ))
     _add(stages, "accepted", "Ready to book", "amber", book_items)
 

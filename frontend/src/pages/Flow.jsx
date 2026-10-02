@@ -1,7 +1,8 @@
 import { useEffect, useState, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { ArrowRight, Workflow } from 'lucide-react'
-import { get } from '../api'
+import { ArrowRight, Workflow, Loader2 } from 'lucide-react'
+import { get, del, post } from '../api'
+import { toast } from '../utils/toastBus'
 import PageTitle from '../components/ui/PageTitle'
 import SubNav from '../components/ui/SubNav'
 import { ErrorState, EmptyState, ListSkeleton } from '../components/ui'
@@ -57,13 +58,15 @@ function Tag({ tag }) {
   )
 }
 
-function FlowRow({ item, onOpen }) {
-  const action = item.actions?.[0]
-  const go = () => action && onOpen(action.href)
+function FlowRow({ item, onAction, confirmingKey, busyKey }) {
+  const actions = item.actions || []
+  const primaryLink = actions.find(a => a.kind !== 'api')
+  // The whole row is a shortcut to the primary next step (always a link).
+  const go = () => primaryLink && onAction(item, primaryLink)
   return (
     <div
       onClick={go}
-      className="flex cursor-pointer items-start gap-2.5 px-3.5 py-2.5 transition-colors hover:bg-bg-2"
+      className={`flex items-start gap-2.5 px-3.5 py-2.5 transition-colors ${primaryLink ? 'cursor-pointer hover:bg-bg-2' : ''}`}
     >
       <span className={`mt-1 h-1.5 w-1.5 shrink-0 rounded-full ${DOT[item.severity] || 'bg-ink-3'}`} />
       <div className="min-w-0 flex-1">
@@ -74,16 +77,41 @@ function FlowRow({ item, onOpen }) {
           )}
         </div>
         {item.body && <p className="mt-0.5 line-clamp-2 text-[11.5px] leading-snug text-ink-2">{item.body}</p>}
-        {(item.tags?.length > 0 || action) && (
+        {(item.tags?.length > 0 || actions.length > 0) && (
           <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
             {item.tags?.map((t, i) => <Tag key={i} tag={t} />)}
-            {action && (
-              <button
-                onClick={(e) => { e.stopPropagation(); onOpen(action.href) }}
-                className="ml-auto inline-flex items-center gap-0.5 text-[11px] font-semibold text-indigo-600 transition-all hover:gap-1 dark:text-indigo-400"
-              >
-                {action.label}<ArrowRight className="h-3 w-3" />
-              </button>
+            {actions.length > 0 && (
+              <div className="ml-auto flex items-center gap-2">
+                {actions.map((a, i) => {
+                  const key = `${item.id}:${a.label}`
+                  if (a.kind !== 'api') {
+                    return (
+                      <button
+                        key={i}
+                        onClick={(e) => { e.stopPropagation(); onAction(item, a) }}
+                        className="inline-flex items-center gap-0.5 text-[11px] font-semibold text-indigo-600 transition-all hover:gap-1 dark:text-indigo-400"
+                      >
+                        {a.label}<ArrowRight className="h-3 w-3" />
+                      </button>
+                    )
+                  }
+                  const busy = busyKey === key
+                  const confirming = confirmingKey === key
+                  return (
+                    <button
+                      key={i}
+                      onClick={(e) => { e.stopPropagation(); onAction(item, a) }}
+                      disabled={busy}
+                      className={`inline-flex items-center gap-1 text-[11px] font-semibold transition-colors disabled:opacity-60 ${
+                        confirming ? 'text-rose-600 dark:text-rose-400' : 'text-ink-3 hover:text-ink-2'
+                      }`}
+                    >
+                      {busy && <Loader2 className="h-3 w-3 animate-spin" />}
+                      {confirming ? 'Confirm?' : a.label}
+                    </button>
+                  )
+                })}
+              </div>
             )}
           </div>
         )}
@@ -92,7 +120,7 @@ function FlowRow({ item, onOpen }) {
   )
 }
 
-function Stage({ stage, onOpen, index }) {
+function Stage({ stage, onAction, confirmingKey, busyKey, index }) {
   return (
     <section
       className="bb-board-in overflow-hidden rounded-2xl border border-hairline bg-panel"
@@ -104,10 +132,24 @@ function Stage({ stage, onOpen, index }) {
         <span className="ml-auto text-[11px] font-semibold tabular-nums text-ink-3">{stage.count}</span>
       </header>
       <div className="divide-y divide-hairline">
-        {stage.items.map(it => <FlowRow key={it.id} item={it} onOpen={onOpen} />)}
+        {stage.items.map(it => (
+          <FlowRow key={it.id} item={it} onAction={onAction}
+            confirmingKey={confirmingKey} busyKey={busyKey} />
+        ))}
       </div>
     </section>
   )
+}
+
+// Drop an item from the payload, and any stage it empties — so an archived
+// quote vanishes from the list in place, no refetch (one fetch per screen).
+function removeItem(data, itemId) {
+  if (!data) return data
+  const stages = data.stages
+    .map(s => ({ ...s, items: s.items.filter(it => it.id !== itemId) }))
+    .map(s => ({ ...s, count: s.items.length }))
+    .filter(s => s.items.length > 0)
+  return { ...data, stages, total_open: stages.reduce((n, s) => n + s.count, 0) }
 }
 
 export default function Flow() {
@@ -115,6 +157,8 @@ export default function Flow() {
   const [data, setData] = useState(null)
   const [error, setError] = useState(null)
   const [loading, setLoading] = useState(true)
+  const [confirmingKey, setConfirmingKey] = useState(null)
+  const [busyKey, setBusyKey] = useState(null)
 
   const load = useCallback(() => {
     setLoading(true); setError(null)
@@ -125,6 +169,24 @@ export default function Flow() {
   }, [])
 
   useEffect(() => { load() }, [load])
+
+  // Link actions navigate; api actions (e.g. Archive) take a confirm tap, then
+  // call the endpoint and clear the row in place.
+  const onAction = useCallback(async (item, action) => {
+    if (action.kind !== 'api') { navigate(action.href); return }
+    const key = `${item.id}:${action.label}`
+    if (confirmingKey !== key) { setConfirmingKey(key); return }
+    setConfirmingKey(null); setBusyKey(key)
+    try {
+      await (action.method === 'DELETE' ? del(action.endpoint) : post(action.endpoint, action.body || {}))
+      setData(d => removeItem(d, item.id))
+      toast.success(action.done || 'Done')
+    } catch (e) {
+      toast.error(e?.message || 'That didn’t work')
+    } finally {
+      setBusyKey(null)
+    }
+  }, [confirmingKey, navigate])
 
   const stages = data?.stages || []
 
@@ -150,7 +212,8 @@ export default function Flow() {
       ) : (
         <div className="space-y-3">
           {stages.map((s, i) => (
-            <Stage key={s.key} stage={s} index={i} onOpen={(href) => navigate(href)} />
+            <Stage key={s.key} stage={s} index={i} onAction={onAction}
+              confirmingKey={confirmingKey} busyKey={busyKey} />
           ))}
         </div>
       )}
