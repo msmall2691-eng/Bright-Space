@@ -197,7 +197,7 @@ export default function Apply() {
     return (
       <div className="mx-auto max-w-lg px-5 py-16">
         <div className="flex items-center gap-2 text-[13px] text-ink-2">
-          <Check className="h-4 w-4 text-emerald-500" /> Application sent
+          <Check className="h-4 w-4 text-emerald-500" /> Sent
         </div>
         <h1 className="mt-2 text-2xl font-semibold tracking-tight text-ink">
           Thanks — we’ve got it.
@@ -263,7 +263,7 @@ export default function Apply() {
         <a href="/login" className="text-ink underline underline-offset-2 hover:text-indigo-600">
           Sign in
         </a>{' '}
-        — you don’t need to apply again.
+        — you don’t need to do this again.
       </p>
 
       {/* ── The form, before the explanations ──────────────────────────────
@@ -271,10 +271,10 @@ export default function Apply() {
           past five sections of detail to start typing. Four fields, then the
           button. */}
       <h2 className="mt-10 text-[11px] font-semibold uppercase tracking-wide text-ink-3">
-        Apply
+        Get set up
       </h2>
       <p className="mt-1.5 text-[13px] text-ink-2">
-        Four things, about a minute. We read every one.
+        Four things, about a minute, and we’ll be in touch.
       </p>
       <form onSubmit={submit} className="mt-4 space-y-4">
         {/* Honeypot. Off-screen rather than display:none — some bots skip
@@ -358,7 +358,7 @@ export default function Apply() {
         <button type="submit" disabled={state === 'sending' || missing.length > 0}
           className="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-indigo-600 px-4 py-3.5 text-[15px] font-medium text-white transition-colors hover:bg-indigo-700 disabled:opacity-50">
           {state === 'sending' && <Loader2 className="h-4 w-4 animate-spin" />}
-          {state === 'sending' ? 'Sending…' : 'Send application'}
+          {state === 'sending' ? 'Sending…' : 'Send my details'}
         </button>
         {missing.length > 0 && (
           <p className="text-center text-[12px] text-ink-3">
