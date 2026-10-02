@@ -104,3 +104,50 @@ describe('Flow pipeline list', () => {
     expect(await screen.findByText(/Nothing in the pipeline/i)).toBeTruthy()
   })
 })
+
+// In-place actions that reuse existing endpoints.
+const OPS_PAYLOAD = {
+  total_open: 3,
+  stages: [
+    { key: 'new', label: 'New requests', tone: 'indigo', count: 1, items: [
+      { id: 'lead:7', severity: 'info', title: 'Walk-in', body: 'Deep clean', meta: '1h ago', tags: [],
+        actions: [
+          { label: 'Draft a quote', kind: 'api', method: 'POST', endpoint: '/api/ai/quote-from-lead/7', done: 'Draft ready' },
+          { label: 'Open', kind: 'link', href: '/requests/7' },
+        ] },
+    ] },
+    { key: 'to_invoice', label: 'To send', tone: 'amber', count: 1, items: [
+      { id: 'invoice:9', severity: 'watch', title: 'Pat Dune', body: '$180.00 · draft, not sent', meta: '2h ago', tags: [],
+        actions: [
+          { label: 'Send', kind: 'api', method: 'POST', endpoint: '/api/invoices/9/send', body: { channel: 'email' },
+            confirm: 'Email this invoice to the customer?', done: 'Sent' },
+          { label: 'Open invoice', kind: 'link', href: '/invoices/9' },
+        ] },
+    ] },
+  ],
+}
+
+describe('Flow in-place actions', () => {
+  it('drafts a quote on the first tap (no confirm) and lands on the new draft', async () => {
+    get.mockResolvedValue(OPS_PAYLOAD)
+    post.mockResolvedValue({ id: 31, href: '/quotes/31', status: 'draft' })
+    renderFlow()
+    const draft = await screen.findByText('Draft a quote')
+    fireEvent.click(draft)                       // one tap — no confirm step
+    await waitFor(() => expect(post).toHaveBeenCalledWith('/api/ai/quote-from-lead/7', {}))
+    await waitFor(() => expect(mockNav).toHaveBeenCalledWith('/quotes/31'))
+  })
+
+  it('sends an invoice only after a confirm, then clears the row', async () => {
+    get.mockResolvedValue(OPS_PAYLOAD)
+    post.mockResolvedValue({ status: 'sent' })
+    renderFlow()
+    await screen.findByText('Pat Dune')
+    fireEvent.click(screen.getByText('Send'))    // arms the confirm
+    expect(post).not.toHaveBeenCalled()
+    fireEvent.click(await screen.findByText('Confirm?'))
+    await waitFor(() => expect(post).toHaveBeenCalledWith('/api/invoices/9/send', { channel: 'email' }))
+    await waitFor(() => expect(screen.queryByText('Pat Dune')).toBeNull())
+    expect(toastSuccess).toHaveBeenCalledWith('Sent')
+  })
+})
