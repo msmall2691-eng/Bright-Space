@@ -1621,6 +1621,14 @@ class Invoice(Base):
     total = Column(Float, default=0)
     status = Column(String, default="draft")  # draft | sent | overdue | paid
     due_date = Column(String)
+    # Typed mirror of due_date (expand/contract — migration 127 adds it, 128
+    # backfills). due_date stays the authoritative string on the wire for now;
+    # the validator below keeps this Date in lockstep on every write, so every
+    # writer dual-writes without knowing about the second column. The
+    # overdue/dunning reads move onto it, then the string is dropped, in later
+    # releases. Reads today still parse the string (correctly), so this phase is
+    # behavior-neutral.
+    due_date_d = Column(Date, nullable=True, index=True)
     paid_at = Column(DateTime, nullable=True)
     notes = Column(Text)
     custom_fields = Column(JSON, default=dict)
@@ -1635,6 +1643,22 @@ class Invoice(Base):
     # `paid` — the dunning_service handles that.
     dunning_stage = Column(Integer, nullable=False, default=0, server_default="0")
     dunning_last_sent_at = Column(DateTime(timezone=True), nullable=True)
+
+    @validates("due_date")
+    def _sync_due_date_d(self, key, value):
+        """Keep the typed due_date_d mirror in lockstep with the string due_date
+        so every writer dual-writes for free. A value that doesn't parse
+        (blank/garbage) clears the mirror rather than raising — the string is
+        returned unchanged and stays authoritative."""
+        from datetime import date as _date
+        parsed = None
+        if value:
+            try:
+                parsed = _date.fromisoformat(str(value)[:10])
+            except (ValueError, TypeError):
+                parsed = None
+        self.due_date_d = parsed
+        return value
 
     # Online card/ACH payment via a hosted Stripe Checkout Session (migration 125).
     # The session is minted on demand from the public /pay/{token} page and
