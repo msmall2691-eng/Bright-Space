@@ -2,7 +2,7 @@ import {
   LayoutDashboard, Sparkles, Users, Calendar, Receipt,
   DollarSign, MessageSquare, Home, Repeat, Settings, Inbox,
   TrendingUp, Radar, Rows3, Filter, HardHat, Store, CalendarDays, FileText, Star,
-  GitMerge, Route, CalendarClock, FileCheck,
+  GitMerge, Route, CalendarClock, FileCheck, Workflow,
 } from 'lucide-react'
 
 /**
@@ -74,6 +74,10 @@ export const NAV_SECTIONS = [
         // admin/manager (the whole intake/sales surface already is).
         to: '/requests', icon: Inbox, label: 'Leads', roles: ['admin', 'manager'],
         tabs: [
+          // The whole lead→cash line in one prioritized list — the first thing
+          // in the hub, so "where does this lead stand and what's next" is one
+          // tap, not a hunt across six screens.
+          { to: '/flow',            icon: Workflow,  label: 'Flow', keywords: 'pipeline flow lead to cash next step stages board' },
           { to: '/requests',        icon: Inbox,     label: 'New', keywords: 'requests sales leads intake website inbox incoming' },
           { to: '/quotes',          icon: FileText,  label: 'Quotes', keywords: 'quotes estimates pricing proposals' },
           // The "said yes, still needs booking" set — accepted quotes not yet

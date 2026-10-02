@@ -6475,6 +6475,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/dashboard/pipeline": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Dashboard Pipeline
+         * @description The lead→cash pipeline as one prioritized, stage-grouped list — new
+         *     requests, quotes out, accepted-and-ready-to-book, booked jobs, invoices to
+         *     send, and unpaid invoices — in one org-scoped round trip. Read-only; each
+         *     row deep-links to the page that owns its next step. Backs /pipeline.
+         */
+        get: operations["dashboard_pipeline_api_dashboard_pipeline_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/dashboard/summary": {
         parameters: {
             query?: never;
@@ -21162,6 +21185,26 @@ export interface operations {
         };
     };
     dashboard_board_api_dashboard_board_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    dashboard_pipeline_api_dashboard_pipeline_get: {
         parameters: {
             query?: never;
             header?: never;

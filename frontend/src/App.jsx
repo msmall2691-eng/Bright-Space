@@ -163,6 +163,7 @@ function SidebarWithUnread(props) {
 
 // Lazy-loaded pages for code splitting
 const Workspace = lazy(() => import('./pages/Workspace'))
+const Flow = lazy(() => import('./pages/Flow'))
 const Clients = lazy(() => import('./pages/Clients'))
 const ClientProfile = lazy(() => import('./pages/ClientProfile'))
 const RequestDetail = lazy(() => import('./pages/RequestDetail'))
@@ -370,7 +371,11 @@ export default function App() {
               <Route path="/requests/:id" element={<RequestDetail />} />
               {/* Pipeline merged into Deals' Board view — redirect any old
                   bookmarks/links instead of leaving them 404. */}
-              <Route path="/pipeline" element={<Navigate to="/deals?view=board" replace />} />
+              <Route path="/flow" element={<Flow />} />
+              {/* /pipeline was an alias for the Deals board; it now points at
+                  the prioritized Flow list — the lead→cash spine the owner
+                  asked for. Old bookmarks land on the better page. */}
+              <Route path="/pipeline" element={<Navigate to="/flow" replace />} />
               <Route path="/deals" element={<Deals />} />
               <Route path="/opportunities/:id" element={<OpportunityDetail />} />
               <Route path="/jobs/:id" element={<JobDetail />} />
