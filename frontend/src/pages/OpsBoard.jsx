@@ -766,7 +766,7 @@ export default function OpsBoard() {
                 actions, notes, the Nova chat — each draggable by its grip into
                 whatever order she likes, saved per device. Office-only tiles
                 fall out for a viewer, so the zone quietly shrinks. */}
-            <div className="mt-4">
+            <div className="mt-4 bb-board-in" style={{ animationDelay: '80ms' }}>
               <WhenVisible minHeight="14rem">
               <HomeWidgets items={[
                 canComms && { key: 'quick', label: 'Quick actions', node: <QuickActions navigate={navigate} /> },
