@@ -137,6 +137,17 @@ _PUBLIC_EXACT = frozenset({
 })
 
 
+# BB-SEC-17: the only paths a scoped health-check key (HEALTHCHECK_API_KEY)
+# may reach, and only with GET. These are the two read-only schema/health scans
+# the owner runs to confirm the schedule looks right; everything else is a hard
+# 403 for that key. Kept as an explicit allow-list (not a prefix) so it can
+# never widen to a neighbouring path somebody later mounts under the same stem.
+_HEALTHCHECK_PATHS = frozenset({
+    "/api/recurring/cleanup/health",
+    "/api/admin/data-health",
+})
+
+
 def _is_public(path: str) -> bool:
     # Exact matches first — a stem that must not open its neighbours.
     if path.rstrip("/") in _PUBLIC_EXACT:
@@ -216,9 +227,28 @@ class APIKeyMiddleware(BaseHTTPMiddleware):
             return JSONResponse(
                 {"detail": "Missing API key or JWT token."}, status_code=401
             )
-        if not secrets.compare_digest(provided_key, expected_key):
+        # Full-access master key — unchanged. Matched FIRST so the scoped key
+        # below can only ever narrow access, never widen it.
+        if secrets.compare_digest(provided_key, expected_key):
+            return await call_next(request)
+
+        # BB-SEC-17: scoped read-only health-check key. Lets the owner store a
+        # key for an uptime monitor / a remote session that can run the two
+        # read-only health scans WITHOUT handing over the master key, which can
+        # read and write every table. Any path outside _HEALTHCHECK_PATHS, or
+        # any method other than GET, is a hard 403 — so a leaked health key
+        # can't touch client data. (Set it to a value distinct from
+        # BRIGHTBASE_API_KEY; if they ever match, the master branch above wins
+        # and the key simply has full access, i.e. no scoping, not a bypass.)
+        healthcheck_key = os.getenv("HEALTHCHECK_API_KEY", "")
+        if healthcheck_key and secrets.compare_digest(provided_key, healthcheck_key):
+            if request.method == "GET" and raw_path.rstrip("/") in _HEALTHCHECK_PATHS:
+                return await call_next(request)
             return JSONResponse(
-                {"detail": "Invalid API key."}, status_code=403
+                {"detail": "This key is limited to the health-check endpoints."},
+                status_code=403,
             )
 
-        return await call_next(request)
+        return JSONResponse(
+            {"detail": "Invalid API key."}, status_code=403
+        )
