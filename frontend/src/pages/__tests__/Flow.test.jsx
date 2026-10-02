@@ -17,7 +17,15 @@ vi.mock('react-router-dom', async (orig) => {
 })
 
 const get = vi.fn()
-vi.mock('../../api', () => ({ get: (...a) => get(...a) }))
+const del = vi.fn()
+const post = vi.fn()
+vi.mock('../../api', () => ({
+  get: (...a) => get(...a), del: (...a) => del(...a), post: (...a) => post(...a),
+}))
+const toastSuccess = vi.fn()
+vi.mock('../../utils/toastBus', () => ({
+  toast: { success: (...a) => toastSuccess(...a), error: vi.fn(), info: vi.fn() },
+}))
 
 import Flow from '../Flow'
 
@@ -29,7 +37,11 @@ const PAYLOAD = {
       items: [
         { id: 'accepted:12', severity: 'watch', title: 'Jane Cove',
           body: '$633.00 · accepted, not booked', meta: '3d ago', tags: [],
-          actions: [{ label: 'Book it', kind: 'link', href: '/quotes/12?book=1' }] },
+          actions: [
+            { label: 'Book it', kind: 'link', href: '/quotes/12?book=1' },
+            { label: 'Archive', kind: 'api', method: 'DELETE', endpoint: '/api/quotes/12',
+              confirm: 'Archive this quote? You can restore it later.', done: 'Archived' },
+          ] },
         { id: 'accepted:13', severity: 'watch', title: 'Bob Pier',
           body: '$200.00 · accepted, not booked', meta: '1w ago', tags: [],
           actions: [{ label: 'Book it', kind: 'link', href: '/quotes/13?book=1' }] },
@@ -48,7 +60,7 @@ const PAYLOAD = {
 
 const renderFlow = () => render(<MemoryRouter initialEntries={['/flow']}><Flow /></MemoryRouter>)
 
-beforeEach(() => { get.mockReset(); mockNav.mockReset() })
+beforeEach(() => { get.mockReset(); mockNav.mockReset(); del.mockReset(); post.mockReset(); toastSuccess.mockReset() })
 afterEach(cleanup)
 
 describe('Flow pipeline list', () => {
@@ -68,6 +80,22 @@ describe('Flow pipeline list', () => {
     const book = (await screen.findAllByText('Book it'))[0]
     fireEvent.click(book)
     expect(mockNav).toHaveBeenCalledWith('/quotes/12?book=1')
+  })
+
+  it('archives a quote in place after a confirm — no bounce, row disappears', async () => {
+    get.mockResolvedValue(PAYLOAD)
+    del.mockResolvedValue({ status: 'archived', id: 12 })
+    renderFlow()
+    await screen.findByText('Jane Cove')
+    const archive = screen.getByText('Archive')
+    fireEvent.click(archive)                       // first tap arms the confirm
+    expect(del).not.toHaveBeenCalled()
+    expect(await screen.findByText('Confirm?')).toBeTruthy()
+    fireEvent.click(screen.getByText('Confirm?'))  // second tap does it
+    await waitFor(() => expect(del).toHaveBeenCalledWith('/api/quotes/12'))
+    await waitFor(() => expect(screen.queryByText('Jane Cove')).toBeNull())
+    expect(toastSuccess).toHaveBeenCalledWith('Archived')
+    expect(mockNav).not.toHaveBeenCalled()         // archiving never navigates
   })
 
   it('shows an empty state when the pipeline is clear', async () => {

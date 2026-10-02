@@ -105,6 +105,10 @@ def test_each_stage_carries_its_row_with_the_right_next_action(client):
     # Booking the accepted quote lands on the quote's booking flow (which no
     # longer dead-ends), and an unassigned booked job is flagged for a cleaner.
     assert _action(stages["accepted"], f"accepted:{acc_id}")["href"] == f"/quotes/{acc_id}?book=1"
+    # ...and a quiet Archive escape hatch to clear a dead/test quote in place.
+    acc_item = next(i for i in stages["accepted"]["items"] if i["id"] == f"accepted:{acc_id}")
+    archive = next(a for a in acc_item["actions"] if a.get("kind") == "api")
+    assert archive["method"] == "DELETE" and archive["endpoint"] == f"/api/quotes/{acc_id}"
     job_item = next(i for i in stages["booked"]["items"] if i["id"] == f"job:{job_id}")
     assert any(t["label"] == "Needs cleaner" for t in job_item["tags"])
 
