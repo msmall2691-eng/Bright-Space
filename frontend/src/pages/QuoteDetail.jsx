@@ -426,6 +426,11 @@ export default function QuoteDetail() {
               initialTitle={quote.title || `${quote.client_name} — Clean`}
               initialQuoteId={quote.id}
               initialFrequency={quote.frequency || null}
+              // Seed the booking address from the quote itself, so a quote with
+              // no linked property (a contact-only lead that was quoted) can be
+              // booked without re-typing the address — and never dead-ends on
+              // "no service address".
+              initialAddress={quote.address || ''}
               defaultRecurring={!!quote.frequency}
               onClose={() => setConvertModalOpen(false)}
               onCreated={async (result) => {

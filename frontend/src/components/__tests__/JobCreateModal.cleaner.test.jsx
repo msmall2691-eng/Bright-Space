@@ -18,8 +18,16 @@ vi.mock('../../hooks/useEmployees', () => ({
 
 import JobCreateModal from '../JobCreateModal'
 
+// The client has one property, which the modal auto-selects — so the job has
+// somewhere to live and the essentials are pre-valid (a one-off job now
+// requires a property or a typed address; this test is about cleaners, not
+// addresses, so give it the common one-property case).
+const PROP = { id: 7, name: '4 Red Barn Circle', address: '4 Red Barn Circle', property_type: 'residential', client_id: 42 }
 beforeEach(() => {
-  get.mockResolvedValue([])           // property load, etc.
+  get.mockImplementation((url) => {
+    if (url.startsWith('/api/properties')) return Promise.resolve([PROP])
+    return Promise.resolve([])
+  })
   post.mockResolvedValue({ id: 1, title: 'Casey — Clean' })
 })
 afterEach(() => { cleanup(); get.mockReset(); post.mockReset() })
@@ -43,6 +51,9 @@ describe('JobCreateModal — assign cleaner at creation', () => {
 
   it('sends the normalized cleaner_ids (userId when there is no id)', async () => {
     renderModal()
+    // Wait for the client's one property to auto-select (that's what makes the
+    // job valid to save) before driving the cleaner pick + Create.
+    await waitFor(() => expect(screen.getByTestId('job-create-submit').disabled).toBe(false))
     fireEvent.click(screen.getByRole('button', { name: 'Bob Ng' }))
     fireEvent.click(screen.getByRole('button', { name: /^Schedule Job$|^Create/i }))
     await waitFor(() => expect(post).toHaveBeenCalled())
@@ -53,6 +64,7 @@ describe('JobCreateModal — assign cleaner at creation', () => {
 
   it('defaults to unassigned (empty cleaner_ids) when none picked', async () => {
     renderModal()
+    await waitFor(() => expect(screen.getByTestId('job-create-submit').disabled).toBe(false))
     fireEvent.click(screen.getByRole('button', { name: /^Schedule Job$|^Create/i }))
     await waitFor(() => expect(post).toHaveBeenCalled())
     const [, body] = post.mock.calls.find(c => c[0] === '/api/jobs') || []

@@ -197,6 +197,11 @@ export default function JobCreateModal({
   initialTitle = null,
   initialQuoteId = null,
   initialFrequency = null,
+  // The address written on the source quote. Seeds the Address field so a
+  // contact-only lead (no property, no client address on file) can be booked
+  // without re-typing the address the customer already gave on the quote — and
+  // so booking never dead-ends on "no place for the work to live".
+  initialAddress = null,
   defaultRecurring = false,
   // Prefill the start time (and derive an end time from JOB_DURATIONS). Used
   // by the Week view's click-empty-slot handler so a new job seeded from a
@@ -220,7 +225,11 @@ export default function JobCreateModal({
     scheduled_date: initialDate || nextBusinessDay(),
     start_time: _seedStart,
     end_time: addMinutes(_seedStart, JOB_DURATIONS[initialJobType || 'residential'] || 180),
-    address: '',
+    // Seed from the source quote's address. The load effect still prefers a
+    // selected property's / the client's address when one exists (it only fills
+    // a blank), so this is the fallback that matters for a property-less,
+    // address-less client — exactly the quotes that used to strand.
+    address: initialAddress || '',
     notes: '',
     price: '',
     posted_rate: '',
@@ -406,6 +415,19 @@ export default function JobCreateModal({
       .finally(() => setLoadingProps(false))
   }, [activeClientId])
 
+  // Reveal the address field when the job has nowhere to live yet — no property
+  // for this client and no address typed. The Address input lives inside the
+  // "More options" disclosure; without this the Save button sits disabled (see
+  // canSave) with its cause hidden, which is exactly the "Book it dead-ends"
+  // trap. One-off only: the recurring form already shows its own required
+  // address up top.
+  useEffect(() => {
+    if (recurring || !activeClientId || loadingProps) return
+    if (properties.length === 0 && !form.property_id && !form.address.trim()) {
+      setShowMore(true)
+    }
+  }, [recurring, activeClientId, loadingProps, properties.length, form.property_id, form.address])
+
   const chooseClient = (c) => {
     if (!c) return
     setActiveClientId(String(c.id))
@@ -555,7 +577,13 @@ export default function JobCreateModal({
         : form.frequency === 'daily'
           ? true                                   // daily: every day (days optional)
           : (form.days_of_week || []).length > 0)
-    : form.title && form.scheduled_date && form.start_time && form.end_time)
+    // A one-off job must have somewhere to live, same as the recurring path
+    // above requires an address. Either a picked property (its address is used)
+    // or a typed service address — the backend creates the property from that
+    // address, so requiring one here is what turns the old raw "no property /
+    // no service address" 422 into a field the operator just fills in place.
+    : form.title && form.scheduled_date && form.start_time && form.end_time
+      && (!!form.property_id || !!form.address.trim()))
 
   // A 409 from create_job means a scheduling conflict (cleaner double-booked,
   // time off, over capacity, or the slot is already busy on Google Calendar).
@@ -690,6 +718,11 @@ export default function JobCreateModal({
       if (/conflict|unavailable|over capacity|time off|already booked/i.test(msg)) {
         setConflict(msg)
       } else {
+        // The backend's "no property / no service address" 422 shouldn't reach
+        // here any more (canSave now requires a place), but if it does — e.g. a
+        // property deleted mid-session — reveal the Address field so the fix is
+        // in reach instead of a dead-end error.
+        if (/service address|no property/i.test(msg)) setShowMore(true)
         setError(msg)
       }
     } finally {
@@ -1240,7 +1273,7 @@ export default function JobCreateModal({
               deviate (e.g. a one-off job at a different address). */}
           <div>
             <label className="block text-xs text-ink-2 font-medium mb-1">
-              <MapPin className="w-3 h-3 inline mr-1" /> Address {recurring ? '*' : '(optional)'}
+              <MapPin className="w-3 h-3 inline mr-1" /> Address {(recurring || !form.property_id) ? '*' : '(optional)'}
             </label>
             <input
               value={form.address}
@@ -1248,6 +1281,11 @@ export default function JobCreateModal({
               placeholder="123 Main St, Portland, ME"
               className="w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-hidden focus:border-blue-400"
             />
+            {!recurring && !form.property_id && !form.address.trim() && (
+              <p className="text-[11px] text-ink-3 mt-1">
+                Add a service address so the crew has somewhere to go — this creates the property for you.
+              </p>
+            )}
           </div>
 
           {recurring && (
