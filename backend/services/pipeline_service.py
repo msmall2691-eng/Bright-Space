@@ -67,7 +67,16 @@ def build_pipeline(db: Session, oid: int) -> dict:
         lead_items.append(_item(
             f"lead:{ld.id}", "watch" if hot else "info",
             ld.name or "New inquiry", body, _ago(ld.created_at),
-            actions=[_link("Draft a quote", f"/requests/{ld.id}")],
+            # Draft a real quote in one tap (AI-written from what they told us)
+            # and land on it to review and send — the same endpoint the board
+            # uses; its response href is what the page navigates to. It's a
+            # button, not the row's tap target, so a stray tap can't spend an
+            # AI call. "Open" (the link) is the row's safe default.
+            actions=[
+                {"label": "Draft a quote", "kind": "api", "method": "POST",
+                 "endpoint": f"/api/ai/quote-from-lead/{ld.id}", "done": "Draft ready"},
+                _link("Open", f"/requests/{ld.id}"),
+            ],
         ))
     _add(stages, "new", "New requests", "indigo", lead_items)
 
@@ -166,7 +175,15 @@ def build_pipeline(db: Session, oid: int) -> dict:
             f"invoice:{inv.id}", "watch",
             _client_name(inv) or (inv.invoice_number or "Invoice"),
             f"{_fmt_money(inv.total)} · draft, not sent", _ago(inv.created_at),
-            actions=[_link("Open invoice", f"/invoices/{inv.id}")],
+            # Send emails the invoice to the customer — outward-facing, so it
+            # takes a confirm. Defaults to the client's email on file; if there
+            # is none the send fails and the row stays put with a toast.
+            actions=[
+                {"label": "Send", "kind": "api", "method": "POST",
+                 "endpoint": f"/api/invoices/{inv.id}/send", "body": {"channel": "email"},
+                 "confirm": "Email this invoice to the customer?", "done": "Sent"},
+                _link("Open invoice", f"/invoices/{inv.id}"),
+            ],
         ))
     _add(stages, "to_invoice", "To send", "amber", draft_items)
 
@@ -187,7 +204,14 @@ def build_pipeline(db: Session, oid: int) -> dict:
             _client_name(inv) or (inv.invoice_number or "Invoice"),
             f"{_fmt_money(inv.total)} · {'overdue' if overdue else 'sent, awaiting payment'}",
             _ago(inv.created_at),
-            actions=[_link("Open invoice", f"/invoices/{inv.id}")],
+            # Mark paid records a manual payment in place (same endpoint the
+            # board's overdue card uses); confirm-gated. Open to chase instead.
+            actions=[
+                {"label": "Mark paid", "kind": "api", "method": "POST",
+                 "endpoint": f"/api/invoices/{inv.id}/pay", "body": {},
+                 "confirm": "Mark this invoice paid?", "done": "Marked paid"},
+                _link("Open invoice", f"/invoices/{inv.id}"),
+            ],
         ))
     _add(stages, "unpaid", "Unpaid", "red", unpaid_items)
 

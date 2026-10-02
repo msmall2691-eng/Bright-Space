@@ -109,6 +109,23 @@ def test_each_stage_carries_its_row_with_the_right_next_action(client):
     acc_item = next(i for i in stages["accepted"]["items"] if i["id"] == f"accepted:{acc_id}")
     archive = next(a for a in acc_item["actions"] if a.get("kind") == "api")
     assert archive["method"] == "DELETE" and archive["endpoint"] == f"/api/quotes/{acc_id}"
+
+    # In-place actions reuse existing endpoints: draft a quote from a lead,
+    # send a draft invoice (confirm-gated, outward-facing), mark an unpaid one
+    # paid.
+    def _api_action(stage_key, item_id):
+        it = next(i for i in stages[stage_key]["items"] if i["id"] == item_id)
+        return next(a for a in it["actions"] if a.get("kind") == "api")
+
+    draft = _api_action("new", f"lead:{lead_id}")
+    assert draft["method"] == "POST" and draft["endpoint"] == f"/api/ai/quote-from-lead/{lead_id}"
+    assert "confirm" not in draft  # drafting is safe — fires on the first tap
+
+    send = _api_action("to_invoice", f"invoice:{draft_id}")
+    assert send["endpoint"] == f"/api/invoices/{draft_id}/send" and send["confirm"]
+
+    paid = _api_action("unpaid", f"unpaid:{overdue_id}")
+    assert paid["endpoint"] == f"/api/invoices/{overdue_id}/pay" and paid["confirm"]
     job_item = next(i for i in stages["booked"]["items"] if i["id"] == f"job:{job_id}")
     assert any(t["label"] == "Needs cleaner" for t in job_item["tags"])
 

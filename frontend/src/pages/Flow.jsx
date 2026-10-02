@@ -170,17 +170,28 @@ export default function Flow() {
 
   useEffect(() => { load() }, [load])
 
-  // Link actions navigate; api actions (e.g. Archive) take a confirm tap, then
-  // call the endpoint and clear the row in place.
+  // Link actions navigate; api actions run in place. The ones that are
+  // outward-facing or destructive (Archive, Send, Mark paid) carry a `confirm`
+  // and take a second tap; a safe producer (Draft a quote) has none and fires
+  // on the first.
   const onAction = useCallback(async (item, action) => {
     if (action.kind !== 'api') { navigate(action.href); return }
     const key = `${item.id}:${action.label}`
-    if (confirmingKey !== key) { setConfirmingKey(key); return }
+    if (action.confirm && confirmingKey !== key) { setConfirmingKey(key); return }
     setConfirmingKey(null); setBusyKey(key)
     try {
-      await (action.method === 'DELETE' ? del(action.endpoint) : post(action.endpoint, action.body || {}))
-      setData(d => removeItem(d, item.id))
-      toast.success(action.done || 'Done')
+      const res = await (action.method === 'DELETE'
+        ? del(action.endpoint)
+        : post(action.endpoint, action.body || {}))
+      // An action that PRODUCES a record (Draft a quote → the new draft) comes
+      // back with an href — land on it to finish, like the board does. Anything
+      // that just advanced this row (archive, send, mark paid) clears it here.
+      if (res && typeof res.href === 'string' && res.href.startsWith('/')) {
+        navigate(res.href)
+      } else {
+        setData(d => removeItem(d, item.id))
+        toast.success(action.done || 'Done')
+      }
     } catch (e) {
       toast.error(e?.message || 'That didn’t work')
     } finally {
