@@ -174,7 +174,8 @@ def test_create_job_pushes_each_assigned_cleaner(ids, pushes):
     uid_a = _mk_cleaner_user(ids, cid_a)
     uid_b = _mk_cleaner_user(ids, cid_b)
     db = SessionLocal()
-    c = Client(name=f"Push {uuid.uuid4().hex[:6]}", status="active", org_id=1)
+    c = Client(name=f"Push {uuid.uuid4().hex[:6]}", status="active", org_id=1,
+               address="8 Assign Ave")   # create_job auto-makes the property from this
     db.add(c); db.commit(); db.refresh(c); ids["clients"].append(c.id)
     client_id = c.id; db.close()
 

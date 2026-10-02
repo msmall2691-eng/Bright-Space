@@ -99,15 +99,16 @@ def _invoice_to_email_dict(inv: Invoice) -> dict:
         # line. Omitted, the reminder printed subtotal + tax with no discount
         # row — the arithmetic didn't add up to `total` and overstated what a
         # discounted customer actually owes.
-        # BB-INV-01: carry the discount so build_invoice_email can show its own
-        # line. Omitted, the reminder printed subtotal + tax with no discount
-        # row — the arithmetic didn't add up to `total` and overstated what a
-        # discounted customer actually owes.
         "discount": inv.discount or 0,
         "total": inv.total or 0,
         "status": "overdue",
         "due_date": inv.due_date,
         "notes": inv.notes,
+        # The overdue reminder is the email most likely to be ACTED on, so it
+        # is the last one that should omit the pay link. Without this key
+        # `build_invoice_email` has no token and renders no link at all — the
+        # chase email would ask for money and not say where to send it.
+        "public_token": inv.public_token,
     }
 
 

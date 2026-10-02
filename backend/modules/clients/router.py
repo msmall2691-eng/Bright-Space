@@ -391,6 +391,9 @@ class ClientUpdate(BaseModel):
     status: Optional[Literal["lead", "active", "inactive"]] = None
     notes: Optional[str] = None
     source: Optional[str] = None
+    # Opt this customer's unassigned recurring visits onto the crew board
+    # (migration 122). False/True only; the office sets it per customer.
+    recurring_open_to_crew: Optional[bool] = None
     custom_fields: Optional[dict] = None
 
 
@@ -475,6 +478,7 @@ def client_to_dict(c: Client, balance: Optional[float] = None, next_visit=None) 
         "status": c.status,
         "notes": c.notes,
         "source": c.source,
+        "recurring_open_to_crew": bool(getattr(c, "recurring_open_to_crew", False)),
         "custom_fields": c.custom_fields or {},
         "created_at": c.created_at.isoformat() if c.created_at else None,
         "updated_at": getattr(c, "updated_at", None).isoformat() if getattr(c, "updated_at", None) else None,

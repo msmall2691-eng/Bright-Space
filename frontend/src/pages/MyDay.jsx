@@ -20,6 +20,7 @@ import CrewProfile from '../components/crew/CrewProfile'
 import CrewMyFile from '../components/crew/CrewMyFile'
 import CrewMyAsks from '../components/crew/CrewMyAsks'
 import CrewMyRoutes from '../components/crew/CrewMyRoutes'
+import CrewMyProperties from '../components/crew/CrewMyProperties'
 import CrewAvailability from '../components/crew/CrewAvailability'
 import CrewLearn from '../components/crew/CrewLearn'
 import CrewMonth from '../components/crew/CrewMonth'
@@ -866,28 +867,42 @@ export default function MyDay({ previewUserId = null }) {
           )
         })()}
 
-        {tab === 'schedule' && (
+        {tab === 'schedule' && (() => {
           /* Segmented control (hairline frame, solid active) — same pattern
-             as the photo sheet's Before/After toggle. */
-          /* Three segments only when this sub actually has a route — a
-             permanent tab for a thing most of the crew doesn't have is chrome. */
-          <div className={`grid ${(data?.routes || []).length ? 'grid-cols-3' : 'grid-cols-2'} rounded-lg border border-hairline overflow-hidden text-[12px] font-semibold mb-1`}>
-            {[['list', 'Next 2 weeks'], ['month', 'Month'],
-              ...((data?.routes || []).length ? [['routes', 'Routes']] : [])].map(([v, l]) => (
-              <button key={v} onClick={() => setSchedView(v)} aria-pressed={schedView === v}
-                className={`py-1.5 transition-colors ${
-                  schedView === v ? 'bg-blue-600 text-white' : 'bg-panel text-ink-2 hover:bg-bg-2'}`}>
-                {l}
-              </button>
-            ))}
-          </div>
-        )}
+             as the photo sheet's Before/After toggle. Segments beyond List /
+             Month appear only for a sub who actually has that thing — a route,
+             or a rental they're the standing cleaner for. A permanent tab for a
+             thing most of the crew doesn't have is chrome. */
+          const segs = [['list', 'Next 2 weeks'], ['month', 'Month']]
+          if ((data?.routes || []).length) segs.push(['routes', 'Routes'])
+          if (data?.has_rentals) segs.push(['rentals', 'Rentals'])
+          const cols = { 2: 'grid-cols-2', 3: 'grid-cols-3', 4: 'grid-cols-4' }[segs.length] || 'grid-cols-2'
+          return (
+            <div className={`grid ${cols} rounded-lg border border-hairline overflow-hidden text-[12px] font-semibold mb-1`}>
+              {segs.map(([v, l]) => (
+                <button key={v} onClick={() => setSchedView(v)} aria-pressed={schedView === v}
+                  className={`py-1.5 transition-colors ${
+                    schedView === v ? 'bg-blue-600 text-white' : 'bg-panel text-ink-2 hover:bg-bg-2'}`}>
+                  {l}
+                </button>
+              ))}
+            </div>
+          )
+        })()}
 
         {tab === 'schedule' && schedView === 'month' && <CrewMonth previewUserId={previewUserId} />}
 
         {/* The full route detail — its houses and their shares — is fetched
             here and not in my-day, so an unopened tab costs nothing. */}
         {tab === 'schedule' && schedView === 'routes' && <CrewMyRoutes previewUserId={previewUserId} />}
+
+        {/* My rentals — the standing-cleaner turnovers, grouped by house. Its
+            data is fetched inside the component only when this segment is open;
+            tapping a turnover opens the job-detail sheet MyDay already owns. */}
+        {tab === 'schedule' && schedView === 'rentals' && (
+          <CrewMyProperties previewUserId={previewUserId} onOpenJob={setSheetJobId}
+            onClaim={(j) => { setActionError(null); setClaimRate(j.my_claim_request?.requested_rate ?? ''); setClaimMessage(j.my_claim_request?.message || ''); setClaimJob(j) }} />
+        )}
 
         {tab === 'schedule' && schedView === 'list' && !loading && !error && data && (data.open_jobs || []).length > 0 && (
           <section>

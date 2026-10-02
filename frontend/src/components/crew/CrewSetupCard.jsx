@@ -28,6 +28,7 @@ const CREW_CATEGORY_LABELS = {
   office_messages: 'Messages from the office',
   time_off: 'Time-off decisions',
   digest: 'Morning digest',
+  mentions: 'When the office @mentions me',
 }
 
 /** Account-wide category toggles — independent of THIS device's subscription

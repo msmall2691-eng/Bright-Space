@@ -1,6 +1,6 @@
 import { useCallback, useState } from 'react'
-import { post } from '../api'
 import { EMPTY } from '../components/properties/constants'
+import { createClientChecked } from '../utils/clientCreate'
 
 /** Form-state cluster for the Add / Edit Property modal in Properties.jsx.
  *
@@ -32,6 +32,7 @@ export function usePropertyForm({ clients, setClients }) {
   const [newClient, setNewClient] = useState({ name: '', phone: '', email: '' })
   const [creatingClient, setCreatingClient] = useState(false)
   const [clientErr, setClientErr] = useState('')
+  const [clientDupes, setClientDupes] = useState([])
 
   const selectClient = useCallback((idStr) => {
     const c = clients.find(c => String(c.id) === String(idStr))
@@ -47,25 +48,35 @@ export function usePropertyForm({ clients, setClients }) {
     })
   }, [clients])
 
-  const createInlineClient = useCallback(async () => {
+  // Select a created-or-chosen client back into the form (both are full dicts).
+  const pickClient = useCallback((client) => {
+    setClients(cs => (cs.some(c => String(c.id) === String(client.id)) ? cs : [client, ...cs]))
+    selectClient(String(client.id))
+    setAddingClient(false)
+    setClientDupes([])
+    setNewClient({ name: '', phone: '', email: '' })
+  }, [setClients, selectClient])
+
+  // force=false dedup-checks and surfaces the duplicate prompt on a match;
+  // force=true is "Create anyway". Shared with every other inline create via
+  // createClientChecked (utils/clientCreate).
+  const createInlineClient = useCallback(async (force = false) => {
     if (!newClient.name.trim()) { setClientErr('Name is required'); return }
     setCreatingClient(true); setClientErr('')
     try {
-      const created = await post('/api/clients', {
+      const res = await createClientChecked({
         name: newClient.name.trim(),
         phone: newClient.phone.trim() || null,
         email: newClient.email.trim() || null,
         status: 'active',
-      })
-      setClients(cs => [created, ...cs])
-      selectClient(String(created.id))
-      setAddingClient(false)
-      setNewClient({ name: '', phone: '', email: '' })
+      }, { force })
+      if (res.status === 'duplicates') { setClientDupes(res.duplicates); setCreatingClient(false); return }
+      pickClient(res.client)
     } catch (e) {
       setClientErr(e.message || 'Failed to create client')
     }
     setCreatingClient(false)
-  }, [newClient, setClients, selectClient])
+  }, [newClient, pickClient])
 
   const openEdit = useCallback((p) => {
     setSelected(p)
@@ -77,7 +88,7 @@ export function usePropertyForm({ clients, setClients }) {
       check_out_time: p.check_out_time || '10:00',
       house_code: p.house_code || '',
     })
-    setAddingClient(false); setNewClient({ name: '', phone: '', email: '' }); setClientErr('')
+    setAddingClient(false); setNewClient({ name: '', phone: '', email: '' }); setClientErr(''); setClientDupes([])
     setShowForm(true)
   }, [])
 
@@ -86,7 +97,7 @@ export function usePropertyForm({ clients, setClients }) {
   const confirmNewProperty = useCallback(() => {
     setSelected(null)
     setForm({ ...EMPTY, property_type: newPropertyType })
-    setAddingClient(false); setNewClient({ name: '', phone: '', email: '' }); setClientErr('')
+    setAddingClient(false); setNewClient({ name: '', phone: '', email: '' }); setClientErr(''); setClientDupes([])
     setShowTypeModal(false)
     setShowForm(true)
   }, [newPropertyType])
@@ -108,8 +119,10 @@ export function usePropertyForm({ clients, setClients }) {
     newClient, setNewClient,
     creatingClient,
     clientErr, setClientErr,
+    clientDupes, setClientDupes,
     selectClient,
     createInlineClient,
+    pickClient,
     openEdit,
     openNew,
     confirmNewProperty,

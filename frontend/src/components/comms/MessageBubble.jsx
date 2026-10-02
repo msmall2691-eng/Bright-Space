@@ -8,6 +8,17 @@ import { htmlToText, splitQuotedEmail } from '../../utils/format'
  *  sending → sent → delivered → failed. */
 const FAILED_STATUSES = ['failed', 'undelivered', 'error']
 
+// Highlight @mentions in an internal note. Heuristic: @ + one or two
+// Capitalized words (how the picker inserts a teammate's name), so it catches
+// "@Sarah" / "@Sarah Lee" without swallowing the lowercase words that follow.
+const MENTION_RE = /(@[A-Z][\w'’.\-]*(?:\s[A-Z][\w'’.\-]*)?)/g
+function withMentions(text) {
+  return String(text).split(MENTION_RE).map((part, i) =>
+    i % 2 === 1
+      ? <span key={i} className="font-semibold text-amber-600 dark:text-amber-400">{part}</span>
+      : part)
+}
+
 function DeliveryIcon({ status }) {
   const s = (status || '').toLowerCase()
   if (FAILED_STATUSES.includes(s))
@@ -38,7 +49,7 @@ export function MessageBubble({ m, isFirst, showTime, contactName }) {
             {m.author && <span className="font-normal text-ink-3">— {m.author}</span>}
             <span className="ml-auto font-normal text-ink-3">{fullTime(m.created_at)}</span>
           </div>
-          <div className="whitespace-pre-wrap wrap-break-word leading-relaxed">{htmlToText(m.body)}</div>
+          <div className="whitespace-pre-wrap wrap-break-word leading-relaxed">{withMentions(htmlToText(m.body))}</div>
         </div>
       </div>
     )

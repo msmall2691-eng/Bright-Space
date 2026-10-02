@@ -100,7 +100,8 @@ def test_get_preferences_default_all_on_office(ids):
         assert r.status_code == 200
     finally:
         _clear()
-    assert r.json() == {"requests": True, "messages": True, "quotes": True, "crew": True}
+    assert r.json() == {"requests": True, "messages": True, "quotes": True, "crew": True,
+                        "mentions": True}
 
 
 def test_get_preferences_default_all_on_crew(ids):
@@ -117,7 +118,7 @@ def test_get_preferences_default_all_on_crew(ids):
     # gets it without a migration or a re-consent.
     assert r.json() == {
         "job_assignments": True, "open_jobs": True, "office_messages": True,
-        "time_off": True, "digest": True,
+        "time_off": True, "digest": True, "mentions": True,
     }
 
 
@@ -133,11 +134,13 @@ def test_patch_persists_and_get_reflects(ids):
         assert r.json()["requests"] is True   # untouched categories stay on
 
         r2 = api.get("/api/push/preferences")
-        assert r2.json() == {"requests": True, "messages": True, "quotes": False, "crew": True}
+        assert r2.json() == {"requests": True, "messages": True, "quotes": False, "crew": True,
+                             "mentions": True}
 
         # A second, different patch merges rather than clobbering the first.
         r3 = api.patch("/api/push/preferences", json={"crew": False})
-        assert r3.json() == {"requests": True, "messages": True, "quotes": False, "crew": False}
+        assert r3.json() == {"requests": True, "messages": True, "quotes": False, "crew": False,
+                             "mentions": True}
     finally:
         _clear()
 

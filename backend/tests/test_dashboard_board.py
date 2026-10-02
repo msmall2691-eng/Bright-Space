@@ -121,7 +121,9 @@ def test_board_shape_and_stat_deltas(client):
     stat_keys = {s["key"] for s in before["stats"]}
     assert stat_keys == {"unassigned", "weekend", "overdue", "waiting", "leads", "collected"}
     int_keys = {c["key"] for c in before["integrations"]}
-    assert int_keys == {"gmail", "calendar", "square", "twilio"}
+    # "stripe" replaced "square": the Square chip read a setting for the
+    # timecard export deleted in Sept 2026, and migration 122 removed the row.
+    assert int_keys == {"gmail", "calendar", "stripe", "twilio"}
     # Every item is well-formed.
     for s in before["sections"]:
         for it in s["items"]:

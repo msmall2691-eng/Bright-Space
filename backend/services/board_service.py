@@ -753,12 +753,21 @@ def _integration_health(db: Session, oid: int, today: date):
     chips.append({"key": "calendar", "label": "Calendar", "status": "connected" if cal else "off",
                   "detail": "synced" if cal else "not connected", "tone": "green" if cal else "gray"})
 
-    for key, label, setting in (
-        ("square", "Square", "square_access_token"),
-    ):
-        on = bool(_setting(db, setting))
-        chips.append({"key": key, "label": label, "status": "connected" if on else "off",
-                      "detail": "configured" if on else "not set", "tone": "green" if on else "gray"})
+    # Stripe, not Square. The Square chip here read `square_access_token`, a
+    # setting for the timecard export deleted in Sept 2026 — so it reported on
+    # a feature that no longer existed, and migration 122 removed the row it
+    # read, which would have pinned it to "not set" forever.
+    #
+    # Stripe is configured by ENV (STRIPE_SECRET_KEY), not by an app_settings
+    # row, so this asks the integration rather than the settings table. It is
+    # one chip for both directions deliberately: the same key that lets a
+    # customer pay an invoice is the one that pays the bench.
+    from integrations.stripe_connect import configured as _stripe_configured
+    stripe_on = _stripe_configured()
+    chips.append({"key": "stripe", "label": "Stripe",
+                  "status": "connected" if stripe_on else "off",
+                  "detail": "configured" if stripe_on else "not set",
+                  "tone": "green" if stripe_on else "gray"})
 
     twilio_on = bool(os.getenv("TWILIO_ACCOUNT_SID"))
     chips.append({"key": "twilio", "label": "Twilio", "status": "connected" if twilio_on else "off",

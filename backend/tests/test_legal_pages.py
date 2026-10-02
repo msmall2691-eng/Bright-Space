@@ -22,7 +22,11 @@ def test_privacy_serves_real_policy_without_js():
     assert "Privacy Policy" in body
     # The substance a reviewer/crawler must be able to see with no JS:
     assert "do not sell" in body.lower()
-    assert "Twilio" in body and "Square" in body
+    # Stripe, not Square — the payment processor named here must match the one
+    # that actually takes the money (integrations/stripe_payments.py). A privacy
+    # policy naming the wrong processor is an inaccurate disclosure, so this
+    # assertion is the thing that keeps the two in step.
+    assert "Twilio" in body and "Stripe" in body
     # Not the SPA shell (which only carried the marketing homepage title).
     assert "Airbnb Cleaning &amp; STR Management" not in body
     assert '<div id="root"></div>' not in body

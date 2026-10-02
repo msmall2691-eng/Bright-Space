@@ -115,6 +115,25 @@ export default function ClientLeftRail({
         <div className="flex justify-between text-xs"><span className="text-ink-3">Outstanding</span><span className={`font-semibold ${outstanding > 0 ? 'text-amber-600' : 'text-ink'}`}>${outstanding.toFixed(0)}</span></div>
       </div>
 
+      {/* Crew access — opt this customer's uncovered recurring visits onto the
+          bench so any cleared sub can grab a single one (offered, never
+          assigned). Off by default; the office turns it on per customer. */}
+      <div className="p-4 border-b border-hairline">
+        <div className="text-[10px] font-semibold uppercase tracking-widest text-ink-3 mb-2">Crew</div>
+        <label className="flex items-start gap-2 cursor-pointer">
+          <input type="checkbox" className="bb-check mt-0.5"
+            checked={!!client.recurring_open_to_crew}
+            disabled={savingField === 'recurring_open_to_crew'}
+            onChange={e => saveField('recurring_open_to_crew', e.target.checked)} />
+          <span className="text-xs text-ink-2 leading-snug">
+            Offer uncovered recurring visits to the crew
+            <span className="block text-[11px] text-ink-3 mt-0.5">
+              A repeating visit with no cleaner goes on the bench for any sub to grab — one at a time. Offered, never assigned.
+            </span>
+          </span>
+        </label>
+      </div>
+
       <div className="p-4 space-y-1.5">
         <div className="text-[10px] font-semibold uppercase tracking-widest text-ink-3 mb-1">Properties</div>
         {properties.length === 0

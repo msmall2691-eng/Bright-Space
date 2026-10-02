@@ -1,6 +1,9 @@
-import { Send, StickyNote, Sparkles, Loader2, BellRing, CalendarCheck } from 'lucide-react'
+import { useRef, useState } from 'react'
+import { Send, StickyNote, Sparkles, Loader2, BellRing, CalendarCheck, AtSign } from 'lucide-react'
 import { Kbd } from './primitives'
 import { apptDatePhrase, apptReminderText, apptConfirmText } from './utils'
+
+const roleLabel = (r) => (r === 'cleaner' ? 'cleaner' : 'office')
 
 const CANNED_REPLIES = [
   'On our way!',
@@ -42,9 +45,57 @@ export function ComposeBar({
   firstName,
   companyName,
   onFillReply,
+  // Teammates taggable with @ in an internal note (office + crew/subs). Typing
+  // @ in Note mode opens a picker; each tagged teammate is notified. Empty =
+  // no picker (e.g. embeds that don't pass a roster).
+  mentionables = [],
 }) {
   // Only offer appointment shortcuts on SMS threads with a real upcoming visit.
   const showApptChips = !noteMode && detail.channel === 'sms' && nextAppt && onFillReply
+
+  // @mention picker state (Note mode only). `picked` remembers who was chosen so
+  // we can send their user ids; at send we keep only those still present in the
+  // text (so deleting the @name un-tags them). `query` is the text typed after @
+  // at the caret, or null when the picker is closed.
+  const taRef = useRef(null)
+  const [query, setQuery] = useState(null)
+  const [picked, setPicked] = useState([])
+
+  const suggestions = (query === null || !mentionables.length)
+    ? []
+    : mentionables
+        .filter(u => (u.name || '').toLowerCase().includes(query.toLowerCase()))
+        .slice(0, 6)
+
+  const onReplyChange = (e) => {
+    const val = e.target.value
+    setReply(val)
+    if (!noteMode || !mentionables.length) { setQuery(null); return }
+    const caret = e.target.selectionStart ?? val.length
+    const m = val.slice(0, caret).match(/(?:^|\s)@([\w'’.\-]*)$/)
+    setQuery(m ? m[1] : null)
+  }
+
+  const pickMention = (u) => {
+    const ta = taRef.current
+    const caret = ta ? (ta.selectionStart ?? reply.length) : reply.length
+    const before = reply.slice(0, caret).replace(/@([\w'’.\-]*)$/, `@${u.name} `)
+    const next = before + reply.slice(caret)
+    setReply(next)
+    setPicked(prev => prev.some(p => p.id === u.id) ? prev : [...prev, u])
+    setQuery(null)
+    requestAnimationFrame(() => {
+      if (ta) { ta.focus(); ta.setSelectionRange(before.length, before.length) }
+    })
+  }
+
+  const handleSend = () => {
+    const mentions = noteMode
+      ? picked.filter(p => reply.includes(`@${p.name}`)).map(p => p.id)
+      : undefined
+    onSend(mentions)
+    setPicked([]); setQuery(null)
+  }
   return (
     <div className="border-t border-hairline bg-panel px-4 pt-2.5 pb-safe">
       {/* Mode toggle — wraps on narrow phones so the AI button + flash never clip */}
@@ -133,18 +184,33 @@ export function ComposeBar({
         </div>
       )}
 
+      {/* @mention picker — Note mode only, opens as you type @ */}
+      {noteMode && query !== null && suggestions.length > 0 && (
+        <div className="mb-1.5 overflow-hidden rounded-xl border border-hairline bg-panel shadow-lg">
+          {suggestions.map(u => (
+            <button key={u.id} type="button"
+              onMouseDown={e => { e.preventDefault(); pickMention(u) }}
+              className="flex w-full items-center gap-2 px-3 py-2 text-left hover:bg-bg-2 transition-colors">
+              <AtSign className="w-3.5 h-3.5 shrink-0 text-ink-3" />
+              <span className="truncate text-[13px] text-ink">{u.name}</span>
+              <span className="ml-auto shrink-0 text-[10px] uppercase tracking-wide text-ink-3">{roleLabel(u.role)}</span>
+            </button>
+          ))}
+        </div>
+      )}
+
       {/* Reply input */}
       <div className="flex gap-2">
-        <textarea value={reply} onChange={e => setReply(e.target.value)} rows={2}
+        <textarea ref={taRef} value={reply} onChange={onReplyChange} rows={2}
           placeholder={noteMode
-            ? 'Write an internal note (not sent to customer)...'
+            ? 'Write an internal note (not sent to customer) — type @ to tag a teammate'
             : `Reply via ${(detail.channel || 'sms').toUpperCase()}...`
           }
           className={`flex-1 border border-hairline bg-bg rounded-xl px-4 py-2.5 text-base sm:text-[13px] resize-none placeholder-ink-3 focus:outline-hidden focus:ring-2 focus:bg-panel transition-all leading-relaxed ${
             noteMode ? 'focus:ring-amber-500/20' : 'focus:ring-indigo-500/20'
           }`}
-          onKeyDown={e => { if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') onSend() }} />
-        <button onClick={onSend} disabled={sending || !reply.trim()}
+          onKeyDown={e => { if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') handleSend() }} />
+        <button onClick={handleSend} disabled={sending || !reply.trim()}
           className={`px-5 min-h-[44px] min-w-[64px] rounded-xl text-[13px] font-semibold self-stretch disabled:opacity-40 transition-all active:scale-95 shadow-xs ${
             noteMode
               ? 'bg-amber-500 hover:bg-amber-600 text-white'

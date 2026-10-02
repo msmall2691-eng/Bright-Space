@@ -51,7 +51,12 @@ def test_public_view_returns_the_invoice_for_a_valid_token(invoice_ctx):
     assert out["status"] == "sent"
     assert out["client_name"] == "Pay Test"      # display name only
     assert out["items"][0]["name"] == "Standard clean"
-    # The write path isn't built — the page is told so rather than shown a dead button.
+    # The write path IS built now (hosted Stripe Checkout, migration 122), but
+    # there is no STRIPE_SECRET_KEY in CI, so it reports off — which is the
+    # state that matters here: an unconfigured integration must read as "not
+    # available" and show the call/text path, never a button that fails after
+    # the customer has decided to pay. The configured case and the whole
+    # checkout flow are covered in test_invoice_stripe_checkout.py.
     assert out["online_payment_enabled"] is False
 
 

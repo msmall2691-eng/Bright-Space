@@ -55,7 +55,7 @@ export default function ScheduleCommandBar({
   if (!showKpiLine && !hasAlerts && !hasNeedsDate) return null
 
   return (
-    <div className="no-print bg-bg border-b border-hairline">
+    <div className="no-print shrink-0 bg-bg border-b border-hairline">
       <div className="max-w-7xl mx-auto px-3 sm:px-4 py-2 bb-board-in">
         {/* At-a-glance counts (was ScheduleHealthStrip). */}
         {showKpiLine && (

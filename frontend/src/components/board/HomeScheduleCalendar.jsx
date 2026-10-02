@@ -21,6 +21,21 @@ import { toLocalYMD } from '../../utils/format'
  * patch that keeps a dragged chip from snapping back before the refetch, and
  * onRefresh reconciles — both mirrored from Schedule.jsx.
  *
+ * The 3-minute poll (vs the hook's 45s default) is because Home is a glance
+ * surface, not where two admins edit against each other — that's the Schedule
+ * page, which keeps the default. At 45s this re-fetched the whole month 80
+ * times an hour while the dashboard sat open. The hook refetches on returning
+ * to the tab, so the slower interval costs no freshness at the moment anyone
+ * actually looks (brightbase-economy).
+ *
+ * stackDayDetail is why the month grid stays legible here. Home puts this
+ * calendar in a ~420px column at the owner's ~940px window; CalendarView's
+ * day rail is a fixed 320px and gates itself on the VIEWPORT (useIsMobile /
+ * md:), which on a full-width Schedule page is right and here is not. Opened
+ * beside the grid it left ~100px of month and collapsed the weekday headers
+ * into "SunMonTue". Stacked, the agenda sits under the grid the way it
+ * already does on a phone. Keep it set while this lives in a column.
+ *
  * The heavy edit machinery (VisitDetailsDrawer, JobEditModal) stays on the
  * Schedule page: clicking a job opens its detail page, and quick-add for a day
  * jumps to the Schedule pre-dated. Guest-stay / Google overlays are left off
@@ -30,7 +45,7 @@ export default function HomeScheduleCalendar({ navigate }) {
   const [currentDate, setCurrentDate] = useState(() => new Date())
   const {
     jobs, setJobs, setVisits, refresh, range, loadError,
-  } = useScheduleData(currentDate, 'month')
+  } = useScheduleData(currentDate, 'month', { pollMs: 180000 })
 
   // CalendarView reads parentJobs as an array; the hook holds them as a map.
   const parentJobs = useMemo(() => Object.values(jobs || {}), [jobs])
@@ -84,6 +99,7 @@ export default function HomeScheduleCalendar({ navigate }) {
             onJobClick={(j) => navigate(`/jobs/${j.id}`)}
             onCreateForDay={(d) => navigate(`/schedule?date=${toLocalYMD(d)}`)}
             showGuestStays={false}
+            stackDayDetail
           />
         </div>
       )}
