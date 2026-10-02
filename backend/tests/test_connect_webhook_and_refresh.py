@@ -222,3 +222,86 @@ def test_refresh_is_metered(sub):
     src = inspect.getsource(crew_router.refresh_my_payout_account)
     assert "rate_limit" in src or "crew_payout_refresh" in src, \
         "the refresh endpoint must stay rate-limited"
+
+
+# -- the Settings card can tell the two secrets apart ------------------------
+#
+# WHY THIS NEEDS A SURFACE AT ALL. From outside, an unsigned probe of the
+# webhook returns the same 400 whether one secret is set or both — so after
+# adding the second one in Railway there was no way to confirm it had landed
+# short of asking a subcontractor to re-onboard. The status endpoint reports
+# the halves separately so "did it take?" is one admin screen, not a guess.
+
+def _status_as_admin():
+    class _Admin:
+        id, org_id, role, email = 9993, 1, "admin", "admin-stripe@example.com"
+        full_name, active, status = "Ops Admin", True, "active"
+
+    app.dependency_overrides[get_current_user] = lambda: _Admin()
+    app.dependency_overrides[current_org_id] = lambda: 1
+    try:
+        return TestClient(app).get("/api/settings/stripe-status")
+    finally:
+        app.dependency_overrides.pop(get_current_user, None)
+        app.dependency_overrides.pop(current_org_id, None)
+
+
+@pytest.fixture
+def key_only(monkeypatch):
+    """A live key and both webhook secrets absent."""
+    from integrations import stripe_connect as sc
+    monkeypatch.setattr(sc, "configured", lambda: True)
+    monkeypatch.setattr(sc, "webhook_secret", lambda: None)
+    monkeypatch.setattr(sc, "connect_webhook_secret", lambda: None)
+
+
+def test_the_status_names_the_connect_secret_separately(key_only, monkeypatch):
+    from integrations import stripe_connect as sc
+    monkeypatch.setattr(sc, "webhook_secret", lambda: ACCOUNT_SECRET)
+
+    body = _status_as_admin().json()
+    assert body["configured"] is True
+    assert body["webhook_configured"] is True
+    # The whole point: the account secret being present says nothing about
+    # the Connect one, and the payload must not conflate them.
+    assert body["connect_webhook_configured"] is False
+    assert "STRIPE_CONNECT_WEBHOOK_SECRET" in body["detail"]
+
+
+def test_both_secrets_present_reads_as_fully_connected(key_only, monkeypatch):
+    from integrations import stripe_connect as sc
+    monkeypatch.setattr(sc, "webhook_secret", lambda: ACCOUNT_SECRET)
+    monkeypatch.setattr(sc, "connect_webhook_secret", lambda: CONNECT_SECRET)
+
+    body = _status_as_admin().json()
+    assert body["connect_webhook_configured"] is True
+    # No instruction left in the sentence once there is nothing left to add.
+    assert "STRIPE_CONNECT_WEBHOOK_SECRET" not in body["detail"]
+    assert "on their own" in body["detail"]
+
+
+def test_a_missing_connect_secret_does_not_claim_payments_are_broken(key_only, monkeypatch):
+    """It is not the money-losing state, and must not read like one.
+
+    Without the ACCOUNT secret a payment completes and the invoice is never
+    marked paid. Without the CONNECT secret nothing is lost but automatic
+    notice of a sub finishing setup, so the detail must still say online
+    payment is ON.
+    """
+    from integrations import stripe_connect as sc
+    monkeypatch.setattr(sc, "webhook_secret", lambda: ACCOUNT_SECRET)
+
+    detail = _status_as_admin().json()["detail"]
+    assert "Online invoice payment is on" in detail
+    assert "could never" not in detail          # the account-secret warning
+
+
+def test_a_missing_account_secret_still_wins_the_sentence(key_only, monkeypatch):
+    """Precedence: the state that takes money and loses it is the one named."""
+    from integrations import stripe_connect as sc
+    monkeypatch.setattr(sc, "connect_webhook_secret", lambda: CONNECT_SECRET)
+
+    body = _status_as_admin().json()
+    assert body["connect_webhook_configured"] is True
+    assert body["webhook_configured"] is False
+    assert "STRIPE_WEBHOOK_SECRET is missing" in body["detail"]

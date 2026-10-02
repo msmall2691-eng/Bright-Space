@@ -723,12 +723,24 @@ def stripe_status():
     transfer, so they work on the key alone. Naming the halves is what turns
     "why is there no pay button" into one obvious missing variable.
     """
-    from integrations.stripe_connect import configured, webhook_secret
+    from integrations.stripe_connect import (
+        configured, connect_webhook_secret, webhook_secret,
+    )
     ok = configured()
     hook = bool(webhook_secret())
+    # The CONNECTED-accounts endpoint has its own signing secret, because
+    # Stripe will not deliver a sub's `account.updated` to the account-level
+    # endpoint at all. Reported separately for the same reason the first two
+    # are: without it a sub finishes onboarding at Stripe and the app never
+    # hears, so `stripe_payouts_enabled` stays False and the payout rail
+    # refuses to send them money — with nothing on any screen saying why.
+    # It is also the only way to tell the secrets apart from outside: an
+    # unsigned probe gets the same 400 whether one is set or both.
+    connect_hook = bool(connect_webhook_secret())
     return {
         "configured": ok,
         "webhook_configured": hook,
+        "connect_webhook_configured": connect_hook,
         # One sentence the operator can act on, rather than two booleans to
         # interpret.
         "detail": (
@@ -740,7 +752,14 @@ def stripe_status():
             "be confirmed. Add it to switch the pay button on."
             if not hook else
             "Connected. Online invoice payment is on, and payouts can settle "
-            "to subcontractors' own accounts."
+            "to subcontractors' own accounts. Add "
+            "STRIPE_CONNECT_WEBHOOK_SECRET so a subcontractor finishing "
+            "Stripe setup is noticed automatically — until then they have to "
+            "tap “Check again” on their own screen."
+            if not connect_hook else
+            "Connected. Online invoice payment is on, payouts can settle to "
+            "subcontractors' own accounts, and their setup updates arrive on "
+            "their own."
         ),
     }
 

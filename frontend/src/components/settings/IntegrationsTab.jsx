@@ -469,9 +469,10 @@ function SmsCard({ toast, active }) {
 }
 
 // Stripe — read-only status. Deliberately has no form: Stripe is configured by
-// environment variable (STRIPE_SECRET_KEY / STRIPE_WEBHOOK_SECRET) on the
-// server, so there is nothing to type here and the key never passes through the
-// browser the way the old Square access token did.
+// environment variable (STRIPE_SECRET_KEY / STRIPE_WEBHOOK_SECRET /
+// STRIPE_CONNECT_WEBHOOK_SECRET) on the server, so there is nothing to type
+// here and the key never passes through the browser the way the old Square
+// access token did.
 //
 // This replaced SquareCard. That card collected a Square access token for the
 // Labor API timecard export, which was deleted in Sept 2026 — a timecard
@@ -492,6 +493,12 @@ function StripeCard({ active }) {
   // Three states, not two: connected-but-no-webhook is the one that silently
   // takes money and never marks the invoice paid, so it reads as needs-
   // attention (amber) rather than connected.
+  //
+  // A missing CONNECT webhook secret is deliberately NOT a fourth state. It
+  // costs nobody money — payments and payouts both work without it; the only
+  // loss is that a sub's finished Stripe setup isn't noticed on its own and
+  // they have to tap "Check again". That belongs in the sentence below, not
+  // in an amber dot that would make a working payment rail look broken.
   const tone = st.loading ? 'bg-ink-3'
     : !st.configured ? 'bg-ink-3'
     : !st.webhook_configured ? 'bg-amber-500'
