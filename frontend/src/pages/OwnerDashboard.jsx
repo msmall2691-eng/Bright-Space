@@ -205,6 +205,7 @@ export default function OwnerDashboard() {
   const topClients = data?.top_clients || []
 
   const arTotal = AGING_ORDER.reduce((sum, b) => sum + (arAging[b.key]?.total || 0), 0)
+  const arCount = AGING_ORDER.reduce((sum, b) => sum + (arAging[b.key]?.count || 0), 0)
   const revenueTotal = revenueByService.reduce((sum, r) => sum + (r.total || 0), 0)
 
   const goInvoices = (status) =>
@@ -223,11 +224,12 @@ export default function OwnerDashboard() {
 
       <div className="px-4 sm:px-8 pb-6 space-y-5">
 
-      {/* KPI row */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+      {/* Headline KPIs — the numbers Meg steers by, above the fold and dense
+          (2-up on a phone, 4-up at ~940px). Past-due is a tile you can ACT on:
+          it drills straight into the overdue invoice list. */}
+      <div className="grid grid-cols-2 shell:grid-cols-4 gap-3 bb-board-in">
         <KpiCard
           icon={TrendingUp}
-          chip="bg-bg-2 text-ink-2"
           label="Close rate (90d)"
           loading={loading}
           value={closeRate?.rate_pct != null ? `${closeRate.rate_pct}%` : 'n/a'}
@@ -237,7 +239,6 @@ export default function OwnerDashboard() {
         />
         <KpiCard
           icon={Repeat}
-          chip="bg-bg-2 text-ink-2"
           label="MRR estimate"
           loading={loading}
           value={fmtMoney((mrr?.estimate_cents || 0) / 100)}
@@ -247,22 +248,51 @@ export default function OwnerDashboard() {
         />
         <KpiCard
           icon={DollarSign}
-          chip="bg-bg-2 text-ink-2"
           label="Revenue paid (90d)"
           loading={loading}
           value={fmtMoney(revenueTotal)}
           sub={`${revenueByService.reduce((n, r) => n + (r.invoice_count || 0), 0)} invoices`}
         />
+        {/* Clickable headline: jumps to the overdue invoice list. A quiet
+            hover lift is the only motion; rose INK (never a tint) when money
+            is owed. Disabled — plain ink — when nothing is past due. */}
+        <button
+          type="button"
+          onClick={() => goInvoices('overdue')}
+          disabled={!arTotal}
+          className="block w-full text-left rounded-xl transition-transform duration-200 ease-out hover:-translate-y-0.5 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-indigo-500/40 disabled:cursor-default disabled:hover:translate-y-0">
+          <KpiCard
+            icon={AlertTriangle}
+            label="Past due"
+            loading={loading}
+            value={fmtMoney(arTotal)}
+            accent={arTotal > 0 ? 'text-rose-600 dark:text-rose-300' : 'text-ink'}
+            sub={`${arCount} ${arCount === 1 ? 'invoice' : 'invoices'} owed`}
+          />
+        </button>
       </div>
 
-      {/* "Am I making money on this house" — full width, it's the table */}
-      <OperatingHealthTile {...health} />
-      <PropertyEconomicsTile {...economics} navigate={navigate} />
-
-      <div className="grid grid-cols-1 shell:grid-cols-2 gap-5">
+      {/* Above the fold: the two numbers the business lives on — labour share
+          & repeat rate beside this week's booked-vs-available capacity. Two
+          equal boxes, not a full-width band apiece. Collapses to one column
+          below shell:. */}
+      <div className="grid grid-cols-1 shell:grid-cols-2 gap-4 bb-board-in" style={{ animationDelay: '40ms' }}>
+        <OperatingHealthTile {...health} />
         {/* This week: how packed, and who's been on the clock */}
         <WeekCapacityTile {...capacity} navigate={navigate} />
+      </div>
 
+      {/* Property economics — a wide table, so it keeps the full width. */}
+      <div className="bb-board-in" style={{ animationDelay: '80ms' }}>
+        <PropertyEconomicsTile {...economics} navigate={navigate} />
+      </div>
+
+      {/* Lower bento — two PACKING columns (per-column flex stacks, not a
+          height-locking grid), so a short box sits straight on the next with
+          no dead space. Money on the left (AR aging + revenue mix); who pays
+          & systems health on the right. One column below shell:. */}
+      <div className="grid grid-cols-1 shell:grid-cols-2 gap-4 bb-board-in" style={{ animationDelay: '120ms' }}>
+        <div className="flex flex-col gap-4">
         {/* AR aging — every bucket links to the matching invoice list */}
         <Tile icon={AlertTriangle} iconColor="rose" title={`AR aging · ${fmtMoney(arTotal)} past due`}>
           {loading ? <TileLoading /> : (
@@ -340,8 +370,10 @@ export default function OwnerDashboard() {
             </div>
           )}
         </Tile>
-      </div>
+        </div>
 
+        {/* Column B — who pays, and whether the assistant is healthy. */}
+        <div className="flex flex-col gap-4">
       {/* Top clients */}
       <Tile icon={Users} iconColor="blue" title="Top clients by paid revenue (90d)">
         {loading ? <TileLoading /> : topClients.length === 0 ? (
@@ -375,6 +407,8 @@ export default function OwnerDashboard() {
       {/* AI provider status + live self-test — surfaces which LLM is active
           and the real error when the assistant fails. */}
       <AiHealthTile />
+        </div>
+      </div>
       </div>
     </div>
   )
