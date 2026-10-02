@@ -194,6 +194,22 @@ def test_somebody_already_on_the_job_is_not_offered_it(ids, pushes):
     assert other in told
 
 
+def test_targeted_offer_pushes_only_to_its_audience(ids, pushes):
+    """Migration 117: a job the office limited to specific cleaners announces
+    itself only to THEM — not the whole cleared bench. The push follows the
+    board: if you can't see the offer, you don't get pinged about it."""
+    invited, invited_cid = _mk_sub(ids, name="Invited")
+    bystander, _ = _mk_sub(ids, name="Not Invited")
+    jid = _mk_job(ids, posted_rate=150)
+    # Post AND target the invited cleaner in one edit.
+    r = _as(_Office()).patch(f"/api/jobs/{jid}",
+                             json={"open_for_claims": True, "offer_audience": [invited_cid]})
+    assert r.status_code == 200, r.text
+    told = {p["user_id"] for p in pushes}
+    assert invited in told
+    assert bystander not in told
+
+
 # ── what the payload may say ───────────────────────────────────────────────
 
 def test_an_offer_never_names_the_house_or_the_customer(ids, pushes):

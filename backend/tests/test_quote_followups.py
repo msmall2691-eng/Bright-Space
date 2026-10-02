@@ -79,7 +79,10 @@ def test_convert_to_job_unscheduled_inherits_quote_org(client_ctx):
     just the quote's own org."""
     db, c = client_ctx
     q = _mk_quote(db, c.id, "QT-CONV-ORG", status="accepted", org_id=9)
-    out = convert_quote_to_job(q.id, db=db)
+    # Pass the caller's org explicitly — the endpoint is now org-scoped (MT-2),
+    # so an in-process call must supply what current_org_id would resolve from an
+    # org-9 admin's JWT; without it the scoped lookup can't see the org-9 quote.
+    out = convert_quote_to_job(q.id, db=db, org_id=9)
     job = db.query(Job).filter(Job.id == out["id"]).first()
     assert job.org_id == 9
 

@@ -131,3 +131,74 @@ describe('useScheduleData — enabled gate (Codex follow-up on audit #5)', () =>
     expect(get).toHaveBeenCalledTimes(2)
   })
 })
+
+/**
+ * Returning to a backgrounded tab refetches when the data has gone stale.
+ *
+ * Why this exists: the poll skips every tick while the tab is hidden, so
+ * without a refetch on the way back in, returning to a backgrounded dashboard
+ * showed up to a full interval of stale schedule. That made the interval a
+ * tug-of-war — short enough to be fresh on return, or long enough not to burn
+ * requests while you sit there. These pin the resolution, which is what lets
+ * the Ops Board run a 3-minute interval instead of 45 seconds.
+ */
+describe('useScheduleData — refresh on returning to the tab', () => {
+  let hidden = false
+  const setHidden = (v) => { hidden = v }
+
+  beforeEach(() => {
+    hidden = false
+    Object.defineProperty(document, 'hidden', { configurable: true, get: () => hidden })
+    get.mockImplementation(async () => weekPayload('a'))
+  })
+
+  const show = async () => {
+    setHidden(false)
+    await act(async () => { document.dispatchEvent(new Event('visibilitychange')) })
+  }
+
+  it('refetches when the data is older than the poll interval', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    try {
+      await act(async () => {
+        renderHook(() => useScheduleData(new Date(2026, 0, 5), 'week', { pollMs: 60000 }))
+      })
+      const afterLoad = get.mock.calls.length
+      expect(afterLoad).toBeGreaterThan(0)
+
+      setHidden(true)
+      // Past the interval while hidden — the tick itself is a no-op.
+      await act(async () => { vi.advanceTimersByTime(90000) })
+      expect(get.mock.calls.length).toBe(afterLoad)
+
+      await show()
+      expect(get.mock.calls.length).toBeGreaterThan(afterLoad)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('does not refetch on a quick alt-tab, when the data is still fresh', async () => {
+    await act(async () => {
+      renderHook(() => useScheduleData(new Date(2026, 0, 5), 'week', { pollMs: 180000 }))
+    })
+    const afterLoad = get.mock.calls.length
+
+    // Away and back inside the interval: the data on screen is still good, and
+    // two round trips for one alt-tab is exactly the waste this guards.
+    setHidden(true)
+    await show()
+    expect(get.mock.calls.length).toBe(afterLoad)
+  })
+
+  it('stays off entirely when polling is disabled', async () => {
+    await act(async () => {
+      renderHook(() => useScheduleData(new Date(2026, 0, 5), 'week', { pollMs: 0 }))
+    })
+    const afterLoad = get.mock.calls.length
+
+    setHidden(true)
+    await show()
+    expect(get.mock.calls.length).toBe(afterLoad)
+  })
+})

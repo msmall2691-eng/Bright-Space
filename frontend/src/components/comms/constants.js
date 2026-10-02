@@ -6,12 +6,6 @@
  */
 import { Phone, Mail, MessageSquare } from 'lucide-react'
 
-export const COLORS = {
-  primary: { 50: '#eff6ff', 100: '#dbeafe', 500: '#3b82f6', 600: '#2563eb', 700: '#1d4ed8' },
-  surface: { 0: '#ffffff', 50: '#fafafa', 100: '#f4f4f5', 200: '#e4e4e7' },
-  ink: { 900: '#18181b', 700: '#3f3f46', 500: '#71717a', 400: '#a1a1aa', 300: '#d4d4d8' },
-}
-
 // Channel + priority indicators are dot+word, not filled/tinted chips (owner's
 // veto of pill bubbles) — each config entry carries a solid dot color class
 // plus a plain-text label; consumers render a small colored dot next to

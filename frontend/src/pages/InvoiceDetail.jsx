@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useParams, useNavigate, Link } from 'react-router-dom'
 import {
-  ArrowLeft, Building2, TrendingUp, Calendar, FileText, Receipt, CheckCircle, Send, Trash2,
+  ArrowLeft, Building2, TrendingUp, Calendar, FileText, Receipt, CheckCircle, Send, Trash2, Repeat,
 } from 'lucide-react'
 import { get, patch, post, del } from '../api'
 import { toast } from '../utils/toastBus'
@@ -14,10 +14,10 @@ import RecordSkeleton from '../components/record/RecordSkeleton'
 import { EmptyState } from '../components/ui'
 
 const STATUS_OPTIONS = [
-  { value: 'draft',   label: 'draft',   chipClass: 'bg-bg-2 text-ink-3 border-hairline',                    dot: 'bg-ink-3' },
-  { value: 'sent',    label: 'sent',    chipClass: 'bg-blue-500/15 text-blue-500 border-blue-500/20',       dot: 'bg-blue-500' },
-  { value: 'overdue', label: 'overdue', chipClass: 'bg-red-500/15 text-red-500 border-red-500/20',          dot: 'bg-red-500' },
-  { value: 'paid',    label: 'paid',    chipClass: 'bg-emerald-500/15 text-emerald-500 border-emerald-500/20', dot: 'bg-emerald-500' },
+  { value: 'draft',   label: 'draft',   dot: 'bg-ink-3' },
+  { value: 'sent',    label: 'sent',    dot: 'bg-blue-500' },
+  { value: 'overdue', label: 'overdue', dot: 'bg-red-500' },
+  { value: 'paid',    label: 'paid',    dot: 'bg-emerald-500' },
 ]
 
 const money = (n) => n == null || n === '' ? '$0' :
@@ -30,7 +30,7 @@ function LinkedCard({ icon: Icon, label, to, primary, secondary }) {
       <div className="flex items-center gap-1.5 text-[10px] uppercase tracking-wide text-ink-3 mb-1">
         <Icon className="w-3.5 h-3.5" /> {label}
       </div>
-      <div className={`text-[13px] truncate ${to ? 'text-blue-500 hover:underline' : 'text-ink-2'}`}>{primary}</div>
+      <div className={`text-[13px] truncate ${to ? 'text-ink hover:text-indigo-600 no-underline' : 'text-ink-2'}`}>{primary}</div>
       {secondary && <div className="text-[11px] text-ink-3 truncate">{secondary}</div>}
     </div>
   )
@@ -138,14 +138,15 @@ export default function InvoiceDetail() {
           <ArrowLeft className="w-4 h-4" /> Back to Invoices
         </button>
 
-        <div className="grid grid-cols-1 shell:grid-cols-[300px_minmax(0,1fr)_320px] gap-4">
+        {/* 2 columns at shell: (fields + body), linked records as a full-width
+            row below; 3rd rail only at xl:. The old 3-fixed-column grid
+            (300+320) crushed the center at the ~940px window. */}
+        <div className="grid grid-cols-1 shell:grid-cols-[minmax(240px,280px)_minmax(0,1fr)] xl:grid-cols-[280px_minmax(0,1fr)_300px] gap-4">
           {/* ── Left: fields ──────────────────────────────────────── */}
           <div className="bg-panel border border-hairline rounded-xl p-4 space-y-4 self-start">
             <div>
               <div className="flex items-center gap-2 mb-2">
-                <div className="w-10 h-10 rounded-lg bg-indigo-600/15 text-blue-500 flex items-center justify-center shrink-0">
-                  <Receipt className="w-5 h-5" />
-                </div>
+                <Receipt className="w-5 h-5 text-ink-3 shrink-0" />
                 <InlineSelect value={inv.status} options={STATUS_OPTIONS} onSelect={setStatus} />
               </div>
               <div className="text-[11px] text-ink-3">{inv.invoice_number}</div>
@@ -166,7 +167,7 @@ export default function InvoiceDetail() {
             <div className="border-t border-hairline pt-3">
               <div className="text-[10px] uppercase tracking-wide text-ink-3 mb-1">Client</div>
               {inv.client_id ? (
-                <Link to={`/clients/${inv.client_id}`} className="flex items-center gap-2 text-[13px] text-blue-500 hover:underline">
+                <Link to={`/clients/${inv.client_id}`} className="flex items-center gap-2 text-[13px] text-ink hover:text-indigo-600 no-underline">
                   <Building2 className="w-3.5 h-3.5 shrink-0" /> {inv.client_name || `Client #${inv.client_id}`}
                 </Link>
               ) : <span className="text-[12px] text-ink-3 italic">No client linked</span>}
@@ -182,6 +183,20 @@ export default function InvoiceDetail() {
                   className="w-full flex items-center justify-center gap-1.5 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white px-3 py-2 rounded-lg text-[12px] font-medium transition-colors">
                   <CheckCircle className="w-3.5 h-3.5" /> Mark paid
                 </button>
+              </div>
+            )}
+
+            {/* "Do this next": once it's paid, the last arrow in the pipeline —
+                turn a one-off into a repeating clean. This was the one hop with
+                no link at all. Prefills the recurring create for this client. */}
+            {canEdit() && inv.status === 'paid' && inv.client_id && (
+              <div className="border-t border-hairline pt-3">
+                <button
+                  onClick={() => navigate(`/recurring?new=1&client=${inv.client_id}${inv.client_name ? `&name=${encodeURIComponent(inv.client_name)}` : ''}`)}
+                  className="w-full flex items-center justify-center gap-1.5 bg-bg-2 hover:bg-bg-3 border border-hairline text-ink-2 px-3 py-2 rounded-lg text-[12px] font-medium transition-colors">
+                  <Repeat className="w-3.5 h-3.5" /> Set up recurring
+                </button>
+                <p className="mt-1.5 text-center text-[11px] text-ink-3">Turn this into a repeating clean.</p>
               </div>
             )}
 
@@ -247,8 +262,8 @@ export default function InvoiceDetail() {
             </div>
           </div>
 
-          {/* ── Right: related ────────────────────────────────────── */}
-          <div className="space-y-4 self-start">
+          {/* ── Related — full-width row at shell:, side rail only at xl:. ── */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 shell:grid-cols-3 xl:grid-cols-1 gap-3 self-start shell:col-span-2 xl:col-span-1">
             <LinkedCard icon={Calendar} label="Job"
               to={inv.job ? `/jobs/${inv.job.id}` : null}
               primary={inv.job?.title || (inv.job ? `Job #${inv.job.id}` : null)}

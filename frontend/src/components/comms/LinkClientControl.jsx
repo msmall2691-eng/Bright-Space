@@ -20,6 +20,9 @@ export function LinkClientControl({ onLink, linking }) {
       setLoading(true)
       const params = new URLSearchParams({ limit: '8' })
       if (q.trim()) params.append('search', q.trim())
+      // Archived clients aren't customers anymore — don't offer them when
+      // linking a conversation to a client (client lifecycle).
+      params.append('include_archived', 'false')
       get(`/api/clients?${params.toString()}`)
         .then(d => setResults(Array.isArray(d) ? d : []))
         .catch(() => setResults([]))
@@ -31,7 +34,7 @@ export function LinkClientControl({ onLink, linking }) {
   if (!open) {
     return (
       <button onClick={() => setOpen(true)} disabled={linking}
-        className="mt-3 w-full flex items-center justify-center gap-1.5 text-[12px] font-semibold text-indigo-600 bg-indigo-500/10 hover:bg-indigo-500/15 disabled:opacity-60 py-2 rounded-xl transition-colors">
+        className="mt-3 w-full flex items-center justify-center gap-1.5 text-[12px] font-medium text-ink-2 bg-panel border border-hairline-2 hover:bg-bg-2 disabled:opacity-60 py-2 rounded-md transition-colors">
         {linking ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Link2 className="w-3.5 h-3.5" />}
         Link to a client
       </button>
@@ -39,7 +42,7 @@ export function LinkClientControl({ onLink, linking }) {
   }
 
   return (
-    <div className="mt-3 rounded-xl border border-indigo-200 dark:border-indigo-500/30 bg-indigo-500/5 p-2 space-y-2">
+    <div className="mt-3 rounded-lg border border-hairline bg-panel p-2 space-y-2">
       <div className="relative">
         <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-ink-3 pointer-events-none" />
         <input

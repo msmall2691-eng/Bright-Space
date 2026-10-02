@@ -2,7 +2,9 @@
 newsletters, bulk mail and cold B2B pitches stay inbox-only. evaluate_inbound_email
 returns (create, reason) so every decision is auditable.
 """
-from integrations.email_filter import evaluate_inbound_email, is_bulk_mail
+from integrations.email_filter import (
+    evaluate_inbound_email, is_bulk_mail, is_promotional, should_thread_inbound_email,
+)
 
 
 def _email(**kw):
@@ -85,6 +87,31 @@ def test_no_sender_rejected():
     create, reason = evaluate_inbound_email(_email(from_email=""))
     assert create is False
     assert reason == "no_sender"
+
+
+def test_gmail_promotions_social_labels_are_promotional():
+    # Gmail keeps INBOX on Promotions/Social mail, so it's still fetched; the
+    # category label is what marks it as junk when no bulk header is present.
+    assert is_promotional({"labels": ["INBOX", "CATEGORY_PROMOTIONS"]}) is True
+    assert is_promotional({"labels": ["INBOX", "CATEGORY_SOCIAL"]}) is True
+    assert is_promotional({"labels": ["INBOX", "SPAM"]}) is True
+    # Primary-tab / normal mail and updates are NOT promotional.
+    assert is_promotional({"labels": ["INBOX", "IMPORTANT"]}) is False
+    assert is_promotional({"labels": ["INBOX", "CATEGORY_UPDATES"]}) is False
+    assert is_promotional({}) is False                 # IMAP path: no labels
+    assert is_promotional({"labels": None}) is False
+
+
+def test_promotional_mail_is_kept_out_of_the_inbox():
+    # A promo blast with NO List-Unsubscribe header slips past is_bulk_mail, but
+    # its Gmail category keeps it out of the Comms inbox (→ triage instead).
+    promo = _email(from_email="deals@shop.example", subject="50% off today!",
+                   body="Shop now", labels=["INBOX", "CATEGORY_PROMOTIONS"])
+    assert is_bulk_mail(promo) is False                # no bulk header
+    assert should_thread_inbound_email(promo) is False # but category excludes it
+    # The same message without the label DOES thread (unknown human sender).
+    plain = _email(from_email="deals@shop.example", subject="hi", body="hello")
+    assert should_thread_inbound_email(plain) is True
 
 
 def test_reply_beats_bulk_headers():

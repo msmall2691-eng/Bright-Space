@@ -211,12 +211,38 @@ def is_reply_to_our_thread(email: dict) -> bool:
     return False
 
 
+# Gmail's own category labels for the Promotions and Social tabs, plus SPAM as
+# belt-and-suspenders (an INBOX-only fetch shouldn't carry SPAM, but a message
+# can briefly hold both during a reclassification). These ride on messages
+# fetched through the Gmail API (gmail_api.py stamps `labels` from labelIds);
+# the IMAP path can't see Gmail categories, so this is simply a no-op there.
+_PROMO_CATEGORY_LABELS = {"CATEGORY_PROMOTIONS", "CATEGORY_SOCIAL", "SPAM"}
+
+
+def is_promotional(email: dict) -> bool:
+    """True if Gmail itself filed this into the Promotions or Social tab (or
+    Spam). Gmail keeps the INBOX label on Promotions/Social mail, so an
+    INBOX-only sync still pulls it in — and cold marketing that carries no
+    List-Unsubscribe / bulk header slips past is_bulk_mail. The category label
+    is the signal those header heuristics miss.
+
+    Only consulted for UNKNOWN senders (run_inbox_sync lets known contacts
+    bypass the thread gate), so a real client whose reply Gmail happens to
+    mis-tag is never affected — this just keeps a stranger's promo/social mail
+    out of the inbox and in the triage pile instead."""
+    labels = email.get("labels") or []
+    if not isinstance(labels, (list, tuple, set)):
+        return False
+    return any(str(lbl).upper() in _PROMO_CATEGORY_LABELS for lbl in labels)
+
+
 def should_thread_inbound_email(email: dict) -> bool:
     """True if this inbound email belongs in the unified Comms inbox at all,
     independent of whether it also qualifies to auto-create a Client.
 
     Only excludes on DEFINITIVE automated/bulk signals — a blocked sender
-    (is_spam_sender) or bulk-mail headers (is_bulk_mail) — never on content
+    (is_spam_sender), bulk-mail headers (is_bulk_mail), or a Gmail
+    Promotions/Social category label (is_promotional) — never on content
     classification. A message that doesn't happen to mention "cleaning" is
     still a real human until proven otherwise; evaluate_inbound_email's
     content heuristics decide whether to auto-create a Client, not whether
@@ -232,7 +258,7 @@ def should_thread_inbound_email(email: dict) -> bool:
     addr = (email.get("from_email") or "").strip()
     if not addr:
         return False
-    return not (is_spam_sender(addr) or is_bulk_mail(email))
+    return not (is_spam_sender(addr) or is_bulk_mail(email) or is_promotional(email))
 
 
 def evaluate_inbound_email(email: dict) -> tuple[bool, str]:

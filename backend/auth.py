@@ -53,6 +53,18 @@ _PUBLIC_PREFIXES = (
     "/api/intake/submit",
     "/api/intake/webhook",
     "/api/comms/twilio/webhook",
+    # Inbound VOICE: the call answer URL plus its callbacks (after-dial,
+    # after-record, recording, transcription). Twilio can't send our API key,
+    # so each handler verifies X-Twilio-Signature itself and REFUSES when
+    # TWILIO_AUTH_TOKEN is unset — same fail-closed posture as the SMS
+    # webhook above. A prefix because this is a genuine family of five
+    # callbacks for one call; nothing else may be mounted under it.
+    #
+    # This entry is the fix for a real outage: the number's Voice webhook
+    # pointed at /api/twilio/voice, which matched nothing here, so this
+    # middleware answered Twilio with a 401 and every inbound call died at
+    # 0 seconds (Twilio error 11200) from 2026-04-29 to 2026-09-14.
+    "/api/comms/twilio/voice",
     # Stripe Connect account events. Stripe can't send our API key, so the
     # handler verifies the webhook signature itself and REFUSES when
     # STRIPE_WEBHOOK_SECRET is unset — same posture as Twilio above. It is the
@@ -77,11 +89,18 @@ _PUBLIC_PREFIXES = (
     # (rate-limited); the data endpoints enforce a portal-session token in the
     # portal router's own dependency, not the staff API key.
     "/api/portal/",
-    # `/api/invoices/public/` was here for a customer-facing payment portal
-    # that never worked and has been deleted rather than finished — see
-    # modules/invoicing/router.py. There is no unauthenticated invoice
-    # endpoint any more, so nothing needs the exemption, and leaving the
-    # prefix open would exempt whatever somebody mounts under it next.
+    # Customer-facing invoice / pay page — passwordless. The per-invoice token
+    # in the path is the credential (revocable by nulling invoices.public_token);
+    # the GET returns a minimal, PII-free payload.
+    #
+    # NOT read-only any more: this prefix also covers
+    # POST /api/invoices/public/{token}/checkout, which opens a hosted Stripe
+    # Checkout session for that one invoice (migration 122). It is metered
+    # (20/hour) because otherwise a leaked token is a free Stripe-session
+    # generator. It CANNOT mark anything paid — only the signature-verified
+    # webhook at /api/payroll/stripe/webhook does that — so the worst a token
+    # holder can do is offer to pay somebody else's invoice.
+    "/api/invoices/public/",
     # Company logo image — loaded unauthenticated by the quote email (<img>),
     # the PDF generator, and the public quote page. Read-only; serves bytes only.
     "/api/settings/logo",
@@ -115,6 +134,17 @@ _PUBLIC_EXACT = frozenset({
     # reveals whether an email is already known — approval is an admin
     # clicking a button (modules/apply/router.py).
     "/api/apply",
+})
+
+
+# BB-SEC-17: the only paths a scoped health-check key (HEALTHCHECK_API_KEY)
+# may reach, and only with GET. These are the two read-only schema/health scans
+# the owner runs to confirm the schedule looks right; everything else is a hard
+# 403 for that key. Kept as an explicit allow-list (not a prefix) so it can
+# never widen to a neighbouring path somebody later mounts under the same stem.
+_HEALTHCHECK_PATHS = frozenset({
+    "/api/recurring/cleanup/health",
+    "/api/admin/data-health",
 })
 
 
@@ -197,9 +227,28 @@ class APIKeyMiddleware(BaseHTTPMiddleware):
             return JSONResponse(
                 {"detail": "Missing API key or JWT token."}, status_code=401
             )
-        if not secrets.compare_digest(provided_key, expected_key):
+        # Full-access master key — unchanged. Matched FIRST so the scoped key
+        # below can only ever narrow access, never widen it.
+        if secrets.compare_digest(provided_key, expected_key):
+            return await call_next(request)
+
+        # BB-SEC-17: scoped read-only health-check key. Lets the owner store a
+        # key for an uptime monitor / a remote session that can run the two
+        # read-only health scans WITHOUT handing over the master key, which can
+        # read and write every table. Any path outside _HEALTHCHECK_PATHS, or
+        # any method other than GET, is a hard 403 — so a leaked health key
+        # can't touch client data. (Set it to a value distinct from
+        # BRIGHTBASE_API_KEY; if they ever match, the master branch above wins
+        # and the key simply has full access, i.e. no scoping, not a bypass.)
+        healthcheck_key = os.getenv("HEALTHCHECK_API_KEY", "")
+        if healthcheck_key and secrets.compare_digest(provided_key, healthcheck_key):
+            if request.method == "GET" and raw_path.rstrip("/") in _HEALTHCHECK_PATHS:
+                return await call_next(request)
             return JSONResponse(
-                {"detail": "Invalid API key."}, status_code=403
+                {"detail": "This key is limited to the health-check endpoints."},
+                status_code=403,
             )
 
-        return await call_next(request)
+        return JSONResponse(
+            {"detail": "Invalid API key."}, status_code=403
+        )

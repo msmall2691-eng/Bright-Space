@@ -181,6 +181,43 @@ def _nights_between(checkin, checkout):
     return None
 
 
+def dismiss_booking_for_job(db, job, actor: str | None = None) -> int:
+    """Mark the iCal booking(s) behind a DELETED turnover as dismissed, so the
+    generator stops recreating a turnover for that booking ("just gone" — the
+    owner's explicit choice).
+
+    Call this ONLY for a deliberate human delete. The automatic false-cancel
+    recovery must never dismiss a booking, or a system hiccup would silently drop
+    a real cleaning — the exact loss the standing "a live booking always keeps a
+    turnover" policy exists to prevent (scheduling-invariants Rule 0 / the feed
+    is an inbox that must not override canonical, and R7 stays intact: nothing
+    here deletes a Job automatically — a human already did).
+
+    Best-effort and idempotent. Returns how many bookings it dismissed. Unlinks
+    job_id so the caller's hard-delete can't strand a dangling FK. A no-op for a
+    non-turnover job or one with no matching booking."""
+    if getattr(job, "job_type", None) != "str_turnover":
+        return 0
+    events = db.query(ICalEvent).filter(ICalEvent.job_id == job.id).all()
+    # Fallback: catch a same-property/date booking whose link a prior sweep
+    # already nulled, so re-deleting the recreated turnover still dismisses it.
+    if not events and getattr(job, "property_id", None) and getattr(job, "scheduled_date", None):
+        co = job.scheduled_date.isoformat() if hasattr(job.scheduled_date, "isoformat") else str(job.scheduled_date)
+        events = db.query(ICalEvent).filter(
+            ICalEvent.property_id == job.property_id,
+            ICalEvent.checkout_date == co,
+        ).all()
+    now = datetime.now(timezone.utc)
+    n = 0
+    for e in events:
+        if e.dismissed_at is None:
+            e.dismissed_at = now
+            e.dismissed_by = actor
+        e.job_id = None   # unlink so the hard-delete can't dangle/block the FK
+        n += 1
+    return n
+
+
 def _refresh_booking_metadata(job, uid, checkin, checkout) -> None:
     """Keep an existing turnover's stay metadata in step with its booking.
 
@@ -257,8 +294,17 @@ def _push_turnover_to_gcal(db, prop, linked_job, checkout_date) -> bool:
         # the change or auth is unavailable. Treat that as a failure and log
         # loudly — otherwise we'd "succeed" while Google keeps the stale date and
         # the next authoritative GCal sync reverts the reconciliation.
+        # Keep the customer on the event when they have an email — update_event
+        # is a full REPLACE, so omitting send_invite here would silently drop the
+        # customer's attendee entry on a reschedule (see update_event's docstring)
+        # and revert the event to the internal, code-bearing description. Same
+        # policy as the create path: on their calendar, no email (send_updates
+        # "none"), no access details (customer-facing description).
+        _has_email = bool(client_dict.get("email"))
         ok = update_event(linked_job.gcal_event_id, job_dict, client_dict,
-                          owner_account_id=getattr(linked_job, "gcal_account_id", None))
+                          owner_account_id=getattr(linked_job, "gcal_account_id", None),
+                          send_invite=_has_email,
+                          send_updates="none" if _has_email else None)
         if ok:
             log.info(
                 f"Updated GCal event {linked_job.gcal_event_id} for turnover "
@@ -315,7 +361,20 @@ def _push_new_turnover_to_gcal(prop, job, check_out_time, end_time, notes_text,
             "site_contact_name": prop.site_contact_name,
             "site_contact_phone": prop.site_contact_phone,
         }
-        gcal_event_id = create_event(job_dict, client_dict, property_data=property_data)
+        # Auto-invite the customer so every turnover lands on THEIR calendar too
+        # (owner request: "so they can see all of the cleanings"). send_updates
+        # is forced to "none" — they wanted the event on the customer's calendar
+        # WITHOUT an email landing every time a booking generates a turnover.
+        # send_invite=True also switches _build_event to the customer-facing
+        # description (address + secure confirm/portal links only — NO gate
+        # codes, access notes, or crew), so inviting the customer never leaks
+        # access details (BB-SEC-08…12). A property with no customer email keeps
+        # the internal, code-rich event exactly as before.
+        has_email = bool(client_dict.get("email"))
+        gcal_event_id = create_event(
+            job_dict, client_dict, property_data=property_data,
+            send_invite=has_email, send_updates="none" if has_email else None,
+        )
         if gcal_event_id:
             job.gcal_event_id = gcal_event_id
             job.calendar_invite_sent = True
@@ -532,6 +591,15 @@ def _sync_ical_url(db: Session, prop: Property, ical_url: str, ical_source_label
         # against, masking the very anomaly this guard exists to catch.
         property_ical.last_events_seen = seen
 
+    # Standing cleaner (migration 120): a property Meg designated a cleaner for
+    # posts each generated turnover as a targeted offer only that cleaner sees.
+    # Collect the new job ids here and notify that one cleaner AFTER the outer
+    # commit — never mid-transaction, so a rolled-back sync can't push a "new
+    # turnover" for work that didn't persist. NULL standing cleaner → this stays
+    # empty and nothing changes.
+    _standing_cid = (prop.standing_cleaner_id or "").strip() or None
+    standing_posted_job_ids = []
+
     # Now process each event
     for event_data in all_events:
         uid = event_data['uid']
@@ -615,28 +683,34 @@ def _sync_ical_url(db: Session, prop: Property, ical_url: str, ical_source_label
                     )
                 event.job_id = None
             elif _linked.status != "completed":
-                # Case 3: the linked turnover is active but lost its date. Old
-                # data resets / the VARCHAR→DATE migration left some linked jobs
-                # with a NULL or stale scheduled_date — "linked" but invisible on
-                # the calendar. Reconcile it to the feed checkout (source of
-                # truth) and re-fill a missing start time so it shows up.
+                # Case 3: the linked turnover is active but has NO date of its
+                # own. Old data resets / the VARCHAR→DATE migration left some
+                # linked jobs with a NULL scheduled_date — "linked" but invisible
+                # on the calendar. Fill it from the feed checkout (source of
+                # truth) so it shows up, and re-fill a missing start time.
+                #
+                # We fill ONLY when the turnover has no date. A turnover the
+                # office deliberately MOVED off the checkout has a real, different
+                # date, and the feed is an inbox — it must never drag a canonical
+                # human decision back onto the booking's checkout (scheduling-
+                # invariants Rule 0). Before this guard the sync reverted every
+                # manual move on the next tick — the "I moved the cleaning day and
+                # it came back" bug, which also spun off piles of cancelled
+                # duplicate turnovers on the original date. A genuine guest
+                # reschedule (the feed's checkout actually changing) still moves
+                # the job — that's the date-change path above, which is untouched.
                 want = _to_date(checkout_date)
-                if want and _linked.scheduled_date != want:
+                if want and _linked.scheduled_date is None:
                     log.info(
-                        f"Reconciling turnover {_linked.id} for {prop.name} ({uid}): "
-                        f"scheduled_date {_linked.scheduled_date} → {want}"
+                        f"Filling missing date on turnover {_linked.id} for "
+                        f"{prop.name} ({uid}): scheduled_date None → {want}"
                     )
                     _linked.scheduled_date = want
-                    if not _linked.start_time:
-                        _linked.start_time = _to_time(
-                            (property_ical.checkout_time if property_ical else None)
-                            or prop.check_out_time or "10:00"
-                        )
-                    # Push the corrected date to Google Calendar — otherwise the
+                    # Push the filled date to Google Calendar — otherwise the
                     # next GCal sync (which treats its event as authoritative)
-                    # would write the stale date straight back onto the job.
+                    # would write the empty date straight back onto the job.
                     _push_turnover_to_gcal(db, prop, _linked, checkout_date)
-                elif not _linked.start_time:
+                if not _linked.start_time:
                     _linked.start_time = _to_time(
                         (property_ical.checkout_time if property_ical else None)
                         or prop.check_out_time or "10:00"
@@ -645,8 +719,14 @@ def _sync_ical_url(db: Session, prop: Property, ical_url: str, ical_source_label
                 # carries the booking window even if it predates that feature.
                 _refresh_booking_metadata(_linked, uid, checkin_date, checkout_date)
 
-        # Create a Job if: no live job yet + checkout is today or future
-        if event.job_id is None and checkout_date >= today:
+        # Create a Job if: no live job yet + checkout is today or future — UNLESS
+        # the office deliberately dismissed this booking (deleted its turnover).
+        # Dismissal is the one thing that overrides the standing "a live booking
+        # always keeps a turnover" policy, because a by-hand delete is a canonical
+        # decision the feed (an inbox) must not undo (scheduling-invariants Rule 0).
+        # The delete path also nulls event.job_id, so the resurrect block above is
+        # skipped too; this guard covers a fresh create and the reactivate path.
+        if event.job_id is None and checkout_date >= today and not event.dismissed_at:
             # Use PropertyIcal settings (if set) or property defaults. Computed
             # up front (not just in the "create new" branch below) so the
             # reactivate-a-cancelled-duplicate branch can push a fresh GCal
@@ -780,6 +860,17 @@ def _sync_ical_url(db: Session, prop: Property, ical_url: str, ical_source_label
                 status="scheduled",
                 ical_event_id=event.id,
                 custom_fields=guest_metadata,
+                # Standing cleaner → post as a TARGETED OFFER only they see
+                # (open board + audience of one). They still tap to accept and
+                # the office still approves — offered, never assigned
+                # (brightbase-marketplace Rule 0). posted_rate seeds from the
+                # property's turnover_rate so the cleaner can one-tap claim
+                # without naming a price; NULL rate just means they name one.
+                # No standing cleaner → all three stay falsy: the turnover is
+                # created unassigned and unposted, exactly as before.
+                open_for_claims=bool(_standing_cid),
+                offer_audience=[_standing_cid] if _standing_cid else None,
+                posted_rate=(prop.turnover_rate if _standing_cid else None),
             )
             # Race-safe insert: two overlapping feed syncs (e.g. Airbnb + VRBO
             # for one property, or the tick overlapping a manual sync) can both
@@ -811,6 +902,8 @@ def _sync_ical_url(db: Session, prop: Property, ical_url: str, ical_source_label
 
             event.job_id = job.id
             created_jobs += 1
+            if _standing_cid:
+                standing_posted_job_ids.append(job.id)
 
             # Push to Google Calendar with guest metadata + property info in description
             _push_new_turnover_to_gcal(
@@ -829,6 +922,22 @@ def _sync_ical_url(db: Session, prop: Property, ical_url: str, ical_source_label
 
     db.commit()
 
+    # Notify the standing cleaner of any turnovers just posted to them — after
+    # the commit, so a rolled-back sync never pushes "new turnover" for work that
+    # didn't persist. One call per job so the targeted-audience filter applies
+    # (notify_jobs_posted only honors offer_audience on the single-job path).
+    # Same push-then-SMS fallback the office's manual bench post uses, but
+    # reaching one designated cleaner. Best-effort: a notify failure never fails
+    # the sync.
+    if standing_posted_job_ids:
+        try:
+            from services.crew_notify import notify_jobs_posted
+            for pj in db.query(Job).filter(Job.id.in_(standing_posted_job_ids)).all():
+                if getattr(pj, "open_for_claims", False) and pj.status == "scheduled":
+                    notify_jobs_posted(db, [pj], org_id=prop.org_id)
+        except Exception:
+            log.exception("standing-cleaner notify failed for %s", prop.name)
+
     # Coverage safety-net: after everything above, EVERY future guest booking in
     # the feed should now have an active turnover. Re-check and report any that
     # don't, so a silently-missed checkout surfaces loudly instead of vanishing.
@@ -842,11 +951,21 @@ def _sync_ical_url(db: Session, prop: Property, ical_url: str, ical_source_label
         ).all()
         if j.scheduled_date
     }
+    # Bookings the office dismissed (deleted their turnover on purpose) are
+    # SUPPOSED to have no turnover — don't flag them as a missing/lost cleaning.
+    dismissed_uids = {
+        e.uid for e in db.query(ICalEvent).filter(
+            ICalEvent.property_id == prop.id,
+            ICalEvent.dismissed_at.isnot(None),
+        ).all()
+    }
     future_bookings = 0
     missing_turnovers = []
     for ev in all_events:
         co = ev.get("checkout_date")
         if not co or _is_host_block(ev.get("summary", "")) or co < today:
+            continue
+        if ev.get("uid") in dismissed_uids:
             continue
         future_bookings += 1
         co_str = co if isinstance(co, str) else (co.isoformat() if hasattr(co, "isoformat") else str(co))
@@ -937,7 +1056,14 @@ def _backfill_turnover_gcal(db: Session, prop: Property) -> int:
             "notes": job.notes, "property_id": prop.id,
         }
         try:
-            eid = create_event(job_dict, client_dict, property_data=property_data)
+            # Same silent customer-invite policy as the live push above: on the
+            # customer's calendar, no email, no access details (send_invite=True
+            # selects the customer-facing description). No email → internal event.
+            _has_email = bool(client_dict.get("email"))
+            eid = create_event(
+                job_dict, client_dict, property_data=property_data,
+                send_invite=_has_email, send_updates="none" if _has_email else None,
+            )
             if eid:
                 job.gcal_event_id = eid
                 healed += 1
@@ -961,6 +1087,25 @@ def sync_property(db: Session, prop: Property, only_ical_id: int = None,
     ``allow_unchanged_skip``: passed through to the per-feed fetch; only the
     background tick sets True (economy audit H5) — manual syncs stay full.
     """
+    # scheduling-invariants: the iCal feed is an INBOX — it must never promote
+    # bookings into canonical Jobs (or invite the customer via the GCal
+    # projection) for a property or client that has been taken out of service.
+    # The hourly tick already filters Property.active, but sync_property is the
+    # shared entry point for "Sync now", per-feed retry and the GCal backfill
+    # too, so the gate lives here to cover every caller. It also closes a
+    # reported bug: setting a client to status="inactive" (a sales sub-stage,
+    # NOT an archive) left its STR feed silently generating turnovers and
+    # emailing the customer GCal invites. Archiving (property or client) or
+    # marking the client inactive stops the feed; unarchiving, or setting the
+    # client active again, resumes it.
+    if not prop.active:
+        return {"skipped": True, "reason": "property_inactive", "property_id": prop.id}
+    if prop.client_id:
+        _client = db.query(Client).filter_by(id=prop.client_id).first()
+        if _client is not None and (_client.archived_at is not None
+                                    or _client.status == "inactive"):
+            return {"skipped": True, "reason": "client_inactive", "property_id": prop.id}
+
     if not prop.property_icals:
         return {"error": "No iCal URLs configured for this property"}
 

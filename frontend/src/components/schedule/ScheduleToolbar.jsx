@@ -1,6 +1,6 @@
 import {
   ChevronLeft, ChevronRight, Plus, Filter, Clock,
-  Calendar as CalendarIcon, Wand2, Wrench, ChevronDown, SlidersHorizontal,
+  Calendar as CalendarIcon, Wand2, Wrench, ChevronDown, SlidersHorizontal, Trash2,
 } from 'lucide-react'
 import Button from '../ui/Button'
 import SyncHealthPill from './SyncHealthPill'
@@ -36,6 +36,11 @@ const VIEWS = [
 export default function ScheduleToolbar({
   viewMode,
   onViewChange,
+  // When false, the toolbar's prev/next-week date-nav is suppressed — the
+  // parent uses this in the narrow-day "agenda" view, where AgendaHero's
+  // DateStrip already provides day/week navigation and a second nav row read
+  // as clutter (owner: "way too busy"). Defaults on so week/dispatch keep it.
+  showDateNav = true,
   currentDate,
   onPrevWeek,
   onNextWeek,
@@ -50,6 +55,7 @@ export default function ScheduleToolbar({
   onCloseTools,
   onPreviewAutoAssign,
   onPreviewFixTimes,
+  onPreviewGhosts,
   onOpenSyncSettings,
   onNewJob,
   // Passive sync-health pill: reads /api/jobs/sync-health and shows a calm
@@ -77,6 +83,7 @@ export default function ScheduleToolbar({
       onClose={onCloseTools}
       onPreviewAutoAssign={onPreviewAutoAssign}
       onPreviewFixTimes={onPreviewFixTimes}
+      onPreviewGhosts={onPreviewGhosts}
       onOpenSyncSettings={onOpenSyncSettings}
     />
   )
@@ -84,7 +91,7 @@ export default function ScheduleToolbar({
   const dateLabel = (opts) => new Date(currentDate).toLocaleDateString('en-US', opts)
 
   return (
-    <div className="no-print bg-panel border-b border-hairline sticky top-0 z-10">
+    <div className="no-print shrink-0 bg-panel border-b border-hairline sticky top-0 z-10">
       <div className="max-w-7xl mx-auto px-3 md:px-4 py-2.5 md:py-3">
 
         {/* ============================ PHONE ============================ */}
@@ -102,7 +109,7 @@ export default function ScheduleToolbar({
 
             <IconButton onClick={onToggleFilters} label="Filters" active={filterActive}>
               <Filter className="w-[18px] h-[18px]" />
-              {filterActive && <span className="absolute top-1 right-1 w-2 h-2 rounded-full bg-blue-500" />}
+              {filterActive && <span className="absolute top-1 right-1 w-2 h-2 rounded-full bg-indigo-500" />}
             </IconButton>
 
             <div className="relative">
@@ -111,11 +118,10 @@ export default function ScheduleToolbar({
               </IconButton>
               {toolsMenu}
             </div>
-
-            <button onClick={onNewJob} aria-label="New job"
-              className="shrink-0 grid place-items-center w-9 h-9 rounded-lg bg-indigo-600 text-white shadow-xs active:scale-95 transition-transform">
-              <Plus className="w-5 h-5" />
-            </button>
+            {/* No "+" here on phone: the bottom-right StickyActionBar FAB is the
+                one primary "New job" on phones (design language: one primary per
+                view, mobile primary = the FAB). Two indigo + buttons firing the
+                same action was the per-view-primary violation. */}
           </div>
 
           {/* Row 2 — the view switcher, full width, real tap targets. Short
@@ -131,10 +137,11 @@ export default function ScheduleToolbar({
             ))}
           </div>
 
-          {/* Row 3 — date nav (non-month only; month has CalendarView's own
-              header, and these arrows step by a WEEK which is the wrong axis
-              for a month grid). */}
-          {viewMode !== 'month' && viewMode !== 'google' && (
+          {/* Row 3 — date nav. Hidden in month/google (CalendarView has its
+              own header, and these week-stepping arrows are the wrong axis for
+              a month grid) and whenever `showDateNav` is off — the agenda view,
+              where AgendaHero's DateStrip already carries day/week nav. */}
+          {viewMode !== 'month' && viewMode !== 'google' && showDateNav && (
             <div className="mt-2 flex items-center gap-2">
               <button onClick={onPrevWeek} aria-label="Previous"
                 className="grid place-items-center w-9 h-9 rounded-lg bg-bg-2 text-ink-3 active:scale-95 transition-transform">
@@ -152,7 +159,11 @@ export default function ScheduleToolbar({
         </div>
 
         {/* =========================== DESKTOP =========================== */}
-        <div className="hidden md:flex items-center gap-3">
+        {/* Wraps instead of clipping: at ~940px (owner's window, minus the
+            sidebar) this one row overflowed and cut off the primary "New Job"
+            button. flex-wrap lets the action cluster drop to a second line
+            when cramped; the sticky bar has no fixed height, so it just grows. */}
+        <div className="hidden md:flex flex-wrap items-center gap-x-3 gap-y-2">
           <div className="flex items-center gap-2 shrink-0">
             <CalendarIcon className="w-[18px] h-[18px] shrink-0 text-ink-3" />
             <h1 className="text-lg font-semibold tracking-tight text-ink">Schedule</h1>
@@ -167,7 +178,7 @@ export default function ScheduleToolbar({
             ))}
           </div>
 
-          {viewMode !== 'month' && viewMode !== 'google' && (
+          {viewMode !== 'month' && viewMode !== 'google' && showDateNav && (
             <div className="flex items-center gap-1 ml-1">
               <button onClick={onPrevWeek} className="p-1 hover:bg-bg-2 rounded text-ink-3" aria-label="Previous week">
                 <ChevronLeft className="w-4 h-4" />
@@ -191,7 +202,7 @@ export default function ScheduleToolbar({
             <Filter className="w-4 h-4" />
             <span className="ml-1.5">Filters</span>
             {filterActive && (
-              <span className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-blue-500" />
+              <span className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-indigo-500" />
             )}
           </Button>
 
@@ -295,7 +306,7 @@ function IconButton({ onClick, label, active, children }) {
   return (
     <button onClick={onClick} aria-label={label}
       className={`relative shrink-0 grid place-items-center w-9 h-9 rounded-lg active:scale-95 transition-transform ${
-        active ? 'bg-blue-500/15 text-blue-600 dark:text-blue-300' : 'bg-bg-2 text-ink-2'}`}>
+        active ? 'bg-indigo-500/15 text-indigo-600 dark:text-indigo-300' : 'bg-bg-2 text-ink-2'}`}>
       {children}
     </button>
   )
@@ -304,7 +315,7 @@ function IconButton({ onClick, label, active, children }) {
 /** The "Tools" dropdown, shared by the phone and desktop triggers so its
  *  contents never diverge. Rendered inside a `relative` trigger wrapper; the
  *  backdrop closes it on outside tap. */
-function ToolsMenu({ open, onClose, onPreviewAutoAssign, onPreviewFixTimes, onOpenSyncSettings }) {
+function ToolsMenu({ open, onClose, onPreviewAutoAssign, onPreviewFixTimes, onPreviewGhosts, onOpenSyncSettings }) {
   if (!open) return null
   return (
     <>
@@ -322,6 +333,12 @@ function ToolsMenu({ open, onClose, onPreviewAutoAssign, onPreviewFixTimes, onOp
           className="w-full flex items-center gap-2.5 px-3 py-2.5 text-sm text-ink-2 hover:bg-bg transition-colors">
           <Clock className="w-4 h-4" /> Fix missing times
         </button>
+        {onPreviewGhosts && (
+          <button onClick={() => { onClose(); onPreviewGhosts() }}
+            className="w-full flex items-center gap-2.5 px-3 py-2.5 text-sm text-ink-2 hover:bg-bg transition-colors">
+            <Trash2 className="w-4 h-4" /> Remove cancelled turnover clutter
+          </button>
+        )}
         {onOpenSyncSettings && (
           <>
             <div className="my-1 border-t border-hairline" />

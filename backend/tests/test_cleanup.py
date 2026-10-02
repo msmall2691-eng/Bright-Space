@@ -105,6 +105,48 @@ def test_scan_finds_dupes_then_merge_moves_records(client):
     assert still is None
 
 
+def test_scan_clusters_by_name_and_address_when_zip_missing(client):
+    """Broader discovery: a returning customer entered twice at the same street
+    address, with NO shared email/phone and NO ZIP on file, still surfaces —
+    name + street is the only link. name + ZIP alone would find nothing here."""
+    api, ids = client
+    db = SessionLocal()
+    a = Client(name="Robin Vale", phone="2075550111", email="",
+               address="14 Dock Rd", city="Bath", state="ME", status="active", org_id=1)
+    b = Client(name="robin  vale", phone="2075550222", email="",   # distinct phone, casing/space differ
+               address="14 Dock Rd", city="Bath", state="ME", status="active", org_id=1)
+    db.add_all([a, b]); db.commit(); db.refresh(a); db.refresh(b)
+    aid, bid = a.id, b.id
+    ids["clients"] += [aid, bid]
+    db.close()
+
+    scan = api.get("/api/cleanup/scan").json()
+    group = next((g for g in scan["duplicate_clients"]
+                  if {aid, bid} <= {c["id"] for c in g["clients"]}), None)
+    assert group is not None, "same name + street address were not clustered"
+    assert "name + address" in group["reason"]
+
+
+def test_scan_does_not_cluster_same_street_different_names(client):
+    """Precision guard: two DIFFERENT people at one address (roommates, a
+    landlord + tenant) must NOT be clustered — the name has to match too."""
+    api, ids = client
+    db = SessionLocal()
+    a = Client(name="Dana Fields", phone="2075550301", email="",
+               address="5 Mill Ln", city="Saco", state="ME", status="active", org_id=1)
+    b = Client(name="Chris Ober", phone="2075550302", email="",
+               address="5 Mill Ln", city="Saco", state="ME", status="active", org_id=1)
+    db.add_all([a, b]); db.commit(); db.refresh(a); db.refresh(b)
+    aid, bid = a.id, b.id
+    ids["clients"] += [aid, bid]
+    db.close()
+
+    scan = api.get("/api/cleanup/scan").json()
+    grouped = any({aid, bid} <= {c["id"] for c in g["clients"]}
+                  for g in scan["duplicate_clients"])
+    assert not grouped, "different names at the same address must not be merged candidates"
+
+
 def _add_email(cid, email, is_primary):
     db = SessionLocal()
     db.add(ContactEmail(client_id=cid, email=email, is_primary=is_primary))

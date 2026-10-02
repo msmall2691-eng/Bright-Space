@@ -31,6 +31,8 @@ import PageHero from '../components/ui/PageHero'
 import ErrorNote from '../components/ui/ErrorNote'
 import SubNav from '../components/ui/SubNav'
 import StatusBadge from '../components/ui/StatusBadge'
+import { Skeleton } from '../components/ui/Skeleton'
+import ListSkeleton from '../components/ui/ListSkeleton'
 import SavedViewsBar from '../components/SavedViewsBar'
 import { useDeals } from '../hooks/useDeals'
 import LaunchStepper from '../components/launch/LaunchStepper'
@@ -312,7 +314,17 @@ export default function Deals() {
                 </thead>
                 <tbody className="divide-y divide-hairline">
                   {loading ? (
-                    <tr><td colSpan={7} className="px-3 py-12 text-center text-ink-3">Loading deals…</td></tr>
+                    Array.from({ length: 6 }).map((_, i) => (
+                      <tr key={`sk-${i}`} aria-hidden="true">
+                        <td className="bb-td"><div className="space-y-2"><Skeleton className="h-3.5 w-40" /><Skeleton className="h-3 w-24" /></div></td>
+                        <td className="bb-td"><Skeleton className="h-3 w-16" /></td>
+                        <td className="bb-td"><Skeleton className="h-3 w-14 ml-auto" /></td>
+                        <td className="bb-td"><Skeleton className="h-3 w-12" /></td>
+                        <td className="bb-td"><Skeleton className="h-3 w-12" /></td>
+                        <td className="bb-td"><Skeleton className="h-3 w-10" /></td>
+                        <td className="bb-td"><Skeleton className="h-6 w-16 ml-auto" /></td>
+                      </tr>
+                    ))
                   ) : rows.length === 0 ? (
                     <tr><td colSpan={7} className="px-3 py-12 text-center text-ink-3">No deals here yet.</td></tr>
                   ) : rows.map(d => {
@@ -404,7 +416,7 @@ export default function Deals() {
             </div>
           </div>
         ) : loading ? (
-          <div className="text-sm text-ink-3 py-12 text-center">Loading deals…</div>
+          <ListSkeleton rows={5} className="max-w-xl" />
         ) : (
           // Stack the stages vertically on mobile (a 5-column horizontal board is
           // a 1150px scroll on a phone); horizontal board on sm+.

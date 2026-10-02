@@ -27,6 +27,11 @@ from database.models import (
     Quote, Client, Job, Property, LeadIntake, IntegrationEvent,
 )
 from modules.auth.router import get_current_user, require_role, current_org_id, resolve_org_id
+from modules.intake.details import (
+    fill_property_access_from_intake,
+    fill_property_rental_from_intake,
+    compose_job_notes_from_intake,
+)
 from utils.integration_log import log_integration_event as _log_integration
 from utils.dates import coerce_date, fmt_long_date
 from utils.address import format_address
@@ -105,9 +110,38 @@ def _items_to_dicts(items) -> list:
     return out
 
 
-def _quote_dict(q: Quote) -> dict:
-    """Serialize a Quote to the shape the Quoting UI expects."""
+def _job_fields_for_quotes(db: Session, quotes) -> dict:
+    """{quote_id: {"job_id", "job_scheduled_date"}} for every quote in one
+    query (no N+1). Lets the Quotes list tell a converted quote whose job is
+    still date-less ("Set up schedule") apart from one that is actually on the
+    calendar ("Scheduled") — auto-convert on accept flips a quote to
+    'converted' before any date exists, so status alone can't."""
+    ids = [q.id for q in quotes if q is not None]
+    out: dict = {}
+    if not ids:
+        return out
+    rows = (db.query(Job.id, Job.quote_id, Job.scheduled_date)
+            .filter(Job.quote_id.in_(ids)).order_by(Job.id.asc()).all())
+    for job_id, quote_id, sched in rows:
+        if quote_id in out:
+            continue  # first (oldest) job wins, matching _existing_job_for_quote
+        out[quote_id] = {
+            "job_id": job_id,
+            "job_scheduled_date": str(sched) if sched else None,
+        }
+    return out
+
+
+def _quote_dict(q: Quote, job_fields: Optional[dict] = None) -> dict:
+    """Serialize a Quote to the shape the Quoting UI expects.
+
+    ``job_fields`` is the per-quote entry from :func:`_job_fields_for_quotes`;
+    callers that don't batch-load jobs leave it None and the two job keys are
+    emitted as None (the UI treats "unknown" like "no date yet")."""
+    jf = job_fields or {}
     return {
+        "job_id": jf.get("job_id"),
+        "job_scheduled_date": jf.get("job_scheduled_date"),
         "id": q.id,
         "client_id": q.client_id,
         "client_name": q.client.name if q.client else None,
@@ -373,7 +407,13 @@ def create_quote(
     org_id: int = Depends(current_org_id),
 ):
     """Create a quote from the Quoting UI (integer client_id + inline items)."""
-    client = db.query(Client).filter(Client.id == quote_data.client_id).first()
+    oid = resolve_org_id(org_id, db)
+    # MT-2: only a client in the caller's workspace can back a new quote (tolerate
+    # legacy NULL-org rows); otherwise a cross-org client_id would seed a quote here.
+    client = db.query(Client).filter(
+        Client.id == quote_data.client_id,
+        or_(Client.org_id == oid, Client.org_id.is_(None)),
+    ).first()
     if not client:
         raise HTTPException(status_code=404, detail="Client not found")
 
@@ -394,7 +434,7 @@ def create_quote(
         opportunity_id=quote_data.opportunity_id,
         property_id=quote_data.property_id,
         created_by=getattr(current_user, "id", None),
-        org_id=resolve_org_id(org_id, db),  # MT-2: stamp the caller's workspace
+        org_id=oid,  # MT-2: stamp the caller's workspace (same org as the client lookup)
         # Temporary unique placeholder; replaced with QT-YYYY-#### after flush.
         quote_number=f"PENDING-{secrets.token_hex(8)}",
         title=quote_data.title,
@@ -427,6 +467,13 @@ def create_quote(
     if intake and not intake.converted_quote_id:
         intake.status = "quoted"
         intake.converted_quote_id = quote.id
+        # Link the lead back to the client it just became a customer of. Without
+        # this the converted request keeps client_id=NULL and never shows on the
+        # client profile's Requests tab (get_intakes ?client_id) — the
+        # orphaned-lead / broken-backlink case the data-doctor scan flags. The
+        # /intake/{id}/convert-* endpoints already set this; the live composer
+        # path (Requests -> Quoting -> here) was the one that didn't.
+        intake.client_id = quote.client_id
     # Pipeline: surface this quote as a deal (reuse the client's active one).
     from utils.opportunity_helper import ensure_opportunity, advance_opportunity
     opp = ensure_opportunity(
@@ -436,6 +483,10 @@ def create_quote(
     if opp:
         quote.opportunity_id = opp.id
         advance_opportunity(db, opp, "quoted", amount=quote.total)
+        # Same backlink for the opportunity, so the intake↔opportunity link isn't
+        # one-directional (the lead couldn't resolve its own deal otherwise).
+        if intake and not intake.opportunity_id:
+            intake.opportunity_id = opp.id
     db.commit()
     db.refresh(quote)
     return _quote_dict(quote)
@@ -474,7 +525,8 @@ def list_quotes(
         # Archived (soft-deleted) quotes are hidden unless asked for explicitly.
         query = query.filter(Quote.status != "archived")
     quotes = query.order_by(Quote.created_at.desc()).offset(offset).limit(limit).all()
-    return [_quote_dict(q) for q in quotes]
+    jobs_by_quote = _job_fields_for_quotes(db, quotes)
+    return [_quote_dict(q, jobs_by_quote.get(q.id)) for q in quotes]
 
 
 def _hours_since(ts) -> Optional[float]:
@@ -566,7 +618,8 @@ def property_photo(address: str = Query(..., min_length=3, max_length=300), db: 
 
 @router.get("/{quote_id}", dependencies=[Depends(require_role("admin", "manager", "viewer"))])
 def get_quote(quote_id: int, db: Session = Depends(get_db), org_id: int = Depends(current_org_id)):
-    return _quote_dict(_get_quote_or_404(quote_id, db, resolve_org_id(org_id, db)))
+    quote = _get_quote_or_404(quote_id, db, resolve_org_id(org_id, db))
+    return _quote_dict(quote, _job_fields_for_quotes(db, [quote]).get(quote.id))
 
 
 @router.get("/{quote_id}/details", dependencies=[Depends(require_role("admin", "manager", "viewer"))])
@@ -584,11 +637,14 @@ def get_quote_details(quote_id: int, db: Session = Depends(get_db), org_id: int 
     prop = None
     if quote.property_id:
         prop = db.query(Property).filter(Property.id == quote.property_id).first()
-    job = db.query(Job).filter(Job.quote_id == quote.id).first()
+    job = db.query(Job).filter(Job.quote_id == quote.id).order_by(Job.id.asc()).first()
     client = quote.client
 
     return {
-        **_quote_dict(quote),
+        **_quote_dict(quote, {
+            "job_id": job.id if job else None,
+            "job_scheduled_date": (str(job.scheduled_date) if job and job.scheduled_date else None),
+        }),
         # Contact fields the detail page's Send panel prefills from.
         "client_email": getattr(client, "email", None) if client else None,
         "client_phone": getattr(client, "phone", None) if client else None,
@@ -639,6 +695,10 @@ def patch_quote(quote_id: int, quote_data: QuoteUpdate, db: Session = Depends(ge
     """Partial update (the Quoting UI uses PATCH for both edits and status)."""
     quote = _get_quote_or_404(quote_id, db, resolve_org_id(org_id, db))
     _apply_update(quote, quote_data.model_dump(exclude_unset=True))
+    # Keep the linked deal's amount in step with the edited quote total, so the
+    # Pipeline card can't drift (e.g. show $150 while the quote reads $135).
+    from utils.opportunity_helper import sync_opportunity_amount
+    sync_opportunity_amount(db, quote)
     db.commit()
     db.refresh(quote)
     return _quote_dict(quote)
@@ -646,8 +706,12 @@ def patch_quote(quote_id: int, quote_data: QuoteUpdate, db: Session = Depends(ge
 
 # PUT kept as an alias of PATCH for backward compatibility.
 @router.put("/{quote_id}", dependencies=[Depends(require_role("admin", "manager"))])
-def update_quote(quote_id: int, quote_data: QuoteUpdate, db: Session = Depends(get_db)):
-    return patch_quote(quote_id, quote_data, db)
+def update_quote(quote_id: int, quote_data: QuoteUpdate, db: Session = Depends(get_db),
+                 org_id: int = Depends(current_org_id)):
+    # Forward the caller's org so the in-process PATCH call stays org-scoped —
+    # without this, patch_quote's `org_id=Depends(current_org_id)` arrives as the
+    # unresolved Depends sentinel and falls back to org 1 (MT-2 scope defeated).
+    return patch_quote(quote_id, quote_data, db, org_id)
 
 
 @router.delete("/{quote_id}", dependencies=[Depends(require_role("admin", "manager"))])
@@ -669,7 +733,8 @@ def delete_quote(quote_id: int, db: Session = Depends(get_db), org_id: int = Dep
 
 
 @router.delete("/{quote_id}/permanent", dependencies=[Depends(require_role("admin"))])
-def permanently_delete_quote(quote_id: int, db: Session = Depends(get_db)):
+def permanently_delete_quote(quote_id: int, db: Session = Depends(get_db),
+                             org_id: int = Depends(current_org_id)):
     """Hard-delete an archived quote (admin only) — for clearing test/junk quotes.
 
     Requires the quote be archived first (so this can't be a one-click way to
@@ -679,7 +744,7 @@ def permanently_delete_quote(quote_id: int, db: Session = Depends(get_db)):
     intact (no FK back to quotes)."""
     from database.models import RecurringSchedule
 
-    quote = _get_quote_or_404(quote_id, db)
+    quote = _get_quote_or_404(quote_id, db, resolve_org_id(org_id, db))
     if quote.status != "archived":
         raise HTTPException(status_code=409, detail="Archive the quote before deleting it permanently.")
     if quote.status == "converted" or _existing_job_for_quote(db, quote):
@@ -711,13 +776,154 @@ class QuoteSendRequest(BaseModel):
     # Optional per-send overrides for the email envelope.
     subject: Optional[str] = None
     greeting: Optional[str] = None
-    # Owner copy: blind-copy the business on the customer email. When omitted,
-    # the configured company email is used; pass "" to explicitly skip the copy.
+    # Owner copy: blind-copy the business on the customer email. OFF by default
+    # (the owner asked to stop being BCC'd on every quote). Pass an explicit
+    # address here to still send a copy; omitting it sends no owner copy.
     copy_to: Optional[str] = None
 
 
+def _send_quote_email(db, quote, client, body, quote_link) -> tuple:
+    """Build the branded PDF + email and deliver it to the customer.
+
+    Returns (result, errors): `result` is the per-channel status string the UI
+    shows ("sent" / "failed" / "no email address on file"); `errors` are the
+    human-readable reasons to fold into the quote's last_send_error. Logs an
+    IntegrationEvent (commit=False) for the delivery history on every outcome.
+    Extracted verbatim from send_quote — the send path was one ~210-line block."""
+    to_email = (body.email or client.email or "").strip()
+    if "@" not in to_email:
+        return "no email address on file", ["no valid email address"]
+    try:
+        company = _company_info(db, quote.service_type)
+        # Owner copy: OFF by default now. The owner stopped wanting a BCC of
+        # every quote in their inbox ("confusing getting the emails") — the
+        # in-app record (quote status flips to 'sent', the request shows
+        # 'quoted', and the IntegrationEvent below logs the delivery) is the
+        # source of truth that a quote went out. An explicit address in
+        # body.copy_to still sends a copy; omitted/blank means no owner copy.
+        owner_copy = (body.copy_to or "") if body.copy_to else ""
+        # Front-of-house photo proxy URL (when enabled + address). The PDF fetch
+        # and the email both skip gracefully if there's no Street View coverage.
+        photo_url = _property_photo_url(quote, db)
+        # Structured "what you asked for" rows from the linked request, shown on
+        # the PDF and email so the customer can verify the scope matches what
+        # they submitted (same source as the page).
+        service_details = build_service_details(db, quote)
+        pdf_bytes = QuotePDFService(
+            company_name=company["company_name"], company_email=company["company_email"] or "",
+            company_phone=company["company_phone"], brand_color=company["brand_color"],
+            terms=company["quote_terms"], logo_url=company.get("company_logo_url"),
+            # Service-aware prep policies, so the emailed PDF matches the public
+            # page and the downloadable PDF (this used to send none at all).
+            policies=company.get("quote_policies"),
+        ).generate_quote_pdf(
+            quote_number=quote.quote_number, client_name=client.name,
+            client_email=client.email or "", client_phone=client.phone,
+            line_items=_pdf_line_items(quote), subtotal=quote.subtotal,
+            tax_amount=quote.tax, discount_amount=quote.discount,
+            total_amount=quote.total, notes=quote.notes, expires_at=quote.valid_until,
+            quote_title=quote.title, property_photo_url=photo_url,
+            quote_link=quote_link, address=format_address(quote.address),
+            service_type=quote.service_type, customer_message=quote.customer_message,
+            service_details=service_details,
+        )
+        # For the EMAIL we only embed the photo when Google actually has imagery
+        # (a 404 proxy would show a broken image in mail clients).
+        email_photo_url = None
+        if photo_url:
+            try:
+                from services.property_media import has_street_view
+                from modules.settings.router import get_setting
+                if has_street_view(quote.address, get_setting(db, "google_maps_api_key")):
+                    email_photo_url = photo_url
+            except Exception:
+                email_photo_url = None
+        res = QuoteEmailService().send_quote_email(
+            to_email=to_email, client_name=client.name, quote_number=quote.quote_number,
+            # Authoritative first name from the client record; falls back to
+            # name-splitting inside the service when unset.
+            client_first_name=getattr(client, "first_name", None),
+            total_amount=float(quote.total or 0),
+            expires_at=fmt_long_date(quote.valid_until),
+            quote_link=quote_link, pdf_bytes=pdf_bytes, pdf_filename=f"{quote.quote_number}.pdf",
+            subject=(body.subject or "").strip() or None,
+            greeting=_safe_greeting(body.greeting),
+            # Send-time personal note wins; the quote's stored customer message
+            # is the default intro.
+            intro_message=(body.custom_message or "").strip()
+                          or (quote.customer_message or "").strip() or None,
+            quote_title=quote.title,
+            items=quote.items or [],
+            subtotal=quote.subtotal, tax=quote.tax, discount=quote.discount,
+            tax_rate=quote.tax_rate, address=format_address(quote.address),
+            bcc=owner_copy, property_photo_url=email_photo_url,
+            scope=quote.notes, service_type=quote.service_type,
+            service_details=service_details,
+        )
+        if res.get("success"):
+            _log_integration(db, entity_type="quote", entity_id=quote.id, org_id=quote.org_id, provider="email",
+                             action="send", status="ok", external_id=res.get("email_id"),
+                             recipient=to_email, commit=False)
+            return "sent", []
+        # Surface the REAL reason (not a generic string) so the owner/UI can tell
+        # an SMTP problem from a code bug.
+        real_error = str(res.get("error") or "email could not be sent")
+        logger.error(f"Quote {quote.id} email send failed: {real_error}")
+        _log_integration(db, entity_type="quote", entity_id=quote.id, org_id=quote.org_id, provider="email",
+                         action="send", status="failed", recipient=to_email,
+                         detail=real_error, commit=False)
+        return "failed", [real_error]
+    except Exception as e:
+        # PDF build / service construction can raise (e.g. the date drift bug);
+        # record the actual exception, not "email could not be sent".
+        logger.exception(f"Quote {quote.id} email send error")
+        _log_integration(db, entity_type="quote", entity_id=quote.id, org_id=quote.org_id, provider="email",
+                         action="send", status="failed", recipient=to_email,
+                         detail=str(e), commit=False)
+        return "failed", [str(e) or "email could not be sent"]
+
+
+def _send_quote_sms(db, quote, client, body, quote_link) -> tuple:
+    """Text the customer the public accept-link. Same (result, errors) contract
+    and best-effort logging as _send_quote_email. Extracted from send_quote."""
+    to_phone = (body.phone or client.phone or "").strip()
+    from utils.phone import is_deliverable_sms_number
+    if not to_phone:
+        return "no phone number on file", ["no phone number"]
+    if not is_deliverable_sms_number(to_phone):
+        # Twilio would silently reject / bill for placeholder-labelled or
+        # malformed numbers. Fail cleanly here with a reason the UI can show.
+        _log_integration(db, entity_type="quote", entity_id=quote.id, org_id=quote.org_id, provider="sms",
+                         action="send", status="failed", recipient=to_phone,
+                         detail="invalid phone number (placeholder or bad format)", commit=False)
+        return "invalid phone number", ["invalid phone number"]
+    try:
+        from integrations.twilio_client import send_sms
+        from services.quote_email_service import build_quote_sms_body
+        company_name = _company_info(db).get("company_name")
+        msg = build_quote_sms_body(
+            quote=quote, client=client, company_name=company_name,
+            quote_link=quote_link, custom_message=body.custom_message,
+        )
+        # No `or to_phone` fallback: "if we can't normalise it, send it raw"
+        # is how the malformed numbers got to Twilio in the first place.
+        # send_sms validates and normalises the destination itself now.
+        sms_result = send_sms(to=to_phone, body=msg)
+        _log_integration(db, entity_type="quote", entity_id=quote.id, org_id=quote.org_id, provider="sms",
+                         action="send", status="ok", external_id=sms_result.get("sid"),
+                         recipient=to_phone, commit=False)
+        return "sent", []
+    except Exception as e:
+        logger.warning(f"Quote {quote.id} SMS send error: {e}")
+        _log_integration(db, entity_type="quote", entity_id=quote.id, org_id=quote.org_id, provider="sms",
+                         action="send", status="failed", recipient=to_phone,
+                         detail=str(e), commit=False)
+        return "failed", ["text message could not be sent"]
+
+
 @router.post("/{quote_id}/send", dependencies=[Depends(require_role("admin", "manager"))])
-def send_quote(quote_id: int, body: QuoteSendRequest = QuoteSendRequest(), db: Session = Depends(get_db)):
+def send_quote(quote_id: int, body: QuoteSendRequest = QuoteSendRequest(), db: Session = Depends(get_db),
+               org_id: int = Depends(current_org_id)):
     """Actually DELIVER the quote to the customer over the chosen channel(s), then
     mark it sent. Email attaches the PDF; SMS texts the public accept-link.
 
@@ -725,7 +931,7 @@ def send_quote(quote_id: int, body: QuoteSendRequest = QuoteSendRequest(), db: S
     delivered — so the UI's email/SMS picker was ignored and customers never
     received anything. Returns per-channel results: {"email": "sent", "sms": ...}.
     """
-    quote = _get_quote_or_404(quote_id, db)
+    quote = _get_quote_or_404(quote_id, db, resolve_org_id(org_id, db))
     # draft = first send; sent/viewed = a follow-up nudge (re-send);
     # changes_requested = the owner revised it and is sending the revised quote
     # back (which clears the change-request flag below).
@@ -759,136 +965,16 @@ def send_quote(quote_id: int, body: QuoteSendRequest = QuoteSendRequest(), db: S
     results: dict = {}
     errors: list = []
 
+    # Delivery itself lives in the two channel helpers above (this route was a
+    # single ~210-line block); each returns its per-channel status + any errors
+    # and logs its own IntegrationEvent. The status-transition below is unchanged.
     if want_email:
-        to_email = (body.email or client.email or "").strip()
-        if "@" not in to_email:
-            results["email"] = "no email address on file"
-            errors.append("no valid email address")
-        else:
-            try:
-                company = _company_info(db)
-                # Owner copy: default to the configured company email so the
-                # owner always gets a copy; an explicit "" from the UI skips it,
-                # and an explicit address overrides the default.
-                owner_copy = (company.get("company_email") or "") if body.copy_to is None \
-                    else (body.copy_to or "")
-                # Front-of-house photo proxy URL (when enabled + address). The
-                # PDF fetch and the email both skip gracefully if there's no
-                # Street View coverage.
-                photo_url = _property_photo_url(quote, db)
-                # Structured "what you asked for" rows from the linked request,
-                # shown on the PDF and the email so the customer can verify the
-                # scope matches what they submitted (same source as the page).
-                service_details = build_service_details(db, quote)
-                pdf_bytes = QuotePDFService(
-                    company_name=company["company_name"], company_email=company["company_email"] or "",
-                    company_phone=company["company_phone"], brand_color=company["brand_color"],
-                    terms=company["quote_terms"], logo_url=company.get("company_logo_url"),
-                ).generate_quote_pdf(
-                    quote_number=quote.quote_number, client_name=client.name,
-                    client_email=client.email or "", client_phone=client.phone,
-                    line_items=_pdf_line_items(quote), subtotal=quote.subtotal,
-                    tax_amount=quote.tax, discount_amount=quote.discount,
-                    total_amount=quote.total, notes=quote.notes, expires_at=quote.valid_until,
-                    quote_title=quote.title, property_photo_url=photo_url,
-                    quote_link=quote_link, address=format_address(quote.address),
-                    service_type=quote.service_type, customer_message=quote.customer_message,
-                    service_details=service_details,
-                )
-                # For the EMAIL we only embed the photo when Google actually has
-                # imagery (a 404 proxy would show a broken image in mail clients).
-                email_photo_url = None
-                if photo_url:
-                    try:
-                        from services.property_media import has_street_view
-                        from modules.settings.router import get_setting
-                        if has_street_view(quote.address, get_setting(db, "google_maps_api_key")):
-                            email_photo_url = photo_url
-                    except Exception:
-                        email_photo_url = None
-                res = QuoteEmailService().send_quote_email(
-                    to_email=to_email, client_name=client.name, quote_number=quote.quote_number,
-                    # Authoritative first name from the client record; falls
-                    # back to name-splitting inside the service when unset.
-                    client_first_name=getattr(client, "first_name", None),
-                    total_amount=float(quote.total or 0),
-                    expires_at=fmt_long_date(quote.valid_until),
-                    quote_link=quote_link, pdf_bytes=pdf_bytes, pdf_filename=f"{quote.quote_number}.pdf",
-                    subject=(body.subject or "").strip() or None,
-                    greeting=_safe_greeting(body.greeting),
-                    # Send-time personal note wins; the quote's stored
-                    # customer message is the default intro.
-                    intro_message=(body.custom_message or "").strip()
-                                  or (quote.customer_message or "").strip() or None,
-                    quote_title=quote.title,
-                    items=quote.items or [],
-                    subtotal=quote.subtotal, tax=quote.tax, discount=quote.discount,
-                    tax_rate=quote.tax_rate, address=format_address(quote.address),
-                    bcc=owner_copy, property_photo_url=email_photo_url,
-                    scope=quote.notes, service_type=quote.service_type,
-                    service_details=service_details,
-                )
-                if res.get("success"):
-                    results["email"] = "sent"
-                    _log_integration(db, entity_type="quote", entity_id=quote.id, org_id=quote.org_id, provider="email",
-                                     action="send", status="ok", external_id=res.get("email_id"),
-                                     recipient=to_email, commit=False)
-                else:
-                    results["email"] = "failed"
-                    # Surface the REAL reason (not a generic string) so the
-                    # owner/UI can tell an SMTP problem from a code bug.
-                    real_error = str(res.get("error") or "email could not be sent")
-                    errors.append(real_error)
-                    logger.error(f"Quote {quote.id} email send failed: {real_error}")
-                    _log_integration(db, entity_type="quote", entity_id=quote.id, org_id=quote.org_id, provider="email",
-                                     action="send", status="failed", recipient=to_email,
-                                     detail=real_error, commit=False)
-            except Exception as e:
-                results["email"] = "failed"
-                # PDF build / service construction can raise (e.g. the date
-                # drift bug); record the actual exception, not "email could
-                # not be sent", and capture the traceback.
-                errors.append(str(e) or "email could not be sent")
-                logger.exception(f"Quote {quote.id} email send error")
-                _log_integration(db, entity_type="quote", entity_id=quote.id, org_id=quote.org_id, provider="email",
-                                 action="send", status="failed", recipient=to_email,
-                                 detail=str(e), commit=False)
+        results["email"], email_errors = _send_quote_email(db, quote, client, body, quote_link)
+        errors.extend(email_errors)
 
     if want_sms:
-        to_phone = (body.phone or client.phone or "").strip()
-        from utils.phone import is_deliverable_sms_number, normalize_e164
-        if not to_phone:
-            results["sms"] = "no phone number on file"
-            errors.append("no phone number")
-        elif not is_deliverable_sms_number(to_phone):
-            # Twilio would silently reject / bill for placeholder-labelled or
-            # malformed numbers. Fail cleanly here with a reason the UI can show.
-            results["sms"] = "invalid phone number"
-            errors.append("invalid phone number")
-            _log_integration(db, entity_type="quote", entity_id=quote.id, org_id=quote.org_id, provider="sms",
-                             action="send", status="failed", recipient=to_phone,
-                             detail="invalid phone number (placeholder or bad format)", commit=False)
-        else:
-            try:
-                from integrations.twilio_client import send_sms
-                from services.quote_email_service import build_quote_sms_body
-                company_name = _company_info(db).get("company_name")
-                msg = build_quote_sms_body(
-                    quote=quote, client=client, company_name=company_name,
-                    quote_link=quote_link, custom_message=body.custom_message,
-                )
-                sms_result = send_sms(to=(normalize_e164(to_phone) or to_phone), body=msg)
-                results["sms"] = "sent"
-                _log_integration(db, entity_type="quote", entity_id=quote.id, org_id=quote.org_id, provider="sms",
-                                 action="send", status="ok", external_id=sms_result.get("sid"),
-                                 recipient=to_phone, commit=False)
-            except Exception as e:
-                results["sms"] = "failed"
-                errors.append("text message could not be sent")
-                logger.warning(f"Quote {quote.id} SMS send error: {e}")
-                _log_integration(db, entity_type="quote", entity_id=quote.id, org_id=quote.org_id, provider="sms",
-                                 action="send", status="failed", recipient=to_phone,
-                                 detail=str(e), commit=False)
+        results["sms"], sms_errors = _send_quote_sms(db, quote, client, body, quote_link)
+        errors.extend(sms_errors)
 
     delivered = any(v == "sent" for v in results.values())
     # Delivery visibility: a failed send must not leave a silent "draft" —
@@ -913,6 +999,10 @@ def send_quote(quote_id: int, body: QuoteSendRequest = QuoteSendRequest(), db: S
             # sent→accepted clock survive) and just record the nudge.
             quote.follow_up_sent_at = _utcnow()
     quote.updated_at = _utcnow()
+    # Sending is the moment these numbers go to the customer — make the linked
+    # deal match, which also repairs any pre-existing drift on a re-send.
+    from utils.opportunity_helper import sync_opportunity_amount
+    sync_opportunity_amount(db, quote)
     db.commit()
     db.refresh(quote)
 
@@ -933,9 +1023,10 @@ def send_quote(quote_id: int, body: QuoteSendRequest = QuoteSendRequest(), db: S
 
 
 @router.post("/{quote_id}/generate-token", dependencies=[Depends(require_role("admin", "manager"))])
-def generate_quote_token(quote_id: int, db: Session = Depends(get_db)):
+def generate_quote_token(quote_id: int, db: Session = Depends(get_db),
+                         org_id: int = Depends(current_org_id)):
     """Ensure a public token exists and return it + the shareable link."""
-    quote = _get_quote_or_404(quote_id, db)
+    quote = _get_quote_or_404(quote_id, db, resolve_org_id(org_id, db))
     token = _ensure_public_token(quote)
     quote.updated_at = _utcnow()
     db.commit()
@@ -955,11 +1046,12 @@ class AdminAcceptRequest(BaseModel):
 
 @router.post("/{quote_id}/accept", dependencies=[Depends(require_role("admin", "manager"))])
 def accept_quote(quote_id: int, body: AdminAcceptRequest = None,
-                 background_tasks: BackgroundTasks = None, db: Session = Depends(get_db)):
+                 background_tasks: BackgroundTasks = None, db: Session = Depends(get_db),
+                 org_id: int = Depends(current_org_id)):
     """Admin-side accept. Runs the SAME side effects as the public accept link
     (convert to job / advance the opportunity to won / notify) via the shared
     finalizer, instead of the old stub that only flipped the status."""
-    quote = _get_quote_or_404(quote_id, db)
+    quote = _get_quote_or_404(quote_id, db, resolve_org_id(org_id, db))
     if quote.status in ("accepted", "declined", "converted"):
         raise HTTPException(status_code=400, detail=f"Quote has already been {quote.status}")
     quote.status = "accepted"
@@ -973,8 +1065,9 @@ def accept_quote(quote_id: int, body: AdminAcceptRequest = None,
 
 
 @router.post("/{quote_id}/decline", dependencies=[Depends(require_role("admin", "manager"))])
-def decline_quote(quote_id: int, db: Session = Depends(get_db)):
-    quote = _get_quote_or_404(quote_id, db)
+def decline_quote(quote_id: int, db: Session = Depends(get_db),
+                  org_id: int = Depends(current_org_id)):
+    quote = _get_quote_or_404(quote_id, db, resolve_org_id(org_id, db))
     if quote.status in ("accepted", "declined"):
         raise HTTPException(status_code=400, detail=f"Quote has already been {quote.status}")
     quote.status = "declined"
@@ -1164,6 +1257,18 @@ def _convert_quote_to_job(
     svc, job_type, prop_type = _quote_job_vocab(quote)
     prop = _resolve_property_for_quote(db, quote, prop_type)
 
+    # Carry the customer's on-site request details onto the records the crew
+    # reads: the request's place-stable access info (entry method, parking,
+    # pets) onto the property (fill-if-missing), and the per-visit instructions
+    # (focus areas, special instructions, arrival window) into the job's notes,
+    # which the crew job card shows. Both no-op when there is no linked intake.
+    intake = _quote_intake(db, quote)
+    fill_property_access_from_intake(prop, intake)
+    # For an STR property, also carry the rental specifics (check-in/out times,
+    # guests, listing URL, turnover day) that the request captured.
+    fill_property_rental_from_intake(prop, intake)
+    job_notes = compose_job_notes_from_intake(quote.notes, intake)
+
     # Fully-scheduled conversion → reuse the Scheduling create-job path so
     # the same guards + calendar side effects run. It also flips the source
     # quote to "converted" and advances the opportunity, matching what this
@@ -1182,7 +1287,7 @@ def _convert_quote_to_job(
             opportunity_id=quote.opportunity_id,
             property_id=prop.id,
             cleaner_ids=[str(c) for c in (cleaner_ids or [])],
-            notes=quote.notes,
+            notes=job_notes,
         )
         # create_job's org_id is a FastAPI dependency (Depends(current_org_id))
         # that only resolves through real request injection; called in-process
@@ -1207,7 +1312,7 @@ def _convert_quote_to_job(
         address=quote.address or prop.address,
         status="unscheduled",
         cleaner_ids=[str(c) for c in cleaner_ids] if cleaner_ids else [],
-        notes=quote.notes,
+        notes=job_notes,
         # BB-MT-01: unlike the scheduled path just above (which explicitly
         # passes quote.org_id to create_job for this exact reason), this
         # direct-insert left org_id NULL — every unscheduled quote→job
@@ -1268,6 +1373,7 @@ def convert_quote_to_job(
     quote_id: int,
     payload: Optional[ConvertToJobRequest] = None,
     db: Session = Depends(get_db),
+    org_id: int = Depends(current_org_id),
 ):
     """Create a Job from a quote. Accepts an optional payload with
     scheduled_date, start_time, end_time, cleaner_ids so the modal can
@@ -1275,7 +1381,7 @@ def convert_quote_to_job(
     Job lands as 'unscheduled' and the operator finishes on the
     Scheduling page. Every Job needs a Property, so we reuse the
     client's existing property or create one from the quote address."""
-    quote = _get_quote_or_404(quote_id, db)
+    quote = _get_quote_or_404(quote_id, db, resolve_org_id(org_id, db))
     p = payload or ConvertToJobRequest()
     job = _convert_quote_to_job(
         db, quote,
@@ -1360,19 +1466,24 @@ def _quote_by_token(token: str, db: Session) -> Quote:
     return quote
 
 
-def _company_info(db: Session) -> dict:
+def _company_info(db: Session, service_type: Optional[str] = None) -> dict:
     """Customer-facing business identity: Settings rows first, env fallback.
-    Powers the public quote page footer and the quote email."""
-    from modules.settings.router import get_setting, quote_policies_text
+    Powers the public quote page footer and the quote email. ``service_type``
+    picks the right customer prep policies (an STR turnover gets turnover
+    notes, not the residential "pick up your clutter / secure pets" block)."""
+    from modules.settings.router import get_setting, quote_policies_text, quote_terms_text
     return {
         "company_name": get_setting(db, "company_name") or os.getenv("COMPANY_NAME", DEFAULT_COMPANY_NAME),
         "company_email": (get_setting(db, "company_email") or os.getenv("COMPANY_EMAIL")
                           or get_setting(db, "from_email") or os.getenv("SMTP_USER")),
         "company_phone": get_setting(db, "company_phone") or os.getenv("COMPANY_PHONE"),
-        "quote_terms": get_setting(db, "quote_terms") or None,
-        # Customer-facing service policies (pickup, access, 24h cancellation…).
-        # Always present — falls back to a sensible professional default.
-        "quote_policies": quote_policies_text(db),
+        # Estimate / non-binding language. Always present — the owner's text
+        # when set, else the shared default (public page, email, PDF alike).
+        "quote_terms": quote_terms_text(db),
+        # Customer-facing service policies (pickup, access, 24h cancellation…),
+        # resolved for this quote's service type. Always present — falls back to
+        # the service-appropriate default.
+        "quote_policies": quote_policies_text(db, service_type),
         # Header band color for every customer-facing quote surface (page,
         # email, PDF). Defaults to the email's original slate.
         "brand_color": get_setting(db, "brand_color") or "#1f2937",
@@ -1384,7 +1495,7 @@ def _company_info(db: Session) -> dict:
 
 def _public_quote_dict(quote: Quote, db: Session) -> dict:
     """Client-facing serialization for the public accept page."""
-    company = _company_info(db)
+    company = _company_info(db, quote.service_type)
     # The customer opening this page IS the client on the quote — the
     # token was sent to their inbox/phone. Surface the name/email we
     # already have so the accept form prefills instead of asking them
@@ -1480,15 +1591,21 @@ def _notify_staff_quote_event(db: Session, quote: Quote, summary: str, activity_
 
 
 def _notify_owner_quote_event_core(subject: str, lines: list, *, quote_number: str,
-                                   client_name: str, total: float) -> None:
+                                   client_name: str, total: float,
+                                   to_email: Optional[str] = None) -> None:
     """Primitive-only owner notification send. Takes plain values (not the ORM
     quote) so it is safe to run from a BackgroundTasks callback AFTER the request
     session has closed — lazy-loading quote.client there would raise
-    DetachedInstanceError. Best-effort: never raises."""
+    DetachedInstanceError. Best-effort: never raises.
+
+    ``to_email`` is the owner alert address (Settings owner_alert_email → env
+    OWNER_ALERT_EMAIL, resolved by the caller while its session is live); when
+    unset the SMTP sender address is used, which is where these went before
+    the owner alert address existed."""
     try:
         from integrations.email import _load_smtp_creds, send_email
         creds = _load_smtp_creds()
-        owner = creds.get("from_email")
+        owner = to_email or creds.get("from_email")
         if not owner:
             logger.info("[quotes] no owner email configured; skipping owner notification")
             return
@@ -1512,19 +1629,26 @@ def _notify_owner_quote_event(db: Session, quote: Quote, subject: str, lines: li
     """Email the business owner when a customer responds to a quote. Thin ORM
     wrapper around :func:`_notify_owner_quote_event_core` for the synchronous
     callers (request-changes, decline, schedule) that still have a live session."""
+    from services.owner_alerts import owner_alert_email
     _notify_owner_quote_event_core(
         subject, lines,
         quote_number=quote.quote_number,
         client_name=(quote.client.name if quote.client else "a customer"),
         total=float(quote.total or 0),
+        to_email=owner_alert_email(db),
     )
 
 
 def _send_customer_quote_confirmation_core(to_email: str, *, quote_number: str,
-                                           total: float, accepted_name: str) -> None:
+                                           total: float, accepted_name: str,
+                                           scheduled_label: Optional[str] = None) -> None:
     """Primitive-only customer receipt send. Like the owner core, takes plain
     values so it can run from a BackgroundTasks callback after the session closes.
-    Best-effort — never raises."""
+    Best-effort — never raises.
+
+    ``scheduled_label`` (e.g. "September 22, 2026 (morning)") is set by the
+    customer self-schedule path: the receipt then confirms the booked date
+    instead of promising a call to schedule one."""
     if not to_email or "@" not in to_email:
         return
     try:
@@ -1534,24 +1658,30 @@ def _send_customer_quote_confirmation_core(to_email: str, *, quote_number: str,
         company = creds.get("from_name") or "Our team"
         name = first_name_of(accepted_name) or "there"
         total = f"${float(total or 0):,.2f}"
+        if scheduled_label:
+            what_next = f"You're booked in for {scheduled_label}. We'll see you then!"
+            subject = f"You're booked in — {scheduled_label}"
+        else:
+            what_next = f"{company} will reach out shortly to schedule your service."
+            subject = f"Quote {quote_number} confirmed — thank you!"
         lines = [
             f"Hi {name},",
             "",
             f"Thanks for accepting quote {quote_number} ({total}).",
-            f"{company} will reach out shortly to schedule your service.",
+            what_next,
             "",
             "Questions? Just reply to this email.",
         ]
         import html as _html
         body = "<div style='font-family:sans-serif;font-size:14px;color:#111'>" + \
             "<br>".join(_html.escape(l) if l else "&nbsp;" for l in lines) + "</div>"
-        send_email(to=to_email, subject=f"Quote {quote_number} confirmed — thank you!",
-                   html_body=body, text_body="\n".join(lines))
+        send_email(to=to_email, subject=subject, html_body=body, text_body="\n".join(lines))
     except Exception as e:
         logger.warning(f"[quotes] customer confirmation email failed for {quote_number}: {e}")
 
 
-def _send_customer_quote_confirmation(db: Session, quote: Quote, to_email: str) -> None:
+def _send_customer_quote_confirmation(db: Session, quote: Quote, to_email: str,
+                                      scheduled_label: Optional[str] = None) -> None:
     """Email the customer a receipt when they accept their quote. Thin ORM
     wrapper around the primitive core for synchronous callers."""
     _send_customer_quote_confirmation_core(
@@ -1559,6 +1689,7 @@ def _send_customer_quote_confirmation(db: Session, quote: Quote, to_email: str) 
         quote_number=quote.quote_number,
         total=float(quote.total or 0),
         accepted_name=(quote.accepted_by_name or (quote.client.name if quote.client else "")),
+        scheduled_label=scheduled_label,
     )
 
 
@@ -1576,17 +1707,33 @@ def _finalize_quote_accept(db: Session, quote: Quote, *, background_tasks=None,
         is supplied so the customer's accept click doesn't block on serial SMTP.
 
     Commits the accept + opportunity/conversion before returning. Email inputs are
-    captured up front so a backgrounded send is safe after the session closes."""
+    captured up front so a backgrounded send is safe after the session closes.
+
+    Owner channels on accept (all best-effort, all in the background task):
+      - email to the owner alert address (Settings owner_alert_email → env
+        OWNER_ALERT_EMAIL; falls back to the SMTP sender when unset),
+      - a short SMS to owner_alert_phone / OWNER_ALERT_PHONE when set,
+      - a staff web push (mirrors the "quote viewed" push).
+    An accepted quote with nobody told is a lost booking, so this is the one
+    event that fans out to every owner channel."""
     _notify_staff_quote_event(db, quote, f"Client accepted quote {quote.quote_number}", "quote_accepted")
 
     # Capture everything the emails need NOW, while the ORM instance is live.
+    from services.owner_alerts import owner_alert_email, owner_alert_phone
     qn = quote.quote_number
+    quote_id = quote.id
+    org_id = getattr(quote, "org_id", None)
     who = quote.accepted_by_name or (quote.client.name if quote.client else "The customer")
+    total = float(quote.total or 0)
     owner_kwargs = dict(
         quote_number=qn,
         client_name=(quote.client.name if quote.client else "a customer"),
-        total=float(quote.total or 0),
+        total=total,
+        to_email=owner_alert_email(db),
     )
+    owner_phone = owner_alert_phone(db)
+    # Deep link that opens the booking modal straight away (QuoteDetail ?book=1).
+    schedule_link = f"{app_base_url().rstrip('/')}/quotes/{quote_id}?book=1"
     customer_email = quote.accepted_by_email or (quote.client.email if quote.client else None)
     customer_kwargs = dict(
         quote_number=qn,
@@ -1613,16 +1760,51 @@ def _finalize_quote_accept(db: Session, quote: Quote, *, background_tasks=None,
         _notify_owner_quote_event_core(
             f"✅ Quote {qn} accepted",
             [f"{who} accepted quote {qn}.",
-             "You can convert it to a scheduled job from the Quoting page."],
+             f"Set up the schedule: {schedule_link}"],
             **owner_kwargs,
         )
         if send_customer_receipt:
             _send_customer_quote_confirmation_core(customer_email, **customer_kwargs)
+        _notify_owner_quote_accepted_extra(
+            quote_number=qn, who=who, total=total, schedule_link=schedule_link,
+            owner_phone=owner_phone, quote_id=quote_id, org_id=org_id,
+        )
 
     if background_tasks is not None:
         background_tasks.add_task(_emails)
     else:
         _emails()
+
+
+def _notify_owner_quote_accepted_extra(*, quote_number: str, who: str, total: float,
+                                       schedule_link: str, owner_phone: Optional[str],
+                                       quote_id: int, org_id: Optional[int]) -> None:
+    """Owner SMS + staff web push for an accepted quote. Primitive-only (safe
+    after the request session closes) and best-effort per channel — a Twilio
+    hiccup must not stop the push, and neither may ever raise into the
+    customer's accept response."""
+    if owner_phone:
+        try:
+            from integrations.twilio_client import send_sms
+            send_sms(to=owner_phone,
+                     body=f"Quote {quote_number} accepted by {who} — ${total:,.2f}. "
+                          f"Schedule: {schedule_link}")
+            logger.info("[quotes] owner SMS sent for accepted quote %s", quote_number)
+        except Exception as e:
+            logger.warning("[quotes] owner SMS failed for accepted quote %s: %s", quote_number, e)
+    try:
+        from services.push_service import notify_staff
+        notify_staff(
+            None,
+            "Quote accepted ✅",
+            f"{who} accepted quote {quote_number} (${total:,.2f})",
+            url=f"/quotes/{quote_id}?book=1",
+            tag=f"quote-accepted-{quote_id}",
+            org_id=org_id,
+            category="quotes",
+        )
+    except Exception:
+        pass
 
 
 @router.get("/public/{token}", dependencies=[Depends(rate_limit(120, 3600, "quote_view"))])
@@ -1753,7 +1935,7 @@ def public_quote_pdf(token: str, download: bool = False, db: Session = Depends(g
     """
     quote = _quote_by_token(token, db)
     client = db.query(Client).filter(Client.id == quote.client_id).first()
-    company = _company_info(db)
+    company = _company_info(db, quote.service_type)
     pdf_bytes = QuotePDFService(
         company_name=company["company_name"], company_email=company["company_email"] or "",
         company_phone=company["company_phone"], brand_color=company["brand_color"],
@@ -1871,9 +2053,11 @@ def public_schedule_quote(token: str, data: PublicScheduleRequest, db: Session =
             # Re-date the already-created job (keeps one job per quote) + sync GCal.
             # org_id explicit for the same reason as the create_job call below —
             # in-process calls skip FastAPI's Depends resolution entirely.
+            # notify_customer=False: this path sends its own dated confirmation
+            # below — one message, not the schedule write's notice as well.
             update_job(existing.id, JobUpdate(
                 scheduled_date=d.isoformat(), start_time=start, end_time=end,
-                allow_conflicts=True), db=db, org_id=quote.org_id)
+                allow_conflicts=True, notify_customer=False), db=db, org_id=quote.org_id)
             job_id = existing.id
         else:
             svc, job_type, prop_type = _quote_job_vocab(quote)
@@ -1888,6 +2072,7 @@ def public_schedule_quote(token: str, data: PublicScheduleRequest, db: Session =
                 job_type=job_type, scheduled_date=d.isoformat(), start_time=start, end_time=end,
                 address=quote.address or prop.address, property_id=prop.id, quote_id=quote.id,
                 cleaner_ids=[], notes=quote.notes, allow_conflicts=True,
+                notify_customer=False,  # own dated confirmation below
             ), db=db, org_id=quote.org_id)
             job_id = created["id"]
     except HTTPException as e:
@@ -1911,9 +2096,14 @@ def public_schedule_quote(token: str, data: PublicScheduleRequest, db: Session =
         [f"{who} accepted quote {quote.quote_number} and booked {nice_date} ({win_label}).",
          "A job was created (unassigned) and pushed to the calendar — assign a cleaner when ready."],
     )
-    if newly_accepted:
-        _send_customer_quote_confirmation(
-            db, quote, quote.accepted_by_email or (quote.client.email if quote.client else None))
+    # The customer just picked a date, so their confirmation carries it — and
+    # goes out whether or not this call was also the accept (a customer who
+    # accepted earlier and is scheduling now still needs to hear the date).
+    # The job write above was told notify_customer=False, so this is the ONE
+    # customer message for a self-schedule.
+    _send_customer_quote_confirmation(
+        db, quote, quote.accepted_by_email or (quote.client.email if quote.client else None),
+        scheduled_label=f"{nice_date} ({win_label})")
 
     return {
         "scheduled": True, "quote_number": quote.quote_number, "job_id": job_id,
@@ -1983,8 +2173,14 @@ def list_quote_requests(
     status: Optional[str] = Query(None),
     limit: int = Query(100, ge=1, le=500),
     offset: int = Query(0, ge=0),
+    org_id: int = Depends(current_org_id),
 ):
-    query = db.query(LeadIntake).filter(LeadIntake.source == _QR_SOURCE)
+    oid = resolve_org_id(org_id, db)
+    query = db.query(LeadIntake).filter(
+        LeadIntake.source == _QR_SOURCE,
+        # MT-2: scope to the caller's workspace; tolerate legacy NULL-org rows.
+        or_(LeadIntake.org_id == oid, LeadIntake.org_id.is_(None)),
+    )
     if status:
         query = query.filter(LeadIntake.status == status)
     rows = query.order_by(LeadIntake.created_at.desc()).offset(offset).limit(limit).all()
@@ -1992,10 +2188,17 @@ def list_quote_requests(
 
 
 @router.put("/requests/{request_id}", dependencies=[Depends(require_role("admin", "manager"))])
-def update_quote_request(request_id: int, request_data: QuoteRequestUpdate, db: Session = Depends(get_db)):
+def update_quote_request(request_id: int, request_data: QuoteRequestUpdate, db: Session = Depends(get_db),
+                         org_id: int = Depends(current_org_id)):
+    oid = resolve_org_id(org_id, db)
     row = (
         db.query(LeadIntake)
-        .filter(LeadIntake.id == request_id, LeadIntake.source == _QR_SOURCE)
+        .filter(
+            LeadIntake.id == request_id,
+            LeadIntake.source == _QR_SOURCE,
+            # MT-2: a request in another workspace reads as 404; tolerate legacy NULL-org.
+            or_(LeadIntake.org_id == oid, LeadIntake.org_id.is_(None)),
+        )
         .first()
     )
     if not row:
@@ -2040,13 +2243,33 @@ def _pdf_line_items(quote: Quote) -> list:
     ]
 
 
+def _extract_recipient(ev) -> Optional[str]:
+    """The address/phone a delivery targeted. utils.integration_log stores it in
+    request_payload as "to <recipient>", so strip that prefix back off; tolerate a
+    bare note or an empty value."""
+    rp = (ev.request_payload or "").strip()
+    if rp.lower().startswith("to "):
+        return rp[3:].strip() or None
+    return rp or None
+
+
+def _ie_status(ev) -> str:
+    """Delivery outcome for a history row. IntegrationEvent.status is already
+    'ok' | 'failed'; infer from error_message only for a legacy row written
+    without a status."""
+    if ev.status:
+        return ev.status
+    return "failed" if ev.error_message else "ok"
+
+
 @router.get("/{quote_id}/delivery-history", dependencies=[Depends(require_role("admin", "manager", "viewer"))])
-def get_quote_delivery_history(quote_id: int, db: Session = Depends(get_db)):
+def get_quote_delivery_history(quote_id: int, db: Session = Depends(get_db),
+                               org_id: int = Depends(current_org_id)):
     """Combined email + SMS delivery history, sorted newest first.
 
     Backed by IntegrationEvent — the same audit log the GCal sync writes to —
     after the per-channel quote_emails/quote_sms tables were retired."""
-    quote = _get_quote_or_404(quote_id, db)
+    quote = _get_quote_or_404(quote_id, db, resolve_org_id(org_id, db))
     rows = (
         db.query(IntegrationEvent)
         .filter(

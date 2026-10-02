@@ -26,7 +26,7 @@ import {
   MessageCircle, PenLine,
 } from 'lucide-react'
 import PageHeader from '../components/ui/PageHeader'
-import { post } from '../api'
+import { get, post } from '../api'
 import { dayLabel, contactDisplay, firstNameOf, apptReminderText } from '../components/comms/utils'
 import { DaySeparator } from '../components/comms/primitives'
 import { MessageBubble } from '../components/comms/MessageBubble'
@@ -170,11 +170,18 @@ export default function Comms() {
     detail, loadDetail, loadList, loadSummary,
   })
 
-  const sendReply = async () => {
+  // Teammates who can be @mentioned in an internal note (office + crew/subs).
+  // Fetched once; the composer filters this list as you type @.
+  const [mentionables, setMentionables] = useState([])
+  useEffect(() => {
+    get('/api/comms/assignees').then(rows => setMentionables(rows || [])).catch(() => {})
+  }, [])
+
+  const sendReply = async (mentions) => {
     if (!reply.trim() || !detail) return
     setSending(true); setFlash(null)
     try {
-      await sendReplyOrNote({ body: reply, subject: replySubject, isNote: noteMode })
+      await sendReplyOrNote({ body: reply, subject: replySubject, isNote: noteMode, mentions })
       setReply(''); setReplySubject('')
       setFlash({ ok: true, msg: noteMode ? 'Note saved' : 'Sent!' })
     } catch (e) { setFlash({ ok: false, msg: String(e.message || e) }) }
@@ -210,7 +217,7 @@ export default function Comms() {
       if (intake?.error) {
         setFlash({ ok: false, msg: intake.error })
       } else {
-        navigate('/billing?view=quotes', { state: { openNewFromIntake: intake } })
+        navigate('/quotes', { state: { openNewFromIntake: intake } })
       }
     } catch (e) {
       setFlash({ ok: false, msg: 'Could not draft a quote' })
@@ -354,7 +361,7 @@ export default function Comms() {
       <PageHeader
         title="Messages"
         icon={MessageSquare}
-        className="hidden lg:block pt-4 pb-3 sm:pt-4 sm:pb-3 shrink-0"
+        className="hidden shell:block pt-4 pb-3 sm:pt-4 sm:pb-3 shrink-0"
         actions={
           <div className="flex items-center gap-2">
             <HeaderStat n={summary.open || 0} label="active" />
@@ -391,9 +398,11 @@ export default function Comms() {
 
 
       {/* ═══ CENTER PANEL: Thread View ═══ */}
-      {/* Mobile shows exactly one pane at a time: list / thread / contact.
-          On lg+ the thread is always visible alongside the list. */}
-      <div className={`flex-1 flex flex-col min-w-0 ${mobileView === 'thread' ? 'flex' : 'hidden lg:flex'}`}>
+      {/* Below shell: one pane at a time (list / thread / contact). At shell+
+          (the owner's ~940px window) the thread sits beside the list — the
+          two-pane inbox. The breakpoint was lg: (1024), so at 940px the desktop
+          layout never engaged and the inbox rendered as the cramped phone view. */}
+      <div className={`flex-1 flex flex-col min-w-0 ${mobileView === 'thread' ? 'flex' : 'hidden shell:flex'}`}>
         {!detail ? (
           /* Empty state */
           <div className="flex-1 flex items-center justify-center bg-bg/50">
@@ -472,6 +481,7 @@ export default function Comms() {
               noteMode={noteMode} setNoteMode={setNoteMode}
               sending={sending}
               flash={flash}
+              mentionables={mentionables}
               onSend={sendReply}
               onDraftAI={draftWithAI}
               draftingAI={draftingAI}

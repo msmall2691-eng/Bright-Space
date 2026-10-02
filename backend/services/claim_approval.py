@@ -141,9 +141,14 @@ def approve(db: Session, job, req: JobClaimRequest, *, org_id: int,
                      .filter(JobResponseRow.job_id == job.id,
                              JobResponseRow.cleaner_id == req.cleaner_id)
                      .first())
+    prior_decline_reason = None
     if existing_resp:
         # A stale decline from a previous round on this job must not outlive
-        # the sub asking for it again and winning.
+        # the sub asking for it again and winning — but capture WHY they'd
+        # declined before we null it, so the trail survives in the activity log
+        # (BB-CLAIM: this write was lossy and couldn't be repaired after).
+        if existing_resp.response == "declined" and existing_resp.reason:
+            prior_decline_reason = existing_resp.reason
         existing_resp.response, existing_resp.reason = "accepted", None
         existing_resp.updated_at = resp_now
     else:
@@ -167,7 +172,12 @@ def approve(db: Session, job, req: JobClaimRequest, *, org_id: int,
         summary=f"Approved {req.cleaner_id}'s request at ${job.agreed_rate:,.2f}",
         extra_data={"cleaner_id": req.cleaner_id, "agreed_rate": job.agreed_rate,
                     "auto_declined": [o.id for o in others],
-                    "auto_approved": actor == "system"},
+                    "auto_approved": actor == "system",
+                    # Preserve the winner's earlier decline reason (if any) — the
+                    # job_responses row that carried it is being flipped to
+                    # "accepted", so this log line is now the only record of it.
+                    **({"prior_decline_reason": prior_decline_reason}
+                       if prior_decline_reason else {})},
         commit=False,
     )
     db.commit()

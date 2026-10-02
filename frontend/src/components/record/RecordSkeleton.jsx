@@ -10,7 +10,7 @@ export default function RecordSkeleton() {
     <div className="h-full overflow-y-auto">
       <div className="p-4 sm:p-6 max-w-[1400px] mx-auto">
         <Skeleton className="h-4 w-28 mb-4" />
-        <div className="grid grid-cols-1 lg:grid-cols-[300px_minmax(0,1fr)_320px] gap-4">
+        <div className="grid grid-cols-1 shell:grid-cols-[minmax(240px,280px)_minmax(0,1fr)] xl:grid-cols-[280px_minmax(0,1fr)_300px] gap-4">
           {/* Left */}
           <div className="bg-panel border border-hairline rounded-xl p-4 space-y-4 self-start">
             <div className="flex items-center gap-2">

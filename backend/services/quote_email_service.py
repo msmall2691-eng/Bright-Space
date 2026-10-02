@@ -237,7 +237,9 @@ class QuoteEmailService:
         self.company_email = (self._db_setting("company_email") or os.getenv("COMPANY_EMAIL")
                               or self.from_email)
         self.company_phone = self._db_setting("company_phone") or os.getenv("COMPANY_PHONE")
-        self.quote_terms = self._db_setting("quote_terms")
+        # Same default the public page + PDF use (settings.quote_terms_text),
+        # so the email never goes out without estimate/non-binding language.
+        self.quote_terms = self._terms_setting()
         # Customer-facing service policies — falls back to the shared default so
         # every quote email carries pickup / access / 24h-cancellation policies.
         self.quote_policies = self._policies_setting()
@@ -268,15 +270,32 @@ class QuoteEmailService:
             return None
 
     @staticmethod
-    def _policies_setting():
-        """The configured service policies, or the shared professional default
-        when unset — so every quote email carries them. Best-effort."""
+    def _terms_setting():
+        """The configured quote terms, or the shared default when unset.
+        Best-effort — falls back to the default constant without a DB."""
+        from modules.settings.router import DEFAULT_QUOTE_TERMS
+        try:
+            from database.db import SessionLocal
+            from modules.settings.router import quote_terms_text
+            db = SessionLocal()
+            try:
+                return quote_terms_text(db)
+            finally:
+                db.close()
+        except Exception:
+            return DEFAULT_QUOTE_TERMS
+
+    @staticmethod
+    def _policies_setting(service_type=None):
+        """The customer prep policies for this quote's service type, or the
+        service-appropriate default when unset — so every quote email carries
+        the right ones. Best-effort."""
         try:
             from database.db import SessionLocal
             from modules.settings.router import quote_policies_text
             db = SessionLocal()
             try:
-                return quote_policies_text(db)
+                return quote_policies_text(db, service_type)
             finally:
                 db.close()
         except Exception:
@@ -568,7 +587,10 @@ class QuoteEmailService:
                     {"label": str(d.get("label") or ""), "value": str(d.get("value") or "")}
                     for d in (service_details or []) if isinstance(d, dict) and d.get("label") and d.get("value")
                 ],
-                policies=self._policy_lines(self.quote_policies),
+                # Resolve prep policies for THIS quote's service type (an STR
+                # turnover gets turnover notes, not residential ones), not the
+                # generic block cached at construction.
+                policies=self._policy_lines(self._policies_setting(service_type)),
                 property_photo_url=(property_photo_url or "").strip() or None,
             )
 
@@ -613,27 +635,3 @@ class QuoteEmailService:
                 "error": str(e),
                 "email_id": None,
             }
-
-    def send_quote_to_multiple(
-        self,
-        recipients: list[dict],
-        quote_number: str,
-        total_amount: str,
-        expires_at: str,
-        quote_link: str,
-        pdf_bytes: Optional[bytes] = None,
-    ) -> list[dict]:
-        """Send quote emails to multiple recipients"""
-        results = []
-        for recipient in recipients:
-            result = self.send_quote_email(
-                to_email=recipient['email'],
-                client_name=recipient['name'],
-                quote_number=quote_number,
-                total_amount=total_amount,
-                expires_at=expires_at,
-                quote_link=quote_link,
-                pdf_bytes=pdf_bytes,
-            )
-            results.append(result)
-        return results

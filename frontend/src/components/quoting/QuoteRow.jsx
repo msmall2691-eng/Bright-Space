@@ -32,6 +32,9 @@ export default function QuoteRow({
   onUpdateStatus,
   copiedQuoteId,
 }) {
+  const jobHasDate = Boolean(q.job_scheduled_date)
+  const needsSchedule = q.status === 'accepted' || (q.status === 'converted' && !jobHasDate)
+  const isScheduled = q.status === 'converted' && jobHasDate
   return (
     <div className="p-3 hover:bg-bg-2/40 transition-colors">
       {/* Stack info + actions on mobile so the button row can wrap instead of
@@ -108,16 +111,20 @@ export default function QuoteRow({
           {/* Accept / Decline removed — the inline status dropdown next
               to the client name already sets those states (most quotes
               are accepted by the customer via their link anyway). */}
-          {canEdit && q.status === 'accepted' && (
+          {/* Auto-convert on accept flips the quote to 'converted' before a
+              date exists, so 'converted' alone doesn't mean "on the calendar".
+              job_scheduled_date rides the list payload (batch-loaded server
+              side): no date yet → still needs scheduling; a date → Scheduled. */}
+          {canEdit && needsSchedule && (
             <button onClick={() => onSchedule(q)}
               className="flex items-center gap-1 text-xs px-2.5 py-1.5 bg-panel border border-hairline-2 text-indigo-700 dark:text-indigo-300 hover:bg-bg-2 font-medium rounded-lg transition-colors">
               <Calendar className="w-3 h-3" />
               Set up schedule
             </button>
           )}
-          {q.status === 'converted' && (
+          {isScheduled && (
             <span className="flex items-center gap-1.5 text-xs px-2.5 py-1.5 text-ink-3"
-              title="This quote has been scheduled">
+              title={`This quote's job is scheduled for ${q.job_scheduled_date}`}>
               <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" aria-hidden="true" />
               <Calendar className="w-3 h-3" />
               Scheduled

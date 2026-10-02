@@ -1,10 +1,12 @@
 /**
  * Crew Schedule tab — Month view.
  *
- * A phone-first month grid of the cleaner's jobs (blue dots). Leads the
- * admin flagged (can_view_full_schedule) also see everyone else's jobs as
- * gray dots — names/times only; the backend strips access details from
- * rows that aren't theirs. Tap a day for its list below the grid.
+ * A phone-first month grid. Your own jobs are blue dots; the rest of the
+ * crew's jobs are gray dots so you can read the shape of the week (owner:
+ * "shape only, no PII"). A job that isn't yours shows town + time only — the
+ * backend strips the property name, the address, and every access detail from
+ * rows that aren't yours. A lead the admin flagged (can_view_full_schedule)
+ * also sees who's covering each job. Tap a day for its list below the grid.
  */
 import { useEffect, useMemo, useState } from 'react'
 import { ChevronLeft, ChevronRight, Users } from 'lucide-react'

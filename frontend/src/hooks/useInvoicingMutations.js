@@ -14,7 +14,7 @@ import { del, get, patch, post } from '../api'
  *  toast + refetch callbacks it already owns so we don't fork the
  *  source of truth. */
 export function useInvoicingMutations({
-  load,
+  load, setInvoices,
   selected, setPanel,
   form, sendForm, setSendForm,
   toast,
@@ -36,15 +36,35 @@ export function useInvoicingMutations({
     setSaving(false)
   }
 
+  // Row actions are OPTIMISTIC: the row flips and the toast fires immediately,
+  // then the write goes out and a background load() reconciles with the server.
+  // On failure the local list is restored to the snapshot taken inside the
+  // updater (so it can't race a stale closure) and the toast turns to an error.
+  // Same request count as before — the refetch just no longer blocks the UI.
   const markPaid = async (id) => {
-    await patch(`/api/invoices/${id}`, { paid_at: new Date().toISOString() })
-    await load(); toast('Marked as paid')
+    const paid_at = new Date().toISOString()
+    let snapshot
+    setInvoices(prev => { snapshot = prev; return prev.map(i => i.id === id ? { ...i, status: 'paid', paid_at } : i) })
     if (selected?.id === id) setPanel(null)
+    try {
+      await patch(`/api/invoices/${id}`, { paid_at })
+      toast('Marked as paid'); load()
+    } catch (e) {
+      if (snapshot) setInvoices(snapshot)
+      toast(e.message || 'Could not mark paid — try again', 'error')
+    }
   }
 
   const markOverdue = async (id) => {
-    await patch(`/api/invoices/${id}`, { status: 'overdue' })
-    await load(); toast('Marked as overdue')
+    let snapshot
+    setInvoices(prev => { snapshot = prev; return prev.map(i => i.id === id ? { ...i, status: 'overdue' } : i) })
+    try {
+      await patch(`/api/invoices/${id}`, { status: 'overdue' })
+      toast('Marked as overdue'); load()
+    } catch (e) {
+      if (snapshot) setInvoices(snapshot)
+      toast(e.message || 'Could not mark overdue — try again', 'error')
+    }
   }
 
   const deleteInvoice = async () => {

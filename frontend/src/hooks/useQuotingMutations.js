@@ -13,45 +13,58 @@ import { confirmDialog } from '../utils/confirmBus'
 export function useQuotingMutations({
   toast,
   loadQuotes, loadIntakes, loadFollowUps, loadArchived,
+  setQuotes, setIntakes,
   selectedIds, clearSelection,
   currentSelectedId, onSelectedCleared,
 }) {
   const [nudging, setNudging] = useState(null)
   const [copiedQuoteId, setCopiedQuoteId] = useState(null)
 
+  // Status changes are OPTIMISTIC: the chip flips across the list at once, the
+  // write goes out, and a background reload reconciles; a failed write restores
+  // the pre-action snapshot (taken inside the updater so it can't race a stale
+  // closure). Same request count — the reload just no longer blocks the chip.
   const updateStatus = async (id, status) => {
     // accepted/declined carry real business side effects (job conversion,
     // opportunity won/lost, owner + customer notifications). A raw PATCH sets the
     // status with NONE of them, so route those two through the real endpoints and
-    // confirm first. Everything else (draft/sent/viewed) is a plain status edit.
-    if (status === 'accepted' || status === 'declined') {
+    // confirm FIRST — nothing flips until the owner confirms. Everything else
+    // (draft/sent/viewed) is a plain status edit.
+    const heavy = status === 'accepted' || status === 'declined'
+    if (heavy) {
       const ok = await confirmDialog(status === 'accepted'
         ? 'Mark this quote accepted? This converts it to a job (when a property is linked), marks the deal won, and emails the owner and customer.'
         : 'Mark this quote declined? This closes the deal as lost and notifies the owner.',
         { confirmLabel: status === 'accepted' ? 'Accept' : 'Decline' })
-      if (!ok) { loadQuotes(); return }  // revert the optimistic chip
-      try {
-        await post(`/api/quotes/${id}/${status === 'accepted' ? 'accept' : 'decline'}`, {})
-      } catch (e) {
-        toast(e.message || `Could not mark quote ${status}`)
-        loadQuotes()
-        return
-      }
-    } else {
-      await patch(`/api/quotes/${id}`, { status })
+      if (!ok) return
     }
-    loadQuotes()
-    loadFollowUps()
+    let snapshot
+    setQuotes(prev => { snapshot = prev; return prev.map(q => q.id === id ? { ...q, status } : q) })
+    try {
+      if (heavy) {
+        await post(`/api/quotes/${id}/${status === 'accepted' ? 'accept' : 'decline'}`, {})
+      } else {
+        await patch(`/api/quotes/${id}`, { status })
+      }
+      loadQuotes(); loadFollowUps()
+    } catch (e) {
+      if (snapshot) setQuotes(snapshot)
+      toast(e.message || `Could not mark quote ${status}`)
+    }
   }
 
   const markIntakeReviewed = async (id) => {
-    await patch(`/api/intake/${id}`, { status: 'reviewed' })
-    loadIntakes()
+    let snapshot
+    setIntakes(prev => { snapshot = prev; return prev.map(i => i.id === id ? { ...i, status: 'reviewed' } : i) })
+    try { await patch(`/api/intake/${id}`, { status: 'reviewed' }); loadIntakes() }
+    catch (e) { if (snapshot) setIntakes(snapshot); toast(e.message || 'Could not update the lead') }
   }
 
   const updateLeadStatus = async (id, status) => {
-    await patch(`/api/intake/${id}`, { status })
-    loadIntakes()
+    let snapshot
+    setIntakes(prev => { snapshot = prev; return prev.map(i => i.id === id ? { ...i, status } : i) })
+    try { await patch(`/api/intake/${id}`, { status }); loadIntakes() }
+    catch (e) { if (snapshot) setIntakes(snapshot); toast(e.message || 'Could not update the lead') }
   }
 
   const archiveQuote = async (quote) => {

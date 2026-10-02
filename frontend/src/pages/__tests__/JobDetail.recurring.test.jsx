@@ -118,6 +118,39 @@ describe('JobDetail — a visit that belongs to a series', () => {
     expect(patch).not.toHaveBeenCalledWith('/api/jobs/6', expect.anything())
   })
 
+  it('offers "Reschedule anyway" when the target date has a conflict, then pushes it through', async () => {
+    // Moving a visit weeks out often lands on a day the crew is off or already
+    // booked → the backend 409s. The job page used to swallow that into a
+    // silent "nothing was changed" (it read as a broken move); it now names the
+    // conflict and offers the same override the calendar drag has.
+    const { toast } = await import('../../utils/toastBus')
+    mount(JOB)
+    await screen.findByText(/This visit repeats/)
+    await editField('Scheduled date', '2026-10-30')
+
+    // First answer hits a conflict on the far target date.
+    toast.error.mockClear()
+    post.mockRejectedValueOnce(Object.assign(new Error('Dana has the day off'),
+      { status: 409, detail: 'Dana has the day off' }))
+    fireEvent.click(await screen.findByRole('button', { name: /This visit only/ }))
+
+    // The dialog closes and an override toast names the conflict.
+    await waitFor(() => expect(toast.error).toHaveBeenCalled())
+    const [msg, opts] = toast.error.mock.calls.at(-1)
+    expect(String(msg)).toMatch(/Dana has the day off/)
+    expect(opts.action.label).toBe('Reschedule anyway')
+    expect(screen.queryByText('This is a repeating visit')).toBeNull()  // dialog closed
+
+    // Taking the override retries WITH allow_conflicts and the same target date.
+    post.mockResolvedValueOnce({ job_id: 6 })
+    opts.action.onClick()
+    await waitFor(() => expect(post.mock.calls.length).toBe(2))
+    const [url, body] = post.mock.calls.at(-1)
+    expect(url).toBe('/api/recurring/42/reschedule')
+    expect(body.rescheduled_date).toBe('2026-10-30')
+    expect(body.allow_conflicts).toBe(true)
+  })
+
   it('names the field it is about to apply, like the edit drawer does', async () => {
     // Picking a blast radius shouldn't mean guessing what's in the blast. The
     // label comes from the shared FIELD_LABELS map, so the two screens that

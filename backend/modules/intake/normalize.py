@@ -52,24 +52,56 @@ DEDUP_WINDOW_MINUTES = 5
 # operator to merge/archive by hand instead of being auto-merged.
 NAME_ADDR_DEDUP_WINDOW_MINUTES = 24 * 60
 
-# Raw website service keys -> canonical service_type. (Consolidates the two
-# near-identical maps that lived in booking/router.py and intake/router.py.)
+# Raw website service keys -> canonical service_type. THE canonical map for the
+# whole app (consolidates the two near-identical maps that lived in
+# booking/router.py and intake/router.py — the booking one is now deleted).
+# Canonical values are only ever "residential" | "commercial" | "str" (Property
+# has a CHECK constraint on exactly those, so nothing else may be produced here).
 SERVICE_TYPE_MAP = {
+    # Residential
     "standard": "residential",
     "deep": "residential",
+    "deep-cleaning": "residential",
     "move-in-out": "residential",
     "move-in": "residential",
     "move-out": "residential",
     "residential": "residential",
     "residential-cleaning": "residential",
+    "house": "residential",
+    "home": "residential",
+    "apartment": "residential",
+    "condo": "residential",
+    # Short-term / vacation rental turnovers. The old map knew only 4 spellings,
+    # so "cottage", "short-term-rental", "rental", "vrbo" etc. silently fell
+    # through to residential — the exact bug that mislabeled a cottage Airbnb.
     "str": "str",
+    "str-turnover": "str",
     "vacation-rental": "str",
+    "vacation-rental-turnover": "str",
     "airbnb": "str",
     "airbnb-turnover": "str",
+    "vrbo": "str",
+    "vrbo-turnover": "str",
+    "short-term-rental": "str",
+    "rental": "str",
+    "turnover": "str",
+    "cottage": "str",
+    "cabin": "str",
+    # Commercial
     "commercial": "commercial",
-    "office": "commercial",
     "commercial-cleaning": "commercial",
+    "office": "commercial",
+    "retail": "commercial",
 }
+
+# Fallback keyword sniff (whole tokens, not substrings — "industrial" must not
+# match on "str"). Used only when the exact key isn't in the map, to rescue a
+# near-miss/free-text service word instead of silently calling it residential.
+_STR_KEYWORDS = {
+    "str", "airbnb", "vrbo", "bnb", "turnover", "vacation", "rental",
+    "cottage", "cabin",
+}
+_COMMERCIAL_KEYWORDS = {"commercial", "office", "retail", "business", "industrial"}
 
 # Names we overwrite when a real website lead lands on a placeholder client, so
 # the Quoting dropdown shows the real person rather than a stale test/import name.
@@ -79,8 +111,37 @@ _PLACEHOLDER_NAMES = (
 
 
 def canonical_service_type(service_key: Optional[str]) -> str:
-    """Map a raw website service key to the canonical service_type."""
-    return SERVICE_TYPE_MAP.get((service_key or "").strip().lower(), "residential")
+    """Map a raw website service key to the canonical service_type
+    ("residential" | "commercial" | "str").
+
+    Resolution order: exact map (separators normalized so "vacation rental",
+    "vacation_rental" and "vacation-rental" all hit) -> whole-token keyword sniff
+    (rescues an unlisted rental/commercial phrasing) -> default residential.
+
+    A genuinely unrecognized non-empty key is LOGGED (a breadcrumb so a future
+    mislabel is visible instead of silently vanishing into residential), and a
+    keyword-rescued STR is logged too. An empty/missing key is the ordinary
+    "form didn't ask" case and defaults quietly to residential.
+    """
+    raw = (service_key or "").strip().lower()
+    if not raw:
+        return "residential"
+    key = re.sub(r"[\s_]+", "-", raw)
+    mapped = SERVICE_TYPE_MAP.get(key)
+    if mapped:
+        return mapped
+    tokens = set(re.split(r"[-/]+", key))
+    if tokens & _STR_KEYWORDS:
+        logger.info("intake: service_type %r rescued to 'str' by keyword", service_key)
+        return "str"
+    if tokens & _COMMERCIAL_KEYWORDS:
+        logger.info("intake: service_type %r rescued to 'commercial' by keyword", service_key)
+        return "commercial"
+    logger.warning(
+        "intake: unrecognized service_type %r -> defaulting to 'residential' "
+        "(add it to SERVICE_TYPE_MAP if it should be rental/commercial)", service_key,
+    )
+    return "residential"
 
 
 # Common synonyms collapsed to one canonical source value so "Website" and
@@ -454,6 +515,49 @@ def _lock_contact_for_upsert(db: Session, email: Optional[str], phone: Optional[
         logger.warning("contact upsert lock failed: %s", e)
 
 
+def _backfill_lead(existing: "LeadIntake", data: IntakeData) -> bool:
+    """Fold a repeat submission's NEW information onto the lead we already have.
+
+    Both dedup paths need this. maineclean.co's /book flow posts TWICE for one
+    visit under ONE idempotency key: step 1-2 sends a thin intake (contact,
+    sqft, baths, estimate) and step 3 sends the real booking (requestedDate
+    plus the six on-site "essentials" and the arrival window). The second POST
+    is not a stale duplicate — it is strictly newer information the operator
+    needs on the Requests card.
+
+    Rules, unchanged from the recency path that has always used them:
+      * scalars fill only where the lead is still empty, so a genuinely stale
+        re-post can never overwrite good data (this is what keeps a replayed
+        forward with a different address from clobbering the original);
+      * the longest free-text message wins;
+      * custom_fields shallow-merge with the incoming keys winning, because
+        "fill-if-missing" is the wrong rule for a dict — the first hit may
+        already have {} on the row.
+
+    Returns the SET OF FIELD NAMES it landed — empty when the submission was a
+    pure replay. Callers use it two ways: skip a pointless commit (any
+    non-empty set is truthy), and decide whether a deduped submission deserves
+    to re-alert. submit_booking needs the second: a repeat post carries nothing
+    new and must stay silent, but the /book flow's second stage lands a real
+    requested date, and the owner was told "no date requested" by the first.
+    """
+    gained: set[str] = set()
+    for f in _MERGE_FIELDS:
+        val = getattr(data, f, None)
+        if val not in (None, "") and not getattr(existing, f, None):
+            setattr(existing, f, val)
+            gained.add(f)
+    if data.message and (not existing.message or len(data.message) > len(existing.message or "")):
+        existing.message = data.message
+        gained.add("message")
+    if data.custom_fields:
+        merged = {**(existing.custom_fields or {}), **data.custom_fields}
+        if merged != (existing.custom_fields or {}):
+            existing.custom_fields = merged
+            gained.add("custom_fields")
+    return gained
+
+
 def upsert_lead(db: Session, data: IntakeData) -> dict:
     """The single write path for public leads — INBOX-ONLY (Twenty-style).
 
@@ -495,11 +599,25 @@ def upsert_lead(db: Session, data: IntakeData) -> dict:
             .first()
         )
         if by_key is not None:
+            # Collapse onto the existing Lead — but FOLD IN anything new the
+            # caller sent. Returning bare here silently dropped the entire
+            # second payload, which for maineclean.co's two-stage /book flow
+            # meant the operator's Requests card kept the thin step-1 intake
+            # and lost the requested date and every /book essential. The
+            # fill-if-missing rules in _backfill_lead keep a genuinely stale
+            # replay from overwriting good data.
+            gained = _backfill_lead(by_key, data)
+            if gained:
+                db.commit()
+                db.refresh(by_key)
             return {
                 "success": True,
                 "intake_id": by_key.id,
                 "client_id": by_key.client_id,
                 "deduped": True,
+                # What this post actually added. Empty for a replay; the /book
+                # flow's second stage lands requested_date + custom_fields here.
+                "enriched": sorted(gained),
             }
 
     # Serialize concurrent upserts for the same contact BEFORE the recency
@@ -518,27 +636,9 @@ def upsert_lead(db: Session, data: IntakeData) -> dict:
         recent = _find_recent_name_address_duplicate(db, data)
         name_addr_merge = recent is not None
     if recent:
-        changed = False
-        for f in _MERGE_FIELDS:
-            val = getattr(data, f, None)
-            if val not in (None, "") and not getattr(recent, f, None):
-                setattr(recent, f, val)
-                changed = True
-        # Keep the longest free-text message (the richer note wins).
-        if data.message and (not recent.message or len(data.message) > len(recent.message or "")):
-            recent.message = data.message
-            changed = True
-        # Shallow-merge custom_fields. The scalar _MERGE_FIELDS loop's
-        # "fill-if-missing" rule is wrong for a dict — the earlier hit
-        # (e.g. an intake-submit) may already have {} on the row, but the
-        # follow-up booking submit's essentials are strictly newer info the
-        # operator needs. Merge with incoming keys winning; assign a fresh
-        # dict so SQLAlchemy's JSON change detection actually fires.
-        if data.custom_fields:
-            merged = {**(recent.custom_fields or {}), **data.custom_fields}
-            if merged != (recent.custom_fields or {}):
-                recent.custom_fields = merged
-                changed = True
+        # Same back-fill the idempotency-key path uses — see _backfill_lead.
+        gained = _backfill_lead(recent, data)
+        changed = bool(gained)
         # Name+address merge: the two rows have DIFFERENT contact info by
         # definition, so preserve both. Back-fill any contact field the
         # original was missing, and when the new submission carries a
@@ -571,7 +671,8 @@ def upsert_lead(db: Session, data: IntakeData) -> dict:
         if changed:
             db.commit()
             db.refresh(recent)
-        return {"success": True, "intake_id": recent.id, "client_id": recent.client_id, "deduped": True}
+        return {"success": True, "intake_id": recent.id, "client_id": recent.client_id,
+                "deduped": True, "enriched": sorted(gained)}
 
     # Brand-new request: persist EVERY structured column the customer gave us,
     # but leave client_id NULL — no Client/Property/Opportunity is created.
@@ -619,6 +720,9 @@ def upsert_lead(db: Session, data: IntakeData) -> dict:
                     "intake_id": winner.id,
                     "client_id": winner.client_id,
                     "deduped": True,
+                    # Lost an insert race: the winner row is whatever the other
+                    # transaction wrote, and we merged nothing onto it.
+                    "enriched": [],
                 }
         raise
 
@@ -646,4 +750,5 @@ def upsert_lead(db: Session, data: IntakeData) -> dict:
     except Exception:
         pass
 
-    return {"success": True, "intake_id": intake.id, "client_id": intake.client_id, "deduped": False}
+    return {"success": True, "intake_id": intake.id, "client_id": intake.client_id,
+            "deduped": False, "enriched": []}

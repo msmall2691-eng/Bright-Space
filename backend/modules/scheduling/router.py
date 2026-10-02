@@ -118,6 +118,12 @@ class JobUpdate(BaseModel):
     # open_for_claims is on. NULL is fine (a re-opened job may not need a new
     # rate) — the crew app just won't show a number until one's set.
     posted_rate: Optional[float] = None
+    # Marketplace (migration 117): limit which cleaners see this open offer.
+    # A list of cleaner_ids; null or [] = every cleared sub (the default). This
+    # narrows WHO is invited to bid — the sub still requests/accepts and the
+    # office still decides, so it is an offer, never an assignment. In
+    # CLEARABLE_FIELDS so an explicit null resets it to "everyone".
+    offer_audience: Optional[List[str]] = None
 
 JOB_TYPES = {"residential", "deep_clean", "commercial", "str_turnover", "one_time"}
 JOB_STATUSES = {"unscheduled", "scheduled", "in_progress", "completed", "cancelled"}
@@ -131,7 +137,7 @@ JOB_STATUSES = {"unscheduled", "scheduled", "in_progress", "completed", "cancell
 # was honest, the server dropped it, and the old number came back on reload.
 # Distinguishing the two cases needs pydantic's `model_fields_set`, not the
 # value: absent and null both arrive as None.
-CLEARABLE_FIELDS = frozenset({"posted_rate"})
+CLEARABLE_FIELDS = frozenset({"posted_rate", "offer_audience"})
 # NO PER-JOB PAY MODE, AND NO HOURLY BUMP. `Job.pay_mode` ("auto | hourly |
 # piece") and `Job.pay_rate_bump` ("extra $/hr on top of each cleaner's normal
 # rate") were the employee model one level down from the per-cleaner hourly
@@ -718,6 +724,11 @@ def job_to_dict(j: Job, client: Client = None, effective_date=None,
         # Crew app Phase 3: "up for grabs" flag the office toggles; claiming
         # flips it back off (crew router's /claim).
         "open_for_claims": bool(getattr(j, "open_for_claims", False)),
+        # Marketplace (migration 117): who this open offer is limited to
+        # (cleaner_ids). [] / absent = everyone. Office-only serialization so
+        # the board can show and edit the audience; the crew row never carries
+        # it.
+        "offer_audience": list(getattr(j, "offer_audience", None) or []),
         # Marketplace pivot (migration 097): asking rate (posted) vs. the
         # final rate once a claim request is approved (agreed) — payroll
         # reads agreed_rate, never posted_rate.
@@ -809,14 +820,130 @@ def _job_booking_info(db: Session, j: Job):
     return booking, next_arrival
 
 
+def _js(v):
+    """Coerce one value to something FastAPI's JSON encoder cannot choke on.
+
+    Primitives and JSON containers pass through; dates/times/datetimes become
+    ISO strings; anything else falls back to ``str()``. Used only by the
+    degraded serializer below, whose whole job is to never raise."""
+    if v is None or isinstance(v, (str, int, float, bool, list, dict)):
+        return v
+    try:
+        return v.isoformat()
+    except Exception:
+        try:
+            return str(v)
+        except Exception:
+            return None
+
+
+def _log_job_shape(where: str, j: Job) -> None:
+    """Emit the traceback plus the row's serialization-relevant field shape when
+    an otherwise-safe job read fails, so a SINGLE occurrence in the logs names
+    the offending field instead of a bare ``Internal Server Error``.
+
+    Deliberately omits access details (house_code / access_notes / wifi) —
+    BB-SEC-08…12 keep those out of logs. Values are repr-truncated so a fat
+    ``photos``/``notes`` field can't flood the log."""
+    def _r(name):
+        try:
+            v = getattr(j, name, None)
+            return f"{type(v).__name__}={repr(v)[:160]}"
+        except Exception as e:  # a broken attribute load is itself signal
+            return f"<unreadable: {e!r}>"
+
+    fields = ("job_type", "status", "property_id", "client_id", "quote_id",
+              "opportunity_id", "recurring_schedule_id", "ical_event_id",
+              "scheduled_date", "start_time", "end_time", "cleaner_ids",
+              "custom_fields", "offer_audience", "posted_rate", "price",
+              "agreed_rate", "created_at", "updated_at")
+    try:
+        shape = " ".join(f"{name}({_r(name)})" for name in fields)
+    except Exception:
+        shape = "<shape unavailable>"
+    logger.exception("[%s] serialize failed for job %s: %s",
+                     where, getattr(j, "id", "?"), shape)
+
+
+def _job_to_dict_min(j: Job) -> dict:
+    """A serializer that cannot raise: every field is read defensively and
+    coerced to a JSON-safe value, and the turnover-booking extras are left
+    empty. It mirrors ``job_to_dict``'s keys so a caller gets the full shape,
+    just without booking enrichment — the graceful-degrade payload used when the
+    normal path throws on one row's bad data."""
+    g = lambda name, default=None: getattr(j, name, default)
+    return {
+        "id": g("id"),
+        "client_id": g("client_id"),
+        "client_name": (getattr(g("client"), "name", "") or "") if g("client") else "",
+        "quote_id": g("quote_id"),
+        "opportunity_id": g("opportunity_id"),
+        "job_type": g("job_type") or "residential",
+        "property_id": g("property_id"),
+        "property_name": getattr(g("property"), "name", None) if g("property") else None,
+        "recurring_schedule_id": g("recurring_schedule_id"),
+        "calendar_invite_sent": g("calendar_invite_sent"),
+        "sms_reminder_sent": g("sms_reminder_sent"),
+        "skip_sms_reminder": bool(g("skip_sms_reminder")),
+        "title": g("title"),
+        "scheduled_date": _js(g("scheduled_date")),
+        "start_time": _js(g("start_time")),
+        "end_time": _js(g("end_time")),
+        "address": g("address"),
+        "cleaner_ids": g("cleaner_ids") or [],
+        "status": g("status"),
+        "notes": g("notes"),
+        "completed_at": _js(g("completed_at")),
+        "completed_by": g("completed_by"),
+        "completion_note": g("completion_note"),
+        "custom_fields": g("custom_fields") or {},
+        "dispatched": bool(g("dispatched")),
+        "open_for_claims": bool(g("open_for_claims") or False),
+        "offer_audience": list(g("offer_audience") or []) if isinstance(g("offer_audience"), (list, tuple)) else [],
+        "posted_rate": _js(g("posted_rate")),
+        "price": _js(g("price")),
+        "agreed_rate": _js(g("agreed_rate")),
+        "pending_claim_requests": 0,
+        "helpers": [],
+        "gcal_event_id": g("gcal_event_id"),
+        "created_at": _js(g("created_at")),
+        "updated_at": _js(g("updated_at")),
+        "customer_confirmed_at": _js(g("customer_confirmed_at")),
+        "reschedule_requested_at": _js(g("reschedule_requested_at")),
+        "reschedule_request_message": g("reschedule_request_message"),
+        "reschedule_requested_date": _js(g("reschedule_requested_date")),
+        "reschedule_requested_scope": g("reschedule_requested_scope"),
+        "is_recurring": bool(g("recurring_schedule_id")),
+        # Booking enrichment is exactly what could not be computed — leave it
+        # empty rather than guess, and flag that this row degraded so a reader
+        # (and a test) can tell an enriched payload from a fallback one.
+        "booking": None,
+        "next_arrival": None,
+        "is_immediate_turnover": False,
+        "turnover_lead_hours": None,
+        "turnover_lead_warning": False,
+        "_degraded": True,
+    }
+
+
 def _job_to_dict_enriched(db: Session, j: Job, **kwargs) -> dict:
     """job_to_dict() plus single-job booking enrichment — the wiring
     get_job/create_job/update_job/get_job_details need for a str_turnover
     job's `booking`/`next_arrival`/`is_immediate_turnover`/
-    `turnover_lead_hours` to ever be populated outside the jobs list."""
-    booking, next_arrival = _job_booking_info(db, j)
-    kwargs.setdefault("lead_buffer_hours", _get_turnover_lead_buffer_hours(db))
-    return job_to_dict(j, booking_event=booking, next_arrival=next_arrival, **kwargs)
+    `turnover_lead_hours` to ever be populated outside the jobs list.
+
+    A read endpoint must not 500 the whole job page because one row's data
+    trips serialization, so if the normal path raises we log the row's shape +
+    traceback (to pinpoint the offending field) and fall back to a serializer
+    that cannot raise. The fallback is booking-less but complete-enough to
+    render; the log is the breadcrumb for a precise root-cause fix."""
+    try:
+        booking, next_arrival = _job_booking_info(db, j)
+        kwargs.setdefault("lead_buffer_hours", _get_turnover_lead_buffer_hours(db))
+        return job_to_dict(j, booking_event=booking, next_arrival=next_arrival, **kwargs)
+    except Exception:
+        _log_job_shape("job_enrich", j)
+        return _job_to_dict_min(j)
 
 
 def _get_turnover_lead_buffer_hours(db: Session) -> float:
@@ -1173,40 +1300,17 @@ def create_job(data: JobCreate, db: Session = Depends(get_db), org_id: int = Dep
         except Exception as e:
             logger.warning(f"Free/Busy guard skipped for new job: {e}")
 
-    # ── PROPERTY DEFAULTING ──
-    # Every job needs a property (DB-level NOT NULL), but the one-screen
-    # Quick-schedule flow lets the user skip it. Resolve to the client's existing
-    # property, or create a sensible default, so a fast booking never fails here.
-    resolved_property_id = data.property_id
-    if resolved_property_id:
-        # Caller-supplied property_id — same class of issue as client_id above:
-        # verify it's this org's property before linking a new Job to it.
-        owned_property = db.query(Property).filter(
-            Property.id == resolved_property_id,
-            or_(Property.org_id == org_id, Property.org_id.is_(None)),  # MT-2 tenant scope
-        ).first()
-        if not owned_property:
-            raise HTTPException(status_code=404, detail="Property not found")
-    if not resolved_property_id:
-        existing_prop = (db.query(Property)
-                         .filter(Property.client_id == data.client_id)
-                         .order_by(Property.id.asc()).first())
-        if existing_prop:
-            resolved_property_id = existing_prop.id
-        else:
-            client = owned_client
-            ptype = "str" if data.job_type == "str_turnover" else (
-                data.job_type if data.job_type in ("residential", "commercial") else "residential")
-            new_prop = Property(
-                client_id=data.client_id,
-                name=f"{client.name} — Main" if client and client.name else "Main location",
-                address=data.address or (getattr(client, "address", None) if client else "") or "",
-                property_type=ptype,
-            )
-            if hasattr(new_prop, "org_id"):
-                new_prop.org_id = org_id
-            db.add(new_prop); db.commit(); db.refresh(new_prop)
-            resolved_property_id = new_prop.id
+    # ── PROPERTY (required) ──
+    # Every job hangs off a property (workflow guardrail). Resolve to the
+    # supplied one, else the client's existing property, else auto-create from
+    # the job's/client's address. Raises 422 only when the client has no
+    # property AND no address to build one from — one shared definition with the
+    # recurring series path (services/property_resolve.py).
+    from services.property_resolve import resolve_property_for_client
+    resolved_property_id = resolve_property_for_client(
+        db, client_id=data.client_id, org_id=org_id,
+        property_id=data.property_id, address=data.address, job_type=data.job_type,
+    )
 
     # allow_conflicts and notify_customer are request-only knobs, not Job
     # columns — the customer-notice suppression is read off `data` below (the
@@ -1344,12 +1448,14 @@ def create_job(data: JobCreate, db: Session = Depends(get_db), org_id: int = Dep
     # schedule the moment it's assigned. The response key stays as an explicit
     # retirement marker (not a silently vanished field).
     # Tell the CUSTOMER their cleaning is booked in (BB-CUST-01) when the office
-    # creates a scheduled job directly for them. Skipped for a quote-sourced job
-    # (source_quote): accepting the quote already sent the customer a receipt, so
-    # a second "you're scheduled" would double up. Also honours an explicit
-    # notify_customer=False. Gated OFF by default; best-effort, post-commit.
+    # creates a scheduled job for them. This used to skip a quote-sourced job on
+    # the theory that the accept receipt covered it — but that receipt goes out
+    # at accept time, before any date exists on the owner-scheduled path, so
+    # the customer never heard WHEN. A quote-sourced job that gets a date sends
+    # the dated notice like any other; the customer self-schedule path passes
+    # notify_customer=False because it sends its own dated confirmation (one
+    # message, not two). Gated OFF by default; best-effort, post-commit.
     if (job.status == "scheduled" and job.scheduled_date and job.client_id
-            and source_quote is None
             and getattr(data, "notify_customer", None) is not False):
         from services.scheduled_notice import notify_customer_scheduled
         notify_customer_scheduled(db, job)
@@ -2104,6 +2210,29 @@ def auto_assign_turnovers(dry_run: bool = False, db: Session = Depends(get_db),
     turnovers, never another org's."""
     return auto_assign_unassigned_turnovers(db, dry_run=dry_run,
                                             org_id=resolve_org_id(org_id, db))
+
+
+@router.post("/purge-cancelled-turnovers", dependencies=[Depends(require_role("admin", "manager"))])
+def purge_cancelled_turnovers_endpoint(dry_run: bool = False, property_id: Optional[int] = None,
+                                       max_delete: Optional[int] = None,
+                                       db: Session = Depends(get_db),
+                                       org_id: int = Depends(current_org_id)):
+    """Remove cancelled STR-turnover *ghosts* — the piles of cancelled duplicate
+    turnovers a flapping iCal feed leaves stacked on one date.
+
+    Pass ?dry_run=true to preview the count (by property) without deleting.
+    `max_delete` caps one call so it finishes inside the client timeout even
+    with thousands of ghosts; the caller loops until the response's `remaining`
+    is 0. Human-confirmed cleanup, scoped to this org (MT-2); only ever touches
+    cancelled str_turnover rows, and never one that carries an invoice. See
+    services/turnover_cleanup.py for the safety rails."""
+    from services.turnover_cleanup import (
+        preview_cancelled_turnovers, purge_cancelled_turnovers,
+    )
+    oid = resolve_org_id(org_id, db)
+    if dry_run:
+        return preview_cancelled_turnovers(db, oid, property_id)
+    return purge_cancelled_turnovers(db, oid, property_id, max_delete=max_delete)
 
 
 class BulkRescheduleRequest(BaseModel):
@@ -3362,6 +3491,14 @@ def get_job_details(job_id: int, db: Session = Depends(get_db), org_id: int = De
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
 
+    # Fold in a Google Calendar RSVP if the customer accepted their invite — the
+    # logic (and its scheduling-invariant / economy guards) lives in the service;
+    # this is read-on-view, office roles only, and a no-op for a job with no
+    # invite out or one already confirmed. Crew read the flag via /crew/my-day.
+    if getattr(current_user, "role", None) in ("admin", "manager", "viewer"):
+        from services.gcal_confirmations import maybe_capture_customer_rsvp
+        maybe_capture_customer_rsvp(db, job)
+
     invoices = db.query(Invoice).filter(
         Invoice.job_id == job.id,
         or_(Invoice.org_id == org_id, Invoice.org_id.is_(None)),
@@ -3676,6 +3813,24 @@ def update_job(job_id: int, data: JobUpdate, db: Session = Depends(get_db), org_
                        "first, then post it — approving a request on an "
                        "assigned job would add a second person, not fill a "
                        "vacancy.")
+    # A targeted offer audience must resolve to real cleaner accounts in this
+    # org. A non-empty audience matching nobody would hide the job from the
+    # whole bench (a silent footgun), so reject it; an empty list stays
+    # "everyone". Order-preserving dedupe. This only narrows who is INVITED to
+    # bid — it never assigns anyone (brightbase-marketplace Rule 0).
+    if "offer_audience" in updates and updates["offer_audience"]:
+        want = [str(c).strip() for c in updates["offer_audience"] if str(c).strip()]
+        known = {str(u.cleaner_id) for u in db.query(User).filter(
+            User.role == "cleaner", User.cleaner_id.isnot(None),
+            or_(User.org_id == org_id, User.org_id.is_(None))).all()}
+        valid = [c for c in dict.fromkeys(want) if c in known]
+        if not valid:
+            raise HTTPException(
+                status_code=400,
+                detail="None of those cleaners were recognized — pick cleaners "
+                       "from your crew, or leave the job open to everyone.")
+        updates["offer_audience"] = valid
+
     if "status" in updates and updates["status"] not in JOB_STATUSES \
             and updates["status"] != job.status:
         raise HTTPException(status_code=400, detail=f"Unknown status '{updates['status']}'")
@@ -4234,6 +4389,13 @@ def delete_job(job_id: int, db: Session = Depends(get_db), org_id: int = Depends
     # is the same silence as a cancel, minus the audit trail.
     from services.claim_approval import close_offer
     close_offer(db, job, reason="was removed from the schedule")
+    # A turnover the office deletes ON PURPOSE must stay deleted: mark its iCal
+    # booking dismissed so the generator stops recreating it on the next sync.
+    # The feed is an inbox — it must not resurrect a canonical, by-hand delete
+    # (scheduling-invariants Rule 0). Only this explicit human delete dismisses;
+    # the automatic false-cancel recovery never does. No-op for non-turnovers.
+    from integrations.ical_sync import dismiss_booking_for_job
+    dismiss_booking_for_job(db, job, actor="office delete")
     db.delete(job)
     db.commit()
 
@@ -4726,6 +4888,27 @@ def _job_as_visit(job: dict) -> dict:
     }
 
 
+_UNSCHEDULED_CAP = 50
+
+
+def _unscheduled_jobs(db: Session, org_id: int) -> list:
+    """Open jobs with no scheduled_date, oldest first, capped. Full job dicts
+    so the page can hand one straight to JobEditModal without another fetch."""
+    org_id = resolve_org_id(org_id, db)
+    rows = (
+        db.query(Job).options(joinedload(Job.client))
+        .filter(
+            or_(Job.org_id == org_id, Job.org_id.is_(None)),
+            Job.scheduled_date.is_(None),
+            Job.status.notin_(["cancelled", "completed"]),
+        )
+        .order_by(Job.created_at.asc(), Job.id.asc())
+        .limit(_UNSCHEDULED_CAP)
+        .all()
+    )
+    return [job_to_dict(j) for j in rows]
+
+
 @schedule_router.get("/week", dependencies=[Depends(require_role("admin", "manager", "viewer", "cleaner"))])
 def schedule_week(
     scheduled_date_from: str,
@@ -4790,6 +4973,14 @@ def schedule_week(
         # /api/visits used to emit so the FE fallback keeps rendering unchanged.
         "visits": [_job_as_visit(j) for j in (stripped_jobs or [])],
         "jobs": stripped_jobs,
+        # Date-less jobs (quote accepted → auto-converted, nobody picked a day
+        # yet). The date-range query above can never return them, so the
+        # Schedule page had no way to show "needs a date". Rides this payload
+        # (one query, no extra request — brightbase-economy) and is office-only:
+        # crew payloads stay light and an unscheduled job isn't theirs yet.
+        "unscheduled": (
+            _unscheduled_jobs(db, org_id) if role in ("admin", "manager", "viewer") else []
+        ),
         "properties": _get_properties(db=db, org_id=org_id),
         # limit/offset are Query() defaults — pass explicitly. 50 matches the
         # standalone /api/clients default the page used before.

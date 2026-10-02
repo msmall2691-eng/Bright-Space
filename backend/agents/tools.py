@@ -65,6 +65,20 @@ TOOLS_BUSINESS_READONLY = [
         "description": "Diagnose BrightBase configuration: Google Calendar auth, Twilio, database, unpushed jobs, missing data.",
         "input_schema": {"type": "object", "properties": {}},
     },
+    {
+        "name": "get_quote",
+        "description": ("Read one quote by its numeric id or its quote number (e.g. \"QT-2026-0050\"). "
+                        "Returns the SAVED line items with a per-line amount (qty × unit price), the real "
+                        "subtotal / tax / discount / total, the status, and the key dates. Use this to state "
+                        "a quote's actual figures — never quote a price or total you have not read back here."),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "quote_id":     {"type": "integer", "description": "The quote's numeric id"},
+                "quote_number": {"type": "string", "description": "The human quote number, e.g. QT-2026-0050"},
+            },
+        },
+    },
 ]
 
 # Side-effecting. Only the agent WebSocket hands these out, and only to a role
@@ -87,6 +101,38 @@ TOOLS_BUSINESS_OPERATIONS = [
                 },
             },
             "required": ["operation"],
+        },
+    },
+    {
+        "name": "propose_quote_edit",
+        "description": (
+            "Draft a change to a quote's line items for the owner to APPROVE. This does NOT save "
+            "the quote — it queues a proposal in 'Waiting for your approval'; only when the owner "
+            "approves does the quote update and its total recompute. So never tell the user the "
+            "quote is changed — say you've drafted it for their approval. Read the quote first with "
+            "get_quote, and pass the COMPLETE new set of line items (every line the quote should "
+            "have afterwards), not just the one you're changing."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "quote_id": {"type": "integer", "description": "The quote's numeric id (from get_quote)"},
+                "items": {
+                    "type": "array",
+                    "description": "The complete new list of line items — every line the quote should have.",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "name": {"type": "string"},
+                            "qty": {"type": "number"},
+                            "unit_price": {"type": "number", "description": "Dollars"},
+                        },
+                        "required": ["name", "qty", "unit_price"],
+                    },
+                },
+                "note": {"type": "string", "description": "Optional one-line reason shown to the owner"},
+            },
+            "required": ["quote_id", "items"],
         },
     },
 ]
@@ -208,7 +254,7 @@ _DEV_TOOL_NAMES = frozenset({"read_file", "write_file", "edit_file", "run_comman
 # gate, this is the second. A tool_use block naming an operation still cannot
 # run it unless the CALLER passed allow_operations — so a stale browser tab, a
 # replayed transcript, or a future caller that forgets the flag all fail closed.
-_OPERATION_TOOL_NAMES = frozenset({"run_operation"})
+_OPERATION_TOOL_NAMES = frozenset({"run_operation", "propose_quote_edit"})
 
 
 def _dev_tools_enabled() -> bool:
@@ -257,7 +303,7 @@ def execute_tool(name: str, input_data: dict, agent_name: str = "",
     from sqlalchemy import or_
 
     from database.db import SessionLocal
-    from database.models import Client, Job, RecurringSchedule, Property, Invoice, ICalEvent
+    from database.models import Client, Job, RecurringSchedule, Property, Invoice, ICalEvent, Quote
 
     # Defense-in-depth: even if a dev tool somehow shows up in a tool_use
     # block (e.g. an older deployment of the agent UI, or a future bug in
@@ -461,6 +507,48 @@ def execute_tool(name: str, input_data: dict, agent_name: str = "",
                 }
             }
 
+        elif name == "get_quote":
+            # Read one quote so the model states the SAVED numbers, not what it
+            # meant to set. Per-line amount is qty × unit_price with the same
+            # "missing qty → 1, explicit 0 → 0" rule the quote total uses, so a
+            # qty-0 line reads $0 (not the unit price). Org-scoped like every
+            # other read here.
+            qid = input_data.get("quote_id")
+            qnum = str(input_data.get("quote_number") or "").strip()
+            if not qid and not qnum:
+                return {"error": "Pass quote_id or quote_number."}
+            qq = db.query(Quote).filter(_org(Quote))
+            qq = qq.filter(Quote.id == int(qid)) if qid else qq.filter(Quote.quote_number == qnum)
+            quote = qq.first()
+            if not quote:
+                return {"error": f"No quote found for {('id ' + str(qid)) if qid else qnum} in this workspace."}
+            items = []
+            for it in (quote.items or []):
+                iq = float(it.get("qty", 1) or 0)
+                ip = float(it.get("unit_price", 0) or 0)
+                items.append({"name": it.get("name", ""), "qty": iq,
+                              "unit_price": ip, "amount": round(iq * ip, 2)})
+            return {
+                "id": quote.id,
+                "quote_number": quote.quote_number,
+                "status": quote.status,
+                "title": quote.title,
+                "service_type": quote.service_type,
+                "client_id": quote.client_id,
+                "client_name": quote.client.name if quote.client else None,
+                "items": items,
+                "subtotal": quote.subtotal,
+                "tax_rate": quote.tax_rate,
+                "tax": quote.tax,
+                "discount": quote.discount,
+                "total": quote.total,
+                "valid_until": str(quote.valid_until) if quote.valid_until else None,
+                "sent_at": quote.sent_at.isoformat() if quote.sent_at else None,
+                "accepted_at": quote.accepted_at.isoformat() if quote.accepted_at else None,
+                "created_at": quote.created_at.isoformat() if quote.created_at else None,
+                "updated_at": quote.updated_at.isoformat() if quote.updated_at else None,
+            }
+
         # ── Action tools ───────────────────────────────────────────────────────
 
         elif name == "run_operation":
@@ -526,6 +614,53 @@ def execute_tool(name: str, input_data: dict, agent_name: str = "",
 
             else:
                 return {"error": f"Unknown operation: {op}"}
+
+        elif name == "propose_quote_edit":
+            # Draft, don't apply. This records a pending ProposedAction the owner
+            # approves in the queue; approval runs the real patch_quote and the
+            # total recomputes there. The quote is NOT touched here, so the model
+            # must report a draft, not a save — the return says so.
+            from services.proposals import create_proposal
+
+            qid = input_data.get("quote_id")
+            raw_items = input_data.get("items")
+            if not qid or not isinstance(raw_items, list) or not raw_items:
+                return {"error": "propose_quote_edit needs quote_id and a non-empty items list."}
+            # Resolve the quote org-scoped so a cross-org / unknown id is refused
+            # up front and the proposal names the real quote.
+            quote = db.query(Quote).filter(_org(Quote), Quote.id == int(qid)).first()
+            if not quote:
+                return {"error": f"No quote found for id {qid} in this workspace."}
+            clean = [{"name": str(i.get("name") or "").strip(),
+                      "qty": float(i.get("qty", 1) or 0),
+                      "unit_price": float(i.get("unit_price", 0) or 0)}
+                     for i in raw_items]
+            preview_subtotal = round(sum(i["qty"] * i["unit_price"] for i in clean), 2)
+            lines = "; ".join(f"{i['name']} ×{i['qty']:g} @ ${i['unit_price']:g}" for i in clean)
+            detail = f"New line items: {lines}. New subtotal ${preview_subtotal:g} (final total set on approval)."
+            note = str(input_data.get("note") or "").strip()
+            if note:
+                detail += f" — {note}"
+            label = quote.quote_number or f"quote {quote.id}"
+            try:
+                prop = create_proposal(
+                    db, org_id=oid, agent_id=agent_name, kind="edit_quote",
+                    title=f"Update {label}", detail=detail,
+                    payload={"quote_id": quote.id, "items": clean},
+                )
+            except ValueError as e:
+                return {"error": str(e)}
+            return {
+                "proposed": True,
+                "proposal_id": prop.id,
+                "quote_number": quote.quote_number,
+                "preview_subtotal": preview_subtotal,
+                "saved": False,
+                "message": (f"Drafted a change to {label} for the owner to approve — it is NOT saved yet. "
+                            f"They approve it under 'Waiting for your approval', and only then does the "
+                            f"quote update and its total recompute. Don't tell them it's changed; tell them "
+                            f"it's waiting for their approval."),
+            }
 
         # ── Pixel codebase tools ───────────────────────────────────────────────
 

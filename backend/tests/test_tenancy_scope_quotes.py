@@ -9,10 +9,11 @@ from fastapi.testclient import TestClient
 
 from main import app
 from database.db import SessionLocal
-from database.models import Client, Quote, Invoice
+from database.models import Client, Quote, Invoice, LeadIntake
 
 client = TestClient(app)
 OTHER_ORG = 99999
+_QR_SOURCE = "quote_request"
 
 
 def _client(db, org_id):
@@ -37,6 +38,57 @@ def test_other_org_quote_is_invisible_but_public_token_works():
     finally:
         db.query(Quote).filter(Quote.id == q.id).delete(synchronize_session=False)
         db.query(Client).filter(Client.id == c.id).delete(synchronize_session=False)
+        db.commit(); db.close()
+
+
+def test_other_org_quote_mutations_are_404():
+    """Every mutating/admin quote endpoint must refuse a cross-tenant quote by ID.
+
+    These status-transition + delivery endpoints were retrofitted after the
+    read/list/patch ones (MT-2) and had been resolving the quote with no org
+    filter — a real cross-tenant IDOR (accept/send/decline/convert/permanent-
+    delete another workspace's quote). The org check fires in _get_quote_or_404
+    before any side effect, so an out-of-org id is a 404 regardless of status.
+    """
+    db = SessionLocal()
+    c = _client(db, OTHER_ORG)
+    q = Quote(client_id=c.id, quote_number=f"QT-M-{uuid.uuid4().hex[:6]}", title="Other Quote",
+              status="archived", total=100, org_id=OTHER_ORG, public_token=uuid.uuid4().hex)
+    db.add(q); db.commit(); db.refresh(q)
+    qid = q.id
+    try:
+        assert client.put(f"/api/quotes/{qid}", json={"title": "x"}).status_code == 404
+        assert client.post(f"/api/quotes/{qid}/send", json={}).status_code == 404
+        assert client.post(f"/api/quotes/{qid}/generate-token").status_code == 404
+        assert client.post(f"/api/quotes/{qid}/accept", json={}).status_code == 404
+        assert client.post(f"/api/quotes/{qid}/decline").status_code == 404
+        assert client.post(f"/api/quotes/{qid}/convert-to-job", json={}).status_code == 404
+        assert client.get(f"/api/quotes/{qid}/delivery-history").status_code == 404
+        assert client.delete(f"/api/quotes/{qid}/permanent").status_code == 404
+        # It must still be present (nothing above mutated or deleted it).
+        db.expire_all()
+        still = db.query(Quote).filter(Quote.id == qid).first()
+        assert still is not None and still.status == "archived"
+    finally:
+        db.query(Quote).filter(Quote.id == qid).delete(synchronize_session=False)
+        db.query(Client).filter(Client.id == c.id).delete(synchronize_session=False)
+        db.commit(); db.close()
+
+
+def test_other_org_quote_request_is_invisible_and_unwritable():
+    """The quote-request inbox (LeadIntake source=quote_request) is org-scoped too:
+    another workspace's request must not list, and updating it by id is a 404."""
+    db = SessionLocal()
+    row = LeadIntake(name=f"QR {uuid.uuid4().hex[:6]}", source=_QR_SOURCE,
+                     status="new", org_id=OTHER_ORG)
+    db.add(row); db.commit(); db.refresh(row)
+    rid = row.id
+    try:
+        ids = {r["id"] for r in client.get("/api/quotes/requests/").json()}
+        assert rid not in ids, "cross-tenant quote request leaked into the list"
+        assert client.put(f"/api/quotes/requests/{rid}", json={"status": "reviewed"}).status_code == 404
+    finally:
+        db.query(LeadIntake).filter(LeadIntake.id == rid).delete(synchronize_session=False)
         db.commit(); db.close()
 
 

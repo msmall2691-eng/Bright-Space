@@ -105,11 +105,14 @@ describe('the nav stays small', () => {
     expect(rows).toHaveLength(7)
     expect(SETTINGS_ITEM.to).toBe('/settings')
     expect(SETTINGS_ITEM.tabs).toBeUndefined()
-    // 19 before this change, and the one addition is /marketplace itself:
-    // Crew and Payouts are the same two destinations they always were, just
-    // reached from a row that makes sense now the employee model is gone.
-    expect(reachable().size).toBe(20)
+    // 20 after Marketplace; +2 here are /quotes and /quotes/accepted — the
+    // quote list and its Accepted view, which MOVED into the Requests hub from
+    // an internal ?view= tab of "Money" (so quotes aren't listed in two places),
+    // not new pages invented from nothing. Still zero new sidebar rows.
+    expect(reachable().size).toBe(22)
     expect(reachable().has('/marketplace')).toBe(true)
+    expect(reachable().has('/quotes')).toBe(true)
+    expect(reachable().has('/quotes/accepted')).toBe(true)
   })
 
   it('gives every destination a label and an icon', () => {

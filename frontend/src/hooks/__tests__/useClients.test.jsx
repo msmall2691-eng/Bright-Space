@@ -18,6 +18,7 @@ vi.mock('../../api', () => ({
 }))
 
 import { useClients } from '../useClients'
+import { DEFAULT_CLIENT_STATUS } from '../../components/clients/constants'
 import { get } from '../../api'
 
 const _urls = () => get.mock.calls.map(c => c[0])
@@ -55,6 +56,18 @@ describe('useClients', () => {
     await act(async () => { await vi.runAllTimersAsync() })
     const clientsUrl = _clientsUrls()[0]
     expect(clientsUrl).toContain('status=lead')
+  })
+
+  it('the Clients-list default lands on Active, not the lead pile', async () => {
+    // Guardrail #5: opening Clients shows real customers, not the ~100 import
+    // leads. The page seeds statusFilter with DEFAULT_CLIENT_STATUS, so the
+    // first fetch must scope to active and never to leads.
+    expect(DEFAULT_CLIENT_STATUS).toBe('active')
+    renderHook(() => useClients(DEFAULT_CLIENT_STATUS, ''))
+    await act(async () => { await vi.runAllTimersAsync() })
+    const clientsUrl = _clientsUrls()[0]
+    expect(clientsUrl).toContain('status=active')
+    expect(clientsUrl).not.toContain('status=lead')
   })
 
   it('forwards the search string to the server', async () => {
@@ -106,6 +119,28 @@ describe('useClients', () => {
     rerender({ q: 'Paul' })
     expect(result.current.filtered).toHaveLength(1)
     expect(result.current.filtered[0].name).toBe('Paul Day')
+  })
+
+  it('hides archived clients on the normal tabs (include_archived=false)', async () => {
+    renderHook(() => useClients('', ''))
+    await act(async () => { await vi.runAllTimersAsync() })
+    expect(_clientsUrls()[0]).toContain('include_archived=false')
+  })
+
+  it('the Archived view fetches archived rows and narrows to them', async () => {
+    get.mockImplementation((url) => {
+      if (url.startsWith('/api/clients/counts')) return Promise.resolve({})
+      return Promise.resolve([
+        { id: 1, name: 'Ana Client', archived: false },
+        { id: 2, name: 'Spin Drift', archived: true },
+      ])
+    })
+    const { result } = renderHook(() => useClients('archived', ''))
+    await act(async () => { await vi.runAllTimersAsync() })
+    expect(_clientsUrls()[0]).toContain('include_archived=true')
+    expect(_clientsUrls()[0]).not.toContain('include_archived=false')
+    // Only the archived row is shown.
+    expect(result.current.filtered.map(c => c.name)).toEqual(['Spin Drift'])
   })
 
   it('matches phone and email as well as name (parity with pre-T-06 filter)', async () => {

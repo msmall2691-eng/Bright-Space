@@ -2,7 +2,7 @@ import {
   LayoutDashboard, Sparkles, Users, Calendar, Receipt,
   DollarSign, MessageSquare, Home, Repeat, Settings, Inbox,
   TrendingUp, Radar, Rows3, Filter, HardHat, Store, CalendarDays, FileText, Star,
-  GitMerge, Route, CalendarClock,
+  GitMerge, Route, CalendarClock, FileCheck,
 } from 'lucide-react'
 
 /**
@@ -29,6 +29,10 @@ import {
  *               renders nothing.
  *  - `pageLabel` — breadcrumb/switcher label for a leaf whose sidebar label is
  *               a category name (Money → "Billing").
+ *  - `secondary` — a rarely-used tab that SubNav folds under a quiet "More"
+ *               instead of the everyday strip. Still reachable, still routed;
+ *               just out of the way (Routes/Turnovers/Calendar sync, Deals/
+ *               Quote funnel, Tidy Up).
  *  - `roles`  — when present, only those roles see the item (matches the
  *               backend's gates — e.g. /api/dashboard/owner 403s viewers, so
  *               viewers don't get a link that only errors). Role gates live on
@@ -39,10 +43,16 @@ import {
  * no entry here and no breadcrumb of its own; `/pipeline` now just redirects
  * to that URL (see App.jsx) for old bookmarks/links.
  */
+// The rows are ordered to read top-to-bottom like the business's own line —
+// a lead comes in, becomes a client, gets scheduled, gets invoiced — with
+// Crew (who does the work) after it and Settings in the footer:
+//   Home · Messages · Leads · Clients · Schedule · Money · Crew
+// Labels use ONE word per concept (owner's "stop the confusing doubles"):
+// "Leads" (not Requests/Intake), "Crew" (not Marketplace/Bench). Routes are
+// unchanged — only the sidebar labels and order moved — so every old URL and
+// bookmark still resolves.
 export const NAV_SECTIONS = [
   {
-    // No group labels. With seven rows they were pure noise (and the owner
-    // said so) — "Sales / Customers / Operations / Team" are gone.
     label: null,
     items: [
       {
@@ -57,36 +67,20 @@ export const NAV_SECTIONS = [
       // admin/manager-only. No tabs — Messages is a leaf.
       { to: '/comms', icon: MessageSquare, label: 'Messages', roles: ['admin', 'manager'], keywords: 'sms email inbox texts crew chat' },
       {
-        to: '/schedule', icon: Calendar, label: 'Schedule',
+        // The start of the line: everything coming IN — website requests, the
+        // quotes you send, and the ones they accepted. "Leads" is the one word
+        // for it (was "Requests"/"Sales"); the incoming list is still the
+        // landing tab. Quotes/Accepted/Deals/Funnel stay a tab away. Gated
+        // admin/manager (the whole intake/sales surface already is).
+        to: '/requests', icon: Inbox, label: 'Leads', roles: ['admin', 'manager'],
         tabs: [
-          { to: '/schedule',  icon: Calendar, label: 'Schedule', keywords: 'jobs calendar dispatch' },
-          // Every /api/recurring endpoint is admin/manager-only.
-          { to: '/recurring', icon: Repeat,   label: 'Recurring', roles: ['admin', 'manager'], keywords: 'series weekly biweekly' },
-          // Routes group recurring houses into one sub's standing day. Office-only:
-          // every /api/routes endpoint is admin/manager (the crew side lives in
-          // the crew app, on /api/crew/my-routes).
-          { to: '/routes',    icon: Route,    label: 'Routes', roles: ['admin', 'manager'], keywords: 'block standing subcontractor owner day' },
-          // Guest changeover days staffed as a batch. Office-only, like the
-          // rest of this family — the crew side is the ordinary open board.
-          { to: '/turnovers', icon: CalendarClock, label: 'Turnovers', roles: ['admin', 'manager'], keywords: 'saturday changeover str airbnb window price step' },
-          // Renamed from "Sync" — plain enough in context, but "Calendar sync"
-          // reads unambiguously on first glance for a non-technical owner.
-          { to: '/sync',      icon: Radar,    label: 'Calendar sync', roles: ['admin', 'manager', 'viewer'], keywords: 'google ical feeds turnovers' },
-        ],
-      },
-      {
-        // THE BENCH GOT A FRONT DOOR. It had shipped as five surfaces bolted
-        // onto other pages — applicants and the roster on Crew, open jobs on
-        // Schedule, standing work on Routes, money on Payouts — and the first
-        // question the owner asked about it was where to find it. Crew and
-        // Payouts move here from Settings rather than being listed twice:
-        // with the employee model gone they are not "set up the people who
-        // work here" any more, they are how the bench is run day to day.
-        to: '/marketplace', icon: Store, label: 'Marketplace',
-        tabs: [
-          { to: '/marketplace', icon: Store,      label: 'Overview', roles: ['admin', 'manager'], keywords: 'bench subcontractors marketplace open jobs applicants apply' },
-          { to: '/crew',        icon: HardHat,    label: 'Crew', roles: ['admin', 'manager'], keywords: 'team cleaners subs bench roster invite applicants vetting documents insurance' },
-          { to: '/payroll',     icon: DollarSign, label: 'Payouts', roles: ['admin', 'manager'], keywords: 'pay subcontractors payouts ledger 1099 stripe direct deposit' },
+          { to: '/requests',        icon: Inbox,     label: 'New', keywords: 'requests sales leads intake website inbox incoming' },
+          { to: '/quotes',          icon: FileText,  label: 'Quotes', keywords: 'quotes estimates pricing proposals' },
+          // The "said yes, still needs booking" set — accepted quotes not yet
+          // converted to a scheduled job. Same page, pre-filtered.
+          { to: '/quotes/accepted', icon: FileCheck, label: 'Accepted', keywords: 'accepted won ready to schedule book' },
+          { to: '/deals',           icon: Rows3,     label: 'Deals', secondary: true, keywords: 'sales pipeline opportunities board' },
+          { to: '/funnel',          icon: Filter,    label: 'Quote funnel', secondary: true, keywords: 'sales conversion close rate' },
         ],
       },
       {
@@ -98,24 +92,44 @@ export const NAV_SECTIONS = [
           // property merge tool reachable only from one buried link in
           // Settings → General. It cleans up clients and properties, so it
           // belongs beside them — /api/cleanup is admin/manager-only.
-          { to: '/cleanup', icon: GitMerge, label: 'Tidy Up', roles: ['admin', 'manager'],
+          { to: '/cleanup', icon: GitMerge, label: 'Tidy Up', roles: ['admin', 'manager'], secondary: true,
             keywords: 'duplicates merge cleanup tidy dedupe' },
         ],
       },
       {
-        to: '/deals', icon: Rows3, label: 'Sales',
+        to: '/schedule', icon: Calendar, label: 'Schedule',
         tabs: [
-          { to: '/deals',    icon: Rows3,  label: 'Deals', keywords: 'sales pipeline opportunities board' },
-          // /api/intake is admin/manager-only — a viewer's Requests page could
-          // only error, so don't offer the link.
-          { to: '/requests', icon: Inbox,  label: 'Requests', roles: ['admin', 'manager'], keywords: 'sales leads intake website' },
-          { to: '/funnel',   icon: Filter, label: 'Quote funnel', roles: ['admin', 'manager'], keywords: 'sales conversion close rate' },
+          { to: '/schedule',  icon: Calendar, label: 'Schedule', keywords: 'jobs calendar dispatch' },
+          // Every /api/recurring endpoint is admin/manager-only.
+          { to: '/recurring', icon: Repeat,   label: 'Recurring', roles: ['admin', 'manager'], keywords: 'series weekly biweekly' },
+          // Routes group recurring houses into one sub's standing day. Office-only:
+          // every /api/routes endpoint is admin/manager (the crew side lives in
+          // the crew app, on /api/crew/my-routes).
+          { to: '/routes',    icon: Route,    label: 'Routes', roles: ['admin', 'manager'], secondary: true, keywords: 'block standing subcontractor owner day' },
+          // Guest changeover days staffed as a batch. Office-only, like the
+          // rest of this family — the crew side is the ordinary open board.
+          { to: '/turnovers', icon: CalendarClock, label: 'Turnovers', roles: ['admin', 'manager'], secondary: true, keywords: 'saturday changeover str airbnb window price step' },
+          // Renamed from "Sync" — plain enough in context, but "Calendar sync"
+          // reads unambiguously on first glance for a non-technical owner.
+          { to: '/sync',      icon: Radar,    label: 'Calendar sync', roles: ['admin', 'manager', 'viewer'], secondary: true, keywords: 'google ical feeds turnovers' },
         ],
       },
-      // Billing already owns its own internal `?view=` tabs (quotes /
-      // invoices / payments), so it stays a leaf here — a second strip on top
-      // of those would be two tab rows saying nearly the same thing.
-      { to: '/billing', icon: Receipt, label: 'Money', pageLabel: 'Billing', keywords: 'money quotes invoices payments estimates' },
+      // Money is invoices + payments now — quotes moved to the Leads hub, so
+      // this stays a leaf with no strip (Invoicing owns its own internal views).
+      { to: '/billing', icon: Receipt, label: 'Money', pageLabel: 'Billing', keywords: 'money invoices payments billing dunning' },
+      {
+        // Who does the work — the subcontractor bench, one word: "Crew" (was
+        // "Marketplace", which read as jargon). Overview (waiting-on-you / open
+        // jobs / the front door), the Roster (add cleaners, vetting), and
+        // Payouts a tab each. Only office roles; a solo owner not dispatching to
+        // subs can mostly ignore it.
+        to: '/marketplace', icon: HardHat, label: 'Crew', roles: ['admin', 'manager'],
+        tabs: [
+          { to: '/marketplace', icon: Store,      label: 'Overview', roles: ['admin', 'manager'], keywords: 'bench subcontractors marketplace open jobs applicants apply' },
+          { to: '/crew',        icon: HardHat,    label: 'Roster', roles: ['admin', 'manager'], keywords: 'crew team cleaners subs bench roster invite applicants vetting documents insurance' },
+          { to: '/payroll',     icon: DollarSign, label: 'Payouts', roles: ['admin', 'manager'], keywords: 'pay subcontractors payouts ledger 1099 stripe direct deposit' },
+        ],
+      },
     ],
   },
 ]
@@ -148,7 +162,7 @@ export const CREATE_ACTIONS = [
   { label: 'New lead',    icon: Inbox,         to: '/requests?new=1',            keywords: 'create lead request intake' },
   { label: 'New message', icon: MessageSquare, to: '/comms?compose=1',           keywords: 'create message sms text compose' },
   { label: 'New job',     icon: CalendarDays,  to: '/schedule?new=1',            keywords: 'create job visit book schedule appointment' },
-  { label: 'New quote',   icon: FileText,      to: '/billing?view=quotes&new=1', keywords: 'create quote estimate billing' },
+  { label: 'New quote',   icon: FileText,      to: '/quotes?new=1',              keywords: 'create quote estimate billing' },
   { label: 'New client',  icon: Users,         to: '/clients?new=1',             keywords: 'create client customer contact person' },
 ]
 
@@ -259,7 +273,7 @@ const DETAIL_ROUTES = [
   { prefix: '/requests/',      parent: '/requests',   label: 'Request',  record: 'lead' },
   { prefix: '/opportunities/', parent: '/deals',      label: 'Deal' },
   { prefix: '/jobs/',          parent: '/schedule',   label: 'Job',      record: 'job' },
-  { prefix: '/quotes/',        parent: '/billing',    label: 'Quote',    record: 'quote' },
+  { prefix: '/quotes/',        parent: '/quotes',     label: 'Quote',    record: 'quote' },
   { prefix: '/invoices/',      parent: '/billing',    label: 'Invoice',  record: 'invoice' },
   { prefix: '/properties/',    parent: '/properties', label: 'Property', record: 'property' },
 ]

@@ -7,6 +7,7 @@ import {
 import { get, patch, post, del, download } from '../api'
 import RecurrenceScopeDialog from '../components/schedule/RecurrenceScopeDialog'
 import JobClaimRequests from '../components/schedule/JobClaimRequests'
+import OfferAudience from '../components/schedule/OfferAudience'
 import JobMargin from '../components/schedule/JobMargin'
 import { rescheduleRecurringVisit } from '../utils/recurringReschedule'
 import { toast } from '../utils/toastBus'
@@ -136,6 +137,8 @@ import { AlertCircle, CheckCircle, CalendarClock } from 'lucide-react'
 import { computeDisplayStatus, FIELD_LABELS } from '../components/schedule/constants'
 import Timeline, { jobTimelineSource } from '../components/Timeline'
 import RecordSkeleton from '../components/record/RecordSkeleton'
+import StatusBadge from '../components/ui/StatusBadge'
+import { statusTone, statusLabel } from '../utils/statusTone'
 import JobPhotosCard from '../components/schedule/JobPhotosCard'
 import { EmptyState } from '../components/ui'
 
@@ -143,11 +146,11 @@ const STATUS_OPTIONS = [
   // "unscheduled" = converted from a quote but no date yet. Distinct badge so
   // an operator can spot date-less jobs at a glance; auto-flips to
   // "scheduled" server-side when a date is saved on the job.
-  { value: 'unscheduled', label: 'unscheduled', chipClass: 'bg-amber-500/15 text-amber-600 border-amber-500/30',    dot: 'bg-amber-500' },
-  { value: 'scheduled',   label: 'scheduled',   chipClass: 'bg-blue-500/15 text-blue-500 border-blue-500/20',       dot: 'bg-blue-500' },
-  { value: 'in_progress', label: 'in progress', chipClass: 'bg-amber-500/15 text-amber-500 border-amber-500/20',    dot: 'bg-amber-500' },
-  { value: 'completed',   label: 'completed',   chipClass: 'bg-emerald-500/15 text-emerald-500 border-emerald-500/20', dot: 'bg-emerald-500' },
-  { value: 'cancelled',   label: 'cancelled',   chipClass: 'bg-bg-2 text-ink-3 border-hairline',                    dot: 'bg-ink-3' },
+  { value: 'unscheduled', label: 'unscheduled', dot: 'bg-amber-500' },
+  { value: 'scheduled',   label: 'scheduled',   dot: 'bg-blue-500' },
+  { value: 'in_progress', label: 'in progress', dot: 'bg-amber-500' },
+  { value: 'completed',   label: 'completed',   dot: 'bg-emerald-500' },
+  { value: 'cancelled',   label: 'cancelled',   dot: 'bg-ink-3' },
 ]
 const JOB_TYPE_OPTIONS = [
   { value: 'residential', label: 'residential' },
@@ -158,7 +161,6 @@ const JOB_TYPE_OPTIONS = [
 
 const money = (n) => n == null || n === '' ? null :
   `$${Number(n).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`
-const STATUS_CHIP = 'text-[10px] px-2 py-0.5 rounded-full border bg-bg-2 text-ink-3 border-hairline capitalize'
 
 function RelatedList({ icon: Icon, title, items, render, empty }) {
   return (
@@ -183,7 +185,7 @@ function LinkedCard({ icon: Icon, label, to, primary, secondary }) {
       <div className="flex items-center gap-1.5 text-[10px] uppercase tracking-wide text-ink-3 mb-1">
         <Icon className="w-3.5 h-3.5" /> {label}
       </div>
-      <div className={`text-[13px] truncate ${to ? 'text-blue-500 hover:underline' : 'text-ink-2'}`}>{primary}</div>
+      <div className={`text-[13px] truncate ${to ? 'text-ink hover:text-indigo-600 no-underline' : 'text-ink-2'}`}>{primary}</div>
       {secondary && <div className="text-[11px] text-ink-3 truncate">{secondary}</div>}
     </div>
   )
@@ -286,23 +288,44 @@ export default function JobDetail() {
     return Promise.resolve()
   }
 
-  const applyTimingScope = async (scope) => {
+  // `pending` is captured (defaults to the held edit) so the 409 "Reschedule
+  // anyway" retry still knows the target date after the scope dialog is closed.
+  const applyTimingScope = async (scope, allowConflicts = false, pending = timingEdit) => {
+    if (!pending) return
     setScopeBusy(true)
     try {
       const { message } = await rescheduleRecurringVisit(scope, {
         schedId: job.recurring_schedule_id,
         originalDate: job.scheduled_date,
-        newDate: timingEdit.scheduled_date ?? job.scheduled_date,
-        newStart: timingEdit.start_time ?? job.start_time,
-        newEnd: timingEdit.end_time ?? job.end_time,
+        newDate: pending.scheduled_date ?? job.scheduled_date,
+        newStart: pending.start_time ?? job.start_time,
+        newEnd: pending.end_time ?? job.end_time,
         cleanerIds: job.cleaner_ids || [],
+        allowConflicts,
         reason: 'Rescheduled from the job page',
       })
       toast.success(message)
       setTimingEdit(null)
       load()
     } catch (e) {
-      toast.error(e?.message || 'Could not move this visit — nothing was changed.')
+      const status = e && (e.status || e.statusCode)
+      const detail = (e && (e.detail || e.message)) || ''
+      // A 409 is a crew conflict or time-off on the TARGET date, not a hard
+      // failure — the calendar drag has always offered a "Reschedule anyway"
+      // override here, but the job page swallowed it into a silent "nothing
+      // was changed", which read as a broken far-date move. Match the drag:
+      // close the scope dialog so the notice isn't buried behind it, name the
+      // conflict, and let her push it through.
+      if (status === 409 && !allowConflicts) {
+        setTimingEdit(null)
+        toast.error(`Can't move: ${detail.slice(0, 160) || 'the crew has a conflict or time off that day'}`, {
+          action: { label: 'Reschedule anyway', onClick: () => applyTimingScope(scope, true, pending) },
+        })
+      } else {
+        toast.error(detail
+          ? `Couldn't move this visit: ${detail.slice(0, 160)}`
+          : 'Could not move this visit — nothing was changed.')
+      }
     } finally {
       setScopeBusy(false)
     }
@@ -440,9 +463,33 @@ export default function JobDetail() {
   return (
     <div className="h-full overflow-y-auto">
       <div className="p-4 sm:p-6 max-w-[1400px] mx-auto">
-        <button onClick={() => navigate('/schedule')} className="flex items-center gap-1.5 text-[13px] text-ink-3 hover:text-ink-2 mb-4">
-          <ArrowLeft className="w-4 h-4" /> Back to Schedule
-        </button>
+        {/* Breadcrumb: a job now links back UP its chain — Schedule › Customer ›
+            Property › this job — instead of the old bare "Back to Schedule".
+            Each segment is a real record link so the hierarchy is navigable
+            both ways (the owner's "nothing feels linked" fix). */}
+        <nav className="flex items-center gap-1.5 text-[13px] text-ink-3 mb-4 flex-wrap" aria-label="Breadcrumb">
+          <button onClick={() => navigate('/schedule')} className="inline-flex items-center gap-1 hover:text-ink-2">
+            <ArrowLeft className="w-4 h-4" /> Schedule
+          </button>
+          {job.client_id && (
+            <>
+              <span className="text-ink-3/50" aria-hidden="true">›</span>
+              <Link to={`/clients/${job.client_id}`} className="truncate max-w-[11rem] text-ink hover:text-indigo-600 no-underline">
+                {job.client_name || `Client #${job.client_id}`}
+              </Link>
+            </>
+          )}
+          {job.property_id && (
+            <>
+              <span className="text-ink-3/50" aria-hidden="true">›</span>
+              <Link to={`/properties/${job.property_id}`} className="truncate max-w-[11rem] text-ink hover:text-indigo-600 no-underline">
+                {job.property_name || 'Property'}
+              </Link>
+            </>
+          )}
+          <span className="text-ink-3/50" aria-hidden="true">›</span>
+          <span className="truncate max-w-[14rem] font-medium text-ink-2">{job.title || `Job #${job.id}`}</span>
+        </nav>
 
         {showInvoicePrompt && (
           <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-hairline bg-panel px-4 py-3">
@@ -490,9 +537,7 @@ export default function JobDetail() {
           <div className="bg-panel border border-hairline rounded-xl p-4 space-y-4 self-start">
             <div>
               <div className="flex items-center gap-2 mb-2">
-                <div className="w-10 h-10 rounded-lg bg-indigo-600/15 text-blue-500 flex items-center justify-center shrink-0">
-                  <Calendar className="w-5 h-5" />
-                </div>
+                <Calendar className="w-5 h-5 text-ink-3 shrink-0" />
                 <InlineSelect value={job.status} options={STATUS_OPTIONS} onSelect={setStatus} />
               </div>
               {/* Warn when the DB status is 'scheduled' but the job is missing a
@@ -676,6 +721,13 @@ export default function JobDetail() {
                   </span>
                 </button>
               )}
+              {canEdit() && job.open_for_claims && (
+                /* Who this open offer shows for. Default is everyone; the office
+                   can limit it to chosen cleaners (still an offer they ask for,
+                   not an assignment — marketplace Rule 0). */
+                <OfferAudience audience={job.offer_audience || []}
+                  onSave={(ids) => saveField({ offer_audience: ids })} />
+              )}
               {canEdit() && job.agreed_rate != null && (
                 /* What the job actually pays, once someone was approved. Kept
                    separate from the asking rate on purpose: they differ
@@ -726,7 +778,7 @@ export default function JobDetail() {
             <div className="border-t border-hairline pt-3">
               <div className="text-[10px] uppercase tracking-wide text-ink-3 mb-1">Client</div>
               {job.client_id ? (
-                <Link to={`/clients/${job.client_id}`} className="flex items-center gap-2 text-[13px] text-blue-500 hover:underline">
+                <Link to={`/clients/${job.client_id}`} className="flex items-center gap-2 text-[13px] text-ink hover:text-indigo-600 no-underline">
                   <Building2 className="w-3.5 h-3.5 shrink-0" /> {job.client_name || `Client #${job.client_id}`}
                 </Link>
               ) : <span className="text-[12px] text-ink-3 italic">No client linked</span>}
@@ -830,7 +882,7 @@ export default function JobDetail() {
                   <span className="text-blue-500 truncate hover:underline">{inv.invoice_number || `#${inv.id}`}</span>
                   <span className="flex items-center gap-2 shrink-0">
                     <span className="text-ink-3">{money(inv.total)}</span>
-                    <span className={STATUS_CHIP}>{inv.status}</span>
+                    <StatusBadge status={statusTone(inv.status)} className="capitalize">{statusLabel(inv.status)}</StatusBadge>
                   </span>
                 </Link>
               )} />

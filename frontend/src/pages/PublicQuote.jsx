@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { useParams } from 'react-router-dom'
 import { CheckCircle, AlertCircle, Clock, X, Download, Printer } from 'lucide-react'
 import QuoteDocument from '../components/QuoteDocument'
+import { publicFetch } from '../utils/publicFetch'
 
 export default function PublicQuote() {
   const { token } = useParams()
@@ -37,7 +38,7 @@ export default function PublicQuote() {
   useEffect(() => {
     const loadQuote = async () => {
       try {
-        const res = await window.fetch(`/api/quotes/public/${token}`)
+        const res = await publicFetch(`/api/quotes/public/${token}`)
         if (!res.ok) {
           // Distinguish a bad/expired link (404) from a server fault (5xx) so a
           // valid link is never wrongly called "broken".
@@ -64,9 +65,10 @@ export default function PublicQuote() {
   }, [token])
 
   const handleAccept = async () => {
+    setError(null)  // clear any prior action's error so it can't linger over a success
     setAccepting(true)
     try {
-      const res = await window.fetch(`/api/quotes/public/${token}/accept`, {
+      const res = await publicFetch(`/api/quotes/public/${token}/accept`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -90,11 +92,12 @@ export default function PublicQuote() {
   }
 
   const openScheduler = async () => {
+    setError(null)
     setShowSchedule(true)
     if (availability) return
     setLoadingAvail(true)
     try {
-      const res = await window.fetch(`/api/quotes/public/${token}/availability`)
+      const res = await publicFetch(`/api/quotes/public/${token}/availability`)
       if (!res.ok) { setError('Could not load available dates. Please try again.'); return }
       const data = await res.json()
       setAvailability(data)
@@ -109,9 +112,10 @@ export default function PublicQuote() {
 
   const handleSchedule = async () => {
     if (!schedDate) return
+    setError(null)
     setScheduling(true)
     try {
-      const res = await window.fetch(`/api/quotes/public/${token}/schedule`, {
+      const res = await publicFetch(`/api/quotes/public/${token}/schedule`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -135,9 +139,10 @@ export default function PublicQuote() {
 
   const handleRequestChanges = async () => {
     if (!requestMsg.trim()) return
+    setError(null)
     setRequesting(true)
     try {
-      const res = await window.fetch(`/api/quotes/public/${token}/request-changes`, {
+      const res = await publicFetch(`/api/quotes/public/${token}/request-changes`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ message: requestMsg.trim() }),
@@ -157,9 +162,10 @@ export default function PublicQuote() {
   }
 
   const handleDecline = async () => {
+    setError(null)
     setDeclining(true)
     try {
-      const res = await window.fetch(`/api/quotes/public/${token}/decline`, {
+      const res = await publicFetch(`/api/quotes/public/${token}/decline`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ reason: declineReason.trim() || null }),
@@ -180,9 +186,9 @@ export default function PublicQuote() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-linear-to-br from-blue-50 to-indigo-50 flex items-center justify-center p-4">
+      <div className="min-h-screen bg-bg flex items-center justify-center p-4">
         <div className="text-center">
-          <Clock className="w-12 h-12 text-blue-300 mx-auto mb-4 animate-spin" />
+          <Clock className="w-12 h-12 text-ink-3 mx-auto mb-4 animate-spin" />
           <p className="text-ink-2 font-medium">Loading quote...</p>
         </div>
       </div>
@@ -191,9 +197,9 @@ export default function PublicQuote() {
 
   if (error && !quote) {
     return (
-      <div className="min-h-screen bg-linear-to-br from-red-50 to-orange-50 flex items-center justify-center p-4">
+      <div className="min-h-screen bg-bg flex items-center justify-center p-4">
         <div className="text-center max-w-sm">
-          <AlertCircle className="w-16 h-16 text-red-300 mx-auto mb-4" />
+          <AlertCircle className="w-16 h-16 text-red-400 mx-auto mb-4" />
           <h1 className="text-xl font-bold text-ink mb-2">Unable to Load Quote</h1>
           <p className="text-ink-2">{error}</p>
         </div>
@@ -211,6 +217,11 @@ export default function PublicQuote() {
   const isExpired = !isAccepted && !isDeclined && (quote.status === 'expired' || quote.is_expired)
   const isClosed = isAccepted || isDeclined || isExpired
   const todayLong = new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })
+  // Only promise an email receipt when one will actually be sent: accept sends a
+  // receipt only if an email was entered or is on the client record. Saying "check
+  // your inbox" with no email on file was a promise the backend never kept.
+  const hasEmail = !!((acceptEmail || '').trim() || (quote.client_email || '').trim())
+  const inboxLine = hasEmail ? ' A confirmation is on its way to your inbox.' : ''
 
   const pdfUrl = `/api/quotes/public/${token}/pdf`
   const toolbar = (
@@ -226,51 +237,50 @@ export default function PublicQuote() {
     </>
   )
 
+  // Quiet hairline cards (design language: bg-panel + border-hairline, a colored
+  // icon/dot for meaning, ink text — no tinted fills). Same shapes as
+  // components/schedule/OpsAlerts.jsx, now on the customer side too.
   const banner = scheduled ? (
-    <div className="no-print mb-3 rounded-2xl bg-emerald-50 border border-emerald-200 px-5 py-6 text-center shadow-xs">
-      <div className="w-14 h-14 rounded-full bg-emerald-100 flex items-center justify-center mx-auto mb-3">
-        <CheckCircle className="w-8 h-8 text-emerald-600" />
-      </div>
-      <p className="text-xl font-bold text-emerald-800">You're booked! 🎉</p>
-      <p className="text-sm text-emerald-700 mt-1">
-        {scheduled.date_label} ({scheduled.window === 'afternoon' ? 'afternoon' : 'morning'}) — we'll confirm the exact time shortly. A confirmation is on its way to your inbox.
+    <div className="no-print mb-3 rounded-2xl bg-panel border border-hairline px-5 py-6 text-center shadow-xs">
+      <CheckCircle className="w-10 h-10 text-emerald-600 mx-auto mb-3" />
+      <p className="text-xl font-bold text-ink">You're booked!</p>
+      <p className="text-sm text-ink-2 mt-1">
+        {scheduled.date_label} ({scheduled.window === 'afternoon' ? 'afternoon' : 'morning'}) — we'll confirm the exact time shortly.{inboxLine}
       </p>
     </div>
   ) : isAccepted ? (
-    <div className="no-print mb-3 rounded-2xl bg-emerald-50 border border-emerald-200 px-5 py-6 text-center shadow-xs">
-      <div className="w-14 h-14 rounded-full bg-emerald-100 flex items-center justify-center mx-auto mb-3">
-        <CheckCircle className="w-8 h-8 text-emerald-600" />
-      </div>
-      <p className="text-xl font-bold text-emerald-800">Quote accepted — thank you! 🎉</p>
-      <p className="text-sm text-emerald-700 mt-1">
-        {accepted ? `Accepted on ${todayLong}. ` : ''}We'll reach out shortly to lock in your date. A confirmation is on its way to your inbox.
+    <div className="no-print mb-3 rounded-2xl bg-panel border border-hairline px-5 py-6 text-center shadow-xs">
+      <CheckCircle className="w-10 h-10 text-emerald-600 mx-auto mb-3" />
+      <p className="text-xl font-bold text-ink">Quote accepted — thank you!</p>
+      <p className="text-sm text-ink-2 mt-1">
+        {accepted ? `Accepted on ${todayLong}. ` : ''}We'll reach out shortly to lock in your date.{inboxLine}
       </p>
     </div>
   ) : requested ? (
-    <div className="no-print mb-3 flex items-center gap-2 rounded-xl bg-blue-50 border border-blue-200 px-4 py-3">
+    <div className="no-print mb-3 flex items-center gap-2 rounded-xl bg-panel border border-hairline px-4 py-3">
       <CheckCircle className="w-5 h-5 text-indigo-600 shrink-0" />
-      <p className="text-sm text-blue-800 font-medium">Change request sent — we'll review and send an updated quote shortly.</p>
+      <p className="text-sm text-ink-2 font-medium">Change request sent — we'll review and send an updated quote shortly.</p>
     </div>
   ) : isDeclined ? (
-    <div className="no-print mb-3 flex items-center gap-2 rounded-xl bg-bg-2 border border-hairline px-4 py-3">
+    <div className="no-print mb-3 flex items-center gap-2 rounded-xl bg-panel border border-hairline px-4 py-3">
       <X className="w-5 h-5 text-ink-3 shrink-0" />
       <p className="text-sm text-ink-2 font-medium">This quote was declined. If anything changes, just reach out.</p>
     </div>
   ) : isExpired ? (
-    <div className="no-print mb-3 rounded-xl bg-amber-50 border border-amber-200 px-4 py-3">
+    <div className="no-print mb-3 rounded-xl bg-panel border border-hairline px-4 py-3">
       <div className="flex items-center gap-2">
-        <Clock className="w-5 h-5 text-amber-600 shrink-0" />
-        <p className="text-sm text-amber-800 font-medium">
+        <Clock className="w-5 h-5 text-amber-500 shrink-0" />
+        <p className="text-sm text-ink-2 font-medium">
           This quote expired{quote.valid_until ? ` on ${quote.valid_until}` : ''} — contact us for an updated quote.
         </p>
       </div>
       {(quote.company_email || quote.company_phone) && (
         <div className="mt-2 flex flex-wrap gap-2">
           {quote.company_email && (
-            <a href={`mailto:${quote.company_email}`} className="text-xs px-3 py-1.5 rounded-lg bg-amber-600 text-white font-medium">Email us</a>
+            <a href={`mailto:${quote.company_email}`} className="text-xs px-3 py-1.5 rounded-md bg-panel border border-hairline-2 text-ink-2 font-medium hover:bg-bg-2 transition-colors">Email us</a>
           )}
           {quote.company_phone && (
-            <a href={`tel:${quote.company_phone.replace(/[^\d+]/g, '')}`} className="text-xs px-3 py-1.5 rounded-lg bg-panel border border-amber-300 text-amber-800 font-medium">Call us</a>
+            <a href={`tel:${quote.company_phone.replace(/[^\d+]/g, '')}`} className="text-xs px-3 py-1.5 rounded-md bg-panel border border-hairline-2 text-ink-2 font-medium hover:bg-bg-2 transition-colors">Call us</a>
           )}
         </div>
       )}
@@ -298,7 +308,7 @@ export default function PublicQuote() {
           <button
             type="button"
             onClick={() => setEditingContact(true)}
-            className="shrink-0 text-[13px] font-semibold text-emerald-700 hover:text-emerald-800 underline underline-offset-2"
+            className="shrink-0 text-[13px] font-semibold text-ink-2 hover:text-ink underline underline-offset-2"
           >
             Not you?
           </button>
@@ -327,7 +337,18 @@ export default function PublicQuote() {
           {loadingAvail ? (
             <p className="text-sm text-ink-3">Loading available dates…</p>
           ) : openDates.length === 0 ? (
-            <p className="text-sm text-ink-3">No open dates right now — accept and we'll reach out to schedule.</p>
+            <>
+              <p className="text-sm text-ink-3">No open dates right now — accept and we'll reach out to schedule.</p>
+              {/* Don't dead-end into just "Back": let the customer accept right here
+                  instead of hunting for the secondary accept button below. */}
+              <button
+                onClick={handleAccept}
+                disabled={accepting}
+                className="w-full bg-emerald-600 hover:bg-emerald-700 disabled:bg-bg-2 text-white font-semibold py-4 sm:py-3 text-base rounded-xl min-h-[52px] transition-colors disabled:cursor-not-allowed shadow-xs"
+              >
+                {accepting ? 'Accepting…' : "Accept — we'll reach out to schedule"}
+              </button>
+            </>
           ) : (
             <>
               <select
@@ -404,8 +425,9 @@ export default function PublicQuote() {
     <div className="min-h-screen bg-bg">
       <div className="max-w-2xl mx-auto px-4 py-6 sm:px-6 sm:py-10">
         {error && (
-          <div className="no-print bg-red-50 border border-red-200 rounded-lg p-4 mb-6">
-            <p className="text-sm text-red-700">{error}</p>
+          <div className="no-print flex items-center gap-2 bg-panel border border-hairline rounded-lg px-4 py-3 mb-6">
+            <span className="w-1.5 h-1.5 rounded-full bg-red-500 shrink-0" aria-hidden="true" />
+            <p className="text-sm text-ink-2">{error}</p>
           </div>
         )}
 

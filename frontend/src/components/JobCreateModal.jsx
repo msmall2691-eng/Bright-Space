@@ -9,6 +9,8 @@ import { useEmployees } from '../hooks/useEmployees'
 import { normalizeEmployee } from '../utils/employees'
 import EndsPicker from './schedule/EndsPicker'
 import { ErrorNote } from './ui'
+import { createClientChecked } from '../utils/clientCreate'
+import DuplicateClientPrompt from './clients/DuplicateClientPrompt'
 
 // Where an in-progress booking is parked if the session expires mid-submit, so
 // it can be restored after re-login instead of being silently lost.
@@ -59,38 +61,88 @@ function ConflictPrompt({ conflict, saving, onCancel, onOverride }) {
   )
 }
 
+/** "The series saved but added no visits" prompt. POST /api/recurring can
+ *  succeed and still return jobs_created === 0 — either the series has no
+ *  property (nothing to place visits on) or it's an STR-turnover series whose
+ *  dates in range are all already on the calendar (usually from the property's
+ *  Airbnb/VRBO feed, deduped by the per-property-per-day turnover index). We
+ *  refuse to let that close as a silent success: the owner's report was "I
+ *  created a job and nothing showed up on the schedule." Quiet hairline card +
+ *  amber dot, matching ConflictPrompt — never a solid tinted banner. */
+function EmptySeriesPrompt({ info, onDone }) {
+  if (!info) return null
+  const reason = !info.hasProperty
+    ? 'No property was selected, so it couldn’t place any visits.'
+    : info.isTurnover
+      ? 'The turnover dates in range are already on the calendar — usually from this property’s Airbnb/VRBO feed. New turnovers schedule themselves as they book.'
+      : 'Every date in range is already booked, so there was nothing new to add.'
+  return (
+    <div className="flex items-start gap-2.5 px-3 py-2.5 rounded-lg border border-hairline bg-panel text-xs">
+      <span className="w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0 mt-1" aria-hidden="true" />
+      <div className="flex-1 min-w-0">
+        <p className="font-medium text-ink mb-1">Series saved — but no visits were added</p>
+        <p className="text-ink-2 mb-2">
+          {reason} To put a single visit on the calendar right now, close this and use{' '}
+          <span className="font-medium text-ink">New Job</span> with Repeat off, then pick a date.
+        </p>
+        <button type="button" onClick={onDone}
+          className="px-3 py-1.5 rounded-md bg-panel border border-hairline-2 text-ink-2 hover:bg-bg-2 font-medium">
+          Got it
+        </button>
+      </div>
+    </div>
+  )
+}
+
 /** "This client already has a similar series" prompt. Shown when
  *  POST /api/recurring 409s with detail=similar_series_exists (the backend's
  *  pre-create duplicate guard). Mirrors ConflictPrompt's escape-hatch UX:
  *  link to the existing series, or resubmit with allow_duplicate=true. */
-function DuplicateSeriesPrompt({ matches, saving, onCancel, onOverride }) {
+// Shown when the similar-series guard (services/recurring_guards.find_similar_series)
+// 409s on a recurring create: this client already has a live series with the
+// same property + cadence + time. The point of the guardrail is to steer the
+// office to EDIT the existing series rather than stack a second one on the same
+// slot (two crews, one booking), so "Edit this series" is the prominent action
+// here and "create a separate series anyway" is the quiet, deliberate escape
+// hatch — not a co-equal button you click past. Exported for a focused test.
+export function DuplicateSeriesPrompt({ matches, saving, onCancel, onOverride }) {
   if (!matches || !matches.length) return null
+  const one = matches.length === 1
   return (
     <div className="flex items-start gap-2.5 px-3 py-2.5 rounded-lg border border-hairline bg-panel text-xs"
       data-testid="job-create-duplicate-series-prompt">
       <span className="w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0 mt-1" aria-hidden="true" />
       <div className="flex-1 min-w-0">
-        <p className="font-medium text-ink mb-1">Similar recurring series already exists</p>
-        <ul className="text-ink-2 mb-2 space-y-1">
+        <p className="font-medium text-ink mb-0.5">
+          {one ? 'This client already has a matching recurring series'
+               : 'This client already has matching recurring series'}
+        </p>
+        <p className="text-ink-3 mb-2">
+          Edit the existing {one ? 'one' : 'series'} instead of starting a second — two series on the
+          same slot put two crews on one booking.
+        </p>
+        <ul className="space-y-1.5 mb-2.5">
           {matches.map(m => (
-            <li key={m.id}>
-              This client already has: {m.cadence}
-              {m.property_name ? ` at ${m.property_name}` : m.address ? ` at ${m.address}` : ''}
-              {` — ${m.upcoming_job_count || 0} upcoming`}
-              {' · '}
+            <li key={m.id} className="flex items-center justify-between gap-2">
+              <span className="min-w-0 truncate text-ink-2">
+                {m.cadence}
+                {m.property_name ? ` · ${m.property_name}` : m.address ? ` · ${m.address}` : ''}
+                {` · ${m.upcoming_job_count || 0} upcoming`}
+              </span>
               <a href={`/recurring?series=${m.id}`}
-                className="font-medium underline text-ink hover:text-indigo-600">
-                Open existing
+                data-testid="job-create-duplicate-edit"
+                className="shrink-0 px-2.5 py-1 rounded-md bg-panel border border-hairline-2 text-ink-2 hover:bg-bg-2 font-medium no-underline">
+                Edit this series
               </a>
             </li>
           ))}
         </ul>
-        <div className="flex gap-2">
+        <div className="flex items-center gap-3">
           <button type="button" onClick={onCancel}
             className="px-3 py-1.5 rounded-md bg-bg-2 border border-hairline-2 text-ink-2 hover:bg-hairline">Never mind</button>
           <button type="button" onClick={onOverride} disabled={saving}
-            className="px-3 py-1.5 rounded-md bg-panel border border-hairline-2 text-ink-2 hover:bg-bg-2 font-medium disabled:opacity-50">
-            {saving ? 'Creating…' : 'Create anyway'}
+            className="text-ink-3 hover:text-ink underline disabled:opacity-50">
+            {saving ? 'Creating…' : 'Create a separate series anyway'}
           </button>
         </div>
       </div>
@@ -229,6 +281,7 @@ export default function JobCreateModal({
   const [newClient, setNewClient] = useState({ name: '', phone: '', email: '' })
   const [creatingClient, setCreatingClient] = useState(false)
   const [clientErr, setClientErr] = useState('')
+  const [clientDupes, setClientDupes] = useState([])
   // Searchable typeahead state (replaces the old preload-everything dropdown,
   // which silently 422'd on limit=1000 and rendered empty).
   const [clientQuery, setClientQuery] = useState('')
@@ -269,6 +322,10 @@ export default function JobCreateModal({
       // "New Job" unusable for the majority of records.
       const params = new URLSearchParams({ limit: '20' })
       if (q) params.append('search', q)
+      // Don't offer archived clients as the target of a NEW job — they're not
+      // customers anymore (client lifecycle). Name resolution elsewhere still
+      // includes them; this is a picker.
+      params.append('include_archived', 'false')
       get(`/api/clients?${params.toString()}`)
         .then(d => setClientResults(Array.isArray(d) ? d : []))
         .catch(e => { setClientLoadErr(e?.message || 'Could not load clients'); setClientResults([]) })
@@ -383,22 +440,32 @@ export default function JobCreateModal({
   const beginCreateClient = (prefillName = '') => {
     setNewClient(n => ({ ...n, name: prefillName || n.name || '' }))
     setClientErr('')
+    setClientDupes([])
     setAddingClient(true)
   }
 
-  const createInlineClient = async () => {
+  const pickCreatedClient = (created) => {
+    chooseClient(created)
+    setAddingClient(false)
+    setClientDupes([])
+    setNewClient({ name: '', phone: '', email: '' })
+  }
+
+  // force=false: dedup-checks first and shows the duplicate prompt on a match.
+  // force=true: "Create anyway" from that prompt. Shared with every other
+  // inline "+ New client" via createClientChecked (utils/clientCreate).
+  const createInlineClient = async (force = false) => {
     if (!newClient.name.trim()) { setClientErr('Name is required'); return }
     setCreatingClient(true); setClientErr('')
     try {
-      const created = await post('/api/clients', {
+      const res = await createClientChecked({
         name: newClient.name.trim(),
         phone: newClient.phone.trim() || null,
         email: newClient.email.trim() || null,
         status: 'active',
-      })
-      chooseClient(created)
-      setAddingClient(false)
-      setNewClient({ name: '', phone: '', email: '' })
+      }, { force })
+      if (res.status === 'duplicates') { setClientDupes(res.duplicates); setCreatingClient(false); return }
+      pickCreatedClient(res.client)
     } catch (e) {
       setClientErr(e.message || 'Failed to create client')
     }
@@ -499,12 +566,17 @@ export default function JobCreateModal({
   // 409 (create-duplicate guard), surfaced as an "Open existing / Create
   // anyway" prompt rather than a dead-end error.
   const [dupMatches, setDupMatches] = useState(null)
+  // A recurring create can succeed but generate zero visits (no property on the
+  // series, or an STR series whose dates are all already on the calendar). We
+  // never close on that silently — holds { hasProperty, isTurnover, schedule }.
+  const [emptySeries, setEmptySeries] = useState(null)
 
   const save = async (allowConflicts = false, allowDuplicate = false) => {
     setSaving(true)
     setError(null)
     setConflict(null)
     setDupMatches(null)
+    setEmptySeries(null)
     // Park the booking before we hit the network: if the session has expired,
     // the 401 redirects to /login (this code never resumes), and this draft is
     // what gets restored after re-auth. Cleared on a confirmed success below.
@@ -561,7 +633,18 @@ export default function JobCreateModal({
         if (!sched) return  // 401 → redirecting to /login; keep the draft to restore
         try { localStorage.removeItem(JOB_DRAFT_KEY) } catch { /* ignore */ }
         await saveIcalIfNeeded()
-        onCreated?.({ kind: 'recurring', schedule: sched })
+        // The series exists now, but it may have generated no visits at all —
+        // surface that instead of a silent success. `jobs_created` is null on
+        // an older backend that didn't return it; only 0 is a real empty result.
+        if ((sched.jobs_created ?? null) === 0) {
+          setEmptySeries({
+            hasProperty: !!form.property_id,
+            isTurnover: form.job_type === 'str_turnover',
+            schedule: sched,
+          })
+          return
+        }
+        onCreated?.({ kind: 'recurring', schedule: sched, jobsCreated: sched.jobs_created })
         onClose?.()
         return
       }
@@ -658,7 +741,7 @@ export default function JobCreateModal({
               <div className="flex items-center justify-between mb-1">
                 <label className="block text-xs text-ink-2 font-medium">Client *</label>
                 <button type="button"
-                  onClick={() => { addingClient ? setAddingClient(false) : beginCreateClient(clientQuery.trim()); setClientErr('') }}
+                  onClick={() => { addingClient ? setAddingClient(false) : beginCreateClient(clientQuery.trim()); setClientErr(''); setClientDupes([]) }}
                   className="text-xs text-indigo-600 hover:text-indigo-700 font-medium">
                   {addingClient ? 'Cancel' : '+ New client'}
                 </button>
@@ -666,7 +749,7 @@ export default function JobCreateModal({
               {!addingClient ? (
                 selectedClient ? (
                   // A client is chosen — show it as a chip with a "Change" affordance.
-                  <div className="flex items-center justify-between gap-2 rounded-lg border border-blue-200 bg-blue-50/50 px-3 py-2">
+                  <div className="flex items-center justify-between gap-2 rounded-lg border border-hairline bg-bg-2 px-3 py-2">
                     <span className="flex items-center gap-2 min-w-0 text-sm text-ink">
                       <Check className="w-4 h-4 text-indigo-600 shrink-0" />
                       <span className="truncate font-medium">{selectedClient.name}</span>
@@ -752,7 +835,7 @@ export default function JobCreateModal({
                   </div>
                 )
               ) : (
-                <div className="rounded-lg border border-blue-200 bg-blue-50/50 p-2.5 space-y-2">
+                <div className="rounded-lg border border-hairline bg-bg-2 p-2.5 space-y-2">
                   <input autoFocus value={newClient.name} onChange={e => setNewClient(n => ({ ...n, name: e.target.value }))}
                     placeholder="Client name *"
                     className="w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-hidden focus:border-blue-400" />
@@ -765,10 +848,20 @@ export default function JobCreateModal({
                       className="w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-hidden focus:border-blue-400" />
                   </div>
                   {clientErr && <div className="text-xs text-red-600">{clientErr}</div>}
-                  <button type="button" onClick={createInlineClient} disabled={creatingClient || !newClient.name.trim()}
-                    className="w-full bg-indigo-600 hover:bg-indigo-700 text-white disabled:bg-bg-2 disabled:text-ink-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors">
-                    {creatingClient ? 'Creating…' : 'Create & select client'}
-                  </button>
+                  {clientDupes.length > 0 ? (
+                    <DuplicateClientPrompt
+                      duplicates={clientDupes}
+                      busy={creatingClient}
+                      onUseExisting={pickCreatedClient}
+                      onCreateAnyway={() => createInlineClient(true)}
+                      onDismiss={() => setClientDupes([])}
+                    />
+                  ) : (
+                    <button type="button" onClick={() => createInlineClient(false)} disabled={creatingClient || !newClient.name.trim()}
+                      className="w-full bg-indigo-600 hover:bg-indigo-700 text-white disabled:bg-bg-2 disabled:text-ink-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors">
+                      {creatingClient ? 'Creating…' : 'Create & select client'}
+                    </button>
+                  )}
                 </div>
               )}
             </div>
@@ -781,6 +874,72 @@ export default function JobCreateModal({
           {!standalone && clientName && (
             <div className="text-xs text-ink-3">Scheduling for <span className="font-medium text-ink-2">{clientName}</span></div>
           )}
+
+          {/* Property — field #2, right after the client. Auto-fills when the
+              client has exactly one (the load effect calls applyProperty), so
+              the common case needs no interaction; was previously buried in the
+              "More options" disclosure, which is why jobs kept landing without a
+              property. */}
+          <div>
+            <div className="flex items-center justify-between mb-1">
+              <label className="block text-xs text-ink-2 font-medium">Property</label>
+              <button type="button"
+                onClick={() => { setAddingProp(a => !a); setPropErr('') }}
+                className="text-xs text-indigo-600 hover:text-indigo-700 font-medium">
+                {addingProp ? 'Cancel' : '+ New property'}
+              </button>
+            </div>
+            {!addingProp ? (
+              <select
+                value={form.property_id}
+                onChange={onPropertyChange}
+                data-testid="job-create-property-select"
+                className="w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-hidden focus:border-blue-400 disabled:bg-bg-2 disabled:text-ink-3"
+                disabled={loadingProps || !activeClientId}
+              >
+                <option value="">
+                  {!activeClientId
+                    ? 'Pick a client first'
+                    : loadingProps
+                      ? 'Loading properties...'
+                      : properties.length === 0
+                        ? 'No properties for this client yet'
+                        : 'Select a property (optional)'}
+                </option>
+                {properties.map(p => (
+                  <option key={p.id} value={p.id}>
+                    {p.name}{p.address ? ` — ${p.address}` : ''}
+                  </option>
+                ))}
+              </select>
+            ) : null}
+            {!addingProp && !loadingProps && properties.length === 0 && clientAddress?.address && (
+              <button type="button" onClick={createPropertyFromClientAddress} disabled={creatingProp}
+                data-testid="job-create-use-client-address"
+                className="mt-1.5 text-xs text-indigo-600 hover:text-indigo-700 font-medium disabled:opacity-50">
+                {creatingProp ? 'Creating…' : `Use their address — create “${clientAddress.address}”`}
+              </button>
+            )}
+            {addingProp && (
+              <div className="rounded-lg border border-hairline bg-bg-2 p-2.5 space-y-2">
+                <input autoFocus value={newProp.name} onChange={e => setNewProp(n => ({ ...n, name: e.target.value }))}
+                  placeholder="Property name * (e.g. 4 Red Barn Circle)"
+                  className="w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-hidden focus:border-blue-400" />
+                <AddressAutocomplete
+                  value={newProp.address}
+                  onChange={v => setNewProp(n => ({ ...n, address: v }))}
+                  onSelect={p => setNewProp(n => ({ ...n, address: p.address || n.address }))}
+                  placeholder="Address"
+                  className="w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-hidden focus:border-blue-400" />
+                {propErr && <div className="text-xs text-red-600">{propErr}</div>}
+                <button type="button" onClick={createInlineProperty} disabled={creatingProp || !newProp.name.trim()}
+                  className="w-full bg-indigo-600 hover:bg-indigo-700 text-white disabled:bg-bg-2 disabled:text-ink-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors">
+                  {creatingProp ? 'Creating…' : 'Create & select property'}
+                </button>
+              </div>
+            )}
+          </div>
+
           <div>
             <label className="block text-xs text-ink-2 font-medium mb-1">Service type</label>
             <div className="flex gap-2">
@@ -943,8 +1102,8 @@ export default function JobCreateModal({
               address override, right below the compact form on the same page. */}
           <button type="button" onClick={() => setShowMore(v => !v)}
             className="w-full flex items-center justify-center gap-1.5 text-center text-xs text-ink-3 hover:text-ink-2 pt-1 border-t border-hairline mt-1">
-            {recurring ? 'More options (property, repeat details, address)'
-              : 'More options (property, address)'}
+            {recurring ? 'More options (title, repeat details, calendar feed)'
+              : 'More options (title, calendar feed)'}
             <span className={`transition-transform inline-block ${showMore ? 'rotate-180' : ''}`}>▾</span>
           </button>
 
@@ -953,69 +1112,12 @@ export default function JobCreateModal({
             onCancel={() => setConflict(null)} onOverride={() => save(true)} />
           <DuplicateSeriesPrompt matches={dupMatches} saving={saving}
             onCancel={() => setDupMatches(null)} onOverride={() => save(false, true)} />
+          <EmptySeriesPrompt info={emptySeries} onDone={() => {
+            onCreated?.({ kind: 'recurring', schedule: emptySeries?.schedule, jobsCreated: 0 })
+            onClose?.()
+          }} />
 
-          {/* ── More options — Property picker (inline expansion) ─────────── */}
           {showMore && (<>
-          <div>
-            <div className="flex items-center justify-between mb-1">
-              <label className="block text-xs text-ink-2 font-medium">Property</label>
-              <button type="button"
-                onClick={() => { setAddingProp(a => !a); setPropErr('') }}
-                className="text-xs text-indigo-600 hover:text-indigo-700 font-medium">
-                {addingProp ? 'Cancel' : '+ New property'}
-              </button>
-            </div>
-            {!addingProp ? (
-              <select
-                value={form.property_id}
-                onChange={onPropertyChange}
-                data-testid="job-create-property-select"
-                className="w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-hidden focus:border-blue-400 disabled:bg-bg-2 disabled:text-ink-3"
-                disabled={loadingProps || !activeClientId}
-              >
-                <option value="">
-                  {!activeClientId
-                    ? 'Pick a client first'
-                    : loadingProps
-                      ? 'Loading properties...'
-                      : properties.length === 0
-                        ? 'No properties for this client yet'
-                        : 'Select a property (optional)'}
-                </option>
-                {properties.map(p => (
-                  <option key={p.id} value={p.id}>
-                    {p.name}{p.address ? ` — ${p.address}` : ''}
-                  </option>
-                ))}
-              </select>
-            ) : null}
-            {!addingProp && !loadingProps && properties.length === 0 && clientAddress?.address && (
-              <button type="button" onClick={createPropertyFromClientAddress} disabled={creatingProp}
-                data-testid="job-create-use-client-address"
-                className="mt-1.5 text-xs text-indigo-600 hover:text-indigo-700 font-medium disabled:opacity-50">
-                {creatingProp ? 'Creating…' : `Use their address — create “${clientAddress.address}”`}
-              </button>
-            )}
-            {addingProp && (
-              <div className="rounded-lg border border-blue-200 bg-blue-50/50 p-2.5 space-y-2">
-                <input autoFocus value={newProp.name} onChange={e => setNewProp(n => ({ ...n, name: e.target.value }))}
-                  placeholder="Property name * (e.g. 4 Red Barn Circle)"
-                  className="w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-hidden focus:border-blue-400" />
-                <AddressAutocomplete
-                  value={newProp.address}
-                  onChange={v => setNewProp(n => ({ ...n, address: v }))}
-                  onSelect={p => setNewProp(n => ({ ...n, address: p.address || n.address }))}
-                  placeholder="Address"
-                  className="w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-hidden focus:border-blue-400" />
-                {propErr && <div className="text-xs text-red-600">{propErr}</div>}
-                <button type="button" onClick={createInlineProperty} disabled={creatingProp || !newProp.name.trim()}
-                  className="w-full bg-indigo-600 hover:bg-indigo-700 text-white disabled:bg-bg-2 disabled:text-ink-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors">
-                  {creatingProp ? 'Creating…' : 'Create & select property'}
-                </button>
-              </div>
-            )}
-          </div>
-
           {/* Title override (auto-generated from the client name; edit here
               to override). Service Type stays in the compact form above so
               it isn't duplicated. */}

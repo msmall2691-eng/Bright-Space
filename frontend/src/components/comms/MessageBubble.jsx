@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react'
-import { Mail, CheckCircle2, Check, Clock, AlertTriangle, StickyNote, ChevronDown } from 'lucide-react'
+import { Mail, Voicemail, CheckCircle2, Check, Clock, AlertTriangle, StickyNote, ChevronDown } from 'lucide-react'
 import { fullTime } from './utils'
 import { htmlToText, splitQuotedEmail } from '../../utils/format'
 
@@ -7,6 +7,17 @@ import { htmlToText, splitQuotedEmail } from '../../utils/format'
  *  that's accepted-but-not-yet-delivered isn't a blank space:
  *  sending → sent → delivered → failed. */
 const FAILED_STATUSES = ['failed', 'undelivered', 'error']
+
+// Highlight @mentions in an internal note. Heuristic: @ + one or two
+// Capitalized words (how the picker inserts a teammate's name), so it catches
+// "@Sarah" / "@Sarah Lee" without swallowing the lowercase words that follow.
+const MENTION_RE = /(@[A-Z][\w'’.\-]*(?:\s[A-Z][\w'’.\-]*)?)/g
+function withMentions(text) {
+  return String(text).split(MENTION_RE).map((part, i) =>
+    i % 2 === 1
+      ? <span key={i} className="font-semibold text-amber-600 dark:text-amber-400">{part}</span>
+      : part)
+}
 
 function DeliveryIcon({ status }) {
   const s = (status || '').toLowerCase()
@@ -38,7 +49,7 @@ export function MessageBubble({ m, isFirst, showTime, contactName }) {
             {m.author && <span className="font-normal text-ink-3">— {m.author}</span>}
             <span className="ml-auto font-normal text-ink-3">{fullTime(m.created_at)}</span>
           </div>
-          <div className="whitespace-pre-wrap wrap-break-word leading-relaxed">{htmlToText(m.body)}</div>
+          <div className="whitespace-pre-wrap wrap-break-word leading-relaxed">{withMentions(htmlToText(m.body))}</div>
         </div>
       </div>
     )
@@ -77,6 +88,7 @@ export function MessageBubble({ m, isFirst, showTime, contactName }) {
               outbound ? 'border-white/25 text-indigo-100' : 'border-hairline text-ink-3'
             }`}>
               {m.channel === 'email' && <Mail className="w-3 h-3 inline mr-1 -mt-0.5" />}
+              {m.channel === 'voice' && <Voicemail className="w-3 h-3 inline mr-1 -mt-0.5" />}
               {m.subject}
             </div>
           )}
@@ -105,6 +117,7 @@ export function MessageBubble({ m, isFirst, showTime, contactName }) {
             {fullTime(m.created_at)}
             {outbound && <DeliveryIcon status={m.status} />}
             {m.channel === 'email' && <Mail className="w-3 h-3 ml-1 opacity-50" />}
+            {m.channel === 'voice' && <Voicemail className="w-3 h-3 ml-1 opacity-50" />}
           </div>
         </div>
         {/* Failed sends must be unmissable — the in-bubble icon alone is easy
