@@ -349,7 +349,7 @@ function ApplyLink() {
   return (
     <div className="rounded-xl border border-hairline bg-panel px-3 py-3">
       <p className="text-[13px] text-ink-2">
-        Cleaners apply to join here. It needs no login — share it anywhere.
+        Where new cleaners get set up. It needs no login — share it anywhere.
       </p>
       <div className="mt-2 flex flex-col items-start gap-2 sm:flex-row sm:items-center">
         {/* break-all, not truncate. A truncated URL on a phone shows half an

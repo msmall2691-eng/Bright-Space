@@ -100,7 +100,7 @@ it('sends somebody who already has an account to sign in', () => {
   render(<Apply />)
   const link = screen.getByRole('link', { name: /sign in/i })
   expect(link.getAttribute('href')).toBe('/login')
-  expect(document.body.textContent).toMatch(/don’t need to apply again/i)
+  expect(document.body.textContent).toMatch(/don’t need to do this again/i)
 })
 
 it('cannot tell anyone whether an email is already known', () => {
@@ -137,7 +137,7 @@ it('never asks for a Social Security number, and says so', () => {
 
 it('still submits, and only needs a name and an email', async () => {
   render(<Apply />)
-  const send = screen.getByRole('button', { name: /Send application/i })
+  const send = screen.getByRole('button', { name: /Send my details/i })
   expect(send.disabled).toBe(true)
 
   fireEvent.change(screen.getByLabelText(/Your name/i), { target: { value: 'Dana Reed' } })

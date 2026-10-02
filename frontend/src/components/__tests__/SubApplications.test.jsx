@@ -24,7 +24,7 @@ afterEach(cleanup)
 it('says so when applications cannot be loaded, instead of looking empty', async () => {
   get.mockRejectedValue(new Error('offline'))
   render(<SubApplications />)
-  expect(await screen.findByText(/Couldn’t load applications just now/)).toBeTruthy()
+  expect(await screen.findByText(/Couldn’t load this just now/)).toBeTruthy()
 })
 
 it('stays hidden when nobody has actually applied', async () => {
@@ -43,5 +43,5 @@ it('draws the panel once there are applications', async () => {
   })
   render(<SubApplications />)
   expect(await screen.findByText('Sam Reed')).toBeTruthy()
-  expect(screen.queryByText(/Couldn’t load applications/)).toBeNull()
+  expect(screen.queryByText(/Couldn’t load this just now/)).toBeNull()
 })
