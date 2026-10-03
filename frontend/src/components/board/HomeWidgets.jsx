@@ -106,7 +106,7 @@ export default function HomeWidgets({ items }) {
               if (dragKey && dragKey !== key) move(dragKey, key)
               setDragKey(null); setOverKey(null)
             }}
-            className={`group/tile relative rounded-2xl transition ${isDragging ? 'opacity-50' : ''} ${
+            className={`group/tile relative rounded-2xl transition duration-200 motion-safe:hover:-translate-y-0.5 hover:shadow-md ${isDragging ? 'opacity-50' : ''} ${
               isOver ? 'ring-2 ring-indigo-400 ring-offset-2 ring-offset-bg' : ''
             }`}
           >

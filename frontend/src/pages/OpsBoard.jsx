@@ -576,6 +576,17 @@ export default function OpsBoard() {
               </div>
             )}
 
+            {/* Your widgets — Notes + Ask Nova, arrange them to taste (drag the
+                grip / arrow keys, saved on this device). Promoted up here from
+                the old last-and-smallest slot so your notes are front and
+                centre, right under the quick actions. */}
+            <div className="mt-4 bb-board-in" style={{ animationDelay: '90ms' }}>
+              <HomeWidgets items={[
+                { key: 'notes', label: 'Notes', node: <StickyNotes /> },
+                canComms && { key: 'nova', label: 'Ask Nova', node: <NovaChat navigate={navigate} /> },
+              ].filter(Boolean)} />
+            </div>
+
             {/* Systems + Safe to Ignore — one quiet collapsed line each. */}
             {((systemsSection?.items.length || 0) > 0 || (safeSection?.items.length || 0) > 0) && (
               <div className="mt-4 flex flex-col gap-4 bb-board-in" style={{ animationDelay: '80ms' }}>
@@ -606,15 +617,6 @@ export default function OpsBoard() {
               </WhenVisible>
             </div>
 
-            {/* Notes + Ask Nova — the smallest, last zone. */}
-            <div className="mt-4 bb-board-in" style={{ animationDelay: '120ms' }}>
-              <WhenVisible minHeight="14rem">
-                <HomeWidgets items={[
-                  { key: 'notes', label: 'Notes', node: <StickyNotes /> },
-                  canComms && { key: 'nova', label: 'Ask Nova', node: <NovaChat navigate={navigate} /> },
-                ].filter(Boolean)} />
-              </WhenVisible>
-            </div>
           </>
         )}
 
