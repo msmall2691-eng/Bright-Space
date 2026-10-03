@@ -49,17 +49,6 @@ import { useCompanyName } from '../hooks/useCompanyName'
    MAIN COMMS PAGE
    ═══════════════════════════════════════════════════════════════════════════ */
 
-/** Compact at-a-glance stat pill for the page header — echoes the stat row
- *  on the Home "Messages" pillar so the two surfaces read as one system. */
-function HeaderStat({ n, label, tone }) {
-  return (
-    <span className="inline-flex items-baseline gap-1.5 whitespace-nowrap text-[13px] text-ink-3">
-      <span className={`font-semibold tabular-nums ${tone || 'text-ink'}`}>{n}</span>
-      <span className="text-[11px] text-ink-3">{label}</span>
-    </span>
-  )
-}
-
 export default function Comms() {
   const navigate = useNavigate()
   // ──────── Filter state ────────
@@ -358,17 +347,27 @@ export default function Comms() {
       {/* Hidden on mobile: the list already shows "Inbox" and each thread has
           its own header, so this outer title is pure wasted top space on a
           phone. Desktop keeps it for page context. */}
+      {/* No at-a-glance stat trio here: it re-printed counts the inbox already
+          carries at rest — "active" duplicates the always-visible Active folder
+          tab, "unread" duplicates the Clients|Crew toggle's unread dot. The one
+          number that isn't shown anywhere at rest, and is the single most urgent
+          triage, is "past SLA" — so it stays, once, as an OPERABLE jump: click
+          to drop into Active + the Overdue filter. Renders nothing when nothing
+          is late (no all-clear furniture). (Page-polish sweep 3/4; cf. #1042.) */}
       <PageHeader
         title="Messages"
         icon={MessageSquare}
         className="hidden shell:block pt-4 pb-3 sm:pt-4 sm:pb-3 shrink-0"
-        actions={
-          <div className="flex items-center gap-2">
-            <HeaderStat n={summary.open || 0} label="active" />
-            <HeaderStat n={summary.unread || 0} label="unread" tone={summary.unread > 0 ? 'text-indigo-600 dark:text-indigo-300' : undefined} />
-            <HeaderStat n={summary.breached || 0} label="past SLA" tone={summary.breached > 0 ? 'text-red-600 dark:text-red-300' : undefined} />
-          </div>
-        }
+        actions={summary.breached > 0 ? (
+          <button
+            onClick={() => { setFolder('active'); setChipFilters(new Set(['overdue'])) }}
+            title="Show conversations past their reply SLA"
+            className="inline-flex items-center gap-1.5 text-[12px] font-medium px-3 py-1.5 rounded-md border border-hairline-2 bg-panel text-ink-2 hover:bg-bg-2 transition-colors">
+            <span className="w-1.5 h-1.5 rounded-full bg-red-500 shrink-0" aria-hidden="true" />
+            <span className="font-semibold tabular-nums text-ink">{summary.breached}</span>
+            <span className="text-ink-3">past SLA</span>
+          </button>
+        ) : undefined}
       />
 
     {view === 'crew' ? (
