@@ -1,11 +1,11 @@
-fastapi==0.141.1
+fastapi==0.142.2
 # BB-SEC-17: pinned explicitly (fastapi only requires starlette>=0.46.0, and
 # 0.39.0-0.49.0 carry CVE-2025-62727, 0.38.x carries six more incl the
 # CVE-2026-48710 Host-header path-poisoning). 1.3.1+ is the first line clear
 # of every advisory affecting the versions in that range.
-starlette==1.6.0
-uvicorn[standard]==0.52.4
-sqlalchemy==2.0.52
+starlette==1.7.0
+uvicorn[standard]==0.54.0
+sqlalchemy==2.1.1
 # BB-DEPS-03: psycopg 3, not psycopg2. SQLAlchemy 2.1 changed what a bare
 # postgresql:// URL resolves to (psycopg2 -> psycopg 3), so staying on
 # psycopg2 meant the DBAPI was decided by whichever SQLAlchemy was pinned --
@@ -15,10 +15,10 @@ sqlalchemy==2.0.52
 # [binary] ships wheels, so no libpq build step in the Docker image.
 psycopg[binary]==3.3.6
 anthropic==1.11.0
-google-genai==2.23.0
+google-genai==2.26.0
 python-dotenv==1.2.3
 pyyaml==6.0.3
-twilio==9.11.0
+twilio==9.11.2
 httpx==0.28.1
 # BB-DEPS-02: ceiling is google-genai, not us. Nothing imports websockets
 # directly — it arrives via uvicorn[standard] to serve /ws/agent/{agent_name},
@@ -30,10 +30,10 @@ httpx==0.28.1
 websockets==16.1.1
 python-multipart==0.0.32
 icalendar==6.1.0
-alembic==1.19.2
-google-api-python-client==2.200.0
-google-auth-httplib2==0.4.2
-google-auth-oauthlib==1.4.1
+alembic==1.20.0
+google-api-python-client==2.201.0
+google-auth-httplib2==0.4.3
+google-auth-oauthlib==1.5.0
 aiofiles==25.1.0
 openpyxl==3.1.5
 apscheduler==3.11.3
@@ -41,9 +41,9 @@ apscheduler==3.11.3
 # only ever present transitively via APScheduler <=3.10. APScheduler 3.11
 # dropped its pytz dependency, so it must be declared explicitly or a fresh
 # install (CI, Docker) has no pytz and every import of main fails at collection.
-pytz==2026.3.post1
+pytz==2026.4
 bcrypt==5.0.0
-PyJWT==2.15.0
+PyJWT==2.15.1
 slowapi==0.1.10
 reportlab==5.0.1
 
