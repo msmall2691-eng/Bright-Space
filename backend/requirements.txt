@@ -13,7 +13,14 @@ python-dotenv==1.2.3
 pyyaml==6.0.3
 twilio==9.11.0
 httpx==0.28.1
-websockets==13.1
+# BB-DEPS-02: ceiling is google-genai, not us. Nothing imports websockets
+# directly — it arrives via uvicorn[standard] to serve /ws/agent/{agent_name},
+# and uvicorn only asks for >=13.0. google-genai pins websockets<17.0 on every
+# release through 2.28.0, so 17.x is a hard ResolutionImpossible at pip install
+# (this is what blocked dependabot #889, which wanted 17.x). 16.1.1 is the
+# highest version that resolves. Don't raise this to 17 until google-genai
+# widens its pin; check its metadata first, not just whether tests pass.
+websockets==16.1.1
 python-multipart==0.0.32
 icalendar==6.1.0
 alembic==1.19.2
