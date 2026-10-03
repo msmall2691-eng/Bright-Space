@@ -41,9 +41,14 @@ from sqlalchemy import create_engine, text
 from sqlalchemy.engine import make_url
 from sqlalchemy.pool import NullPool
 
+from utils.db_url import normalize_db_url
+
 _RAW = os.getenv("RLS_TEST_DATABASE_URL", "").strip()
 pytestmark = pytest.mark.skipif(
-    not _RAW.startswith(("postgresql://", "postgres://")),
+    # "postgres" (not the ("postgresql://", "postgres://") tuple) so a URL that
+    # names its driver -- postgresql+psycopg://, which is how db.py spells it
+    # now -- still runs these tests instead of silently skipping them.
+    not _RAW.startswith("postgres"),
     reason="RLS_TEST_DATABASE_URL not set to a Postgres DB",
 )
 
@@ -123,7 +128,7 @@ def _missing_rls_policies(engine) -> list[str]:
 
 
 def test_alembic_upgrade_head_from_empty_db():
-    server_url = make_url(_RAW.replace("postgres://", "postgresql://", 1))
+    server_url = make_url(normalize_db_url(_RAW))
     fresh_db_name = f"brightspace_migtest_{uuid.uuid4().hex[:12]}"
 
     admin_url = server_url.set(database="postgres")

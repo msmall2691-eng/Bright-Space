@@ -1,6 +1,7 @@
 from sqlalchemy import create_engine, text, inspect as sa_inspect
 from sqlalchemy.orm import sessionmaker, Session
 from database.base import Base
+from utils.db_url import normalize_db_url
 import os
 import logging
 
@@ -24,9 +25,11 @@ if not DATABASE_URL:
         "(or to sqlite:///./local.db for local dev / tests)."
     )
 
-# Railway sometimes provides postgres:// but SQLAlchemy requires postgresql://
-if DATABASE_URL.startswith("postgres://"):
-    DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
+# Railway supplies postgres://, which SQLAlchemy doesn't accept, and a bare
+# postgresql:// leaves the DBAPI to a version-dependent SQLAlchemy default
+# (2.0 -> psycopg2, 2.1 -> psycopg 3). We run psycopg 3, so the driver is
+# spelled out. See utils/db_url.py (BB-DEPS-03) for why that matters.
+DATABASE_URL = normalize_db_url(DATABASE_URL)
 
 # Only use check_same_thread for SQLite (it's SQLite-specific)
 connect_args = {}

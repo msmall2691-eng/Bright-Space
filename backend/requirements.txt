@@ -6,7 +6,14 @@ fastapi==0.141.1
 starlette==1.6.0
 uvicorn[standard]==0.52.4
 sqlalchemy==2.0.52
-psycopg2-binary==2.9.12
+# BB-DEPS-03: psycopg 3, not psycopg2. SQLAlchemy 2.1 changed what a bare
+# postgresql:// URL resolves to (psycopg2 -> psycopg 3), so staying on
+# psycopg2 meant the DBAPI was decided by whichever SQLAlchemy was pinned --
+# dependabot #1034 (sqlalchemy 2.1.1) would have broken the Railway deploy
+# outright, because create_engine could not import psycopg. The URL now names
+# the driver explicitly (utils/db_url.py) and this is that driver.
+# [binary] ships wheels, so no libpq build step in the Docker image.
+psycopg[binary]==3.3.6
 anthropic==1.11.0
 google-genai==2.23.0
 python-dotenv==1.2.3
