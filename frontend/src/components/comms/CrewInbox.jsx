@@ -169,8 +169,10 @@ export function CrewInbox({ viewToggle }) {
 }
 
 /** Compose-to-many: one message, fanned into each selected cleaner's normal
- *  thread (default: everyone active). POST /api/crew/messages/broadcast. */
-function BroadcastModal({ threads, onClose, onSent }) {
+ *  thread (default: everyone active). POST /api/crew/messages/broadcast.
+ *  Exported so Home's crew rail can reuse the exact same composer (one
+ *  broadcast implementation, not two). */
+export function BroadcastModal({ threads, onClose, onSent }) {
   const eligible = threads.filter(t => t.status !== 'disabled')
   const [body, setBody] = useState('')
   const [picked, setPicked] = useState(() => new Set(eligible.map(t => t.user_id)))

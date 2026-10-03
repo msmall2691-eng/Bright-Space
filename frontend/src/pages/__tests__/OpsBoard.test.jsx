@@ -1,18 +1,19 @@
 /**
- * OpsBoard — the /dashboard home. Verifies the view logic that isn't the
- * backend's job: it mounts from one /api/dashboard/board fetch; the Messages
- * list (the one full list left on Home) is searchable/filterable and its cards
- * clear and run inline actions; the pipeline sections (requests / needs_cleaner
- * / money) render as SUMMARY cards that link to Flow / Billing instead of
- * re-listing every row; and systems / safe-to-ignore stay collapsed to a quiet
- * line.
+ * OpsBoard — the /dashboard home (Oct 2026 rebuild). Verifies the view logic
+ * that isn't the backend's job: it mounts from one /api/dashboard/board fetch;
+ * a FOCUS BAR surfaces the single most pressing thing derived from the payload;
+ * the THREE-COLUMN GRID shows Today + Flow/Money summaries + the comms rail;
+ * the comms rail (Crew from a single /api/crew/threads fetch, Clients from the
+ * board's messages) is office-only; a client Resolve runs the inline api action
+ * and optimistically clears the row; and systems / safe-to-ignore stay
+ * collapsed to a quiet line.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { render, screen, cleanup, fireEvent, waitFor, within } from '@testing-library/react'
 import { MemoryRouter, useLocation } from 'react-router-dom'
 
-// `getCached` is used by useEmployees, which the embedded Today timeline
-// pulls in for cleaner-name lookup — without it the whole page throws.
+// `getCached` drives useUnreadCount (summary) and useEmployees (the roster the
+// Today list pulls in for cleaner-name lookup) — without it the page throws.
 vi.mock('../../api', () => ({ get: vi.fn(), post: vi.fn(), getCached: vi.fn() }))
 
 import { get, post, getCached } from '../../api'
@@ -25,6 +26,7 @@ const PAYLOAD = {
   refreshed_at: '2026-08-10T14:00:00Z',
   stats: [
     { key: 'unassigned', label: 'Unassigned jobs', value: '4', sub: 'next 7 days', tone: 'red', href: '/schedule' },
+    { key: 'overdue', label: 'Overdue', value: '1', sub: 'invoices past due', tone: 'red', href: '/billing' },
     { key: 'collected', label: 'Collected today', value: '$39', sub: 'payments in', tone: 'money', href: '/billing' },
   ],
   integrations: [
@@ -32,8 +34,8 @@ const PAYLOAD = {
   ],
   filters: { all: 6, urgent: 2, watch: 3, info: 1, good: 0, recurring: 0 },
   sections: [
-    // Messages stays a LIST on Home (the office answers from here) with inline
-    // Resolve/Reply actions — the only full list left after the declutter.
+    // Messages → the Clients box in the comms rail (office answers from here)
+    // with inline Resolve/Reply actions.
     { key: 'messages', title: 'Messages', icon: '✉️', items: [
       { id: 'conv:7', severity: 'urgent', title: 'Reply overdue — Jess Racco', body: 'Can you come Saturday?', meta: '2h',
         tags: [{ label: 'Sms', tone: 'rose' }],
@@ -45,16 +47,14 @@ const PAYLOAD = {
         tags: [{ label: 'Email', tone: 'blue' }],
         actions: [{ label: 'Reply', kind: 'link', href: '/comms?conversation=8' }] },
     ] },
-    // Pipeline sections → SUMMARY cards. They no longer carry inline actions on
-    // Home: the row-level work (Draft quote, Book it, Mark paid) lives on the
-    // Flow / Billing pages those cards link to.
+    // requests → Flow summary rows (derived from the item ids).
     { key: 'requests', title: 'Requests & quotes', icon: '📋', items: [
-      { id: 'quote:2', severity: 'watch', title: 'Wells rental', body: 'Jess Racco', meta: 'Sat',
-        tags: [{ label: 'QUOTE', tone: 'indigo' }], actions: [] },
+      { id: 'lead:5', severity: 'watch', title: 'New lead — inquiry', body: 'Wants a quote', meta: '1h', tags: [], actions: [] },
+      { id: 'quote-stranded:2', severity: 'urgent', title: 'Accepted, not booked — Jess', body: '$300', meta: 'Sat', tags: [], actions: [] },
     ] },
     { key: 'needs_cleaner', title: 'Needs a cleaner', icon: '🧹', items: [
       { id: 'job:1', severity: 'urgent', title: 'No cleaner assigned', body: 'Denmark Rental', meta: 'today',
-        tags: [{ label: 'TURNO', tone: 'blue' }], actions: [] },
+        tags: [{ label: 'TURNO', tone: 'blue' }], actions: [{ label: 'Open', kind: 'link', href: '/jobs/1' }] },
     ] },
     { key: 'money', title: 'Money', icon: '💵', items: [
       { id: 'money:outstanding', severity: 'watch', title: '$250 outstanding', body: 'across 1 invoice', meta: '',
@@ -110,8 +110,15 @@ const WITH_SNAPSHOT = {
   },
 }
 
-// Shows where the router currently is, so an action that navigates can be
-// asserted without mocking react-router.
+const CREW_THREADS = [
+  { user_id: 11, name: 'Dana Jones', status: 'active', unread: 2,
+    last_message: { sender: 'cleaner', sender_name: 'Dana', body: 'Van won’t start', created_at: '2026-08-10T13:00:00Z' },
+    last_activity: '2026-08-10T13:00:00Z' },
+  { user_id: 12, name: 'Pat Lee', status: 'active', unread: 0,
+    last_message: { sender: 'office', sender_name: 'You', body: 'Thanks!', created_at: '2026-08-10T10:00:00Z' },
+    last_activity: '2026-08-10T10:00:00Z' },
+]
+
 function LocationProbe() {
   return <div data-testid="loc">{useLocation().pathname}</div>
 }
@@ -120,94 +127,80 @@ function renderBoard() {
   return render(<MemoryRouter><OpsBoard /><LocationProbe /></MemoryRouter>)
 }
 
-// Home makes two independent GETs now: the board payload, and one month of
-// /api/schedule/week for the embedded calendar. Route by URL so the calendar
-// gets a real (empty) schedule shape instead of the board payload.
+// Home now makes up to three GETs: the board payload, one month of
+// /api/schedule/week for the Today list, and (office roles only) one
+// /api/crew/threads for the Crew box. Route by URL.
 const EMPTY_DAY = { visits: [], jobs: [], properties: [], clients: [] }
-function mockGet(boardPayload = PAYLOAD) {
-  get.mockImplementation((url) =>
-    Promise.resolve(String(url).startsWith('/api/schedule/week') ? EMPTY_DAY : boardPayload))
+function mockGet(boardPayload = PAYLOAD, crewThreads = []) {
+  get.mockImplementation((url) => {
+    const u = String(url)
+    if (u.startsWith('/api/schedule/week')) return Promise.resolve(EMPTY_DAY)
+    if (u.startsWith('/api/crew/threads')) return Promise.resolve(crewThreads)
+    return Promise.resolve(boardPayload)
+  })
 }
 
 beforeEach(() => {
   localStorage.clear()
-  // Spend the approval queue's once-a-day drafting run up front. It fires a
-  // POST on mount, which is ProposalsQueue's behaviour and has its own tests —
-  // here it would just be noise in every "did this click POST?" assertion.
+  // Most of Home's comms rail + quick actions are admin/manager-only; default
+  // the test user to admin so they render. Individual tests can override.
+  localStorage.setItem('brightbase_user', JSON.stringify({ role: 'admin', full_name: 'Mariah Small' }))
+  // Spend the approval queue's once-a-day drafting run up front (its own tests
+  // cover it; here it's just noise in "did this click POST?" assertions).
   claimDailyDraftRun()
   get.mockReset(); post.mockReset(); getCached.mockReset()
-  getCached.mockResolvedValue([])   // crew roster, via useEmployees
+  getCached.mockResolvedValue([])   // crew roster + unread summary
   mockGet()
   post.mockResolvedValue({})
 })
 afterEach(cleanup)
 
 describe('OpsBoard', () => {
-  it('mounts from one board fetch: messages list + pipeline summaries', async () => {
+  it('mounts from one board fetch: focus bar + messages in the Clients box', async () => {
     renderBoard()
-    expect(await screen.findByText('The Maine Cleaning Co.')).toBeTruthy()
+    expect(await screen.findByTestId('home-focus')).toBeTruthy()
     expect(get).toHaveBeenCalledWith('/api/dashboard/board')
-    // Messages renders as a list...
+    // Focus bar surfaces the needs-a-cleaner coverage gap (1 needs_cleaner item).
+    expect(screen.getByText('1 job still needs a cleaner')).toBeTruthy()
+    // The Clients box renders the waiting conversations.
     expect(screen.getByText('Reply overdue — Jess Racco')).toBeTruthy()
-    // ...and the pipeline sections render as summary cards that preview the top
-    // line (the full lists live on Flow / Billing).
-    expect(screen.getByText('No cleaner assigned')).toBeTruthy() // needs_cleaner summary
-    expect(screen.getByText('Wells rental')).toBeTruthy()        // requests summary
-    // Cleared-progress is scoped to the Messages list (2 items).
-    expect(screen.getByText('0 of 2 cleared')).toBeTruthy()
+    expect(screen.getByText('Dana Smith')).toBeTruthy()
   })
 
-  it('pipeline summaries link out to Flow and Billing, not full row lists', async () => {
+  it('derives Flow and Money summaries from the board payload', async () => {
     renderBoard()
-    await screen.findByText('Wells rental')
-    // The requests/needs_cleaner cards hand off to Flow; money hands off to
-    // Billing. Clicking the money card navigates to /billing.
-    expect(screen.getByText('Billing')).toBeTruthy()
-    expect(screen.getAllByText('Open Flow').length).toBeGreaterThanOrEqual(1)
-    fireEvent.click(screen.getByText('$250 outstanding'))
+    await screen.findByText('Reply overdue — Jess Racco')
+    // Flow rows derived from the requests/money item ids.
+    expect(screen.getByText('New leads')).toBeTruthy()
+    expect(screen.getByText('Ready to book')).toBeTruthy()
+    // Money rows: Outstanding (parsed from the money item) + Collected today
+    // (the label also appears on the KPI tile, so assert at least one).
+    expect(screen.getByText('Outstanding')).toBeTruthy()
+    expect(screen.getByText('$250')).toBeTruthy()
+    expect(screen.getAllByText('Collected today').length).toBeGreaterThanOrEqual(1)
+    // The Money box hands off to Billing.
+    fireEvent.click(screen.getByText('Outstanding'))
     await waitFor(() => expect(screen.getByTestId('loc').textContent).toBe('/billing'))
   })
 
-  it('clearing a message advances the progress and persists', async () => {
+  it('the focus bar greets the user by first name', async () => {
     renderBoard()
-    await screen.findByText('Reply overdue — Jess Racco')
-    fireEvent.click(within(screen.getByTestId('board-row-conv:7')).getByLabelText('Clear'))
-    expect(screen.getByText('1 of 2 cleared')).toBeTruthy()
-    expect(JSON.parse(localStorage.getItem('brightbase_board_cleared'))).toContain('conv:7')
+    await screen.findByTestId('home-focus')
+    expect(screen.getByText(/, Mariah/)).toBeTruthy()
   })
 
-  // Search + severity chips fold behind the quiet "Filters" disclosure (owner:
-  // "this is so busy") and are scoped to the Messages list now.
-  it('severity chips filter the visible messages', async () => {
-    renderBoard()
-    await screen.findByText('Reply overdue — Jess Racco')
-    fireEvent.click(screen.getByRole('button', { name: /filters/i }))
-    fireEvent.click(screen.getByRole('button', { name: /urgent/i }))
-    expect(screen.getByText('Reply overdue — Jess Racco')).toBeTruthy() // urgent
-    expect(screen.queryByText('Dana Smith')).toBeNull()                 // watch → hidden
-  })
-
-  it('search narrows the messages list', async () => {
-    renderBoard()
-    await screen.findByText('Reply overdue — Jess Racco')
-    fireEvent.click(screen.getByRole('button', { name: /filters/i }))
-    fireEvent.change(screen.getByPlaceholderText(/search messages/i), { target: { value: 'jess' } })
-    expect(screen.getByText('Reply overdue — Jess Racco')).toBeTruthy()
-    expect(screen.queryByText('Dana Smith')).toBeNull()
-  })
-
-  it('runs an inline API action on a message and clears the card', async () => {
+  it('runs an inline Resolve on a client row, toasts, and clears the row', async () => {
     renderBoard()
     await screen.findByText('Reply overdue — Jess Racco')
     fireEvent.click(screen.getByRole('button', { name: /resolve/i }))
     expect(post).toHaveBeenCalledWith('/api/comms/conversations/7/status', { status: 'resolved' })
     expect(await screen.findByText(/Resolved — Reply overdue — Jess Racco/i)).toBeTruthy()
-    expect(screen.getByText('1 of 2 cleared')).toBeTruthy()
+    // Optimistically removed from the Clients box.
+    await waitFor(() => expect(screen.queryByText('Reply overdue — Jess Racco')).toBeNull())
+    expect(JSON.parse(localStorage.getItem('brightbase_board_cleared'))).toContain('conv:7')
   })
 
-  // The per-row confirm UI is generic runAction machinery — any card whose api
-  // action carries a `confirm` string gets a two-step press before it POSTs.
-  it('needs a confirm before a card action that asks for one', async () => {
+  it('needs a confirm before a client action that asks for one', async () => {
     const withConfirm = {
       ...PAYLOAD,
       sections: PAYLOAD.sections.map(s => s.key === 'messages'
@@ -230,8 +223,38 @@ describe('OpsBoard', () => {
     expect(post).toHaveBeenCalledWith('/api/comms/conversations/9/status', { status: 'resolved' })
   })
 
-  // Owner: "so busy... full of spam" — the inbox-triage pile collapses to one
-  // line by default with a one-tap bulk clear right there.
+  it('Reply on a client row deep-links to the conversation', async () => {
+    renderBoard()
+    await screen.findByText('Dana Smith')
+    // Dana Smith's row has only a Reply (link) action — tapping it navigates.
+    fireEvent.click(screen.getByText('Dana Smith'))
+    await waitFor(() => expect(screen.getByTestId('loc').textContent).toBe('/comms'))
+  })
+
+  it('caps the Clients box and folds the rest behind "+N more"', async () => {
+    const many = {
+      ...PAYLOAD,
+      sections: PAYLOAD.sections.map(s => s.key === 'messages'
+        ? { ...s, items: Array.from({ length: 8 }, (_, i) => ({
+            id: `conv:${i}`, severity: 'urgent', title: `Message ${i}`, body: '', meta: '',
+            tags: [], actions: [{ label: 'Reply', kind: 'link', href: `/comms?conversation=${i}` }],
+          })) }
+        : s),
+    }
+    mockGet(many)
+    renderBoard()
+    await screen.findByText('Message 0')
+    expect(screen.getByText('Message 4')).toBeTruthy()   // 5th row (cap)
+    expect(screen.queryByText('Message 5')).toBeNull()   // 6th row — folded
+    expect(screen.getByText(/\+3 more/)).toBeTruthy()
+  })
+
+  it('shows the trimmed stat tiles in one KPI row', async () => {
+    renderBoard()
+    await screen.findByText('Reply overdue — Jess Racco')
+    expect(screen.getAllByRole('button', { name: /^4\s*Unassigned jobs$/ })).toHaveLength(1)
+  })
+
   it('collapses Safe to Ignore by default with a confirm-then-clear', async () => {
     const withNoise = {
       ...PAYLOAD,
@@ -256,83 +279,6 @@ describe('OpsBoard', () => {
     expect(await screen.findByText(/Cleared 1 item/i)).toBeTruthy()
   })
 
-  it('hides Clear All while a search narrows the board', async () => {
-    const withNoise = {
-      ...PAYLOAD,
-      sections: PAYLOAD.sections.map(s => s.key === 'safe_to_ignore'
-        ? { ...s, items: [
-            { id: 'triage:1', severity: 'info', title: 'Jotform', body: "Today's last chance", meta: '1d',
-              tags: [{ label: 'PROMOTIONS', tone: 'gray' }], actions: [] },
-          ] }
-        : s),
-    }
-    mockGet(withNoise)
-    renderBoard()
-    await screen.findByText('Reply overdue — Jess Racco')
-    expect(screen.getByRole('button', { name: /^clear all$/i })).toBeTruthy()
-    fireEvent.click(screen.getByRole('button', { name: /filters/i }))
-    fireEvent.change(screen.getByPlaceholderText(/search messages/i), { target: { value: 'wells' } })
-    // Narrowed — the section-wide bulk action must not be offered while it would
-    // delete cards the search hid (Codex review).
-    expect(screen.queryByRole('button', { name: /^clear all$/i })).toBeNull()
-  })
-
-  // Owner: "smaller boxes... it's almost a little redundant" — the KPI band is
-  // trimmed to the handful that matter and sits once at the top.
-  //
-  // ASSERTED ON THE TILE, NOT THE BARE STRING: the tile is a button whose
-  // accessible name is its value followed by its label, so matching that cannot
-  // collide with a calendar cell, a badge, or the next number on the page.
-  it('shows the trimmed stat tiles in one merged band near the top', async () => {
-    renderBoard()
-    await screen.findByText('Reply overdue — Jess Racco')
-    expect(screen.getAllByRole('button', { name: /^4\s*Unassigned jobs$/ })).toHaveLength(1)
-    expect(screen.getByText('Unassigned jobs')).toBeTruthy()
-    expect(screen.getByText('Collected today')).toBeTruthy()
-  })
-
-  // Owner: "not have to scroll so much" — the Messages list caps tight and folds
-  // the rest behind a "+N more" into the inbox.
-  it('caps the Messages list to a few rows with a "+N more" link', async () => {
-    const many = {
-      ...PAYLOAD,
-      sections: PAYLOAD.sections.map(s => s.key === 'messages'
-        ? { ...s, items: Array.from({ length: 8 }, (_, i) => ({
-            id: `conv:${i}`, severity: 'urgent', title: `Message ${i}`, body: '', meta: '',
-            tags: [], actions: [],
-          })) }
-        : s),
-    }
-    mockGet(many)
-    renderBoard()
-    await screen.findByText('Message 0')
-    expect(screen.getByText('Message 3')).toBeTruthy()   // 4th row (cap)
-    expect(screen.queryByText('Message 4')).toBeNull()   // 5th row — folded
-    expect(screen.getByText(/\+4 more/)).toBeTruthy()
-  })
-
-  // An api action whose response carries an href navigates there after the
-  // toast; every other api action stays put.
-  it('navigates to the record an api action returns an href for', async () => {
-    post.mockResolvedValue({ status: 'resolved', href: '/quotes/42' })
-    renderBoard()
-    await screen.findByText('Reply overdue — Jess Racco')
-    fireEvent.click(screen.getByRole('button', { name: /resolve/i }))
-    expect(post).toHaveBeenCalledWith('/api/comms/conversations/7/status', { status: 'resolved' })
-    expect(await screen.findByText(/Resolved — Reply overdue — Jess Racco/i)).toBeTruthy()
-    // React Router's navigate lands in a transition, so poll rather than
-    // reading the probe on the same tick.
-    await waitFor(() => expect(screen.getByTestId('loc').textContent).toBe('/quotes/42'))
-  })
-
-  it('leaves the board in place for api actions with no href', async () => {
-    renderBoard()
-    await screen.findByText('Reply overdue — Jess Racco')
-    fireEvent.click(screen.getByRole('button', { name: /resolve/i }))
-    expect(await screen.findByText(/Resolved — Reply overdue — Jess Racco/i)).toBeTruthy()
-    expect(screen.getByTestId('loc').textContent).toBe('/')
-  })
-
   it('expands Safe to Ignore on click to review items', async () => {
     const withNoise = {
       ...PAYLOAD,
@@ -349,22 +295,72 @@ describe('OpsBoard', () => {
     fireEvent.click(screen.getByText('1 item you can ignore'))
     expect(await screen.findByText('Jotform')).toBeTruthy()
   })
+
+  it('navigates to the record an api action returns an href for', async () => {
+    post.mockResolvedValue({ status: 'resolved', href: '/quotes/42' })
+    renderBoard()
+    await screen.findByText('Reply overdue — Jess Racco')
+    fireEvent.click(screen.getByRole('button', { name: /resolve/i }))
+    expect(post).toHaveBeenCalledWith('/api/comms/conversations/7/status', { status: 'resolved' })
+    await waitFor(() => expect(screen.getByTestId('loc').textContent).toBe('/quotes/42'))
+  })
+
+  it('leaves the board in place for api actions with no href', async () => {
+    renderBoard()
+    await screen.findByText('Reply overdue — Jess Racco')
+    fireEvent.click(screen.getByRole('button', { name: /resolve/i }))
+    expect(await screen.findByText(/Resolved — Reply overdue — Jess Racco/i)).toBeTruthy()
+    expect(screen.getByTestId('loc').textContent).toBe('/')
+  })
 })
 
-/**
- * The above-the-fold split and the declutter's load-bearing moves.
- */
-describe('OpsBoard — layout', () => {
-  it('puts the schedule beside the Messages column, above the fold', async () => {
+/* ── The comms rail (new centerpiece) ─────────────────────────────────────── */
+describe('OpsBoard — comms rail', () => {
+  it('renders the Crew box from one /api/crew/threads fetch', async () => {
+    mockGet(PAYLOAD, CREW_THREADS)
     renderBoard()
-    const slot = await screen.findByTestId('home-calendar-slot')
-    const row = screen.getByTestId('home-abovefold')
-    // The calendar is one track of the above-the-fold grid...
-    expect(row.contains(slot)).toBe(true)
-    expect(row.className).toContain('grid')
-    expect(row.className).toMatch(/shell:grid-cols-/)
-    // ...and the other track is the Messages column — a packing flex column.
-    expect(row.querySelector(':scope > .flex.flex-col')).toBeTruthy()
+    await screen.findByTestId('home-crew')
+    expect(get).toHaveBeenCalledWith('/api/crew/threads')
+    // One cleaner, unread shown as a quiet dot+word ("2 new"), not a bubble.
+    expect(screen.getByText('Dana Jones')).toBeTruthy()
+    expect(screen.getByText('2 new')).toBeTruthy()
+    expect(screen.getByText('Pat Lee')).toBeTruthy()
+  })
+
+  it('opens a cleaner thread in a drawer on tap', async () => {
+    mockGet(PAYLOAD, CREW_THREADS)
+    renderBoard()
+    await screen.findByText('Dana Jones')
+    fireEvent.click(screen.getByText('Dana Jones'))
+    // The drawer mounts the shared CrewThreadPane, which fetches that thread.
+    await waitFor(() => expect(get).toHaveBeenCalledWith('/api/crew/messages/11'))
+  })
+
+  it('hides the whole comms rail for a non-admin/manager role', async () => {
+    localStorage.setItem('brightbase_user', JSON.stringify({ role: 'viewer' }))
+    mockGet(PAYLOAD, CREW_THREADS)
+    renderBoard()
+    // The grid still renders (Today / Flow / Money)...
+    await screen.findByTestId('home-grid')
+    // ...but the comms rail, Crew box and client rows are gone, and the
+    // crew endpoint is never hit (it would 403 for a viewer).
+    expect(screen.queryByTestId('home-comms-rail')).toBeNull()
+    expect(screen.queryByTestId('home-crew')).toBeNull()
+    expect(screen.queryByText('Reply overdue — Jess Racco')).toBeNull()
+    const urls = get.mock.calls.map(c => String(c[0]))
+    expect(urls.some(u => u.startsWith('/api/crew/threads'))).toBe(false)
+  })
+})
+
+/* ── Layout + the declutter's load-bearing moves ──────────────────────────── */
+describe('OpsBoard — layout', () => {
+  it('lays out a three-column grid with Today and the comms rail', async () => {
+    renderBoard()
+    const grid = await screen.findByTestId('home-grid')
+    expect(grid.className).toContain('grid')
+    expect(grid.className).toMatch(/shell:grid-cols-/)
+    expect(within(grid).getByTestId('home-today')).toBeTruthy()
+    expect(within(grid).getByTestId('home-comms-rail')).toBeTruthy()
   })
 
   it('puts the bench below the fold, in two packing columns', async () => {
@@ -375,11 +371,6 @@ describe('OpsBoard — layout', () => {
   })
 
   it('surfaces money as a Billing summary and systems as a quiet collapsed line', async () => {
-    // The load-bearing assertion of the declutter. Money and systems no longer
-    // re-list every row on Home — money previews its top line and hands off to
-    // Billing (which owns the full list now), and systems folds to one quiet
-    // collapsed line with the rows a tap behind it. The records aren't lost,
-    // they're delegated to the page that owns them.
     mockGet({
       ...WITH_SNAPSHOT,
       sections: WITH_SNAPSHOT.sections.map(s => s.key === 'systems'
@@ -388,10 +379,9 @@ describe('OpsBoard — layout', () => {
         : s),
     })
     renderBoard()
-
-    // Money: a summary card previewing the top line + a Billing hand-off.
-    expect(await screen.findByText('$250 outstanding')).toBeTruthy()
-    expect(screen.getByText('Billing')).toBeTruthy()
+    // Money: a summary row previewing the outstanding total + a Billing hand-off.
+    expect(await screen.findByText('Outstanding')).toBeTruthy()
+    expect(screen.getByText('$250')).toBeTruthy()
     // Systems: present, but one quiet collapsed line (row behind it).
     expect(screen.getByText('1 system notice')).toBeTruthy()
     expect(screen.queryByText('iCal feed stalled')).toBeNull()
@@ -404,28 +394,26 @@ describe('OpsBoard — layout', () => {
     renderBoard()
     await screen.findByText('Reply overdue — Jess Racco')
 
-    // Cut by the owner: the four snapshot boxes and the two charts...
     expect(screen.queryByText('$480')).toBeNull()                   // money today
-    expect(screen.queryByText('Dana')).toBeNull()                   // crew today
     expect(screen.queryByText('9 Lakeshore Dr')).toBeNull()         // feed health
     expect(screen.queryByText('Weekly kitchen + baths')).toBeNull() // recurring
     expect(screen.queryByText('Money, last 12 weeks')).toBeNull()   // trend chart
     expect(screen.queryByText('Requests, last 30 days')).toBeNull() // lead funnel
 
-    // ...and both AI strips, which moved to the Assistant tab. Their endpoints
-    // are the point: each was a completion racing the real data on first paint.
     const urls = get.mock.calls.map(c => String(c[0]))
     expect(urls.some(u => u.startsWith('/api/ai/daily-brief'))).toBe(false)
     expect(urls.some(u => u.startsWith('/api/ai/proposals'))).toBe(false)
   })
 
-  it('still costs exactly one board fetch', async () => {
+  it('costs exactly one board fetch (plus the schedule + crew reads)', async () => {
     mockGet(WITH_SNAPSHOT)
     renderBoard()
     await screen.findByText('Reply overdue — Jess Racco')
 
     const urls = get.mock.calls.map(c => String(c[0]))
     expect(urls.filter(u => u === '/api/dashboard/board')).toHaveLength(1)
+    // The only reads beyond the board are the shared schedule-week fetch and
+    // the single crew-threads fetch — no pipeline/health/properties storms.
     for (const owned of ['/api/recurring/cleanup/health', '/api/jobs/time-off',
                          '/api/properties', '/api/jobs/sync-overview']) {
       expect(urls.some(u => u.startsWith(owned))).toBe(false)
