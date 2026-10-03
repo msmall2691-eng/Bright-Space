@@ -24,9 +24,14 @@ from sqlalchemy import create_engine, text
 from sqlalchemy.engine import make_url
 from sqlalchemy.pool import NullPool
 
+from utils.db_url import normalize_db_url
+
 _RAW = os.getenv("RLS_TEST_DATABASE_URL", "").strip()
 pytestmark = pytest.mark.skipif(
-    not _RAW.startswith(("postgresql://", "postgres://")),
+    # "postgres" (not the ("postgresql://", "postgres://") tuple) so a URL that
+    # names its driver -- postgresql+psycopg://, which is how db.py spells it
+    # now -- still runs these tests instead of silently skipping them.
+    not _RAW.startswith("postgres"),
     reason="RLS_TEST_DATABASE_URL not set to a Postgres DB (RLS is Postgres-only)",
 )
 
@@ -47,7 +52,7 @@ def app_url():
     app role, and return a URL that connects as that role."""
     from database.models import Base
 
-    super_url = make_url(_RAW.replace("postgres://", "postgresql://", 1))
+    super_url = make_url(normalize_db_url(_RAW))
     using, policy = _migration_policy()
     su = create_engine(super_url, poolclass=NullPool)
 
@@ -75,7 +80,7 @@ def seeded(app_url):
     """Seed two orgs and one client each, as the superuser (bypasses RLS).
     Returns the unique tag so assertions can target this run's rows."""
     from database.models import Base  # noqa: F401  (ensure models imported)
-    super_url = make_url(_RAW.replace("postgres://", "postgresql://", 1))
+    super_url = make_url(normalize_db_url(_RAW))
     su = create_engine(super_url, poolclass=NullPool)
     tag = uuid.uuid4().hex[:8]
     with su.begin() as c:
@@ -148,7 +153,7 @@ def test_apply_org_rls_actually_protects_every_tenant_table():
     from database.models import Base
     from database.rls import POLICY, TENANT_TABLES, apply_org_rls
 
-    super_url = make_url(_RAW.replace("postgres://", "postgresql://", 1))
+    super_url = make_url(normalize_db_url(_RAW))
     su = create_engine(super_url, poolclass=NullPool)
     try:
         with su.begin() as c:

@@ -4,6 +4,7 @@ from sqlalchemy import pool
 from alembic import context
 import os
 from database.models import Base
+from utils.db_url import normalize_db_url
 
 config = context.config
 
@@ -25,8 +26,10 @@ if not database_url:
         "fallback. Set DATABASE_URL to the Postgres URL (production) or an explicit "
         "sqlite:///./local.db for local dev/tests."
     )
-if database_url.startswith("postgres://"):
-    database_url = database_url.replace("postgres://", "postgresql://", 1)
+# Same normalization as the app (utils/db_url.py, BB-DEPS-03): fold Railway's
+# postgres:// alias AND pin the psycopg 3 driver, so the pre-deploy migration
+# and the running app always address the database through the same DBAPI.
+database_url = normalize_db_url(database_url)
 config.set_main_option("sqlalchemy.url", database_url)
 
 # Log WHICH database we're migrating (host/db only — never the credentials) so

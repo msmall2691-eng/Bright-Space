@@ -44,6 +44,7 @@ sys.path.insert(0, str(BACKEND_DIR))
 
 import sqlalchemy as sa  # noqa: E402
 from database.base import Base  # noqa: E402
+from utils.db_url import normalize_db_url  # noqa: E402
 import database.models  # noqa: E402,F401  (import registers every model on Base.metadata)
 
 STAMP_REVISION = "022_intake_converted_quote_fk"
@@ -131,9 +132,7 @@ def _engine():
     url = os.getenv("DATABASE_URL", "").strip()
     if not url:
         return None
-    if url.startswith("postgres://"):
-        url = url.replace("postgres://", "postgresql://", 1)
-    return sa.create_engine(url)
+    return sa.create_engine(normalize_db_url(url))
 
 
 def main() -> int:
