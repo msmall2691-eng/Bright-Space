@@ -1,58 +1,50 @@
 /**
  * Ops Board — the /dashboard home.
  *
- * ABOVE THE FOLD IS A BUDGET (Oct 2026 declutter). At ~940px the first paint is
- * exactly three things: a trimmed KPI strip, the REAL Schedule calendar, and
- * the Messages box (overdue replies — the #1 office surface). Everything else
- * packs below without a long scroll.
+ * APPROVED LAYOUT (Oct 2026 rebuild). Top to bottom:
+ *   1. FOCUS BAR — a greeting eyebrow + ONE headline for the single most
+ *      pressing thing (unassigned-urgent coverage → overdue money → calm),
+ *      derived from the board payload already fetched. One primary + one ghost
+ *      action, hairline divider below.
+ *   2. KPI STRIP — the trimmed stat tiles (TopBand), one compact quiet row.
+ *   3. THREE-COLUMN GRID (3 cols at shell:, 2 mid, 1 on phone):
+ *      A — Today (compact list of today's visits, from the SAME schedule-week
+ *          fetch the old Home calendar used) + a quiet "needs a cleaner" card.
+ *      B — Flow + Money summaries, DERIVED from the board payload (no fetch).
+ *      C — the comms rail: Crew (one new fetch, /api/crew/threads) + Clients
+ *          (the board payload's messages). Office-only.
+ *   4. BELOW — Quick actions, Systems + Safe-to-Ignore (collapsed one-liners),
+ *      the bench, then Notes + Ask Nova as the smallest last zone.
  *
- * THIS PASS CUT THE DUPLICATION, NOT THE COLOR. Home had become a second copy
- * of a page that now exists on its own: the new Flow page (/flow) is the
- * lead→cash pipeline — New requests → Quote out → Ready to book → Booked →
- * To send → Unpaid, each row with its next action. So Home's feed sections that
- * listed the SAME records — "Requests & quotes", "Needs a cleaner", "Money" —
- * were redundant with Flow. Each is now a SHORT summary card (the top line +
- * the count) that links OUT to the surface that owns the full list (Flow for
- * incoming work and coverage, Billing for money) instead of repeating every
- * row. That single change removed most of the scroll.
+ * ECONOMY. `GET /api/dashboard/board` drives the strip, the focus bar, the
+ * Flow/Money summaries AND the Clients box (all derived client-side — no new
+ * field, no new request). HomeToday reuses the one /api/schedule/week fetch the
+ * Home calendar already made. The ONLY new call this page adds is CrewBox's
+ * single `GET /api/crew/threads` on mount (+ a refetch after a crew send). No
+ * polling loop is added; the shared summary poll (useUnreadCount) still drives
+ * unread counts. Don't add an eager fetch here.
  *
- * WHAT STAYED A LIST. Messages: the office answers texts/emails from here, so
- * it keeps a tight capped list with inline Resolve/Reply (runAction) + Inbox →.
- * Systems and Safe-to-Ignore stay on the board but collapsed to one quiet line
- * each (plumbing + inbox noise — present, never front and centre). Notes and
- * Ask Nova dropped to the smallest, last zone so they stop dominating.
- *
- * ONE FETCH, PLUS WHAT SCROLLS INTO VIEW. `GET /api/dashboard/board` drives the
- * strip, the Messages list AND the summary counts (derived client-side from the
- * section item lists it already ships — no new field, no new request). The
- * backend ships render-ready strings, so this file is a pure view (see
- * backend/services/board_service.py). The calendar runs its own
- * useScheduleData(month) fetch. The self-fetching boxes below the fold are
- * wrapped in <WhenVisible> so their requests happen when scrolled to. Don't add
- * an eager fetch here.
- *
- * Cleared-state persists in localStorage. `/` opens search; severity filters
- * and the cleared-progress meter live behind the Filters disclosure, scoped to
- * the Messages list (the only full list left on the page).
+ * Cleared-state persists in localStorage and now only serves the optimistic
+ * clear of a resolved client row + the Systems/Safe-to-Ignore triage.
  *
  * Design: built entirely on the app's semantic tokens (bg / panel / ink /
- * hairline + the indigo accent), so it re-skins with the active theme and
- * lands the dark iOS look under `theme-console`. Sections are flat panels with
- * a header and hairline-divided rows; color is reserved for status, never
+ * hairline + the indigo accent); color is reserved for status, never
  * decoration — no filled pills, tinted resting banners, or count bubbles.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
-  Search, RotateCcw, Eye, EyeOff, Check, ArrowRight, RefreshCw, Loader2, Sparkles,
-  SlidersHorizontal, ChevronDown,
+  Check, ArrowRight, RefreshCw, Loader2, Sparkles, ChevronDown,
 } from 'lucide-react'
 import { get, post } from '../api'
-import { pushToast } from '../utils/toastBus'
 import { ErrorState } from '../components/ui'
-import { TAG_TONE, SEV_DOT, SEV_LABEL, STAT_TONE, INT_DOT, SEV_ORDER } from '../components/board/tokens'
+import { TAG_TONE, STAT_TONE, INT_DOT } from '../components/board/tokens'
 import BoardAssistant from '../components/board/BoardAssistant'
-import HomeScheduleCalendar from '../components/board/HomeScheduleCalendar'
+import FocusBar from '../components/board/FocusBar'
+import HomeToday from '../components/board/HomeToday'
+import MiniListBox from '../components/board/MiniListBox'
+import CrewBox from '../components/board/CrewBox'
+import ClientsBox from '../components/board/ClientsBox'
 import HomeWidgets from '../components/board/HomeWidgets'
 import WhenVisible from '../components/board/WhenVisible'
 import StickyNotes from '../components/board/StickyNotes'
@@ -84,31 +76,18 @@ function fmtRefreshed(iso) {
   } catch { return '' }
 }
 
-function matchesQuery(it, q) {
-  if (!q) return true
-  const hay = `${it.title} ${it.body || ''} ${(it.tags || []).map(t => t.label).join(' ')}`.toLowerCase()
-  return hay.includes(q)
-}
-
 /* ── Top stats band ───────────────────────────────────────────────────────── */
 // Trim to the handful that actually moves the needle (owner: "smaller boxes...
-// it's almost a little redundant"). The board ships six tiles; two were low
-// signal next to the rest of Home — "This weekend" repeats what the calendar
-// right below already shows at a glance, and "People waiting" repeats the
-// unread-messages comms count AND the Messages box directly beneath it. We keep
-// the four that nothing else on first paint answers.
+// it's almost a little redundant"). We keep the four that nothing else on first
+// paint answers.
 const STAT_KEEP = new Set(['unassigned', 'overdue', 'leads', 'collected'])
 
-/** ONE compact, quiet KPI row at the very top of Home. Comms counts (from the
- *  shared summary poll — no extra request) lead since they're the most
- *  time-sensitive, then the board's trimmed stat tiles. "Crew chats" only
- *  appears when there's actually one waiting (it read "0" most of the time —
- *  pure noise). Comms entries are admin+manager only (those pages 403 for other
- *  roles); the stat tiles stay visible to everyone. */
+/** ONE compact, quiet KPI row. Comms counts (from the shared summary poll — no
+ *  extra request) lead since they're the most time-sensitive, then the board's
+ *  trimmed stat tiles. Comms entries are admin+manager only. */
 function TopBand({ stats, unreadConversations, crewUnreadThreads, showComms, navigate }) {
   const commsEntries = showComms ? [
     { key: 'unread', n: unreadConversations, label: 'unread messages', to: '/comms' },
-    // Only when it's non-zero — a "crew chats: 0" tile was dead weight.
     ...(crewUnreadThreads > 0
       ? [{ key: 'crew', n: crewUnreadThreads, label: 'crew chats', to: '/comms?view=crew' }]
       : []),
@@ -146,8 +125,7 @@ function TopBand({ stats, unreadConversations, crewUnreadThreads, showComms, nav
 
 /* ── Small pieces ─────────────────────────────────────────────────────────── */
 
-// Quiet dot + word — the old bold-uppercase pill ("TURNO", "UNASSIGNED")
-// read as shouting and the owner vetoed the bubbles. The dot carries the
+// Quiet dot + word — the owner vetoed the bubble labels. The dot carries the
 // tone via bg-current, so TAG_TONE stays a single text-color map.
 function Tag({ tag }) {
   return (
@@ -167,20 +145,6 @@ function IntChip({ chip }) {
       {chip.label}
       {chip.detail && <span className="text-ink-3">· {chip.detail}</span>}
     </span>
-  )
-}
-
-function FilterChip({ sev, count, active, onClick }) {
-  return (
-    <button
-      onClick={onClick}
-      className={`inline-flex h-7 items-center gap-1.5 rounded-md border px-2.5 text-xs font-medium transition-colors ${
-        active ? 'border-transparent bg-ink text-bg' : 'border-hairline-2 bg-panel text-ink-2 hover:bg-bg-2'
-      }`}>
-      {sev !== 'all' && <span className={`h-1.5 w-1.5 rounded-full ${SEV_DOT[sev]}`} />}
-      {SEV_LABEL[sev]}
-      <span className={`tabular-nums ${active ? 'text-bg/70' : 'text-ink-3'}`}>{count}</span>
-    </button>
   )
 }
 
@@ -244,20 +208,11 @@ function BoardRow({ item, cleared, onToggle, onAction, actioningKey, confirmingK
   )
 }
 
-// Plumbing + inbox noise fold to one quiet line each by default. Systems
-// (integration health, duplicate-client nudges) and Safe-to-Ignore (marketing
-// email, delivery-failure notices) are useful but never front-and-centre — Home
-// read as "so busy... full of spam" when they rendered expanded. Reviewing the
-// individual rows is one tap away; nothing is deleted automatically.
+// Plumbing + inbox noise fold to one quiet line each by default.
 const COLLAPSED_BY_DEFAULT = new Set(['systems', 'safe_to_ignore'])
-
-// Only Safe-to-Ignore has a server-side bulk clear (the Gmail-triage
-// delete-all endpoint). Systems rows are integration-health items the triage
-// endpoint doesn't own, so no "Clear all" is offered there — it would silently
-// miss them.
+// Only Safe-to-Ignore has a server-side bulk clear (the Gmail-triage delete-all).
 const BULK_CLEARABLE = new Set(['safe_to_ignore'])
 
-// The collapsed one-liner reads as what the section IS, not a generic count.
 function collapsedHeading(key, n) {
   if (key === 'safe_to_ignore') return `${n} item${n === 1 ? '' : 's'} you can ignore`
   if (key === 'systems') return `${n} system notice${n === 1 ? '' : 's'}`
@@ -268,18 +223,8 @@ function Section({ section, items, clearedSet, onToggle, onAction, actioningKey,
   const [open, setOpen] = useState(() => !COLLAPSED_BY_DEFAULT.has(section.key))
   if (!items.length) return null
   const collapsible = COLLAPSED_BY_DEFAULT.has(section.key)
-  // Cap how many rows render before folding the rest behind "View all" — a
-  // section like Needs You Today can genuinely hold a dozen-plus cards, and
-  // showing every one turned Home into a very long scroll (owner: "not have
-  // to scroll so much"). Filtering/search still searches the FULL set
-  // (`items` already reflects the active filter), only the render is capped.
   const visibleItems = maxRows ? items.slice(0, maxRows) : items
   const hiddenCount = items.length - visibleItems.length
-  // Codex review (PR #720): search/severity/hide-cleared narrow `items` to a
-  // subset, but the bulk endpoint clears the WHOLE section server-side — so
-  // "Clear all" while filtered would silently delete cards never shown. Only
-  // offer the bulk action with nothing narrowing the view; per-row Delete
-  // still works on whatever IS visible.
   const canClearAll = BULK_CLEARABLE.has(section.key) && !filtersActive
   const clearKey = `clear-section:${section.key}`
   const confirmingClear = confirmingKey === clearKey
@@ -298,7 +243,6 @@ function Section({ section, items, clearedSet, onToggle, onAction, actioningKey,
         ) : (
           <h2 className="text-[11px] font-medium text-ink-3">{section.title}</h2>
         )}
-        {/* Plain number, not a count bubble (owner veto). */}
         {!collapsible && (
           <span className="ml-auto text-[11px] font-semibold tabular-nums text-ink-3">
             {items.length}
@@ -342,72 +286,13 @@ function Section({ section, items, clearedSet, onToggle, onAction, actioningKey,
   )
 }
 
-// A section that now lives on its own page (Flow / Billing) collapses to this:
-// the top line + the count, linking OUT instead of repeating every row. Home
-// used to re-list "Requests & quotes", "Needs a cleaner" and "Money" in full —
-// the same records the Flow pipeline already owns — which was most of the
-// scroll. The count and preview are derived from the section's item list the
-// board payload already ships (no new field, no new fetch). Renders nothing
-// when the section is empty (no all-clear furniture).
-function SummaryCard({ meta, items, navigate }) {
-  if (!items.length) return null
-  const [top, ...rest] = items
-  const go = () => navigate(meta.link.to)
-  return (
-    <section className="flex flex-col overflow-hidden rounded-2xl border border-hairline bg-panel transition-colors hover:border-hairline-2">
-      <header className="flex items-center gap-2 border-b border-hairline px-3.5 py-2.5">
-        <span className="text-[13px] leading-none" aria-hidden="true">{meta.icon}</span>
-        <h2 className="text-[11px] font-medium text-ink-3">{meta.title}</h2>
-        {/* Plain number, not a count bubble (owner veto). */}
-        <span className="ml-auto text-[11px] font-semibold tabular-nums text-ink-3">{items.length}</span>
-      </header>
-      <button onClick={go}
-        className="flex flex-1 flex-col items-start gap-1 px-3.5 py-3 text-left transition-colors hover:bg-bg-2">
-        <p className="line-clamp-2 text-[13px] font-semibold leading-snug text-ink">{top.title}</p>
-        {top.body && <p className="line-clamp-1 text-[11.5px] leading-snug text-ink-2">{top.body}</p>}
-        {rest.length > 0 && <p className="text-[11px] text-ink-3">+{rest.length} more</p>}
-      </button>
-      <footer className="flex border-t border-hairline px-3.5 py-2">
-        <button onClick={go}
-          className="inline-flex items-center gap-0.5 text-[11px] font-semibold text-indigo-600 transition-all hover:gap-1 dark:text-indigo-400">
-          {meta.link.label}<ArrowRight className="h-3 w-3" />
-        </button>
-      </footer>
-    </section>
-  )
+/* ── derivations from the board payload ───────────────────────────────────── */
+function firstMoney(s) {
+  const m = (s || '').match(/\$[\d,]+(?:\.\d+)?/)
+  return m ? m[0] : s
 }
 
 /* ── Page ─────────────────────────────────────────────────────────────────── */
-
-// Home is a command-center bento, not a vertical stack of full-width bands
-// (owner: "worst dashboard layout ever... wasted space... useful boxes, more
-// actions"). `today_schedule` is deliberately absent: today's visits render in
-// the real Schedule calendar (HomeScheduleCalendar.jsx), not a second text list.
-//
-// Three groups of sections now, by how they render:
-//   - messages → stays a tight capped LIST above the fold (the office answers
-//     from here; inline Resolve/Reply);
-//   - requests / needs_cleaner / money → SUMMARY CARDS that link to the page
-//     that owns the full list (Flow / Billing), because that page now exists
-//     and re-listing every row here was the duplication;
-//   - systems / safe_to_ignore → one quiet COLLAPSED line each, below the fold.
-const SUMMARY_SECTIONS = ['requests', 'needs_cleaner', 'money']
-
-// Each summary card's header + the surface it hands off to. Requests/quotes and
-// coverage gaps both live on the Flow pipeline now; money lives on Billing.
-const SUMMARY_META = {
-  requests: { icon: '📋', title: 'Requests & quotes', link: { label: 'Open Flow', to: '/flow' } },
-  needs_cleaner: { icon: '🧹', title: 'Needs a cleaner', link: { label: 'Open Flow', to: '/flow' } },
-  money: { icon: '💵', title: 'Money', link: { label: 'Billing', to: '/billing' } },
-}
-
-const SECTION_LINKS = {
-  messages: { label: 'Inbox', to: '/comms' },
-}
-// The Messages list caps tight before folding the rest behind "+N more → Inbox"
-// — it's a glance at what's overdue, not the whole inbox (owner: "not have to
-// scroll so much").
-const MESSAGE_CAP = 4
 
 export default function OpsBoard() {
   const navigate = useNavigate()
@@ -417,14 +302,8 @@ export default function OpsBoard() {
   const [error, setError] = useState(false)
 
   const [cleared, setCleared] = useState(loadCleared)
-  const [filter, setFilter] = useState('all')
-  const [query, setQuery] = useState('')
-  const [hideCleared, setHideCleared] = useState(false)
-  // Triage machinery (search / severity filter / cleared progress) folds away
-  // behind one quiet disclosure — the owner: "this is so busy".
-  const [toolsOpen, setToolsOpen] = useState(false)
-  // Messages/crew unread for the Communication strip (same summary poll the
-  // sidebar uses; getCached dedupes the request).
+  // Messages/crew unread for the KPI strip (same summary poll the sidebar uses;
+  // getCached dedupes the request — no new interval added here).
   const { unreadConversations, crewUnreadThreads } = useUnreadCount()
   const canComms = ['admin', 'manager'].includes(currentRole())
   const [note, setNote] = useState('')
@@ -432,7 +311,14 @@ export default function OpsBoard() {
   const [confirmingKey, setConfirmingKey] = useState(null)
   const [assistantOpen, setAssistantOpen] = useState(false)
   const [clearingSection, setClearingSection] = useState(null)
-  const searchRef = useRef(null)
+
+  const firstName = useMemo(() => {
+    try {
+      const u = JSON.parse(localStorage.getItem('brightbase_user') || '{}')
+      const fn = (u.full_name || '').trim().split(/\s+/)[0]
+      return fn || null
+    } catch { return null }
+  }, [])
 
   const load = useCallback(async (isRefresh) => {
     isRefresh ? setRefreshing(true) : setLoading(true)
@@ -450,25 +336,6 @@ export default function OpsBoard() {
 
   useEffect(() => { load() }, [load])
 
-  // `/` focuses search; Esc clears it — matches the artifact's shortcuts.
-  useEffect(() => {
-    const onKey = (e) => {
-      const tag = (e.target.tagName || '').toLowerCase()
-      const typing = tag === 'input' || tag === 'textarea' || e.target.isContentEditable
-      if (e.key === '/' && !typing) {
-        e.preventDefault()
-        // Search lives inside the collapsed tools row — open it first.
-        setToolsOpen(true)
-        setTimeout(() => searchRef.current?.focus(), 0)
-      }
-      else if (e.key === 'Escape' && document.activeElement === searchRef.current) {
-        setQuery(''); searchRef.current?.blur()
-      }
-    }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [])
-
   const toggleCleared = useCallback((id) => {
     setCleared(prev => {
       const next = new Set(prev)
@@ -476,12 +343,6 @@ export default function OpsBoard() {
       persistCleared(next)
       return next
     })
-  }, [])
-
-  const resetCleared = useCallback(() => {
-    const empty = new Set()
-    persistCleared(empty)
-    setCleared(empty)
   }, [])
 
   const markCleared = useCallback((id) => {
@@ -492,13 +353,8 @@ export default function OpsBoard() {
   }, [])
 
   // Run a card action. `link` navigates; `api` POSTs to an existing endpoint
-  // right from the board — with a confirm step, a spinner, and an optimistic
-  // clear on success. auto-assign can report it had no crew history to use.
-  // An api action whose response carries an `href` also navigates there
-  // afterwards, so a one-tap action that PRODUCES a record (Draft quote →
-  // the new draft) lands her on it instead of leaving her on the board
-  // hunting for what it made. Additive: responses without an href behave
-  // exactly as before.
+  // with a confirm step, a spinner, an optimistic clear on success, and a
+  // toast. An api response carrying an `href` also navigates there afterward.
   const runAction = useCallback(async (item, action) => {
     if (action.kind !== 'api') { navigate(action.href); return }
     const key = `${item.id}:${action.label}`
@@ -510,9 +366,6 @@ export default function OpsBoard() {
         setNote(res.message || 'Could not complete automatically — open it to finish.')
       } else {
         if (action.clears) markCleared(item.id)
-        // Delete of a triaged email: if it cleared the board but couldn't be
-        // removed from Gmail (e.g. an account needs to reconnect), say why
-        // instead of a bare "Deleted".
         if (res && res.deleted && res.gmail_trashed === false && res.reason) {
           setNote(`Cleared from board — ${res.reason}`)
         } else {
@@ -529,9 +382,6 @@ export default function OpsBoard() {
     }
   }, [confirmingKey, navigate, markCleared])
 
-  // Bulk-clears one collapsed section (Safe to Ignore) in place — same
-  // endpoint the Ask panel's "Clear the noise" already used, now reachable
-  // right where the pile actually sits instead of a separate surface.
   const clearAllInSection = useCallback(async (sectionKey) => {
     setConfirmingKey(null)
     setClearingSection(sectionKey)
@@ -549,50 +399,59 @@ export default function OpsBoard() {
   const sections = data?.sections || []
   const byKey = useMemo(() => Object.fromEntries(sections.map(s => [s.key, s])), [sections])
 
-  // The Messages section is the only full LIST left on Home, so the triage
-  // machinery (search / severity filter / cleared progress) is scoped to it.
   const messageItems = useMemo(() => byKey.messages?.items || [], [byKey])
+  const needsCleanerItems = useMemo(() => byKey.needs_cleaner?.items || [], [byKey])
+  const requestItems = useMemo(() => byKey.requests?.items || [], [byKey])
+  const moneyItems = useMemo(() => byKey.money?.items || [], [byKey])
 
-  const counts = useMemo(() => {
-    const c = { all: 0, urgent: 0, watch: 0, info: 0, good: 0, recurring: 0 }
-    for (const it of messageItems) { c.all += 1; c[it.severity] = (c[it.severity] || 0) + 1 }
-    return c
-  }, [messageItems])
+  // Flow summary — pipeline counts derived from the board payload's item lists
+  // (no pipeline fetch). Each row links out to the Flow page that owns it.
+  const flowRows = useMemo(() => {
+    const leads = requestItems.filter(it => it.id.startsWith('lead:')).length
+    const ready = requestItems.filter(it => it.id.startsWith('quote-stranded:')).length
+    const overdueInv = moneyItems.filter(it => it.id.startsWith('invoice:')).length
+    return [
+      leads && { label: 'New leads', value: leads, to: '/flow', dot: 'bg-amber-500' },
+      ready && { label: 'Ready to book', value: ready, to: '/flow', dot: 'bg-rose-500' },
+      overdueInv && { label: 'Overdue invoices', value: overdueInv, to: '/flow', dot: 'bg-rose-500' },
+    ].filter(Boolean)
+  }, [requestItems, moneyItems])
 
-  const total = messageItems.length
-  const clearedCount = useMemo(
-    () => messageItems.reduce((n, it) => n + (cleared.has(it.id) ? 1 : 0), 0),
-    [messageItems, cleared],
-  )
+  // Money summary — Outstanding + Collected today from the board payload.
+  // (A "To send" / draft-invoices count isn't in the board payload — see the
+  // follow-up note in the PR; designed around what's shipped.)
+  const moneyRows = useMemo(() => {
+    const outstanding = moneyItems.find(it => it.id === 'money:outstanding')
+    const collected = (data?.stats || []).find(s => s.key === 'collected')
+    const rows = []
+    if (outstanding) rows.push({ label: 'Outstanding', value: firstMoney(outstanding.title), to: '/billing?view=invoices' })
+    if (collected && collected.value && collected.value !== '$0') {
+      rows.push({ label: 'Collected today', value: collected.value, to: '/billing?view=invoices', dot: 'bg-emerald-500' })
+    }
+    return rows
+  }, [moneyItems, data])
 
-  const q = query.trim().toLowerCase()
-  const filtersActive = filter !== 'all' || !!q || hideCleared
-  const visibleMessages = useMemo(() => messageItems.filter(it => {
-    if (filter !== 'all' && it.severity !== filter) return false
-    if (hideCleared && cleared.has(it.id)) return false
-    if (q && !matchesQuery(it, q)) return false
-    return true
-  }), [messageItems, filter, hideCleared, cleared, q])
+  // The single most pressing thing for the focus headline.
+  const focus = useMemo(() => {
+    const n = needsCleanerItems.length
+    if (n > 0) return {
+      tone: 'attention',
+      headline: `${n} ${n === 1 ? 'job' : 'jobs'} still ${n === 1 ? 'needs' : 'need'} a cleaner`,
+      primary: { label: 'See schedule', to: '/schedule?view=dispatch' },
+      ghost: { label: 'Open Flow', to: '/flow' },
+    }
+    const overdue = (data?.stats || []).find(s => s.key === 'overdue')
+    const oc = overdue ? (parseInt(overdue.value, 10) || 0) : 0
+    if (oc > 0) return {
+      tone: 'attention',
+      headline: `${oc} ${oc === 1 ? 'invoice' : 'invoices'} overdue`,
+      primary: { label: 'Chase', to: '/billing?view=invoices&status=overdue' },
+    }
+    return { tone: 'calm', headline: "You're on top of it this morning." }
+  }, [needsCleanerItems, data])
 
-  // The three sections that Flow / Billing now own in full. Rendered as summary
-  // cards, not row lists — the cut that removed most of the scroll. Counts and
-  // previews come straight off the board payload's own item lists.
-  const summaryData = useMemo(
-    () => SUMMARY_SECTIONS.map(key => ({ key, items: byKey[key]?.items || [] }))
-      .filter(s => s.items.length > 0),
-    [byKey],
-  )
-
-  // Plumbing + noise: present on the board, one quiet collapsed line each.
   const systemsSection = byKey.systems
   const safeSection = byKey.safe_to_ignore
-
-  // The whole-board caught-up check — nothing waiting anywhere.
-  const anyAttention =
-    messageItems.length > 0 ||
-    summaryData.length > 0 ||
-    (systemsSection?.items.length || 0) > 0 ||
-    (safeSection?.items.length || 0) > 0
 
   if (error && !loading) {
     return (
@@ -603,21 +462,16 @@ export default function OpsBoard() {
     )
   }
 
-  const pct = total ? Math.round((clearedCount / total) * 100) : 0
-
   return (
     <div className="min-h-full">
       <div className="mx-auto max-w-[1440px] px-4 pb-10 pt-5 sm:px-6">
 
-        {/* Header */}
-        <header className="flex flex-wrap items-end justify-between gap-3">
+        {/* Slim top bar: identity + Ask/Refresh. The focus bar below is the hero. */}
+        <header className="flex flex-wrap items-center justify-between gap-3">
           <div className="min-w-0">
-            <div className="flex items-center gap-2">
-              <h1 className="truncate text-lg font-semibold tracking-tight text-ink">
-                {data?.company || 'Ops Board'}
-              </h1>
-            </div>
-            {data?.email && <p className="mt-0.5 truncate text-[12px] text-ink-3">{data.email}</p>}
+            <h1 className="truncate text-[13px] font-semibold tracking-tight text-ink-2">
+              {data?.company || 'Ops Board'}
+            </h1>
           </div>
           <div className="flex items-center gap-2">
             {data?.refreshed_at && (
@@ -638,17 +492,14 @@ export default function OpsBoard() {
           </div>
         </header>
 
-        {/* Home · Assistant · Owner. Lives here under the page title, matching
-            where every other section's tab strip sits. */}
         <div className="mt-3">
           <SubNav />
         </div>
 
-        {/* Compact KPI strip up top — the old "Communication" strip and the
-            stat-tile band, merged into one dense row right under the brief
-            (owner: "smaller boxes... it's almost a little redundant"). Comms/
-            crew counts inside it are hidden for viewers — /comms, /requests and
-            crew chat are admin/manager-only, so they'd only link into 403s. */}
+        {/* 1 — FOCUS BAR */}
+        {!loading && <FocusBar firstName={firstName} focus={focus} navigate={navigate} />}
+
+        {/* 2 — KPI STRIP */}
         {!loading && (
           <TopBand stats={data?.stats}
             unreadConversations={unreadConversations}
@@ -666,158 +517,66 @@ export default function OpsBoard() {
         )}
 
         {loading ? (
-          /* Skeleton mirrors the above-the-fold split: a tall schedule panel
-             beside a short stack of feed cards. */
-          <div className="mt-4 grid grid-cols-1 gap-4 shell:grid-cols-[minmax(0,1.55fr)_minmax(0,1fr)]">
-            <div className="h-[26rem] animate-pulse rounded-2xl border border-hairline bg-panel" />
-            <div className="flex flex-col gap-4">
-              {Array.from({ length: 3 }).map((_, i) => (
-                <div key={i} className="h-40 animate-pulse rounded-2xl border border-hairline bg-panel" />
-              ))}
-            </div>
+          <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2 shell:grid-cols-3">
+            {Array.from({ length: 3 }).map((_, i) => (
+              <div key={i} className="h-72 animate-pulse rounded-2xl border border-hairline bg-panel" />
+            ))}
           </div>
         ) : (
           <>
-            {/* ── Above the fold: the schedule beside the Messages box ───────
-                At ~940px first paint is the trimmed KPI strip (above), the REAL
-                Schedule calendar (drag-to-reschedule and all), and Messages —
-                the three things the owner looks at first. The pipeline sections
-                moved to summary cards below; what's left beside the calendar is
-                the one list she answers from. Collapses to one column below the
-                shell: breakpoint. */}
-            <div data-testid="home-abovefold"
-              className="mt-4 grid grid-cols-1 gap-4 shell:grid-cols-[minmax(0,1.55fr)_minmax(0,1fr)] bb-board-in">
-              {/* Rendered regardless of the feed: an empty inbox must never hide
-                  the week's work. */}
-              <div data-testid="home-calendar-slot">
-                <HomeScheduleCalendar navigate={navigate} />
-              </div>
+            {/* 3 — THREE-COLUMN GRID. Per-column flex stacks so a short box packs
+                onto the next instead of height-locking to the tallest in its row
+                (owner: "too much empty spaces"). */}
+            <div data-testid="home-grid"
+              className="mt-4 grid grid-cols-1 items-start gap-4 sm:grid-cols-2 shell:grid-cols-[minmax(0,1.5fr)_minmax(0,1fr)_minmax(0,1.15fr)] bb-board-in">
 
+              {/* Column A — Today + needs-a-cleaner */}
               <div className="flex flex-col gap-4">
-                {messageItems.length > 0 ? (
-                  <>
-                    {/* Triage machinery (search / severity / cleared progress),
-                        scoped to the Messages list, folded behind one quiet
-                        disclosure so it reads calm (owner: "this is so busy").
-                        `/` opens it. */}
-                    <div className="flex items-center gap-2.5">
-                      <span className="text-[11px] tabular-nums text-ink-3">{clearedCount} of {total} cleared</span>
-                      <button
-                        onClick={() => setToolsOpen(v => !v)}
-                        aria-expanded={toolsOpen}
-                        className="ml-auto inline-flex h-7 items-center gap-1.5 rounded-md border border-hairline-2 bg-panel px-2 text-[11px] font-medium text-ink-2 hover:bg-bg-2">
-                        <SlidersHorizontal className="h-3 w-3" />
-                        Filters
-                        {filtersActive && <span className="h-1.5 w-1.5 rounded-full bg-indigo-600" aria-hidden="true" />}
-                        <ChevronDown className={`h-3 w-3 transition-transform ${toolsOpen ? 'rotate-180' : ''}`} />
-                      </button>
-                    </div>
-
-                    {toolsOpen && (
-                      <div className="space-y-2.5 rounded-xl border border-hairline bg-panel p-3">
-                        <div className="relative">
-                          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-ink-3" />
-                          <input
-                            ref={searchRef}
-                            value={query}
-                            onChange={e => setQuery(e.target.value)}
-                            placeholder="Search messages…  (press /)"
-                            className="w-full rounded-lg border border-hairline bg-bg py-2 pl-9 pr-3 text-[13px] text-ink placeholder:text-ink-3 focus:border-indigo-500 focus:outline-hidden" />
-                        </div>
-                        {/* Zero-count severities are noise ("Good 0") — only offered while active. */}
-                        <div className="flex flex-wrap gap-1.5">
-                          {SEV_ORDER.filter(sev => sev === 'all' || (counts[sev] || 0) > 0 || filter === sev).map(sev => (
-                            <FilterChip key={sev} sev={sev} count={counts[sev] || 0}
-                              active={filter === sev} onClick={() => setFilter(sev)} />
-                          ))}
-                        </div>
-                        <div className="flex items-center gap-3">
-                          <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-bg-2">
-                            <div className="h-full rounded-full bg-emerald-500 transition-all" style={{ width: `${pct}%` }} />
-                          </div>
-                          <div className="flex shrink-0 items-center gap-1.5">
-                            <button
-                              onClick={() => setHideCleared(v => !v)}
-                              className="inline-flex h-7 items-center gap-1 rounded-md border border-hairline-2 bg-panel px-2 text-[11px] font-medium text-ink-2 hover:bg-bg-2">
-                              {hideCleared ? <Eye className="h-3 w-3" /> : <EyeOff className="h-3 w-3" />}
-                              {hideCleared ? 'Show cleared' : 'Hide cleared'}
-                            </button>
-                            <button
-                              onClick={resetCleared}
-                              disabled={!clearedCount}
-                              className="inline-flex h-7 items-center gap-1 rounded-md border border-hairline-2 bg-panel px-2 text-[11px] font-medium text-ink-2 hover:bg-bg-2 disabled:opacity-40">
-                              <RotateCcw className="h-3 w-3" /> Reset
-                            </button>
-                          </div>
-                        </div>
-                      </div>
-                    )}
-
-                    {visibleMessages.length > 0 ? (
-                      <Section section={byKey.messages} items={visibleMessages}
-                        clearedSet={cleared} onToggle={toggleCleared}
-                        onAction={runAction} actioningKey={actioningKey} confirmingKey={confirmingKey}
-                        headerLink={SECTION_LINKS.messages} navigate={navigate}
-                        onClearAll={clearAllInSection} clearingSection={clearingSection}
-                        setConfirmingKey={setConfirmingKey} filtersActive={filtersActive}
-                        maxRows={MESSAGE_CAP} />
-                    ) : (
-                      <div className="rounded-2xl border border-hairline bg-panel px-3.5 py-6 text-center">
-                        <p className="text-[13px] font-semibold text-ink">No matches</p>
-                        <p className="mt-0.5 text-[11.5px] text-ink-3">Try a different search or filter.</p>
-                      </div>
-                    )}
-                  </>
-                ) : anyAttention ? (
-                  /* Inbox is clear but other work waits below — a single quiet
-                     line, not a full all-clear panel (owner veto on furniture). */
+                <HomeToday navigate={navigate} />
+                {needsCleanerItems.length > 0 && (
                   <div className="flex items-center gap-2.5 rounded-2xl border border-hairline bg-panel px-3.5 py-3">
-                    <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-emerald-500" aria-hidden="true" />
-                    <span className="min-w-0 flex-1 text-[12.5px] text-ink-2">No messages waiting.</span>
-                    <button onClick={() => navigate('/comms')}
+                    <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-amber-500" aria-hidden="true" />
+                    <span className="min-w-0 flex-1 text-[12.5px] text-ink-2">
+                      <span className="font-semibold text-ink">{needsCleanerItems.length}</span>
+                      {' '}{needsCleanerItems.length === 1 ? 'job' : 'jobs'} still {needsCleanerItems.length === 1 ? 'needs' : 'need'} a cleaner
+                    </span>
+                    <button onClick={() => navigate('/schedule?view=dispatch')}
                       className="inline-flex shrink-0 items-center gap-0.5 text-[11px] font-semibold text-indigo-600 transition-all hover:gap-1 dark:text-indigo-400">
-                      Inbox<ArrowRight className="h-3 w-3" />
+                      Open to crew<ArrowRight className="h-3 w-3" />
                     </button>
-                  </div>
-                ) : (
-                  <div className="flex items-center gap-2.5 rounded-2xl border border-hairline bg-panel px-3.5 py-4">
-                    <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-emerald-500" aria-hidden="true" />
-                    <div className="min-w-0">
-                      <p className="text-[13px] font-semibold text-ink">You're all caught up</p>
-                      <p className="text-[11.5px] text-ink-3">Nothing needs your attention right now.</p>
-                    </div>
                   </div>
                 )}
               </div>
+
+              {/* Column B — Flow + Money */}
+              <div className="flex flex-col gap-4">
+                <MiniListBox title="Flow" link={{ label: 'Open Flow', to: '/flow' }} rows={flowRows} navigate={navigate} />
+                <MiniListBox title="Money" link={{ label: 'Billing', to: '/billing' }} rows={moneyRows} navigate={navigate} />
+              </div>
+
+              {/* Column C — the comms rail. Office-only: both /api/crew/threads
+                  and /api/comms/* are admin/manager, so the whole rail is hidden
+                  for roles that would 403. Spans both tracks at the mid (2-col)
+                  width, its own track at shell:. */}
+              {canComms && (
+                <div data-testid="home-comms-rail" className="flex flex-col gap-4 sm:col-span-2 shell:col-span-1">
+                  <CrewBox navigate={navigate} />
+                  <ClientsBox items={messageItems} cleared={cleared} onAction={runAction}
+                    actioningKey={actioningKey} confirmingKey={confirmingKey} navigate={navigate} />
+                </div>
+              )}
             </div>
 
-            {/* ── The pipeline, below the fold ───────────────────────────────
-                Requests & quotes, coverage gaps and money each used to re-list
-                every row here. Those records now live on the Flow pipeline
-                (/flow) and Billing — so Home shows just the top line + the count
-                and hands off, instead of being a second copy of a page that
-                exists. This is the cut that killed the scroll. Empty sections
-                render nothing. */}
-            {summaryData.length > 0 && (
-              <div data-testid="home-summaries"
-                className="mt-4 grid grid-cols-1 items-start gap-4 shell:grid-cols-3 bb-board-in"
-                style={{ animationDelay: '40ms' }}>
-                {summaryData.map(({ key, items }) => (
-                  <SummaryCard key={key} meta={SUMMARY_META[key]} items={items} navigate={navigate} />
-                ))}
-              </div>
-            )}
+            {/* 4 — BELOW THE GRID (demoted, nothing lost) */}
 
-            {/* Quick actions — kept; the fastest way to start the things she
-                starts most. Office-only (every create flow is a write). */}
+            {/* Quick actions — office-only (every create flow is a write). */}
             {canComms && (
               <div className="mt-4 bb-board-in" style={{ animationDelay: '60ms' }}>
                 <QuickActions navigate={navigate} />
               </div>
             )}
 
-            {/* Systems + Safe to Ignore — present but one quiet collapsed line
-                each; plumbing and inbox noise, never front and centre. */}
+            {/* Systems + Safe to Ignore — one quiet collapsed line each. */}
             {((systemsSection?.items.length || 0) > 0 || (safeSection?.items.length || 0) > 0) && (
               <div className="mt-4 flex flex-col gap-4 bb-board-in" style={{ animationDelay: '80ms' }}>
                 {[systemsSection, safeSection].filter(s => s && s.items.length > 0).map(section => (
@@ -826,17 +585,16 @@ export default function OpsBoard() {
                     onAction={runAction} actioningKey={actioningKey} confirmingKey={confirmingKey}
                     navigate={navigate}
                     onClearAll={clearAllInSection} clearingSection={clearingSection}
-                    setConfirmingKey={setConfirmingKey} filtersActive={filtersActive}
+                    setConfirmingKey={setConfirmingKey} filtersActive={false}
                     maxRows={6} />
                 ))}
               </div>
             )}
 
-            {/* ── The bench ──────────────────────────────────────────────────
-                Who's asking for work and the week's round-up. Both fetch
-                themselves, so both wait until scrolled to (WhenVisible). Neither
-                approves here — the office says yes on the marketplace page
-                itself (brightbase-marketplace guard). */}
+            {/* The bench — who's asking for work + the week's round-up. Both
+                fetch themselves, so both wait until scrolled to (WhenVisible).
+                Neither approves here — the office says yes on the marketplace
+                page itself (brightbase-marketplace guard). */}
             <div data-testid="home-bento"
               className="mt-4 grid grid-cols-1 gap-4 shell:grid-cols-2 bb-board-in"
               style={{ animationDelay: '100ms' }}>
@@ -848,19 +606,15 @@ export default function OpsBoard() {
               </WhenVisible>
             </div>
 
-            {/* Notes + Ask Nova — the smallest, last zone. They used to take a
-                full section up high; now they're secondary, below everything
-                operational, still draggable to taste. Office-only Nova falls out
-                for a viewer, so the zone quietly shrinks. */}
+            {/* Notes + Ask Nova — the smallest, last zone. */}
             <div className="mt-4 bb-board-in" style={{ animationDelay: '120ms' }}>
               <WhenVisible minHeight="14rem">
-              <HomeWidgets items={[
-                { key: 'notes', label: 'Notes', node: <StickyNotes /> },
-                canComms && { key: 'nova', label: 'Ask Nova', node: <NovaChat navigate={navigate} /> },
-              ].filter(Boolean)} />
+                <HomeWidgets items={[
+                  { key: 'notes', label: 'Notes', node: <StickyNotes /> },
+                  canComms && { key: 'nova', label: 'Ask Nova', node: <NovaChat navigate={navigate} /> },
+                ].filter(Boolean)} />
               </WhenVisible>
             </div>
-
           </>
         )}
 
@@ -871,7 +625,6 @@ export default function OpsBoard() {
           </div>
         )}
 
-        {/* Provenance footnote — mirrors the artifact's honesty about data sources. */}
         <p className="mt-3 text-[10.5px] leading-relaxed text-ink-3">
           Live from BrightBase — jobs, invoices, quotes, conversations and integration health.
           Check-offs are saved on this device. Twilio balance isn't live yet.
