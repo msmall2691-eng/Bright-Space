@@ -131,14 +131,50 @@ export default function GeneralTab({ toast, active, automation, dangerZone }) {
     setLogoUploading(false)
   }
 
+  // Anchored jump-nav for the long General tab: a sticky row of links that
+  // scroll to each section, so the tab reads as a map instead of a wall you
+  // thumb through. Scroll is smooth unless the OS asks for reduced motion.
+  const JUMP = [
+    ['appearance', 'Appearance'],
+    ['notifications', 'Notifications'],
+    ['company', 'Company'],
+    ['services', 'Services'],
+    ['property', 'Property'],
+    ['automation', 'Automation'],
+    ['data', 'Data'],
+    ['danger', 'Danger zone'],
+  ]
+  const jumpTo = (id) => {
+    const el = document.getElementById(id)
+    if (!el) return
+    const reduce = window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches
+    el.scrollIntoView({ behavior: reduce ? 'auto' : 'smooth', block: 'start' })
+  }
+
   return (
     <div className="flex-1 overflow-y-auto px-4 sm:px-8 pb-8 bg-bg">
-      <div className="max-w-2xl pt-6 space-y-5">
-        <div>
+      <div className="max-w-2xl space-y-5">
+        {/* Sticky section map — turns the long scroll into something you can
+            navigate. Token-built, no accent fill; blurs the content beneath it
+            the same way the schedule agenda header does. */}
+        <nav className="sticky top-0 z-10 -mx-4 sm:-mx-8 px-4 sm:px-8 py-3 bg-bg/95 backdrop-blur-sm border-b border-hairline flex items-center gap-0.5 overflow-x-auto scrollbar-thin">
+          {JUMP.map(([id, label]) => (
+            <button key={id} type="button" onClick={() => jumpTo(id)}
+              className="shrink-0 whitespace-nowrap px-2.5 py-1 rounded-md text-[12px] font-medium text-ink-3 hover:text-ink-2 hover:bg-bg-2 transition-colors">
+              {label}
+            </button>
+          ))}
+        </nav>
+
+        <section id="appearance" className="scroll-mt-24">
           <h2 className="text-lg font-bold text-ink mb-4">Appearance</h2>
           <div className="bg-panel rounded-xl border border-hairline p-5">
             <label className={lbl}>Theme</label>
-            <div className="flex gap-2 mt-1">
+            {/* Neutral segmented control (bg-bg-2 track / bg-panel active) —
+                same vocabulary as the section switcher and the rest of the
+                Oct 2026 polish sweep; the active state is bg-panel, never an
+                accent fill. */}
+            <div className="flex items-center gap-0.5 bg-bg-2 rounded-lg p-0.5 mt-1">
               {[
                 { value: 'light', label: 'Light' },
                 { value: 'dark', label: 'Dark' },
@@ -146,10 +182,11 @@ export default function GeneralTab({ toast, active, automation, dangerZone }) {
               ].map(opt => (
                 <button key={opt.value} type="button"
                   onClick={() => setThemeChoice(applyTheme(opt.value))}
-                  className={`flex-1 px-3 py-2 rounded-lg text-sm font-semibold border transition-colors ${
+                  aria-pressed={themeChoice === opt.value}
+                  className={`flex-1 px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
                     themeChoice === opt.value
-                      ? 'bg-indigo-600 text-white border-indigo-600'
-                      : 'bg-bg-2 text-ink-2 border-hairline hover:border-hairline-2'
+                      ? 'bg-panel text-ink shadow-xs'
+                      : 'text-ink-3 hover:text-ink-2'
                   }`}>
                   {opt.label}
                 </button>
@@ -195,11 +232,13 @@ export default function GeneralTab({ toast, active, automation, dangerZone }) {
               </label>
             </div>
           </div>
-        </div>
+        </section>
 
-        <NotificationsCard toast={toast} />
+        <section id="notifications" className="scroll-mt-24">
+          <NotificationsCard toast={toast} />
+        </section>
 
-        <div>
+        <section id="company" className="scroll-mt-24">
           <h2 className="text-lg font-bold text-ink mb-4">Company Information</h2>
           <div className="bg-panel rounded-xl border border-hairline p-5">
             <div>
@@ -282,11 +321,55 @@ export default function GeneralTab({ toast, active, automation, dangerZone }) {
               <p className="text-[11px] text-ink-3 mt-1">Shown as a friendly checklist on the quote email, PDF, and public page (heading “A Few Things Before We Clean”). One policy per line. Applies to home cleans; short-term rental turnovers and commercial jobs use their own turnover/commercial-appropriate notes. Leave blank to use the built-in professional defaults.</p>
             </div>
           </div>
-        </div>
+        </section>
 
-        <ServiceScopesEditor toast={toast} />
+        <section id="regional" className="scroll-mt-24">
+          <h2 className="text-lg font-bold text-ink mb-4">Regional Settings</h2>
+          <div className="bg-panel rounded-xl border border-hairline p-5 space-y-4">
+            <div>
+              <label className={lbl}>Timezone</label>
+              <select value={generalSettings.timezone}
+                onChange={e => setGeneralSettings(s => ({ ...s, timezone: e.target.value }))}
+                className={inp}>
+                <option value="America/New_York">Eastern Time (ET)</option>
+                <option value="America/Chicago">Central Time (CT)</option>
+                <option value="America/Denver">Mountain Time (MT)</option>
+                <option value="America/Los_Angeles">Pacific Time (PT)</option>
+                <option value="UTC">UTC</option>
+              </select>
+            </div>
+            <div>
+              <label className={lbl}>Currency</label>
+              {/* Bright Space is US-only today — every downstream (quotes,
+                  invoices, Stripe integration) assumes USD. EUR/GBP/CAD were
+                  visible in the dropdown but not actually supported anywhere,
+                  which set operators up to save a value that would silently
+                  do nothing. When we expand, re-add the options AND wire up
+                  the formatters. */}
+              <select value={generalSettings.currency}
+                onChange={e => setGeneralSettings(s => ({ ...s, currency: e.target.value }))}
+                className={inp}>
+                <option value="USD">USD ($)</option>
+              </select>
+            </div>
+          </div>
+        </section>
 
-        <div>
+        {/* Saves Company Information + Regional (both live in generalSettings),
+            so it sits directly under them instead of adrift at the bottom of
+            the tab the way it used to. Service scopes, property media, and
+            automation each save themselves, in their own sections below. */}
+        <button onClick={saveGeneralSettings} disabled={generalSaving}
+          className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white px-5 py-2.5 rounded-xl text-sm font-semibold transition-colors">
+          {generalSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle className="w-4 h-4" />}
+          Save Changes
+        </button>
+
+        <section id="services" className="scroll-mt-24">
+          <ServiceScopesEditor toast={toast} />
+        </section>
+
+        <section id="property" className="scroll-mt-24">
           <h2 className="text-lg font-bold text-ink mb-4">Property Photos &amp; Data</h2>
           <div className="bg-panel rounded-xl border border-hairline p-5 space-y-5">
             {/* Street View photo */}
@@ -335,11 +418,13 @@ export default function GeneralTab({ toast, active, automation, dangerZone }) {
               {propertyMediaSaving ? 'Saving…' : 'Save property settings'}
             </button>
           </div>
-        </div>
+        </section>
 
-        {automation && <AutomationSection state={automation} toast={toast} active={active} />}
+        <section id="automation" className="scroll-mt-24">
+          {automation && <AutomationSection state={automation} toast={toast} active={active} />}
+        </section>
 
-        <div>
+        <section id="data" className="scroll-mt-24">
           <h2 className="text-lg font-bold text-ink mb-4">Data Quality</h2>
           <div className="bg-panel rounded-xl border border-hairline p-5">
             <p className="text-sm text-ink-2">
@@ -351,49 +436,14 @@ export default function GeneralTab({ toast, active, automation, dangerZone }) {
               Open Tidy Up<ArrowRight className="h-3.5 w-3.5" />
             </Link>
           </div>
-        </div>
-
-        <div>
-          <h2 className="text-lg font-bold text-ink mb-4">Regional Settings</h2>
-          <div className="bg-panel rounded-xl border border-hairline p-5 space-y-4">
-            <div>
-              <label className={lbl}>Timezone</label>
-              <select value={generalSettings.timezone}
-                onChange={e => setGeneralSettings(s => ({ ...s, timezone: e.target.value }))}
-                className={inp}>
-                <option value="America/New_York">Eastern Time (ET)</option>
-                <option value="America/Chicago">Central Time (CT)</option>
-                <option value="America/Denver">Mountain Time (MT)</option>
-                <option value="America/Los_Angeles">Pacific Time (PT)</option>
-                <option value="UTC">UTC</option>
-              </select>
-            </div>
-            <div>
-              <label className={lbl}>Currency</label>
-              {/* Bright Space is US-only today — every downstream (quotes,
-                  invoices, Stripe integration) assumes USD. EUR/GBP/CAD were
-                  visible in the dropdown but not actually supported anywhere,
-                  which set operators up to save a value that would silently
-                  do nothing. When we expand, re-add the options AND wire up
-                  the formatters. */}
-              <select value={generalSettings.currency}
-                onChange={e => setGeneralSettings(s => ({ ...s, currency: e.target.value }))}
-                className={inp}>
-                <option value="USD">USD ($)</option>
-              </select>
-            </div>
+          <div className="mt-5">
+            <DataHealthCard />
           </div>
-        </div>
+        </section>
 
-        <button onClick={saveGeneralSettings} disabled={generalSaving}
-          className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white px-5 py-2.5 rounded-xl text-sm font-semibold transition-colors">
-          {generalSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle className="w-4 h-4" />}
-          Save Changes
-        </button>
-
-        <DataHealthCard />
-
-        {dangerZone}
+        <section id="danger" className="scroll-mt-24">
+          {dangerZone}
+        </section>
       </div>
     </div>
   )

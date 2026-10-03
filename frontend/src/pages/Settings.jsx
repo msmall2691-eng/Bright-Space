@@ -71,13 +71,17 @@ export default function Settings() {
             icon={SettingsIcon}
             iconColor="slate"
           >
-            {/* Page-level tabs (Settings / Crew / Payroll) sit above the
-                section switcher below. Both rows speak SubNav's underline
-                vocabulary — the sections are just smaller. (The old solid
-                indigo pills were the last filled tab bar in the office.) */}
-            <SubNav className="mb-1.5" />
+            {/* Page-level tabs (Settings / Crew / Payroll) keep SubNav's
+                underline vocabulary. The section switcher below is the neutral
+                token-built segmented control the Oct 2026 page-polish sweep
+                standardized on (bg-bg-2 track / bg-panel active) — same as
+                Clients (#1041), Billing (#1042), Messages (#1043). Still never
+                a filled colored pill: the old solid-indigo section tabs were
+                retired for exactly that, and this active state is bg-panel, not
+                an accent fill. */}
+            <SubNav className="mb-2" />
 
-            <div className="flex items-center gap-4 overflow-x-auto scrollbar-thin">
+            <div className="inline-flex items-center gap-0.5 bg-bg-2 rounded-lg p-0.5 max-w-full overflow-x-auto scrollbar-thin">
               {[
                 ['general', 'General', Settings2, true],
                 ['integrations', 'Integrations', Plug, true],
@@ -87,10 +91,10 @@ export default function Settings() {
               ].filter(([, , , show]) => show).map(([key, label, Icon]) => (
                 <button key={key} onClick={() => setSection(key)}
                   aria-current={section === key ? 'true' : undefined}
-                  className={`shrink-0 whitespace-nowrap flex items-center gap-1.5 border-b-2 px-0.5 py-1.5 text-xs font-medium transition-colors ${
+                  className={`shrink-0 whitespace-nowrap flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
                     section === key
-                      ? 'border-ink text-ink'
-                      : 'border-transparent text-ink-3 hover:text-ink-2'}`}>
+                      ? 'bg-panel text-ink shadow-xs'
+                      : 'text-ink-3 hover:text-ink-2'}`}>
                   <Icon className="w-3.5 h-3.5" /> {label}
                 </button>
               ))}
