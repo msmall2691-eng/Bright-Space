@@ -21,6 +21,7 @@
 import OpsSummary from './OpsSummary'
 import DateStrip from './DateStrip'
 import OpsAlerts from './OpsAlerts'
+import NeedsDateStrip from './NeedsDateStrip'
 import DayActionButtons from './DayActionButtons'
 import { toLocalYMD, todayYMD } from '../../utils/format'
 
@@ -34,10 +35,12 @@ export default function AgendaHero({
   loadByDate,
   jobs,
   properties,
+  unscheduled,
   isToday,
   onDateSelect,
   onFocusUnassigned,
   onOpenToCrew,
+  onSchedule,
 }) {
   const dateLabel = new Date(`${toLocalYMD(currentDate)}T00:00`).toLocaleDateString('en-US', {
     weekday: 'long',
@@ -94,6 +97,12 @@ export default function AgendaHero({
           onFocusUnassigned={onFocusUnassigned}
           onOpenToCrew={onOpenToCrew}
         />
+        {/* Accepted jobs that still need a date. This used to live only on the
+            office command bar, so on a phone those undated jobs were invisible
+            on this page — you had to go to the dashboard or the job to set a
+            date. Same component + handler as the desktop bar; renders nothing
+            when there are none, so calm days stay calm. */}
+        <NeedsDateStrip jobs={unscheduled} onSchedule={onSchedule} />
       </div>
     </div>
   )

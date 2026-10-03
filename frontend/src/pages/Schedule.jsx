@@ -21,7 +21,6 @@ import VisitDetailsDrawer from '../components/schedule/VisitDetailsDrawer'
 import { ComposeModal } from '../components/comms/ComposeModal'
 import ScheduleToolbar from '../components/schedule/ScheduleToolbar'
 import SubNav from '../components/ui/SubNav'
-import GoogleCalendarView from '../components/schedule/GoogleCalendarView'
 import ScheduleSyncSettings from '../components/schedule/ScheduleSyncSettings'
 import { AutoAssignModal, FixTimesModal, OpenToCrewModal, PurgeGhostsModal } from '../components/schedule/PowerToolModals'
 import { AvailabilityPanel } from '../components/schedule/ScheduleTabs'
@@ -53,12 +52,15 @@ export default function Schedule() {
   // desktop. The old "always default to month" landed a dispatcher on a
   // grid of "10:00" pills with no context — the July audit called it out.
   // Three visible tabs (Day / Week / Month) since Aug 2026 — the owner asked
-  // for fewer ("I don't need all the tabs"). 'upcoming' and 'google' still
-  // render when reached via ?view= (old bookmarks), they just have no button.
+  // for fewer ("I don't need all the tabs"). 'upcoming' still renders when
+  // reached via ?view= (old bookmarks), it just has no button.
   // Legacy 'agenda'/'dispatch' values (old bookmarks + remembered prefs)
-  // normalize to 'day', which picks its own layout by window width below.
-  const VALID_VIEWS = ['day', 'week', 'month', 'upcoming', 'google']
-  const normalizeView = (v) => (v === 'agenda' || v === 'dispatch') ? 'day' : v
+  // normalize to 'day'; the retired embedded-Google view ('google') falls back
+  // to 'month' (the in-app calendar centerpiece) so old bookmarks still land on
+  // a calendar. Each picks its own layout by window width below.
+  const VALID_VIEWS = ['day', 'week', 'month', 'upcoming']
+  const normalizeView = (v) =>
+    (v === 'agenda' || v === 'dispatch') ? 'day' : (v === 'google' ? 'month' : v)
   const rawView = normalizeView(searchParams.get('view'))
   const isMobile = useIsMobile(768)
   // Half-screen fix: below this width the wide Day timeline stops earning
@@ -552,9 +554,12 @@ export default function Schedule() {
           "Needs a date" list) into one dense bento, and brings the actionable
           OpsAlerts (needs-crew / subs-waiting, with "Open to crew") to the
           desktop — they previously only rendered in the phone AgendaHero.
-          Suppressed in agenda (AgendaHero already carries the summary, alerts
-          and needs-date; two of each stacked is the "way too busy" the owner
-          flagged). On the wide Day view (dispatch) the KPI line is hidden —
+          Suppressed in agenda (AgendaHero already carries the summary + the
+          same OpsAlerts + its own "Needs a date" strip; stacking a second copy
+          is the "way too busy" the owner flagged). The phone AgendaHero now
+          shows the same "Needs a date" list, so undated accepted jobs are
+          reachable on a phone from this page too.
+          On the wide Day view (dispatch) the KPI line is hidden —
           DayBoard owns the big date header + OpsSummary there — so this bar
           contributes only the alerts + needs-date. "Schedule" opens the same
           edit modal as the drawer's Edit; saving a date lands the job on the
@@ -602,10 +607,12 @@ export default function Schedule() {
             loadByDate={loadByDate}
             jobs={jobs}
             properties={properties}
+            unscheduled={unscheduled}
             isToday={dateStr === todayYMD()}
             onDateSelect={setCurrentDate}
             onFocusUnassigned={() => setUnassignedOnly(v => !v)}
             onOpenToCrew={handleOpenToCrew}
+            onSchedule={handleEditJob}
           />
           <div className="flex-1 min-h-0">
             <AgendaDay
@@ -708,11 +715,6 @@ export default function Schedule() {
             showGuestStays={showGuestStays}
           />
         </div>
-      ) : viewMode === 'google' ? (
-        /* Google Calendar embedded in-app — use it as the schedule surface
-           directly. Self-contained (its own month/nav), so the BrightBase
-           date-nav is hidden for this view. */
-        <GoogleCalendarView reloadKey={calRefresh} />
       ) : null /* VALID_VIEWS is fully covered above; no fallback branch needed */}
       </div>
 
