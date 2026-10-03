@@ -2407,6 +2407,44 @@ def crew_job_detail(
                     house_notes=house_notes, photos=photos)
 
 
+@router.get("/jobs/{job_id}/property-photo")
+def crew_job_property_photo(
+    job_id: int,
+    db: Session = Depends(get_db),
+    org_id: int = Depends(current_org_id),
+    current_user: User = Depends(require_role("cleaner")),
+):
+    """The front-of-house Street View photo for a job's property — the same
+    picture the office and the customer see, so a cleaner can recognise the
+    house from the road before they pull in.
+
+    ASSIGNED-ONLY (404 otherwise), exactly like crew_job_detail: the photo
+    reveals which house this is, so it's need-to-know alongside the address and
+    never rides an open-offer card. Lazy-loaded by the card and cached a day in
+    the browser (Cache-Control), so a cleaner on bad rural cell pays for it
+    once. 404 when photos are off, no key is set, or Google has no imagery for
+    the address — the client simply hides the tile, same as everywhere else the
+    Street View photo appears."""
+    _require_crew_id(current_user)
+    oid = resolve_org_id(org_id, db)
+    job = (db.query(Job)
+           .options(joinedload(Job.property))
+           .filter(or_(Job.org_id == oid, Job.org_id.is_(None)), Job.id == job_id)
+           .first())
+    if not job or current_user.cleaner_id not in (job.cleaner_ids or []):
+        raise HTTPException(status_code=404, detail="Job not found.")
+    from services.property_media import street_view_enabled, street_view_bytes
+    from modules.settings.router import get_setting
+    if not street_view_enabled(db):
+        raise HTTPException(status_code=404, detail="No photo")
+    address = ((job.property.address if job.property else None) or job.address or "").strip()
+    img = street_view_bytes(address, get_setting(db, "google_maps_api_key")) if address else None
+    if not img:
+        raise HTTPException(status_code=404, detail="No photo")
+    return Response(content=img, media_type="image/jpeg",
+                    headers={"Cache-Control": "private, max-age=86400"})
+
+
 # ── Weather (Today-tab greeting) ─────────────────────────────────────────────
 # Open-Meteo: free, keyless, and fail-soft — a weather hiccup must never
 # break the schedule screen. Cached in-process for 30 minutes per worker.

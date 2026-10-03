@@ -25,6 +25,7 @@ import { wifiQrPayload, qrMatrix, qrSvgPath } from './wifiQr'
 import { copyToClipboard } from '../../utils/clipboard'
 import StatusBadge from '../ui/StatusBadge'
 import { SOFT, SectionLabel, DisclosureRow } from './primitives'
+import PropertyPhoto from '../PropertyPhoto'
 
 export function fmtTimeRange(start, end) {
   if (!start && !end) return ''
@@ -278,6 +279,21 @@ export default function JobCard({ job, onMarkDone, onPhotos, onRespond, onDeclin
           <StatusBadge status="info" className="shrink-0">Turnover</StatusBadge>
         )}
       </div>
+
+      {!job.open && job.address && (
+        /* The house from the road — the same Street View the office and the
+           customer see, so a cleaner recognises where they're going before
+           they pull in. Assigned jobs only (the endpoint 404s otherwise, and
+           an open-offer card has no address anyway); lazy, so it only loads
+           for a card actually on screen; cached a day in the browser after
+           that — one paid fetch, friendly to rural cell. Hides itself when
+           there's no imagery or photos are off. */
+        <PropertyPhoto
+          url={`/api/crew/jobs/${job.id}/property-photo`}
+          lazy
+          className="mt-3 w-full h-32 rounded-lg object-cover border border-hairline"
+        />
+      )}
 
       {done && job.completion_note && (
         <div className="mt-2 text-[12px] text-ink-3">Your note: “{job.completion_note}”</div>

@@ -1,5 +1,13 @@
 import { useEffect, useRef, useState } from 'react'
-import { getJWT } from '../api'
+
+// Read the JWT straight from localStorage rather than importing it from
+// ../api. This component is pulled into very widely-rendered surfaces (the
+// crew JobCard, the office PropertyDetail), and importing a named api export
+// would make every test that partially mocks ../api throw the moment it
+// rendered one of those with an address. Same key api.getJWT uses.
+function readJWT() {
+  try { return localStorage.getItem('brightbase_jwt') } catch { return null }
+}
 
 /** Front-of-house Street View photo for an address — the SAME photo the
  *  customer sees on their quote, shown to staff on the Requests list/drawer and
@@ -11,13 +19,26 @@ import { getJWT } from '../api'
  *  Google has no imagery (a 404), so a missing photo never leaves a broken tile.
  *
  *  `lazy` defers the fetch until the element scrolls into view — every fetch is
- *  a paid Street View call, so list cards use lazy to only load what's seen. */
-export default function PropertyPhoto({ address, className = '', lazy = false }) {
+ *  a paid Street View call, so list cards use lazy to only load what's seen.
+ *
+ *  Two ways to point it at a photo:
+ *   - `address` → the staff, address-keyed quotes endpoint (office surfaces).
+ *   - `url`     → an explicit endpoint, for callers with their own gated route
+ *                 (e.g. the crew app's assigned-only /api/crew/jobs/:id/
+ *                 property-photo, which the office quotes endpoint 403s for).
+ *  `url` wins when both are given. */
+export default function PropertyPhoto({ address, url, className = '', lazy = false }) {
   const [src, setSrc] = useState(null)
   const [failed, setFailed] = useState(false)
   const [visible, setVisible] = useState(!lazy)
   const boxRef = useRef(null)
   const objUrl = useRef(null)
+  // The endpoint to fetch: an explicit url, else the address-keyed quotes photo.
+  // Null when neither is usable (no url and too short an address to match).
+  const endpoint = url
+    || ((address || '').trim().length >= 5
+      ? `/api/quotes/property-photo?address=${encodeURIComponent((address || '').trim())}`
+      : null)
 
   // Lazy: wait until the placeholder is near the viewport before fetching.
   useEffect(() => {
@@ -37,10 +58,9 @@ export default function PropertyPhoto({ address, className = '', lazy = false })
     const clear = () => { if (objUrl.current) { URL.revokeObjectURL(objUrl.current); objUrl.current = null } }
     setSrc(null); setFailed(false); clear()
 
-    const a = (address || '').trim()
-    if (a.length < 5) { setFailed(true); return }
-    const token = getJWT()
-    fetch(`/api/quotes/property-photo?address=${encodeURIComponent(a)}`, {
+    if (!endpoint) { setFailed(true); return }
+    const token = readJWT()
+    fetch(endpoint, {
       headers: token ? { Authorization: `Bearer ${token}` } : {},
     })
       .then(r => (r.ok ? r.blob() : Promise.reject(r.status)))
@@ -53,7 +73,7 @@ export default function PropertyPhoto({ address, className = '', lazy = false })
       .catch(() => { if (!cancelled) setFailed(true) })
 
     return () => { cancelled = true; clear() }
-  }, [address, visible])
+  }, [endpoint, visible])
 
   if (src) return <img src={src} alt="Property (Street View)" loading="lazy" className={className} />
   // Lazy: keep a sized placeholder to observe until we know the result; collapse

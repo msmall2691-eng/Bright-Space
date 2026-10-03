@@ -10,7 +10,24 @@ import Button from '../components/ui/Button'
 import RecordLink from '../components/RecordLink'
 import CustomerActions from '../components/comms/CustomerActions'
 import AiInsight from '../components/AiInsight'
+import PropertyPhoto from '../components/PropertyPhoto'
 import GlassCard from '../components/ui/GlassCard'
+
+const PROPERTY_TYPE_LABELS = { str: 'Short-term rental', commercial: 'Commercial', residential: 'Residential' }
+
+/** The at-a-glance specs we actually have for this house — type, beds, baths,
+ *  square footage, year built. Only fields on file, so the panel is never a row
+ *  of blanks. */
+function propertySpecs(p) {
+  const out = []
+  const type = PROPERTY_TYPE_LABELS[p.property_type]
+  if (type) out.push({ label: 'Type', value: type })
+  if (p.bedrooms != null) out.push({ label: 'Bedrooms', value: p.bedrooms })
+  if (p.bathrooms != null) out.push({ label: 'Bathrooms', value: p.bathrooms })
+  if (p.square_footage != null) out.push({ label: 'Square feet', value: Number(p.square_footage).toLocaleString() })
+  if (p.year_built != null) out.push({ label: 'Year built', value: p.year_built })
+  return out
+}
 import { ICAL_SOURCES } from '../components/properties/constants'
 import { isStaleSync, relTimeAgo } from '../components/properties/utils'
 import { groupJobsByService } from '../utils/services'
@@ -613,6 +630,36 @@ export default function PropertyDetail() {
       {/* Content */}
       <div className="flex-1 overflow-auto">
         <div className="max-w-6xl mx-auto p-4">
+          {/* House at a glance — the front-of-house Street View photo and the
+              key specs, the "more visual" property view the owner asked for.
+              Both halves self-hide: the photo renders nothing when there's no
+              imagery or no key, and the specs show only fields on file, so an
+              under-documented house doesn't leave an empty frame. */}
+          {(() => {
+            const specs = propertySpecs(property)
+            if (!specs.length && !property.address) return null
+            return (
+              <div className="mb-4 flex flex-col sm:flex-row gap-4">
+                {property.address && (
+                  <PropertyPhoto
+                    address={property.address}
+                    className="w-full sm:w-72 shrink-0 aspect-video rounded-xl object-cover border border-hairline"
+                  />
+                )}
+                {specs.length > 0 && (
+                  <dl className="grid grid-cols-2 gap-x-8 gap-y-3 content-start">
+                    {specs.map(s => (
+                      <div key={s.label}>
+                        <dt className="text-[11px] text-ink-3">{s.label}</dt>
+                        <dd className="text-lg font-semibold text-ink tabular-nums">{s.value}</dd>
+                      </div>
+                    ))}
+                  </dl>
+                )}
+              </div>
+            )
+          })()}
+
           {/* AI-enriched gist of the property: specs, access, notable notes. */}
           <AiInsight type="property" id={propertyId} className="mb-4" />
           {error && (

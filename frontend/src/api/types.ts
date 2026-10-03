@@ -7807,6 +7807,36 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/crew/jobs/{job_id}/property-photo": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Crew Job Property Photo
+         * @description The front-of-house Street View photo for a job's property — the same
+         *     picture the office and the customer see, so a cleaner can recognise the
+         *     house from the road before they pull in.
+         *
+         *     ASSIGNED-ONLY (404 otherwise), exactly like crew_job_detail: the photo
+         *     reveals which house this is, so it's need-to-know alongside the address and
+         *     never rides an open-offer card. Lazy-loaded by the card and cached a day in
+         *     the browser (Cache-Control), so a cleaner on bad rural cell pays for it
+         *     once. 404 when photos are off, no key is set, or Google has no imagery for
+         *     the address — the client simply hides the tile, same as everywhere else the
+         *     Street View photo appears.
+         */
+        get: operations["crew_job_property_photo_api_crew_jobs__job_id__property_photo_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/crew/weather": {
         parameters: {
             query?: never;
@@ -22988,6 +23018,37 @@ export interface operations {
         };
     };
     crew_job_detail_api_crew_jobs__job_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                job_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    crew_job_property_photo_api_crew_jobs__job_id__property_photo_get: {
         parameters: {
             query?: never;
             header?: never;
