@@ -1,0 +1,113 @@
+"""Crew property-photo endpoint — the Street View house picture on the job card.
+
+Same assigned-only rule as the rest of the crew job context: the photo reveals
+which house this is, so an unassigned cleaner (even a lead who can see the whole
+month) gets a 404. The Google call itself is mocked — we're testing the gate and
+the plumbing, not Google's imagery (the service layer is covered in
+test_property_media.py and is fail-soft by design).
+"""
+import uuid
+from datetime import time
+
+import pytest
+from fastapi.testclient import TestClient
+
+from main import app
+from database.db import SessionLocal
+from database.models import Client, Property, Job
+from modules.auth.router import get_current_user, current_org_id
+from utils.dates import business_today
+import services.property_media as pm
+
+
+class _Cleaner:
+    def __init__(self, uid, cleaner_id):
+        self.id, self.org_id, self.role, self.status, self.active = uid, 1, "cleaner", "active", True
+        self.email = f"cleaner-{uid}@example.com"
+        self.full_name = "Pat Tester"
+        self.cleaner_id = cleaner_id
+        self.can_view_full_schedule = True   # even a lead gets 404 on others' photos
+
+
+def _as(user):
+    app.dependency_overrides[get_current_user] = lambda: user
+    app.dependency_overrides[current_org_id] = lambda: 1
+    return TestClient(app)
+
+
+def _clear():
+    app.dependency_overrides.pop(get_current_user, None)
+    app.dependency_overrides.pop(current_org_id, None)
+
+
+@pytest.fixture
+def job():
+    db = SessionLocal()
+    tag = uuid.uuid4().hex[:6]
+    c = Client(name=f"Pho {tag}", status="active", org_id=1)
+    db.add(c); db.commit(); db.refresh(c)
+    p = Property(client_id=c.id, name=f"9 Oak {tag}", address=f"9 Oak {tag}", org_id=1)
+    db.add(p); db.commit(); db.refresh(p)
+    j = Job(client_id=c.id, property_id=p.id, job_type="residential",
+            title=f"Pho clean {tag}", scheduled_date=business_today(),
+            start_time=time(9, 0), end_time=time(11, 0),
+            cleaner_ids=["CT-pho-1"], status="scheduled", org_id=1)
+    db.add(j); db.commit(); db.refresh(j)
+    ids = (j.id, p.id, c.id)
+    db.close()
+    yield ids[0]
+    db = SessionLocal()
+    db.query(Job).filter(Job.id == ids[0]).delete(synchronize_session=False)
+    db.query(Property).filter(Property.id == ids[1]).delete(synchronize_session=False)
+    db.query(Client).filter(Client.id == ids[2]).delete(synchronize_session=False)
+    db.commit(); db.close()
+
+
+def test_assigned_cleaner_gets_the_photo(job, monkeypatch):
+    monkeypatch.setattr(pm, "street_view_enabled", lambda db: True)
+    monkeypatch.setattr(pm, "street_view_bytes", lambda addr, key, size="640x360": b"JPEGBYTES")
+    try:
+        r = _as(_Cleaner(9985, "CT-pho-1")).get(f"/api/crew/jobs/{job}/property-photo")
+        assert r.status_code == 200
+        assert r.headers["content-type"] == "image/jpeg"
+        assert r.content == b"JPEGBYTES"
+    finally:
+        _clear()
+
+
+def test_unassigned_cleaner_404s_without_calling_google(job, monkeypatch):
+    # The assignment gate runs BEFORE the photo service, so an unassigned
+    # cleaner never even triggers a (paid) Street View lookup.
+    called = {"n": 0}
+
+    def _boom(*a, **k):
+        called["n"] += 1
+        return b"x"
+
+    monkeypatch.setattr(pm, "street_view_enabled", lambda db: True)
+    monkeypatch.setattr(pm, "street_view_bytes", _boom)
+    try:
+        r = _as(_Cleaner(9986, "CT-pho-2")).get(f"/api/crew/jobs/{job}/property-photo")
+        assert r.status_code == 404
+        assert called["n"] == 0
+    finally:
+        _clear()
+
+
+def test_photos_off_404s(job, monkeypatch):
+    monkeypatch.setattr(pm, "street_view_enabled", lambda db: False)
+    try:
+        r = _as(_Cleaner(9987, "CT-pho-1")).get(f"/api/crew/jobs/{job}/property-photo")
+        assert r.status_code == 404
+    finally:
+        _clear()
+
+
+def test_enabled_but_no_imagery_404s(job, monkeypatch):
+    monkeypatch.setattr(pm, "street_view_enabled", lambda db: True)
+    monkeypatch.setattr(pm, "street_view_bytes", lambda addr, key, size="640x360": None)
+    try:
+        r = _as(_Cleaner(9988, "CT-pho-1")).get(f"/api/crew/jobs/{job}/property-photo")
+        assert r.status_code == 404
+    finally:
+        _clear()
