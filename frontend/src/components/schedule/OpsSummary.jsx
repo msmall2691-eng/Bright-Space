@@ -10,14 +10,18 @@
 
 export default function OpsSummary({ stats, isToday, compact = false }) {
   if (!stats || stats.jobs === 0) return null
-  // `compact` (the phone/agenda hero) shows only the two the dispatcher acts
-  // on — how many jobs, and how many still need a crew. capacity% and crews-out
-  // are desktop-DayBoard context, and on a phone they turned this into a stat
-  // row (owner: "way too busy").
+  // `compact` (the phone/agenda hero) shows only the one plain fact — how many
+  // jobs today. The "need a crew" count used to live here too, but OpsAlerts
+  // sits directly below in the same hero and already names that number WITH the
+  // actions on it (Assign / Open to crew), so printing it here as well was a
+  // duplicate number (ui-revamp: merge duplicate numbers) that also read "0
+  // need a crew" on a calm day — empty furniture. capacity% and crews-out stay
+  // desktop-DayBoard context only; on a phone they turned this into a stat row
+  // (owner: "way too busy").
   const items = [
     { key: 'jobs', value: stats.jobs, label: 'jobs' },
-    { key: 'unassigned', value: stats.unassigned, label: 'need a crew', warn: stats.unassigned > 0 },
     ...(compact ? [] : [
+      { key: 'unassigned', value: stats.unassigned, label: 'need a crew', warn: stats.unassigned > 0 },
       { key: 'capacity', value: `${stats.capacityPct}%`, label: 'capacity' },
       { key: 'crews', value: stats.crewsOut, label: stats.crewsOut === 1 ? 'crew out' : 'crews out' },
     ]),

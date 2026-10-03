@@ -13,8 +13,8 @@ import SyncHealthPill from './SyncHealthPill'
 // tabs"): Day / Week / Month. "Day" is smart — it renders the dispatch board
 // on a wide window and the agenda cards on a narrow one (half-screen, phone),
 // which is what made the separate Agenda/Dispatch tabs redundant. The old
-// 'upcoming' and 'google' views still render via ?view= URLs (nothing
-// deleted, tab buttons only), and "Open in Google Calendar" stays in Tools.
+// The 'upcoming' view still renders via a ?view= URL (no tab button), and
+// "Open in Google Calendar" stays in Tools.
 const VIEWS = [
   ['day', 'Day', 'Day'],
   ['week', 'Week', 'Week'],
@@ -141,7 +141,7 @@ export default function ScheduleToolbar({
               own header, and these week-stepping arrows are the wrong axis for
               a month grid) and whenever `showDateNav` is off — the agenda view,
               where AgendaHero's DateStrip already carries day/week nav. */}
-          {viewMode !== 'month' && viewMode !== 'google' && showDateNav && (
+          {viewMode !== 'month' && showDateNav && (
             <div className="mt-2 flex items-center gap-2">
               <button onClick={onPrevWeek} aria-label="Previous"
                 className="grid place-items-center w-9 h-9 rounded-lg bg-bg-2 text-ink-3 active:scale-95 transition-transform">
@@ -178,7 +178,7 @@ export default function ScheduleToolbar({
             ))}
           </div>
 
-          {viewMode !== 'month' && viewMode !== 'google' && showDateNav && (
+          {viewMode !== 'month' && showDateNav && (
             <div className="flex items-center gap-1 ml-1">
               <button onClick={onPrevWeek} className="p-1 hover:bg-bg-2 rounded text-ink-3" aria-label="Previous week">
                 <ChevronLeft className="w-4 h-4" />
@@ -215,6 +215,12 @@ export default function ScheduleToolbar({
             </Button>
             {toolsMenu}
           </div>
+
+          {/* Hairline divider: the quiet status + secondary controls above sit
+              apart from the one primary action, so the eye lands on "New Job"
+              without a row of same-weight buttons competing (design language:
+              hierarchy through hairlines, one primary per view). */}
+          <span className="hidden shell:inline-block w-px h-5 bg-hairline shrink-0" aria-hidden="true" />
 
           <Button onClick={onNewJob} variant="primary" size="sm" className="whitespace-nowrap">
             <Plus className="w-4 h-4" />
