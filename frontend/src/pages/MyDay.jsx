@@ -11,7 +11,7 @@
  * week-pay summary), not four.
  */
 import { useCallback, useEffect, useState } from 'react'
-import { MapPin, LogOut, RefreshCw, CalendarDays, Clock, Car, DollarSign, CheckCircle2, CalendarRange, CircleUserRound, Sparkles, BookOpen, MessageSquare, Sun, CalendarClock, CalendarOff, Smartphone, CalendarPlus, ShieldCheck, Landmark, Lightbulb } from 'lucide-react'
+import { MapPin, LogOut, RefreshCw, CalendarDays, Clock, Car, DollarSign, CheckCircle2, CalendarRange, CircleUserRound, Sparkles, BookOpen, MessageSquare, Sun, CalendarClock, CalendarOff, Smartphone, CalendarPlus, ShieldCheck, Landmark, Lightbulb, Palette } from 'lucide-react'
 import { get, post as apiPost, patch as apiPatch, del as apiDel, logout } from '../api'
 import { toast } from '../utils/toastBus'
 import { EmptyState, ErrorState, Skeleton } from '../components/ui'
@@ -34,6 +34,9 @@ import CrewJobSheet from '../components/crew/CrewJobSheet'
 import CrewPayoutSetup from '../components/crew/CrewPayoutSetup'
 import CrewEarnings from '../components/crew/CrewEarnings'
 import CrewSetupCard from '../components/crew/CrewSetupCard'
+import AccentPicker from '../components/crew/AccentPicker'
+import StickyNotes from '../components/board/StickyNotes'
+import { initAccent } from '../utils/accent'
 import { SOFT, CrewCard, SectionLabel, ErrorNote, SettingRow, Sheet, SheetActions } from '../components/crew/primitives'
 // Photos captured on cellular wait on-device and send on WiFi — My Day owns
 // flushing the queue (app open + connectivity changes) and the visible
@@ -284,6 +287,9 @@ export default function MyDay({ previewUserId = null }) {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   const [tab, setTab] = useState('today')
+  // Paint the cleaner's chosen accent (saved on this phone) over the app's
+  // default, once on mount — a no-op when they've never picked one.
+  useEffect(() => { initAccent() }, [])
   const [actionBusy, setActionBusy] = useState(false)
   const [actionError, setActionError] = useState(null)
   const [now, setNow] = useState(() => new Date())
@@ -777,6 +783,11 @@ export default function MyDay({ previewUserId = null }) {
             )}
 
 
+            {/* The cleaner's own reminders — their notes, saved to their
+                account (/api/notes), the same sticky board the office Home has.
+                A scratchpad at hand: "bring the tall ladder", "gate sticks". */}
+            <StickyNotes />
+
             {/* Two rotating pro cleaning tips — quiet training on the home. */}
             <ProTips tips={data.tips} />
 
@@ -934,10 +945,17 @@ export default function MyDay({ previewUserId = null }) {
           /* One sectioned accordion instead of six stacked cards: every row
              expands in place, and rows that fetch only do it once opened. */
           <>
-            <CrewCard className="px-4">
+            <CrewCard className="px-4 divide-y divide-hairline">
               <SettingRow icon={CircleUserRound} label="Your info"
                 summary="Name, phone, emergency contact">
                 <CrewProfile bare previewUserId={previewUserId} />
+              </SettingRow>
+              {/* Make it yours — the accent colour the app wears, saved on this
+                  phone. Sits with "Your info" because it's a personal setting,
+                  not work. */}
+              <SettingRow icon={Palette} label="Appearance"
+                summary="Pick your accent colour">
+                <AccentPicker />
               </SettingRow>
             </CrewCard>
 
