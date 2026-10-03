@@ -35,6 +35,18 @@ it('shows the empty state when there are no windows', async () => {
   expect(await screen.findByText(/No windows planned/)).toBeTruthy()
 })
 
+it('gathers the short-term-rental flow with links to feeds and sync', async () => {
+  // The Airbnb side is spread across a few screens; the orientation strip makes
+  // Turnovers the one way in by linking the other two.
+  get.mockResolvedValue({ windows: [] })
+  render(<Turnovers />)
+  await screen.findByText(/No windows planned/)
+  const feeds = screen.getByRole('link', { name: 'Rental feeds' })
+  const sync = screen.getByRole('link', { name: 'Calendar sync' })
+  expect(feeds.getAttribute('href')).toBe('/properties?type=str')
+  expect(sync.getAttribute('href')).toBe('/sync')
+})
+
 it('plans a day through a real date field, not a window.prompt', async () => {
   // The picker used to be window.prompt('YYYY-MM-DD') — a bare text box, blocked
   // or ugly on a phone. It's a real <input type=date> in an inline form now.
