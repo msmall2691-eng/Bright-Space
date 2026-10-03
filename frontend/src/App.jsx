@@ -357,6 +357,12 @@ export default function App() {
         />
         <main className="flex-1 overflow-auto bg-bg bb-app-canvas pb-bottomnav shell:pb-0 scroll-smooth-mobile">
           <ErrorBoundary>
+          {/* A quiet cross-page fade on navigation, so moving between screens
+              flows rather than snapping. Keyed on pathname only (not search),
+              so in-page ?view=/?tab= switches don't replay it; reused from the
+              same 150–350ms ease-out budget as the rest of the app's motion and
+              disabled under prefers-reduced-motion (index.css). */}
+          <div key={location.pathname} className="bb-page-in">
           <Suspense fallback={<PageLoader />}>
             <Routes>
               <Route path="/" element={<Navigate to="/dashboard" replace />} />
@@ -449,6 +455,7 @@ export default function App() {
               <Route path="*" element={<Navigate to="/dashboard" replace />} />
             </Routes>
           </Suspense>
+          </div>
           </ErrorBoundary>
         </main>
         </div>

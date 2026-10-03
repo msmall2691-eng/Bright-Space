@@ -511,8 +511,18 @@ layer(base);
     to   { opacity: 1; transform: translateY(0); }
   }
   .bb-board-in { animation: bb-board-in 0.28s ease-out both; }
+  /* Cross-page fade on navigation (App.jsx keys this on pathname). Fade only,
+     no translate — it sits OVER pages whose own tiers already slide up with
+     bb-board-in, so a page-level slide would double up and read busy; a plain
+     fade lets the page appear while its contents settle. Same ease-out budget,
+     also disabled under reduced-motion. */
+  @keyframes bb-page-in {
+    from { opacity: 0; }
+    to   { opacity: 1; }
+  }
+  .bb-page-in { animation: bb-page-in 0.18s ease-out both; }
   @media (prefers-reduced-motion: reduce) {
-    .bb-modal-in, .bb-backdrop-in, .bb-board-in { animation: none; }
+    .bb-modal-in, .bb-backdrop-in, .bb-board-in, .bb-page-in { animation: none; }
   }
   .bb-nav-active {
     box-shadow: inset 0 0 0 1px rgba(99, 102, 241, 0.22);
