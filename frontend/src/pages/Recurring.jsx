@@ -20,6 +20,7 @@ import {
 } from '../utils/recurringDuplicates'
 import { useEmployees } from '../hooks/useEmployees'
 import EndsPicker from '../components/schedule/EndsPicker'
+import FrequencyPicker from '../components/schedule/FrequencyPicker'
 import JobCreateModal from '../components/JobCreateModal'
 
 /** Resolve a roster employee to an id+name pair, defensively. Mirrors
@@ -322,8 +323,11 @@ function EditSeriesModal({ schedule, onClose, onDone }) {
     title: schedule.title || '',
     address: schedule.address || '',
     frequency: schedule.frequency || 'weekly',
+    // A daily rule with no weekday filter means "every day" — keep that empty
+    // rather than seeding Monday, or saving would narrow it to Mondays only.
     days_of_week: (schedule.days_of_week && schedule.days_of_week.length)
-      ? schedule.days_of_week : [schedule.day_of_week ?? 0],
+      ? schedule.days_of_week
+      : (schedule.frequency === 'daily' ? [] : [schedule.day_of_week ?? 0]),
     day_of_month: schedule.day_of_month || 1,
     interval_weeks: schedule.interval_weeks || (schedule.frequency === 'biweekly' ? 2 : 1),
     start_time: (schedule.start_time || '09:00').slice(0, 5),
@@ -355,7 +359,9 @@ function EditSeriesModal({ schedule, onClose, onDone }) {
   const submit = async () => {
     if (!form.title.trim()) { setError('Title required'); return }
     if (!form.address.trim()) { setError('Address required'); return }
-    if (form.frequency !== 'monthly' && form.days_of_week.length === 0) {
+    // Daily with no days selected is valid ("every day"); week-based rules need
+    // at least one weekday.
+    if (form.frequency !== 'monthly' && form.frequency !== 'daily' && form.days_of_week.length === 0) {
       setError('Pick at least one day of week'); return
     }
     if (form.ends_mode === 'on_date' && !form.ends_on) {
@@ -420,25 +426,7 @@ function EditSeriesModal({ schedule, onClose, onDone }) {
         <input type="text" value={form.address} onChange={e => setForm(f => ({ ...f, address: e.target.value }))}
           className="w-full px-3 py-2 border border-hairline rounded-lg text-sm" />
       </div>
-      <div>
-        <label className="block text-xs font-semibold text-ink-3 mb-1">Frequency</label>
-        <select
-          value={form.frequency === 'monthly' ? 'monthly' : String(form.interval_weeks || (form.frequency === 'biweekly' ? 2 : 1))}
-          onChange={e => {
-            const v = e.target.value
-            if (v === 'monthly') { setForm(f => ({ ...f, frequency: 'monthly' })); return }
-            const n = parseInt(v) || 1
-            setForm(f => ({ ...f, frequency: n === 2 ? 'biweekly' : 'weekly', interval_weeks: n }))
-          }}
-          className="w-full px-3 py-2 border border-hairline rounded-lg text-sm">
-          <option value="1">Weekly</option>
-          <option value="2">Biweekly (every 2 weeks)</option>
-          <option value="3">Every 3 weeks</option>
-          <option value="4">Every 4 weeks</option>
-          <option value="8">Every 8 weeks</option>
-          <option value="monthly">Monthly</option>
-        </select>
-      </div>
+      <FrequencyPicker value={form} onChange={patch => setForm(f => ({ ...f, ...patch }))} />
       {form.frequency === 'monthly' ? (
         <div>
           <label className="block text-xs font-semibold text-ink-3 mb-1">Day of month (1–28)</label>
@@ -448,7 +436,9 @@ function EditSeriesModal({ schedule, onClose, onDone }) {
         </div>
       ) : (
         <div>
-          <label className="block text-xs font-semibold text-ink-3 mb-1">Day(s) of week</label>
+          <label className="block text-xs font-semibold text-ink-3 mb-1">
+            {form.frequency === 'daily' ? 'Day(s) of week (optional — blank = every day)' : 'Day(s) of week'}
+          </label>
           <div className="flex flex-wrap gap-2">
             {DAY_LABELS.map((lbl, i) => {
               const sel = form.days_of_week.includes(i)

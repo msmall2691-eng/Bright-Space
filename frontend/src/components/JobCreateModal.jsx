@@ -8,6 +8,7 @@ import { toLocalYMD } from '../utils/format'
 import { useEmployees } from '../hooks/useEmployees'
 import { normalizeEmployee } from '../utils/employees'
 import EndsPicker from './schedule/EndsPicker'
+import FrequencyPicker from './schedule/FrequencyPicker'
 import { ErrorNote } from './ui'
 import { createClientChecked } from '../utils/clientCreate'
 import DuplicateClientPrompt from './clients/DuplicateClientPrompt'
@@ -21,16 +22,6 @@ const JOB_TYPES = [
   { value: 'deep_clean',   label: 'Deep Clean' },
   { value: 'commercial',   label: 'Commercial' },
   { value: 'str_turnover', label: 'STR Turnover' },
-]
-
-const FREQUENCIES = [
-  { value: 'daily',          label: 'Daily',          interval: 1 },
-  { value: 'weekly',         label: 'Weekly',         interval: 1 },
-  { value: 'biweekly',       label: 'Every 2 weeks',  interval: 2 },
-  { value: 'every_3_weeks',  label: 'Every 3 weeks',  interval: 3 },
-  { value: 'every_4_weeks',  label: 'Every 4 weeks',  interval: 4 },
-  { value: 'every_8_weeks',  label: 'Every 8 weeks',  interval: 8 },
-  { value: 'monthly',        label: 'Monthly',        interval: null },
 ]
 
 const WEEK_LABELS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
@@ -1192,33 +1183,7 @@ export default function JobCreateModal({
               frequency/day-of-week/etc controls take over. */}
           {recurring && (
             <>
-              <div>
-                <label className="block text-xs text-ink-2 font-medium mb-1">Frequency</label>
-                <div className="grid grid-cols-2 gap-2">
-                  {FREQUENCIES.map(opt => (
-                    <button
-                      key={opt.value}
-                      type="button"
-                      onClick={() => setForm(f => ({
-                        ...f,
-                        frequency: opt.value,
-                        interval_weeks: opt.interval ?? f.interval_weeks,
-                        // Daily defaults to every day (no weekday filter); leaving
-                        // daily restores a sensible default day for weekly modes.
-                        days_of_week: opt.value === 'daily' ? []
-                          : ((f.days_of_week || []).length ? f.days_of_week : [0]),
-                      }))}
-                      className={`py-2 rounded-lg text-xs font-medium transition-colors border ${
-                        form.frequency === opt.value
-                          ? 'bg-indigo-600 text-white border-indigo-600'
-                          : 'bg-panel text-ink-2 border-hairline hover:bg-bg'
-                      }`}
-                    >
-                      {opt.label}
-                    </button>
-                  ))}
-                </div>
-              </div>
+              <FrequencyPicker value={form} onChange={patch => setForm(f => ({ ...f, ...patch }))} />
 
               {form.frequency === 'monthly' ? (
                 <div>
