@@ -388,19 +388,13 @@ export default function Clients() {
       {/* Main list */}
       <div className="flex-1 flex flex-col min-w-0">
         <div className="px-4 sm:px-8 pt-4">
+          {/* No status pods here — the status counts + filter live in one
+              always-visible segmented control in the toolbar below, so the
+              count isn't shown twice and the active tab is never ambiguous. */}
           <PageHero
             title="Clients"
             subtitle="Search, filter, and manage your customer list"
             icon={Users}
-            pods={[
-              // Clickable so the default Active view can still reach the other
-              // buckets in one tap — the status tabs otherwise sit behind the
-              // collapsed Filters panel.
-              { label: 'All', value: statusCounts[''] ?? clients.length, onClick: () => setStatusFilter('') },
-              { label: 'Active', value: statusCounts.active ?? 0, tone: 'text-emerald-300', onClick: () => setStatusFilter('active') },
-              { label: 'Leads', value: statusCounts.lead ?? 0, tone: 'text-indigo-200', onClick: () => setStatusFilter('lead') },
-              { label: 'Inactive', value: statusCounts.inactive ?? 0, tone: 'text-white/70', onClick: () => setStatusFilter('inactive') },
-            ]}
           >
             <SubNav />
           </PageHero>
