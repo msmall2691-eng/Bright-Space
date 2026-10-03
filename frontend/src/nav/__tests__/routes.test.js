@@ -110,8 +110,10 @@ describe('the nav stays small', () => {
     // internal ?view= tab of "Money". +1 is /flow — the lead→cash pipeline, the
     // landing tab of the Leads hub, built from pages that already exist (it's a
     // view OVER requests/quotes/jobs/invoices, not a new destination). Still
-    // zero new sidebar rows.
-    expect(reachable().size).toBe(23)
+    // zero new sidebar rows. −1 is /routes (Routes), retired Oct 2026: unused
+    // and a duplicate of Recurring, so it left the nav entirely (/routes now
+    // redirects to /recurring).
+    expect(reachable().size).toBe(22)
     expect(reachable().has('/flow')).toBe(true)
     expect(reachable().has('/marketplace')).toBe(true)
     expect(reachable().has('/quotes')).toBe(true)

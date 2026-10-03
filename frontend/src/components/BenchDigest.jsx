@@ -22,7 +22,6 @@ import { get } from '../api'
 
 const LINKS = [
   { match: 'turnover', to: '/turnovers', label: 'Turnovers' },
-  { match: 'route', to: '/routes', label: 'Routes' },
   { match: 'document', to: '/users', label: 'Staff files' },
   { match: 'owed', to: '/payroll', label: 'Payroll' },
   { match: '1099', to: '/payroll', label: 'Payroll' },

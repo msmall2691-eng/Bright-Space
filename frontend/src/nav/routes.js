@@ -2,7 +2,7 @@ import {
   LayoutDashboard, Sparkles, Users, Calendar, Receipt,
   DollarSign, MessageSquare, Home, Repeat, Settings, Inbox,
   TrendingUp, Radar, Rows3, Filter, HardHat, Store, CalendarDays, FileText, Star,
-  GitMerge, Route, CalendarClock, FileCheck, Workflow,
+  GitMerge, CalendarClock, FileCheck, Workflow,
 } from 'lucide-react'
 
 /**
@@ -106,10 +106,14 @@ export const NAV_SECTIONS = [
           { to: '/schedule',  icon: Calendar, label: 'Schedule', keywords: 'jobs calendar dispatch' },
           // Every /api/recurring endpoint is admin/manager-only.
           { to: '/recurring', icon: Repeat,   label: 'Recurring', roles: ['admin', 'manager'], keywords: 'series weekly biweekly' },
-          // Routes group recurring houses into one sub's standing day. Office-only:
-          // every /api/routes endpoint is admin/manager (the crew side lives in
-          // the crew app, on /api/crew/my-routes).
-          { to: '/routes',    icon: Route,    label: 'Routes', roles: ['admin', 'manager'], secondary: true, keywords: 'block standing subcontractor owner day' },
+          // Routes (a standing block of recurring houses owned by one sub) was
+          // retired Oct 2026 — the owner didn't use or understand it and it
+          // duplicated Recurring (every route house was already a series). The
+          // page and both crew/office nav entries are gone; /routes redirects
+          // to /recurring (App.jsx). The backend tables/endpoints stay dormant:
+          // the recurring generator reads the route rate-split, so dropping
+          // them would be a destructive refactor of live scheduling code
+          // (scheduling-invariants R8).
           // Guest changeover days staffed as a batch. Office-only, like the
           // rest of this family — the crew side is the ordinary open board.
           { to: '/turnovers', icon: CalendarClock, label: 'Turnovers', roles: ['admin', 'manager'], secondary: true, keywords: 'saturday changeover str airbnb window price step' },

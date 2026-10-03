@@ -182,7 +182,6 @@ const Properties = lazy(() => import('./pages/Properties'))
 const PropertyDetail = lazy(() => import('./pages/PropertyDetail'))
 const PropertyIcalsBulk = lazy(() => import('./pages/PropertyIcalsBulk'))
 const Recurring = lazy(() => import('./pages/Recurring'))
-const RoutesPage = lazy(() => import('./pages/Routes'))
 const Turnovers = lazy(() => import('./pages/Turnovers'))
 const SyncCenter = lazy(() => import('./pages/SyncCenter'))
 const OwnerDashboard = lazy(() => import('./pages/OwnerDashboard'))
@@ -429,10 +428,11 @@ export default function App() {
                   and rule edits (future visits only). The old
                   /schedule?tab=recurring summary tab now redirects here. */}
               <Route path="/recurring" element={<Recurring />} />
-              {/* Standing blocks of recurring work owned by one sub
-                  (marketplace pivot Phase 4). A tab on Schedule, not a
-                  new sidebar destination — that went 17 -> 7 on purpose. */}
-              <Route path="/routes" element={<RoutesPage />} />
+              {/* Routes (standing blocks of recurring work owned by one sub)
+                  was retired Oct 2026 — unused, and a duplicate of Recurring.
+                  Old bookmarks/links and the bench round-up's route lines land
+                  on Recurring, the surviving "repeating work" screen. */}
+              <Route path="/routes" element={<Navigate to="/recurring" replace />} />
               {/* Guest changeover days posted to the bench as a batch,
                   with a price ladder on whatever nobody takes. */}
               <Route path="/turnovers" element={<Turnovers />} />

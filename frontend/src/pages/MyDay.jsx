@@ -19,7 +19,6 @@ import JobPhotoSheet from '../components/crew/JobPhotoSheet'
 import CrewProfile from '../components/crew/CrewProfile'
 import CrewMyFile from '../components/crew/CrewMyFile'
 import CrewMyAsks from '../components/crew/CrewMyAsks'
-import CrewMyRoutes from '../components/crew/CrewMyRoutes'
 import CrewMyProperties from '../components/crew/CrewMyProperties'
 import CrewAvailability from '../components/crew/CrewAvailability'
 import CrewLearn from '../components/crew/CrewLearn'
@@ -714,24 +713,6 @@ export default function MyDay({ previewUserId = null }) {
               </div>
             )}
 
-            {(data.routes || []).some(r => r.status === 'offered') && (
-              /* A standing offer is worth more than a shift and expires by
-                 being ignored, so it leads rather than waiting behind a tab.
-                 Dot + sentence, not a banner. */
-              <button type="button"
-                onClick={() => { setTab('schedule'); setSchedView('routes') }}
-                className="w-full rounded-xl border border-hairline bg-panel px-4 py-3 text-left transition-colors hover:bg-bg-2">
-                <span className="flex items-center gap-1.5 text-[12px] text-ink-2">
-                  <span className="h-1.5 w-1.5 rounded-full bg-amber-500" aria-hidden="true" />
-                  You've been offered a route
-                </span>
-                <span className="mt-0.5 block text-[14px] font-medium text-ink">
-                  {(data.routes || []).find(r => r.status === 'offered')?.name} — have a look
-                </span>
-              </button>
-            )}
-
-
             <section>
               <div className="flex items-center justify-between mb-2">
                 <SectionLabel>{boardIsToday ? 'Up for grabs' : 'Today'}</SectionLabel>
@@ -874,7 +855,6 @@ export default function MyDay({ previewUserId = null }) {
              or a rental they're the standing cleaner for. A permanent tab for a
              thing most of the crew doesn't have is chrome. */
           const segs = [['list', 'Next 2 weeks'], ['month', 'Month']]
-          if ((data?.routes || []).length) segs.push(['routes', 'Routes'])
           if (data?.has_rentals) segs.push(['rentals', 'Rentals'])
           const cols = { 2: 'grid-cols-2', 3: 'grid-cols-3', 4: 'grid-cols-4' }[segs.length] || 'grid-cols-2'
           return (
@@ -891,10 +871,6 @@ export default function MyDay({ previewUserId = null }) {
         })()}
 
         {tab === 'schedule' && schedView === 'month' && <CrewMonth previewUserId={previewUserId} />}
-
-        {/* The full route detail — its houses and their shares — is fetched
-            here and not in my-day, so an unopened tab costs nothing. */}
-        {tab === 'schedule' && schedView === 'routes' && <CrewMyRoutes previewUserId={previewUserId} />}
 
         {/* My rentals — the standing-cleaner turnovers, grouped by house. Its
             data is fetched inside the component only when this segment is open;
