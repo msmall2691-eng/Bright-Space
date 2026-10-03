@@ -21,6 +21,7 @@
  * here are for going early, not for driving it by hand.
  */
 import { useCallback, useEffect, useState } from 'react'
+import { Link } from 'react-router-dom'
 import { CalendarClock, ChevronDown, TrendingUp, Ban, Plus, Trash2 } from 'lucide-react'
 import { get, post, patch, del } from '../api'
 import { PageHeader, SubNav } from '../components/ui'
@@ -136,6 +137,32 @@ export default function Turnovers() {
       </PageHeader>
 
       <div className="space-y-4 px-4 pb-6 sm:px-8">
+        {/* Short-term rentals, gathered. The Airbnb side of the app lives on a
+            few screens — the guest calendars that feed in (on each rental), the
+            turnover days here, and sync health — and it's easy to lose which is
+            where. This names the flow and links the other two, so Turnovers is
+            the one way in. Quiet hairline card + tertiary links, not a banner. */}
+        <div className="rounded-xl border border-hairline bg-panel px-4 py-3">
+          <div className="flex items-center gap-2">
+            <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-indigo-500" aria-hidden="true" />
+            <h2 className="text-[11px] font-medium text-ink-3">Short-term rentals</h2>
+          </div>
+          <p className="mt-1 text-[13px] text-ink-2">
+            Guest calendars feed in from Airbnb/VRBO, each changeover becomes a turnover on
+            the board below, and the price climbs on whatever’s still unclaimed.
+          </p>
+          <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-[13px]">
+            <Link to="/properties?type=str"
+              className="font-medium text-ink-2 underline decoration-hairline-2 underline-offset-2 hover:text-indigo-600">
+              Rental feeds
+            </Link>
+            <Link to="/sync"
+              className="font-medium text-ink-2 underline decoration-hairline-2 underline-offset-2 hover:text-indigo-600">
+              Calendar sync
+            </Link>
+          </div>
+        </div>
+
         {error && (
           <p className="flex items-start gap-1.5 text-[13px] text-ink-2">
             <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-red-500" aria-hidden="true" />
