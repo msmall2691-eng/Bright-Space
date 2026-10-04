@@ -490,11 +490,15 @@ function StripeCard({ active }) {
       .catch(e => setSt({ loading: false, configured: false, detail: e?.message || 'Could not check status' }))
   }, [active])
 
-  // Three states, not two: connected-but-no-webhook is the one that silently
-  // takes money and never marks the invoice paid, so it reads as needs-
-  // attention (amber) rather than connected.
+  // Four meaningful states. Connected-but-no-webhook silently takes money and
+  // never marks the invoice paid, so it reads as needs-attention (amber).
+  // Keys-set-but-Stripe-won't-charge (charges_enabled === false) is the state
+  // behind a pay button that errors — the account isn't activated for live
+  // charges — and it's also amber with the reason spelled out below. Strict
+  // `=== false`: null/undefined means the server couldn't probe Stripe, which
+  // stays green rather than crying wolf.
   //
-  // A missing CONNECT webhook secret is deliberately NOT a fourth state. It
+  // A missing CONNECT webhook secret is deliberately NOT a separate state. It
   // costs nobody money — payments and payouts both work without it; the only
   // loss is that a sub's finished Stripe setup isn't noticed on its own and
   // they have to tap "Check again". That belongs in the sentence below, not
@@ -502,10 +506,12 @@ function StripeCard({ active }) {
   const tone = st.loading ? 'bg-ink-3'
     : !st.configured ? 'bg-ink-3'
     : !st.webhook_configured ? 'bg-amber-500'
+    : st.charges_enabled === false ? 'bg-amber-500'
     : 'bg-emerald-500'
   const word = st.loading ? 'Checking…'
     : !st.configured ? 'Not connected'
     : !st.webhook_configured ? 'Needs webhook'
+    : st.charges_enabled === false ? 'Needs activation'
     : 'Connected'
 
   return (
