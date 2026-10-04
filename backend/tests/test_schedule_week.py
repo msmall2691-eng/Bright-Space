@@ -150,3 +150,99 @@ def test_schedule_week_excludes_out_of_range_jobs(client):
     body = res.json()
     assert all(x.get("id") != jid for x in body["jobs"])
     assert all(x.get("id") != jid for x in body["visits"])
+
+
+def test_one_bad_section_degrades_instead_of_500ing(client, monkeypatch):
+    """A failure in a delegate (clients / properties / unscheduled) must not
+    take the whole calendar down.
+
+    The office hit a bare 500 on /api/schedule/week and the Schedule page
+    renders a single ErrorState for it — so one broken sub-query blanked the
+    entire schedule. Each section now falls back to empty and names itself in
+    `degraded`; jobs still come back.
+    """
+    import modules.scheduling.router as sched
+
+    def _boom(*a, **kw):
+        raise RuntimeError("client book exploded")
+
+    monkeypatch.setattr(sched, "_get_clients", _boom)
+
+    api, ids = client
+    today = date.today()
+    r = api.get(
+        "/api/schedule/week"
+        f"?scheduled_date_from={today - timedelta(days=3)}"
+        f"&scheduled_date_to={today + timedelta(days=3)}"
+    )
+    assert r.status_code == 200
+    body = r.json()
+    assert body["degraded"] == ["clients"]
+    assert body["clients"] == []
+    # The parts that work still come back.
+    assert isinstance(body["jobs"], list)
+    assert isinstance(body["properties"], list)
+
+
+def test_healthy_week_reports_nothing_degraded(client):
+    api, ids = client
+    today = date.today()
+    r = api.get(
+        "/api/schedule/week"
+        f"?scheduled_date_from={today}&scheduled_date_to={today + timedelta(days=1)}"
+    )
+    assert r.status_code == 200
+    assert r.json()["degraded"] == []
+
+
+def test_one_poison_row_does_not_kill_the_whole_list(client, monkeypatch):
+    """The actual office outage: GET /api/schedule/week returned 500 and the
+    Schedule page went dark.
+
+    #965 gave the SINGLE-job endpoints a guard after one turnover row tripped
+    serialization and 500'd the job page. The LIST path kept calling
+    job_to_dict bare, so that same row still took down every caller routed
+    through get_jobs — /api/schedule/week included. The crew app reads the
+    guarded single-job endpoints, which is why it degraded while the office
+    calendar died: exactly the admin-only symptom reported.
+
+    One bad row must now come back degraded with the rest of the week intact.
+    """
+    import modules.scheduling.router as sched
+
+    api, ids = client
+    db = SessionLocal()
+    cid, pid = _client_with_property(db, ids)
+    target = date.today() + timedelta(days=1)
+    good = Job(client_id=cid, property_id=pid, title="Fine job", scheduled_date=target,
+               status="scheduled", org_id=1)
+    poison = Job(client_id=cid, property_id=pid, title="Poison job", scheduled_date=target,
+                 status="scheduled", org_id=1)
+    db.add_all([good, poison]); db.commit()
+    db.refresh(good); db.refresh(poison)
+    good_id, poison_id = good.id, poison.id
+    ids["jobs"] += [good_id, poison_id]
+    db.close()
+
+    real = sched._job_row_dict
+
+    def _explode(j, *a, **kw):
+        if j.id == poison_id:
+            raise ValueError("this row's data trips serialization")
+        return real(j, *a, **kw)
+
+    monkeypatch.setattr(sched, "_job_row_dict", _explode)
+
+    start = (target - timedelta(days=1)).isoformat()
+    end = (target + timedelta(days=1)).isoformat()
+    res = api.get(f"/api/schedule/week?scheduled_date_from={start}&scheduled_date_to={end}")
+
+    # The whole week used to 500 here.
+    assert res.status_code == 200
+    by_id = {j["id"]: j for j in res.json()["jobs"]}
+    # The healthy row is untouched and NOT degraded.
+    assert by_id[good_id]["title"] == "Fine job"
+    assert not by_id[good_id].get("_degraded")
+    # The poison row still renders, flagged, instead of killing the page.
+    assert by_id[poison_id]["_degraded"] is True
+    assert by_id[poison_id]["id"] == poison_id

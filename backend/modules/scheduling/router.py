@@ -781,6 +781,59 @@ def job_to_dict(j: Job, client: Client = None, effective_date=None,
     }
 
 
+def _reservation_events(db: Session, property_ids, since=None, linked_ids=None) -> dict:
+    """{property_id: [ICalEvent, ...]} — the reservations needed to match
+    turnover jobs to their booking, sorted by check-in.
+
+    BOUNDED BY `since` ON PURPOSE. This used to load EVERY reservation ever
+    recorded for these properties, on every Schedule load and every 45s poll.
+    That set only grows: a property two years into its life carried two years
+    of dead bookings through this query to answer a question about one week.
+    It was a timeout waiting to happen, and it got slower every month the
+    business ran.
+
+    A reservation's check-in is never after its check-out, so
+    `checkout_date >= since` is a safe superset of everything the callers can
+    match (the check-in bound is kept too, so a malformed row with the pair
+    inverted still can't silently vanish). Nothing bounds it ABOVE: the
+    next-arrival lookup legitimately reaches past the window, and future
+    bookings are a small set that doesn't grow with history — unlike the past,
+    which is what actually needed cutting.
+
+    No `since` leaves the fetch unbounded, which is the old behaviour. That
+    only happens for a turnover with no date at all — a single property, and
+    vanishingly rare, since a turnover exists BECAUSE a booking checks out on a
+    given day. Bounding it would need a second fetch to keep next-arrival
+    correct, which is not worth it for that case.
+
+    `linked_ids` is the exception that keeps this correct. A turnover the
+    office MOVED still points at its original booking through
+    `Job.ical_event_id`, and that booking's checkout can sit before `since` —
+    so those rows are fetched by id regardless of date rather than dropped,
+    which would blank the booking details on exactly the jobs most likely to
+    need looking at.
+    """
+    property_ids = list(property_ids or [])
+    if not property_ids:
+        return {}
+    q = db.query(ICalEvent).filter(
+        ICalEvent.property_id.in_(property_ids),
+        ICalEvent.event_type == "reservation",
+    )
+    if since:
+        iso = since.isoformat() if hasattr(since, "isoformat") else str(since)
+        window = or_(ICalEvent.checkout_date >= iso, ICalEvent.checkin_date >= iso)
+        linked = [i for i in (linked_ids or []) if i]
+        q = q.filter(or_(window, ICalEvent.id.in_(linked)) if linked else window)
+    by_prop: dict = {}
+    for ev in q.all():
+        by_prop.setdefault(ev.property_id, []).append(ev)
+    # Sort each property's events by check-in for the next-arrival lookup.
+    for evs in by_prop.values():
+        evs.sort(key=lambda e: e.checkin_date or "")
+    return by_prop
+
+
 def _job_booking_info(db: Session, j: Job):
     """Single-job counterpart to get_jobs()'s bulk booking/next-arrival match
     (lines ~611-648): finds the ICalEvent this str_turnover job's checkout
@@ -797,12 +850,9 @@ def _job_booking_info(db: Session, j: Job):
     """
     if j.job_type != "str_turnover" or not j.property_id:
         return None, None
-    events = (
-        db.query(ICalEvent)
-          .filter(ICalEvent.property_id == j.property_id, ICalEvent.event_type == "reservation")
-          .all()
-    )
-    events.sort(key=lambda e: e.checkin_date or "")
+    events = _reservation_events(
+        db, [j.property_id], since=j.scheduled_date, linked_ids=[j.ical_event_id],
+    ).get(j.property_id, [])
     booking = None
     if j.ical_event_id:
         booking = next((e for e in events if e.id == j.ical_event_id), None)
@@ -924,6 +974,44 @@ def _job_to_dict_min(j: Job) -> dict:
         "turnover_lead_warning": False,
         "_degraded": True,
     }
+
+
+def _job_row_dict(j: Job, eff, events_by_prop, prop_names, prop_meta,
+                  lead_buffer_hours, pending_by_job, helpers_by_job) -> dict:
+    """Serialize ONE job row for the jobs list, booking enrichment included.
+
+    Pulled out of get_jobs's render loop so the loop can guard each row
+    individually (see the call site). Takes the page's prebuilt indexes rather
+    than a Session — the bulk queries already ran, so this stays query-free and
+    the list keeps its O(1)-queries-per-page property.
+    """
+    booking = None
+    next_arrival = None
+    if j.job_type == "str_turnover" and j.property_id:
+        # Already-linked ical_event_id wins.
+        if j.ical_event_id:
+            booking = next((e for e in events_by_prop.get(j.property_id, [])
+                             if e.id == j.ical_event_id), None)
+        # Fall back to checkout-date == job-date matching.
+        if booking is None:
+            iso = eff.isoformat() if hasattr(eff, "isoformat") else (str(eff) if eff else None)
+            booking = next((e for e in events_by_prop.get(j.property_id, [])
+                             if e.checkout_date == iso), None)
+        # Find the next reservation that starts on/after this turnover.
+        if booking is not None:
+            next_arrival = next(
+                (e for e in events_by_prop.get(j.property_id, [])
+                 if e.checkin_date and e.checkin_date >= booking.checkout_date and e.uid != booking.uid),
+                None,
+            )
+    return job_to_dict(j, effective_date=eff,
+                       booking_event=booking,
+                       next_arrival=next_arrival,
+                       property_name=prop_names.get(j.property_id),
+                       lead_buffer_hours=lead_buffer_hours,
+                       property_check_in_time=prop_meta.get(j.property_id, (None, None))[1],
+                       pending_claim_requests=pending_by_job.get(j.id, 0),
+                       helpers=helpers_by_job.get(j.id))
 
 
 def _job_to_dict_enriched(db: Session, j: Job, **kwargs) -> dict:
@@ -1079,20 +1167,19 @@ def get_jobs(
         prop_names = {pid: meta[0] for pid, meta in prop_meta.items()}
         from modules.settings.router import turnover_lead_buffer_hours
         lead_buffer_hours = turnover_lead_buffer_hours(db)
-        prop_ids = {j.property_id for j, _ in rows if j.property_id and j.job_type == "str_turnover"}
-        events_by_prop = {}
-        if prop_ids:
-            ical_rows = (
-                db.query(ICalEvent)
-                  .filter(ICalEvent.property_id.in_(prop_ids))
-                  .filter(ICalEvent.event_type == "reservation")
-                  .all()
-            )
-            for ev in ical_rows:
-                events_by_prop.setdefault(ev.property_id, []).append(ev)
-            # Sort each property's events by checkin_date for next-arrival lookup.
-            for pid, evs in events_by_prop.items():
-                evs.sort(key=lambda e: e.checkin_date or "")
+        # Earliest turnover date on this page is the floor for the reservation
+        # fetch — see _reservation_events for why loading all of history here
+        # was the real problem. One source of truth for "which rows are
+        # turnovers with a property", since the floor and the property set have
+        # to agree.
+        turnover_rows = [(j, eff) for j, eff in rows
+                         if j.property_id and j.job_type == "str_turnover"]
+        prop_ids = {j.property_id for j, _ in turnover_rows}
+        since = min((eff for _, eff in turnover_rows if eff), default=None)
+        events_by_prop = _reservation_events(
+            db, prop_ids, since=since,
+            linked_ids=[j.ical_event_id for j, _ in turnover_rows],
+        )
 
         # One query for the whole page, and only when something on it is
         # actually posted — a shop with nothing on the board pays nothing
@@ -1119,33 +1206,23 @@ def get_jobs(
                 pending_by_job[jid] = n
 
         for j, eff in rows:
-            booking = None
-            next_arrival = None
-            if j.job_type == "str_turnover" and j.property_id:
-                # Already-linked ical_event_id wins.
-                if j.ical_event_id:
-                    booking = next((e for e in events_by_prop.get(j.property_id, [])
-                                     if e.id == j.ical_event_id), None)
-                # Fall back to checkout-date == job-date matching.
-                if booking is None:
-                    iso = eff.isoformat() if hasattr(eff, "isoformat") else (str(eff) if eff else None)
-                    booking = next((e for e in events_by_prop.get(j.property_id, [])
-                                     if e.checkout_date == iso), None)
-                # Find the next reservation that starts on/after this turnover.
-                if booking is not None:
-                    next_arrival = next(
-                        (e for e in events_by_prop.get(j.property_id, [])
-                         if e.checkin_date and e.checkin_date >= booking.checkout_date and e.uid != booking.uid),
-                        None,
-                    )
-            rendered.append(job_to_dict(j, effective_date=eff,
-                                        booking_event=booking,
-                                        next_arrival=next_arrival,
-                                        property_name=prop_names.get(j.property_id),
-                                        lead_buffer_hours=lead_buffer_hours,
-                                        property_check_in_time=prop_meta.get(j.property_id, (None, None))[1],
-                                        pending_claim_requests=pending_by_job.get(j.id, 0),
-                                        helpers=helpers_by_job.get(j.id)))
+            # One poison row must not take the whole list down. #965 gave the
+            # SINGLE-job endpoints this guard (_job_to_dict_enriched) after a
+            # turnover row 500'd the job page — but the LIST path kept calling
+            # job_to_dict bare, so the same row still killed every caller that
+            # comes through here, /api/schedule/week among them. That is the
+            # office-vs-crew split exactly: the crew app reads the guarded
+            # single-job endpoints and degrades, while the office Schedule had
+            # no guard and went dark on one row. Same breadcrumb as #965: log
+            # the row's shape, serve the degraded dict, keep the other rows.
+            try:
+                rendered.append(_job_row_dict(
+                    j, eff, events_by_prop, prop_names, prop_meta,
+                    lead_buffer_hours, pending_by_job, helpers_by_job,
+                ))
+            except Exception:
+                _log_job_shape("jobs_list", j)
+                rendered.append(_job_to_dict_min(j))
     role = getattr(current_user, "role", None)
     if paginated:
         return {
@@ -4909,6 +4986,30 @@ def _unscheduled_jobs(db: Session, org_id: int) -> list:
     return [job_to_dict(j) for j in rows]
 
 
+def _week_section(name: str, fn, fallback):
+    """Run one piece of the /week aggregate in isolation.
+
+    schedule_week fans out to four independent queries (jobs, unscheduled,
+    properties, clients). Before this, ANY one of them raising took the whole
+    response down as a bare 500 — and since Schedule.jsx renders a single
+    ErrorState when the call fails, one bad row in, say, the client book blanked
+    the entire schedule. The office lost the calendar over something that had
+    nothing to do with the calendar.
+
+    Each section now fails to its own empty fallback and logs the real traceback
+    under a greppable marker ([schedule_week] <section> failed), so the Railway
+    log names the culprit instead of us guessing from a 500. The page draws with
+    the parts that worked and reports what degraded; the caller sees `degraded`
+    in the payload. Jobs are deliberately NOT wrapped — they ARE the schedule, so
+    a failure there is a real outage and should still surface as one.
+    """
+    try:
+        return fn(), None
+    except Exception:
+        logger.exception("[schedule_week] %s failed — degrading that section", name)
+        return fallback, name
+
+
 @schedule_router.get("/week", dependencies=[Depends(require_role("admin", "manager", "viewer", "cleaner"))])
 def schedule_week(
     scheduled_date_from: str,
@@ -4943,12 +5044,23 @@ def schedule_week(
     jobs = []
     offset = 0
     for _ in range(MAX_PAGES):
-        page = get_jobs(
-            date_from=scheduled_date_from,
-            date_to=scheduled_date_to,
-            limit=PAGE_SIZE, offset=offset, paginated=False,
-            db=db, org_id=org_id,
-        )
+        try:
+            page = get_jobs(
+                date_from=scheduled_date_from,
+                date_to=scheduled_date_to,
+                limit=PAGE_SIZE, offset=offset, paginated=False,
+                db=db, org_id=org_id,
+            )
+        except Exception:
+            # Jobs ARE the schedule, so this stays a hard failure — but log the
+            # traceback with the range and org first. Without this the Railway
+            # log showed an unattributed 500 and we could not tell a bad job row
+            # apart from a bad client row (see _week_section).
+            logger.exception(
+                "[schedule_week] jobs failed for org_id=%s range=%s..%s offset=%s",
+                org_id, scheduled_date_from, scheduled_date_to, offset,
+            )
+            raise
         jobs.extend(page)
         if len(page) < PAGE_SIZE:
             break
@@ -4968,6 +5080,22 @@ def schedule_week(
     # compat shim. Stripping first means the copies never see the fields.
     role = getattr(current_user, "role", None)
     stripped_jobs = strip_office_only_for_crew(jobs, role)
+
+    # Each delegate in its own blast radius — see _week_section.
+    is_office = role in ("admin", "manager", "viewer")
+    unscheduled, f1 = _week_section(
+        "unscheduled", lambda: _unscheduled_jobs(db, org_id), []
+    ) if is_office else ([], None)
+    properties, f2 = _week_section(
+        "properties", lambda: _get_properties(db=db, org_id=org_id), []
+    )
+    # limit/offset are Query() defaults — pass explicitly. 50 matches the
+    # standalone /api/clients default the page used before.
+    clients, f3 = _week_section(
+        "clients", lambda: _get_clients(limit=50, offset=0, db=db, org_id=org_id), []
+    )
+    degraded = [f for f in (f1, f2, f3) if f]
+
     return {
         # Visits are derived from jobs post-unification; the shape mirrors what
         # /api/visits used to emit so the FE fallback keeps rendering unchanged.
@@ -4978,13 +5106,12 @@ def schedule_week(
         # Schedule page had no way to show "needs a date". Rides this payload
         # (one query, no extra request — brightbase-economy) and is office-only:
         # crew payloads stay light and an unscheduled job isn't theirs yet.
-        "unscheduled": (
-            _unscheduled_jobs(db, org_id) if role in ("admin", "manager", "viewer") else []
-        ),
-        "properties": _get_properties(db=db, org_id=org_id),
-        # limit/offset are Query() defaults — pass explicitly. 50 matches the
-        # standalone /api/clients default the page used before.
-        "clients": _get_clients(limit=50, offset=0, db=db, org_id=org_id),
+        "unscheduled": unscheduled,
+        "properties": properties,
+        "clients": clients,
+        # Which sections (if any) fell back to empty. Empty list = a fully
+        # healthy response; anything in here means the log has the traceback.
+        "degraded": degraded,
         # Coverage was "Job without Visit"; that can't happen post-unification.
         "coverage": {
             "total_jobs": len(jobs or []),
