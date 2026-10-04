@@ -72,10 +72,10 @@ export default function AcceptInvite() {
             </div>
           ) : (
             <>
-              <h1 className="text-3xl font-bold text-ink text-center mb-2">Set your password</h1>
+              <h1 className="text-3xl font-bold text-ink text-center mb-2">Welcome aboard 👋</h1>
               <p className="text-center text-ink-3 mb-8">
-                Welcome to The Maine Cleaning Co. Choose a password to sign in
-                and see your work from your phone.
+                Welcome to The Maine Cleaning Co. Pick a password to sign in — then a
+                few quick steps on your phone and you can start picking up jobs.
               </p>
 
               {error && <div className="mb-6"><ErrorNote>{error}</ErrorNote></div>}
@@ -137,7 +137,11 @@ export default function AcceptInvite() {
                 </button>
               </form>
 
-              <p className="text-[11px] text-ink-3 text-center mt-6">
+              <p className="text-[12px] text-ink-2 text-center mt-6">
+                Next, a quick look at your file — your insurance, a W-9, and the
+                agreement — and then you’re ready for work.
+              </p>
+              <p className="text-[11px] text-ink-3 text-center mt-2">
                 This link is single-use and expires 7 days after it was sent.
               </p>
             </>

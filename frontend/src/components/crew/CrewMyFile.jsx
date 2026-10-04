@@ -193,21 +193,65 @@ export default function CrewMyFile({ bare = false, previewUserId = null }) {
     return <div className="h-20 animate-pulse rounded-lg bg-bg-2" aria-hidden="true" />
   }
 
+  // A friendly first name for the welcome, from the signed-in cleaner. Skipped
+  // in office preview (the viewer isn't the cleaner), so the greeting there is
+  // just generic rather than wrong.
+  let firstName = null
+  if (!preview) {
+    try {
+      const u = JSON.parse(localStorage.getItem('brightbase_user') || '{}')
+      firstName = (u.full_name || '').trim().split(/\s+/)[0] || null
+    } catch { /* no name is fine */ }
+  }
+
+  // Onboarding progress — one step for the agreement plus each REQUIRED
+  // document. Drives the "X of Y done" line + bar so a new cleaner sees how
+  // close they are instead of a flat list of demands. Optional documents don't
+  // count toward the gate, so they don't count here.
+  const reqDocs = (file.documents || []).filter(d => d.required)
+  const stepsTotal = reqDocs.length + 1
+  const stepsDone = reqDocs.filter(d => d.status === 'accepted').length + (file.agreement_accepted ? 1 : 0)
+  const pct = stepsTotal ? Math.round((stepsDone / stepsTotal) * 100) : 0
+
   const body = (
     <>
       {file.can_take_jobs ? (
-        <p className="flex items-center gap-1.5 text-[13px] text-ink-2">
-          <ShieldCheck className="w-4 h-4 text-emerald-500 shrink-0" />
-          Your file is complete — you can ask for jobs.
-        </p>
+        <div className="flex items-start gap-2">
+          <ShieldCheck className="w-5 h-5 text-emerald-500 shrink-0" />
+          <div>
+            <p className="text-[14px] font-semibold text-ink">You’re all set{firstName ? `, ${firstName}` : ''} 🎉</p>
+            <p className="text-[12.5px] text-ink-2">
+              Your file is complete — you can ask for jobs. We’ll give you a heads-up well before anything here needs renewing.
+            </p>
+          </div>
+        </div>
       ) : (
         <div>
-          <p className="text-[13px] font-medium text-ink">To start asking for jobs:</p>
+          {/* Warm welcome + a sense of how close they are — the "a lot at the
+              beginning" was a flat list of requirements with no encouragement
+              and no progress. The steps themselves are unchanged. */}
+          <p className="text-[15px] font-semibold text-ink">Welcome{firstName ? `, ${firstName}` : ''} 👋</p>
+          <p className="mt-0.5 text-[12.5px] text-ink-2">
+            A few quick things and you’re ready to take jobs — about five minutes, right from
+            your phone. It’s what keeps you and the homeowners covered.
+          </p>
+          {stepsTotal > 0 && (
+            <div className="mt-3" role="progressbar" aria-valuenow={stepsDone} aria-valuemin={0} aria-valuemax={stepsTotal}>
+              <div className="flex items-center justify-between text-[11px] text-ink-3">
+                <span>Getting set up</span>
+                <span className="tabular-nums">{stepsDone} of {stepsTotal} done</span>
+              </div>
+              <div className="mt-1 h-1.5 w-full overflow-hidden rounded-full bg-bg-2">
+                <div className="h-full rounded-full bg-emerald-500 transition-all duration-500" style={{ width: `${pct}%` }} />
+              </div>
+            </div>
+          )}
+          <p className="mt-3 text-[13px] font-medium text-ink">To start asking for jobs:</p>
           <ul className="mt-1.5 space-y-1">
-            {file.missing.map(m => (
+            {file.missing.map((m, i) => (
               <li key={m} className="flex items-start gap-1.5 text-[13px] text-ink-2">
                 <span className="mt-1.5 w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0" aria-hidden="true" />
-                <span>{m}</span>
+                <span>{i === 0 ? <><span className="font-medium text-ink">Next:</span> {m}</> : m}</span>
               </li>
             ))}
           </ul>
