@@ -321,8 +321,14 @@ describe('OpsBoard — comms rail', () => {
     renderBoard()
     await screen.findByTestId('home-crew')
     expect(get).toHaveBeenCalledWith('/api/crew/threads')
+    // findByText, not getByText: home-crew is the box's shell, and the rows
+    // arrive from the separate /api/crew/threads fetch, so the two don't land
+    // in the same flush. Awaiting the testId and then asserting the content
+    // synchronously was a race that React 18's scheduler happened to always
+    // win and React 19's does not -- 5 failures in 8 runs on 19, 0 in 8 on 18.
+    // The sibling test below already awaits this text for the same reason.
     // One cleaner, unread shown as a quiet dot+word ("2 new"), not a bubble.
-    expect(screen.getByText('Dana Jones')).toBeTruthy()
+    expect(await screen.findByText('Dana Jones')).toBeTruthy()
     expect(screen.getByText('2 new')).toBeTruthy()
     expect(screen.getByText('Pat Lee')).toBeTruthy()
   })
