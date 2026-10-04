@@ -17,6 +17,7 @@ import { get, post, patch } from '../api'
 import { PageHeader, EmptyState, ErrorState, Skeleton, SubNav } from '../components/ui'
 import BenchRoster from '../components/crew/BenchRoster'
 import SubApplications from '../components/SubApplications'
+import InviteCleaners from '../components/InviteCleaners'
 import { pushToast } from '../utils/toastBus'
 import { reportInvite } from '../utils/inviteFallback'
 import CrewDocsAdmin from '../components/crew/CrewDocsAdmin'
@@ -247,6 +248,9 @@ export default function Crew() {
         <section>
           <h2 className="mb-2 text-sm font-semibold text-ink">The bench</h2>
           <BenchRoster />
+          {/* How to grow the bench — always visible, so the join link and the
+              direct invite are here whether or not anyone has applied yet. */}
+          <div className="mt-4"><InviteCleaners /></div>
           <div className="mt-4"><SubApplications /></div>
         </section>
 
