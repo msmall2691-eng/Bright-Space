@@ -571,6 +571,20 @@ export default function JobCard({ job, onMarkDone, onPhotos, onRespond, onDeclin
       })()}
 
 
+      {/* MARK DONE — the cleaner's single most important action, and the whole
+          point of the card on an assigned job. It opens the completion sheet
+          (optional note) in MyDay; it queues and retries when there's no signal
+          (actionQueue), so finishing a house in a dead zone still sticks. Only
+          on a job that is actually theirs (not an open offer) and not already
+          done. Emerald primary, thumb-sized — Photos stays the quiet secondary
+          below it. */}
+      {onMarkDone && !done && !job.open && (
+        <button onClick={onMarkDone} disabled={busy}
+          className="mt-3 w-full min-h-[48px] text-sm font-semibold bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-700 disabled:opacity-60 text-white rounded-xl transition-colors inline-flex items-center justify-center gap-2">
+          <CheckCircle2 className="w-5 h-5" aria-hidden="true" /> Mark done
+        </button>
+      )}
+
       {onPhotos && (
         /* Photos stay reachable after Mark done on purpose — "after" shots are
            usually taken on the way out the door. */
