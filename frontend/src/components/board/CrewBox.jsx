@@ -41,8 +41,17 @@ export default function CrewBox({ navigate }) {
   if (threads && threads.length === 0) return null
 
   const open = (threads || []).find(t => t.user_id === openId) || null
-  const visible = (threads || []).slice(0, CAP)
-  const hidden = (threads || []).length - visible.length
+  // Active threads first, so a real conversation never hides below a cleaner
+  // who's never been messaged.
+  const sorted = [...(threads || [])].sort(
+    (a, b) => (b.last_activity || '').localeCompare(a.last_activity || ''))
+  const visible = sorted.slice(0, CAP)
+  const hidden = sorted.length - visible.length
+  // A glance surface, not a roster: when NObody has a message yet, a wall of
+  // "No messages yet" rows is just empty furniture (owner: Home "empty/awkward").
+  // Collapse to one line — "Message all" / "Open chat" in the header still reach
+  // the full roster.
+  const anyActivity = (threads || []).some(t => t.last_message)
 
   return (
     <section data-testid="home-crew" className="overflow-hidden rounded-2xl border border-hairline bg-panel">
@@ -64,6 +73,11 @@ export default function CrewBox({ navigate }) {
       {!threads ? (
         <div className="divide-y divide-hairline">
           {[0, 1, 2].map(i => <div key={i} className="h-[52px] animate-pulse bg-bg-2/40" />)}
+        </div>
+      ) : !anyActivity ? (
+        <div className="flex items-center gap-2.5 px-3.5 py-3.5">
+          <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-emerald-500" aria-hidden="true" />
+          <span className="text-[12.5px] text-ink-2">No crew messages yet.</span>
         </div>
       ) : (
         <div className="divide-y divide-hairline">

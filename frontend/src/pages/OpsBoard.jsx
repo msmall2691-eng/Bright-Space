@@ -431,6 +431,13 @@ export default function OpsBoard() {
     return rows
   }, [moneyItems, data])
 
+  // Whether the middle column (Flow + Money) has anything to show. Both
+  // MiniListBoxes self-hide when empty, so on a quiet morning this column would
+  // render as a blank track in the middle of the grid — the lopsided "empty
+  // space" the owner flagged. When it's empty we drop the column entirely and
+  // the grid narrows to Today + comms, so there is never a hole (see the grid).
+  const showFlowMoney = flowRows.length > 0 || moneyRows.length > 0
+
   // The single most pressing thing for the focus headline.
   const focus = useMemo(() => {
     const n = needsCleanerItems.length
@@ -526,12 +533,20 @@ export default function OpsBoard() {
           <>
             {/* 3 — THREE-COLUMN GRID. Per-column flex stacks so a short box packs
                 onto the next instead of height-locking to the tallest in its row
-                (owner: "too much empty spaces"). */}
+                (owner: "too much empty spaces"). The middle column collapses out
+                entirely when Flow + Money are both empty, so the grid is never
+                left with a blank track (owner: Home "looks empty/awkward"). */}
             <div data-testid="home-grid"
-              className="mt-4 grid grid-cols-1 items-start gap-4 sm:grid-cols-2 shell:grid-cols-[minmax(0,1.5fr)_minmax(0,1fr)_minmax(0,1.15fr)] bb-board-in">
+              className={`mt-4 grid grid-cols-1 items-start gap-4 sm:grid-cols-2 bb-board-in ${
+                showFlowMoney
+                  ? 'shell:grid-cols-[minmax(0,1.5fr)_minmax(0,1fr)_minmax(0,1.15fr)]'
+                  : 'shell:grid-cols-[minmax(0,1.5fr)_minmax(0,1.1fr)]'
+              }`}>
 
-              {/* Column A — Today + needs-a-cleaner */}
-              <div className="flex flex-col gap-4">
+              {/* Column A — Today + needs-a-cleaner. Spans the full width at the
+                  2-col (sm) size when the middle column is gone, so Today never
+                  sits beside an empty cell. */}
+              <div className={`flex flex-col gap-4 ${showFlowMoney ? '' : 'sm:col-span-2 shell:col-span-1'}`}>
                 <HomeToday navigate={navigate} />
                 {needsCleanerItems.length > 0 && (
                   <div className="flex items-center gap-2.5 rounded-2xl border border-hairline bg-panel px-3.5 py-3">
@@ -548,11 +563,15 @@ export default function OpsBoard() {
                 )}
               </div>
 
-              {/* Column B — Flow + Money */}
-              <div className="flex flex-col gap-4">
-                <MiniListBox title="Flow" link={{ label: 'Open Flow', to: '/flow' }} rows={flowRows} navigate={navigate} />
-                <MiniListBox title="Money" link={{ label: 'Billing', to: '/billing' }} rows={moneyRows} navigate={navigate} />
-              </div>
+              {/* Column B — Flow + Money. Dropped entirely when both are empty
+                  (each MiniListBox already self-hides) so the grid narrows
+                  rather than showing a blank middle track. */}
+              {showFlowMoney && (
+                <div className="flex flex-col gap-4">
+                  <MiniListBox title="Flow" link={{ label: 'Open Flow', to: '/flow' }} rows={flowRows} navigate={navigate} />
+                  <MiniListBox title="Money" link={{ label: 'Billing', to: '/billing' }} rows={moneyRows} navigate={navigate} />
+                </div>
+              )}
 
               {/* Column C — the comms rail. Office-only: both /api/crew/threads
                   and /api/comms/* are admin/manager, so the whole rail is hidden
