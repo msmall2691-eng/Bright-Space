@@ -170,8 +170,9 @@ export function buildRequestFeed(requests, { searchTerm = '', showDuplicatesOnly
 function SourceChip({ source }) {
   const cfg = SOURCE_CONFIG[source] || SOURCE_CONFIG.website
   const Ic = cfg.icon
+  // Bare icon + muted word — a quiet provenance note, not a filled chip.
   return (
-    <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-sm text-[11px] font-medium ${cfg.badge}`}>
+    <span className="inline-flex items-center gap-1 text-[11px] font-medium text-ink-3">
       <Ic className="w-3 h-3" /> {cfg.label}
     </span>
   )
@@ -212,7 +213,7 @@ const RequestCard = ({ intake, onViewDetails, onCreateQuote, onConvertToClient, 
             <div className="flex items-center gap-2 mb-2 flex-wrap">
               <h3 className="font-semibold text-ink truncate">{displayContactName(intake)}</h3>
               <SourceChip source={intake.source || 'website'} />
-              <span className="inline-flex h-5 items-center gap-1.5 rounded-sm border border-hairline-2 bg-panel px-2 text-[11px] font-medium text-ink-2 whitespace-nowrap">
+              <span className="inline-flex items-center gap-1.5 text-[11px] font-medium text-ink-2 whitespace-nowrap">
                 <span className={`h-1.5 w-1.5 rounded-full ${statusConfig.dot}`} />
                 {statusConfig.label}
               </span>
@@ -220,7 +221,7 @@ const RequestCard = ({ intake, onViewDetails, onCreateQuote, onConvertToClient, 
                   request. Only meaningful pre-conversion (a converted lead is
                   already won). */}
               {intake.quote_viewed_at && displayStatus !== 'converted' && (
-                <span className="inline-flex h-5 items-center gap-1.5 rounded-sm border border-hairline-2 bg-panel px-2 text-[11px] font-medium text-ink-2 whitespace-nowrap"
+                <span className="inline-flex items-center gap-1.5 text-[11px] font-medium text-ink-2 whitespace-nowrap"
                   title={`Customer opened the quote on ${new Date(intake.quote_viewed_at).toLocaleString()}`}>
                   <span className="h-1.5 w-1.5 rounded-full bg-indigo-500 shrink-0" /> Quote opened
                 </span>
@@ -229,7 +230,7 @@ const RequestCard = ({ intake, onViewDetails, onCreateQuote, onConvertToClient, 
                   can merge/archive from here. Same signal the backend uses to
                   auto-merge in-window; older matches surface here instead. */}
               {intake._possibleDuplicate && (
-                <span className="inline-flex h-5 items-center gap-1.5 rounded-sm border border-hairline-2 bg-panel px-2 text-[11px] font-medium text-ink-2 whitespace-nowrap"
+                <span className="inline-flex items-center gap-1.5 text-[11px] font-medium text-ink-2 whitespace-nowrap"
                   title="Shares a name or address with another lead — check for a duplicate">
                   <span className="h-1.5 w-1.5 rounded-full bg-amber-500 shrink-0" /> Possible duplicate
                 </span>
@@ -264,7 +265,7 @@ const RequestCard = ({ intake, onViewDetails, onCreateQuote, onConvertToClient, 
               {intake.requested_date && <span>• {formatDate(intake.requested_date)}</span>}
               {intake.frequency && <span>• {intake.frequency}</span>}
               {estimateText(intake.estimate_min, intake.estimate_max) ? (
-                <span className="inline-flex h-5 items-center gap-1.5 rounded-sm border border-hairline-2 bg-panel px-2 text-[11px] font-medium text-ink-2">
+                <span className="inline-flex items-center gap-1.5 text-[11px] font-medium text-ink-2">
                   <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
                   {estimateText(intake.estimate_min, intake.estimate_max)}
                 </span>
@@ -272,7 +273,7 @@ const RequestCard = ({ intake, onViewDetails, onCreateQuote, onConvertToClient, 
                 // STR / commercial are quoted by hand — the site shows no
                 // instant number, so make the blank estimate read as
                 // intentional rather than missing data.
-                <span className="inline-flex h-5 items-center gap-1.5 rounded-sm border border-hairline-2 bg-panel px-2 text-[11px] font-medium text-ink-2">
+                <span className="inline-flex items-center gap-1.5 text-[11px] font-medium text-ink-2">
                   <span className="h-1.5 w-1.5 rounded-full bg-violet-500" />
                   Custom quote
                 </span>

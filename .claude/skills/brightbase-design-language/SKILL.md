@@ -16,6 +16,9 @@ reintroduce the patterns below — reviewers grep for them.
 ## Never (owner-vetoed)
 
 - Filled colored pill/chip labels (`rounded-full` + `bg-amber-100`-style tints)
+- **Boxed status "dot-pills"** — a dot+word wrapped in `border border-hairline-2
+  bg-panel px-2` (the old `StatusBadge`/`InlineSelect` shape). Even neutral, the
+  box reads as a bubble; status is a BARE dot+word now (see Always).
 - Solid tinted banners (yellow/blue warning bars)
 - Colored count bubbles on buttons, tabs, or nav items
 - Tinted icon chips on stat tiles; gradient cards
@@ -33,9 +36,15 @@ chasing this rule; only the resting-state fill is the problem.
 
 ## Always
 
-- **Tags/status = dot + word**: 6px colored dot + plain sentence-case word in
-  `text-ink-2`/`text-ink-3` (11–13px). Shared component:
-  `frontend/src/components/ui/StatusBadge.jsx`. Color meanings: amber =
+- **Tags/status = BARE dot + word**: 6px colored dot + plain sentence-case word
+  in `text-ink-2`/`text-ink-3` (11–13px), and **nothing around it** — no border,
+  no `bg-panel` box, no `px`/`h-5` capsule. Oct 2026 the owner rejected even the
+  quiet boxed "dot-pill" ("those little bubbles"/"eww") and asked status to
+  recede into the text; a bordered box around a dot+word is now the same mistake
+  as a filled pill. Shared component: `frontend/src/components/ui/StatusBadge.jsx`
+  (already bare — don't re-add the box). An *interactive* status (click-to-change,
+  `InlineSelect.jsx`) stays bare at rest and reveals a subtle border+fill on
+  **hover** only, so it still reads as clickable. Color meanings: amber =
   needs attention, red = overdue/error, emerald = ok/done, gray = neutral/ok-
   and-quiet (e.g. synced), violet = open to crew, indigo = informational.
 - **Attention = hairline card**: `bg-panel border border-hairline rounded-lg`
