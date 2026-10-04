@@ -2418,21 +2418,39 @@ def crew_job_property_photo(
     picture the office and the customer see, so a cleaner can recognise the
     house from the road before they pull in.
 
-    ASSIGNED-ONLY (404 otherwise), exactly like crew_job_detail: the photo
-    reveals which house this is, so it's need-to-know alongside the address and
-    never rides an open-offer card. Lazy-loaded by the card and cached a day in
-    the browser (Cache-Control), so a cleaner on bad rural cell pays for it
-    once. 404 when photos are off, no key is set, or Google has no imagery for
-    the address — the client simply hides the tile, same as everywhere else the
-    Street View photo appears."""
+    VISIBLE TO THE ASSIGNED CLEANER, AND — since the owner's Oct 2026 decision —
+    to a cleared sub looking at an OPEN offer, so they can judge the house before
+    deciding to go for it (brightbase-marketplace: this relaxes "no photo on an
+    open offer"; the street ADDRESS and customer NAME still wait until won — only
+    the picture rides the offer). Gated to the SAME visibility as the open board
+    itself: cleared, open_for_claims, scheduled, inside the offer audience — so
+    it never reveals a house to a sub who couldn't already see the offer.
+
+    Loaded once when the detail sheet opens and cached a day in the browser
+    (Cache-Control), so a cleaner on bad rural cell pays for it once. 404 when
+    photos are off, no key is set, or Google has no imagery for the address —
+    the client simply hides the tile."""
     _require_crew_id(current_user)
     oid = resolve_org_id(org_id, db)
     job = (db.query(Job)
            .options(joinedload(Job.property))
            .filter(or_(Job.org_id == oid, Job.org_id.is_(None)), Job.id == job_id)
            .first())
-    if not job or current_user.cleaner_id not in (job.cleaner_ids or []):
+    if not job:
         raise HTTPException(status_code=404, detail="Job not found.")
+    assigned = current_user.cleaner_id in (job.cleaner_ids or [])
+    if not assigned:
+        # An open offer this sub can see on the board: same gate as the board.
+        from services.sub_vetting import blocking_requirements
+        audience = getattr(job, "offer_audience", None) or []
+        can_see_open = (
+            getattr(job, "open_for_claims", False)
+            and job.status == "scheduled"
+            and not blocking_requirements(db, current_user)
+            and (not audience or current_user.cleaner_id in audience)
+        )
+        if not can_see_open:
+            raise HTTPException(status_code=404, detail="Job not found.")
     from services.property_media import street_view_enabled, street_view_bytes
     from modules.settings.router import get_setting
     if not street_view_enabled(db):
