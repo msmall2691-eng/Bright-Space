@@ -57,10 +57,14 @@ function SkyArt({ night, raining, cloudy }) {
           : (<><circle cx="322" cy="46" r="40" fill="url(#bb-sun)" /><circle cx="322" cy="46" r="18" fill="#fff2bf" /></>)
       )}
 
-      {/* Clouds — a couple always, more when it's grey; a rain cloud when wet */}
-      <Cloud x={70} y={34} s={0.8} opacity={night ? 0.5 : 0.8} />
+      {/* Clouds. Kept OUT of the top-left where the tips sit — a white cloud
+          behind a white tip left it unreadable (owner screenshot). The two
+          fair-weather clouds ride low, under the scrim that already darkens the
+          ground for the greeting; the rain cloud stays high so the rain has
+          room to fall. */}
+      <Cloud x={88} y={120} s={0.78} opacity={night ? 0.5 : 0.78} />
       {(cloudy || raining) && <Cloud x={300} y={40} s={1} opacity={night ? 0.6 : 0.92} />}
-      {cloudy && !raining && <Cloud x={180} y={22} s={0.7} opacity={night ? 0.45 : 0.7} />}
+      {cloudy && !raining && <Cloud x={176} y={116} s={0.7} opacity={night ? 0.45 : 0.7} />}
 
       {/* Rain under the right-hand cloud */}
       {raining && [296, 312, 328, 344].map((x, i) => (
@@ -119,7 +123,7 @@ export default function HeroBanner({ firstName, jobCount, tips = [], onTipTap })
           <div className="space-y-0.5">
             {tips.map((t, i) => (
               <button key={i} type="button" onClick={onTipTap}
-                className={`flex w-[82%] items-start gap-1.5 text-left text-[11px] font-medium leading-snug transition-colors ${tipTone}`}>
+                className={`flex w-[82%] items-start gap-1.5 text-left text-[11px] font-medium leading-snug drop-shadow-sm transition-colors ${tipTone}`}>
                 <Lightbulb className="mt-px h-3 w-3 shrink-0" aria-hidden="true" />
                 <span className="line-clamp-2">{t}</span>
               </button>
