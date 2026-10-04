@@ -319,16 +319,19 @@ describe('OpsBoard — comms rail', () => {
   it('renders the Crew box from one /api/crew/threads fetch', async () => {
     mockGet(PAYLOAD, CREW_THREADS)
     renderBoard()
+    // home-crew is only the box's SHELL. The rows come from a separate
+    // /api/crew/threads fetch, so nothing about that request -- not its
+    // result, not even that it was issued -- is settled when the testId
+    // appears. Both assertions below used to run synchronously after it, and
+    // both raced: the text one lost 5 times in 8 runs, and `get` was observed
+    // with "Number of calls: 1" (the board payload only, crew not yet
+    // requested) once in 24. React 18's scheduler won both every time; React
+    // 19's does not. So await the rows FIRST -- once they are on screen the
+    // fetch provably happened -- and assert the call after.
     await screen.findByTestId('home-crew')
-    expect(get).toHaveBeenCalledWith('/api/crew/threads')
-    // findByText, not getByText: home-crew is the box's shell, and the rows
-    // arrive from the separate /api/crew/threads fetch, so the two don't land
-    // in the same flush. Awaiting the testId and then asserting the content
-    // synchronously was a race that React 18's scheduler happened to always
-    // win and React 19's does not -- 5 failures in 8 runs on 19, 0 in 8 on 18.
-    // The sibling test below already awaits this text for the same reason.
     // One cleaner, unread shown as a quiet dot+word ("2 new"), not a bubble.
     expect(await screen.findByText('Dana Jones')).toBeTruthy()
+    expect(get).toHaveBeenCalledWith('/api/crew/threads')
     expect(screen.getByText('2 new')).toBeTruthy()
     expect(screen.getByText('Pat Lee')).toBeTruthy()
   })
