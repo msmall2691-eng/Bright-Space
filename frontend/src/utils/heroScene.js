@@ -1,51 +1,65 @@
 /**
- * Per-cleaner Home header "scene" — the gradient banner behind the greeting and
- * weather on My Day. Pure CSS gradients, no image download (brightbase-economy:
- * the crew app runs on rural cell data, so a header that re-fetches a photo on
- * every open is exactly what we don't want).
+ * Per-cleaner My Day header "scene" — a SOFT SKY behind the greeting and
+ * weather. Pure CSS gradient + a little inline SVG sun/moon/clouds drawn by
+ * HeroBanner (no image download — brightbase-economy, rural cell data).
  *
- * OWNER-REQUESTED EXCEPTION to the "no gradient cards" line in the design
- * language: that veto governs the quiet OFFICE surface. The crew app is the
- * deliberately fun, customizable one (My Day accent + sticky notes), and the
- * owner asked for a colourful, pick-your-own header here. Scoped to this one
- * banner — it does not spread to the office.
+ * The default is the time of day (dawn / day / dusk / night), NOT the accent
+ * colour — an amber accent turned the old gradient gold-then-muddy, which the
+ * owner didn't like. Accent is still a pickable scene ("My colour") for anyone
+ * who wants it.
  *
- * Like the accent, the choice is a per-viewer convenience: localStorage only,
- * no backend, no payload. 'auto' follows the cleaner's chosen accent colour so
- * the two personalisations move together by default.
+ * Owner-approved exception to the design language's "no gradient cards" line,
+ * which governs the quiet OFFICE surface; this is the friendly crew app. Scoped
+ * to this one banner. Saved per-phone in localStorage, no backend.
  */
 const STORAGE_KEY = 'bb_crew_hero'
 
+// `sky` = [top, bottom] for a vertical gradient; `dark` = the sky is dark
+// enough to want white text. Soft, low-saturation palettes on purpose.
 export const HERO_SCENES = [
-  { id: 'auto',     label: 'My colour' },   // follows the accent (default)
-  { id: 'sunrise',  label: 'Sunrise',  from: '#fb923c', via: '#f472b6', to: '#a855f7' },
-  { id: 'daylight', label: 'Daylight', from: '#38bdf8', via: '#22d3ee', to: '#2dd4bf' },
-  { id: 'dusk',     label: 'Dusk',     from: '#7c3aed', via: '#db2777', to: '#f97316' },
-  { id: 'night',    label: 'Night',    from: '#0f172a', via: '#1e3a8a', to: '#312e81' },
-  { id: 'ocean',    label: 'Ocean',    from: '#0369a1', via: '#0891b2', to: '#0e7490' },
-  { id: 'forest',   label: 'Forest',   from: '#15803d', via: '#0f766e', to: '#166534' },
+  { id: 'auto',  label: 'Auto' },
+  { id: 'dawn',  label: 'Dawn',  sky: ['#fcd9b0', '#a9c7ec'], dark: false },
+  { id: 'day',   label: 'Day',   sky: ['#9fc9f3', '#e8f4ff'], dark: false },
+  { id: 'dusk',  label: 'Dusk',  sky: ['#f0a97f', '#5b5a8c'], dark: true },
+  { id: 'night', label: 'Night', sky: ['#28406e', '#0b1026'], dark: true },
+  { id: 'mine',  label: 'My colour', accent: true, dark: true },
 ]
 
-/** The CSS `background-image` for a scene. 'auto' reads the live accent vars so
- *  it recolours with the cleaner's accent pick; the named scenes are fixed. */
-export function heroGradient(sceneId) {
-  const s = HERO_SCENES.find(x => x.id === sceneId) || HERO_SCENES[0]
-  if (!s.from) {
-    return 'linear-gradient(135deg, rgb(var(--accent-400)) 0%, rgb(var(--accent-600)) 55%, rgb(var(--accent-800)) 100%)'
-  }
-  return `linear-gradient(135deg, ${s.from} 0%, ${s.via} 50%, ${s.to} 100%)`
+/** Which sky the clock points at right now (what 'auto' resolves to). */
+export function timeScene() {
+  const h = new Date().getHours()
+  if (h < 7) return 'night'
+  if (h < 11) return 'dawn'
+  if (h < 17) return 'day'
+  if (h < 20) return 'dusk'
+  return 'night'
 }
 
-/** The small swatch gradient for the picker (same angle, smaller). */
-export function heroSwatch(sceneId) {
-  return heroGradient(sceneId)
+/** The concrete scene to paint for a saved id (resolves 'auto' by the clock). */
+export function resolveScene(id) {
+  let s = HERO_SCENES.find(x => x.id === (id || 'auto')) || HERO_SCENES[0]
+  if (s.id === 'auto') s = HERO_SCENES.find(x => x.id === timeScene()) || HERO_SCENES[2]
+  return s
+}
+
+/** The CSS background for a resolved scene. 'My colour' reads the live accent. */
+export function skyStyle(scene) {
+  if (scene.accent) {
+    return { backgroundImage: 'linear-gradient(to bottom, rgb(var(--accent-400)) 0%, rgb(var(--accent-700)) 100%)' }
+  }
+  return { backgroundImage: `linear-gradient(to bottom, ${scene.sky[0]} 0%, ${scene.sky[1]} 100%)` }
+}
+
+/** Swatch style for the picker (resolves 'auto' so it shows a real sky). */
+export function skySwatch(id) {
+  return skyStyle(resolveScene(id))
 }
 
 export function currentHeroId() {
   try { return localStorage.getItem(STORAGE_KEY) || 'auto' } catch { return 'auto' }
 }
 
-/** Save the pick and tell any live HeroBanner to recolour at once. */
+/** Save the pick and tell any live HeroBanner to repaint at once. */
 export function setHero(id) {
   try {
     if (!id || id === 'auto') localStorage.removeItem(STORAGE_KEY)

@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { Check } from 'lucide-react'
-import { HERO_SCENES, heroSwatch, currentHeroId, setHero } from '../../utils/heroScene'
+import { HERO_SCENES, skySwatch, currentHeroId, setHero } from '../../utils/heroScene'
 
 /**
  * "Make it yours" — the cleaner picks the gradient scene behind their My Day
@@ -29,7 +29,7 @@ export default function HeroScenePicker() {
               className={`flex h-9 w-14 items-center justify-center rounded-lg ring-1 ring-black/10 transition-transform active:scale-90 ${
                 active ? 'ring-2 ring-offset-2 ring-ink/50 ring-offset-bg' : 'hover:scale-105'
               }`}
-              style={{ backgroundImage: heroSwatch(s.id) }}
+              style={skySwatch(s.id)}
             >
               {active && <Check className="h-4 w-4 drop-shadow" style={{ color: '#fff' }} aria-hidden="true" />}
             </button>
