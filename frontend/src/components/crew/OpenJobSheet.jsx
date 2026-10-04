@@ -6,13 +6,13 @@ import PropertyPhoto from '../PropertyPhoto'
  * The details of a job that's up for grabs — what a cleaner needs to decide
  * whether to go for it, in one tap.
  *
- * brightbase-marketplace: an open offer carries town, size, rate — and, since
- * the owner's Oct 2026 decision, a PHOTO of the house, so a cleared sub can
- * judge the property before deciding (it helps them choose without asking the
- * office). The street ADDRESS and the customer's NAME still wait until the job
- * is theirs — only the picture rides the offer. The photo loads once, when this
- * sheet opens (not on every board card), and is served by the same gated crew
- * endpoint, so it never reveals a house to a sub who couldn't see the offer.
+ * brightbase-marketplace: since the owner's Oct 2026 decision an open offer
+ * carries the house ADDRESS and PHOTO alongside town/size/rate, so a cleared
+ * sub can judge the job and choose without asking the office. What still waits
+ * until the job is theirs: the customer's NAME and the access details (gate
+ * code, wifi, entry notes). The photo loads once, when this sheet opens (not on
+ * every board card), from the gated crew endpoint — so it only ever reaches a
+ * sub who could already see the offer.
  */
 const SERVICE = {
   str_turnover: {
@@ -112,7 +112,14 @@ export default function OpenJobSheet({ job, onClose, onClaim, onAccept, busy = f
           <span className="h-1.5 w-1.5 rounded-full bg-violet-500" aria-hidden="true" /> Up for grabs
         </div>
         <h2 className="mt-1 text-[18px] font-bold leading-tight text-ink">{svc.label}</h2>
-        {job.area && (
+        {job.address ? (
+          <a href={`https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(job.address)}`}
+            target="_blank" rel="noopener noreferrer"
+            className="mt-0.5 flex items-center gap-1 text-[13px] text-blue-600 dark:text-blue-400 active:opacity-60">
+            <MapPin className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+            <span className="underline decoration-blue-400/40 underline-offset-2">{job.address}</span>
+          </a>
+        ) : job.area && (
           <div className="mt-0.5 flex items-center gap-1 text-[13px] text-ink-2">
             <MapPin className="h-3.5 w-3.5 shrink-0 text-ink-3" aria-hidden="true" /> {job.area}
           </div>
@@ -145,8 +152,8 @@ export default function OpenJobSheet({ job, onClose, onClaim, onAccept, busy = f
       <div className="flex items-start gap-2 rounded-xl border border-hairline bg-panel px-3 py-2.5">
         <Lock className="mt-0.5 h-3.5 w-3.5 shrink-0 text-ink-3" aria-hidden="true" />
         <p className="text-[12px] leading-snug text-ink-2">
-          The exact address and the access details (gate code, wifi, notes) unlock
-          once this job is yours.
+          The access details — gate code, wifi, entry notes — and the customer’s
+          name unlock once this job is yours.
         </p>
       </div>
 

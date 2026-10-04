@@ -289,14 +289,15 @@ export default function JobCard({ job, onMarkDone, onPhotos, onRespond, onDeclin
         )}
       </div>
 
-      {!job.open && job.address && (
+      {job.address && (
         /* The house from the road — the same Street View the office and the
            customer see, so a cleaner recognises where they're going before
-           they pull in. Assigned jobs only (the endpoint 404s otherwise, and
-           an open-offer card has no address anyway); lazy, so it only loads
-           for a card actually on screen; cached a day in the browser after
-           that — one paid fetch, friendly to rural cell. Hides itself when
-           there's no imagery or photos are off. */
+           they pull in. Shown on assigned jobs AND open offers (owner's Oct
+           2026 call: the photo helps a sub choose; the endpoint gates it to
+           subs who can see the offer). Lazy, so it only loads for a card
+           actually on screen; cached a day after that — one paid fetch,
+           friendly to rural cell. Hides itself when there's no imagery or
+           photos are off. */
         <PropertyPhoto
           url={`/api/crew/jobs/${job.id}/property-photo`}
           lazy
