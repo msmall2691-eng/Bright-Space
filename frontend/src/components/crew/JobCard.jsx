@@ -262,6 +262,17 @@ export default function JobCard({ job, onMarkDone, onPhotos, onRespond, onDeclin
           {offerSpecsInline && (
             <div className="text-xs text-ink-3 mt-0.5 truncate">{houseLine}</div>
           )}
+          {/* What this job pays the cleaner — their own agreed, per-job rate,
+              already in the payload. Shown on a job that's THEIRS (an open
+              offer carries its price in the claim row below instead); hidden
+              when no rate is on file (a grandfathered job), never $0. Per-job
+              pay is the only money a sub ever sees — never an hourly figure
+              (brightbase-marketplace). */}
+          {!job.open && job.agreed_rate != null && (
+            <div className="text-xs text-ink-2 mt-0.5">
+              Pays <span className="font-semibold text-ink">${Number(job.agreed_rate).toLocaleString(undefined, { maximumFractionDigits: 2 })}</span>
+            </div>
+          )}
           {/* Open offers: a tap to the full (anonymised) details — size, hours,
               pay, what the job involves — so a sub can judge it before bidding.
               Address/photo still unlock only once it's theirs. */}

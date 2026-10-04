@@ -189,3 +189,50 @@ def test_targeted_offer_photo_hidden_from_sub_not_in_audience(open_job, monkeypa
         assert r.status_code == 404
     finally:
         _clear()
+
+
+# ── Street View uses the FULL address, not the bare street line ──────────────
+# A bare "74 Central Ave" geocodes to whatever town Google guesses — a sub was
+# shown a desert Street View for an Old Orchard Beach turnover. The lookup now
+# composes the property's town/state/zip onto the street line.
+
+@pytest.fixture
+def job_with_town():
+    db = SessionLocal()
+    tag = uuid.uuid4().hex[:6]
+    c = Client(name=f"Town {tag}", status="active", org_id=1)
+    db.add(c); db.commit(); db.refresh(c)
+    p = Property(client_id=c.id, name=f"74 Central {tag}", address="74 Central Ave",
+                 city="Old Orchard Beach", state="ME", zip_code="04064", org_id=1)
+    db.add(p); db.commit(); db.refresh(p)
+    j = Job(client_id=c.id, property_id=p.id, job_type="str_turnover",
+            title=f"Turnover {tag}", scheduled_date=business_today(),
+            start_time=time(10, 0), end_time=time(15, 0),
+            cleaner_ids=["CT-town-1"], status="scheduled", org_id=1)
+    db.add(j); db.commit(); db.refresh(j)
+    ids = (j.id, p.id, c.id)
+    db.close()
+    yield ids[0]
+    db = SessionLocal()
+    db.query(Job).filter(Job.id == ids[0]).delete(synchronize_session=False)
+    db.query(Property).filter(Property.id == ids[1]).delete(synchronize_session=False)
+    db.query(Client).filter(Client.id == ids[2]).delete(synchronize_session=False)
+    db.commit(); db.close()
+
+
+def test_street_view_lookup_uses_the_full_address(job_with_town, monkeypatch):
+    seen = {}
+
+    def _capture(addr, key, size="640x360"):
+        seen["addr"] = addr
+        return b"JPEGBYTES"
+
+    monkeypatch.setattr(pm, "street_view_enabled", lambda db: True)
+    monkeypatch.setattr(pm, "street_view_bytes", _capture)
+    try:
+        r = _as(_Cleaner(9993, "CT-town-1")).get(f"/api/crew/jobs/{job_with_town}/property-photo")
+        assert r.status_code == 200
+        # Town + state + zip composed onto the street line — not "74 Central Ave" alone.
+        assert seen["addr"] == "74 Central Ave, Old Orchard Beach, ME, 04064"
+    finally:
+        _clear()

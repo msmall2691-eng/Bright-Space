@@ -46,6 +46,7 @@ from modules.auth.router import (
 )
 from modules.scheduling.completion import auto_create_draft_invoice
 from utils.activity_logger import log_job_status_change
+from utils.address import combine_address
 from utils.uploads import read_capped
 from utils.dates import business_today, business_tz, coerce_date, week_monday
 
@@ -91,7 +92,14 @@ def _job_row(job: Job, names_by_cid: dict | None = None, self_cid: str | None = 
         "start_time": _fmt_time(job.start_time),
         "end_time": _fmt_time(job.end_time),
         "property_name": prop.name if prop else None,
-        "address": prop.address if prop else (job.address or None),
+        # Full address (street + town + state + zip), not the bare street line.
+        # A bare "74 Central Ave" geocodes to whatever town Google guesses — a
+        # sub was shown a desert Street View for an Old Orchard Beach turnover,
+        # and the map link would have driven them there too. The town/state/zip
+        # live in their own columns; combine_address skips any already present
+        # in the line, so a line that's already complete is left alone.
+        "address": (combine_address(prop.address, prop.city, prop.state, prop.zip_code) or None)
+                   if prop else (job.address or None),
         # What the office wrote on the job — "dog in the yard", "bring the
         # tall ladder". Was never sent to crew before Aug 2026 (owner bug
         # report: "I'm still not seeing notes").
@@ -2458,7 +2466,13 @@ def crew_job_property_photo(
     from modules.settings.router import get_setting
     if not street_view_enabled(db):
         raise HTTPException(status_code=404, detail="No photo")
-    address = ((job.property.address if job.property else None) or job.address or "").strip()
+    # Full address (town + state + zip), not the bare street line — otherwise
+    # Google geocodes "74 Central Ave" to the wrong town and the sub gets a
+    # Street View of somewhere else entirely (a desert, for an Old Orchard
+    # Beach turnover). Same composition the card's map link uses.
+    p = job.property
+    address = (combine_address(p.address, p.city, p.state, p.zip_code) if p
+               else (job.address or "")).strip()
     img = street_view_bytes(address, get_setting(db, "google_maps_api_key")) if address else None
     if not img:
         raise HTTPException(status_code=404, detail="No photo")
