@@ -79,8 +79,16 @@ jobs:
           pip install -r requirements.txt -r requirements-dev.txt
       - name: Validate Postgres Row-Level Security (MT-3)
         run: python -m pytest tests/test_tenancy_rls_postgres.py -v
+      # test_dashboard_board.py rides along in the SAME pytest invocation as a
+      # canary, and is not here for its own coverage (the Backend tests job
+      # already runs it). The migration test has to repoint the app at a
+      # throwaway database and reload database.db to do its job; when it failed
+      # to put that back, every later DB-touching test in the session died with
+      # `database "brightspace_migtest_..." does not exist` -- ~390 of them.
+      # No job ran this file alongside anything else, so CI never saw it. One
+      # fast module in the same process is enough to catch a regression.
       - name: Validate migrations replay cleanly from an empty database
-        run: python -m pytest tests/test_migrations_from_scratch.py -v
+        run: python -m pytest tests/test_migrations_from_scratch.py tests/test_dashboard_board.py -v
 
   frontend-build:
     name: Frontend build
