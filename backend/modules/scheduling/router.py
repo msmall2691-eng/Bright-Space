@@ -781,6 +781,59 @@ def job_to_dict(j: Job, client: Client = None, effective_date=None,
     }
 
 
+def _reservation_events(db: Session, property_ids, since=None, linked_ids=None) -> dict:
+    """{property_id: [ICalEvent, ...]} — the reservations needed to match
+    turnover jobs to their booking, sorted by check-in.
+
+    BOUNDED BY `since` ON PURPOSE. This used to load EVERY reservation ever
+    recorded for these properties, on every Schedule load and every 45s poll.
+    That set only grows: a property two years into its life carried two years
+    of dead bookings through this query to answer a question about one week.
+    It was a timeout waiting to happen, and it got slower every month the
+    business ran.
+
+    A reservation's check-in is never after its check-out, so
+    `checkout_date >= since` is a safe superset of everything the callers can
+    match (the check-in bound is kept too, so a malformed row with the pair
+    inverted still can't silently vanish). Nothing bounds it ABOVE: the
+    next-arrival lookup legitimately reaches past the window, and future
+    bookings are a small set that doesn't grow with history — unlike the past,
+    which is what actually needed cutting.
+
+    No `since` leaves the fetch unbounded, which is the old behaviour. That
+    only happens for a turnover with no date at all — a single property, and
+    vanishingly rare, since a turnover exists BECAUSE a booking checks out on a
+    given day. Bounding it would need a second fetch to keep next-arrival
+    correct, which is not worth it for that case.
+
+    `linked_ids` is the exception that keeps this correct. A turnover the
+    office MOVED still points at its original booking through
+    `Job.ical_event_id`, and that booking's checkout can sit before `since` —
+    so those rows are fetched by id regardless of date rather than dropped,
+    which would blank the booking details on exactly the jobs most likely to
+    need looking at.
+    """
+    property_ids = list(property_ids or [])
+    if not property_ids:
+        return {}
+    q = db.query(ICalEvent).filter(
+        ICalEvent.property_id.in_(property_ids),
+        ICalEvent.event_type == "reservation",
+    )
+    if since:
+        iso = since.isoformat() if hasattr(since, "isoformat") else str(since)
+        window = or_(ICalEvent.checkout_date >= iso, ICalEvent.checkin_date >= iso)
+        linked = [i for i in (linked_ids or []) if i]
+        q = q.filter(or_(window, ICalEvent.id.in_(linked)) if linked else window)
+    by_prop: dict = {}
+    for ev in q.all():
+        by_prop.setdefault(ev.property_id, []).append(ev)
+    # Sort each property's events by check-in for the next-arrival lookup.
+    for evs in by_prop.values():
+        evs.sort(key=lambda e: e.checkin_date or "")
+    return by_prop
+
+
 def _job_booking_info(db: Session, j: Job):
     """Single-job counterpart to get_jobs()'s bulk booking/next-arrival match
     (lines ~611-648): finds the ICalEvent this str_turnover job's checkout
@@ -797,12 +850,9 @@ def _job_booking_info(db: Session, j: Job):
     """
     if j.job_type != "str_turnover" or not j.property_id:
         return None, None
-    events = (
-        db.query(ICalEvent)
-          .filter(ICalEvent.property_id == j.property_id, ICalEvent.event_type == "reservation")
-          .all()
-    )
-    events.sort(key=lambda e: e.checkin_date or "")
+    events = _reservation_events(
+        db, [j.property_id], since=j.scheduled_date, linked_ids=[j.ical_event_id],
+    ).get(j.property_id, [])
     booking = None
     if j.ical_event_id:
         booking = next((e for e in events if e.id == j.ical_event_id), None)
@@ -1079,20 +1129,19 @@ def get_jobs(
         prop_names = {pid: meta[0] for pid, meta in prop_meta.items()}
         from modules.settings.router import turnover_lead_buffer_hours
         lead_buffer_hours = turnover_lead_buffer_hours(db)
-        prop_ids = {j.property_id for j, _ in rows if j.property_id and j.job_type == "str_turnover"}
-        events_by_prop = {}
-        if prop_ids:
-            ical_rows = (
-                db.query(ICalEvent)
-                  .filter(ICalEvent.property_id.in_(prop_ids))
-                  .filter(ICalEvent.event_type == "reservation")
-                  .all()
-            )
-            for ev in ical_rows:
-                events_by_prop.setdefault(ev.property_id, []).append(ev)
-            # Sort each property's events by checkin_date for next-arrival lookup.
-            for pid, evs in events_by_prop.items():
-                evs.sort(key=lambda e: e.checkin_date or "")
+        # Earliest turnover date on this page is the floor for the reservation
+        # fetch — see _reservation_events for why loading all of history here
+        # was the real problem. One source of truth for "which rows are
+        # turnovers with a property", since the floor and the property set have
+        # to agree.
+        turnover_rows = [(j, eff) for j, eff in rows
+                         if j.property_id and j.job_type == "str_turnover"]
+        prop_ids = {j.property_id for j, _ in turnover_rows}
+        since = min((eff for _, eff in turnover_rows if eff), default=None)
+        events_by_prop = _reservation_events(
+            db, prop_ids, since=since,
+            linked_ids=[j.ical_event_id for j, _ in turnover_rows],
+        )
 
         # One query for the whole page, and only when something on it is
         # actually posted — a shop with nothing on the board pays nothing
