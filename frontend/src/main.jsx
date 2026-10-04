@@ -4,12 +4,26 @@ import { BrowserRouter } from 'react-router-dom'
 import App from './App'
 import GlobalToasts from './components/ui/GlobalToasts'
 import GlobalConfirmDialog from './components/ui/GlobalConfirmDialog'
+import InstallPrompt from './components/InstallPrompt'
 import './index.css'
 import { applyTheme, applyAccent } from './theme'
 
 // Apply the saved theme + accent (defaults: clean light, indigo) before first paint.
 applyTheme()
 applyAccent()
+
+// ── Capture the install prompt as early as possible ──
+// Chrome/Android fire `beforeinstallprompt` once, and it can land before React
+// has mounted. Stash it (and mute Chrome's own mini-infobar) so InstallPrompt
+// can offer our quiet card on its own terms; re-announce via `bb:installable`
+// for the case where it fires after mount. See components/InstallPrompt.jsx.
+window.__bbInstallEvent = null
+window.addEventListener('beforeinstallprompt', (e) => {
+  e.preventDefault()
+  window.__bbInstallEvent = e
+  window.dispatchEvent(new Event('bb:installable'))
+})
+window.addEventListener('appinstalled', () => { window.__bbInstallEvent = null })
 
 
 // ── Global fetch interceptor ──
@@ -46,6 +60,9 @@ ReactDOM.createRoot(document.getElementById('root')).render(
           and /pay, the loading splash), not just the authenticated shell. */}
       <GlobalToasts />
       <GlobalConfirmDialog />
+      {/* Quiet "Add to Home Screen" nudge — self-gating (installable, phone,
+          signed-in, not already installed, not recently dismissed). */}
+      <InstallPrompt />
     </BrowserRouter>
   </React.StrictMode>
 )
