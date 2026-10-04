@@ -1,10 +1,12 @@
 /**
- * StatusBadge — the Attio-style dot-pill: a quiet bordered body with a small
- * colored dot carrying the status hue, instead of a tinted capsule. Status
- * still never relies on color alone — the label text is always present.
+ * StatusBadge — a bare dot + word. A small colored dot carries the status hue;
+ * the label text always rides alongside it, so status never relies on color
+ * alone. No bordered box, no fill: the owner rejected even the quiet boxed
+ * "dot-pill" (Oct 2026 — "those little bubbles") and asked status to recede
+ * into the text. See the brightbase-design-language skill.
  *
- * Same API as before ({status, variant, children}); `variant` is accepted
- * for compatibility but both variants now render the one pill shape.
+ * Same API as before ({status, variant, children}); `variant` is accepted for
+ * compatibility but there is one shape now.
  */
 const DOTS = {
   success: 'bg-emerald-500 dark:bg-emerald-400',
@@ -23,7 +25,7 @@ export default function StatusBadge({
   const dot = DOTS[status] || DOTS.neutral
   return (
     <span
-      className={`inline-flex h-5 items-center gap-1.5 whitespace-nowrap rounded-sm border border-hairline-2 bg-panel px-2 text-[11px] font-medium leading-none text-ink-2 ${className}`}
+      className={`inline-flex items-center gap-1.5 whitespace-nowrap text-[11px] font-medium leading-none text-ink-2 ${className}`}
     >
       <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${dot}`} aria-hidden />
       {children}

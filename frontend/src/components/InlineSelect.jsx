@@ -1,9 +1,11 @@
 import { useState, useRef, useEffect } from 'react'
 
 /**
- * Twenty-style click-to-edit chip. Renders the current value as a pill; clicking
- * opens a dropdown to pick a new value and fires onSelect (the parent persists +
- * updates state). Stops row-click propagation so it works inside clickable rows.
+ * Click-to-edit status. At rest it's a bare dot + word so it recedes into the
+ * row (the owner rejected the boxed "dot-pill" — Oct 2026); on hover it reveals
+ * a subtle border + fill so it still reads as clickable. Clicking opens a
+ * dropdown to pick a new value and fires onSelect (the parent persists + updates
+ * state). Stops row-click propagation so it works inside clickable rows.
  *
  * options: [{ value, label, chipClass?, dot? }]
  */
@@ -27,8 +29,8 @@ export default function InlineSelect({ value, options, onSelect, disabled = fals
         disabled={disabled}
         onClick={() => setOpen(o => !o)}
         title={disabled ? undefined : 'Click to change'}
-        className={`inline-flex h-5 min-h-0 items-center gap-1.5 whitespace-nowrap rounded-sm border border-hairline-2 bg-panel px-2 text-[11px] font-medium capitalize leading-none text-ink-2 transition
-          ${disabled ? '' : 'cursor-pointer hover:bg-bg-2'}`}
+        className={`-mx-1 inline-flex h-5 min-h-0 items-center gap-1.5 whitespace-nowrap rounded-sm border border-transparent px-1 text-[11px] font-medium capitalize leading-none text-ink-2 transition
+          ${disabled ? '' : 'cursor-pointer hover:border-hairline-2 hover:bg-bg-2'}`}
       >
         <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${current?.dot || 'bg-ink-3'}`} aria-hidden />
         {current?.label || value || '—'}
