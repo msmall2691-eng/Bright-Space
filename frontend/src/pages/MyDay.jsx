@@ -10,7 +10,7 @@
  * place and only fetches once opened, so opening Me costs one request (the
  * week-pay summary), not four.
  */
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { MapPin, LogOut, RefreshCw, CalendarDays, Clock, Car, DollarSign, CheckCircle2, CalendarRange, CircleUserRound, Sparkles, BookOpen, MessageSquare, Sun, CalendarClock, CalendarOff, Smartphone, CalendarPlus, ShieldCheck, Landmark, Palette } from 'lucide-react'
 import { get, post as apiPost, patch as apiPatch, del as apiDel, logout } from '../api'
 import { toast } from '../utils/toastBus'
@@ -44,6 +44,9 @@ import { SOFT, CrewCard, SectionLabel, ErrorNote, SettingRow, Sheet, SheetAction
 // flushing the queue (app open + connectivity changes) and the visible
 // "waiting" line with the cleaner's Send-now override.
 import { flushPhotoQueue, subscribeQueue } from '../components/crew/photoQueue'
+import {
+  enqueueAction, flushActionQueue, subscribeActions, looksOffline,
+} from '../components/crew/actionQueue'
 
 function fmtDuration(ms) {
   const totalMin = Math.max(0, Math.floor(ms / 60000))
@@ -291,6 +294,17 @@ export default function MyDay({ previewUserId = null }) {
   // Photos waiting for WiFi (see components/crew/photoQueue.js).
   const [queuedPhotos, setQueuedPhotos] = useState(0)
   const [sendingQueued, setSendingQueued] = useState(false)
+  // Mark-done / accept-decline taps made with no signal, waiting to send
+  // (components/crew/actionQueue.js). Separate from photos because these do
+  // NOT wait for WiFi — they go on any connection.
+  const [queuedActions, setQueuedActions] = useState(0)
+  const [sendingActions, setSendingActions] = useState(false)
+  // fetchDay is defined further down, and both the flush effect and the
+  // Send-now handler above it need to call it after a successful flush (so a
+  // job that went through stops looking open). A ref keeps that from being an
+  // ordering problem -- reading `fetchDay` directly up here is a temporal
+  // dead zone ReferenceError at render, which the build does NOT catch.
+  const fetchDayRef = useRef(null)
 
   useEffect(() => {
     const unsub = subscribeQueue(setQueuedPhotos)
@@ -298,15 +312,33 @@ export default function MyDay({ previewUserId = null }) {
     // and when the connection type changes (cellular → WiFi). flush() itself
     // refuses to run on cellular unless forced.
     flushPhotoQueue()
-    const onChange = () => { flushPhotoQueue() }
+    // Queued actions ride the SAME listeners rather than registering their own
+    // (scheduling-invariants R1, economy rule 2: no new tick, no polling).
+    // They flush first and unconditionally: a mark-done is ~100 bytes and the
+    // office is waiting on it, where photos can afford to wait for WiFi.
+    const unsubActions = subscribeActions(setQueuedActions)
+    flushActionQueue().then(({ sent }) => { if (sent) fetchDayRef.current?.(true) })
+    const onChange = () => {
+      flushActionQueue().then(({ sent }) => { if (sent) fetchDayRef.current?.(true) })
+      flushPhotoQueue()
+    }
     window.addEventListener('online', onChange)
     const conn = navigator.connection || navigator.mozConnection || navigator.webkitConnection
     conn?.addEventListener?.('change', onChange)
     return () => {
       unsub()
+      unsubActions()
       window.removeEventListener('online', onChange)
       conn?.removeEventListener?.('change', onChange)
     }
+  }, [])
+
+  const sendActionsNow = useCallback(async () => {
+    setSendingActions(true)
+    try {
+      const { sent } = await flushActionQueue()
+      if (sent) await fetchDayRef.current?.(true)
+    } finally { setSendingActions(false) }
   }, [])
 
   const sendQueuedNow = useCallback(async () => {
@@ -355,6 +387,8 @@ export default function MyDay({ previewUserId = null }) {
   }, [])
 
   useEffect(() => { fetchDay() }, [fetchDay])
+  // Hand fetchDay to the queue-flush handlers defined above it (see fetchDayRef).
+  useEffect(() => { fetchDayRef.current = fetchDay }, [fetchDay])
 
   // Week pay loads when (and only when) the Me tab opens — it used to ride
   // every my-day refresh for a card nobody was looking at. Re-opening the
@@ -387,7 +421,23 @@ export default function MyDay({ previewUserId = null }) {
       setMarkDoneJob(null)
       await fetchDay(true)
     }
-    catch (e) { setActionError(e.detail || e.message || 'Could not mark the job done') }
+    catch (e) {
+      // No signal is not a refusal. Hold the tap and send it when service is
+      // back, rather than making the cleaner remember to come back to it --
+      // the old behaviour was a red error and a job the office never heard
+      // about. A real answer from the server (cancelled job, not yours) still
+      // shows: see looksOffline().
+      if (looksOffline(e) && await enqueueAction({
+        url: `/api/crew/jobs/${markDoneJob.id}/complete`,
+        body: note ? { note } : {},
+        kind: 'complete',
+        jobId: markDoneJob.id,
+      })) {
+        setMarkDoneJob(null)
+      } else {
+        setActionError(e.detail || e.message || 'Could not mark the job done')
+      }
+    }
     finally { setActionBusy(false) }
   }, [markDoneJob, doneNote, fetchDay])
 
@@ -402,7 +452,22 @@ export default function MyDay({ previewUserId = null }) {
       setDeclineJob(null)
       await fetchDay(true)
     }
-    catch (e) { setActionError(e.detail || e.message || 'Could not send your answer') }
+    catch (e) {
+      // Same reasoning as mark-done: an answer given in a basement is still an
+      // answer. Queued by (kind, jobId), so changing accepted -> declined
+      // before signal returns replaces the pending record instead of sending
+      // both.
+      if (looksOffline(e) && await enqueueAction({
+        url: `/api/crew/jobs/${job.id}/respond`,
+        body: reason ? { response, reason } : { response },
+        kind: 'respond',
+        jobId: job.id,
+      })) {
+        setDeclineJob(null)
+      } else {
+        setActionError(e.detail || e.message || 'Could not send your answer')
+      }
+    }
     finally { setActionBusy(false) }
   }, [fetchDay])
 
@@ -598,6 +663,25 @@ export default function MyDay({ previewUserId = null }) {
 
       <div className="px-4 py-4 max-w-lg mx-auto space-y-5 pb-24">
         <ErrorNote>{actionError}</ErrorNote>
+
+        {queuedActions > 0 && (
+          /* Taps made with no signal (mark done, accept/decline), waiting to
+             send. Same quiet hairline card + amber dot as the photo line
+             below -- dot+word, never a tinted banner. Worded as "saved"
+             because that is the point: the work is not lost. Send now is for
+             when the cleaner can see they have bars but the browser hasn't
+             fired its `online` event yet, which on iOS it often hasn't. */
+          <div className="flex items-center justify-between gap-2 rounded-lg border border-hairline bg-panel px-3 py-2">
+            <span className="text-[12px] text-ink-2 flex items-center gap-1.5 min-w-0">
+              <span className="w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0" />
+              {queuedActions} update{queuedActions > 1 ? 's' : ''} saved — sends when you have signal
+            </span>
+            <button onClick={sendActionsNow} disabled={sendingActions}
+              className="shrink-0 min-h-9 text-[12px] font-medium text-ink-2 border border-hairline-2 rounded-md px-2.5 py-1 hover:bg-bg-2 disabled:opacity-60 transition-colors">
+              {sendingActions ? 'Sending…' : 'Send now'}
+            </button>
+          </div>
+        )}
 
         {queuedPhotos > 0 && (
           /* Photos captured on cellular, waiting for WiFi. Quiet hairline
