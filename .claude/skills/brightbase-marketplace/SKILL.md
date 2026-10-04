@@ -199,7 +199,14 @@ form ten minutes ago.
 
 **An open offer is not a work order.** Access codes, WiFi and notes were always
 stripped; the customer's *name and street address* were not. An offer carries
-**town, size and rate**. Identity waits until they have won it.
+**town, size, rate** — and, since the owner's Oct 2026 decision, a **photo of
+the house** (so a cleared sub can judge the property and choose without asking
+the office). The street **address** and the customer's **name** still wait
+until they have won it — only the picture rides the offer. The photo is served
+by `crew_job_property_photo`, gated to the *same visibility as the open board*
+(cleared + `open_for_claims` + scheduled + offer audience), and loads once when
+the detail sheet opens (`OpenJobSheet`), not on every board card — so it neither
+leaks a house to a sub who couldn't see the offer nor floods a rural connection.
 
 ---
 

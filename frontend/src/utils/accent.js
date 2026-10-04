@@ -22,15 +22,25 @@ const STOPS = [
   ['800', 0.36, 0.92], ['900', 0.3, 0.88], ['950', 0.2, 0.82],
 ]
 
-/** The presets the picker offers. `default` clears the override (app indigo). */
+/** The presets the picker offers. `default` clears the override (app indigo).
+ *  A wheel of hues so there's a real choice — ids are stable, so a saved pick
+ *  keeps working as the list grows. */
 export const ACCENTS = [
   { id: 'default', label: 'Default' },
+  { id: 'blue',    label: 'Blue',    h: 224, s: 0.72 },
   { id: 'sky',     label: 'Sky',     h: 205, s: 0.72 },
+  { id: 'cyan',    label: 'Cyan',    h: 190, s: 0.68 },
   { id: 'teal',    label: 'Teal',    h: 176, s: 0.60 },
   { id: 'green',   label: 'Green',   h: 150, s: 0.55 },
+  { id: 'lime',    label: 'Lime',    h: 96,  s: 0.60 },
+  { id: 'amber',   label: 'Amber',   h: 38,  s: 0.78 },
+  { id: 'orange',  label: 'Orange',  h: 24,  s: 0.82 },
+  { id: 'red',     label: 'Red',     h: 6,   s: 0.72 },
+  { id: 'rose',    label: 'Rose',    h: 345, s: 0.64 },
+  { id: 'fuchsia', label: 'Fuchsia', h: 312, s: 0.62 },
   { id: 'violet',  label: 'Violet',  h: 273, s: 0.62 },
-  { id: 'rose',    label: 'Rose',    h: 345, s: 0.62 },
-  { id: 'amber',   label: 'Amber',   h: 38,  s: 0.75 },
+  { id: 'indigo',  label: 'Indigo',  h: 248, s: 0.60 },
+  { id: 'slate',   label: 'Slate',   h: 220, s: 0.18 },
 ]
 
 /** HSL (h in degrees, s & l in 0..1) → "R G B" with 0-255 integer channels. */

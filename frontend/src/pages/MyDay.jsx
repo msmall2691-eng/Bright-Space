@@ -10,8 +10,8 @@
  * place and only fetches once opened, so opening Me costs one request (the
  * week-pay summary), not four.
  */
-import { useCallback, useEffect, useState } from 'react'
-import { MapPin, LogOut, RefreshCw, CalendarDays, Clock, Car, DollarSign, CheckCircle2, CalendarRange, CircleUserRound, Sparkles, BookOpen, MessageSquare, Sun, CalendarClock, CalendarOff, Smartphone, CalendarPlus, ShieldCheck, Landmark, Lightbulb, Palette } from 'lucide-react'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import { MapPin, LogOut, RefreshCw, CalendarDays, Clock, Car, DollarSign, CheckCircle2, CalendarRange, CircleUserRound, Sparkles, BookOpen, MessageSquare, Sun, CalendarClock, CalendarOff, Smartphone, CalendarPlus, ShieldCheck, Landmark, Palette } from 'lucide-react'
 import { get, post as apiPost, patch as apiPatch, del as apiDel, logout } from '../api'
 import { toast } from '../utils/toastBus'
 import { EmptyState, ErrorState, Skeleton } from '../components/ui'
@@ -31,10 +31,13 @@ import PropertySheet from '../components/crew/PropertySheet'
 // schedule list, month tap-through sheet) renders the SAME details.
 import JobCard, { fmtTimeRange } from '../components/crew/JobCard'
 import CrewJobSheet from '../components/crew/CrewJobSheet'
+import OpenJobSheet from '../components/crew/OpenJobSheet'
 import CrewPayoutSetup from '../components/crew/CrewPayoutSetup'
 import CrewEarnings from '../components/crew/CrewEarnings'
 import CrewSetupCard from '../components/crew/CrewSetupCard'
 import AccentPicker from '../components/crew/AccentPicker'
+import HeroBanner from '../components/crew/HeroBanner'
+import HeroScenePicker from '../components/crew/HeroScenePicker'
 import StickyNotes from '../components/board/StickyNotes'
 import { initAccent } from '../utils/accent'
 import { SOFT, CrewCard, SectionLabel, ErrorNote, SettingRow, Sheet, SheetActions } from '../components/crew/primitives'
@@ -42,6 +45,9 @@ import { SOFT, CrewCard, SectionLabel, ErrorNote, SettingRow, Sheet, SheetAction
 // flushing the queue (app open + connectivity changes) and the visible
 // "waiting" line with the cleaner's Send-now override.
 import { flushPhotoQueue, subscribeQueue } from '../components/crew/photoQueue'
+import {
+  enqueueAction, flushActionQueue, subscribeActions, looksOffline,
+} from '../components/crew/actionQueue'
 
 function fmtDuration(ms) {
   const totalMin = Math.max(0, Math.floor(ms / 60000))
@@ -108,30 +114,12 @@ function WeekPayBreakdown({ week, onOpenJob }) {
   )
 }
 
-function GreetingHero({ firstName, jobCount }) {
-  const [wx, setWx] = useState(null)
-  useEffect(() => {
-    let cancelled = false
-    get('/api/crew/weather')
-      .then(d => { if (!cancelled && d?.available) setWx(d) })
-      .catch(() => {})
-    return () => { cancelled = true }
-  }, [])
-  const h = new Date().getHours()
-  const timeOfDay = h < 12 ? 'morning' : h < 17 ? 'afternoon' : 'evening'
-  return (
-    <div className="mb-1">
-      <div className="text-[17px] font-bold text-ink">
-        Good {timeOfDay}{firstName ? `, ${firstName}` : ''}
-        {timeOfDay === 'morning' ? ' ☀️' : ''}
-      </div>
-      <div className="text-[12px] text-ink-3">
-        {jobCount === 0 ? 'Nothing on the books today.'
-          : `${jobCount} job${jobCount > 1 ? 's' : ''} today.`}
-        {wx && ` ${wx.temp_f}° now, high ${wx.high_f}°${wx.summary ? `, ${wx.summary}` : ''}${wx.precip_chance >= 40 ? ` — ${wx.precip_chance}% chance of rain` : ''}.`}
-      </div>
-    </div>
-  )
+// One pro-tip for the faint line in the Home header, rotating by the day so it
+// changes without any state. The full set still lives in the Learn tab.
+function pickDailyTip(tips) {
+  if (!tips || !tips.length) return null
+  const t = tips[Math.floor(Date.now() / 86400000) % tips.length]
+  return t?.title || null
 }
 
 
@@ -166,29 +154,6 @@ function DayGlance({ week, openCount, unread, onTab }) {
     </div>
   )
 }
-
-/** Two rotating pro cleaning tips on the crew home — a quiet, always-there way
- *  to train the team without a meeting. Text rides the my-day payload
- *  (data.tips), so no extra fetch on a rural connection. */
-function ProTips({ tips }) {
-  if (!tips || tips.length === 0) return null
-  return (
-    <section>
-      <SectionLabel className="mb-2 flex items-center gap-1.5">
-        <Lightbulb className="w-3.5 h-3.5" /> Pro tips
-      </SectionLabel>
-      <div className="space-y-2.5">
-        {tips.map((t, i) => (
-          <div key={i} className="rounded-xl border border-hairline bg-panel px-4 py-3">
-            <p className="text-[13.5px] font-semibold text-ink">{t.title}</p>
-            <p className="mt-1 text-[13px] leading-relaxed text-ink-2">{t.body}</p>
-          </div>
-        ))}
-      </div>
-    </section>
-  )
-}
-
 
 /** Upcoming jobs grouped by day with a friendly header — the Schedule tab. */
 function groupByDate(jobs) {
@@ -318,6 +283,7 @@ export default function MyDay({ previewUserId = null }) {
   const [schedView, setSchedView] = useState('list')
   // House photos & notes sheet: the job whose property is open (null = closed).
   const [houseJob, setHouseJob] = useState(null)
+  const [detailJob, setDetailJob] = useState(null)   // open-offer details sheet
   // Crew job-detail sheet: tap any job row (e.g. the week-pay breakdown) and
   // the full card opens, fetched from the crew-only detail endpoint.
   const [sheetJobId, setSheetJobId] = useState(null)
@@ -330,6 +296,17 @@ export default function MyDay({ previewUserId = null }) {
   // Photos waiting for WiFi (see components/crew/photoQueue.js).
   const [queuedPhotos, setQueuedPhotos] = useState(0)
   const [sendingQueued, setSendingQueued] = useState(false)
+  // Mark-done / accept-decline taps made with no signal, waiting to send
+  // (components/crew/actionQueue.js). Separate from photos because these do
+  // NOT wait for WiFi — they go on any connection.
+  const [queuedActions, setQueuedActions] = useState(0)
+  const [sendingActions, setSendingActions] = useState(false)
+  // fetchDay is defined further down, and both the flush effect and the
+  // Send-now handler above it need to call it after a successful flush (so a
+  // job that went through stops looking open). A ref keeps that from being an
+  // ordering problem -- reading `fetchDay` directly up here is a temporal
+  // dead zone ReferenceError at render, which the build does NOT catch.
+  const fetchDayRef = useRef(null)
 
   useEffect(() => {
     const unsub = subscribeQueue(setQueuedPhotos)
@@ -337,15 +314,33 @@ export default function MyDay({ previewUserId = null }) {
     // and when the connection type changes (cellular → WiFi). flush() itself
     // refuses to run on cellular unless forced.
     flushPhotoQueue()
-    const onChange = () => { flushPhotoQueue() }
+    // Queued actions ride the SAME listeners rather than registering their own
+    // (scheduling-invariants R1, economy rule 2: no new tick, no polling).
+    // They flush first and unconditionally: a mark-done is ~100 bytes and the
+    // office is waiting on it, where photos can afford to wait for WiFi.
+    const unsubActions = subscribeActions(setQueuedActions)
+    flushActionQueue().then(({ sent }) => { if (sent) fetchDayRef.current?.(true) })
+    const onChange = () => {
+      flushActionQueue().then(({ sent }) => { if (sent) fetchDayRef.current?.(true) })
+      flushPhotoQueue()
+    }
     window.addEventListener('online', onChange)
     const conn = navigator.connection || navigator.mozConnection || navigator.webkitConnection
     conn?.addEventListener?.('change', onChange)
     return () => {
       unsub()
+      unsubActions()
       window.removeEventListener('online', onChange)
       conn?.removeEventListener?.('change', onChange)
     }
+  }, [])
+
+  const sendActionsNow = useCallback(async () => {
+    setSendingActions(true)
+    try {
+      const { sent } = await flushActionQueue()
+      if (sent) await fetchDayRef.current?.(true)
+    } finally { setSendingActions(false) }
   }, [])
 
   const sendQueuedNow = useCallback(async () => {
@@ -394,6 +389,8 @@ export default function MyDay({ previewUserId = null }) {
   }, [])
 
   useEffect(() => { fetchDay() }, [fetchDay])
+  // Hand fetchDay to the queue-flush handlers defined above it (see fetchDayRef).
+  useEffect(() => { fetchDayRef.current = fetchDay }, [fetchDay])
 
   // Week pay loads when (and only when) the Me tab opens — it used to ride
   // every my-day refresh for a card nobody was looking at. Re-opening the
@@ -426,7 +423,23 @@ export default function MyDay({ previewUserId = null }) {
       setMarkDoneJob(null)
       await fetchDay(true)
     }
-    catch (e) { setActionError(e.detail || e.message || 'Could not mark the job done') }
+    catch (e) {
+      // No signal is not a refusal. Hold the tap and send it when service is
+      // back, rather than making the cleaner remember to come back to it --
+      // the old behaviour was a red error and a job the office never heard
+      // about. A real answer from the server (cancelled job, not yours) still
+      // shows: see looksOffline().
+      if (looksOffline(e) && await enqueueAction({
+        url: `/api/crew/jobs/${markDoneJob.id}/complete`,
+        body: note ? { note } : {},
+        kind: 'complete',
+        jobId: markDoneJob.id,
+      })) {
+        setMarkDoneJob(null)
+      } else {
+        setActionError(e.detail || e.message || 'Could not mark the job done')
+      }
+    }
     finally { setActionBusy(false) }
   }, [markDoneJob, doneNote, fetchDay])
 
@@ -441,7 +454,22 @@ export default function MyDay({ previewUserId = null }) {
       setDeclineJob(null)
       await fetchDay(true)
     }
-    catch (e) { setActionError(e.detail || e.message || 'Could not send your answer') }
+    catch (e) {
+      // Same reasoning as mark-done: an answer given in a basement is still an
+      // answer. Queued by (kind, jobId), so changing accepted -> declined
+      // before signal returns replaces the pending record instead of sending
+      // both.
+      if (looksOffline(e) && await enqueueAction({
+        url: `/api/crew/jobs/${job.id}/respond`,
+        body: reason ? { response, reason } : { response },
+        kind: 'respond',
+        jobId: job.id,
+      })) {
+        setDeclineJob(null)
+      } else {
+        setActionError(e.detail || e.message || 'Could not send your answer')
+      }
+    }
     finally { setActionBusy(false) }
   }, [fetchDay])
 
@@ -638,6 +666,25 @@ export default function MyDay({ previewUserId = null }) {
       <div className="px-4 py-4 max-w-lg mx-auto space-y-5 pb-24">
         <ErrorNote>{actionError}</ErrorNote>
 
+        {queuedActions > 0 && (
+          /* Taps made with no signal (mark done, accept/decline), waiting to
+             send. Same quiet hairline card + amber dot as the photo line
+             below -- dot+word, never a tinted banner. Worded as "saved"
+             because that is the point: the work is not lost. Send now is for
+             when the cleaner can see they have bars but the browser hasn't
+             fired its `online` event yet, which on iOS it often hasn't. */
+          <div className="flex items-center justify-between gap-2 rounded-lg border border-hairline bg-panel px-3 py-2">
+            <span className="text-[12px] text-ink-2 flex items-center gap-1.5 min-w-0">
+              <span className="w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0" />
+              {queuedActions} update{queuedActions > 1 ? 's' : ''} saved — sends when you have signal
+            </span>
+            <button onClick={sendActionsNow} disabled={sendingActions}
+              className="shrink-0 min-h-9 text-[12px] font-medium text-ink-2 border border-hairline-2 rounded-md px-2.5 py-1 hover:bg-bg-2 disabled:opacity-60 transition-colors">
+              {sendingActions ? 'Sending…' : 'Send now'}
+            </button>
+          </div>
+        )}
+
         {queuedPhotos > 0 && (
           /* Photos captured on cellular, waiting for WiFi. Quiet hairline
              card + amber dot; Send now is the cleaner's override. */
@@ -673,7 +720,8 @@ export default function MyDay({ previewUserId = null }) {
 
         {tab === 'today' && !loading && !error && data && (
           <>
-            <GreetingHero firstName={data.first_name} jobCount={(data.today || []).length} />
+            <HeroBanner firstName={data.first_name} jobCount={(data.today || []).length}
+              tip={pickDailyTip(data.tips)} onTipTap={() => setTab('learn')} />
 
             {/* The day at a glance — what makes this a home and not the jobs
                 list. Only for a sub who can actually take work; a not-cleared
@@ -737,7 +785,7 @@ export default function MyDay({ previewUserId = null }) {
                       /* showDate: this list is the whole board, not one day —
                          without it every offer reads as today's. */
                       <JobCard key={j.id} job={j} busy={actionBusy} showDate
-                        onAccept={() => acceptJob(j)}
+                        onOpenDetails={setDetailJob} onAccept={() => acceptJob(j)}
                         onClaim={() => { setActionError(null); setClaimRate(j.my_claim_request?.requested_rate ?? ''); setClaimMessage(j.my_claim_request?.message || ''); setClaimJob(j) }} />
                     ))}
                   </div>
@@ -775,7 +823,7 @@ export default function MyDay({ previewUserId = null }) {
                 </SectionLabel>
                 <div className="space-y-3">
                   {(data.open_jobs || []).filter(j => j.scheduled_date === data.as_of).map(j => (
-                    <JobCard key={j.id} job={j} onAccept={() => acceptJob(j)}
+                    <JobCard key={j.id} job={j} onOpenDetails={setDetailJob} onAccept={() => acceptJob(j)}
                         onClaim={() => { setActionError(null); setClaimRate(j.my_claim_request?.requested_rate ?? ''); setClaimMessage(j.my_claim_request?.message || ''); setClaimJob(j) }} busy={actionBusy} />
                   ))}
                 </div>
@@ -788,8 +836,9 @@ export default function MyDay({ previewUserId = null }) {
                 A scratchpad at hand: "bring the tall ladder", "gate sticks". */}
             <StickyNotes />
 
-            {/* Two rotating pro cleaning tips — quiet training on the home. */}
-            <ProTips tips={data.tips} />
+            {/* Pro tips moved to the faint line in the header (and the full set
+                lives in Learn) — the owner wanted them quiet and up top, not a
+                block at the bottom of the home. */}
 
             {/* Save-to-phone + notifications setup. Dismissible here (sticks
                 via localStorage); always reachable again from the Me tab. */}
@@ -849,7 +898,7 @@ export default function MyDay({ previewUserId = null }) {
                   <div className="space-y-3">
                     {g.jobs.map(j => (
                       <JobCard key={j.id} job={j} busy={actionBusy}
-                        onAccept={() => acceptJob(j)}
+                        onOpenDetails={setDetailJob} onAccept={() => acceptJob(j)}
                         onClaim={() => { setActionError(null); setClaimRate(j.my_claim_request?.requested_rate ?? ''); setClaimMessage(j.my_claim_request?.message || ''); setClaimJob(j) }} />
                     ))}
                   </div>
@@ -898,7 +947,7 @@ export default function MyDay({ previewUserId = null }) {
             </SectionLabel>
             <div className="space-y-3">
               {(data.open_jobs || []).map(j => (
-                <JobCard key={j.id} job={j} showDate onAccept={() => acceptJob(j)}
+                <JobCard key={j.id} job={j} showDate onOpenDetails={setDetailJob} onAccept={() => acceptJob(j)}
                         onClaim={() => { setActionError(null); setClaimRate(j.my_claim_request?.requested_rate ?? ''); setClaimMessage(j.my_claim_request?.message || ''); setClaimJob(j) }} busy={actionBusy} />
               ))}
             </div>
@@ -954,8 +1003,11 @@ export default function MyDay({ previewUserId = null }) {
                   phone. Sits with "Your info" because it's a personal setting,
                   not work. */}
               <SettingRow icon={Palette} label="Appearance"
-                summary="Pick your accent colour">
-                <AccentPicker />
+                summary="Your colour and Home header">
+                <div className="space-y-4">
+                  <AccentPicker />
+                  <HeroScenePicker />
+                </div>
               </SettingRow>
             </CrewCard>
 
@@ -1033,6 +1085,23 @@ export default function MyDay({ previewUserId = null }) {
 
       {sheetJobId && (
         <CrewJobSheet jobId={sheetJobId} onClose={() => setSheetJobId(null)} />
+      )}
+
+      {/* The anonymised details of an open offer — tap "View details" on any
+          up-for-grabs card. Its action reuses the existing claim/accept flow;
+          address + photo still unlock only once the job is theirs. */}
+      {detailJob && (
+        <OpenJobSheet job={detailJob} busy={actionBusy}
+          onClose={() => setDetailJob(null)}
+          onClaim={() => {
+            const j = detailJob
+            setDetailJob(null); setActionError(null)
+            setClaimRate(j.my_claim_request?.requested_rate ?? '')
+            setClaimMessage(j.my_claim_request?.message || '')
+            setClaimJob(j)
+          }}
+          onAccept={() => { const j = detailJob; setDetailJob(null); acceptJob(j) }}
+        />
       )}
 
       {markDoneJob && (
