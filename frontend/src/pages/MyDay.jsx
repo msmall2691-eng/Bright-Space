@@ -114,12 +114,17 @@ function WeekPayBreakdown({ week, onOpenJob }) {
   )
 }
 
-// One pro-tip for the faint line in the Home header, rotating by the day so it
-// changes without any state. The full set still lives in the Learn tab.
-function pickDailyTip(tips) {
-  if (!tips || !tips.length) return null
-  const t = tips[Math.floor(Date.now() / 86400000) % tips.length]
-  return t?.title || null
+// A couple of pro-tip titles for the faint lines in the Home header, rotating
+// by the day so they change without any state. The full set lives in Learn.
+function pickDailyTips(tips, n = 2) {
+  if (!tips || !tips.length) return []
+  const start = Math.floor(Date.now() / 86400000) % tips.length
+  const out = []
+  for (let i = 0; i < Math.min(n, tips.length); i++) {
+    const t = tips[(start + i) % tips.length]
+    if (t?.title) out.push(t.title)
+  }
+  return out
 }
 
 
@@ -721,7 +726,7 @@ export default function MyDay({ previewUserId = null }) {
         {tab === 'today' && !loading && !error && data && (
           <>
             <HeroBanner firstName={data.first_name} jobCount={(data.today || []).length}
-              tip={pickDailyTip(data.tips)} onTipTap={() => setTab('learn')} />
+              tips={pickDailyTips(data.tips, 2)} onTipTap={() => setTab('learn')} />
 
             {/* The day at a glance — what makes this a home and not the jobs
                 list. Only for a sub who can actually take work; a not-cleared

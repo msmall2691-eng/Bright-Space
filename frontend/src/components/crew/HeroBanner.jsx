@@ -71,7 +71,7 @@ function SkyArt({ night, raining, cloudy }) {
   )
 }
 
-export default function HeroBanner({ firstName, jobCount, tip, onTipTap }) {
+export default function HeroBanner({ firstName, jobCount, tips = [], onTipTap }) {
   const [wx, setWx] = useState(null)
   const [heroId, setHeroId] = useState(currentHeroId)
 
@@ -110,17 +110,21 @@ export default function HeroBanner({ firstName, jobCount, tip, onTipTap }) {
   const tipTone = scene.dark ? 'text-white/80 hover:text-white' : 'text-slate-600 hover:text-slate-900'
 
   return (
-    <div className="relative min-h-[118px] overflow-hidden rounded-2xl" style={skyStyle(scene)}>
+    <div className="relative min-h-[132px] overflow-hidden rounded-2xl" style={skyStyle(scene)}>
       <SkyArt night={night} raining={raining} cloudy={cloudy} />
       {/* Seat the text on a dark sky; harmless on a light one (very faint). */}
       <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/25 via-transparent to-transparent" aria-hidden="true" />
       <div className="relative px-4 pb-4 pt-3">
-        {tip && (
-          <button type="button" onClick={onTipTap}
-            className={`flex w-[72%] items-start gap-1.5 text-left text-[11px] font-medium leading-snug transition-colors ${tipTone}`}>
-            <Lightbulb className="mt-px h-3 w-3 shrink-0" aria-hidden="true" />
-            <span className="line-clamp-2">{tip}</span>
-          </button>
+        {tips.length > 0 && (
+          <div className="space-y-0.5">
+            {tips.map((t, i) => (
+              <button key={i} type="button" onClick={onTipTap}
+                className={`flex w-[82%] items-start gap-1.5 text-left text-[11px] font-medium leading-snug transition-colors ${tipTone}`}>
+                <Lightbulb className="mt-px h-3 w-3 shrink-0" aria-hidden="true" />
+                <span className="line-clamp-2">{t}</span>
+              </button>
+            ))}
+          </div>
         )}
         <div className={`mt-2.5 text-[21px] font-bold leading-tight drop-shadow-sm ${head}`}>
           Good {timeOfDay}{firstName ? `, ${firstName}` : ''}
