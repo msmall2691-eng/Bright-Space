@@ -225,7 +225,7 @@ function RespondRow({ job, onRespond, onDecline, busy }) {
   )
 }
 
-export default function JobCard({ job, onMarkDone, onPhotos, onRespond, onDecline, onClaim, onAccept, onTextClient, onHouseInfo, onHelpers, busy = false, showDate = false }) {
+export default function JobCard({ job, onMarkDone, onPhotos, onRespond, onDecline, onClaim, onAccept, onTextClient, onHouseInfo, onHelpers, onOpenDetails, busy = false, showDate = false }) {
   const isTurnover = job.job_type === 'str_turnover'
   const done = job.status === 'completed'
   const houseLine = houseSpecsLine(job)
@@ -261,6 +261,15 @@ export default function JobCard({ job, onMarkDone, onPhotos, onRespond, onDeclin
           </div>
           {offerSpecsInline && (
             <div className="text-xs text-ink-3 mt-0.5 truncate">{houseLine}</div>
+          )}
+          {/* Open offers: a tap to the full (anonymised) details — size, hours,
+              pay, what the job involves — so a sub can judge it before bidding.
+              Address/photo still unlock only once it's theirs. */}
+          {job.open && onOpenDetails && (
+            <button type="button" onClick={() => onOpenDetails(job)}
+              className="mt-1 -mb-0.5 py-1 text-xs font-semibold text-blue-600 dark:text-blue-400 active:opacity-60">
+              View details
+            </button>
           )}
           {job.address && (
             /* Tap → the phone's maps app with directions. Generous hit area on

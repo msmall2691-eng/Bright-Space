@@ -18,6 +18,7 @@ from database.models import Client, Property, Job
 from modules.auth.router import get_current_user, current_org_id
 from utils.dates import business_today
 import services.property_media as pm
+import services.sub_vetting as sv
 
 
 class _Cleaner:
@@ -108,6 +109,83 @@ def test_enabled_but_no_imagery_404s(job, monkeypatch):
     monkeypatch.setattr(pm, "street_view_bytes", lambda addr, key, size="640x360": None)
     try:
         r = _as(_Cleaner(9988, "CT-pho-1")).get(f"/api/crew/jobs/{job}/property-photo")
+        assert r.status_code == 404
+    finally:
+        _clear()
+
+
+# ── Open offers (owner's Oct 2026 decision) ─────────────────────────────────
+# A cleared sub looking at a job that's up for grabs now gets the house photo so
+# they can judge the property before deciding — gated to the same visibility as
+# the open board (cleared + open_for_claims + scheduled + audience). The street
+# address and the customer's name still never ride the offer.
+
+@pytest.fixture
+def open_job():
+    db = SessionLocal()
+    tag = uuid.uuid4().hex[:6]
+    c = Client(name=f"Op {tag}", status="active", org_id=1)
+    db.add(c); db.commit(); db.refresh(c)
+    p = Property(client_id=c.id, name=f"7 Elm {tag}", address=f"7 Elm {tag}", org_id=1)
+    db.add(p); db.commit(); db.refresh(p)
+    j = Job(client_id=c.id, property_id=p.id, job_type="str_turnover",
+            title=f"Op turn {tag}", scheduled_date=business_today(),
+            start_time=time(10, 0), end_time=time(15, 0),
+            cleaner_ids=[], status="scheduled", open_for_claims=True, org_id=1)
+    db.add(j); db.commit(); db.refresh(j)
+    ids = (j.id, p.id, c.id)
+    db.close()
+    yield ids[0]
+    db = SessionLocal()
+    db.query(Job).filter(Job.id == ids[0]).delete(synchronize_session=False)
+    db.query(Property).filter(Property.id == ids[1]).delete(synchronize_session=False)
+    db.query(Client).filter(Client.id == ids[2]).delete(synchronize_session=False)
+    db.commit(); db.close()
+
+
+def test_cleared_sub_sees_open_offer_photo(open_job, monkeypatch):
+    monkeypatch.setattr(pm, "street_view_enabled", lambda db: True)
+    monkeypatch.setattr(pm, "street_view_bytes", lambda addr, key, size="640x360": b"JPEGBYTES")
+    monkeypatch.setattr(sv, "blocking_requirements", lambda db, user: [])
+    try:
+        r = _as(_Cleaner(9990, "CT-pho-open")).get(f"/api/crew/jobs/{open_job}/property-photo")
+        assert r.status_code == 200
+        assert r.content == b"JPEGBYTES"
+    finally:
+        _clear()
+
+
+def test_not_cleared_sub_404s_on_open_offer(open_job, monkeypatch):
+    # Not cleared → can't see the board, so can't see the photo. The gate runs
+    # before the (paid) Street View lookup.
+    called = {"n": 0}
+
+    def _boom(*a, **k):
+        called["n"] += 1
+        return b"x"
+
+    monkeypatch.setattr(pm, "street_view_enabled", lambda db: True)
+    monkeypatch.setattr(pm, "street_view_bytes", _boom)
+    monkeypatch.setattr(sv, "blocking_requirements", lambda db, user: ["Sign the agreement"])
+    try:
+        r = _as(_Cleaner(9991, "CT-pho-open2")).get(f"/api/crew/jobs/{open_job}/property-photo")
+        assert r.status_code == 404
+        assert called["n"] == 0
+    finally:
+        _clear()
+
+
+def test_targeted_offer_photo_hidden_from_sub_not_in_audience(open_job, monkeypatch):
+    # A targeted offer only reveals its house to the cleaners it was offered to.
+    db = SessionLocal()
+    j = db.query(Job).filter(Job.id == open_job).first()
+    j.offer_audience = ["CT-someone-else"]
+    db.commit(); db.close()
+    monkeypatch.setattr(pm, "street_view_enabled", lambda db: True)
+    monkeypatch.setattr(pm, "street_view_bytes", lambda addr, key, size="640x360": b"JPEGBYTES")
+    monkeypatch.setattr(sv, "blocking_requirements", lambda db, user: [])
+    try:
+        r = _as(_Cleaner(9992, "CT-pho-open3")).get(f"/api/crew/jobs/{open_job}/property-photo")
         assert r.status_code == 404
     finally:
         _clear()

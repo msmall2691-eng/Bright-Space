@@ -31,6 +31,7 @@ import PropertySheet from '../components/crew/PropertySheet'
 // schedule list, month tap-through sheet) renders the SAME details.
 import JobCard, { fmtTimeRange } from '../components/crew/JobCard'
 import CrewJobSheet from '../components/crew/CrewJobSheet'
+import OpenJobSheet from '../components/crew/OpenJobSheet'
 import CrewPayoutSetup from '../components/crew/CrewPayoutSetup'
 import CrewEarnings from '../components/crew/CrewEarnings'
 import CrewSetupCard from '../components/crew/CrewSetupCard'
@@ -279,6 +280,7 @@ export default function MyDay({ previewUserId = null }) {
   const [schedView, setSchedView] = useState('list')
   // House photos & notes sheet: the job whose property is open (null = closed).
   const [houseJob, setHouseJob] = useState(null)
+  const [detailJob, setDetailJob] = useState(null)   // open-offer details sheet
   // Crew job-detail sheet: tap any job row (e.g. the week-pay breakdown) and
   // the full card opens, fetched from the crew-only detail endpoint.
   const [sheetJobId, setSheetJobId] = useState(null)
@@ -699,7 +701,7 @@ export default function MyDay({ previewUserId = null }) {
                       /* showDate: this list is the whole board, not one day —
                          without it every offer reads as today's. */
                       <JobCard key={j.id} job={j} busy={actionBusy} showDate
-                        onAccept={() => acceptJob(j)}
+                        onOpenDetails={setDetailJob} onAccept={() => acceptJob(j)}
                         onClaim={() => { setActionError(null); setClaimRate(j.my_claim_request?.requested_rate ?? ''); setClaimMessage(j.my_claim_request?.message || ''); setClaimJob(j) }} />
                     ))}
                   </div>
@@ -737,7 +739,7 @@ export default function MyDay({ previewUserId = null }) {
                 </SectionLabel>
                 <div className="space-y-3">
                   {(data.open_jobs || []).filter(j => j.scheduled_date === data.as_of).map(j => (
-                    <JobCard key={j.id} job={j} onAccept={() => acceptJob(j)}
+                    <JobCard key={j.id} job={j} onOpenDetails={setDetailJob} onAccept={() => acceptJob(j)}
                         onClaim={() => { setActionError(null); setClaimRate(j.my_claim_request?.requested_rate ?? ''); setClaimMessage(j.my_claim_request?.message || ''); setClaimJob(j) }} busy={actionBusy} />
                   ))}
                 </div>
@@ -812,7 +814,7 @@ export default function MyDay({ previewUserId = null }) {
                   <div className="space-y-3">
                     {g.jobs.map(j => (
                       <JobCard key={j.id} job={j} busy={actionBusy}
-                        onAccept={() => acceptJob(j)}
+                        onOpenDetails={setDetailJob} onAccept={() => acceptJob(j)}
                         onClaim={() => { setActionError(null); setClaimRate(j.my_claim_request?.requested_rate ?? ''); setClaimMessage(j.my_claim_request?.message || ''); setClaimJob(j) }} />
                     ))}
                   </div>
@@ -861,7 +863,7 @@ export default function MyDay({ previewUserId = null }) {
             </SectionLabel>
             <div className="space-y-3">
               {(data.open_jobs || []).map(j => (
-                <JobCard key={j.id} job={j} showDate onAccept={() => acceptJob(j)}
+                <JobCard key={j.id} job={j} showDate onOpenDetails={setDetailJob} onAccept={() => acceptJob(j)}
                         onClaim={() => { setActionError(null); setClaimRate(j.my_claim_request?.requested_rate ?? ''); setClaimMessage(j.my_claim_request?.message || ''); setClaimJob(j) }} busy={actionBusy} />
               ))}
             </div>
@@ -999,6 +1001,23 @@ export default function MyDay({ previewUserId = null }) {
 
       {sheetJobId && (
         <CrewJobSheet jobId={sheetJobId} onClose={() => setSheetJobId(null)} />
+      )}
+
+      {/* The anonymised details of an open offer — tap "View details" on any
+          up-for-grabs card. Its action reuses the existing claim/accept flow;
+          address + photo still unlock only once the job is theirs. */}
+      {detailJob && (
+        <OpenJobSheet job={detailJob} busy={actionBusy}
+          onClose={() => setDetailJob(null)}
+          onClaim={() => {
+            const j = detailJob
+            setDetailJob(null); setActionError(null)
+            setClaimRate(j.my_claim_request?.requested_rate ?? '')
+            setClaimMessage(j.my_claim_request?.message || '')
+            setClaimJob(j)
+          }}
+          onAccept={() => { const j = detailJob; setDetailJob(null); acceptJob(j) }}
+        />
       )}
 
       {markDoneJob && (
