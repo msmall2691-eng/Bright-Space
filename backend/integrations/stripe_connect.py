@@ -232,6 +232,79 @@ def account_status(account_id: str) -> Optional[dict]:
         return None
 
 
+def account_health() -> Optional[dict]:
+    """The PLATFORM account's live ability to actually CHARGE a card.
+
+    `/stripe-status` can see only that the SECRET KEY is set — it cannot see
+    that Stripe will REFUSE to open a Checkout session because this account has
+    not finished activation for live charges. That refusal is exactly the
+    "pay button gives an error" report: `create_checkout_session` returns
+    `ok: False`, `start_checkout` turns it into a 502, and the reason lives
+    only in a server log line nobody reads. This surfaces it on the Settings
+    card instead.
+
+    `charges_enabled` is the signal that matters here, not `payouts_enabled`:
+    a hosted Checkout in `payment` mode is the PLATFORM taking a direct charge,
+    which a non-activated account cannot do in live mode however many keys are
+    set. (Payouts to subcontractors are a separate capability and have their
+    own `payouts_enabled` flag — reported too, but not what gates the pay
+    button.)
+
+    Returns `{charges_enabled, payouts_enabled, details_submitted, detail}` or
+    None when Stripe isn't configured or the read failed — which the caller
+    must read as "couldn't check", never as "broken". A Stripe hiccup must not
+    make a working rail look down.
+    """
+    s = _client()
+    if s is None:
+        return None
+    try:
+        acct = s.Account.retrieve()
+    except Exception:
+        logger.warning("[stripe] could not read the platform account for health")
+        return None
+
+    def _get(key):
+        # Account behaves like a dict, but be defensive either way.
+        try:
+            return acct.get(key)
+        except AttributeError:
+            return getattr(acct, key, None)
+
+    req = _get("requirements") or {}
+    disabled = req.get("disabled_reason") if isinstance(req, dict) else None
+    due = []
+    if isinstance(req, dict):
+        due = list(req.get("currently_due") or []) + list(req.get("past_due") or [])
+    charges = bool(_get("charges_enabled"))
+    payouts = bool(_get("payouts_enabled"))
+    submitted = bool(_get("details_submitted"))
+
+    if charges:
+        detail = None
+    elif not submitted:
+        detail = ("Stripe account isn't activated for live charges yet — finish "
+                  "activation at dashboard.stripe.com and the pay button can "
+                  "charge cards.")
+    elif disabled:
+        detail = (f"Stripe has charges paused on this account ({disabled}). "
+                  "Resolve it at dashboard.stripe.com.")
+    elif due:
+        detail = ("Stripe needs more information before it will take charges: "
+                  + ", ".join(sorted(set(due))[:6])
+                  + ". Complete it at dashboard.stripe.com.")
+    else:
+        detail = ("Stripe isn't taking charges on this account yet — check "
+                  "dashboard.stripe.com for what's outstanding.")
+
+    return {
+        "charges_enabled": charges,
+        "payouts_enabled": payouts,
+        "details_submitted": submitted,
+        "detail": detail,
+    }
+
+
 def summarize(account) -> dict:
     """The three things worth storing, from an Account object or webhook body.
 

@@ -248,11 +248,19 @@ def _status_as_admin():
 
 @pytest.fixture
 def key_only(monkeypatch):
-    """A live key and both webhook secrets absent."""
+    """A live key and both webhook secrets absent.
+
+    `account_health` is stubbed to None (couldn't-probe) so the status
+    endpoint never makes a live Stripe call in these tests; the webhook-secret
+    behaviour each test exercises is independent of the account probe, and
+    None leaves the card exactly as it read before the probe existed. Tests
+    that care about the charge-capability override it explicitly.
+    """
     from integrations import stripe_connect as sc
     monkeypatch.setattr(sc, "configured", lambda: True)
     monkeypatch.setattr(sc, "webhook_secret", lambda: None)
     monkeypatch.setattr(sc, "connect_webhook_secret", lambda: None)
+    monkeypatch.setattr(sc, "account_health", lambda: None)
 
 
 def test_the_status_names_the_connect_secret_separately(key_only, monkeypatch):
@@ -305,3 +313,132 @@ def test_a_missing_account_secret_still_wins_the_sentence(key_only, monkeypatch)
     assert body["connect_webhook_configured"] is True
     assert body["webhook_configured"] is False
     assert "STRIPE_WEBHOOK_SECRET is missing" in body["detail"]
+
+
+# ── Charge-capability: the state behind a pay button that errors ─────────────
+#
+# Both keys set and the card still said "Connected" — because the status only
+# ever checked that the SECRET KEY was present, never that Stripe would
+# actually open a Checkout session. An account that hasn't finished activation
+# refuses the live charge; `create_checkout_session` returns ok:False, the
+# public page 502s, and the reason lived only in a log line. These pin that the
+# status now reads the live capability and names the blocker.
+
+def _both_keys(monkeypatch):
+    from integrations import stripe_connect as sc
+    monkeypatch.setattr(sc, "webhook_secret", lambda: ACCOUNT_SECRET)
+    monkeypatch.setattr(sc, "connect_webhook_secret", lambda: CONNECT_SECRET)
+
+
+def test_keys_set_but_stripe_wont_charge_reads_as_needs_activation(key_only, monkeypatch):
+    from integrations import stripe_connect as sc
+    _both_keys(monkeypatch)
+    monkeypatch.setattr(sc, "account_health", lambda: {
+        "charges_enabled": False, "payouts_enabled": False,
+        "details_submitted": False,
+        "detail": "Stripe account isn't activated for live charges yet — "
+                  "finish activation at dashboard.stripe.com and the pay "
+                  "button can charge cards.",
+    })
+
+    body = _status_as_admin().json()
+    # Not a mystery any more: the payload says charges are off and the sentence
+    # names activation, taking precedence over the connect-webhook note.
+    assert body["charges_enabled"] is False
+    assert "activat" in body["detail"].lower()
+    assert "STRIPE_CONNECT_WEBHOOK_SECRET" not in body["detail"]
+
+
+def test_keys_set_and_charges_live_reads_as_connected(key_only, monkeypatch):
+    from integrations import stripe_connect as sc
+    _both_keys(monkeypatch)
+    monkeypatch.setattr(sc, "account_health", lambda: {
+        "charges_enabled": True, "payouts_enabled": True,
+        "details_submitted": True, "detail": None,
+    })
+
+    body = _status_as_admin().json()
+    assert body["charges_enabled"] is True
+    assert "Online invoice payment is on" in body["detail"]
+
+
+def test_a_failed_account_probe_does_not_cry_wolf(key_only, monkeypatch):
+    """None from the probe means "couldn't check", never "broken". The card
+    must stay as it read before the probe existed, not flip to needs-attention
+    because Stripe was briefly unreachable."""
+    from integrations import stripe_connect as sc
+    _both_keys(monkeypatch)
+    monkeypatch.setattr(sc, "account_health", lambda: None)
+
+    body = _status_as_admin().json()
+    assert body["charges_enabled"] is None
+    assert "Online invoice payment is on" in body["detail"]
+
+
+# ── account_health() itself ──────────────────────────────────────────────────
+
+class _FakeAccount(dict):
+    pass
+
+
+def _stub_client(monkeypatch, account):
+    """Point stripe_connect._client at a fake whose Account.retrieve returns
+    `account`, so account_health never touches the network."""
+    from integrations import stripe_connect as sc
+
+    class _Acct:
+        @staticmethod
+        def retrieve():
+            if isinstance(account, Exception):
+                raise account
+            return account
+
+    class _FakeStripe:
+        Account = _Acct
+
+    monkeypatch.setattr(sc, "_client", lambda: _FakeStripe())
+
+
+def test_account_health_is_none_when_not_configured(monkeypatch):
+    from integrations import stripe_connect as sc
+    monkeypatch.setattr(sc, "_client", lambda: None)
+    assert sc.account_health() is None
+
+
+def test_account_health_reports_activation_when_not_submitted(monkeypatch):
+    from integrations import stripe_connect as sc
+    _stub_client(monkeypatch, _FakeAccount(
+        charges_enabled=False, payouts_enabled=False,
+        details_submitted=False, requirements={},
+    ))
+    h = sc.account_health()
+    assert h["charges_enabled"] is False
+    assert "activat" in h["detail"].lower()
+
+
+def test_account_health_names_what_stripe_is_waiting_for(monkeypatch):
+    from integrations import stripe_connect as sc
+    _stub_client(monkeypatch, _FakeAccount(
+        charges_enabled=False, payouts_enabled=False, details_submitted=True,
+        requirements={"currently_due": ["business_profile.url"], "past_due": []},
+    ))
+    h = sc.account_health()
+    assert h["charges_enabled"] is False
+    assert "business_profile.url" in h["detail"]
+
+
+def test_account_health_is_quiet_when_charges_are_live(monkeypatch):
+    from integrations import stripe_connect as sc
+    _stub_client(monkeypatch, _FakeAccount(
+        charges_enabled=True, payouts_enabled=True, details_submitted=True,
+        requirements={},
+    ))
+    h = sc.account_health()
+    assert h["charges_enabled"] is True
+    assert h["detail"] is None
+
+
+def test_account_health_swallows_a_failed_read(monkeypatch):
+    from integrations import stripe_connect as sc
+    _stub_client(monkeypatch, RuntimeError("stripe down"))
+    assert sc.account_health() is None

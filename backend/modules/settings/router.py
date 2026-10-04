@@ -724,10 +724,23 @@ def stripe_status():
     "why is there no pay button" into one obvious missing variable.
     """
     from integrations.stripe_connect import (
-        configured, connect_webhook_secret, webhook_secret,
+        account_health, configured, connect_webhook_secret, webhook_secret,
     )
     ok = configured()
     hook = bool(webhook_secret())
+    # The live account capability — the one thing the key-presence booleans
+    # above cannot see. Only probed when a key exists (nothing to ask Stripe
+    # otherwise), and a failed probe stays None so a Stripe hiccup never
+    # reports a working rail as broken. This is what turns a customer's
+    # "couldn't open the payment page" 502 — Stripe refusing to open Checkout
+    # on an un-activated account — into a sentence the operator can act on,
+    # instead of a green card that says payments are on while the pay button
+    # errors. Reads only when both keys are set, i.e. the exact state the old
+    # card called "Connected".
+    health = account_health() if (ok and hook) else None
+    # None = couldn't probe (treat as unknown, leave the card green as before);
+    # False = Stripe answered and will not charge yet (the pay-button bug).
+    charges_enabled = None if health is None else bool(health.get("charges_enabled"))
     # The CONNECTED-accounts endpoint has its own signing secret, because
     # Stripe will not deliver a sub's `account.updated` to the account-level
     # endpoint at all. Reported separately for the same reason the first two
@@ -741,8 +754,11 @@ def stripe_status():
         "configured": ok,
         "webhook_configured": hook,
         "connect_webhook_configured": connect_hook,
-        # One sentence the operator can act on, rather than two booleans to
-        # interpret.
+        # None when not probed or the probe failed; False is the pay-button bug
+        # (keys set, Stripe won't charge); True is genuinely ready.
+        "charges_enabled": charges_enabled,
+        # One sentence the operator can act on, rather than a handful of
+        # booleans to interpret.
         "detail": (
             "Not connected — set STRIPE_SECRET_KEY to take online payments "
             "and pay subcontractors by direct deposit."
@@ -751,6 +767,13 @@ def stripe_status():
             "online invoice payment is off — without it a payment could never "
             "be confirmed. Add it to switch the pay button on."
             if not hook else
+            # Keys are both set, but Stripe itself won't take a charge yet —
+            # this is the state behind a pay button that errors. It takes
+            # precedence over the connect-webhook note below, because a card
+            # that won't charge is a bigger problem than a sub-setup update
+            # that doesn't auto-arrive.
+            health["detail"]
+            if (health is not None and charges_enabled is False and health.get("detail")) else
             "Connected. Online invoice payment is on, and payouts can settle "
             "to subcontractors' own accounts. Add "
             "STRIPE_CONNECT_WEBHOOK_SECRET so a subcontractor finishing "
