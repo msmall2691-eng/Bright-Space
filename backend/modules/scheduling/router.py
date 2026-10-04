@@ -4909,6 +4909,30 @@ def _unscheduled_jobs(db: Session, org_id: int) -> list:
     return [job_to_dict(j) for j in rows]
 
 
+def _week_section(name: str, fn, fallback):
+    """Run one piece of the /week aggregate in isolation.
+
+    schedule_week fans out to four independent queries (jobs, unscheduled,
+    properties, clients). Before this, ANY one of them raising took the whole
+    response down as a bare 500 — and since Schedule.jsx renders a single
+    ErrorState when the call fails, one bad row in, say, the client book blanked
+    the entire schedule. The office lost the calendar over something that had
+    nothing to do with the calendar.
+
+    Each section now fails to its own empty fallback and logs the real traceback
+    under a greppable marker ([schedule_week] <section> failed), so the Railway
+    log names the culprit instead of us guessing from a 500. The page draws with
+    the parts that worked and reports what degraded; the caller sees `degraded`
+    in the payload. Jobs are deliberately NOT wrapped — they ARE the schedule, so
+    a failure there is a real outage and should still surface as one.
+    """
+    try:
+        return fn(), None
+    except Exception:
+        logger.exception("[schedule_week] %s failed — degrading that section", name)
+        return fallback, name
+
+
 @schedule_router.get("/week", dependencies=[Depends(require_role("admin", "manager", "viewer", "cleaner"))])
 def schedule_week(
     scheduled_date_from: str,
@@ -4943,12 +4967,23 @@ def schedule_week(
     jobs = []
     offset = 0
     for _ in range(MAX_PAGES):
-        page = get_jobs(
-            date_from=scheduled_date_from,
-            date_to=scheduled_date_to,
-            limit=PAGE_SIZE, offset=offset, paginated=False,
-            db=db, org_id=org_id,
-        )
+        try:
+            page = get_jobs(
+                date_from=scheduled_date_from,
+                date_to=scheduled_date_to,
+                limit=PAGE_SIZE, offset=offset, paginated=False,
+                db=db, org_id=org_id,
+            )
+        except Exception:
+            # Jobs ARE the schedule, so this stays a hard failure — but log the
+            # traceback with the range and org first. Without this the Railway
+            # log showed an unattributed 500 and we could not tell a bad job row
+            # apart from a bad client row (see _week_section).
+            logger.exception(
+                "[schedule_week] jobs failed for org_id=%s range=%s..%s offset=%s",
+                org_id, scheduled_date_from, scheduled_date_to, offset,
+            )
+            raise
         jobs.extend(page)
         if len(page) < PAGE_SIZE:
             break
@@ -4968,6 +5003,22 @@ def schedule_week(
     # compat shim. Stripping first means the copies never see the fields.
     role = getattr(current_user, "role", None)
     stripped_jobs = strip_office_only_for_crew(jobs, role)
+
+    # Each delegate in its own blast radius — see _week_section.
+    is_office = role in ("admin", "manager", "viewer")
+    unscheduled, f1 = _week_section(
+        "unscheduled", lambda: _unscheduled_jobs(db, org_id), []
+    ) if is_office else ([], None)
+    properties, f2 = _week_section(
+        "properties", lambda: _get_properties(db=db, org_id=org_id), []
+    )
+    # limit/offset are Query() defaults — pass explicitly. 50 matches the
+    # standalone /api/clients default the page used before.
+    clients, f3 = _week_section(
+        "clients", lambda: _get_clients(limit=50, offset=0, db=db, org_id=org_id), []
+    )
+    degraded = [f for f in (f1, f2, f3) if f]
+
     return {
         # Visits are derived from jobs post-unification; the shape mirrors what
         # /api/visits used to emit so the FE fallback keeps rendering unchanged.
@@ -4978,13 +5029,12 @@ def schedule_week(
         # Schedule page had no way to show "needs a date". Rides this payload
         # (one query, no extra request — brightbase-economy) and is office-only:
         # crew payloads stay light and an unscheduled job isn't theirs yet.
-        "unscheduled": (
-            _unscheduled_jobs(db, org_id) if role in ("admin", "manager", "viewer") else []
-        ),
-        "properties": _get_properties(db=db, org_id=org_id),
-        # limit/offset are Query() defaults — pass explicitly. 50 matches the
-        # standalone /api/clients default the page used before.
-        "clients": _get_clients(limit=50, offset=0, db=db, org_id=org_id),
+        "unscheduled": unscheduled,
+        "properties": properties,
+        "clients": clients,
+        # Which sections (if any) fell back to empty. Empty list = a fully
+        # healthy response; anything in here means the log has the traceback.
+        "degraded": degraded,
         # Coverage was "Job without Visit"; that can't happen post-unification.
         "coverage": {
             "total_jobs": len(jobs or []),

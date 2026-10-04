@@ -150,3 +150,46 @@ def test_schedule_week_excludes_out_of_range_jobs(client):
     body = res.json()
     assert all(x.get("id") != jid for x in body["jobs"])
     assert all(x.get("id") != jid for x in body["visits"])
+
+
+def test_one_bad_section_degrades_instead_of_500ing(client, monkeypatch):
+    """A failure in a delegate (clients / properties / unscheduled) must not
+    take the whole calendar down.
+
+    The office hit a bare 500 on /api/schedule/week and the Schedule page
+    renders a single ErrorState for it — so one broken sub-query blanked the
+    entire schedule. Each section now falls back to empty and names itself in
+    `degraded`; jobs still come back.
+    """
+    import modules.scheduling.router as sched
+
+    def _boom(*a, **kw):
+        raise RuntimeError("client book exploded")
+
+    monkeypatch.setattr(sched, "_get_clients", _boom)
+
+    api, ids = client
+    today = date.today()
+    r = api.get(
+        "/api/schedule/week"
+        f"?scheduled_date_from={today - timedelta(days=3)}"
+        f"&scheduled_date_to={today + timedelta(days=3)}"
+    )
+    assert r.status_code == 200
+    body = r.json()
+    assert body["degraded"] == ["clients"]
+    assert body["clients"] == []
+    # The parts that work still come back.
+    assert isinstance(body["jobs"], list)
+    assert isinstance(body["properties"], list)
+
+
+def test_healthy_week_reports_nothing_degraded(client):
+    api, ids = client
+    today = date.today()
+    r = api.get(
+        "/api/schedule/week"
+        f"?scheduled_date_from={today}&scheduled_date_to={today + timedelta(days=1)}"
+    )
+    assert r.status_code == 200
+    assert r.json()["degraded"] == []
