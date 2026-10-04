@@ -197,16 +197,20 @@ business date. This shipped in seven places at once.
 rather than `blocking_requirements` is open to a stranger who filled in a web
 form ten minutes ago.
 
-**An open offer is not a work order.** Access codes, WiFi and notes were always
-stripped; the customer's *name and street address* were not. An offer carries
-**town, size, rate** — and, since the owner's Oct 2026 decision, a **photo of
-the house** (so a cleared sub can judge the property and choose without asking
-the office). The street **address** and the customer's **name** still wait
-until they have won it — only the picture rides the offer. The photo is served
-by `crew_job_property_photo`, gated to the *same visibility as the open board*
-(cleared + `open_for_claims` + scheduled + offer audience), and loads once when
-the detail sheet opens (`OpenJobSheet`), not on every board card — so it neither
-leaks a house to a sub who couldn't see the offer nor floods a rural connection.
+**An open offer is not a work order — but it now shows the house.** Since the
+owner's Oct 2026 decision an open offer carries the **street address** and a
+**photo** of the house alongside town/size/rate, so a cleared sub can see where
+the job is and choose without asking the office. What STILL waits until the job
+is won: the customer's **name**, and the access details (**gate code, WiFi,
+entry notes, per-house checklist**) — those are need-to-know, not help-me-decide,
+and `_offer_title` still builds the heading from the work + town (never the
+address). The photo is served by `crew_job_property_photo`, gated to the *same
+visibility as the open board* (cleared + `open_for_claims` + scheduled + offer
+audience), and loads lazily per card / once per sheet — so it only ever reaches
+a sub who could already see the offer. **The address is deliberately kept OUT of
+the push/SMS notification** (`crew_notify`): a lock screen is more exposed than a
+screen behind login, and those tests (`test_open_job_push`,
+`test_open_job_sms_fallback`) still pin name+address out of the notification.
 
 ---
 

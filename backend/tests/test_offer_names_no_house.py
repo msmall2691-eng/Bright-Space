@@ -1,22 +1,18 @@
-"""An open offer must not name the house — including through its TITLE.
+"""An open offer's TITLE is the work + the town — never the address — and the
+offer never leaks the customer's NAME or the house's ACCESS details.
 
-`/api/crew/my-day` already blanked the fields an offer has no business
-carrying: `address`, `property_name`, `client_name`, access notes, WiFi. The
-reasoning is in the router and it is the right reasoning — whose house it is
-stops being a bidder's business until they have actually won the job, because
-the customer agreed to a cleaning company in their home, not to their name and
-street address circulating among whoever is currently on the bench.
+History: `integrations/ical_sync.py` titles a generated turnover
+`f"Turnover — {prop.name}"`, and a Property's `name` is its address ("4 Red
+Barn Circle"), so every rental turnover on the open board was once captioned
+with the street address while the fields beside it were nulled. The title is
+now rebuilt from the kind of work and the town, so the heading reads as a job.
 
-It missed the one field that is actually DISPLAYED. `integrations/ical_sync.py`
-titles a generated turnover `f"Turnover — {prop.name}"`, and a Property's
-`name` is its address — the model says so in its own comment ("4 Red Barn
-Circle" (address, not service description)). So every rental turnover on the
-open board was captioned with the customer's street address while the fields
-beside it were carefully nulled. It was visible in a screenshot of the live
-board: "Turnover — 22 Kincaid St".
-
-An offer is titled from the two things it may say: the kind of work, and the
-town.
+Owner's Oct 2026 decision: the house ADDRESS (and photo) now DO ride an open
+offer — a cleared sub sees where the job is so they can choose for themselves
+without asking the office. What still waits until the job is won: the
+customer's NAME and the access details (gate code, lockbox, notes, wifi). So
+these tests pin two things now — the title stays town-based, and the offer
+reveals the address but not the name or the way in.
 """
 import uuid
 from datetime import time, timedelta
@@ -111,12 +107,23 @@ def test_the_title_does_not_carry_the_address(made):
     assert row["title"] == "Turnover — Camden ME"
 
 
-def test_nothing_anywhere_in_the_offer_names_the_house(made):
-    """Belt and braces across the whole row, not just the field that broke.
-    A new field added later that carries the address should fail here."""
+def test_the_offer_shows_the_address_but_not_access_or_name(made):
+    """Owner's Oct 2026 decision: a cleared sub now sees the house ADDRESS (and
+    photo) on an open offer, so they can judge the job and choose without asking
+    the office. What STILL waits until the job is won: the access details (gate
+    code, lockbox, notes) and the customer's NAME. This is the belt-and-braces
+    across the whole row — a new field that leaked an access detail or the name
+    would fail here."""
     _open_turnover(made, title="Turnover — 22 Kincaid St")
-    blob = repr(_offers()[0])
-    for leaked in ("Kincaid", "4521", "lockbox", "Side door"):
+    row = _offers()[0]
+    # The address rides the offer now...
+    assert row.get("address") and "Kincaid" in row["address"], row.get("address")
+    # ...the access details and the customer's name do not.
+    assert row.get("client_name") is None
+    assert row.get("house_code") is None
+    assert row.get("access_notes") is None
+    blob = repr(row)
+    for leaked in ("4521", "lockbox", "Side door"):
         assert leaked not in blob, f"{leaked!r} reached the open board"
 
 

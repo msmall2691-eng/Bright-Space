@@ -478,22 +478,25 @@ def my_day(
         prop = getattr(j, "property", None)
         area = " ".join(x for x in [getattr(prop, "city", None),
                                     getattr(prop, "state", None)] if x) or None
-        # ...AND NOT THROUGH THE TITLE EITHER. Nulling `address` and
-        # `property_name` above missed the one field that is displayed:
-        # `integrations/ical_sync.py` titles a turnover "Turnover — {prop.name}"
-        # and a Property's `name` IS its street address ("4 Red Barn Circle" —
-        # the model says so). So every rental turnover on the open board was
-        # captioned with the customer's address while the fields beside it were
-        # carefully blanked. Rebuilt here from the two things an offer may say.
+        # OWNER'S OCT 2026 DECISION: the house ADDRESS now rides an open offer
+        # (alongside the photo), so a cleared sub can see where the job is and
+        # choose for themselves without asking the office. What STILL waits until
+        # the job is won: the customer's NAME, the access details (gate code,
+        # lockbox, notes), wifi, and the per-house checklist — those are
+        # need-to-know, not help-me-decide. `title` stays the work + town (never
+        # the address) so the heading reads as a job, with the address shown as
+        # its own line/map link beside it. The address is deliberately NOT put
+        # in the push/SMS notification (crew_notify) — a lock screen is more
+        # exposed than a screen behind login.
         row.update({"title": _offer_title(j, area),
                     "open": True, "house_code": None, "access_notes": None,
                     "parking_notes": None, "can_text_client": False,
                     "checklist_template": None, "turnover_line": "",
                     "notes": None, "wifi_ssid": None, "wifi_password": None,
                     "house_notes": [],
-                    "address": None, "client_name": None,
+                    "client_name": None,          # the customer's name still waits
                     "property_name": None, "teammates": [],
-                    "area": area,        # offers carry no house internals
+                    "area": area,
                     # True only when a claim on THIS job would be awarded on the
                     # spot: instant claiming on AND the job priced. The card
                     # says "it's yours" only when this is true; otherwise it's
