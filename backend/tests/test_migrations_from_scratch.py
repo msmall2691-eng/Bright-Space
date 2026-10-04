@@ -127,53 +127,82 @@ def _missing_rls_policies(engine) -> list[str]:
     return sorted(t for t in TENANT_TABLES if t in live and t not in protected)
 
 
-def test_alembic_upgrade_head_from_empty_db():
+@pytest.fixture
+def fresh_db():
+    """An empty database for the migration chain, with the app repointed at it.
+
+    THE TEARDOWN IS THE POINT, not housekeeping. To migrate a throwaway
+    database the app has to be repointed at it, and the only lever for that is
+    ``os.environ["DATABASE_URL"]`` plus ``importlib.reload(database.db)``.
+    ``reload()`` updates the EXISTING module ``__dict__`` in place, so every
+    function already imported from that module starts seeing the new binding --
+    ``get_db`` above all, which every route resolves through ``Depends`` and
+    which reads the module-global ``SessionLocal`` at call time.
+
+    Undo that and the database is just gone. Leave it, and every later test in
+    the session that touches the DB dies with ``database
+    "brightspace_migtest_..." does not exist`` -- ~390 of them, a run that
+    looks catastrophic and has nothing to do with whatever is being tested.
+    (``tests/conftest.py`` does ``from database.db import engine,
+    SessionLocal``, binding the objects, so IT keeps the real ones; fixtures
+    and route handlers end up on different databases, which is why the
+    resulting errors look so arbitrary.)
+
+    CI never caught it: the "RLS (Postgres)" job runs this file and
+    test_tenancy_rls_postgres.py as two targeted pytest calls and never runs
+    the rest of the suite with RLS_TEST_DATABASE_URL set. It only bites a
+    developer who exports that variable and then runs everything.
+
+    Creation and drop live here too, so a failure mid-test can't orphan a
+    database on the server -- the old inline version created it before its
+    try block.
+    """
+    import importlib
+    import database.db as db_module
+
     server_url = make_url(normalize_db_url(_RAW))
+    admin_url = server_url.set(database="postgres")
     fresh_db_name = f"brightspace_migtest_{uuid.uuid4().hex[:12]}"
 
-    admin_url = server_url.set(database="postgres")
-    admin_engine = create_engine(admin_url, poolclass=NullPool, isolation_level="AUTOCOMMIT")
+    def _admin():
+        return create_engine(admin_url, poolclass=NullPool, isolation_level="AUTOCOMMIT")
+
+    admin_engine = _admin()
     with admin_engine.connect() as conn:
         conn.execute(text(f'CREATE DATABASE "{fresh_db_name}"'))
     admin_engine.dispose()
 
     fresh_url = server_url.set(database=fresh_db_name)
+    # Saved as a sentinel-free pair: DATABASE_URL may legitimately be unset,
+    # and restoring it to the string "None" would be its own silent breakage.
+    had_url = "DATABASE_URL" in os.environ
+    prior_url = os.environ.get("DATABASE_URL")
     try:
         os.environ["DATABASE_URL"] = str(fresh_url.render_as_string(hide_password=False))
-        from alembic import command
-        from alembic.config import Config
-        from alembic.script import ScriptDirectory
-
-        # Reload the engine module so it picks up the new DATABASE_URL — the
-        # migration env.py builds its own engine from the config, but any
-        # imports side-effect'd on module load need a fresh module.
-        import importlib
-        import database.db as db_module
         importlib.reload(db_module)
-
-        cfg = Config("alembic.ini")
-        cfg.set_main_option("script_location", "alembic")
-        command.upgrade(cfg, "head")
-
-        script_dir = ScriptDirectory.from_config(cfg)
-        expected_head = script_dir.get_current_head()
-
-        check_engine = create_engine(fresh_url, poolclass=NullPool)
-        with check_engine.connect() as conn:
-            actual = conn.execute(text("SELECT version_num FROM alembic_version")).scalar()
-        assert actual == expected_head
-
-        issues = _schema_parity_issues(check_engine)
-        unprotected = _missing_rls_policies(check_engine)
-        check_engine.dispose()
-        assert not issues, "migrated schema drifted from database/models:\n" + "\n".join(issues)
-        assert not unprotected, (
-            "TENANT_TABLES entries with no RLS policy after the full migration "
-            "chain — the backstop the list claims to provide is not there:\n  "
-            + "\n  ".join(unprotected)
-        )
+        yield fresh_url
     finally:
-        admin_engine = create_engine(admin_url, poolclass=NullPool, isolation_level="AUTOCOMMIT")
+        # Order matters. Drop the temp-bound engine's connections BEFORE the
+        # database goes away, put the environment back, then reload so the
+        # module globals (and every function reading them) point at the real
+        # database again -- all before the DROP, so nothing is left holding a
+        # handle to it.
+        try:
+            db_module.engine.dispose()
+        except Exception:
+            pass
+        if had_url:
+            os.environ["DATABASE_URL"] = prior_url
+            importlib.reload(db_module)
+        else:
+            # Unreachable in practice -- database/db.py raises at import when
+            # DATABASE_URL is unset (BB-INFRA-01), so the module could not have
+            # loaded without it. Guarded anyway because reloading with it unset
+            # would raise RuntimeError from *teardown*, masking the real result
+            # with an error about the fixture.
+            os.environ.pop("DATABASE_URL", None)
+
+        admin_engine = _admin()
         with admin_engine.connect() as conn:
             conn.execute(text(
                 "SELECT pg_terminate_backend(pid) FROM pg_stat_activity "
@@ -181,3 +210,34 @@ def test_alembic_upgrade_head_from_empty_db():
             ), {"name": fresh_db_name})
             conn.execute(text(f'DROP DATABASE IF EXISTS "{fresh_db_name}"'))
         admin_engine.dispose()
+
+
+def test_alembic_upgrade_head_from_empty_db(fresh_db):
+    fresh_url = fresh_db
+    from alembic import command
+    from alembic.config import Config
+    from alembic.script import ScriptDirectory
+
+    cfg = Config("alembic.ini")
+    cfg.set_main_option("script_location", "alembic")
+    command.upgrade(cfg, "head")
+
+    script_dir = ScriptDirectory.from_config(cfg)
+    expected_head = script_dir.get_current_head()
+
+    check_engine = create_engine(fresh_url, poolclass=NullPool)
+    try:
+        with check_engine.connect() as conn:
+            actual = conn.execute(text("SELECT version_num FROM alembic_version")).scalar()
+        assert actual == expected_head
+
+        issues = _schema_parity_issues(check_engine)
+        unprotected = _missing_rls_policies(check_engine)
+    finally:
+        check_engine.dispose()
+    assert not issues, "migrated schema drifted from database/models:\n" + "\n".join(issues)
+    assert not unprotected, (
+        "TENANT_TABLES entries with no RLS policy after the full migration "
+        "chain — the backstop the list claims to provide is not there:\n  "
+        + "\n  ".join(unprotected)
+    )
