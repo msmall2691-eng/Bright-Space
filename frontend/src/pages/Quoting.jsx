@@ -1,7 +1,6 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
-import { Plus, Trash2, Calendar, FileText, Search } from 'lucide-react'
-import SavedViewsBar from '../components/SavedViewsBar'
+import { Plus, Trash2, FileText } from 'lucide-react'
 import PageHero from '../components/ui/PageHero'
 import InlineSelect from '../components/InlineSelect'
 import JobCreateModal from '../components/JobCreateModal'
@@ -12,6 +11,7 @@ import { createClientChecked } from '../utils/clientCreate'
 import { formatDate, combineAddress } from '../utils/format'
 import { pushToast } from '../utils/toastBus'
 import QuoteRow from '../components/quoting/QuoteRow'
+import QuotesToolbar from '../components/quoting/QuotesToolbar'
 import FollowUpRow from '../components/quoting/FollowUpRow'
 import ArchivedRow from '../components/quoting/ArchivedRow'
 import SendQuotePanel from '../components/quoting/SendQuotePanel'
@@ -671,6 +671,14 @@ export default function Quoting() {
   const isComposing = panel === 'quote'
   const composeClientId = isComposing ? (form.client_id || '') : ''
   const composeClientName = composeClientId ? clientName(composeClientId) : ''
+  // Status counts for the always-visible segmented filter — derived from the
+  // already-loaded quotes list (no new fetch). '' is the "All" segment. These
+  // replace the old hero stat pods so a count is never shown in two places.
+  const statusCounts = useMemo(() => {
+    const c = { '': quotes.length }
+    for (const q of quotes) c[q.status] = (c[q.status] || 0) + 1
+    return c
+  }, [quotes])
   const visibleQuotes = quotes.filter(q => {
     if (isComposing) {
       if (!composeClientId) return false
@@ -687,16 +695,14 @@ export default function Quoting() {
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
 
         <div className="px-4 sm:px-8 pt-4">
+        {/* No stat pods here — the per-status counts live in one always-visible
+            segmented control in the toolbar below (QuotesToolbar), so a count
+            is never shown twice and the active status is never ambiguous. The
+            Follow-ups total stays as the quiet count on its own tab. */}
         <PageHero
           title="Quotes"
           subtitle="Turn leads into booked, recurring work"
           icon={FileText}
-          pods={[
-            { label: 'Quotes', value: quotes.length },
-            { label: 'Sent', value: quotes.filter(q => ['sent', 'viewed', 'changes_requested'].includes(q.status)).length },
-            { label: 'Follow-ups', value: followUps.length, tone: followUps.length > 0 ? 'text-amber-300' : 'text-white' },
-            { label: 'Accepted', value: quotes.filter(q => q.status === 'accepted').length, tone: 'text-emerald-300' },
-          ]}
           actions={
             <>
               {canManageTemplates && (
@@ -760,20 +766,12 @@ export default function Quoting() {
                 </button>
               </div>
             )}
-            <div className="flex items-center gap-2 shrink-0">
-              <div className="relative flex-1 max-w-xs">
-                <Search className="w-3.5 h-3.5 text-ink-3 absolute left-2.5 top-1/2 -translate-y-1/2" />
-                <input value={quoteSearch} onChange={e => setQuoteSearch(e.target.value)} placeholder="Search quotes…"
-                  className="w-full bg-bg-2 border border-hairline rounded-lg pl-8 pr-3 py-2 text-[12px] text-ink placeholder-ink-3 focus:outline-hidden focus:border-blue-400" />
-              </div>
-              <select value={quoteStatusFilter} onChange={e => setQuoteStatusFilter(e.target.value)}
-                className="bg-bg-2 border border-hairline rounded-lg px-3 py-2 text-[12px] text-ink-2 focus:outline-hidden focus:border-blue-400">
-                <option value="">All statuses</option>
-                {['draft', 'sent', 'viewed', 'accepted', 'declined', 'converted'].map(s =>
-                  <option key={s} value={s}>{s[0].toUpperCase() + s.slice(1)}</option>)}
-              </select>
-              <SavedViewsBar entityType="quote" currentConfig={quoteViewConfig} onApply={applyQuoteView} defaultLabel="All quotes" />
-            </div>
+            <QuotesToolbar
+              search={quoteSearch} setSearch={setQuoteSearch}
+              statusFilter={quoteStatusFilter} setStatusFilter={setQuoteStatusFilter}
+              statusCounts={statusCounts}
+              viewConfig={quoteViewConfig} applyView={applyQuoteView}
+            />
             {canEdit && selectedIds.size > 0 && (
               <div className="sticky top-0 z-10 flex items-center justify-between gap-3 bg-panel border border-hairline rounded-xl px-4 py-2.5">
                 <span className="flex items-center gap-2.5 text-sm text-ink font-medium">
@@ -812,7 +810,7 @@ export default function Quoting() {
               </div>
             )}
             {visibleQuotes.length > 0 && (
-            <div className="border border-hairline rounded-lg bg-panel divide-y divide-hairline overflow-hidden">
+            <div className="bb-board-in border border-hairline rounded-lg bg-panel divide-y divide-hairline overflow-hidden">
             {visibleQuotes.map(q => (
               <QuoteRow
                 key={q.id}

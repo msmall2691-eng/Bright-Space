@@ -22,8 +22,11 @@ export default function ArchivedRow({
         <div className="flex-1 min-w-0 cursor-pointer" onClick={() => onOpenQuote(q)}>
           <div className="flex flex-wrap items-center gap-2">
             <span className="font-medium text-ink">{clientName(q.client_id)}</span>
-            <span className="text-xs text-ink-3">{q.quote_number}</span>
-            <span className="text-xs px-2.5 py-0.5 rounded-full border bg-bg-2 text-ink-3 border-hairline">archived</span>
+            <span className="text-xs text-ink-3 tabular-nums">{q.quote_number}</span>
+            <span className="inline-flex items-center gap-1.5 text-[11px] font-medium text-ink-3">
+              <span className="w-1.5 h-1.5 rounded-full bg-ink-3 shrink-0" aria-hidden="true" />
+              archived
+            </span>
           </div>
           <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-ink-3 mt-0.5">
             {q.address && <span className="flex items-center gap-1"><MapPin className="w-3.5 h-3.5 shrink-0" />{q.address}</span>}
@@ -31,7 +34,7 @@ export default function ArchivedRow({
             {q.service_type && <span>{q.service_type.charAt(0).toUpperCase() + q.service_type.slice(1)}</span>}
           </div>
         </div>
-        <div className="font-semibold text-ink shrink-0">${parseFloat(q.total || 0).toFixed(2)}</div>
+        <div className="font-semibold text-ink shrink-0 tabular-nums text-right">${parseFloat(q.total || 0).toFixed(2)}</div>
         {isAdmin && (
           <button onClick={() => onDeletePermanent(q)}
             title="Delete permanently"
