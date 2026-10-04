@@ -1,5 +1,6 @@
-import { Component, useState, useCallback, useEffect, Suspense, lazy } from 'react'
+import { Component, useState, useCallback, useEffect, useRef, Suspense, lazy } from 'react'
 import { Routes, Route, Navigate, useLocation, useNavigate } from 'react-router-dom'
+import { useScrollRestoration } from './hooks/useScrollRestoration'
 import Sidebar from './components/Sidebar'
 import Header from './components/Header'
 import BottomNav from './components/BottomNav'
@@ -203,6 +204,10 @@ export default function App() {
   const [user, setUser] = useState(null)
   const [loading, setLoading] = useState(true)
   const location = useLocation()
+  // The office page sheet (<main>) is the scroll container, not window — so
+  // Back/Forward restores where you were in a long list instead of the top.
+  const mainRef = useRef(null)
+  useScrollRestoration(mainRef)
   const closeSidebar = useCallback(() => setSidebarOpen(false), [])
   const setCollapsed = useCallback((v) => {
     setSidebarCollapsed(v)
@@ -355,7 +360,7 @@ export default function App() {
           sidebarCollapsed={sidebarCollapsed}
           onSidebarExpand={() => setCollapsed(false)}
         />
-        <main className="flex-1 overflow-auto bg-bg bb-app-canvas pb-bottomnav shell:pb-0 scroll-smooth-mobile">
+        <main ref={mainRef} className="flex-1 overflow-auto bg-bg bb-app-canvas pb-bottomnav shell:pb-0 scroll-smooth-mobile">
           <ErrorBoundary>
           {/* A quiet cross-page fade on navigation, so moving between screens
               flows rather than snapping. Keyed on pathname only (not search),
