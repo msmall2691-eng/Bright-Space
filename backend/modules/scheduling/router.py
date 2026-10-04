@@ -976,6 +976,44 @@ def _job_to_dict_min(j: Job) -> dict:
     }
 
 
+def _job_row_dict(j: Job, eff, events_by_prop, prop_names, prop_meta,
+                  lead_buffer_hours, pending_by_job, helpers_by_job) -> dict:
+    """Serialize ONE job row for the jobs list, booking enrichment included.
+
+    Pulled out of get_jobs's render loop so the loop can guard each row
+    individually (see the call site). Takes the page's prebuilt indexes rather
+    than a Session — the bulk queries already ran, so this stays query-free and
+    the list keeps its O(1)-queries-per-page property.
+    """
+    booking = None
+    next_arrival = None
+    if j.job_type == "str_turnover" and j.property_id:
+        # Already-linked ical_event_id wins.
+        if j.ical_event_id:
+            booking = next((e for e in events_by_prop.get(j.property_id, [])
+                             if e.id == j.ical_event_id), None)
+        # Fall back to checkout-date == job-date matching.
+        if booking is None:
+            iso = eff.isoformat() if hasattr(eff, "isoformat") else (str(eff) if eff else None)
+            booking = next((e for e in events_by_prop.get(j.property_id, [])
+                             if e.checkout_date == iso), None)
+        # Find the next reservation that starts on/after this turnover.
+        if booking is not None:
+            next_arrival = next(
+                (e for e in events_by_prop.get(j.property_id, [])
+                 if e.checkin_date and e.checkin_date >= booking.checkout_date and e.uid != booking.uid),
+                None,
+            )
+    return job_to_dict(j, effective_date=eff,
+                       booking_event=booking,
+                       next_arrival=next_arrival,
+                       property_name=prop_names.get(j.property_id),
+                       lead_buffer_hours=lead_buffer_hours,
+                       property_check_in_time=prop_meta.get(j.property_id, (None, None))[1],
+                       pending_claim_requests=pending_by_job.get(j.id, 0),
+                       helpers=helpers_by_job.get(j.id))
+
+
 def _job_to_dict_enriched(db: Session, j: Job, **kwargs) -> dict:
     """job_to_dict() plus single-job booking enrichment — the wiring
     get_job/create_job/update_job/get_job_details need for a str_turnover
@@ -1168,33 +1206,23 @@ def get_jobs(
                 pending_by_job[jid] = n
 
         for j, eff in rows:
-            booking = None
-            next_arrival = None
-            if j.job_type == "str_turnover" and j.property_id:
-                # Already-linked ical_event_id wins.
-                if j.ical_event_id:
-                    booking = next((e for e in events_by_prop.get(j.property_id, [])
-                                     if e.id == j.ical_event_id), None)
-                # Fall back to checkout-date == job-date matching.
-                if booking is None:
-                    iso = eff.isoformat() if hasattr(eff, "isoformat") else (str(eff) if eff else None)
-                    booking = next((e for e in events_by_prop.get(j.property_id, [])
-                                     if e.checkout_date == iso), None)
-                # Find the next reservation that starts on/after this turnover.
-                if booking is not None:
-                    next_arrival = next(
-                        (e for e in events_by_prop.get(j.property_id, [])
-                         if e.checkin_date and e.checkin_date >= booking.checkout_date and e.uid != booking.uid),
-                        None,
-                    )
-            rendered.append(job_to_dict(j, effective_date=eff,
-                                        booking_event=booking,
-                                        next_arrival=next_arrival,
-                                        property_name=prop_names.get(j.property_id),
-                                        lead_buffer_hours=lead_buffer_hours,
-                                        property_check_in_time=prop_meta.get(j.property_id, (None, None))[1],
-                                        pending_claim_requests=pending_by_job.get(j.id, 0),
-                                        helpers=helpers_by_job.get(j.id)))
+            # One poison row must not take the whole list down. #965 gave the
+            # SINGLE-job endpoints this guard (_job_to_dict_enriched) after a
+            # turnover row 500'd the job page — but the LIST path kept calling
+            # job_to_dict bare, so the same row still killed every caller that
+            # comes through here, /api/schedule/week among them. That is the
+            # office-vs-crew split exactly: the crew app reads the guarded
+            # single-job endpoints and degrades, while the office Schedule had
+            # no guard and went dark on one row. Same breadcrumb as #965: log
+            # the row's shape, serve the degraded dict, keep the other rows.
+            try:
+                rendered.append(_job_row_dict(
+                    j, eff, events_by_prop, prop_names, prop_meta,
+                    lead_buffer_hours, pending_by_job, helpers_by_job,
+                ))
+            except Exception:
+                _log_job_shape("jobs_list", j)
+                rendered.append(_job_to_dict_min(j))
     role = getattr(current_user, "role", None)
     if paginated:
         return {
