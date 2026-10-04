@@ -15,10 +15,14 @@
  * a second place to get worker classification wrong (brightbase-marketplace,
  * Rule 0). So this page reads and links; it never approves.
  *
- * ORDERED BY WHO IS BLOCKED ON WHOM. "Waiting on you" is first because it is
- * the only section where a person is held up by the office rather than the
- * other way round — somebody asked for a job, or asked to join, and is
- * sitting there. Everything below it is the office looking at its own state.
+ * LAYOUT IS A BENTO, NOT A STACK OF BANDS (brightbase-ui-revamp). The page used
+ * to be five full-width bands scrolling down past a lot of empty desk. It is
+ * now two packing columns at shell: — the work flowing through the board
+ * (what's waiting on you, what's open to the bench) on the left, the state of
+ * the bench itself (who's cleared, what's owed, the front door) on the right —
+ * so the eye takes the whole hub in at ~940px without a scroll. Collapses to
+ * one column on a phone. Boxes carry the canonical quiet chrome (in-card
+ * dot+word header over hairline-divided rows) the rest of the office wears.
  *
  * ONE REQUEST draws the whole page (brightbase-economy). A hub costing four
  * round trips would be worse than the five pages it gathers.
@@ -41,15 +45,23 @@ const fmtDate = (iso) => {
 
 const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`
 
-/** Section heading + an optional link to the screen that owns the actions. */
-function Section({ title, count, to, linkLabel, shortLabel, children }) {
+/**
+ * One box of the bento. Canonical quiet chrome: a hairline card with an
+ * in-card header — a 6px semantic dot, a quiet uppercase label, an optional
+ * plain ink-3 count (never a bubble), and a right-aligned link to the screen
+ * that owns the full set. The body (rows / a quiet line / the apply card)
+ * sits directly under it, no box-in-box.
+ */
+function Box({ dot = 'bg-ink-3/40', title, count, to, linkLabel, shortLabel, children }) {
   return (
-    <section>
-      <div className="mb-2 flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
-        <h2 className="text-[11px] font-semibold uppercase tracking-wide text-ink-3">
-          {title}
+    <section className="overflow-hidden rounded-2xl border border-hairline bg-panel">
+      <header className="flex items-center justify-between gap-3 border-b border-hairline px-3.5 py-2.5">
+        <h2 className="flex items-baseline gap-2 text-[11px] font-semibold uppercase tracking-wide text-ink-3">
+          <span className={`relative top-px h-1.5 w-1.5 shrink-0 self-center rounded-full ${dot}`}
+            aria-hidden="true" />
+          <span>{title}</span>
           {/* A plain ink-3 number, never a bubble. */}
-          {count > 0 && <span className="ml-2 font-normal tabular-nums">{count}</span>}
+          {count > 0 && <span className="font-normal tabular-nums">{count}</span>}
         </h2>
         {to && (
           <Link to={to}
@@ -61,13 +73,13 @@ function Section({ title, count, to, linkLabel, shortLabel, children }) {
             <span className="hidden sm:inline">{linkLabel}</span>
           </Link>
         )}
-      </div>
+      </header>
       {children}
     </section>
   )
 }
 
-/** One line of the page: a dot, a sentence, and somewhere to go. */
+/** One line of a box: a dot, a sentence, and somewhere to go. */
 function Row({ dot = 'bg-ink-3/40', to, children, right }) {
   // The meta used to sit OUTSIDE the link, which meant tapping the date on a
   // phone did nothing — half the row looked tappable and wasn't. It is inside
@@ -94,25 +106,25 @@ function Row({ dot = 'bg-ink-3/40', to, children, right }) {
     <li className="border-b border-hairline/60 text-[13px] text-ink-2 last:border-0">
       {to ? (
         <Link to={to}
-          className="flex px-3 py-2.5 text-ink-2 no-underline transition-colors hover:bg-bg-2 hover:text-indigo-600">
+          className="flex px-3.5 py-2.5 text-ink-2 no-underline transition-colors hover:bg-bg-2 hover:text-indigo-600">
           {body}
         </Link>
       ) : (
-        <span className="flex px-3 py-2.5">{body}</span>
+        <span className="flex px-3.5 py-2.5">{body}</span>
       )}
     </li>
   )
 }
 
+/** The hairline-divided list that fills a box. No border of its own — the box
+ *  already carries one, and a second would be box-in-box. */
 function List({ children }) {
-  return (
-    <ul className="overflow-hidden rounded-xl border border-hairline bg-panel">{children}</ul>
-  )
+  return <ul>{children}</ul>
 }
 
-/** A quiet sentence where a whole section would otherwise be an empty box. */
+/** A quiet sentence where a whole box would otherwise be empty furniture. */
 function Quiet({ children }) {
-  return <p className="text-[13px] text-ink-3">{children}</p>
+  return <p className="px-3.5 py-3 text-[13px] text-ink-3">{children}</p>
 }
 
 export default function Marketplace() {
@@ -132,17 +144,19 @@ export default function Marketplace() {
 
   if (error) {
     return (
-      <div className="max-w-4xl px-4 sm:px-8">
+      <div className="max-w-5xl px-4 sm:px-8">
         <ErrorState title="Couldn’t load the marketplace" description={error} onRetry={load} />
       </div>
     )
   }
   if (!data) {
     return (
-      <div className="max-w-4xl space-y-4 px-4 pt-4 sm:px-8">
+      <div className="max-w-5xl space-y-4 px-4 pt-4 sm:px-8">
         <Skeleton className="h-8 w-56" />
-        <Skeleton className="h-32 w-full" />
-        <Skeleton className="h-32 w-full" />
+        <div className="grid gap-4 shell:grid-cols-[1.5fr_1fr]">
+          <Skeleton className="h-48 w-full" />
+          <Skeleton className="h-48 w-full" />
+        </div>
       </div>
     )
   }
@@ -151,7 +165,7 @@ export default function Marketplace() {
   const nothingWaiting = !waiting.application_count && !waiting.job_count
 
   return (
-    <div className="max-w-4xl">
+    <div className="max-w-5xl">
       {/* PageTitle, not PageHeader. PageHeader is a legacy alias that forwards
           title/subtitle/icon/actions/children and nothing else — `stats` went
           in and never came out, so the four numbers this page opens with were
@@ -171,153 +185,183 @@ export default function Marketplace() {
 
       {/* px on the body too. Without it every row ran edge to edge and the
           section links clipped mid-word on a phone. */}
-      <div className="space-y-6 px-4 pb-6 sm:px-8">
-        <Section title="Waiting on you" count={waiting.application_count + waiting.people_waiting}>
-          {nothingWaiting ? (
-            <Quiet>Nobody’s waiting on an answer.</Quiet>
-          ) : (
-            <List>
-              {waiting.jobs.map(j => (
-                /* Amber: somebody asked for this job and is sitting there.
-                   The link goes to the job, which is where answering lives —
-                   this page never approves anything. */
-                <Row key={`job-${j.job_id}`} dot="bg-amber-500" to={`/jobs/${j.job_id}`}
-                  right={fmtDate(j.scheduled_date)}>
-                  <span className="flex flex-col gap-1">
-                    <span>
-                      <span className="text-ink">{plural(j.asked, 'person', 'people')}</span>
-                      {' asked for '}{j.title}
-                      {j.client ? ` · ${j.client}` : ''}
-                    </span>
-                    {/* Who asked and at what price, so a job can be sized up
-                        without opening it. A pushy ask (BB-CLAIM-02) carries the
-                        same amber dot + word as the office review — never a
-                        pill or a tinted bar. Tapping still goes to the job to
-                        decide; the office never approves from here. */}
-                    {j.askers?.length > 0 && (
-                      <span className="flex flex-col gap-0.5">
-                        {j.askers.map((a, i) => (
-                          <span key={i} className="flex flex-wrap items-center gap-x-1.5 text-[12px] text-ink-3">
-                            <span className="text-ink-2">{a.name}</span>
-                            {a.rate != null && (
-                              <span>· {money(a.rate)}{a.countered ? '' : ' · your price'}</span>
-                            )}
-                            {a.high_bid && (
-                              <span className="flex items-center gap-1 text-ink-2">
-                                <span className="h-1.5 w-1.5 rounded-full bg-amber-500" aria-hidden="true" />
-                                over asking
-                              </span>
-                            )}
+      <div className="px-4 pb-6 sm:px-8">
+        {/* The bento. Two packing columns at shell: (the owner's ~940px window),
+            one column on a phone. Columns are flex stacks, not grid cells, so a
+            short box sits directly on the next instead of being height-locked to
+            the tallest box in its row (brightbase-ui-revamp: pack, don't lock).
+            bb-board-in is the shared 0.28s ease-out entrance, already disabled
+            under prefers-reduced-motion. */}
+        <div className="bb-board-in grid gap-4 shell:grid-cols-[1.5fr_1fr] shell:items-start">
+          {/* ── Column A — the work flowing through the board ───────────────── */}
+          <div className="flex flex-col gap-4">
+            <Box
+              dot={nothingWaiting ? 'bg-ink-3/40' : 'bg-amber-500'}
+              title="Waiting on you"
+              count={waiting.application_count + waiting.people_waiting}>
+              {nothingWaiting ? (
+                <Quiet>Nobody’s waiting on an answer.</Quiet>
+              ) : (
+                <>
+                  <List>
+                    {waiting.jobs.map(j => (
+                      /* Amber: somebody asked for this job and is sitting there.
+                         The link goes to the job, which is where answering lives
+                         — this page never approves anything. */
+                      <Row key={`job-${j.job_id}`} dot="bg-amber-500" to={`/jobs/${j.job_id}`}
+                        right={fmtDate(j.scheduled_date)}>
+                        <span className="flex flex-col gap-1">
+                          <span>
+                            <span className="text-ink">{plural(j.asked, 'person', 'people')}</span>
+                            {' asked for '}{j.title}
+                            {j.client ? ` · ${j.client}` : ''}
                           </span>
-                        ))}
-                      </span>
-                    )}
+                          {/* Who asked and at what price, so a job can be sized
+                              up without opening it. A pushy ask (BB-CLAIM-02)
+                              carries the same amber dot + word as the office
+                              review — never a pill or a tinted bar. Tapping still
+                              goes to the job to decide; the office never approves
+                              from here. */}
+                          {j.askers?.length > 0 && (
+                            <span className="flex flex-col gap-0.5">
+                              {j.askers.map((a, i) => (
+                                <span key={i} className="flex flex-wrap items-center gap-x-1.5 text-[12px] text-ink-3">
+                                  <span className="text-ink-2">{a.name}</span>
+                                  {a.rate != null && (
+                                    <span>· {money(a.rate)}{a.countered ? '' : ' · your price'}</span>
+                                  )}
+                                  {a.high_bid && (
+                                    <span className="flex items-center gap-1 text-ink-2">
+                                      <span className="h-1.5 w-1.5 rounded-full bg-amber-500" aria-hidden="true" />
+                                      over asking
+                                    </span>
+                                  )}
+                                </span>
+                              ))}
+                            </span>
+                          )}
+                        </span>
+                      </Row>
+                    ))}
+                    {waiting.applications.map(a => (
+                      <Row key={`app-${a.id}`} dot="bg-amber-500" to="/crew"
+                        right="Review on Crew">
+                        <span className="text-ink">{a.name}</span>
+                        {' applied to join'}{a.towns ? ` · ${a.towns}` : ''}
+                      </Row>
+                    ))}
+                  </List>
+                  {waiting.job_count > waiting.jobs.length && (
+                    <p className="border-t border-hairline/60 px-3.5 py-2 text-[12px] text-ink-3">
+                      …and {waiting.job_count - waiting.jobs.length} more on the schedule.
+                    </p>
+                  )}
+                </>
+              )}
+            </Box>
+
+            {/* Count lives in the header stat ("Open jobs"); repeating it on the
+                box header is the redundancy the owner flagged by name. */}
+            <Box
+              dot={data.open_jobs.length ? 'bg-violet-500' : 'bg-ink-3/40'}
+              title="Open to the bench"
+              to="/schedule" linkLabel="Post more on the schedule" shortLabel="Schedule">
+              {data.open_jobs.length === 0 ? (
+                <Quiet>
+                  No jobs are open right now. Open one to the bench from the schedule
+                  and everyone cleared to work can ask for it.
+                </Quiet>
+              ) : (
+                <List>
+                  {data.open_jobs.map(j => (
+                    <Row key={j.job_id} to={`/jobs/${j.job_id}`}
+                      /* Violet is "open to crew" in the shared vocabulary. */
+                      dot={j.asked ? 'bg-amber-500' : 'bg-violet-500'}
+                      right={[
+                        fmtDate(j.scheduled_date),
+                        j.posted_rate ? money(j.posted_rate) : null,
+                        j.asked ? `${plural(j.asked, 'person', 'people')} asked` : 'nobody yet',
+                      ].filter(Boolean).join(' · ')}>
+                      {/* Title line stays what and where. When, how much and who
+                          has asked are all the same kind of fact and belong
+                          together on the meta line. */}
+                      <span className="text-ink">{j.title}</span>
+                      {j.town ? ` · ${j.town}` : ''}
+                    </Row>
+                  ))}
+                </List>
+              )}
+            </Box>
+          </div>
+
+          {/* ── Column B — the state of the bench itself ────────────────────── */}
+          <div className="flex flex-col gap-4">
+            {/* Count lives in the header stat ("On the bench"). */}
+            <Box
+              dot={bench.people === 0 ? 'bg-ink-3/40'
+                : bench.can_work ? 'bg-emerald-500' : 'bg-amber-500'}
+              title="The bench" to="/crew"
+              linkLabel="Manage on Crew" shortLabel="Crew">
+              {bench.people === 0 ? (
+                <Quiet>
+                  Nobody on the bench yet. Share the application link below and
+                  approve the people you want.
+                </Quiet>
+              ) : (
+                <List>
+                  <Row dot={bench.can_work ? 'bg-emerald-500' : 'bg-amber-500'} to="/crew">
+                    <span className="text-ink">{bench.can_work}</span>
+                    {` of ${bench.people} cleared to work`}
+                    <span className="text-ink-3"> — insurance and paperwork accepted</span>
+                  </Row>
+                  {bench.awaiting_review > 0 && (
+                    <Row dot="bg-amber-500" to="/crew">
+                      <span className="text-ink">{bench.awaiting_review}</span>
+                      {' waiting on you to review a document'}
+                    </Row>
+                  )}
+                  {bench.blocked > 0 && (
+                    <Row dot="bg-red-500" to="/crew">
+                      <span className="text-ink">{bench.blocked}</span>
+                      {' can’t take jobs — something on file expired or was rejected'}
+                    </Row>
+                  )}
+                  <Row dot={bench.direct_deposit ? 'bg-emerald-500' : 'bg-ink-3/40'} to="/payroll">
+                    <span className="text-ink">{bench.direct_deposit}</span>
+                    {` of ${bench.people} set up for direct deposit`}
+                    <span className="text-ink-3">
+                      {' — the rest get paid however you pay them today'}
+                    </span>
+                  </Row>
+                </List>
+              )}
+            </Box>
+
+            <Box
+              dot={cash.owed > 0 ? 'bg-amber-500' : 'bg-emerald-500'}
+              title="Money" to="/payroll" linkLabel="Open Payouts" shortLabel="Payouts">
+              <List>
+                <Row dot={cash.owed > 0 ? 'bg-amber-500' : 'bg-emerald-500'} to="/payroll"
+                  right={money(cash.owed)}>
+                  {cash.owed > 0 ? 'Owed to subcontractors' : 'Nothing outstanding'}
+                  <span className="text-ink-3">
+                    {' — recorded on the ledger, not yet paid'}
                   </span>
                 </Row>
-              ))}
-              {waiting.applications.map(a => (
-                <Row key={`app-${a.id}`} dot="bg-amber-500" to="/crew"
-                  right="Review on Crew">
-                  <span className="text-ink">{a.name}</span>
-                  {' applied to join'}{a.towns ? ` · ${a.towns}` : ''}
+                <Row to="/payroll" right={money(cash.paid_ytd)}>
+                  {`Paid out in ${cash.year}`}
+                  <span className="text-ink-3">
+                    {' — by the date the work happened, which is what a 1099 counts'}
+                  </span>
                 </Row>
-              ))}
-            </List>
-          )}
-          {waiting.job_count > waiting.jobs.length && (
-            <p className="mt-2 text-[12px] text-ink-3">
-              …and {waiting.job_count - waiting.jobs.length} more on the schedule.
-            </p>
-          )}
-        </Section>
+              </List>
+            </Box>
 
-        <Section title="Open to the bench" count={data.open_job_count}
-          to="/schedule" linkLabel="Post more on the schedule" shortLabel="Schedule">
-          {data.open_jobs.length === 0 ? (
-            <Quiet>
-              No jobs are open right now. Open one to the bench from the schedule
-              and everyone cleared to work can ask for it.
-            </Quiet>
-          ) : (
-            <List>
-              {data.open_jobs.map(j => (
-                <Row key={j.job_id} to={`/jobs/${j.job_id}`}
-                  /* Violet is "open to crew" in the shared vocabulary. */
-                  dot={j.asked ? 'bg-amber-500' : 'bg-violet-500'}
-                  right={[
-                    fmtDate(j.scheduled_date),
-                    j.posted_rate ? money(j.posted_rate) : null,
-                    j.asked ? `${plural(j.asked, 'person', 'people')} asked` : 'nobody yet',
-                  ].filter(Boolean).join(' · ')}>
-                  {/* Title line stays what and where. When, how much and who
-                      has asked are all the same kind of fact and belong
-                      together on the meta line. */}
-                  <span className="text-ink">{j.title}</span>
-                  {j.town ? ` · ${j.town}` : ''}
-                </Row>
-              ))}
-            </List>
-          )}
-        </Section>
-
-        <Section title="The bench" count={bench.people} to="/crew"
-          linkLabel="Manage on Crew" shortLabel="Crew">
-          {bench.people === 0 ? (
-            <Quiet>
-              Nobody on the bench yet. Share the application link below and
-              approve the people you want.
-            </Quiet>
-          ) : (
-            <List>
-              <Row dot={bench.can_work ? 'bg-emerald-500' : 'bg-amber-500'} to="/crew">
-                <span className="text-ink">{bench.can_work}</span>
-                {` of ${bench.people} cleared to work`}
-                <span className="text-ink-3"> — insurance and paperwork accepted</span>
-              </Row>
-              {bench.awaiting_review > 0 && (
-                <Row dot="bg-amber-500" to="/crew">
-                  <span className="text-ink">{bench.awaiting_review}</span>
-                  {' waiting on you to review a document'}
-                </Row>
-              )}
-              {bench.blocked > 0 && (
-                <Row dot="bg-red-500" to="/crew">
-                  <span className="text-ink">{bench.blocked}</span>
-                  {' can’t take jobs — something on file expired or was rejected'}
-                </Row>
-              )}
-              <Row dot={bench.direct_deposit ? 'bg-emerald-500' : 'bg-ink-3/40'} to="/payroll">
-                <span className="text-ink">{bench.direct_deposit}</span>
-                {` of ${bench.people} set up for direct deposit`}
-                <span className="text-ink-3">
-                  {' — the rest get paid however you pay them today'}
-                </span>
-              </Row>
-            </List>
-          )}
-        </Section>
-
-        <Section title="Money" to="/payroll" linkLabel="Open Payouts" shortLabel="Payouts">
-          <List>
-            <Row dot={cash.owed > 0 ? 'bg-amber-500' : 'bg-emerald-500'} to="/payroll"
-              right={money(cash.owed)}>
-              {cash.owed > 0 ? 'Owed to subcontractors' : 'Nothing outstanding'}
-              <span className="text-ink-3">
-                {' — recorded on the ledger, not yet paid'}
-              </span>
-            </Row>
-            <Row to="/payroll" right={money(cash.paid_ytd)}>
-              {`Paid out in ${cash.year}`}
-              <span className="text-ink-3">
-                {' — by the date the work happened, which is what a 1099 counts'}
-              </span>
-            </Row>
-          </List>
-        </Section>
-
-        <Section title="The front door">
-          <ApplyLink />
-        </Section>
+            <Box dot="bg-indigo-500" title="The front door">
+              <ApplyLink />
+            </Box>
+          </div>
+        </div>
       </div>
     </div>
   )
@@ -331,6 +375,8 @@ export default function Marketplace() {
  * somebody at a job. Built from the browser's own origin rather than a
  * configured base URL, so it is always the address the person reading it is
  * already on and can never show a stale domain.
+ *
+ * No border of its own — it lives inside its box, which already has one.
  */
 function ApplyLink() {
   const [copied, setCopied] = useState(false)
@@ -347,7 +393,7 @@ function ApplyLink() {
   }
 
   return (
-    <div className="rounded-xl border border-hairline bg-panel px-3 py-3">
+    <div className="px-3.5 py-3">
       <p className="text-[13px] text-ink-2">
         Where new cleaners get set up. It needs no login — share it anywhere.
       </p>

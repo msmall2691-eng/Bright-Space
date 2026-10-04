@@ -170,7 +170,8 @@ it('pads its own body, because the header does not do it for you', async () => {
   // the body underneath does not inherit it — and every row sat flush against
   // the phone's screen edge. Measured in a real browser at 390px: gutter went
   // 0px → 16px.
-  const body = screen.getByText('Waiting on you').closest('section').parentElement
+  const body = screen.getByText('Waiting on you').closest('.px-4')
+  expect(body).toBeTruthy()
   expect(body.className).toMatch(/\bpx-4\b/)
 })
 
