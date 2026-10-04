@@ -11,7 +11,7 @@
  * week-pay summary), not four.
  */
 import { useCallback, useEffect, useState } from 'react'
-import { MapPin, LogOut, RefreshCw, CalendarDays, Clock, Car, DollarSign, CheckCircle2, CalendarRange, CircleUserRound, Sparkles, BookOpen, MessageSquare, Sun, CalendarClock, CalendarOff, Smartphone, CalendarPlus, ShieldCheck, Landmark, Lightbulb, Palette } from 'lucide-react'
+import { MapPin, LogOut, RefreshCw, CalendarDays, Clock, Car, DollarSign, CheckCircle2, CalendarRange, CircleUserRound, Sparkles, BookOpen, MessageSquare, Sun, CalendarClock, CalendarOff, Smartphone, CalendarPlus, ShieldCheck, Landmark, Palette } from 'lucide-react'
 import { get, post as apiPost, patch as apiPatch, del as apiDel, logout } from '../api'
 import { toast } from '../utils/toastBus'
 import { EmptyState, ErrorState, Skeleton } from '../components/ui'
@@ -35,6 +35,8 @@ import CrewPayoutSetup from '../components/crew/CrewPayoutSetup'
 import CrewEarnings from '../components/crew/CrewEarnings'
 import CrewSetupCard from '../components/crew/CrewSetupCard'
 import AccentPicker from '../components/crew/AccentPicker'
+import HeroBanner from '../components/crew/HeroBanner'
+import HeroScenePicker from '../components/crew/HeroScenePicker'
 import StickyNotes from '../components/board/StickyNotes'
 import { initAccent } from '../utils/accent'
 import { SOFT, CrewCard, SectionLabel, ErrorNote, SettingRow, Sheet, SheetActions } from '../components/crew/primitives'
@@ -108,30 +110,12 @@ function WeekPayBreakdown({ week, onOpenJob }) {
   )
 }
 
-function GreetingHero({ firstName, jobCount }) {
-  const [wx, setWx] = useState(null)
-  useEffect(() => {
-    let cancelled = false
-    get('/api/crew/weather')
-      .then(d => { if (!cancelled && d?.available) setWx(d) })
-      .catch(() => {})
-    return () => { cancelled = true }
-  }, [])
-  const h = new Date().getHours()
-  const timeOfDay = h < 12 ? 'morning' : h < 17 ? 'afternoon' : 'evening'
-  return (
-    <div className="mb-1">
-      <div className="text-[17px] font-bold text-ink">
-        Good {timeOfDay}{firstName ? `, ${firstName}` : ''}
-        {timeOfDay === 'morning' ? ' ☀️' : ''}
-      </div>
-      <div className="text-[12px] text-ink-3">
-        {jobCount === 0 ? 'Nothing on the books today.'
-          : `${jobCount} job${jobCount > 1 ? 's' : ''} today.`}
-        {wx && ` ${wx.temp_f}° now, high ${wx.high_f}°${wx.summary ? `, ${wx.summary}` : ''}${wx.precip_chance >= 40 ? ` — ${wx.precip_chance}% chance of rain` : ''}.`}
-      </div>
-    </div>
-  )
+// One pro-tip for the faint line in the Home header, rotating by the day so it
+// changes without any state. The full set still lives in the Learn tab.
+function pickDailyTip(tips) {
+  if (!tips || !tips.length) return null
+  const t = tips[Math.floor(Date.now() / 86400000) % tips.length]
+  return t?.title || null
 }
 
 
@@ -166,29 +150,6 @@ function DayGlance({ week, openCount, unread, onTab }) {
     </div>
   )
 }
-
-/** Two rotating pro cleaning tips on the crew home — a quiet, always-there way
- *  to train the team without a meeting. Text rides the my-day payload
- *  (data.tips), so no extra fetch on a rural connection. */
-function ProTips({ tips }) {
-  if (!tips || tips.length === 0) return null
-  return (
-    <section>
-      <SectionLabel className="mb-2 flex items-center gap-1.5">
-        <Lightbulb className="w-3.5 h-3.5" /> Pro tips
-      </SectionLabel>
-      <div className="space-y-2.5">
-        {tips.map((t, i) => (
-          <div key={i} className="rounded-xl border border-hairline bg-panel px-4 py-3">
-            <p className="text-[13.5px] font-semibold text-ink">{t.title}</p>
-            <p className="mt-1 text-[13px] leading-relaxed text-ink-2">{t.body}</p>
-          </div>
-        ))}
-      </div>
-    </section>
-  )
-}
-
 
 /** Upcoming jobs grouped by day with a friendly header — the Schedule tab. */
 function groupByDate(jobs) {
@@ -673,7 +634,8 @@ export default function MyDay({ previewUserId = null }) {
 
         {tab === 'today' && !loading && !error && data && (
           <>
-            <GreetingHero firstName={data.first_name} jobCount={(data.today || []).length} />
+            <HeroBanner firstName={data.first_name} jobCount={(data.today || []).length}
+              tip={pickDailyTip(data.tips)} onTipTap={() => setTab('learn')} />
 
             {/* The day at a glance — what makes this a home and not the jobs
                 list. Only for a sub who can actually take work; a not-cleared
@@ -788,8 +750,9 @@ export default function MyDay({ previewUserId = null }) {
                 A scratchpad at hand: "bring the tall ladder", "gate sticks". */}
             <StickyNotes />
 
-            {/* Two rotating pro cleaning tips — quiet training on the home. */}
-            <ProTips tips={data.tips} />
+            {/* Pro tips moved to the faint line in the header (and the full set
+                lives in Learn) — the owner wanted them quiet and up top, not a
+                block at the bottom of the home. */}
 
             {/* Save-to-phone + notifications setup. Dismissible here (sticks
                 via localStorage); always reachable again from the Me tab. */}
@@ -954,8 +917,11 @@ export default function MyDay({ previewUserId = null }) {
                   phone. Sits with "Your info" because it's a personal setting,
                   not work. */}
               <SettingRow icon={Palette} label="Appearance"
-                summary="Pick your accent colour">
-                <AccentPicker />
+                summary="Your colour and Home header">
+                <div className="space-y-4">
+                  <AccentPicker />
+                  <HeroScenePicker />
+                </div>
               </SettingRow>
             </CrewCard>
 
