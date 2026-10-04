@@ -38,7 +38,7 @@ export default function FollowUpRow({
             <span>{`${q.items?.length || 0} items`}</span>
           </div>
         </div>
-        <div className="font-semibold text-ink shrink-0">${parseFloat(q.total || 0).toFixed(2)}</div>
+        <div className="font-semibold text-ink shrink-0 tabular-nums text-right">${parseFloat(q.total || 0).toFixed(2)}</div>
         {canEdit && (
           <div className="flex gap-1.5 shrink-0">
             <button onClick={() => onSendFollowUp(q)} disabled={nudging === q.id}

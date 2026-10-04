@@ -48,8 +48,16 @@ export default function QuoteRow({
         )}
         <div className="flex-1 min-w-0 cursor-pointer" onClick={() => onOpenQuote(q)}>
           <div className="flex flex-wrap items-center gap-2">
-            <span className="font-medium text-ink">{clientName(q.client_id)}</span>
-            <span className="text-xs text-ink-3">{q.quote_number}</span>
+            <button onClick={e => { e.stopPropagation(); onNavigate(`/clients/${q.client_id}`) }}
+              className="font-medium text-ink hover:text-indigo-600 transition-colors text-left truncate max-w-full"
+              title="Open client">
+              {clientName(q.client_id)}
+            </button>
+            <button onClick={e => { e.stopPropagation(); onNavigate(`/quotes/${q.id}`) }}
+              className="text-xs text-ink-3 hover:text-indigo-600 transition-colors tabular-nums"
+              title="Open quote">
+              {q.quote_number}
+            </button>
             {canEdit && ['draft', 'sent', 'viewed', 'accepted', 'declined'].includes(q.status) ? (
               <span onClick={e => e.stopPropagation()}>
                 <InlineSelect value={q.status} options={QUOTE_STATUS_OPTIONS}
@@ -87,7 +95,7 @@ export default function QuoteRow({
             </div>
           )}
         </div>
-        <div className="font-semibold text-ink shrink-0">${parseFloat(q.total || 0).toFixed(2)}</div>
+        <div className="font-semibold text-ink shrink-0 tabular-nums text-right ml-auto sm:ml-0">${parseFloat(q.total || 0).toFixed(2)}</div>
       </div>
         <div className="flex flex-wrap gap-1.5 sm:flex-nowrap sm:shrink-0">
           <button onClick={() => onNavigate(`/quotes/${q.id}`)}
