@@ -358,11 +358,11 @@ def test_an_unvetted_account_sees_no_open_jobs_at_all(ids):
         _clear()
 
 
-def test_an_offer_names_the_town_not_the_customer(ids):
-    """Town and the size of the place is enough to judge the drive and the
-    hours. Whose house it is stops being the bidder's business until they have
-    won it — the customer agreed to a cleaning company in their home, not to
-    their name and address circulating around the bench."""
+def test_an_offer_shows_the_address_but_not_the_customer(ids):
+    """Owner's Oct 2026 decision: a cleared sub sees the ADDRESS (and photo) on
+    an open offer so they can judge the drive and choose for themselves. Whose
+    customer it is — the NAME — and the house internals (gate code, access notes)
+    still wait until they have won it."""
     jid = _mk_job(ids, [], open_for_claims=True)
     db = SessionLocal()
     j = db.query(Job).filter(Job.id == jid).first()
@@ -374,14 +374,16 @@ def test_an_offer_names_the_town_not_the_customer(ids):
     try:
         row = next(r for r in api.get("/api/crew/my-day?days=14").json()["open_jobs"]
                    if r["id"] == jid)
-        assert row["address"] is None
+        # The address rides the offer now...
+        assert row["address"] is not None
+        assert row["area"] == "Scarborough ME"
+        # ...but the customer's name does not, and neither does the title.
         assert row["client_name"] is None
         assert row["property_name"] is None
-        assert row["area"] == "Scarborough ME", "town is what they get instead"
         # Still the things a bid actually needs.
         assert row["posted_rate"] == 80.0
         assert row["scheduled_date"]
-        # And the house internals stay gone, as they always were.
+        # And the house internals stay gone — need-to-know, not help-me-decide.
         assert row["house_code"] is None and row["access_notes"] is None
     finally:
         _clear()
