@@ -1,6 +1,7 @@
 import { AlertTriangle, Calendar, Clock, Home, Link, RefreshCw, Users } from 'lucide-react'
 import { ICAL_SOURCES, PROPERTY_TYPE_CONFIG } from './constants'
 import { IcalFeedRow } from './IcalFeedRow'
+import PropertyPhoto from '../PropertyPhoto'
 
 const propType = (p) => (p?.property_type || '').toLowerCase()
 
@@ -50,7 +51,14 @@ export function PropertyRow({
             </div>
             <div className="flex-1 min-w-0">
               <div className="flex items-center gap-2">
-                <div className="font-semibold text-ink">{p.name}</div>
+                {/* The name is the record — click it to open the property
+                    (was dead text; only the Jobs button navigated). Stops
+                    propagation so it doesn't also toggle the row's expand. */}
+                <button
+                  onClick={(e) => { e.stopPropagation(); navigate(`/properties/${p.id}`) }}
+                  className="font-semibold text-ink hover:text-indigo-600 no-underline transition-colors text-left truncate">
+                  {p.name}
+                </button>
                 <span className="inline-flex items-center gap-1.5 text-xs font-medium text-ink-3">
                   <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${
                     pType === 'str' ? 'bg-amber-500' : pType === 'commercial' ? 'bg-purple-500' : 'bg-blue-500'
@@ -144,7 +152,16 @@ export function PropertyRow({
             </div>
           </div>
 
-          <div className="flex flex-wrap items-center gap-2 sm:ml-2 shrink-0">
+          <div className="flex items-start gap-3 sm:ml-2 shrink-0">
+            {/* Front-of-house Street View — lazy (loads when scrolled into
+                view, zero fetch for off-screen rows) and collapses when Google
+                has no imagery. Desktop only; a phone row stays dense. */}
+            <PropertyPhoto
+              lazy
+              address={[p.address, p.city, p.state, p.zip_code].filter(Boolean).join(', ')}
+              className="hidden shell:block w-20 h-14 object-cover rounded-md border border-hairline bg-bg-2 shrink-0"
+            />
+          <div className="flex flex-wrap items-center gap-2 shrink-0">
             {pType === 'str' && (p.icals?.length || 0) > 0 && (
               <button onClick={(e) => { e.stopPropagation(); syncOne(p.id) }} disabled={syncing === p.id}
                 className="flex items-center gap-1.5 bg-panel border border-hairline-2 text-ink-2 hover:bg-bg-2 px-3 py-1.5 rounded-md text-xs font-medium transition-colors">
@@ -168,6 +185,7 @@ export function PropertyRow({
               className="text-xs text-red-600 hover:text-red-700 border border-hairline hover:border-red-300 hover:bg-red-50 dark:hover:bg-red-500/10 px-3 py-1.5 rounded-lg transition-colors">
               Deactivate
             </button>
+          </div>
           </div>
         </div>
       </div>
@@ -217,7 +235,7 @@ export function PropertyRow({
               ) : (
                 <>
                   <button onClick={() => setShowIcalForm(p.id)}
-                    className="w-full text-xs text-blue-600 dark:text-blue-300 hover:text-blue-700 border border-indigo-600/20 bg-blue-50/50 dark:bg-blue-500/10 hover:bg-blue-50 dark:hover:bg-blue-500/20 px-3 py-2 rounded-lg transition-colors">
+                    className="w-full text-xs font-medium bg-panel border border-hairline-2 text-ink-2 hover:bg-bg-2 px-3 py-2 rounded-md transition-colors">
                     + Add Calendar URL
                   </button>
                   <button onClick={() => navigate(`/properties/${p.id}/icals`)}

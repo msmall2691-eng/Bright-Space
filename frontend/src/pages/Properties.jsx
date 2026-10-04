@@ -1,23 +1,18 @@
 import { useEffect, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
-import { Home, Search, RefreshCw, ChevronRight, Plus } from 'lucide-react'
+import { Home } from 'lucide-react'
 import { EmptyState, PageHero, SubNav } from '../components/ui'
-import SavedViewsBar from '../components/SavedViewsBar'
 import { PROPERTY_TYPE_CONFIG } from '../components/properties/constants'
 import { TypeSelectorModal } from '../components/properties/TypeSelectorModal'
 import { PropertyForm } from '../components/properties/PropertyForm'
 import { SyncToolsPanel, SweepResultsPanel } from '../components/properties/SyncToolsPanel'
 import { PropertyRow } from '../components/properties/PropertyRow'
-import { BulkActionBar, SyncResultBanner } from '../components/properties/PropertiesToolbar'
+import { BulkActionBar, SyncResultBanner, PropertiesToolbar } from '../components/properties/PropertiesToolbar'
 import { useProperties } from '../hooks/useProperties'
 import { usePropertyMutations } from '../hooks/usePropertyMutations'
 import { usePropertyForm } from '../hooks/usePropertyForm'
 import { useSelectionSet } from '../hooks/useSelectionSet'
 import { usePropertyFilters } from '../hooks/usePropertyFilters'
-
-// Type tabs shown under the page header — mirrors PROPERTY_TYPE_CONFIG's
-// keys plus the synthetic "all" bucket used by usePropertyFilters.
-const TYPE_TABS = ['all', 'residential', 'commercial', 'str']
 
 export default function Properties() {
   const navigate = useNavigate()
@@ -137,66 +132,31 @@ export default function Properties() {
     <div className="flex h-full">
       <div className="flex-1 flex flex-col min-w-0">
         <div className="px-4 sm:px-8 pt-4">
-        <PageHero
-          title="Properties"
-          subtitle="Homes, rentals, and commercial sites you service"
-          icon={Home}
-          pods={[
-            { label: 'All', value: typeCounts.all },
-            { label: 'Residential', value: typeCounts.residential ?? 0, tone: 'text-blue-300' },
-            { label: 'Commercial', value: typeCounts.commercial ?? 0, tone: 'text-amber-300' },
-            { label: 'STR', value: typeCounts.str ?? 0, tone: 'text-emerald-300' },
-          ]}
-          actions={
-            <>
-              {typeCounts.str > 0 && (
-                <button onClick={() => setShowAdvanced(v => !v)}
-                  title="Sync tools and turnover health check"
-                  className={`flex items-center gap-2 border border-hairline-2 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${showAdvanced ? 'bg-bg-2 text-ink' : 'bg-panel hover:bg-bg-2 text-ink-2'}`}>
-                  <RefreshCw className="w-3.5 h-3.5" />
-                  Sync tools
-                  <ChevronRight className={`w-3.5 h-3.5 transition-transform ${showAdvanced ? 'rotate-90' : ''}`} />
-                </button>
-              )}
-              <button onClick={openNew}
-                className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white px-3 py-1.5 rounded-md text-xs font-medium transition-colors">
-                <Plus className="w-4 h-4" /> Add Property
-              </button>
-            </>
-          }
-        >
-          <SubNav className="mb-3" />
-
-          <div className="flex items-center gap-2 flex-wrap">
-            <div className="relative">
-              <Search className="w-3.5 h-3.5 text-ink-3 absolute left-2.5 top-1/2 -translate-y-1/2" />
-              <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search properties…"
-                className="bg-bg-2 border border-hairline rounded-lg pl-8 pr-3 py-2 text-[12px] text-ink placeholder-ink-3 focus:outline-hidden focus:border-blue-400 w-40 sm:w-52" />
-            </div>
-            <SavedViewsBar entityType="property" currentConfig={viewConfig} onApply={applyView} defaultLabel="All properties" />
-          </div>
-
-          {/* Type tabs — scroll horizontally on mobile so "All / Residential /
-              Commercial / STR" (+ counts) never clip past the edge at 375px. */}
-          <div className="flex gap-2 mt-4 border-b border-hairline overflow-x-auto scrollbar-thin">
-            {TYPE_TABS.map(type => (
-              <button
-                key={type}
-                onClick={() => setSearchParams({ type: type === 'all' ? '' : type })}
-                className={`shrink-0 whitespace-nowrap px-3 sm:px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
-                  currentType === type
-                    ? 'border-indigo-600 text-indigo-600'
-                    : 'border-transparent text-ink-2 hover:text-ink'
-                }`}
-              >
-                {type === 'all' ? `All (${typeCounts.all})` : `${PROPERTY_TYPE_CONFIG[type].label} (${typeCounts[type]})`}
-              </button>
-            ))}
-          </div>
-        </PageHero>
+          {/* No type pods in the hero — the type counts + filter live in one
+              always-visible neutral segmented control in the toolbar below, so
+              the count isn't shown twice and the active tab is never ambiguous
+              (matches Clients #1041). */}
+          <PageHero
+            title="Properties"
+            subtitle="Homes, rentals, and commercial sites you service"
+            icon={Home}
+          >
+            <SubNav />
+          </PageHero>
         </div>
 
-        <div className="flex-1 flex flex-col min-h-0 px-4 sm:px-8 pb-4 sm:pb-6">
+        <div className="flex-1 flex flex-col min-h-0 px-4 sm:px-8 pb-4 sm:pb-6 pt-4">
+          <PropertiesToolbar
+            search={search} setSearch={setSearch}
+            currentType={currentType}
+            onTypeChange={(key) => setSearchParams({ type: key === 'all' ? '' : key })}
+            typeCounts={typeCounts}
+            hasStr={typeCounts.str > 0}
+            showAdvanced={showAdvanced} setShowAdvanced={setShowAdvanced}
+            viewConfig={viewConfig} applyView={applyView}
+            openNew={openNew}
+          />
+
           {(missingAccessCount > 0 || feedAttentionCount > 0) && (
             <div className="flex items-center gap-2 flex-wrap self-start mb-2">
               {feedAttentionCount > 0 && (
@@ -259,7 +219,7 @@ export default function Properties() {
             />
           )}
 
-          <div className="space-y-2 overflow-y-auto flex-1 scrollbar-thin">
+          <div className="space-y-2 overflow-y-auto flex-1 scrollbar-thin bb-board-in">
             {visibleProperties.map(p => (
               <PropertyRow
                 key={p.id}
