@@ -10,20 +10,51 @@
  * Removing is one tap and takes effect everywhere, because a face you can't
  * easily take down is a face you never really chose to put up.
  */
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Camera, Trash2, UserRound } from 'lucide-react'
 import { del, upload } from '../../api'
 import { prepareForUpload } from '../../utils/imageDownscale'
 import { ErrorNote } from './primitives'
 
+// The JWT straight from localStorage (same key api.js uses), so we can send it
+// on the image fetch below. Read inline rather than importing a named api
+// export to match PropertyPhoto — keeps widely-mocked ../api out of the way.
+function readJWT() {
+  try { return localStorage.getItem('brightbase_jwt') } catch { return null }
+}
+
 export default function CrewHeadshot({ photoUrl, onChange, disabled = false }) {
   const fileRef = useRef(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState(null)
-  // Bumped on every change so the <img> refetches: the URL is stable by
-  // design (it's keyed on the user, not the upload), so without this a
-  // replaced photo keeps showing the old one out of the browser cache.
+  // Bumped on every change so the photo refetches: the URL is stable by design
+  // (it's keyed on the user, not the upload), so without this a replaced photo
+  // would keep showing the old one.
   const [rev, setRev] = useState(0)
+
+  // The headshot endpoint (/api/crew/photo/:id) is auth-gated — a plain
+  // <img src> can't send the Bearer token, so it 401'd into a broken image and
+  // the cleaner's own photo never showed. Fetch it with the token as a blob and
+  // render an object URL instead (the same pattern as PropertyPhoto).
+  const [src, setSrc] = useState(null)
+  const objUrl = useRef(null)
+  useEffect(() => {
+    const clear = () => { if (objUrl.current) { URL.revokeObjectURL(objUrl.current); objUrl.current = null } }
+    setSrc(null); clear()
+    if (!photoUrl) return undefined
+    let cancelled = false
+    const token = readJWT()
+    fetch(photoUrl, { headers: token ? { Authorization: `Bearer ${token}` } : {} })
+      .then(r => (r.ok ? r.blob() : Promise.reject(r.status)))
+      .then(blob => {
+        if (cancelled) return
+        const u = URL.createObjectURL(blob)
+        objUrl.current = u
+        setSrc(u)
+      })
+      .catch(() => { /* leave the placeholder up; upload errors surface separately */ })
+    return () => { cancelled = true; clear() }
+  }, [photoUrl, rev])
 
   const pick = async e => {
     const file = e.target.files?.[0]
@@ -64,9 +95,8 @@ export default function CrewHeadshot({ photoUrl, onChange, disabled = false }) {
     <div className="space-y-2">
       <div className="flex items-center gap-3">
         <div className="w-16 h-16 rounded-full overflow-hidden bg-bg-2 border border-hairline shrink-0 flex items-center justify-center">
-          {photoUrl ? (
-            <img src={`${photoUrl}?v=${rev}`} alt="Your photo"
-              className="w-full h-full object-cover" />
+          {src ? (
+            <img src={src} alt="Your photo" className="w-full h-full object-cover" />
           ) : (
             <UserRound className="w-7 h-7 text-ink-3" aria-hidden="true" />
           )}
