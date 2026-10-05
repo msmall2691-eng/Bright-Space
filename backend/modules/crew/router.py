@@ -1653,12 +1653,13 @@ async def upload_my_document(
         raise HTTPException(status_code=422,
                             detail="Send a PDF or a photo of the document.")
 
+    # Expiry is NOT required to upload — a sub in a driveway shouldn't have the
+    # file blocked behind typing a date. They add it after (POST
+    # /my-file/{kind}/expiry) or the office sets it from the certificate on
+    # review; either way vetting won't clear an expiring doc with no date on it
+    # (sub_vetting.missing_requirements), so the "when does it lapse" signal is
+    # never lost — it's just no longer in the way of the upload.
     exp = coerce_date(expires_at) if expires_at else None
-    if kind in EXPIRING_KINDS and exp is None:
-        raise HTTPException(
-            status_code=422,
-            detail="Add the expiry date from the certificate — it's how the "
-                   "office knows to ask you for the next one.")
 
     now = _now_naive_utc()
     doc = (db.query(SubDocument)
@@ -1685,6 +1686,43 @@ async def upload_my_document(
                      org_id=resolve_org_id(org_id, db), category="crew")
     except Exception:
         log.exception("push notify failed on document upload")
+    return vetting_status(db, current_user.id)
+
+
+class _ExpiryUpdate(BaseModel):
+    expires_at: Optional[str] = None
+
+
+@router.post("/my-file/{kind}/expiry")
+def set_my_document_expiry(
+    kind: str,
+    body: _ExpiryUpdate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_role("cleaner")),
+):
+    """Set the expiry date on my OWN already-uploaded document — the "add it
+    after" half of upload-first, so the date never blocks getting the file on
+    file. Touches only the date: not the file, not the review status (the office
+    still reads the real date off the certificate when it reviews). Only
+    expiring kinds carry a date."""
+    from services.sub_vetting import EXPIRING_KINDS, vetting_status
+    kind = (kind or "").strip().lower()
+    if kind not in EXPIRING_KINDS:
+        raise HTTPException(status_code=422,
+                            detail="That document doesn't carry an expiry date.")
+    doc = (db.query(SubDocument)
+           .filter(SubDocument.user_id == current_user.id, SubDocument.kind == kind)
+           .first())
+    if doc is None or not doc.data:
+        raise HTTPException(status_code=404,
+                            detail="Upload the document first, then add its date.")
+    exp = coerce_date(body.expires_at) if body.expires_at else None
+    if body.expires_at and exp is None:
+        raise HTTPException(status_code=422,
+                            detail="That date didn't look right — use the date on the certificate.")
+    doc.expires_at = exp
+    doc.updated_at = _now_naive_utc()
+    db.commit()
     return vetting_status(db, current_user.id)
 
 

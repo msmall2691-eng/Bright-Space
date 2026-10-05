@@ -21,8 +21,8 @@ from database.db import SessionLocal
 from database.models import SubAgreement, SubDocument, User
 from modules.auth.router import get_current_user, current_org_id
 from services.sub_vetting import (
-    CURRENT_AGREEMENT_VERSION, can_take_jobs, expiring_documents, is_expired,
-    missing_requirements, vetting_status,
+    CURRENT_AGREEMENT_VERSION, blocking_requirements, can_take_jobs,
+    expiring_documents, is_expired, missing_requirements, vetting_status,
 )
 from utils.dates import business_today
 
@@ -226,19 +226,52 @@ def test_an_old_agreement_version_does_not_count_as_current(sub):
 
 # ── uploads ─────────────────────────────────────────────────────────────────
 
-def test_uploading_a_coi_requires_its_expiry_date(sub):
+def test_a_coi_uploads_without_an_expiry_then_the_date_is_added_after(sub):
+    # Upload-first: the date must not block getting the file on (a sub in a
+    # driveway). But a dated doc with no date can't prove it's current, so it
+    # must not clear anyone until the date is on it.
+    db, uid = sub
+    _sign(db, uid); _doc(db, uid, "w9")   # everything else complete
+    u = db.query(User).filter(User.id == uid).first()
+    api = _as(_Cleaner(uid, u.cleaner_id))
+
+    # 1) Uploads with NO expiry — used to 422, now 200.
+    r = api.post("/api/crew/my-file/coi",
+                 files={"file": ("coi.pdf", io.BytesIO(b"%PDF-1.4"), "application/pdf")})
+    assert r.status_code == 200, r.text
+
+    # 2) On file but dateless → still not cleared, with a clear "add the date".
+    miss = missing_requirements(db, uid)
+    assert any("expiry date" in m.lower() for m in miss)
+    assert not can_take_jobs(db, uid)
+
+    # 3) Add the date after, without re-uploading the file.
+    good = (business_today() + timedelta(days=365)).isoformat()
+    r2 = api.post("/api/crew/my-file/coi/expiry", json={"expires_at": good})
+    assert r2.status_code == 200, r2.text
+    db.expire_all()
+    coi = db.query(SubDocument).filter(SubDocument.user_id == uid,
+                                       SubDocument.kind == "coi").first()
+    assert coi.expires_at and coi.expires_at.isoformat() == good
+    assert coi.data, "the file is untouched by a date-only update"
+    # The date no longer blocks clearance; only the office's review remains.
+    assert "expiry date" not in " ".join(missing_requirements(db, uid)).lower()
+    _clear()
+
+
+def test_expiry_endpoint_needs_the_doc_first_and_only_expiring_kinds(sub):
     db, uid = sub
     u = db.query(User).filter(User.id == uid).first()
     api = _as(_Cleaner(uid, u.cleaner_id))
-    r = api.post("/api/crew/my-file/coi",
-                 files={"file": ("coi.pdf", io.BytesIO(b"%PDF-1.4"), "application/pdf")})
-    assert r.status_code == 422
-    assert "expiry" in r.json()["detail"]
-
-    r2 = api.post("/api/crew/my-file/coi",
-                  files={"file": ("coi.pdf", io.BytesIO(b"%PDF-1.4"), "application/pdf")},
-                  data={"expires_at": (business_today() + timedelta(days=365)).isoformat()})
-    assert r2.status_code == 200, r2.text
+    # No COI uploaded yet → nothing to date.
+    r = api.post("/api/crew/my-file/coi/expiry",
+                 json={"expires_at": business_today().isoformat()})
+    assert r.status_code == 404
+    # A W-9 doesn't carry an expiry at all.
+    _doc(db, uid, "w9", status="pending")
+    r2 = api.post("/api/crew/my-file/w9/expiry",
+                  json={"expires_at": business_today().isoformat()})
+    assert r2.status_code == 422
     _clear()
 
 
@@ -358,3 +391,83 @@ def test_accepting_text_the_server_no_longer_serves_is_refused(sub):
     finally:
         _clear()
     assert db.query(SubAgreement).filter(SubAgreement.user_id == uid).count() == 0
+
+
+# ── admin "work now, collect the docs later" override (migration 130) ─────────
+
+def test_override_clears_the_gate_but_leaves_the_file_honest(sub):
+    db, uid = sub
+    u = db.query(User).filter(User.id == uid).first()
+    assert blocking_requirements(db, u)          # empty file → blocked
+    assert not can_take_jobs(db, uid)
+
+    r = _as(_Admin()).post(f"/api/auth/users/{uid}/vetting-override",
+                           json={"enabled": True, "reason": "same-day cover"})
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["override"] is True and body["cleared"] is True
+    # The file's honest answer is UNCHANGED — this is what instant auto-award
+    # reads, so it stays fail-closed; the bench still shows what's owed.
+    assert body["can_take_jobs"] is False
+    assert body["missing"]
+    _clear()
+
+    db.expire_all()
+    u = db.query(User).filter(User.id == uid).first()
+    assert blocking_requirements(db, u) == []    # office-approved path is clear
+    assert not can_take_jobs(db, uid)            # but auto-award is not
+    assert u.vetting_override_reason == "same-day cover"
+
+
+def test_override_shows_on_the_bench_loudly(sub):
+    db, uid = sub
+    from services.sub_vetting import roster
+    db.query(User).filter(User.id == uid).update(
+        {"vetting_override": True, "vetting_override_reason": "covering today"})
+    db.commit()
+    row = next(p for p in roster(db, 1)["crew"] if p["user_id"] == uid)
+    assert row["override"] is True
+    assert row["can_work"] is True               # can work...
+    assert row["complete"] is False              # ...but the file isn't complete
+    assert row["missing"]                        # and the gaps are still named
+
+
+def test_override_is_admin_only(sub):
+    db, uid = sub
+
+    class _Manager:
+        id, org_id, role, status, active = 9971, 1, "manager", "active", True
+        email = "mgr2@example.com"; full_name = "Mgr"; cleaner_id = None
+
+    r = _as(_Manager()).post(f"/api/auth/users/{uid}/vetting-override",
+                             json={"enabled": True})
+    assert r.status_code == 403
+    _clear()
+
+
+def test_override_can_be_revoked(sub):
+    db, uid = sub
+    _as(_Admin()).post(f"/api/auth/users/{uid}/vetting-override", json={"enabled": True})
+    _clear()
+    r = _as(_Admin()).post(f"/api/auth/users/{uid}/vetting-override", json={"enabled": False})
+    assert r.status_code == 200
+    _clear()
+    db.expire_all()
+    u = db.query(User).filter(User.id == uid).first()
+    assert not u.vetting_override and u.vetting_override_reason is None
+    assert blocking_requirements(db, u)          # blocked again
+
+
+def test_only_a_cleaners_file_can_be_overridden(sub):
+    db, _ = sub
+    other = User(email=f"off-{uuid.uuid4().hex[:6]}@example.com", role="manager",
+                 status="active", org_id=1)
+    db.add(other); db.commit(); db.refresh(other)
+    oid = other.id
+    try:
+        r = _as(_Admin()).post(f"/api/auth/users/{oid}/vetting-override",
+                               json={"enabled": True})
+        assert r.status_code == 422
+    finally:
+        _clear()
+        db.query(User).filter(User.id == oid).delete(); db.commit()

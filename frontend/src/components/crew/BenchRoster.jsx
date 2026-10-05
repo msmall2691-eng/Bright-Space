@@ -36,10 +36,11 @@
  * refreshed file so a decision costs one call, not two.
  */
 import { useCallback, useEffect, useState } from 'react'
-import { Check, ExternalLink, FileCheck, Smartphone, Users, X } from 'lucide-react'
+import { Check, ExternalLink, FileCheck, Send, Smartphone, Users, X } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { download, get, post } from '../../api'
 import { toast } from '../../utils/toastBus'
+import { reportInvite } from '../../utils/inviteFallback'
 import { EmptyState } from '../ui'
 
 const DOC = {
@@ -47,6 +48,14 @@ const DOC = {
   pending: { dot: 'bg-amber-500', word: 'waiting for you' },
   expired: { dot: 'bg-red-500', word: 'expired' },
   missing: { dot: 'bg-ink-3/40', word: 'not uploaded' },
+}
+
+// The override — letting a cleaner work before their file is complete — is an
+// admin call, not a manager one: it's the uninsured-person risk the whole gate
+// exists for. Hide the control from non-admins (the API refuses them anyway).
+function isAdmin() {
+  try { return JSON.parse(localStorage.getItem('brightbase_user') || '{}').role === 'admin' }
+  catch { return false }
 }
 
 const fmtDate = (iso) => {
@@ -98,6 +107,42 @@ export default function CrewFiles() {
     await review(userId, kind, 'pending', { notes })
   }
 
+  // Re-send the set-password invite to someone still stuck at "invited" — the
+  // link is single-use + 7 days, so a missed email used to mean no way in.
+  const resend = async (person) => {
+    setBusy(`invite:${person.user_id}`)
+    try {
+      const r = await post(`/api/auth/users/${person.user_id}/resend-invite`)
+      // Mail unconfigured/failed → reportInvite surfaces the live link to copy.
+      if (reportInvite(r, person.email)) return
+      toast.success('Invite sent again')
+    } catch (e) {
+      toast.error(e?.detail || e?.message || 'Couldn’t resend that invite')
+    } finally { setBusy(null) }
+  }
+
+  // Grant/clear the "work now, collect the docs later" override (admin only).
+  const setOverride = async (person, enabled) => {
+    let reason = null
+    if (enabled) {
+      reason = window.prompt(
+        `${person.name} will be able to take jobs before their file is complete. `
+        + 'Add a note (optional) — it shows on the bench:')
+      if (reason === null) return   // cancelled
+    }
+    setBusy(`override:${person.user_id}`)
+    try {
+      await post(`/api/auth/users/${person.user_id}/vetting-override`,
+                 { enabled, reason: reason || null })
+      toast.success(enabled ? 'Cleared to work — file still owed' : 'Override removed')
+      load()
+    } catch (e) {
+      toast.error(e?.detail || e?.message || 'Couldn’t update that')
+    } finally { setBusy(null) }
+  }
+
+  const admin = isAdmin()
+
   if (error) {
     return (
       <p className="text-[13px] text-ink-3">
@@ -119,9 +164,14 @@ export default function CrewFiles() {
   }
 
   const t = data.totals || {}
-  const waiting = people.filter(c => c.awaiting_review.length)
-  const owing = people.filter(c => !c.awaiting_review.length && !c.complete)
-  const done = people.filter(c => c.complete)
+  // Invited-but-never-signed-in sit before everything else: they can't upload a
+  // thing until they set a password, so they're stuck at step one and the only
+  // action is to (re)send the invite — not document review.
+  const invited = people.filter(c => c.status === 'invited')
+  const active = people.filter(c => c.status !== 'invited')
+  const waiting = active.filter(c => c.awaiting_review.length)
+  const owing = active.filter(c => !c.awaiting_review.length && !c.complete)
+  const done = active.filter(c => c.complete)
 
   return (
     <div className="space-y-4">
@@ -162,6 +212,32 @@ export default function CrewFiles() {
         </p>
       )}
 
+      {invited.length > 0 && (
+        <section>
+          <h3 className="mb-1.5 text-[10px] uppercase tracking-wide text-ink-3">
+            Invited — waiting for them to sign in
+          </h3>
+          <div className="divide-y divide-hairline rounded-lg border border-hairline">
+            {invited.map(person => (
+              <div key={person.user_id} className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2 px-3 py-2.5">
+                <div className="min-w-0">
+                  <div className="text-[14px] font-medium text-ink">{person.name}</div>
+                  <div className="mt-0.5 inline-flex items-center gap-1.5 text-[12px] text-ink-2">
+                    <span className="h-1.5 w-1.5 rounded-full bg-violet-500" aria-hidden="true" />
+                    Haven’t set their password yet{person.email ? ` · ${person.email}` : ''}
+                  </div>
+                </div>
+                <button type="button" disabled={busy === `invite:${person.user_id}`}
+                  onClick={() => resend(person)}
+                  className="inline-flex shrink-0 items-center gap-1 rounded-md border border-hairline-2 bg-panel px-2.5 py-1.5 text-xs font-medium text-ink-2 transition-colors hover:bg-bg-2 disabled:opacity-50">
+                  <Send className="h-3.5 w-3.5" /> Resend invite
+                </button>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
+
       {[['Waiting for you', waiting], ['Still owed', owing], ['Complete', done]]
         .filter(([, list]) => list.length)
         .map(([heading, list]) => (
@@ -172,6 +248,7 @@ export default function CrewFiles() {
             <div className="divide-y divide-hairline rounded-lg border border-hairline">
               {list.map(person => (
                 <Person key={person.user_id} person={person} busy={busy}
+                  admin={admin} onOverride={setOverride}
                   onView={(doc) => viewDoc(person.user_id, doc)}
                   onAccept={(kind) => review(person.user_id, kind, 'accepted')}
                   onSendBack={(kind) => sendBack(person.user_id, kind)} />
@@ -183,7 +260,7 @@ export default function CrewFiles() {
   )
 }
 
-function Person({ person, busy, onAccept, onSendBack, onView }) {
+function Person({ person, busy, admin, onOverride, onAccept, onSendBack, onView }) {
   return (
     <div className="px-3 py-2.5">
       <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
@@ -191,12 +268,21 @@ function Person({ person, busy, onAccept, onSendBack, onView }) {
         <span className="inline-flex items-center gap-1.5 text-[12px] text-ink-2">
           <span className={`h-1.5 w-1.5 rounded-full ${
             person.complete ? 'bg-emerald-500'
-              : person.can_work ? 'bg-blue-500' : 'bg-amber-500'}`} aria-hidden="true" />
+              : person.override ? 'bg-violet-500'
+                : person.can_work ? 'bg-blue-500' : 'bg-amber-500'}`} aria-hidden="true" />
           {person.complete ? 'File complete'
-            : person.can_work ? 'Working while you collect their file'
-              : 'Can’t take work yet'}
+            : person.override ? 'Working on an override'
+              : person.can_work ? 'Working while you collect their file'
+                : 'Can’t take work yet'}
         </span>
       </div>
+
+      {person.override && (
+        <p className="mt-1 text-[12px] text-ink-3">
+          Cleared to work before their file is complete
+          {person.override_reason ? ` — “${person.override_reason}”` : ''}. Still owes the documents below.
+        </p>
+      )}
 
       <WorkLine person={person} />
 
@@ -257,6 +343,26 @@ function Person({ person, busy, onAccept, onSendBack, onView }) {
               </div>
             )
           })}
+        </div>
+      )}
+
+      {/* Admin-only: let a cleaner work before their file is complete, or take
+          that back. Managers don't see it — it's the uninsured-person call. */}
+      {admin && !person.complete && (
+        <div className="mt-2">
+          {person.override ? (
+            <button type="button" disabled={busy === `override:${person.user_id}`}
+              onClick={() => onOverride(person, false)}
+              className="inline-flex items-center gap-1 rounded-md border border-hairline-2 bg-panel px-2.5 py-1.5 text-[11px] font-medium text-ink-3 transition-colors hover:bg-bg-2 disabled:opacity-50">
+              Remove override
+            </button>
+          ) : (
+            <button type="button" disabled={busy === `override:${person.user_id}`}
+              onClick={() => onOverride(person, true)}
+              className="inline-flex items-center gap-1 rounded-md border border-hairline-2 bg-panel px-2.5 py-1.5 text-[11px] font-medium text-ink-2 transition-colors hover:bg-bg-2 disabled:opacity-50">
+              Let them work now
+            </button>
+          )}
         </div>
       )}
     </div>

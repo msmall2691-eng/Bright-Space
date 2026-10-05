@@ -137,14 +137,27 @@ def is_exempt(db: Session, user) -> bool:
     return exempt_against(enforce_from(db), user)
 
 
+def is_overridden(user) -> bool:
+    """An admin granted THIS person clearance despite an incomplete file — the
+    owner's "get them working now, collect the docs later" call (migration 130).
+
+    Per-person and explicit, unlike the grandfather exemption, but it works the
+    same way: it clears the GATE (blocking_requirements) while leaving the file's
+    honest answer — can_take_jobs / missing_requirements — untouched, so the
+    bench still shows exactly what's owed and instant auto-award (which reads the
+    honest answer) stays fail-closed. A human still approves each claim.
+    """
+    return bool(getattr(user, "vetting_override", False))
+
+
 def blocking_requirements(db: Session, user) -> list:
     """What stands between this person and taking work, AFTER the exemption.
 
     This is what the gates call. `missing_requirements` stays the honest
     answer about the file itself and is what every screen shows, so an exempt
-    person still reads as incomplete to the office.
+    (or admin-overridden) person still reads as incomplete to the office.
     """
-    if is_exempt(db, user):
+    if is_exempt(db, user) or is_overridden(user):
         return []
     return missing_requirements(db, user.id)
 
@@ -193,6 +206,12 @@ def missing_requirements(db: Session, user_id: int) -> list:
             missing.append(f"Upload your {label.lower()}")
         elif is_expired(doc, today):
             missing.append(f"Your {label.lower()} expired — upload a current one")
+        elif kind in EXPIRING_KINDS and not doc.expires_at:
+            # Upload-first: the file is on, but a dated doc with no date can't
+            # prove it's current, so it must not clear anyone. The sub can add
+            # the date (POST /my-file/{kind}/expiry) — it's theirs to do, so
+            # this is named as their action, before "waiting on the office".
+            missing.append(f"Add the expiry date to your {label.lower()}")
         elif doc.status != "accepted":
             # Uploaded and waiting on the office. Named separately because the
             # sub has nothing left to do about it, and telling them to upload
@@ -236,10 +255,19 @@ def vetting_status(db: Session, user_id: int) -> dict:
             "notes": doc.notes if doc else None,
         })
     missing = missing_requirements(db, user_id)
+    from database.models import User
+    u = db.query(User).filter(User.id == user_id).first()
+    override = bool(getattr(u, "vetting_override", False)) if u else False
     return {
         "user_id": user_id,
-        # The file's own answer, unchanged by any exemption — see is_exempt.
+        # The file's own answer, unchanged by any exemption or override — this
+        # is what instant auto-award reads, so it stays honest.
         "can_take_jobs": not missing,
+        # The EFFECTIVE answer the gates give: can they actually take work right
+        # now, counting an admin override. My File uses this for the headline so
+        # an overridden sub isn't told to "finish your file" while they can work.
+        "cleared": override or (not missing),
+        "override": override,
         "missing": missing,
         "agreement_version": CURRENT_AGREEMENT_VERSION,
         "agreement_accepted": has_current_agreement(db, user_id),
@@ -327,6 +355,10 @@ def roster(db: Session, org_id: int) -> dict:
                 missing.append(f"Upload their {label.lower()}")
             elif is_expired(doc, today):
                 missing.append(f"Their {label.lower()} has expired")
+            elif kind in EXPIRING_KINDS and not doc.expires_at:
+                # Upload-first: on file but no date, so it can't prove it's
+                # current — set the expiry from the certificate when reviewing.
+                missing.append(f"{label} needs an expiry date")
             elif doc.status != "accepted":
                 missing.append(f"{label} is waiting for you to review it")
 
@@ -337,18 +369,24 @@ def roster(db: Session, org_id: int) -> dict:
         waiting += len(to_review)
 
         exempt = exempt_against(cutoff, u)
+        override = bool(getattr(u, "vetting_override", False))
         rows.append({
             "user_id": u.id,
             "name": u.full_name or u.email,
             "email": u.email,
             "cleaner_id": u.cleaner_id,
             "status": u.status,
-            # Complete file, regardless of any exemption.
+            # Complete file, regardless of any exemption or override.
             "complete": not missing,
             "missing": missing,
             # Grandfathered in: gaps, but not blocked from working today.
             "exempt": exempt,
-            "can_work": (not missing) or exempt,
+            # Admin "work now, collect later" override (migration 130): working
+            # with an incomplete file on purpose, shown LOUDLY — never a silent
+            # green tick. The reason the admin gave, if any, rides along.
+            "override": override,
+            "override_reason": (u.vetting_override_reason or None) if override else None,
+            "can_work": (not missing) or exempt or override,
             "awaiting_review": to_review,
             "documents": [{
                 "kind": k,

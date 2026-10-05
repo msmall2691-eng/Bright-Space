@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from sqlalchemy import func, text
+from sqlalchemy import func, or_, text
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
 from typing import Optional
@@ -238,6 +238,34 @@ def current_org_id(current_user: User = Depends(get_current_user),
     oid = getattr(current_user, "org_id", None) or _default_org_id(db)
     set_rls_org_context(db, oid)
     return oid
+
+
+def current_org_id_without_rls_guc(current_user: User = Depends(get_current_user),
+                                   db: Session = Depends(get_db)) -> int:
+    """The caller's workspace id, WITHOUT setting `app.current_org_id`.
+
+    BB-SEC-24. Identical to `current_org_id` except it does not arm the MT-3
+    RLS backstop, and it exists for exactly one reason:
+
+    `apply_org_rls()` ENABLEs and **FORCEs** RLS, and the policy is
+    `org_id = <guc> OR <guc> IS NULL`. A row with org_id IS NULL satisfies
+    NEITHER arm once the GUC is set — Postgres drops it before any application
+    predicate runs. A production census found 85 of 126 conversations and 517
+    of 1,304 messages carry a NULL org_id (they are the unknown-sender inbound
+    leads: comms/router.py deliberately leaves org_id unset when there is no
+    client to inherit it from). So merely ADDING `current_org_id` to a route
+    that reads those tables hides most of their rows.
+
+    Using this instead keeps the route's explicit `org_id` filters — the real
+    tenant enforcement, and what every other module in this app relies on —
+    while leaving RLS in the permissive state it was already in before
+    BB-SEC-22, so legacy rows stay readable.
+
+    THIS IS A STOPGAP. The correct fix is to backfill those rows to the default
+    workspace and then switch back to `current_org_id` so the backstop is armed
+    again. Do not use it on new code; see BB-SEC-24 in modules/comms/router.py.
+    """
+    return getattr(current_user, "org_id", None) or _default_org_id(db)
 
 
 def set_rls_org_context(db: Session, org_id: int) -> None:
@@ -1135,6 +1163,62 @@ def review_sub_document(user_id: int, kind: str, body: SubDocumentReview,
     return vetting_status(db, user_id)
 
 
+class VettingOverride(BaseModel):
+    enabled: bool
+    reason: Optional[str] = None
+
+
+@router.post("/users/{user_id}/vetting-override",
+             dependencies=[Depends(require_role("admin"))])
+def set_vetting_override(user_id: int, body: VettingOverride,
+                         db: Session = Depends(get_db),
+                         current_user: User = Depends(get_current_user),
+                         org_id: int = Depends(current_org_id)):
+    """Admin grants (or clears) a "work now, collect the docs later" override on
+    one cleaner — the owner's call to get someone working before their file is
+    complete.
+
+    ADMIN ONLY on purpose: this is the uninsured-person-in-a-customer's-house
+    risk the whole vetting gate exists to prevent, so it is not a manager power.
+    It clears the OFFICE-APPROVED path only (sub_vetting.blocking_requirements);
+    the file's honest answer (can_take_jobs) is untouched, so instant auto-award
+    stays fail-closed and the bench keeps showing exactly what's owed. Holds
+    until an admin clears it or the real documents land."""
+    from datetime import datetime as _dt, timezone as _tz
+    from services.sub_vetting import vetting_status
+
+    oid = resolve_org_id(org_id, db)
+    u = (db.query(User)
+         .filter(User.id == user_id,
+                 or_(User.org_id == oid, User.org_id.is_(None)))
+         .first())
+    if u is None:
+        raise HTTPException(status_code=404, detail="No such user")
+    if (u.role or "") != "cleaner":
+        raise HTTPException(status_code=422,
+                            detail="Only a cleaner's file can be overridden.")
+    u.vetting_override = bool(body.enabled)
+    if body.enabled:
+        u.vetting_override_by = current_user.id
+        u.vetting_override_at = _dt.now(_tz.utc).replace(tzinfo=None)
+        u.vetting_override_reason = (body.reason or "").strip() or None
+    else:
+        u.vetting_override_by = None
+        u.vetting_override_at = None
+        u.vetting_override_reason = None
+    db.commit()
+
+    try:
+        from services.push_service import notify_user
+        if body.enabled:
+            notify_user(user_id, "You're cleared to take jobs",
+                        "The office is still collecting your file — keep it moving.",
+                        url="/crew", category="crew")
+    except Exception:
+        pass
+    return vetting_status(db, user_id)
+
+
 @router.post("/users/invite")
 def invite_user(data: InviteUser, db: Session = Depends(get_db),
                 current_user: User = Depends(require_role("admin")),
@@ -1171,12 +1255,17 @@ def invite_user(data: InviteUser, db: Session = Depends(get_db),
     return {**_user_row(db, u), **invite_status_fields(invite)}
 
 
-@router.post("/users/{user_id}/resend-invite")
-def resend_user_invite(user_id: int, db: Session = Depends(get_db),
-                       current_user: User = Depends(require_role("admin"))):
+@router.post("/users/{user_id}/resend-invite",
+             dependencies=[Depends(require_role("admin", "manager"))])
+def resend_user_invite(user_id: int, db: Session = Depends(get_db)):
     """Re-email the set-password link to anyone who hasn't activated yet — the
     link expires after 7 days, or the first email got lost. 409 once a password
-    exists: resend must never become a password-reset backdoor."""
+    exists: resend must never become a password-reset backdoor.
+
+    Admin OR manager: re-sending a link to someone already approved is low
+    stakes (unlike approval, which is admin-only) and is the onboarding recovery
+    the bench screen's "Resend invite" button calls — the bench is a
+    manager-reachable screen."""
     u = db.query(User).filter(User.id == user_id).first()
     if not u:
         raise HTTPException(status_code=404, detail="User not found")

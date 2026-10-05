@@ -234,7 +234,10 @@ def apply(request: Request, body: ApplyBody, db: Session = Depends(get_db)):
         from services.push_service import notify_staff
         notify_staff(db, "Someone applied to join the bench",
                      f"{name}" + (f" · {fields['towns']}" if fields["towns"] else ""),
-                     url="/users?tab=applications", org_id=oid, category="ops")
+                     # Onboarding (applications + the bench) lives on the Crew
+                     # page; the old /users?tab=applications link opened the
+                     # wrong screen.
+                     url="/crew", org_id=oid, category="ops")
     except Exception:
         pass                       # a push outage must not lose an application
     return accepted

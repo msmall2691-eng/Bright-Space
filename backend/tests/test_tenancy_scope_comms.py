@@ -147,3 +147,74 @@ def test_assignee_picker_excludes_other_orgs_staff():
     finally:
         db.query(User).filter(User.id.in_([other.id, legacy.id])).delete(synchronize_session=False)
         db.commit(); db.close()
+
+def test_legacy_null_org_rows_stay_visible():
+    """BB-SEC-24 — the regression BB-SEC-22's first cut shipped.
+
+    A production census found 85 of 126 conversations and 517 of 1,304 messages
+    carry org_id IS NULL, despite migration 027's backfill. The strict
+    `org_id == org_id` filter excluded them, hiding two thirds of the office
+    inbox. A NULL org_id means "the default workspace" (database/rls.py,
+    modules/ai/router.py `_org()`), so it must match.
+
+    This is the guard against someone "hardening" the filter back.
+    """
+    db = SessionLocal()
+    tag = uuid.uuid4().hex[:8]
+    legacy = _mk_conv(db, None, contact=f"+1777{tag[:7]}", unread=2)   # pre-tenancy row
+    mine   = _mk_conv(db, 1,    contact=f"+1888{tag[:7]}", unread=1)
+    other  = _mk_conv(db, OTHER_ORG, contact=f"+1999{tag[:7]}", unread=9)
+    try:
+        ids = {r["id"] for r in client.get("/api/comms/conversations?limit=500").json()}
+        assert legacy.id in ids, "legacy NULL-org conversation vanished from the inbox"
+        assert mine.id in ids
+        assert other.id not in ids, "cross-tenant conversation leaked"
+
+        assert client.get(f"/api/comms/conversations/{legacy.id}").status_code == 200, \
+            "legacy NULL-org conversation must still open"
+
+        # and it must stay actionable, not just visible
+        assert client.post(f"/api/comms/conversations/{legacy.id}/read").status_code == 200
+    finally:
+        _cleanup(db, [legacy.id, mine.id, other.id])
+
+
+def test_summary_counts_include_legacy_null_org_rows():
+    """The unread chime reads this; a NULL-org thread must still count."""
+    db = SessionLocal()
+    base = client.get("/api/comms/conversations/summary").json()
+    legacy = _mk_conv(db, None, contact=f"+1777{uuid.uuid4().hex[:7]}", unread=5)
+    try:
+        after = client.get("/api/comms/conversations/summary").json()
+        assert after["open"] == base["open"] + 1, "legacy NULL-org thread missing from counts"
+        assert after["unread_messages"] == base["unread_messages"] + 5
+    finally:
+        _cleanup(db, [legacy.id])
+
+def test_null_org_rows_are_NOT_visible_to_a_non_default_workspace():
+    """Codex review on #1083, P1: a NULL org_id means THE DEFAULT workspace,
+    not every workspace. The first cut of the NULL arm admitted orphan rows for
+    any tenant — harmless today with one workspace, a real leak the moment a
+    second exists. Only the default workspace may see them."""
+    from modules.comms import router as comms_router
+    from modules.auth.router import _default_org_id
+    db = SessionLocal()
+    legacy = _mk_conv(db, None, contact=f"+1777{uuid.uuid4().hex[:7]}")
+    try:
+        default_org = _default_org_id(db); db.commit()
+        # The caller in this suite IS the default workspace, so it sees it...
+        assert client.get(f"/api/comms/conversations/{legacy.id}").status_code == 200
+
+        # ...but the predicate for any OTHER workspace must exclude NULL.
+        comms_router._DEFAULT_ORG_CACHE = None
+        other = comms_router._org(Conversation, OTHER_ORG, db)
+        rendered = str(other.compile(compile_kwargs={"literal_binds": True}))
+        assert "IS NULL" not in rendered, (
+            f"non-default workspace got the NULL arm: {rendered}")
+
+        # and the default workspace's predicate does carry it
+        mine = comms_router._org(Conversation, default_org, db)
+        assert "IS NULL" in str(mine.compile(compile_kwargs={"literal_binds": True}))
+    finally:
+        comms_router._DEFAULT_ORG_CACHE = None
+        _cleanup(db, [legacy.id])

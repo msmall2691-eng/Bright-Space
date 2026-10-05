@@ -35,14 +35,18 @@ const fmtDate = (iso) => {
     : d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })
 }
 
-function DocRow({ doc, busy, onUpload }) {
+function DocRow({ doc, busy, onUpload, onSetExpiry }) {
   const fileRef = useRef(null)
   const [expiry, setExpiry] = useState(doc.expires_at || '')
   const state = STATE[doc.status] || STATE.missing
-  // The server won't take a certificate without the date off it — it's how
-  // the office knows when to ask for the next one — so the date is asked for
-  // before the file picker opens rather than as a failed upload.
-  const needsExpiry = doc.expires && !expiry
+  const uploaded = doc.status !== 'missing'
+  // The expiry no longer blocks the upload — a sub in a driveway shouldn't have
+  // to fight a date field to get the file on. They can add it at upload OR
+  // after; vetting won't clear an expiring doc with no date, so the signal
+  // isn't lost, it's just out of the way. `dateChanged` shows a Save after an
+  // upload; `needsDate` is the gentle nudge once it's on but dateless.
+  const dateChanged = doc.expires && expiry !== (doc.expires_at || '')
+  const needsDate = doc.expires && uploaded && !doc.expires_at
 
   return (
     <div className="py-3 first:pt-0 last:pb-0">
@@ -64,11 +68,7 @@ function DocRow({ doc, busy, onUpload }) {
             <p className="text-[12px] text-ink-2 mt-1">“{doc.notes}”</p>
           )}
         </div>
-        {/* Disabled until the date is in. The reason used to live only in a
-            `title=` tooltip — dead on a phone, where nobody hovers — so a sub
-            saw a greyed-out button and no way to know why. The reason is a
-            visible line by the date field now (below). */}
-        <button type="button" disabled={busy || needsExpiry}
+        <button type="button" disabled={busy}
           onClick={() => fileRef.current?.click()}
           className="shrink-0 inline-flex items-center gap-1.5 rounded-md border border-hairline-2 bg-panel px-2.5 py-2 text-[13px] font-medium text-ink-2 hover:bg-bg-2 disabled:opacity-50 transition-colors">
           <FileUp className="w-3.5 h-3.5" />
@@ -78,15 +78,26 @@ function DocRow({ doc, busy, onUpload }) {
 
       {doc.expires && (
         <div className="mt-2">
-          <label className="flex items-center gap-2">
-            <span className="text-[12px] text-ink-3 shrink-0">Expires</span>
-            <input type="date" value={expiry} onChange={e => setExpiry(e.target.value)}
-              className="rounded-lg border border-hairline bg-bg px-2.5 py-1.5 text-[13px] text-ink focus:outline-hidden focus:border-blue-400" />
-          </label>
-          {needsExpiry && (
+          <div className="flex flex-wrap items-center gap-2">
+            <label className="flex items-center gap-2">
+              <span className="text-[12px] text-ink-3 shrink-0">Expires</span>
+              <input type="date" value={expiry} onChange={e => setExpiry(e.target.value)}
+                className="rounded-lg border border-hairline bg-bg px-2.5 py-1.5 text-[13px] text-ink focus:outline-hidden focus:border-blue-400" />
+            </label>
+            {/* Save the date on an already-uploaded doc without re-picking the
+                file — the "add it after" half of upload-first. */}
+            {uploaded && dateChanged && (
+              <button type="button" disabled={busy}
+                onClick={() => onSetExpiry(doc.kind, expiry)}
+                className="inline-flex items-center gap-1 rounded-md bg-blue-600 px-2.5 py-1.5 text-[12px] font-semibold text-white hover:bg-blue-700 disabled:opacity-50 transition-colors">
+                <Check className="w-3.5 h-3.5" /> Save date
+              </button>
+            )}
+          </div>
+          {needsDate && !dateChanged && (
             <p className="mt-1 flex items-start gap-1.5 text-[11.5px] text-ink-3">
               <span className="mt-[5px] w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0" aria-hidden="true" />
-              <span>Add the date first — the office uses it to know when to ask for a fresh one. Then Upload turns on.</span>
+              <span>Add the date from the certificate so we know when to ask for the next one — it doesn’t hold anything else up.</span>
             </p>
           )}
         </div>
@@ -143,6 +154,20 @@ export default function CrewMyFile({ bare = false, previewUserId = null }) {
       toast.success('Sent to the office')
     } catch (e) {
       toast.error(e?.detail || e?.message || 'Could not upload that')
+    } finally { setBusy(false) }
+  }
+
+  // Add/update the expiry on an already-uploaded doc — the "add it after" half
+  // of upload-first, so the date never blocks getting the file on. JSON body,
+  // so post() (not upload()); it returns the refreshed file.
+  const setExpiry = async (kind, expiresAt) => {
+    if (preview) return
+    setBusy(true)
+    try {
+      setFile(await post(`/api/crew/my-file/${kind}/expiry`, { expires_at: expiresAt || null }))
+      toast.success('Date saved')
+    } catch (e) {
+      toast.error(e?.detail || e?.message || 'Could not save the date')
     } finally { setBusy(false) }
   }
 
@@ -225,6 +250,29 @@ export default function CrewMyFile({ bare = false, previewUserId = null }) {
             </p>
           </div>
         </div>
+      ) : file.override ? (
+        // The office cleared them to work before the file is complete. Say so
+        // warmly, and keep the remaining items below as a gentle to-do, not a
+        // "you can't work yet" wall.
+        <div className="flex items-start gap-2">
+          <ShieldCheck className="w-5 h-5 text-emerald-500 shrink-0" />
+          <div>
+            <p className="text-[14px] font-semibold text-ink">You’re cleared to take jobs{firstName ? `, ${firstName}` : ''} 🎉</p>
+            <p className="text-[12.5px] text-ink-2">
+              The office set you up to start — finish the few things below when you can so your file’s complete.
+            </p>
+            {file.missing.length > 0 && (
+              <ul className="mt-1.5 space-y-1">
+                {file.missing.map(m => (
+                  <li key={m} className="flex items-start gap-1.5 text-[12.5px] text-ink-3">
+                    <span className="mt-1.5 w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0" aria-hidden="true" />
+                    <span>{m}</span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        </div>
       ) : (
         <div>
           {/* Warm welcome + a sense of how close they are — the "a lot at the
@@ -295,7 +343,7 @@ export default function CrewMyFile({ bare = false, previewUserId = null }) {
 
       <div className="mt-3 divide-y divide-hairline">
         {file.documents.map(d => (
-          <DocRow key={d.kind} doc={d} busy={busy} onUpload={upload} />
+          <DocRow key={d.kind} doc={d} busy={busy} onUpload={upload} onSetExpiry={setExpiry} />
         ))}
       </div>
 

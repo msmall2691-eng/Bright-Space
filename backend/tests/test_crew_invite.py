@@ -300,3 +300,26 @@ def test_invite_user_cleaner_gets_crew_id_and_generic_resend(api):
     assert client.post("/api/auth/accept-invite",
                        json={"token": token, "password": "cl3anerpw!"}).status_code == 200
     assert client.post(f"/api/auth/users/{row['id']}/resend-invite").status_code == 409
+
+
+def test_a_manager_can_resend_an_invite(api):
+    """Resend is admin OR manager — it's the onboarding recovery the bench's
+    'Resend invite' button calls, and the bench is a manager-reachable screen.
+    (Approval stays admin-only; re-sending a link to someone already approved
+    is lower stakes.)"""
+    client, made = api
+    # Create the invited account as the admin fixture, then resend as a manager.
+    email = _email()
+    row = client.post("/api/auth/users/invite",
+                      json={"full_name": "Via Users", "email": email, "role": "cleaner"}).json()
+    made["users"].append(row["id"])
+
+    class _Manager:
+        id, org_id, role, status, active = 8802, 1, "manager", "active", True
+        email = "crew-mgr@example.com"
+
+    app.dependency_overrides[get_current_user] = lambda: _Manager()
+    try:
+        assert client.post(f"/api/auth/users/{row['id']}/resend-invite").status_code == 200
+    finally:
+        app.dependency_overrides[get_current_user] = lambda: _Admin()
