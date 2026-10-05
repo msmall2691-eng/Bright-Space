@@ -1153,57 +1153,87 @@ def get_jobs(
     # direct ical_event_id (production data is currently mostly unlinked).
     rendered = []
     if rows:
-        # Bulk-fetch property names for the property_name field on JobResponse
-        # (needed by Schedule / Dashboard after the Job/Visit unification).
-        all_prop_ids = {j.property_id for j, _ in rows if j.property_id}
-        # (name, check_in_time) — the latter feeds turnover_lead_hours below
-        # without a per-row lazy-load of j.property.
-        prop_meta = (
-            {p.id: (p.name, p.check_in_time) for p in
-             db.query(Property.id, Property.name, Property.check_in_time)
-               .filter(Property.id.in_(all_prop_ids)).all()}
-            if all_prop_ids else {}
-        )
-        prop_names = {pid: meta[0] for pid, meta in prop_meta.items()}
-        from modules.settings.router import turnover_lead_buffer_hours
-        lead_buffer_hours = turnover_lead_buffer_hours(db)
-        # Earliest turnover date on this page is the floor for the reservation
-        # fetch — see _reservation_events for why loading all of history here
-        # was the real problem. One source of truth for "which rows are
-        # turnovers with a property", since the floor and the property set have
-        # to agree.
-        turnover_rows = [(j, eff) for j, eff in rows
-                         if j.property_id and j.job_type == "str_turnover"]
-        prop_ids = {j.property_id for j, _ in turnover_rows}
-        since = min((eff for _, eff in turnover_rows if eff), default=None)
-        events_by_prop = _reservation_events(
-            db, prop_ids, since=since,
-            linked_ids=[j.ical_event_id for j, _ in turnover_rows],
-        )
-
-        # One query for the whole page, and only when something on it is
-        # actually posted — a shop with nothing on the board pays nothing
-        # (brightbase-economy). ix_job_claim_requests_job_status covers it.
-        # Same bulk-and-gate shape as the claim counts below: one query for the
-        # page, and only for jobs that actually have somebody on them.
+        # Booking/helper/claim enrichment for the whole page. Each map defaults
+        # empty and `lead_buffer_hours` to job_to_dict's own 3.0, so a failure
+        # ANYWHERE in the bulk setup below degrades to a schedule WITHOUT
+        # turnover booking badges / helper chips / claim counts — never a blank
+        # 500. This is #965's "one poison row must not take the list down"
+        # extended from the per-row render (already guarded below) to the bulk
+        # PRE-FETCH that feeds it: a single malformed ICalEvent reservation, a
+        # mixed-type scheduled_date tripping the `min()` floor, or a settings
+        # read hiccup used to kill the entire office Schedule here, with only an
+        # unattributed 500 to show for it. The full traceback is logged so the
+        # offending data still gets a precise root-cause fix.
+        prop_meta: dict = {}
+        prop_names: dict = {}
+        lead_buffer_hours = 3.0
+        events_by_prop: dict = {}
         helpers_by_job: dict = {}
-        staffed_ids = [j.id for j, _ in rows if (j.cleaner_ids or [])]
-        if staffed_ids:
-            for h in (db.query(JobHelper)
-                      .filter(JobHelper.job_id.in_(staffed_ids))
-                      .order_by(JobHelper.id).all()):
-                helpers_by_job.setdefault(h.job_id, []).append(
-                    {"id": h.id, "name": h.name, "phone": h.phone,
-                     "sub_cleaner_id": h.sub_cleaner_id})
-
         pending_by_job: dict = {}
-        open_ids = [j.id for j, _ in rows if getattr(j, "open_for_claims", False)]
-        if open_ids:
-            for jid, n in (db.query(JobClaimRequest.job_id, func.count(JobClaimRequest.id))
-                           .filter(JobClaimRequest.job_id.in_(open_ids),
-                                   JobClaimRequest.status == "pending")
-                           .group_by(JobClaimRequest.job_id).all()):
-                pending_by_job[jid] = n
+        try:
+            # Bulk-fetch property names for the property_name field on JobResponse
+            # (needed by Schedule / Dashboard after the Job/Visit unification).
+            all_prop_ids = {j.property_id for j, _ in rows if j.property_id}
+            # (name, check_in_time) — the latter feeds turnover_lead_hours below
+            # without a per-row lazy-load of j.property.
+            prop_meta = (
+                {p.id: (p.name, p.check_in_time) for p in
+                 db.query(Property.id, Property.name, Property.check_in_time)
+                   .filter(Property.id.in_(all_prop_ids)).all()}
+                if all_prop_ids else {}
+            )
+            prop_names = {pid: meta[0] for pid, meta in prop_meta.items()}
+            from modules.settings.router import turnover_lead_buffer_hours
+            lead_buffer_hours = turnover_lead_buffer_hours(db)
+            # Earliest turnover date on this page is the floor for the reservation
+            # fetch — see _reservation_events for why loading all of history here
+            # was the real problem. One source of truth for "which rows are
+            # turnovers with a property", since the floor and the property set have
+            # to agree.
+            turnover_rows = [(j, eff) for j, eff in rows
+                             if j.property_id and j.job_type == "str_turnover"]
+            prop_ids = {j.property_id for j, _ in turnover_rows}
+            since = min((eff for _, eff in turnover_rows if eff), default=None)
+            events_by_prop = _reservation_events(
+                db, prop_ids, since=since,
+                linked_ids=[j.ical_event_id for j, _ in turnover_rows],
+            )
+
+            # One query for the whole page, and only when something on it is
+            # actually posted — a shop with nothing on the board pays nothing
+            # (brightbase-economy). ix_job_claim_requests_job_status covers it.
+            # Same bulk-and-gate shape as the claim counts below: one query for the
+            # page, and only for jobs that actually have somebody on them.
+            staffed_ids = [j.id for j, _ in rows if (j.cleaner_ids or [])]
+            if staffed_ids:
+                for h in (db.query(JobHelper)
+                          .filter(JobHelper.job_id.in_(staffed_ids))
+                          .order_by(JobHelper.id).all()):
+                    helpers_by_job.setdefault(h.job_id, []).append(
+                        {"id": h.id, "name": h.name, "phone": h.phone,
+                         "sub_cleaner_id": h.sub_cleaner_id})
+
+            open_ids = [j.id for j, _ in rows if getattr(j, "open_for_claims", False)]
+            if open_ids:
+                for jid, n in (db.query(JobClaimRequest.job_id, func.count(JobClaimRequest.id))
+                               .filter(JobClaimRequest.job_id.in_(open_ids),
+                                       JobClaimRequest.status == "pending")
+                               .group_by(JobClaimRequest.job_id).all()):
+                    pending_by_job[jid] = n
+        except Exception:
+            # A rollback is required before the per-row render below reuses this
+            # Session — a failed bulk query leaves the transaction poisoned on
+            # Postgres (every later statement 500s with "current transaction is
+            # aborted"). Roll back, log the traceback, and fall through with the
+            # empty-map defaults so the schedule still loads.
+            try:
+                db.rollback()
+            except Exception:
+                pass
+            logger.exception(
+                "[get_jobs] booking/helper/claim enrichment failed for "
+                "org_id=%s (serving rows without it)", org_id,
+            )
 
         for j, eff in rows:
             # One poison row must not take the whole list down. #965 gave the

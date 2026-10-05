@@ -248,6 +248,50 @@ def test_one_poison_row_does_not_kill_the_whole_list(client, monkeypatch):
     assert by_id[poison_id]["id"] == poison_id
 
 
+def test_bulk_booking_enrichment_failure_degrades_instead_of_500(client, monkeypatch):
+    """A throw in the per-PAGE booking enrichment (not a single row) must not
+    take the whole office Schedule down.
+
+    #965 and the poison-row test above guard the per-ROW render. But the bulk
+    PRE-FETCH that feeds it — property names, the turnover `_reservation_events`
+    lookup, helper and claim-count queries — ran unguarded, so a single
+    malformed ICalEvent reservation, a mixed-type scheduled_date tripping the
+    `min()` floor, or a settings hiccup still 500'd the entire week. The jobs
+    now render WITHOUT booking badges rather than the page going dark; the
+    traceback is logged for a precise fix.
+    """
+    import modules.scheduling.router as sched
+
+    api, ids = client
+    db = SessionLocal()
+    cid, pid = _client_with_property(db, ids)
+    target = date.today() + timedelta(days=1)
+    turn = Job(client_id=cid, property_id=pid, title="Turnover", job_type="str_turnover",
+               scheduled_date=target, status="scheduled", org_id=1)
+    db.add(turn); db.commit(); db.refresh(turn)
+    turn_id = turn.id
+    ids["jobs"].append(turn_id)
+    db.close()
+
+    # Blow up the booking lookup the turnover page runs in bulk.
+    def _boom(*a, **k):
+        raise ValueError("a malformed reservation row trips the bulk fetch")
+    monkeypatch.setattr(sched, "_reservation_events", _boom)
+
+    start = (target - timedelta(days=1)).isoformat()
+    end = (target + timedelta(days=1)).isoformat()
+    res = api.get(f"/api/schedule/week?scheduled_date_from={start}&scheduled_date_to={end}")
+
+    # The whole week used to 500 here; now it loads.
+    assert res.status_code == 200, res.text
+    by_id = {j["id"]: j for j in res.json()["jobs"]}
+    assert turn_id in by_id
+    # Rendered (not the minimal degraded fallback — the row itself is fine), just
+    # without the booking badge the failed enrichment would have supplied.
+    assert by_id[turn_id]["title"] == "Turnover"
+    assert by_id[turn_id].get("booking") is None
+
+
 def test_a_jobs_bulk_failure_names_the_real_error_not_a_bare_500(client, monkeypatch):
     """A throw in the jobs path (before the per-row guard) used to return a
     generic 'Internal Server Error' — undiagnosable without Railway logs. The
