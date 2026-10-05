@@ -60,37 +60,12 @@ describe('StickyNotes', () => {
     await waitFor(() => expect(screen.queryByDisplayValue('toss')).toBeNull())
   })
 
-  const DECK = [
-    { title: 'Glass without streaks', body: 'Buff mirrors dry in an S-pattern, out of direct sun.' },
-    { title: 'Two cloths in every bathroom', body: 'One for the toilet, a different one for sinks.' },
-  ]
-
-  it('shows the full daily tip (headline + body) as a read-only flashcard', async () => {
-    api.get.mockResolvedValue([])
-    render(<StickyNotes tips={DECK} />)
-    // deck[0] is today's: both the headline AND the detail show, not just a title.
-    expect(await screen.findByText('Glass without streaks')).toBeTruthy()
-    expect(screen.getByText(/Buff mirrors dry in an S-pattern/)).toBeTruthy()
-    expect(screen.getByText('Tip of the day')).toBeTruthy()
-    expect(screen.getByText('Tips & notes')).toBeTruthy()
-  })
-
-  it('flips through the deck on tap', async () => {
-    api.get.mockResolvedValue([])
-    render(<StickyNotes tips={DECK} />)
-    await screen.findByText('Glass without streaks')
-    fireEvent.click(screen.getByRole('button', { name: /next tip/i }))
-    // The second tip is now shown, labelled "Pro tip" rather than today's.
-    expect(await screen.findByText('Two cloths in every bathroom')).toBeTruthy()
-    expect(screen.getByText('Pro tip')).toBeTruthy()
-  })
-
-  it('shows plain "Notes" with no tips (office Home) and no flashcard', async () => {
+  it('is just "Notes" — the training tip lives in the My Day header, not here', async () => {
     api.get.mockResolvedValue([])
     render(<StickyNotes />)
     await waitFor(() => expect(screen.getByText(/no notes yet/i)).toBeTruthy())
     expect(screen.getByText('Notes')).toBeTruthy()
-    expect(screen.queryByText('Tip of the day')).toBeNull()
+    expect(screen.queryByText(/tip of the day/i)).toBeNull()
   })
 
   it('shows a retry affordance when loading fails', async () => {

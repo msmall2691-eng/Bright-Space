@@ -751,7 +751,8 @@ export default function MyDay({ previewUserId = null }) {
 
         {tab === 'today' && !loading && !error && data && (
           <>
-            <HeroBanner firstName={data.first_name} jobCount={(data.today || []).length} />
+            <HeroBanner firstName={data.first_name} jobCount={(data.today || []).length}
+              tips={data.tips} />
 
             {/* The day at a glance — what makes this a home and not the jobs
                 list. Only for a sub who can actually take work; a not-cleared
@@ -892,11 +893,8 @@ export default function MyDay({ previewUserId = null }) {
             {/* The cleaner's own reminders — their notes, saved to their
                 account (/api/notes), the same sticky board the office Home has.
                 A scratchpad at hand: "bring the tall ladder", "gate sticks".
-                The daily training tip pins read-only at the top of this card as
-                its own sticky — the owner wanted tips "like a sticky note":
-                the full tip (not just a headline), today's first, and tap to
-                flip through the whole deck right there. */}
-            <StickyNotes tips={data.tips} />
+                (The training tip lives up in the header now, not here.) */}
+            <StickyNotes />
 
             {/* Save-to-phone + notifications setup. Dismissible here (sticks
                 via localStorage); always reachable again from the Me tab. */}

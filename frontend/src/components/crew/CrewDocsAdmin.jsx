@@ -17,7 +17,12 @@ import { confirmDialog } from '../../utils/confirmBus'
 
 const CATEGORIES = [
   ['training', 'Training'], ['how-to', 'How-to'], ['products', 'Products'],
-  ['policy', 'Policy'], ['safety', 'Safety'], ['other', 'Other'],
+  ['policy', 'Policy'], ['safety', 'Safety'],
+  // A published "Tip" also rotates on the crew's My Day home screen (today's
+  // first), on top of appearing in Learn — this is how the office writes its
+  // own home-screen tips in its own words instead of the built-in set.
+  ['tip', 'Tip (shows on home)'],
+  ['other', 'Other'],
 ]
 const catLabel = (v) => (CATEGORIES.find(([k]) => k === v)?.[1]) || 'Other'
 

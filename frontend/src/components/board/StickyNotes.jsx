@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { Plus, X, RefreshCw, Lightbulb, ChevronRight } from 'lucide-react'
+import { Plus, X, RefreshCw } from 'lucide-react'
 import { get, post, patch, del } from '../../api'
 
 /**
@@ -11,12 +11,8 @@ import { get, post, patch, del } from '../../api'
  * distinct from the status chrome the app keeps quiet. Kept muted, and each
  * tint has a dark-mode pairing so notes stay legible on either ground.
  *
- * The crew board also passes `tips` — the pro-tip deck (each {title, body}),
- * ordered so deck[0] is today's. It pins read-only at the top as a little
- * training flashcard (not one of the member's own notes, so no edit/delete):
- * the full tip, not just a headline, and tapping it flips to the next one so
- * the crew can page through the whole set right there. Office Home passes no
- * tips, so the card is just "Notes" with none of this.
+ * (The crew's daily training tip used to pin here; it lives up in the My Day
+ * header now, so this card is just the member's own notes everywhere.)
  */
 const COLORS = ['amber', 'blue', 'green', 'pink']
 
@@ -29,19 +25,10 @@ const TINT = {
 }
 const SWATCH = { amber: 'bg-amber-400', blue: 'bg-blue-400', green: 'bg-emerald-400', pink: 'bg-pink-400' }
 
-export default function StickyNotes({ tips = null }) {
+export default function StickyNotes() {
   const [notes, setNotes] = useState([])
   const [state, setState] = useState('loading')   // loading | ready | error
   const timers = useRef({})
-
-  // The pro-tip deck (today's tip first). `tipIdx` pages through it on tap;
-  // index 0 is "Tip of the day", the rest are "Pro tip". Office Home passes no
-  // tips, so `deck` is empty and the whole flashcard is absent.
-  const deck = Array.isArray(tips) ? tips.filter(t => t && t.title) : []
-  const [tipIdx, setTipIdx] = useState(0)
-  const pos = deck.length ? tipIdx % deck.length : 0
-  const tip = deck.length ? deck[pos] : null
-  const nextTip = () => { if (deck.length > 1) setTipIdx(i => i + 1) }
 
   const load = () => {
     setState('loading')
@@ -99,7 +86,7 @@ export default function StickyNotes({ tips = null }) {
     <section className="overflow-hidden rounded-2xl border border-hairline bg-panel" data-testid="home-sticky-notes">
       <header className="flex items-center gap-2 border-b border-hairline px-3.5 py-2.5">
         <span className="text-[13px] leading-none" aria-hidden="true">🗒️</span>
-        <h2 className="text-[11px] font-medium text-ink-3">{tip ? 'Tips & notes' : 'Notes'}</h2>
+        <h2 className="text-[11px] font-medium text-ink-3">Notes</h2>
         <div className="ml-auto">
           <button onClick={add}
             className="inline-flex items-center gap-1 text-[11px] font-semibold text-indigo-600 hover:text-indigo-700 dark:text-indigo-400">
@@ -107,33 +94,6 @@ export default function StickyNotes({ tips = null }) {
           </button>
         </div>
       </header>
-
-      {/* The training flashcard — a read-only sticky pinned above the member's
-          own notes. Shows the full tip (headline + the how/why), not just a
-          title; deck[0] is today's and tapping flips through the rest. */}
-      {tip && (
-        <div className="px-3 pt-3">
-          <button type="button" onClick={deck.length > 1 ? nextTip : undefined}
-            aria-label={deck.length > 1 ? 'Next tip' : undefined}
-            className={`block w-full rounded-xl border p-3 text-left transition-colors ${TINT.amber} ${deck.length > 1 ? 'hover:border-amber-300' : 'cursor-default'}`}>
-            <span className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wide text-ink-3">
-              <Lightbulb className="h-3 w-3" aria-hidden="true" /> {pos === 0 ? 'Tip of the day' : 'Pro tip'}
-            </span>
-            <span className="mt-1 block text-[13.5px] font-semibold leading-snug text-ink">{tip.title}</span>
-            {tip.body && (
-              <span className="mt-1 block text-[12.5px] leading-snug text-ink-2">{tip.body}</span>
-            )}
-            {deck.length > 1 && (
-              <span className="mt-2 flex items-center justify-between">
-                <span className="text-[10.5px] text-ink-3 tabular-nums">{pos + 1} / {deck.length}</span>
-                <span className="inline-flex items-center gap-0.5 text-[11px] font-semibold text-amber-700 dark:text-amber-400">
-                  Next tip <ChevronRight className="h-3 w-3" />
-                </span>
-              </span>
-            )}
-          </button>
-        </div>
-      )}
 
       {state === 'error' ? (
         <div className="flex items-center gap-2.5 px-3.5 py-3 text-[12.5px]">
