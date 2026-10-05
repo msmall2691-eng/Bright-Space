@@ -585,9 +585,11 @@ def my_day(
         # isn't linked to a crew ID yet (nothing to total).
         "week": (_week_earnings(db, oid, current_user.cleaner_id, today)
                  if current_user.cleaner_id else None),
-        # Two pro cleaning tips on the home screen — a quiet, always-there way
-        # to train the team, rotating daily. Built-in text, so it rides this
-        # payload with no extra fetch and no per-house weight (brightbase-economy).
+        # The pro-tip deck for the home screen — a quiet, always-there way to
+        # train the team. Ordered so TODAY's tip leads (rotates daily) and the
+        # rest follow, so the crew can flip through the whole set on the card.
+        # Built-in text, so it rides this payload with no extra fetch and no
+        # per-house weight (brightbase-economy).
         "tips": _daily_tips(today),
     }
 
@@ -622,10 +624,16 @@ _PRO_TIPS = [
 
 
 def _daily_tips(today) -> list:
-    """Two pro tips for the crew home, rotating by date."""
+    """The whole pro-tip deck for the crew home, ordered so TODAY's tip is first
+    and the rest follow for flip-through.
+
+    Rotates by the Maine-local date, so the lead tip is stable within a day and
+    changes daily; the full library rides along (it's a handful of short
+    strings) so the crew can page through every tip on the card without a second
+    fetch — the header's "Tip of the day" is just deck[0]."""
     n = len(_PRO_TIPS)
     i = today.toordinal() % n
-    return [_PRO_TIPS[i], _PRO_TIPS[(i + 1) % n]]
+    return [_PRO_TIPS[(i + k) % n] for k in range(n)]
 
 
 def _week_earnings(db: Session, oid: int, cleaner_id: str, today, *,
