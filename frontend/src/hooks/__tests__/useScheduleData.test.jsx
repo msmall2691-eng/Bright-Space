@@ -122,6 +122,15 @@ describe('useScheduleData — enabled gate (Codex follow-up on audit #5)', () =>
     expect(get.mock.calls[0][0]).toMatch(/^\/api\/schedule\/week\?/)
   })
 
+  it('gives the heavy week/month aggregate a generous timeout', async () => {
+    // The default 15s was aborting the month view on a busy org ("the schedule
+    // won't load at all"). This read asks for more headroom.
+    renderHook(() => useScheduleData(new Date(2026, 6, 12), 'month', { pollMs: 1000 }))
+    await act(async () => { await vi.advanceTimersByTimeAsync(0) })
+    expect(get).toHaveBeenCalledTimes(1)
+    expect(get.mock.calls[0][1]?.timeout).toBeGreaterThanOrEqual(45000)
+  })
+
   it('still polls normally when enabled is true (default)', async () => {
     renderHook(() => useScheduleData(new Date(2026, 6, 12), 'week', { pollMs: 1000 }))
     await act(async () => { await vi.advanceTimersByTimeAsync(0) })
