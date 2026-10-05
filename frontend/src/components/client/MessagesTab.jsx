@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Mail, MessageSquare, Send } from 'lucide-react'
+import { Mail, MessageSquare, Send, Voicemail } from 'lucide-react'
 
 /** A single linked email (from the unified comms tables), styled as a chat
  *  bubble — same shape/radius/alignment as an SMS bubble, with the subject
@@ -28,14 +28,26 @@ function EmailBubble({ em }) {
   )
 }
 
+/** An SMS, or — when `channel === 'voice'` — an inbound call / voicemail
+ *  transcript. Voicemails ride this bubble because they are the phone channel,
+ *  and they get the same "this one's different" treatment EmailBubble uses: a
+ *  small icon + header line inside the bubble. Without it a transcript was
+ *  indistinguishable from a text the customer typed. */
 function SmsBubble({ m }) {
   const outbound = m.direction === 'outbound'
+  const isVoice = m.channel === 'voice'
   return (
     <div className={`flex ${outbound ? 'justify-end' : 'justify-start'}`}>
       <div className={`max-w-sm px-4 py-2.5 rounded-2xl text-sm ${
         outbound ? 'bg-indigo-600 text-white rounded-br-sm' : 'bg-bg-2 text-ink-2 rounded-bl-sm'
       }`}>
-        <div>{m.body}</div>
+        {isVoice && (
+          <div className={`flex items-center gap-1.5 text-[11px] font-medium mb-1 ${outbound ? 'text-sky-100' : 'text-ink-3'}`}>
+            <Voicemail className="w-3 h-3 shrink-0" />
+            <span className="truncate">{m.subject || 'Voicemail'}</span>
+          </div>
+        )}
+        <div className="whitespace-pre-wrap">{m.body}</div>
         <div className={`text-xs mt-1 ${outbound ? 'text-sky-200' : 'text-ink-3'}`}>
           {new Date(m.created_at).toLocaleString()}
         </div>

@@ -47,8 +47,13 @@ export function ConvItem({ conv, active, onClick }) {
             color) so a full list doesn't dot every row a different hue. */}
         <div className="relative shrink-0">
           <Avatar name={conv.client?.name || conv.external_contact} size="md" />
-          <div className="absolute -bottom-0.5 -right-0.5 w-4 h-4 rounded-full bg-bg-2 ring-2 ring-panel flex items-center justify-center">
-            <ChannelIcon className="w-2.5 h-2.5 text-ink-3" />
+          {/* The chip is the ONLY channel signal on this row, and it was a
+              10px glyph with no accessible name — a screen reader got no
+              channel at all. Naming it costs nothing visually and keeps the
+              monochrome decision above intact. */}
+          <div role="img" aria-label={channel.label}
+            className="absolute -bottom-0.5 -right-0.5 w-4 h-4 rounded-full bg-bg-2 ring-2 ring-panel flex items-center justify-center">
+            <ChannelIcon className="w-2.5 h-2.5 text-ink-3" aria-hidden="true" />
           </div>
         </div>
 
