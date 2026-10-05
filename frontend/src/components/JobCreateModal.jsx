@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { X, Calendar, Clock, MapPin, Repeat as RepeatIcon, Search, Loader, Check, Users } from 'lucide-react'
 import { get, post } from '../api'
 import { toast } from '../utils/toastBus'
@@ -288,23 +288,24 @@ export default function JobCreateModal({
   const [clientResults, setClientResults] = useState([])
   // Crew-roster name set — used to badge client search results whose
   // name matches a cleaner (audit finding: "Megan Small" existed as both a
-  // client and a cleaner and got confused in dispatch). Loaded lazily and
-  // tolerates the roster fetch failing — an empty set just skips the badge.
-  const [employeeNameSet, setEmployeeNameSet] = useState(() => new Set())
-  useEffect(() => {
-    if (!standalone) return
-    get('/api/dispatch/employees')
-      .then(rows => {
-        const names = new Set()
-        for (const e of (Array.isArray(rows) ? rows : [])) {
-          const n = (e?.name || e?.displayName
-            || [e?.firstName, e?.lastName].filter(Boolean).join(' ') || '').trim().toLowerCase()
-          if (n) names.add(n)
-        }
-        setEmployeeNameSet(names)
-      })
-      .catch(() => setEmployeeNameSet(new Set()))
-  }, [standalone])
+  // client and a cleaner and got confused in dispatch).
+  //
+  // DERIVED from the roster `useEmployees` already holds, not fetched. This
+  // used to be a second, raw `get('/api/dispatch/employees')` sitting a few
+  // lines below the hook that had the identical array — so every "New Job"
+  // open cost an uncached duplicate of a request the 2-minute `getCached` TTL
+  // had already served. `useEmployees`' own docstring names JobCreateModal as
+  // one of the seven callers audit §18 consolidated onto it; this raw call was
+  // a leftover that migration missed. An empty roster just skips the badge.
+  const employeeNameSet = useMemo(() => {
+    const names = new Set()
+    for (const e of (Array.isArray(employees) ? employees : [])) {
+      const n = (e?.name || e?.displayName
+        || [e?.firstName, e?.lastName].filter(Boolean).join(' ') || '').trim().toLowerCase()
+      if (n) names.add(n)
+    }
+    return names
+  }, [employees])
   const [clientLoading, setClientLoading] = useState(false)
   const [clientLoadErr, setClientLoadErr] = useState('')
   const [clientRetry, setClientRetry] = useState(0)

@@ -1,5 +1,5 @@
 /**
- * Ops alerts — the two things you might need to act on right now.
+ * Ops alerts — the handful of things you might need to act on right now.
  *
  * Quiet hairline cards (the owner vetoed the solid yellow banners): a small
  * colored dot carries the severity, the text stays in ink, and the actions
@@ -8,6 +8,7 @@
  *
  *   - "N jobs need a crew · at 10:00, 14:00"  [Assign] [Open to crew]
  *   - "2 subs are waiting to hear back · Harbour St, Elm Ave"
+ *   - "A customer wants to move a visit · Nina Cole, to Oct 12"  [Open]
  *   - "Today is 92% booked · consider moving one to tomorrow"
  *
  * "Open to crew" flips open_for_claims on the still-unassigned jobs so they
@@ -17,11 +18,22 @@
  * say.
  */
 
+import { SEV_DOT } from '../board/tokens'
+
 const BTN =
   'shrink-0 px-2.5 py-1.5 rounded-md bg-panel border border-hairline-2 text-ink-2 hover:bg-bg-2 text-xs font-medium transition-colors'
 
+/** The requested date, short and without a year. */
+function shortWhen(ymd) {
+  if (!ymd) return ''
+  const d = new Date(`${ymd}T12:00`)
+  if (Number.isNaN(d.getTime())) return ymd
+  return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
+}
+
 export default function OpsAlerts({ stats, unassignedToday, awaitingReply,
-                                   onFocusUnassigned, onOpenToCrew }) {
+                                   rescheduleRequests,
+                                   onFocusUnassigned, onOpenToCrew, onOpenJob }) {
   const alerts = []
 
   // Somebody has asked for a posted job and is waiting on an answer.
@@ -44,7 +56,7 @@ export default function OpsAlerts({ stats, unassignedToday, awaitingReply,
       .filter(Boolean)
     alerts.push({
       key: 'claim-requests',
-      dot: 'bg-violet-500',
+      dot: SEV_DOT.recurring,
       title: `${asked} sub${asked === 1 ? ' is' : 's are'} waiting to hear back`,
       detail: where.length
         ? `on ${where.join(', ')}${waiting.length > where.length ? ' and more' : ''}`
@@ -65,7 +77,7 @@ export default function OpsAlerts({ stats, unassignedToday, awaitingReply,
     const claimable = (unassignedToday || []).filter(v => !v.open_for_claims)
     alerts.push({
       key: 'unassigned',
-      dot: 'bg-amber-500',
+      dot: SEV_DOT.watch,
       title: `${stats.unassigned} job${stats.unassigned === 1 ? '' : 's'} need${stats.unassigned === 1 ? 's' : ''} a crew`,
       detail: previews.length ? `at ${previews.join(', ')}` : null,
       actions: [
@@ -80,10 +92,48 @@ export default function OpsAlerts({ stats, unassignedToday, awaitingReply,
       ].filter(Boolean),
     })
   }
+  // A customer asked to move a visit and is waiting on a yes or no.
+  //
+  // NO inline approve, for the same reason the claim-requests alert carries no
+  // button: approving applies the held date, pushes Google Calendar and emails
+  // the customer, and the decision needs the scope ("this visit" vs "this and
+  // all future") and what they actually wrote in front of you. JobDetail
+  // already has that card, with Approve & move / Dismiss. This alert's job is
+  // that you KNOW, from the screen you live on — it was invisible here.
+  const moves = rescheduleRequests || []
+  if (moves.length > 0) {
+    const who = moves.slice(0, 2)
+      .map(v => {
+        const name = v.client_name || v.property_name || v.title
+        const when = shortWhen(v.reschedule_requested_date)
+        return name && when ? `${name}, to ${when}` : (name || when)
+      })
+      .filter(Boolean)
+    alerts.push({
+      key: 'reschedule',
+      dot: SEV_DOT.watch,
+      title: moves.length === 1
+        ? 'A customer wants to move a visit'
+        : `${moves.length} customers want to move a visit`,
+      detail: who.length
+        ? `${who.join(' · ')}${moves.length > who.length ? ' and more' : ''}`
+        : null,
+      actions: [
+        // One per alert, and only when there is exactly one request — "Open"
+        // is unambiguous then. With several, which job would it open?
+        moves.length === 1 && onOpenJob && {
+          label: 'Open',
+          onClick: () => onOpenJob(moves[0].job_id || moves[0].id),
+          title: 'Open the job to approve or dismiss the request',
+        },
+      ].filter(Boolean),
+    })
+  }
+
   if (stats && stats.jobs > 0 && stats.capacityPct >= 90) {
     alerts.push({
       key: 'capacity',
-      dot: 'bg-blue-500',
+      dot: SEV_DOT.info,
       title: `Today is ${stats.capacityPct}% booked`,
       detail: 'consider moving one to tomorrow',
       actions: [],

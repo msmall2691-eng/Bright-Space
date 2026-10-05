@@ -58,18 +58,10 @@ vi.mock('../../hooks/useScheduleFilters', () => ({
     currentlyVisibleVisits: [],
   }),
 }))
-vi.mock('../../hooks/useVisitSelection', () => ({
-  useVisitSelection: () => ({
-    selectedVisitIds: new Set(), toggleVisitSelect: vi.fn(), selectAllVisible: vi.fn(),
-    clearVisitSelection: vi.fn(), bulkDeleteVisits: vi.fn(), bulkDeleting: false,
-    bulkShiftVisits: vi.fn(), bulkShifting: false,
-  }),
-}))
 vi.mock('../../hooks/useIsMobile', () => ({ useIsMobile: () => false }))
 
 // Child components stubbed to trivial markers so we can assert which branch
 // rendered without pulling in their own (large) dependency trees.
-vi.mock('../../components/ui/Button', () => ({ default: () => null }))
 vi.mock('../../components/ui/ErrorState', () => ({ default: () => null }))
 vi.mock('../../components/JobEditModal', () => ({ default: () => null }))
 vi.mock('../../components/JobCreateModal', () => ({ default: () => null }))
@@ -84,7 +76,6 @@ vi.mock('../../components/schedule/CompleteVisitModal', () => ({ default: () => 
 vi.mock('../../components/schedule/VisitDetailsDrawer', () => ({ default: () => null }))
 vi.mock('../../components/schedule/ScheduleToolbar', () => ({ default: () => <div data-testid="schedule-toolbar" /> }))
 vi.mock('../../components/schedule/PowerToolModals', () => ({ AutoAssignModal: () => null, FixTimesModal: () => null, OpenToCrewModal: () => null, PurgeGhostsModal: () => null }))
-vi.mock('../../components/schedule/ScheduleSections', () => ({ ScheduleHealthStrip: () => null, ScheduleBulkBar: () => null }))
 vi.mock('../../components/schedule/ScheduleTabs', () => ({
   AvailabilityPanel: () => <div data-testid="availability-panel" />,
 }))
