@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Lightbulb, Sun, Moon, Cloud, CloudRain, CloudSun } from 'lucide-react'
+import { Sun, Moon, Cloud, CloudRain, CloudSun } from 'lucide-react'
 import { get } from '../../api'
 
 /**
@@ -8,10 +8,10 @@ import { get } from '../../api'
  * like the painted header and didn't want anything that felt heavy to load, so
  * this is a plain panel that paints instantly and fills the weather in async.
  *
- * Kept from before: the greeting, the day line, the real weather (same GET
- * /api/crew/weather — no new request, brightbase-economy), and a couple of
- * faint pro-tips up top that tap through to Learn. The weather glyph is drawn
- * in the accent colour, so the one bit of colour here is the colour they chose.
+ * Just the greeting, the day line, and the real weather (same GET
+ * /api/crew/weather — no new request, brightbase-economy). The daily tips used
+ * to sit up here; the owner wanted them "like a sticky note" instead, so they
+ * now live in the Tips & notes card (StickyNotes) further down.
  */
 
 function WeatherGlyph({ night, raining, cloudy, className }) {
@@ -23,7 +23,7 @@ function WeatherGlyph({ night, raining, cloudy, className }) {
   return <Chosen className={className} aria-hidden="true" />
 }
 
-export default function HeroBanner({ firstName, jobCount, tips = [], onTipTap }) {
+export default function HeroBanner({ firstName, jobCount }) {
   const [wx, setWx] = useState(null)
 
   useEffect(() => {
@@ -48,18 +48,6 @@ export default function HeroBanner({ firstName, jobCount, tips = [], onTipTap })
 
   return (
     <div className="rounded-2xl border border-hairline bg-panel px-4 py-3.5">
-      {tips.length > 0 && (
-        <div className="mb-2.5 space-y-0.5">
-          {tips.map((t, i) => (
-            <button key={i} type="button" onClick={onTipTap}
-              className="flex w-full items-start gap-1.5 text-left text-[11px] font-medium leading-snug text-ink-3 hover:text-ink-2 transition-colors">
-              <Lightbulb className="mt-px h-3 w-3 shrink-0 text-[color:var(--accent)]" aria-hidden="true" />
-              <span className="line-clamp-1">{t}</span>
-            </button>
-          ))}
-        </div>
-      )}
-
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <div className="text-[20px] font-bold leading-tight text-ink">
