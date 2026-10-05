@@ -85,6 +85,77 @@ const STAT_KEEP = new Set(['unassigned', 'overdue', 'leads', 'collected'])
 /** ONE compact, quiet KPI row. Comms counts (from the shared summary poll — no
  *  extra request) lead since they're the most time-sensitive, then the board's
  *  trimmed stat tiles. Comms entries are admin+manager only. */
+/* ── Shape-matched first paint ─────────────────────────────────────────────
+ *
+ * The focus bar and the KPI strip used to be gated behind `!loading`, so they
+ * appeared out of nothing the moment the payload resolved and shoved the whole
+ * grid down by about 160px — on the one screen whose job is to be read in a
+ * hurry. And the grid's own placeholder was three `h-72` blocks: 288px each, so
+ * 864px of pulse at phone width, taller than the viewport AND taller than the
+ * content it stood in for.
+ *
+ * These reserve the real shape instead — same tiers, same corners, same row
+ * rhythm — so nothing moves when the data lands. Every sibling page already
+ * does this (ScheduleSkeleton, ClientProfileSkeleton, RecordSkeleton); the
+ * board was the holdout. `aria-hidden` throughout: a screen reader should hear
+ * the content, not the scaffolding.
+ */
+function SkelBar({ className = '' }) {
+  return <div className={`animate-pulse rounded bg-hairline opacity-70 ${className}`} />
+}
+
+function FocusBarSkeleton() {
+  return (
+    <div aria-hidden="true" className="mt-4 border-b border-hairline pb-4">
+      <SkelBar className="h-2.5 w-24" />
+      <SkelBar className="mt-2.5 h-6 w-[min(22rem,80%)]" />
+      <div className="mt-3 flex gap-2">
+        <SkelBar className="h-8 w-28 rounded-lg" />
+        <SkelBar className="h-8 w-20 rounded-lg" />
+      </div>
+    </div>
+  )
+}
+
+function TopBandSkeleton() {
+  return (
+    <div aria-hidden="true"
+      className="mt-4 grid grid-cols-2 gap-px overflow-hidden rounded-xl border border-hairline bg-hairline shell:flex shell:items-stretch shell:gap-0 shell:divide-x shell:divide-hairline shell:bg-panel">
+      {Array.from({ length: 4 }).map((_, i) => (
+        <div key={i} className="flex flex-col items-start gap-1.5 bg-panel px-3.5 py-2.5 shell:flex-1">
+          <SkelBar className="h-3.5 w-10" />
+          <SkelBar className="h-2 w-16" />
+        </div>
+      ))}
+    </div>
+  )
+}
+
+function BoardGridSkeleton() {
+  return (
+    <div aria-hidden="true" className="mt-4 grid grid-cols-1 items-start gap-4 sm:grid-cols-2 shell:grid-cols-3">
+      {Array.from({ length: 3 }).map((_, col) => (
+        /* The third column is office-only and the last to matter, so it waits
+           for sm: — that is what keeps the phone placeholder shorter than the
+           viewport instead of three times taller. */
+        <div key={col}
+          className={`rounded-2xl border border-hairline bg-panel ${col === 2 ? 'hidden sm:block' : ''}`}>
+          <div className="flex items-center gap-2 px-3.5 py-3">
+            <SkelBar className="h-1.5 w-1.5 rounded-full" />
+            <SkelBar className="h-2 w-20" />
+          </div>
+          {Array.from({ length: 3 }).map((_, row) => (
+            <div key={row} className="border-t border-hairline px-3.5 py-2.5">
+              <SkelBar className="h-2.5 w-[70%]" />
+              <SkelBar className="mt-1.5 h-2 w-[45%]" />
+            </div>
+          ))}
+        </div>
+      ))}
+    </div>
+  )
+}
+
 function TopBand({ stats, unreadConversations, crewUnreadThreads, showComms, navigate }) {
   const commsEntries = showComms ? [
     { key: 'unread', n: unreadConversations, label: 'unread messages', to: '/comms' },
@@ -95,10 +166,17 @@ function TopBand({ stats, unreadConversations, crewUnreadThreads, showComms, nav
   const tiles = (stats || []).filter(s => STAT_KEEP.has(s.key))
   if (!commsEntries.length && !tiles.length) return null
   return (
-    <div className="mt-4 flex items-stretch divide-x divide-hairline overflow-x-auto rounded-xl border border-hairline bg-panel">
+    /* Wraps 2-up on a phone instead of scrolling sideways. It used to be one
+       `overflow-x-auto` row of `min-w-[8.5rem]` tiles, which at 390px left two
+       tiles permanently off-screen behind a scroller with no fade, no
+       scrollbar and no affordance — so they were simply invisible, not hidden.
+       The grid costs no height and loses nothing at shell:, where it goes back
+       to a single divided row. `gap-px` over a hairline ground draws the
+       dividers, so the 1px rules survive the wrap. */
+    <div className="mt-4 grid grid-cols-2 gap-px overflow-hidden rounded-xl border border-hairline bg-hairline shell:flex shell:items-stretch shell:gap-0 shell:divide-x shell:divide-hairline shell:bg-panel">
       {commsEntries.map(e => (
         <button key={e.key} onClick={() => navigate(e.to)}
-          className="flex min-w-[8.5rem] shrink-0 flex-col items-start gap-0.5 px-3.5 py-2.5 text-left transition-colors hover:bg-bg-2 shell:min-w-0 shell:flex-1">
+          className="bb-focus flex flex-col items-start gap-0.5 bg-panel px-3.5 py-2.5 text-left transition-colors hover:bg-bg-2 shell:min-w-0 shell:flex-1">
           <span className="flex items-center gap-1.5">
             {e.n > 0 && <span className="h-1.5 w-1.5 rounded-full bg-indigo-500" aria-hidden="true" />}
             <span className={`text-[15px] font-bold leading-none tabular-nums ${e.n > 0 ? 'text-ink' : 'text-ink-3'}`}>
@@ -112,7 +190,7 @@ function TopBand({ stats, unreadConversations, crewUnreadThreads, showComms, nav
         <button key={stat.key}
           onClick={() => stat.href && navigate(stat.href)}
           title={stat.sub || undefined}
-          className="flex min-w-[8.5rem] shrink-0 flex-col items-start gap-0.5 px-3.5 py-2.5 text-left transition-colors hover:bg-bg-2 shell:min-w-0 shell:flex-1">
+          className="bb-focus flex flex-col items-start gap-0.5 bg-panel px-3.5 py-2.5 text-left transition-colors hover:bg-bg-2 shell:min-w-0 shell:flex-1">
           <span className={`text-[15px] font-bold leading-none tabular-nums ${STAT_TONE[stat.tone] || STAT_TONE.neutral}`}>
             {stat.value}
           </span>
@@ -504,10 +582,12 @@ export default function OpsBoard() {
         </div>
 
         {/* 1 — FOCUS BAR */}
-        {!loading && <FocusBar firstName={firstName} focus={focus} navigate={navigate} />}
+        {loading
+          ? <FocusBarSkeleton />
+          : <FocusBar firstName={firstName} focus={focus} navigate={navigate} />}
 
         {/* 2 — KPI STRIP */}
-        {!loading && (
+        {loading ? <TopBandSkeleton /> : (
           <TopBand stats={data?.stats}
             unreadConversations={unreadConversations}
             crewUnreadThreads={crewUnreadThreads}
@@ -523,13 +603,7 @@ export default function OpsBoard() {
           </div>
         )}
 
-        {loading ? (
-          <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2 shell:grid-cols-3">
-            {Array.from({ length: 3 }).map((_, i) => (
-              <div key={i} className="h-72 animate-pulse rounded-2xl border border-hairline bg-panel" />
-            ))}
-          </div>
-        ) : (
+        {loading ? <BoardGridSkeleton /> : (
           <>
             {/* 3 — THREE-COLUMN GRID. Per-column flex stacks so a short box packs
                 onto the next instead of height-locking to the tallest in its row
