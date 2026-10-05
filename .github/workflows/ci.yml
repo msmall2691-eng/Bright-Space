@@ -78,7 +78,11 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt -r requirements-dev.txt
       - name: Validate Postgres Row-Level Security (MT-3)
-        run: python -m pytest tests/test_tenancy_rls_postgres.py -v
+        # test_schedule_date_filter_postgres.py rides along here (its own engine,
+        # doesn't touch the app's database.db global) to catch the DATE-vs-string
+        # operator error that only Postgres raises — the Schedule-page 500 the
+        # sqlite suite structurally can't see.
+        run: python -m pytest tests/test_tenancy_rls_postgres.py tests/test_schedule_date_filter_postgres.py -v
       # test_dashboard_board.py rides along in the SAME pytest invocation as a
       # canary, and is not here for its own coverage (the Backend tests job
       # already runs it). The migration test has to repoint the app at a

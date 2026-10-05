@@ -1093,12 +1093,22 @@ def get_jobs(
         q = q.filter(Job.recurring_schedule_id == recurring_schedule_id)
     if status:
         q = q.filter(Job.status == status)
-    if date:
-        q = q.filter(Job.scheduled_date == date)
-    if date_from:
-        q = q.filter(Job.scheduled_date >= date_from)
-    if date_to:
-        q = q.filter(Job.scheduled_date <= date_to)
+    # Job.scheduled_date is a DATE column, and these params arrive as strings.
+    # SQLite compares date-vs-string leniently, but Postgres has NO
+    # `date >= varchar` operator and 500s the whole query ("operator does not
+    # exist: date >= character varying") — which is exactly what took the office
+    # Schedule dark. Coerce every bound to a real date so the comparison is
+    # date-vs-date on both engines. coerce_date is None-safe and never raises;
+    # an unparseable bound just drops (same as it being absent).
+    d_eq = coerce_date(date)
+    d_from = coerce_date(date_from)
+    d_to = coerce_date(date_to)
+    if d_eq:
+        q = q.filter(Job.scheduled_date == d_eq)
+    if d_from:
+        q = q.filter(Job.scheduled_date >= d_from)
+    if d_to:
+        q = q.filter(Job.scheduled_date <= d_to)
     if job_type:
         q = q.filter(Job.job_type == job_type)
 
