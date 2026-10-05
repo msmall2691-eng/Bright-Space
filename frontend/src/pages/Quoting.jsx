@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
+import { useUrlFilters } from '../hooks/useUrlFilters'
 import { Plus, Trash2, FileText } from 'lucide-react'
 import PageHero from '../components/ui/PageHero'
 import InlineSelect from '../components/InlineSelect'
@@ -33,6 +34,11 @@ import {
 // backend's. Templates load on mount; until then (or if the fetch fails) the
 // picker just offers "Custom (build from scratch)".
 
+// The filters this page keeps in the URL. Module-level because `useUrlFilters`
+// memoises on this object's identity. '' is "all statuses" and is omitted from
+// the URL, so a bare /quotes means unfiltered.
+const QUOTE_FILTERS = { status: '' }
+
 export default function Quoting() {
   const navigate = useNavigate()
   const location = useLocation()
@@ -57,7 +63,12 @@ export default function Quoting() {
   const [selected, setSelected] = useState(null)
   const [selectedIntake, setSelectedIntake] = useState(null)
   const [quoteSearch, setQuoteSearch] = useState('')
-  const [quoteStatusFilter, setQuoteStatusFilter] = useState('')
+  // Status lives in the URL so the Quote funnel's outcome rows can link to the
+  // quotes behind them, and so a filtered list survives a reload. '' is "all",
+  // and is omitted from the URL.
+  const [quoteFilters, setQuoteFilter] = useUrlFilters(QUOTE_FILTERS)
+  const quoteStatusFilter = quoteFilters.status
+  const setQuoteStatusFilter = (v) => setQuoteFilter('status', v)
   const [form, setForm] = useState({
     client_id: '', intake_id: null, title: '', customer_message: '',
     address: '', service_type: 'residential',
@@ -204,11 +215,18 @@ export default function Quoting() {
   // list pre-filtered to accepted-but-not-yet-converted quotes (the "said yes,
   // still needs booking" set). Keyed on pathname so it applies on entry without
   // fighting the user if they then change the status dropdown.
+  //
+  // Now that status is a URL param, "without fighting the user" is explicit:
+  // the default is applied only when the URL carries no `?status=` of its own.
+  // Once they pick something the param exists, so re-entering this effect
+  // (a re-render, a tab switch) leaves their choice alone.
   useEffect(() => {
-    if (location.pathname.endsWith('/quotes/accepted')) {
-      setTab('quotes')
-      setQuoteStatusFilter('accepted')
+    if (!location.pathname.endsWith('/quotes/accepted')) return
+    setTab('quotes')
+    if (!new URLSearchParams(location.search).get('status')) {
+      setQuoteFilter('status', 'accepted')
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [location.pathname])
 
   useEffect(() => {
@@ -661,7 +679,7 @@ export default function Quoting() {
 
   // Quotes-tab filtering, persisted by saved views (entityType="quote").
   const quoteViewConfig = { search: quoteSearch, status: quoteStatusFilter }
-  const applyQuoteView = (cfg) => { setQuoteSearch(cfg.search ?? ''); setQuoteStatusFilter(cfg.status ?? '') }
+  const applyQuoteView = (cfg) => { setQuoteSearch(cfg.search ?? ''); setQuoteFilter('status', cfg.status ?? '') }
   // While the New Quote composer is open, scope the left list to the client
   // it's being written for — so composing a quote from a Request shows that
   // client's own quote history instead of the full global list next to it

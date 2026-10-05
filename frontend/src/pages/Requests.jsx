@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
+import { useUrlFilters } from '../hooks/useUrlFilters'
 import {
   MoreVertical, Plus, Search, FileText, Archive, AlertCircle,
   Home, Building2, Wind, Zap, Mail, Phone, MapPin, X, MessageSquare, Globe,
@@ -62,6 +63,12 @@ const SOURCE_CONFIG = {
   email:   { label: 'Email',   icon: Mail,          badge: 'bg-bg-2 text-ink-3' },
   chat:    { label: 'Chat',    icon: MessageSquare, badge: 'bg-bg-2 text-ink-3' },
 }
+
+// The filters this page keeps in the URL. Module-level because `useUrlFilters`
+// memoises on this object's identity — an inline literal would recompute every
+// render. Keys are the query-param names, values the "no filter" default, and
+// a filter at its default is omitted from the URL.
+const REQUEST_FILTERS = { status: 'all', service_type: 'all', priority: 'all', source: 'all' }
 
 // The customer's ACTUAL service pick + the two pricing inputs (condition, pet
 // hair) that the website quote engine uses. A Deep Clean with pets is bucketed
@@ -430,9 +437,13 @@ export default function Requests() {
   const navigate = useNavigate()
   const [requests, setRequests] = useState([])
   const [loading, setLoading] = useState(false)
-  const [selectedStatus, setSelectedStatus] = useState('all')
-  const [selectedServiceType, setSelectedServiceType] = useState('all')
-  const [selectedPriority, setSelectedPriority] = useState('all')
+  // Filters live in the URL, not in useState — so the Quote funnel can link
+  // straight to "the 25 website requests" it is counting, and so an operator
+  // who filters to commercial leads and reloads is still looking at them. A
+  // filter at its default is omitted, so a bare /requests means no filters.
+  const [filters, setFilter] = useUrlFilters(REQUEST_FILTERS)
+  const { status: selectedStatus, service_type: selectedServiceType,
+          priority: selectedPriority, source: selectedSource } = filters
   const [searchTerm, setSearchTerm] = useState('')
   const [filtersOpen, setFiltersOpen] = useState(false)
   // "Possible duplicates" view — leads sharing a name or address with another
@@ -473,6 +484,10 @@ export default function Requests() {
       if (selectedStatus !== 'all') params.append('status', selectedStatus)
       if (selectedServiceType !== 'all') params.append('service_type', selectedServiceType)
       if (selectedPriority !== 'all') params.append('priority', selectedPriority)
+      // `/api/intake` has always accepted `source` (intake/router.py) — the
+      // frontend just never sent it, so "where did this lead come from" was
+      // displayable but not filterable.
+      if (selectedSource !== 'all') params.append('source', selectedSource)
 
       const intakes = await get(`/api/intake?${params.toString()}`).catch(() => [])
       setRequests(Array.isArray(intakes) ? intakes : [])
@@ -484,7 +499,7 @@ export default function Requests() {
 
   useEffect(() => {
     loadRequests()
-  }, [selectedStatus, selectedServiceType, selectedPriority])
+  }, [selectedStatus, selectedServiceType, selectedPriority, selectedSource])
 
   // Saved-views glue: the snapshot a view persists, and the inverse that
   // applies a stored config back onto the page. Status/service/priority are
@@ -494,12 +509,14 @@ export default function Requests() {
     status: selectedStatus,
     serviceType: selectedServiceType,
     priority: selectedPriority,
+    source: selectedSource,
     duplicatesOnly: showDuplicatesOnly,
   }
   const applyView = (cfg) => {
-    setSelectedStatus(cfg.status || 'all')
-    setSelectedServiceType(cfg.serviceType || 'all')
-    setSelectedPriority(cfg.priority || 'all')
+    setFilter('status', cfg.status || 'all')
+    setFilter('service_type', cfg.serviceType || 'all')
+    setFilter('priority', cfg.priority || 'all')
+    setFilter('source', cfg.source || 'all')
     setShowDuplicatesOnly(!!cfg.duplicatesOnly)
   }
 
@@ -691,7 +708,7 @@ export default function Requests() {
               className="flex shrink-0 items-center gap-1.5 px-3 py-2 rounded-lg text-sm border border-hairline bg-panel text-ink-2 hover:bg-bg-2 transition-colors">
               <SlidersHorizontal className="w-3.5 h-3.5" />
               <span className="hidden sm:inline">Filters</span>
-              {(selectedStatus !== 'all' || selectedServiceType !== 'all' || selectedPriority !== 'all' || showDuplicatesOnly) && (
+              {(selectedStatus !== 'all' || selectedServiceType !== 'all' || selectedPriority !== 'all' || selectedSource !== 'all' || showDuplicatesOnly) && (
                 <span className="w-1.5 h-1.5 rounded-full bg-indigo-500" aria-hidden="true" />
               )}
               <ChevronDown className={`w-3 h-3 transition-transform ${filtersOpen ? 'rotate-180' : ''}`} />
@@ -706,7 +723,7 @@ export default function Requests() {
             <SavedViewsBar entityType="lead" currentConfig={viewConfig} onApply={applyView} defaultLabel="All requests" />
             <select
               value={selectedStatus}
-              onChange={(e) => setSelectedStatus(e.target.value)}
+              onChange={(e) => setFilter('status', e.target.value)}
               className="px-3 py-2 border border-hairline rounded-lg text-sm bg-panel"
             >
               <option value="all">All Statuses</option>
@@ -719,7 +736,7 @@ export default function Requests() {
 
             <select
               value={selectedServiceType}
-              onChange={(e) => setSelectedServiceType(e.target.value)}
+              onChange={(e) => setFilter('service_type', e.target.value)}
               className="px-3 py-2 border border-hairline rounded-lg text-sm bg-panel"
             >
               <option value="all">All Service Types</option>
@@ -728,9 +745,25 @@ export default function Requests() {
               <option value="str">STR</option>
             </select>
 
+            {/* Source was displayable (SourceChip on every card) but not
+                filterable, which is why the funnel's "by lead source" table had
+                nowhere to send you. Options derive from SOURCE_CONFIG so the
+                chip labels and the filter cannot drift apart. */}
+            <select
+              value={selectedSource}
+              onChange={(e) => setFilter('source', e.target.value)}
+              className="px-3 py-2 border border-hairline rounded-lg text-sm bg-panel"
+              aria-label="Filter by lead source"
+            >
+              <option value="all">All Sources</option>
+              {Object.entries(SOURCE_CONFIG).map(([value, cfg]) => (
+                <option key={value} value={value}>{cfg.label}</option>
+              ))}
+            </select>
+
             <select
               value={selectedPriority}
-              onChange={(e) => setSelectedPriority(e.target.value)}
+              onChange={(e) => setFilter('priority', e.target.value)}
               className="px-3 py-2 border border-hairline rounded-lg text-sm bg-panel"
             >
               <option value="all">All Priorities</option>
