@@ -61,6 +61,34 @@ export function rangeForView(currentDate, viewMode) {
 }
 
 /**
+ * Every calendar day from `start` to `end` inclusive, as YYYY-MM-DD.
+ *
+ * For turning a range that was already FETCHED into the day keys a per-day
+ * summary needs — the dashboard's week rail groups one week's visits by
+ * `scheduled_date` and needs all seven keys, including the days with nothing
+ * on them (a day the business is closed is a real answer, and deriving the
+ * keys from the visits alone would silently drop it).
+ *
+ * Parsed at noon for the reason the helpers above are: midnight plus a DST
+ * shift lands on the previous day in half the world's timezones.
+ */
+export function daysInRange(start, end) {
+  if (!start || !end || start > end) return []
+  const [y, m, d] = start.split('-').map(Number)
+  const cur = new Date(y, m - 1, d, 12, 0, 0, 0)
+  const out = []
+  // Bounded so a malformed pair can never spin: a fetched range is a week or
+  // a month grid, never a year.
+  for (let i = 0; i < 400; i++) {
+    const ymd = toYMD(cur)
+    if (ymd > end) break
+    out.push(ymd)
+    cur.setDate(cur.getDate() + 1)
+  }
+  return out
+}
+
+/**
  * Does the outer range fully contain the inner one? Used by CalendarView
  * to decide whether the parent's fetched jobs cover its month grid; if
  * yes, it can skip its own jobs fetch (audit §16).

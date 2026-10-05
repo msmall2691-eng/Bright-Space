@@ -63,6 +63,15 @@ import { currentRole } from '../nav/routes'
 
 const CLEARED_KEY = 'brightbase_board_cleared'
 
+// Column templates by how many of the grid's three columns have children.
+// Spelled out as complete literals because Tailwind's JIT only emits classes it
+// can see as whole strings — an interpolated track list gets purged.
+const GRID_COLS = {
+  1: 'shell:grid-cols-1',
+  2: 'shell:grid-cols-[minmax(0,1.5fr)_minmax(0,1.15fr)]',
+  3: 'shell:grid-cols-[minmax(0,1.5fr)_minmax(0,1.15fr)_minmax(0,1.15fr)]',
+}
+
 // Endpoints that cost money per call. Every one of these gets a confirm step
 // client-side, whether or not the payload shipped a `confirm` string.
 const METERED = /^\/api\/ai\//
@@ -525,6 +534,16 @@ export default function OpsBoard() {
   // Today + comms, so there is never a hole (see the grid).
   const showMiddle = requestItems.length > 0 || moneyItems.length > 0 || showFeeds || showRecurring
 
+  // How many tracks the grid actually has children for. The template used to
+  // be keyed on `showMiddle` ALONE, which was right only for office roles:
+  // Column C is gated on `canComms`, so a viewer with work on the board got a
+  // three-track template holding two children (a blank third column), and a
+  // viewer on a quiet morning got two tracks holding one. Both are the empty
+  // space the owner has complained about, and both were invisible to the
+  // existing role test, which checked that the rail was gone but never looked
+  // at the template it left behind.
+  const columns = 1 + (showMiddle ? 1 : 0) + (canComms ? 1 : 0)
+
   // The single most pressing thing for the focus headline. When nothing is
   // pressing there is NO headline: the hero slot stays empty and the greeting
   // line carries the section on its own. A 26px "You're on top of it this
@@ -550,6 +569,9 @@ export default function OpsBoard() {
 
   const systemsSection = byKey.systems
   const safeSection = byKey.safe_to_ignore
+  // The quiet collapsed lines at the bottom, in order, skipping the empty ones.
+  // Derived once because both the row's track count and its contents need it.
+  const tailNotices = [systemsSection, safeSection].filter(sec => sec && sec.items.length > 0)
 
   if (error && !loading) {
     return (
@@ -564,35 +586,49 @@ export default function OpsBoard() {
     <div className="min-h-full">
       <div className="mx-auto max-w-[1440px] px-4 pb-10 pt-5 sm:px-6">
 
-        {/* Slim top bar: identity + Ask/Refresh. The focus bar below is the hero. */}
-        <header className="flex flex-wrap items-center justify-between gap-3">
-          <div className="min-w-0">
-            <h1 className="truncate text-[13px] font-semibold tracking-tight text-ink-2">
-              {data?.company || 'Ops Board'}
-            </h1>
+        {/* ONE command row: identity · tabs · Ask/Refresh.
+            This was two stacked rows — an identity header, then SubNav on its
+            own line — which spent ~64px of the top of the page on chrome before
+            the hero. At shell: they share a line, the tabs taking the slack;
+            below 900px it wraps to exactly the two rows it had before — name
+            and actions together, tabs underneath — because seven tabs plus two
+            buttons do not fit on a phone, and a naive flex-col would have made
+            it THREE rows and pushed Ask/Refresh below the tabs, spending more
+            of the smallest screen on chrome rather than less.
+
+            The company name carries the page's `<h1>`. It is 13px and the focus
+            headline is 26px, but heading level is structure, not size: this line
+            is always present and the focus headline is not, so putting the `<h1>`
+            on the conditional one made the document outline depend on how busy
+            the morning was — and after the calm verdict was retired, a quiet
+            morning had no `<h1>` at all. FocusBar's is an `<h2>`. */}
+        <header className="flex flex-wrap items-center gap-x-4 gap-y-2">
+          <h1 className="order-1 min-w-0 shrink truncate text-[13px] font-semibold tracking-tight text-ink-2">
+            {data?.company || 'Ops Board'}
+          </h1>
+          {/* Last on a phone (its own full-width row), middle at shell: where it
+              takes the slack between the name and the actions. */}
+          <div className="order-3 min-w-0 w-full shell:order-2 shell:w-auto shell:flex-1">
+            <SubNav />
           </div>
-          <div className="flex items-center gap-2">
+          <div className="order-2 ml-auto flex shrink-0 items-center gap-2 shell:order-3">
             {data?.refreshed_at && (
               <span className="hidden text-[11px] text-ink-3 sm:inline">refreshed {fmtRefreshed(data.refreshed_at)}</span>
             )}
             <button
               onClick={() => setAssistantOpen(true)}
-              className="inline-flex h-8 items-center gap-1.5 rounded-md border border-hairline-2 bg-panel px-2.5 text-xs font-medium text-ink-2 transition-colors hover:bg-bg-2">
+              className="bb-focus inline-flex h-8 items-center gap-1.5 rounded-md border border-hairline-2 bg-panel px-2.5 text-xs font-medium text-ink-2 transition-colors hover:bg-bg-2">
               <Sparkles className="h-3.5 w-3.5" /> Ask
             </button>
             <button
               onClick={() => load(true)}
               disabled={refreshing || loading}
-              className="inline-flex h-8 items-center gap-1.5 rounded-md border border-hairline-2 bg-panel px-2.5 text-xs font-medium text-ink-2 transition-colors hover:bg-bg-2 disabled:opacity-50">
+              className="bb-focus inline-flex h-8 items-center gap-1.5 rounded-md border border-hairline-2 bg-panel px-2.5 text-xs font-medium text-ink-2 transition-colors hover:bg-bg-2 disabled:opacity-50">
               {refreshing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
               Refresh
             </button>
           </div>
         </header>
-
-        <div className="mt-3">
-          <SubNav />
-        </div>
 
         {/* 1 — FOCUS BAR */}
         {loading
@@ -625,15 +661,11 @@ export default function OpsBoard() {
                 broken, so the grid is never left with a blank track (owner:
                 Home "looks empty/awkward"). */}
             <div data-testid="home-grid"
-              className={`mt-4 grid grid-cols-1 items-start gap-4 sm:grid-cols-2 bb-board-in ${
-                showMiddle
-                  ? 'shell:grid-cols-[minmax(0,1.5fr)_minmax(0,1.15fr)_minmax(0,1.15fr)]'
-                  : 'shell:grid-cols-[minmax(0,1.5fr)_minmax(0,1.1fr)]'
-              }`}>
+              className={`mt-4 grid grid-cols-1 items-start gap-4 sm:grid-cols-2 bb-board-in ${GRID_COLS[columns]}`}>
 
-              {/* Column A — Today + needs-a-cleaner. Spans the full width at the
-                  2-col (sm) size when the middle column is gone, so Today never
-                  sits beside an empty cell. */}
+              {/* Column A — Today + needs-a-cleaner. Spans both tracks at the
+                  2-col (sm) size whenever there is no middle column, so Today
+                  never sits beside an empty cell. */}
               <div className={`flex flex-col gap-4 ${showMiddle ? '' : 'sm:col-span-2 shell:col-span-1'}`}>
                 <HomeToday navigate={navigate} />
                 {/* The jobs with nobody on them, as the JOBS — not as the
@@ -700,54 +732,69 @@ export default function OpsBoard() {
               )}
             </div>
 
-            {/* 4 — BELOW THE GRID (demoted, nothing lost) */}
+            {/* 4 — BELOW THE GRID (demoted, nothing lost)
 
-            {/* Quick actions — office-only (every create flow is a write). */}
-            {canComms && (
-              <div className="mt-4 bb-board-in" style={{ animationDelay: '60ms' }}>
-                <QuickActions navigate={navigate} />
+                PAIRED, not stacked. These were five full-width bands one after
+                another, so the demoted half of the page was as tall as the half
+                that matters and everything below the fold needed scrolling past
+                rather than glancing at. At shell: they sit two-up; below 900px
+                they stack in the same order as before.
+
+                The stagger also ran out of order — 60 / 90 / 80 / 100ms meant
+                Systems animated BEFORE the widgets sitting above it. Delays now
+                follow document order. */}
+
+            {/* Row 1 — do something (create flows) beside something's wrong
+                (plumbing + inbox noise, one collapsed line each). Both halves
+                are conditional, so the track count follows them for the same
+                reason the main grid's does: a fixed two-up holding one child is
+                the blank column this slice set out to remove, and a spacer div
+                to push the survivor rightward is worse than no column. */}
+            {(canComms || tailNotices.length > 0) && (
+              <div data-testid="home-tail-row"
+                className={`mt-4 grid grid-cols-1 items-start gap-4 bb-board-in ${
+                  canComms && tailNotices.length > 0 ? 'shell:grid-cols-2' : 'shell:grid-cols-1'
+                }`}
+                style={{ animationDelay: '60ms' }}>
+                {/* Office-only: every create flow is a write. */}
+                {canComms && <QuickActions navigate={navigate} />}
+                {tailNotices.length > 0 && (
+                  <div className="flex flex-col gap-4">
+                    {tailNotices.map(section => (
+                      <Section key={section.key} section={section} items={section.items}
+                        clearedSet={cleared} onToggle={toggleCleared}
+                        onAction={runAction} actioningKey={actioningKey} confirmingKey={confirmingKey}
+                        navigate={navigate}
+                        onClearAll={clearAllInSection} clearingSection={clearingSection}
+                        setConfirmingKey={setConfirmingKey} filtersActive={false}
+                        maxRows={6} />
+                    ))}
+                  </div>
+                )}
               </div>
             )}
 
-            {/* Your widgets — Notes + Ask Nova, arrange them to taste (drag the
-                grip / arrow keys, saved on this device). Promoted up here from
-                the old last-and-smallest slot so your notes are front and
-                centre, right under the quick actions. */}
-            <div className="mt-4 bb-board-in" style={{ animationDelay: '90ms' }}>
+            {/* Row 2 — your own space (Notes + Ask Nova, drag the grip / arrow
+                keys, saved on this device) beside the bench: who's asking for
+                work + the week's round-up. Both bench boxes fetch themselves,
+                so both wait until scrolled to (WhenVisible). Neither approves
+                here — the office says yes on the marketplace page itself
+                (brightbase-marketplace guard). */}
+            <div data-testid="home-bento"
+              className="mt-4 grid grid-cols-1 items-start gap-4 shell:grid-cols-2 bb-board-in"
+              style={{ animationDelay: '90ms' }}>
               <HomeWidgets items={[
                 { key: 'notes', label: 'Notes', node: <StickyNotes /> },
                 canComms && { key: 'nova', label: 'Ask Nova', node: <NovaChat navigate={navigate} /> },
               ].filter(Boolean)} />
-            </div>
-
-            {/* Systems + Safe to Ignore — one quiet collapsed line each. */}
-            {((systemsSection?.items.length || 0) > 0 || (safeSection?.items.length || 0) > 0) && (
-              <div className="mt-4 flex flex-col gap-4 bb-board-in" style={{ animationDelay: '80ms' }}>
-                {[systemsSection, safeSection].filter(s => s && s.items.length > 0).map(section => (
-                  <Section key={section.key} section={section} items={section.items}
-                    clearedSet={cleared} onToggle={toggleCleared}
-                    onAction={runAction} actioningKey={actioningKey} confirmingKey={confirmingKey}
-                    navigate={navigate}
-                    onClearAll={clearAllInSection} clearingSection={clearingSection}
-                    setConfirmingKey={setConfirmingKey} filtersActive={false}
-                    maxRows={6} />
-                ))}
+              <div className="flex flex-col gap-4">
+                <WhenVisible minHeight="12rem">
+                  <MarketplaceBoard />
+                </WhenVisible>
+                <WhenVisible minHeight="12rem">
+                  <BenchDigest />
+                </WhenVisible>
               </div>
-            )}
-
-            {/* The bench — who's asking for work + the week's round-up. Both
-                fetch themselves, so both wait until scrolled to (WhenVisible).
-                Neither approves here — the office says yes on the marketplace
-                page itself (brightbase-marketplace guard). */}
-            <div data-testid="home-bento"
-              className="mt-4 grid grid-cols-1 gap-4 shell:grid-cols-2 bb-board-in"
-              style={{ animationDelay: '100ms' }}>
-              <WhenVisible minHeight="12rem">
-                <MarketplaceBoard />
-              </WhenVisible>
-              <WhenVisible minHeight="12rem">
-                <BenchDigest />
-              </WhenVisible>
             </div>
 
           </>

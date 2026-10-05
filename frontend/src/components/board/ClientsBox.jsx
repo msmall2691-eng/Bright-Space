@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { ArrowRight, Loader2, PenLine } from 'lucide-react'
 import { pushToast } from '../../utils/toastBus'
 import { ComposeModal } from '../comms/ComposeModal'
+import { SEV_DOT } from './tokens'
 
 /**
  * The second box in Home's comms rail: client conversations waiting on a reply,
@@ -18,12 +19,26 @@ import { ComposeModal } from '../comms/ComposeModal'
  * box, so the whole comms rail is hidden for roles that would 403 on /comms.
  */
 const CAP = 5
-const SEV_DOT = {
-  urgent: 'bg-rose-500',
-  watch: 'bg-amber-500',
-  info: 'bg-blue-500',
-  good: 'bg-emerald-500',
-  recurring: 'bg-violet-500',
+
+/**
+ * Which channel the client wrote in on.
+ *
+ * `board_service.py` puts it in `tags[0].label` as the capitalized
+ * `Conversation.channel` — "Sms" / "Email" / "Chat" / "Whatsapp" (the column is
+ * `nullable=False`, so its `or "message"` fallbacks never fire). The docstring
+ * above has claimed since this box shipped that the payload carries a "channel
+ * tag"; it does, and the box was dropping it on the floor. On a surface whose
+ * whole job is "who is waiting on a reply", how to reply is not a detail.
+ *
+ * Rendered as a WORD, with no dot. `tags[0].tone` encodes SEVERITY (rose when
+ * breached, blue when merely waiting), not channel — so reusing it would colour
+ * by urgency while labelling by channel, and the row already says urgency with
+ * its leading dot. A second coloured mark on the same row would be the same
+ * number twice in two vocabularies.
+ */
+function channelOf(item) {
+  const label = item?.tags?.[0]?.label
+  return typeof label === 'string' && label.trim() ? label.trim() : null
 }
 
 export default function ClientsBox({ items, cleared, onAction, actioningKey, confirmingKey, navigate }) {
@@ -73,7 +88,13 @@ export default function ClientsBox({ items, cleared, onAction, actioningKey, con
                 <button onClick={goReply} className="min-w-0 flex-1 text-left">
                   <span className="flex items-baseline justify-between gap-2">
                     <span className="min-w-0 flex-1 truncate text-[13px] font-semibold leading-snug text-ink">{it.title}</span>
-                    {it.meta && <span className="shrink-0 text-[10.5px] tabular-nums text-ink-3">{it.meta}</span>}
+                    {(channelOf(it) || it.meta) && (
+                      <span className="shrink-0 text-[10.5px] text-ink-3">
+                        {channelOf(it)}
+                        {channelOf(it) && it.meta ? ' · ' : ''}
+                        {it.meta && <span className="tabular-nums">{it.meta}</span>}
+                      </span>
+                    )}
                   </span>
                   {it.body && <span className="mt-0.5 block truncate text-[11.5px] leading-snug text-ink-2">{it.body}</span>}
                 </button>

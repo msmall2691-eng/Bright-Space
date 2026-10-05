@@ -1,7 +1,9 @@
 import { useMemo } from 'react'
 import { ArrowRight, RefreshCw, User } from 'lucide-react'
 import { useScheduleData } from '../../hooks/useScheduleData'
+import { daysInRange } from '../../utils/dateRange'
 import { todayYMD } from '../../utils/format'
+import NeedsDateStrip from '../schedule/NeedsDateStrip'
 
 /**
  * Today's visits as a COMPACT list — the glanceable replacement for the full
@@ -16,6 +18,24 @@ import { todayYMD } from '../../utils/format'
  * name or a quiet amber "needs a cleaner" cue (dot + word, never a tinted
  * capsule). Tapping a row opens the job; "Open schedule →" hands off to the
  * full calendar.
+ *
+ * THREE THINGS RIDE THAT ONE FETCH, not one. The `/api/schedule/week` response
+ * is a whole Sunday–Saturday week plus the date-less jobs, and this component
+ * used to keep one day of it and discard the rest:
+ *
+ *   - today's rows (the original job)
+ *   - the WEEK RAIL — the same `visits` grouped by `scheduled_date` instead of
+ *     filtered to one, so the week's shape costs nothing. There is no
+ *     `week_load` field in the board payload and there must not be one.
+ *   - NEEDS A DATE — the `unscheduled` array the response already carries
+ *     (office roles only; crew receive `[]`). Accepting a quote converts it to
+ *     a job with no date, and a date-bounded week query can never show those.
+ *
+ * All three MUST stay inside this component. `useScheduleData` keeps its state
+ * in per-instance refs with no module-level cache and no in-flight map, so a
+ * second mount anywhere on this page is a second identical request
+ * (brightbase-economy). Mounting the rail from OpsBoard would double the
+ * schedule fetch, and the test that counts requests is there to catch it.
  */
 function statusDot(v, job) {
   const cleanerIds = v.cleaner_ids?.length ? v.cleaner_ids : job?.cleaner_ids
@@ -25,17 +45,94 @@ function statusDot(v, job) {
   return { cls: 'bg-indigo-500', label: 'Scheduled' }
 }
 
+/**
+ * The week's shape in seven columns — day initial over a plain count.
+ *
+ * Today is marked by INK WEIGHT and a hairline underline, not a fill: a filled
+ * cell on a seven-cell strip reads as a selected tab, and the owner has vetoed
+ * the whole family of coloured blocks. A day with nothing on it shows a dim
+ * dash rather than a 0, so the eye skips it instead of reading it as data.
+ * Each cell is a real link to that day on the calendar.
+ */
+const DAY_INITIALS = ['S', 'M', 'T', 'W', 'T', 'F', 'S']
+// Spoken, not shown. The visible cell is three terse glyphs — "S", "2", "5" —
+// which is exactly what a screen reader would read out, and `title` is not
+// reliably announced. Each cell gets a sentence instead.
+const DAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
+
+function WeekRail({ days, countFor, today, navigate }) {
+  // Nothing fetched yet, or a malformed range — the rest of the card still works.
+  if (!days.length) return null
+  return (
+    <div data-testid="home-week-rail"
+      className="flex items-stretch border-b border-hairline">
+      {days.map(ymd => {
+        const n = countFor(ymd)
+        const isToday = ymd === today
+        const [, , dd] = ymd.split('-')
+        // Parsed with no zone suffix, so local — and `ymd` came from a local
+        // Date, so it round-trips. Taken from the date rather than the array
+        // index, which would only be right for a Sunday-aligned range.
+        const dow = new Date(`${ymd}T12:00`).getDay()
+        const spoken = `${DAY_NAMES[dow]} the ${Number(dd)}${isToday ? ', today' : ''} — ${
+          n === 0 ? 'nothing booked' : `${n} ${n === 1 ? 'job' : 'jobs'}`}`
+        return (
+          <button key={ymd} type="button"
+            onClick={() => navigate(`/schedule?view=day&date=${ymd}`)}
+            aria-current={isToday ? 'date' : undefined}
+            aria-label={spoken}
+            title={spoken}
+            className={`bb-focus min-w-0 flex-1 px-1 py-2 text-center transition-colors hover:bg-bg-2 ${
+              isToday ? 'border-b-2 border-ink' : ''
+            }`}>
+            <span className={`block text-[10px] leading-none ${isToday ? 'font-semibold text-ink-2' : 'text-ink-3'}`}>
+              {DAY_INITIALS[dow]}
+            </span>
+            <span className={`mt-1 block text-[13px] font-semibold leading-none tabular-nums ${
+              n === 0 ? 'text-ink-3/60' : isToday ? 'text-ink' : 'text-ink-2'
+            }`}>
+              {n === 0 ? '–' : n}
+            </span>
+            <span className="mt-0.5 block text-[9.5px] leading-none text-ink-3/70 tabular-nums">{Number(dd)}</span>
+          </button>
+        )
+      })}
+    </div>
+  )
+}
+
 export default function HomeToday({ navigate }) {
-  const { visits, jobs, clients, loading, loadError, refresh, empName } =
+  const { visits, jobs, clients, unscheduled, range, loading, loadError, refresh, empName } =
     useScheduleData(new Date(), 'week', { pollMs: 180000 })
 
   const today = todayYMD()
+
+  // One pass over `visits` keyed by day, used by BOTH today's rows and the
+  // rail — the rail is a different read of the same array, never a second
+  // fetch and never a second traversal.
+  const byDay = useMemo(() => {
+    const map = new Map()
+    for (const v of visits || []) {
+      const d = v.scheduled_date || jobs[v.job_id]?.scheduled_date
+      if (!d) continue
+      const bucket = map.get(d)
+      if (bucket) bucket.push(v)
+      else map.set(d, [v])
+    }
+    return map
+  }, [visits, jobs])
+
   const rows = useMemo(() => {
-    const list = (visits || []).filter(v => (v.scheduled_date || jobs[v.job_id]?.scheduled_date) === today)
-    return list.sort((a, b) => (a.start_time || '99').localeCompare(b.start_time || '99'))
-  }, [visits, jobs, today])
+    const list = byDay.get(today) || []
+    return [...list].sort((a, b) => (a.start_time || '99').localeCompare(b.start_time || '99'))
+  }, [byDay, today])
+
+  // Day keys come from the RANGE that was fetched, not from the visits, so a
+  // day with nothing booked still gets a column.
+  const days = useMemo(() => daysInRange(range?.start, range?.end), [range])
 
   return (
+    <>
     <section data-testid="home-today" className="overflow-hidden rounded-2xl border border-hairline bg-panel">
       <header className="flex items-center gap-2 border-b border-hairline px-3.5 py-2.5">
         <span className="h-1.5 w-1.5 rounded-full bg-indigo-500" aria-hidden="true" />
@@ -49,6 +146,14 @@ export default function HomeToday({ navigate }) {
           Open schedule<ArrowRight className="h-3 w-3" />
         </button>
       </header>
+
+      {/* The week, above today. One card, one subject: the schedule — today
+          expanded, the rest of the week as shape. Hidden while the first paint
+          is still a skeleton so the row doesn't appear and then re-count. */}
+      {!loading && !loadError && (
+        <WeekRail days={days} countFor={d => (byDay.get(d) || []).length}
+          today={today} navigate={navigate} />
+      )}
 
       {loading ? (
         <div className="divide-y divide-hairline">
@@ -109,5 +214,17 @@ export default function HomeToday({ navigate }) {
         </div>
       )}
     </section>
+
+    {/* Jobs with no date at all — a sibling block, not a row in Today, because
+        they are the opposite of today: a date-bounded week query can never
+        surface them. Shared with the Schedule page; `className=""` mounts it
+        flush with the cards around it instead of inset for a calendar edge.
+        No `onSchedule` here: picking the date is the job page's modal, and the
+        row already links there. Renders nothing when the list is empty, and
+        crew roles are served `[]` by the backend. */}
+    {!loading && !loadError && (
+      <NeedsDateStrip jobs={unscheduled} className="" />
+    )}
+    </>
   )
 }
