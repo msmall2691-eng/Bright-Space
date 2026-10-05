@@ -105,20 +105,31 @@ def upgrade() -> None:
         # No workspace exists yet (fresh database) — nothing can be orphaned.
         return
 
-    # Per-batch commits on a SEPARATE connection. A single long UPDATE would
-    # hold a write lock on a table the old container is still serving from
-    # (Railway runs this as preDeployCommand), and Alembic's own connection has
-    # already begun a transaction, so its isolation level cannot be changed —
-    # hence a second connection in AUTOCOMMIT rather than reusing `bind`.
+    # Batched, but on ALEMBIC'S OWN CONNECTION — deliberately not a second
+    # AUTOCOMMIT connection.
     #
-    # Running outside the migration's transaction is safe here precisely
-    # because every statement is `WHERE org_id IS NULL`: a crash mid-way leaves
-    # committed progress, and re-running simply finishes the job.
-    engine = bind.engine
+    # The first version of this migration opened `engine.connect()` so each
+    # batch could commit independently, per the usual advice about not holding
+    # a write lock during a long backfill. CI caught why that is wrong here:
+    #
+    #     ERROR: relation "clients" does not exist
+    #     STATEMENT: UPDATE "clients" SET org_id = $1 WHERE "id" IN (...)
+    #
+    # A fresh connection does not inherit the session's `search_path`, and
+    # tests/test_migrations_from_scratch.py builds the schema per session, so
+    # the new connection could not see the tables at all. In production it
+    # would have happened to work against `public` — which is worse, because
+    # the bug would only ever have shown up somewhere else.
+    #
+    # The lock argument does not apply at this size anyway: the one large table
+    # (schedule_events, ~11k rows) is excluded by design, and what remains is a
+    # few thousand rows across small tables. Batching is kept because it avoids
+    # one enormous statement and keeps each step cheap; idempotency does the
+    # work that per-batch commits were there for, since a failed run rolls back
+    # and a re-run simply redoes it.
 
     def _run(sql, params):
-        with engine.connect().execution_options(isolation_level="AUTOCOMMIT") as c:
-            return c.execute(sa.text(sql), params)
+        return bind.execute(sa.text(sql), params)
 
     for table in TENANT_TABLES:
         if table in EXCLUDED or table not in existing:
