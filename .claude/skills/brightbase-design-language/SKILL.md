@@ -59,8 +59,13 @@ chasing this rule; only the resting-state fill is the problem.
 - **Buttons**: ONE primary per view. Secondary =
   `bg-panel border border-hairline-2 text-ink-2 hover:bg-bg-2 rounded-md
   text-xs font-medium`. Tertiary = underlined text link.
-- **Record links**: `text-ink hover:text-indigo-600 no-underline`. Every
+- **Record links**: `text-ink hover:text-link no-underline`. Every
   number or name that identifies a client/property/job/invoice links to it.
+  Use `text-link`, never `text-indigo-600` (BB-A11Y-03): that step is the
+  BUTTON FILL, which carries white ink on top, and as text it was under AA for
+  every accent choice in Console and three of five in light. `--accent-link`
+  picks the right step per theme and follows the `body.accent-*` choice.
+  `__tests__/accentLinkContrast.test.js` fails a diff that reintroduces it.
 - **Mobile primary action**: compact FAB bottom-right, phones only
   (`md:hidden`), stacked ABOVE the assistant button (see
   `components/schedule/StickyActionBar.jsx` for z-order/offsets).
