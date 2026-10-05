@@ -270,7 +270,7 @@ export default function JobCard({ job, onMarkDone, onPhotos, onRespond, onDeclin
               (brightbase-marketplace). */}
           {!job.open && job.agreed_rate != null && (
             <div className="text-xs text-ink-2 mt-0.5">
-              Pays <span className="font-semibold text-ink">${Number(job.agreed_rate).toLocaleString(undefined, { maximumFractionDigits: 2 })}</span>
+              Pays <span className="font-semibold text-emerald-600 dark:text-emerald-400">${Number(job.agreed_rate).toLocaleString(undefined, { maximumFractionDigits: 2 })}</span>
             </div>
           )}
           {/* Open offers: a tap to the full (anonymised) details — size, hours,
@@ -523,7 +523,7 @@ export default function JobCard({ job, onMarkDone, onPhotos, onRespond, onDeclin
               <div className="min-w-0">
                 {claimable ? (
                   <p className="text-[13px] text-ink-2">
-                    Pays <span className="font-semibold text-ink">${Number(rate).toLocaleString(undefined, { maximumFractionDigits: 2 })}</span>
+                    Pays <span className="font-semibold text-emerald-600 dark:text-emerald-400">${Number(rate).toLocaleString(undefined, { maximumFractionDigits: 2 })}</span>
                   </p>
                 ) : (
                   /* No posted price: claiming isn't instant (there's no anchor),

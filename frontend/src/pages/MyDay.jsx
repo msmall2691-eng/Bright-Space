@@ -665,8 +665,16 @@ export default function MyDay({ previewUserId = null }) {
       <div className="sticky top-0 z-10 safe-top bg-panel">
         <header className="bg-panel border-b border-hairline px-4 py-3 flex items-center justify-between">
           <div>
-            <div className="text-sm font-bold text-ink">
-              {tab === 'jobs' ? 'Open jobs' : tab === 'schedule' ? 'My Schedule' : tab === 'me' ? 'Me' : tab === 'learn' ? 'Learn' : tab === 'chat' ? 'Chat' : 'My Day'}
+            <div className="flex items-center gap-1.5">
+              {(() => {
+                // The tab's own icon, in the cleaner's accent colour — the
+                // thread that carries the home's warmth across every tab.
+                const Icon = (TABS.find(t => t.key === tab) || TABS[0]).icon
+                return <Icon className="h-4 w-4 shrink-0 text-[color:var(--accent)]" aria-hidden="true" />
+              })()}
+              <div className="text-sm font-bold text-ink">
+                {tab === 'jobs' ? 'Open jobs' : tab === 'schedule' ? 'My Schedule' : tab === 'me' ? 'Me' : tab === 'learn' ? 'Learn' : tab === 'chat' ? 'Chat' : 'My Day'}
+              </div>
             </div>
             <div className="text-[12px] text-ink-3">{longDate}</div>
           </div>
@@ -828,7 +836,7 @@ export default function MyDay({ previewUserId = null }) {
 
             <section>
               <div className="flex items-center justify-between mb-2">
-                <SectionLabel>{boardIsToday ? 'Up for grabs' : 'Today'}</SectionLabel>
+                <SectionLabel icon={Sparkles}>{boardIsToday ? 'Up for grabs' : 'Today'}</SectionLabel>
               </div>
               {data.today.length === 0 ? (
                 /* NOTHING ON TODAY MEANS SHOW THEM WORK, NOT AN EMPTY BOX.
@@ -952,7 +960,7 @@ export default function MyDay({ previewUserId = null }) {
               </SectionLabel>
               {groupByDate(open).map(g => (
                 <section key={g.date}>
-                  <SectionLabel className="mb-2">{dayLabel(g.date)}</SectionLabel>
+                  <SectionLabel className="mb-2" icon={CalendarDays}>{dayLabel(g.date)}</SectionLabel>
                   <div className="space-y-3">
                     {g.jobs.map(j => (
                       <JobCard key={j.id} job={j} busy={actionBusy}

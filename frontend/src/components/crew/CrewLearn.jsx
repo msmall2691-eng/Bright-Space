@@ -184,7 +184,7 @@ export default function CrewLearn({ previewUserId = null }) {
       <CrewAsk />
       <MyNotes />
 
-      <SectionLabel className="pt-1">Company guides</SectionLabel>
+      <SectionLabel className="pt-1" icon={BookOpen}>Company guides</SectionLabel>
 
       {docs.length === 0 ? (
         <div className="text-center py-8">
