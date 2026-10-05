@@ -24,15 +24,31 @@
  */
 
 // Tone → value color. Accepts both the new short names and the legacy
-// Tailwind-ish tone strings PageHero callers still pass (text-emerald-300 …).
+// Tailwind-ish tone strings PageHero callers still pass (text-emerald-300 …),
+// which is why normalising HERE fixes every caller at once: a page passing
+// `tone: 'text-amber-300'` never reaches the DOM with that class.
+//
+// BB-A11Y-02. The light steps moved DOWN the ramp because the 600s were under
+// the 4.5:1 text floor against the grounds a page header actually sits on —
+// measured as the worst of panel / bg / bg-2 / bg-3, not just panel:
+//
+//   amber-600 2.63   emerald-600 3.11   red-600 3.99
+//
+// This is the stat VALUE on every page header that passes a tone — the number
+// itself, in bold, which is the one thing on that line you are meant to read.
+// The dark partners (the 300s) were already fine and are left alone.
+//
+// Steps differ per hue on purpose: equal ramp positions are not equal
+// luminance, so a uniform "use 700" leaves amber at 4.14. Same reasoning as
+// components/board/tokens.js, which carries the matching steps for dots.
 function toneClass(tone) {
   if (!tone) return 'text-ink'
   if (tone === 'good' || tone.includes('emerald') || tone.includes('green'))
-    return 'text-emerald-600 dark:text-emerald-300'
+    return 'text-emerald-800 dark:text-emerald-300'
   if (tone === 'warn' || tone.includes('amber') || tone.includes('yellow'))
-    return 'text-amber-600 dark:text-amber-300'
+    return 'text-amber-800 dark:text-amber-300'
   if (tone === 'bad' || tone.includes('red') || tone.includes('rose'))
-    return 'text-red-600 dark:text-red-300'
+    return 'text-red-700 dark:text-red-300'
   return 'text-ink'
 }
 
