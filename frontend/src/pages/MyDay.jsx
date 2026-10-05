@@ -37,7 +37,6 @@ import CrewEarnings from '../components/crew/CrewEarnings'
 import CrewSetupCard from '../components/crew/CrewSetupCard'
 import AccentPicker from '../components/crew/AccentPicker'
 import HeroBanner from '../components/crew/HeroBanner'
-import HeroScenePicker from '../components/crew/HeroScenePicker'
 import StickyNotes from '../components/board/StickyNotes'
 import { initAccent } from '../utils/accent'
 import { SOFT, CrewCard, SectionLabel, ErrorNote, SettingRow, Sheet, SheetActions } from '../components/crew/primitives'
@@ -1008,11 +1007,8 @@ export default function MyDay({ previewUserId = null }) {
                   phone. Sits with "Your info" because it's a personal setting,
                   not work. */}
               <SettingRow icon={Palette} label="Appearance"
-                summary="Your colour and Home header">
-                <div className="space-y-4">
-                  <AccentPicker />
-                  <HeroScenePicker />
-                </div>
+                summary="The colour the app wears">
+                <AccentPicker />
               </SettingRow>
             </CrewCard>
 
