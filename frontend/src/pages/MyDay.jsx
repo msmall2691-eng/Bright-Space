@@ -494,6 +494,21 @@ export default function MyDay({ previewUserId = null }) {
     }
   }, [])
 
+  // One-tap "On my way" from the job card (the common case lifted out of the
+  // text sheet). Toasts the outcome instead of opening the sheet; a 409 — most
+  // often "already sent for this job" — shows the server's own words.
+  const notifyOnMyWay = useCallback(async (job) => {
+    setActionBusy(true)
+    try {
+      await post(`/api/crew/jobs/${job.id}/notify-client`, { template: 'on_the_way' })
+      toast.success(`Texted ${job.client_name || 'the customer'} — on your way`)
+    } catch (e) {
+      toast.error(e.detail || e.message || "Couldn't text the customer")
+    } finally {
+      setActionBusy(false)
+    }
+  }, [])
+
   // Ask for an open job (marketplace pivot, migration 097). This files a
   // REQUEST — it doesn't assign anything, so there's no race to lose. A 409
   // means the job stopped being open (someone was picked, or the office
@@ -807,6 +822,7 @@ export default function MyDay({ previewUserId = null }) {
                       onRespond={(resp) => respond(j, resp)}
                       onDecline={() => requestDecline(j)}
                       onTextClient={() => { setTextNote(''); setTextSent(null); setActionError(null); setTextJob(j) }}
+                      onOnMyWay={() => notifyOnMyWay(j)}
                       onHouseInfo={() => setHouseJob(j)}
                       onHelpers={() => { setActionError(null); setHelperName(''); setHelperPhone(''); setHelperJob(j) }}
                       busy={actionBusy}
