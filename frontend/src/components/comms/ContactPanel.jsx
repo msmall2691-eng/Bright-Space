@@ -33,7 +33,7 @@ function AppointmentRow({ job, tone = 'upcoming', onRemind }) {
     <div className="flex items-center justify-between gap-2 bg-bg-2 rounded-lg px-2.5 py-1.5">
       <div className="flex items-center gap-2 min-w-0">
         <div className={`w-6 h-6 rounded-lg bg-panel flex items-center justify-center shrink-0 ${
-          tone === 'upcoming' ? 'text-indigo-500 dark:text-indigo-300' : 'text-ink-3'
+          tone === 'upcoming' ? 'text-link' : 'text-ink-3'
         }`}>
           {tone === 'upcoming' ? <Calendar className="w-3 h-3" /> : <CheckCircle2 className="w-3 h-3" />}
         </div>
@@ -51,7 +51,7 @@ function AppointmentRow({ job, tone = 'upcoming', onRemind }) {
             composer so the operator can glance, tweak, and send. */}
         {onRemind && (
           <button onClick={() => onRemind(job)} title="Text an appointment reminder"
-            className="w-6 h-6 rounded-lg flex items-center justify-center text-ink-3 hover:text-indigo-600 hover:bg-indigo-500/10 transition-colors">
+            className="w-6 h-6 rounded-lg flex items-center justify-center text-ink-3 hover:text-link hover:bg-indigo-500/10 transition-colors">
             <BellRing className="w-3.5 h-3.5" />
           </button>
         )}
@@ -144,19 +144,19 @@ export function ContactPanel({ detail, context, onRemind, onClose, onDraftQuote,
         <div className="mt-3 grid grid-cols-3 gap-1.5">
           <a href={phone ? `tel:${phone}` : undefined} aria-disabled={!phone}
             className={`flex flex-col items-center gap-1 py-2 rounded-xl text-[11px] font-semibold transition-colors ${
-              phone ? 'bg-panel border border-hairline text-ink-2 hover:bg-indigo-500/10 hover:text-indigo-700 dark:hover:text-indigo-300' : 'bg-bg-2 text-ink-3 opacity-50 pointer-events-none'
+              phone ? 'bg-panel border border-hairline text-ink-2 hover:bg-indigo-500/10 hover:text-link dark:hover:text-link' : 'bg-bg-2 text-ink-3 opacity-50 pointer-events-none'
             }`}>
             <Phone className="w-3.5 h-3.5" /> Call
           </a>
           <a href={phone ? `sms:${phone}` : undefined} aria-disabled={!phone}
             className={`flex flex-col items-center gap-1 py-2 rounded-xl text-[11px] font-semibold transition-colors ${
-              phone ? 'bg-panel border border-hairline text-ink-2 hover:bg-indigo-500/10 hover:text-indigo-700 dark:hover:text-indigo-300' : 'bg-bg-2 text-ink-3 opacity-50 pointer-events-none'
+              phone ? 'bg-panel border border-hairline text-ink-2 hover:bg-indigo-500/10 hover:text-link dark:hover:text-link' : 'bg-bg-2 text-ink-3 opacity-50 pointer-events-none'
             }`}>
             <MessageSquare className="w-3.5 h-3.5" /> Text
           </a>
           <a href={client?.email ? `mailto:${client.email}` : undefined} aria-disabled={!client?.email}
             className={`flex flex-col items-center gap-1 py-2 rounded-xl text-[11px] font-semibold transition-colors ${
-              client?.email ? 'bg-panel border border-hairline text-ink-2 hover:bg-indigo-500/10 hover:text-indigo-700 dark:hover:text-indigo-300' : 'bg-bg-2 text-ink-3 opacity-50 pointer-events-none'
+              client?.email ? 'bg-panel border border-hairline text-ink-2 hover:bg-indigo-500/10 hover:text-link dark:hover:text-link' : 'bg-bg-2 text-ink-3 opacity-50 pointer-events-none'
             }`}>
             <Mail className="w-3.5 h-3.5" /> Email
           </a>
@@ -165,9 +165,9 @@ export function ContactPanel({ detail, context, onRemind, onClose, onDraftQuote,
         {/* Address with map link */}
         {address && (
           <a href={mapHref} target="_blank" rel="noreferrer"
-            className="mt-2 flex items-center gap-2 text-[12px] text-ink-2 hover:text-indigo-600 transition-colors group">
+            className="mt-2 flex items-center gap-2 text-[12px] text-ink-2 hover:text-link transition-colors group">
             <div className="w-6 h-6 rounded-lg bg-panel group-hover:bg-indigo-500/10 flex items-center justify-center transition-colors shrink-0">
-              <MapPin className="w-3 h-3 text-ink-3 group-hover:text-indigo-600" />
+              <MapPin className="w-3 h-3 text-ink-3 group-hover:text-link" />
             </div>
             <span className="truncate">{address}</span>
           </a>
@@ -296,7 +296,7 @@ export function ContactPanel({ detail, context, onRemind, onClose, onDraftQuote,
                   const iconConfig = {
                     note:     { icon: StickyNote, bg: 'bg-bg-2', text: 'text-amber-600 dark:text-amber-300' },
                     inbound:  { icon: ArrowLeft,  bg: 'bg-bg-2', text: 'text-ink-3' },
-                    outbound: { icon: Send,       bg: 'bg-bg-2', text: 'text-indigo-500 dark:text-indigo-300' },
+                    outbound: { icon: Send,       bg: 'bg-bg-2', text: 'text-link' },
                   }
                   const cfg = iconConfig[item.type] || iconConfig.inbound
                   const Icon = cfg.icon

@@ -39,7 +39,7 @@ export default function NeedsDateStrip({ jobs, onSchedule }) {
         <ul className="divide-y divide-hairline">
           {shown.map(j => (
             <li key={j.id} className="flex flex-wrap items-center gap-x-3 gap-y-1 px-3 py-1.5 min-h-[40px]">
-              <Link to={`/jobs/${j.id}`} className="font-medium text-ink hover:text-indigo-600 no-underline truncate">
+              <Link to={`/jobs/${j.id}`} className="font-medium text-ink hover:text-link no-underline truncate">
                 {j.client_name || j.title || `Job #${j.id}`}
               </Link>
               <span className="flex-1 min-w-0 truncate text-ink-3">

@@ -65,7 +65,7 @@ function Box({ dot = 'bg-ink-3/40', title, count, to, linkLabel, shortLabel, chi
         </h2>
         {to && (
           <Link to={to}
-            className="shrink-0 text-[12px] text-ink-3 no-underline hover:text-indigo-600">
+            className="shrink-0 text-[12px] text-ink-3 no-underline hover:text-link">
             {/* Two lengths. On a phone the full sentence ran off the screen
                 edge and clipped mid-word; the short form says the same thing
                 in the space there is. */}
@@ -106,7 +106,7 @@ function Row({ dot = 'bg-ink-3/40', to, children, right }) {
     <li className="border-b border-hairline/60 text-[13px] text-ink-2 last:border-0">
       {to ? (
         <Link to={to}
-          className="flex px-3.5 py-2.5 text-ink-2 no-underline transition-colors hover:bg-bg-2 hover:text-indigo-600">
+          className="flex px-3.5 py-2.5 text-ink-2 no-underline transition-colors hover:bg-bg-2 hover:text-link">
           {body}
         </Link>
       ) : (
@@ -402,7 +402,7 @@ function ApplyLink() {
             address and no way to read the rest — and this is the one string on
             the page somebody might type out by hand. */}
         <a href="/apply" target="_blank" rel="noreferrer"
-          className="min-w-0 break-all text-[13px] text-ink no-underline hover:text-indigo-600">
+          className="min-w-0 break-all text-[13px] text-ink no-underline hover:text-link">
           {url}
         </a>
         <button type="button" onClick={copy}

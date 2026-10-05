@@ -100,7 +100,7 @@ export default function VisitCard({ v, jobs, properties, clients, onSelect, empN
                 {job?.property_id ? (
                   <span
                     onClick={e => goTo(e, `/properties/${job.property_id}`)}
-                    className="truncate hover:text-indigo-600 hover:underline cursor-pointer py-1 -my-1"
+                    className="truncate hover:text-link hover:underline cursor-pointer py-1 -my-1"
                     title="Open this property's record"
                     role="link"
                     tabIndex={-1}
@@ -115,7 +115,7 @@ export default function VisitCard({ v, jobs, properties, clients, onSelect, empN
                     Padded hit area (~32px) so a thumb can hit it on a phone. */}
                 <span
                   onClick={e => { e.stopPropagation(); window.open(mapsSearchUrl(property.address), '_blank', 'noopener,noreferrer') }}
-                  className="no-print shrink-0 text-ink-3 hover:text-indigo-600 cursor-pointer p-2 -my-2 -mr-1"
+                  className="no-print shrink-0 text-ink-3 hover:text-link cursor-pointer p-2 -my-2 -mr-1"
                   title="Open in Google Maps"
                   role="button"
                   tabIndex={-1}
@@ -132,7 +132,7 @@ export default function VisitCard({ v, jobs, properties, clients, onSelect, empN
             client?.id != null ? (
               <span
                 onClick={e => goTo(e, `/clients/${client.id}`)}
-                className="truncate hover:text-indigo-600 hover:underline cursor-pointer py-1 -my-1"
+                className="truncate hover:text-link hover:underline cursor-pointer py-1 -my-1"
                 title={`Open ${client.name}'s client record`}
                 role="link"
                 tabIndex={-1}

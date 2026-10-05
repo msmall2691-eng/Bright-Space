@@ -49,10 +49,10 @@ export default function NovaChat({ navigate }) {
   return (
     <section className="flex flex-col overflow-hidden rounded-2xl border border-hairline bg-panel" data-testid="home-nova-chat">
       <header className="flex items-center gap-2 border-b border-hairline px-3.5 py-2.5">
-        <Sparkles className="h-3.5 w-3.5 text-indigo-600 dark:text-indigo-400" aria-hidden="true" />
+        <Sparkles className="h-3.5 w-3.5 text-link" aria-hidden="true" />
         <h2 className="text-[11px] font-medium text-ink-3">Ask Nova</h2>
         <button onClick={() => navigate('/workspace')}
-          className="ml-auto inline-flex items-center gap-0.5 text-[11px] font-semibold text-indigo-600 transition-all hover:gap-1 dark:text-indigo-400">
+          className="ml-auto inline-flex items-center gap-0.5 text-[11px] font-semibold text-link transition-all hover:gap-1">
           Full assistant<ArrowRight className="h-3 w-3" />
         </button>
       </header>

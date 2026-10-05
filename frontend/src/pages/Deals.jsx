@@ -223,7 +223,7 @@ export default function Deals() {
           pods={[
             { label: 'Inbox', value: counts.inbox || 0, tone: 'text-ink-2' },
             { label: 'Qualified', value: counts.qualified || 0, tone: 'text-blue-300' },
-            { label: 'Quoted', value: counts.quoted || 0, tone: 'text-indigo-200' },
+            { label: 'Quoted', value: counts.quoted || 0, tone: 'text-link' },
             { label: 'Won', value: counts.won || 0, tone: 'text-emerald-300' },
           ]}
           actions={
@@ -332,7 +332,7 @@ export default function Deals() {
                     return (
                       <tr key={d.id} className={`hover:bg-bg-2/50 transition-colors ${busyId === d.id ? 'opacity-60' : ''}`}>
                         <td className="bb-td max-w-[280px]">
-                          <Link to={to} className="font-medium text-ink hover:text-indigo-600 truncate block">{d.title || 'Untitled'}</Link>
+                          <Link to={to} className="font-medium text-ink hover:text-link truncate block">{d.title || 'Untitled'}</Link>
                           {d.client_name && <span className="text-[11px] text-ink-3 truncate block">{d.client_name}</span>}
                         </td>
                         <td className="bb-td"><StageDot stage={d.stage} /></td>
@@ -347,7 +347,7 @@ export default function Deals() {
                               <Link to={`/quotes/${d.quote_id}`} className="group/rl inline-block no-underline">
                                 <StatusBadge
                                   status={QUOTE_STATUS_VARIANT[d.quote_status] || 'neutral'}
-                                  className="transition-colors group-hover/rl:border-indigo-300 group-hover/rl:text-indigo-600"
+                                  className="transition-colors group-hover/rl:border-indigo-300 group-hover/rl:text-link"
                                 >
                                   {String(d.quote_status).replace(/_/g, ' ')}
                                 </StatusBadge>
@@ -363,7 +363,7 @@ export default function Deals() {
                           {d.job_state ? (
                             d.job_id ? (
                               <Link to={`/jobs/${d.job_id}`}
-                                className={`text-[12px] font-medium capitalize no-underline hover:text-indigo-600 ${JOB_STATE_TONE[d.job_state] || 'text-ink-2'}`}>
+                                className={`text-[12px] font-medium capitalize no-underline hover:text-link ${JOB_STATE_TONE[d.job_state] || 'text-ink-2'}`}>
                                 {d.job_state}
                               </Link>
                             ) : (
@@ -392,7 +392,7 @@ export default function Deals() {
                                 </select>
                                 {d.stage !== 'lost' && (
                                   <button onClick={() => setLaunching(d)} title="Launch this deal"
-                                    className="inline-flex items-center gap-1 text-[12px] font-semibold px-2 py-1 rounded-md border border-indigo-200 dark:border-indigo-500/30 text-indigo-600 dark:text-indigo-300 hover:bg-indigo-50 dark:hover:bg-indigo-500/10">
+                                    className="inline-flex items-center gap-1 text-[12px] font-semibold px-2 py-1 rounded-md border border-indigo-200 dark:border-indigo-500/30 text-link hover:bg-indigo-50 dark:hover:bg-indigo-500/10">
                                     <Rocket className="w-3 h-3" /> Launch
                                   </button>
                                 )}
@@ -460,12 +460,12 @@ export default function Deals() {
                           <GripVertical className="hidden sm:block w-3.5 h-3.5 text-ink-3 mt-0.5 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity" />
                           <div className="min-w-0 flex-1">
                             <Link to={`/opportunities/${d.opportunity_id}`}
-                              className="text-[13px] font-medium text-ink hover:text-indigo-600 truncate block">
+                              className="text-[13px] font-medium text-ink hover:text-link truncate block">
                               {d.title || 'Untitled'}
                             </Link>
                             {d.client_name && (
                               <Link to={d.client_id ? `/clients/${d.client_id}` : '#'}
-                                className="text-[11px] text-ink-3 hover:text-indigo-600 truncate block">
+                                className="text-[11px] text-ink-3 hover:text-link truncate block">
                                 {d.client_name}
                               </Link>
                             )}

@@ -115,7 +115,7 @@ export default function DataHealthCard() {
                             <span className="text-[11px] text-ink-3">Open:</span>
                             {ids.map(id => (
                               <Link key={id} to={route(id)}
-                                className="text-[11px] text-ink hover:text-indigo-600 no-underline tabular-nums">
+                                className="text-[11px] text-ink hover:text-link no-underline tabular-nums">
                                 #{id}
                               </Link>
                             ))}

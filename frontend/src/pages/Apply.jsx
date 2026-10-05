@@ -260,7 +260,7 @@ export default function Apply() {
           design-system question and is left alone.) */}
       <p className="mt-5 text-[13px] text-ink-2">
         Already cleaning with us?{' '}
-        <a href="/login" className="text-ink underline underline-offset-2 hover:text-indigo-600">
+        <a href="/login" className="text-ink underline underline-offset-2 hover:text-link">
           Sign in
         </a>{' '}
         — you don’t need to do this again.

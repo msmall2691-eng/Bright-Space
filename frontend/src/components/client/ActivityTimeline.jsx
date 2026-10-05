@@ -88,14 +88,14 @@ export default function ActivityTimeline({
                 double as a tinted chip (owner's veto of tinted icon chips). */}
             <div className="w-8 h-8 rounded-full flex items-center justify-center shrink-0 bg-bg-2">
               {item.type === 'job'          && <Calendar className="w-3.5 h-3.5 text-blue-500" />}
-              {item.type === 'gcal_event'   && <Calendar className="w-3.5 h-3.5 text-indigo-500" />}
+              {item.type === 'gcal_event'   && <Calendar className="w-3.5 h-3.5 text-link" />}
               {item.type === 'quote'        && <FileText className="w-3.5 h-3.5 text-blue-400" />}
               {item.type === 'invoice'      && <Receipt className="w-3.5 h-3.5 text-green-400" />}
               {item.type === 'message'      && <MessageSquare className="w-3.5 h-3.5 text-purple-400" />}
               {item.type === 'opportunity'  && <TrendingUp className="w-3.5 h-3.5 text-amber-500" />}
               {item.type === 'email'        && <Mail className="w-3.5 h-3.5 text-cyan-500" />}
               {item.type === 'activity_log' && (
-                item.data.extra_data?.source === 'gcal' ? <Calendar className="w-3.5 h-3.5 text-indigo-500" />
+                item.data.extra_data?.source === 'gcal' ? <Calendar className="w-3.5 h-3.5 text-link" />
                 : item.data.extra_data?.single_occurrence ? <X className="w-3.5 h-3.5 text-rose-500" />
                 : item.data.activity_type?.startsWith('email_') ? <Mail className="w-3.5 h-3.5 text-cyan-500" />
                 : <Zap className="w-3.5 h-3.5 text-ink-3" />

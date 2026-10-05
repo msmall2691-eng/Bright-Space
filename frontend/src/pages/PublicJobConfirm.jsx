@@ -252,7 +252,7 @@ export default function PublicJobConfirm() {
                 {rescheduled ? (
                   rescheduled.pending ? (
                     <div className="flex items-start gap-2 rounded-xl bg-panel border border-hairline px-4 py-3">
-                      <Clock className="w-5 h-5 text-indigo-600 shrink-0 mt-0.5" />
+                      <Clock className="w-5 h-5 text-link shrink-0 mt-0.5" />
                       <p className="text-sm text-ink-2 font-medium">Request received — that time is popular, so we'll confirm it and get right back to you.</p>
                     </div>
                   ) : (
@@ -269,7 +269,7 @@ export default function PublicJobConfirm() {
                   </div>
                 ) : isRequested ? (
                   <div className="flex items-center gap-2 rounded-xl bg-panel border border-hairline px-4 py-3">
-                    <CheckCircle className="w-5 h-5 text-indigo-600 shrink-0" />
+                    <CheckCircle className="w-5 h-5 text-link shrink-0" />
                     <p className="text-sm text-ink-2 font-medium">Reschedule request sent — we'll follow up shortly.</p>
                   </div>
                 ) : showReschedule ? (

@@ -288,7 +288,7 @@ export default function Crew() {
                         {!row.activated && (row.status || '') !== 'disabled' && (
                           <button onClick={() => resend(row.id)} disabled={busyId === row.id || !isAdmin}
                             title={isAdmin ? undefined : 'Admin only'}
-                            className="text-xs font-medium text-indigo-600 hover:text-indigo-700 disabled:opacity-60 disabled:cursor-not-allowed inline-flex items-center gap-1">
+                            className="text-xs font-medium text-link hover:text-link disabled:opacity-60 disabled:cursor-not-allowed inline-flex items-center gap-1">
                             <Mail className="w-3.5 h-3.5" /> Resend
                           </button>
                         )}
@@ -400,7 +400,7 @@ export default function Crew() {
         <form onSubmit={addCleaner} className="border border-hairline bg-panel rounded-xl p-4">
           <fieldset disabled={!isAdmin} className="disabled:opacity-60">
           <div className="flex items-center gap-2 text-ink font-semibold text-sm mb-3">
-            <UserPlus className="w-4 h-4 text-indigo-500" /> Add a cleaner
+            <UserPlus className="w-4 h-4 text-link" /> Add a cleaner
             {!isAdmin && <span className="text-[11px] font-normal text-ink-3">— admin only</span>}
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">

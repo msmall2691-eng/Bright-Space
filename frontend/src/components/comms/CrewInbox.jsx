@@ -73,7 +73,7 @@ export function CrewInbox({ viewToggle }) {
               <div className="text-sm font-semibold text-ink-3 mb-1">No cleaners yet</div>
               <p className="text-[12px] text-ink-3 leading-relaxed">
                 Add your crew on the{' '}
-                <Link to="/crew" className="text-indigo-600 hover:text-indigo-700 font-semibold">Crew page</Link>
+                <Link to="/crew" className="text-link hover:text-link font-semibold">Crew page</Link>
                 {' '}— each one gets a chat thread here.
               </p>
             </div>
@@ -226,7 +226,7 @@ export function BroadcastModal({ threads, onClose, onSent }) {
             <div className="flex items-center justify-between mb-1.5">
               <span className="text-[11px] font-medium text-ink-3">To ({picked.size} of {eligible.length})</span>
               <button onClick={() => setPicked(picked.size === eligible.length ? new Set() : new Set(eligible.map(t => t.user_id)))}
-                className="text-[11px] font-medium text-indigo-600 hover:text-indigo-700">
+                className="text-[11px] font-medium text-link hover:text-link">
                 {picked.size === eligible.length ? 'Clear all' : 'Select all'}
               </button>
             </div>

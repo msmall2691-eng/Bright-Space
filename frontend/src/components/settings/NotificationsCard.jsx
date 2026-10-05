@@ -169,7 +169,7 @@ export default function NotificationsCard({ toast }) {
         <div className="flex items-start justify-between gap-3">
           <span className="flex items-start gap-3">
             <span className="mt-0.5 w-9 h-9 rounded-lg bg-bg-2 flex items-center justify-center shrink-0">
-              {on ? <Bell className="w-4 h-4 text-indigo-600" /> : <BellOff className="w-4 h-4 text-ink-3" />}
+              {on ? <Bell className="w-4 h-4 text-link" /> : <BellOff className="w-4 h-4 text-ink-3" />}
             </span>
             <span>
               <span className="block text-sm font-semibold text-ink">Push notifications</span>
@@ -226,7 +226,7 @@ export default function NotificationsCard({ toast }) {
         ) : on ? (
           <div className="mt-3 flex items-center gap-3">
             <button type="button" onClick={test} disabled={busy}
-              className="text-xs font-semibold text-indigo-600 hover:text-indigo-700 disabled:opacity-40">
+              className="text-xs font-semibold text-link hover:text-link disabled:opacity-40">
               Send a test notification
             </button>
           </div>

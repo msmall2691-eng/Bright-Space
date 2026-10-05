@@ -49,12 +49,12 @@ export default function QuoteRow({
         <div className="flex-1 min-w-0 cursor-pointer" onClick={() => onOpenQuote(q)}>
           <div className="flex flex-wrap items-center gap-2">
             <button onClick={e => { e.stopPropagation(); onNavigate(`/clients/${q.client_id}`) }}
-              className="font-medium text-ink hover:text-indigo-600 transition-colors text-left truncate max-w-full"
+              className="font-medium text-ink hover:text-link transition-colors text-left truncate max-w-full"
               title="Open client">
               {clientName(q.client_id)}
             </button>
             <button onClick={e => { e.stopPropagation(); onNavigate(`/quotes/${q.id}`) }}
-              className="text-xs text-ink-3 hover:text-indigo-600 transition-colors tabular-nums"
+              className="text-xs text-ink-3 hover:text-link transition-colors tabular-nums"
               title="Open quote">
               {q.quote_number}
             </button>
@@ -125,7 +125,7 @@ export default function QuoteRow({
               side): no date yet → still needs scheduling; a date → Scheduled. */}
           {canEdit && needsSchedule && (
             <button onClick={() => onSchedule(q)}
-              className="flex items-center gap-1 text-xs px-2.5 py-1.5 bg-panel border border-hairline-2 text-indigo-700 dark:text-indigo-300 hover:bg-bg-2 font-medium rounded-lg transition-colors">
+              className="flex items-center gap-1 text-xs px-2.5 py-1.5 bg-panel border border-hairline-2 text-link hover:bg-bg-2 font-medium rounded-lg transition-colors">
               <Calendar className="w-3 h-3" />
               Set up schedule
             </button>

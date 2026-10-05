@@ -415,7 +415,7 @@ const RequestCard = ({ intake, onViewDetails, onCreateQuote, onConvertToClient, 
         || (Array.isArray(intake.custom_fields.photos) && intake.custom_fields.photos.length)
       ) && (
         <button onClick={() => onViewDetails(intake)}
-          className="mt-1 inline-flex items-center gap-1 text-[11px] font-medium text-ink-3 hover:text-indigo-600 transition-colors">
+          className="mt-1 inline-flex items-center gap-1 text-[11px] font-medium text-ink-3 hover:text-link transition-colors">
           Booking details
           <ChevronRight className="w-3 h-3" />
         </button>
@@ -661,7 +661,7 @@ export default function Requests() {
             { label: 'All', value: requests.length },
             { label: 'New', value: requests.filter(r => (r.display_status || r.status) === 'new').length, tone: 'text-amber-300' },
             { label: 'Reviewed', value: requests.filter(r => (r.display_status || r.status) === 'reviewed').length },
-            { label: 'Quoted', value: requests.filter(r => (r.display_status || r.status) === 'quoted').length, tone: 'text-indigo-200' },
+            { label: 'Quoted', value: requests.filter(r => (r.display_status || r.status) === 'quoted').length, tone: 'text-link' },
           ]}
           actions={
             <button onClick={() => setShowNewRequestModal(true)}
@@ -852,7 +852,7 @@ export default function Requests() {
                   onClick={() => setDrawerTab(tab.key)}
                   className={`px-3 py-2 text-sm font-medium border-b-2 -mb-px transition-colors ${
                     drawerTab === tab.key
-                      ? 'border-indigo-600 text-indigo-600'
+                      ? 'border-indigo-600 text-link'
                       : 'border-transparent text-ink-3 hover:text-ink-2'
                   }`}
                 >
@@ -932,7 +932,7 @@ export default function Requests() {
                 <label className="text-xs font-semibold text-ink-2 uppercase">Email</label>
                 <p className="text-sm text-ink">
                   {selectedRequest.email ? (
-                    <a href={`mailto:${selectedRequest.email}`} className="text-indigo-600 hover:underline">
+                    <a href={`mailto:${selectedRequest.email}`} className="text-link hover:underline">
                       {selectedRequest.email}
                     </a>
                   ) : '—'}
@@ -942,7 +942,7 @@ export default function Requests() {
                 <label className="text-xs font-semibold text-ink-2 uppercase">Phone</label>
                 <p className="text-sm text-ink">
                   {selectedRequest.phone ? (
-                    <a href={`tel:${selectedRequest.phone}`} className="text-indigo-600 hover:underline">
+                    <a href={`tel:${selectedRequest.phone}`} className="text-link hover:underline">
                       {selectedRequest.phone}
                     </a>
                   ) : '—'}
@@ -1081,7 +1081,7 @@ export default function Requests() {
                     )}
                     {selectedRequest.custom_fields.listing_url && (
                       <div><span className="text-ink-3">Listing:</span>{' '}
-                        <a href={selectedRequest.custom_fields.listing_url} target="_blank" rel="noopener noreferrer" className="text-indigo-600 hover:underline break-all">
+                        <a href={selectedRequest.custom_fields.listing_url} target="_blank" rel="noopener noreferrer" className="text-link hover:underline break-all">
                           {selectedRequest.custom_fields.listing_url}
                         </a>
                       </div>

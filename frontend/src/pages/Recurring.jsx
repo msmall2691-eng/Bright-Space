@@ -579,7 +579,7 @@ function SeriesRow({ s, clientName, onOpen, isDuplicate }) {
             <p className="text-[13px] text-ink-2 truncate">
               {s.client_id ? (
                 <Link to={`/clients/${s.client_id}`} onClick={e => e.stopPropagation()}
-                  className="no-underline hover:text-indigo-600 hover:underline">
+                  className="no-underline hover:text-link hover:underline">
                   {clientName}
                 </Link>
               ) : clientName}
@@ -767,7 +767,7 @@ function DuplicateReviewPanel({ schedules, clientsById, reviewedKeys, onToggleRe
                         <div className="text-[12px] text-ink-2 truncate">
                           {s.client_id ? (
                             <Link to={`/clients/${s.client_id}`}
-                              className="no-underline hover:text-indigo-600 hover:underline">
+                              className="no-underline hover:text-link hover:underline">
                               {clientsById[s.client_id]?.name || `Client #${s.client_id}`}
                             </Link>
                           ) : 'No client'}

@@ -227,15 +227,15 @@ export default function Login({ onLoginSuccess }) {
                     btn.textContent = 'Contact your administrator to reset'
                     btn.disabled = true
                     btn.classList.add('text-ink-3')
-                    btn.classList.remove('text-indigo-600', 'hover:text-indigo-700')
+                    btn.classList.remove('text-link', 'hover:text-link')
                     setTimeout(() => {
                       btn.textContent = 'Forgot password?'
                       btn.disabled = false
                       btn.classList.remove('text-ink-3')
-                      btn.classList.add('text-indigo-600', 'hover:text-indigo-700')
+                      btn.classList.add('text-link', 'hover:text-link')
                     }, 5000)
                   }}
-                  className="text-xs text-indigo-600 hover:text-indigo-700 font-semibold"
+                  className="text-xs text-link hover:text-link font-semibold"
                 >
                   Forgot password?
                 </button>
@@ -317,7 +317,7 @@ export default function Login({ onLoginSuccess }) {
                     setMode('register')
                     setError('')
                   }}
-                  className="text-indigo-600 font-semibold hover:text-indigo-700"
+                  className="text-link font-semibold hover:text-link"
                 >
                   Create one
                 </button>
@@ -330,7 +330,7 @@ export default function Login({ onLoginSuccess }) {
                     setMode('login')
                     setError('')
                   }}
-                  className="text-indigo-600 font-semibold hover:text-indigo-700"
+                  className="text-link font-semibold hover:text-link"
                 >
                   Sign in
                 </button>

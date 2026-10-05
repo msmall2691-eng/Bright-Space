@@ -213,7 +213,7 @@ export default function ClientCalendarTab({ jobs, upcomingJobs, pastJobs, naviga
               events appear here automatically, linked by their email.
             </p>
             <button onClick={() => navigate('/settings?section=integrations')}
-              className="mt-3 text-xs font-semibold text-indigo-600 hover:text-indigo-700">Go to Settings →</button>
+              className="mt-3 text-xs font-semibold text-link hover:text-link">Go to Settings →</button>
           </div>
         ) : (gcalEvents.events || []).length === 0 ? (
           <div className="text-center py-8 bg-panel border border-hairline rounded-xl px-4">
@@ -225,7 +225,7 @@ export default function ClientCalendarTab({ jobs, upcomingJobs, pastJobs, naviga
               <p className="text-[11px] text-ink-3 mt-1">Add an email to this client so their events link automatically.</p>
             )}
             <button onClick={onAddAppointment}
-              className="mt-3 text-xs font-semibold text-indigo-600 hover:text-indigo-700">+ Add appointment</button>
+              className="mt-3 text-xs font-semibold text-link hover:text-link">+ Add appointment</button>
           </div>
         ) : (
           <div className="space-y-2">
@@ -381,7 +381,7 @@ export default function ClientCalendarTab({ jobs, upcomingJobs, pastJobs, naviga
               {selectedDate ? 'No cleanings on this day' : 'No upcoming cleanings'}
             </p>
             <button onClick={() => navigate(`/scheduling?client_id=${clientId}`)}
-              className="mt-3 text-xs text-indigo-600 hover:text-indigo-600 font-medium">
+              className="mt-3 text-xs text-link hover:text-link font-medium">
               + Schedule a cleaning
             </button>
           </div>
@@ -421,7 +421,7 @@ export default function ClientCalendarTab({ jobs, upcomingJobs, pastJobs, naviga
                       <span>{JOB_TYPE_LABEL[j.job_type] || j.job_type}</span>
                     </div>
                     {j.property_name && (
-                      <div className="flex items-center gap-1 mt-1 text-[11px] text-indigo-500 truncate">
+                      <div className="flex items-center gap-1 mt-1 text-[11px] text-link truncate">
                         <Home className="w-3 h-3 shrink-0" />{j.property_name}
                       </div>
                     )}

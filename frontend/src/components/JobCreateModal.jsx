@@ -766,7 +766,7 @@ export default function JobCreateModal({
                 <label className="block text-xs text-ink-2 font-medium">Client *</label>
                 <button type="button"
                   onClick={() => { addingClient ? setAddingClient(false) : beginCreateClient(clientQuery.trim()); setClientErr(''); setClientDupes([]) }}
-                  className="text-xs text-indigo-600 hover:text-indigo-700 font-medium">
+                  className="text-xs text-link hover:text-link font-medium">
                   {addingClient ? 'Cancel' : '+ New client'}
                 </button>
               </div>
@@ -775,12 +775,12 @@ export default function JobCreateModal({
                   // A client is chosen — show it as a chip with a "Change" affordance.
                   <div className="flex items-center justify-between gap-2 rounded-lg border border-hairline bg-bg-2 px-3 py-2">
                     <span className="flex items-center gap-2 min-w-0 text-sm text-ink">
-                      <Check className="w-4 h-4 text-indigo-600 shrink-0" />
+                      <Check className="w-4 h-4 text-link shrink-0" />
                       <span className="truncate font-medium">{selectedClient.name}</span>
                       {selectedClient.email && <span className="truncate text-xs text-ink-3">· {selectedClient.email}</span>}
                     </span>
                     <button type="button" onClick={clearClient}
-                      className="text-xs text-indigo-600 hover:text-indigo-700 font-medium shrink-0">Change</button>
+                      className="text-xs text-link hover:text-link font-medium shrink-0">Change</button>
                   </div>
                 ) : (
                   <div>
@@ -804,7 +804,7 @@ export default function JobCreateModal({
                         <div className="flex items-center justify-between gap-2 px-3 py-3 text-xs">
                           <span className="text-red-600 truncate">{clientLoadErr}</span>
                           <button type="button" onClick={() => setClientRetry(n => n + 1)}
-                            className="text-indigo-600 hover:text-indigo-700 font-medium shrink-0">Retry</button>
+                            className="text-link hover:text-link font-medium shrink-0">Retry</button>
                         </div>
                       ) : clientResults.length === 0 ? (
                         clientQuery.trim() ? (
@@ -813,9 +813,9 @@ export default function JobCreateModal({
                           <button type="button" onClick={() => beginCreateClient(clientQuery.trim())}
                             data-testid="job-create-client-create-inline"
                             className="w-full flex items-center gap-2 px-3 py-3 text-sm text-left hover:bg-bg transition-colors">
-                            <span className="w-6 h-6 rounded-full bg-indigo-500/10 text-indigo-600 flex items-center justify-center shrink-0 text-base leading-none">+</span>
+                            <span className="w-6 h-6 rounded-full bg-indigo-500/10 text-link flex items-center justify-center shrink-0 text-base leading-none">+</span>
                             <span className="min-w-0">
-                              <span className="font-semibold text-indigo-700 dark:text-indigo-300">Create “{clientQuery.trim()}”</span>
+                              <span className="font-semibold text-link">Create “{clientQuery.trim()}”</span>
                               <span className="block text-[11px] text-ink-3">Add as a new client and select</span>
                             </span>
                           </button>
@@ -909,7 +909,7 @@ export default function JobCreateModal({
               <label className="block text-xs text-ink-2 font-medium">Property</label>
               <button type="button"
                 onClick={() => { setAddingProp(a => !a); setPropErr('') }}
-                className="text-xs text-indigo-600 hover:text-indigo-700 font-medium">
+                className="text-xs text-link hover:text-link font-medium">
                 {addingProp ? 'Cancel' : '+ New property'}
               </button>
             </div>
@@ -940,7 +940,7 @@ export default function JobCreateModal({
             {!addingProp && !loadingProps && properties.length === 0 && clientAddress?.address && (
               <button type="button" onClick={createPropertyFromClientAddress} disabled={creatingProp}
                 data-testid="job-create-use-client-address"
-                className="mt-1.5 text-xs text-indigo-600 hover:text-indigo-700 font-medium disabled:opacity-50">
+                className="mt-1.5 text-xs text-link hover:text-link font-medium disabled:opacity-50">
                 {creatingProp ? 'Creating…' : `Use their address — create “${clientAddress.address}”`}
               </button>
             )}
@@ -1118,7 +1118,7 @@ export default function JobCreateModal({
             </div>
           ) : (
             <button type="button" onClick={() => setShowNotes(true)}
-              className="text-xs text-indigo-600 hover:text-indigo-700 font-medium">+ Add notes</button>
+              className="text-xs text-link hover:text-link font-medium">+ Add notes</button>
           )}
 
           {/* More options — inline expansion, NOT a mode switch. Reveals the

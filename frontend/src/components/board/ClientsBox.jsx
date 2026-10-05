@@ -45,7 +45,7 @@ export default function ClientsBox({ items, cleared, onAction, actioningKey, con
             <PenLine className="h-3 w-3" /> Text a client
           </button>
           <button onClick={() => navigate('/comms')}
-            className="inline-flex items-center gap-0.5 text-[11px] font-semibold text-indigo-600 transition-all hover:gap-1 dark:text-indigo-400">
+            className="inline-flex items-center gap-0.5 text-[11px] font-semibold text-link transition-all hover:gap-1">
             Inbox<ArrowRight className="h-3 w-3" />
           </button>
         </div>

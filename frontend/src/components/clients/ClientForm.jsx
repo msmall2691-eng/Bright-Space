@@ -113,7 +113,7 @@ export function ClientForm({
               </div>
             ))}
             <button type="button" onClick={addExtraPhone}
-              className="text-[11px] font-medium text-indigo-600 hover:text-indigo-700">
+              className="text-[11px] font-medium text-link hover:text-link">
               + Add another number
             </button>
           </div>
@@ -232,7 +232,7 @@ export function ClientForm({
         {/* ── More details ───────────────────────────────────────── */}
         {!expanded ? (
           <button type="button" onClick={() => setExpanded(true)}
-            className="text-[12px] font-medium text-indigo-600 hover:text-indigo-700">
+            className="text-[12px] font-medium text-link hover:text-link">
             + More details (email, source, billing, status, notes)
           </button>
         ) : (
@@ -248,7 +248,7 @@ export function ClientForm({
             <div>
               {!showBilling ? (
                 <button type="button" onClick={() => setShowBilling(true)}
-                  className="text-[11px] font-medium text-indigo-600 hover:text-indigo-700">
+                  className="text-[11px] font-medium text-link hover:text-link">
                   + Add separate billing address
                 </button>
               ) : (<>
@@ -294,7 +294,7 @@ export function ClientForm({
               <li key={d.id} className="flex items-center justify-between gap-2">
                 <span className="truncate">{d.name}{d.phone ? ` · ${d.phone}` : ''}{d.email ? ` · ${d.email}` : ''}</span>
                 <button type="button" onClick={() => navigate(`/clients/${d.id}`)}
-                  className="shrink-0 text-indigo-600 hover:text-indigo-700 font-medium">Open</button>
+                  className="shrink-0 text-link hover:text-link font-medium">Open</button>
               </li>
             ))}
           </ul>

@@ -212,7 +212,7 @@ export function LeadFunnel({ snap }) {
 
       <div className="flex border-t border-hairline px-3.5 py-2">
         <Link to="/funnel"
-          className="touch-sm inline-flex items-center text-[11px] text-ink-2 no-underline hover:text-indigo-600">
+          className="touch-sm inline-flex items-center text-[11px] text-ink-2 no-underline hover:text-link">
           Full funnel →
         </Link>
       </div>

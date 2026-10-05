@@ -166,7 +166,7 @@ export default function PropertiesTab({
                       type="button"
                       onClick={() => syncProperty(editingProp.id)}
                       disabled={syncingPropId === editingProp.id}
-                      className="flex items-center gap-1 text-[11px] text-indigo-600 hover:text-indigo-700 disabled:opacity-50">
+                      className="flex items-center gap-1 text-[11px] text-link hover:text-link disabled:opacity-50">
                       <RefreshCw className={`w-3 h-3 ${syncingPropId === editingProp.id ? 'animate-spin' : ''}`} />
                       {syncingPropId === editingProp.id ? 'Syncing…' : 'Sync now'}
                     </button>
@@ -178,7 +178,7 @@ export default function PropertiesTab({
                     type="button"
                     onClick={() => navigate(`/properties/${editingProp.id}/icals`)}
                     data-testid="open-bulk-icals"
-                    className="text-[11px] text-indigo-600 hover:text-indigo-700 mb-3">
+                    className="text-[11px] text-link hover:text-link mb-3">
                     Paste multiple URLs at once →
                   </button>
                 )}
@@ -341,7 +341,7 @@ export default function PropertiesTab({
                         button already went there, but the name itself was
                         dead text). */}
                     <Link to={`/properties/${p.id}`}
-                      className="block font-medium text-ink hover:text-indigo-600 no-underline text-sm truncate">
+                      className="block font-medium text-ink hover:text-link no-underline text-sm truncate">
                       {p.name}
                     </Link>
                     {p.address && (

@@ -45,7 +45,7 @@ export default function HomeToday({ navigate }) {
         )}
         <button
           onClick={() => navigate('/schedule')}
-          className="ml-auto inline-flex items-center gap-0.5 text-[11px] font-semibold text-indigo-600 transition-all hover:gap-1 dark:text-indigo-400">
+          className="ml-auto inline-flex items-center gap-0.5 text-[11px] font-semibold text-link transition-all hover:gap-1">
           Open schedule<ArrowRight className="h-3 w-3" />
         </button>
       </header>
@@ -59,7 +59,7 @@ export default function HomeToday({ navigate }) {
           <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-amber-500" aria-hidden="true" />
           <span className="min-w-0 flex-1 text-ink-2">Couldn't load today's schedule.</span>
           <button onClick={refresh}
-            className="inline-flex shrink-0 items-center gap-1 text-[11px] font-semibold text-indigo-600 hover:text-indigo-700 dark:text-indigo-400">
+            className="inline-flex shrink-0 items-center gap-1 text-[11px] font-semibold text-link hover:text-link">
             <RefreshCw className="h-3 w-3" /> Retry
           </button>
         </div>

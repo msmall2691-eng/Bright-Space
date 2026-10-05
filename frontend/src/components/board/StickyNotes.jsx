@@ -89,7 +89,7 @@ export default function StickyNotes() {
         <h2 className="text-[11px] font-medium text-ink-3">Notes</h2>
         <div className="ml-auto">
           <button onClick={add}
-            className="inline-flex items-center gap-1 text-[11px] font-semibold text-indigo-600 hover:text-indigo-700 dark:text-indigo-400">
+            className="inline-flex items-center gap-1 text-[11px] font-semibold text-link hover:text-link">
             <Plus className="h-3 w-3" /> Add
           </button>
         </div>
@@ -99,7 +99,7 @@ export default function StickyNotes() {
         <div className="flex items-center gap-2.5 px-3.5 py-3 text-[12.5px]">
           <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-amber-500" aria-hidden="true" />
           <span className="min-w-0 flex-1 text-ink-2">Couldn't load your notes.</span>
-          <button onClick={load} className="inline-flex shrink-0 items-center gap-1 text-[11px] font-semibold text-indigo-600 hover:text-indigo-700 dark:text-indigo-400">
+          <button onClick={load} className="inline-flex shrink-0 items-center gap-1 text-[11px] font-semibold text-link hover:text-link">
             <RefreshCw className="h-3 w-3" /> Retry
           </button>
         </div>
@@ -131,7 +131,7 @@ export default function StickyNotes() {
             ))}
 
             <button onClick={add}
-              className="flex min-h-[76px] items-center justify-center gap-1.5 rounded-xl border border-dashed border-hairline-2 text-[12px] text-ink-3 transition-colors hover:border-indigo-500 hover:text-indigo-600">
+              className="flex min-h-[76px] items-center justify-center gap-1.5 rounded-xl border border-dashed border-hairline-2 text-[12px] text-ink-3 transition-colors hover:border-indigo-500 hover:text-link">
               <Plus className="h-3.5 w-3.5" /> New note
             </button>
           </div>

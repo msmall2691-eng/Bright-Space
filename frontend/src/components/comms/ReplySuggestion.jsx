@@ -57,7 +57,7 @@ export function ReplySuggestion({ conversationId, lastMessageId, onUse }) {
       <div className="flex shrink-0 items-center gap-1.5">
         <button
           onClick={() => onUse(entry.text, entry.subject)}
-          className="text-[12px] font-semibold text-indigo-600 hover:text-indigo-700 dark:text-indigo-400 dark:hover:text-indigo-300 transition-colors">
+          className="text-[12px] font-semibold text-link hover:text-link dark:hover:text-link transition-colors">
           Use
         </button>
         <button

@@ -185,7 +185,7 @@ export default function BoardAssistant({ open, onClose, sections, navigate, onAc
                     {actionMsg === 'working'
                       ? <><Loader2 className="h-3.5 w-3.5 animate-spin" /> Working…</>
                       : <><span>{actionMsg.text}</span>{actionMsg.to && (
-                          <button onClick={() => { onClose(); navigate(actionMsg.to) }} className="font-semibold text-indigo-600 hover:text-indigo-500">Open →</button>
+                          <button onClick={() => { onClose(); navigate(actionMsg.to) }} className="font-semibold text-link hover:text-link">Open →</button>
                         )}</>}
                   </div>
                 )}
@@ -206,7 +206,7 @@ export default function BoardAssistant({ open, onClose, sections, navigate, onAc
 
           {answer && !asking && (
             <button onClick={() => { setAnswer(null); setQuery('') }}
-              className="text-[12px] font-semibold text-indigo-600 hover:text-indigo-500 dark:text-indigo-400">
+              className="text-[12px] font-semibold text-link hover:text-link">
               ← Ask something else
             </button>
           )}

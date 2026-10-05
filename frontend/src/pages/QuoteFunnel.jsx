@@ -41,7 +41,7 @@ const OUTCOME_ORDER = [
   { key: 'won', label: 'Won', bar: 'bg-emerald-500', tone: 'text-emerald-600 dark:text-emerald-300' },
   { key: 'accepted', label: 'Accepted · to schedule', bar: 'bg-teal-500', tone: 'text-teal-600 dark:text-teal-300' },
   { key: 'changes_requested', label: 'Changes requested', bar: 'bg-amber-500', tone: 'text-amber-600 dark:text-amber-300' },
-  { key: 'open', label: 'In play · awaiting reply', bar: 'bg-indigo-500', tone: 'text-indigo-600 dark:text-indigo-300' },
+  { key: 'open', label: 'In play · awaiting reply', bar: 'bg-indigo-500', tone: 'text-link' },
   { key: 'declined', label: 'Declined', bar: 'bg-red-500', tone: 'text-red-600 dark:text-red-300' },
   { key: 'expired', label: 'Expired', bar: 'bg-ink-3', tone: 'text-ink-3' },
 ]

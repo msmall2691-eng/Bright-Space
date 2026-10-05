@@ -48,7 +48,7 @@ function LinkedCard({ icon: Icon, label, to, primary, secondary }) {
       <div className="flex items-center gap-1.5 text-[10px] uppercase tracking-wide text-ink-3 mb-1">
         <Icon className="w-3.5 h-3.5" /> {label}
       </div>
-      <div className={`text-[13px] truncate ${to ? 'text-ink hover:text-indigo-600 no-underline' : 'text-ink-2'}`}>{primary}</div>
+      <div className={`text-[13px] truncate ${to ? 'text-ink hover:text-link no-underline' : 'text-ink-2'}`}>{primary}</div>
       {secondary && <div className="text-[11px] text-ink-3 truncate">{secondary}</div>}
     </div>
   )
@@ -371,7 +371,7 @@ export default function QuoteDetail() {
                 <InlineSelect value={quote.status} options={statusOptions} onSelect={setStatus} />
               </div>
               {quote.viewed_at && (
-                <div className="flex items-center gap-1 text-[11px] text-indigo-600 mb-1"
+                <div className="flex items-center gap-1 text-[11px] text-link mb-1"
                   title={`Customer opened this quote on ${new Date(quote.viewed_at).toLocaleString()}`}>
                   <Eye className="w-3.5 h-3.5 shrink-0" />
                   Opened by customer · {new Date(quote.viewed_at).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}
@@ -397,7 +397,7 @@ export default function QuoteDetail() {
             <div className="border-t border-hairline pt-3">
               <div className="text-[10px] uppercase tracking-wide text-ink-3 mb-1">Client</div>
               {quote.client_id ? (
-                <Link to={`/clients/${quote.client_id}`} className="flex items-center gap-2 text-[13px] text-ink hover:text-indigo-600 no-underline">
+                <Link to={`/clients/${quote.client_id}`} className="flex items-center gap-2 text-[13px] text-ink hover:text-link no-underline">
                   <Building2 className="w-3.5 h-3.5 shrink-0" /> {quote.client_name || `Client #${quote.client_id}`}
                 </Link>
               ) : <span className="text-[12px] text-ink-3 italic">No client linked</span>}

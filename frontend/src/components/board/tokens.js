@@ -17,7 +17,7 @@ export const TAG_TONE = {
   amber: 'text-amber-600 dark:text-amber-300',
   emerald: 'text-emerald-600 dark:text-emerald-300',
   blue: 'text-blue-600 dark:text-blue-300',
-  indigo: 'text-indigo-600 dark:text-indigo-300',
+  indigo: 'text-link',
   violet: 'text-violet-600 dark:text-violet-300',
   gray: 'text-ink-3',
 }

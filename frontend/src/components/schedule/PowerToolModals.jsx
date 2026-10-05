@@ -23,7 +23,7 @@ export function AutoAssignModal({ state, onCancel, onRun, empName }) {
       ariaLabel="Auto-assign turnovers"
       title={
         <div className="flex items-center gap-2.5 min-w-0">
-          <Wand2 className="w-5 h-5 text-indigo-600 shrink-0" />
+          <Wand2 className="w-5 h-5 text-link shrink-0" />
           <div className="min-w-0">
             <div className="text-sm font-semibold text-ink">Auto-assign turnovers</div>
             <div className="text-[12px] font-normal text-ink-3 mt-0.5">Available cleaners, balanced by daily load. Review before applying.</div>
@@ -95,7 +95,7 @@ export function FixTimesModal({ state, onCancel, onRun }) {
       ariaLabel="Fix missing job times"
       title={
         <div className="flex items-center gap-2.5 min-w-0">
-          <Clock className="w-5 h-5 text-indigo-600 shrink-0" />
+          <Clock className="w-5 h-5 text-link shrink-0" />
           <div className="min-w-0">
             <div className="text-sm font-semibold text-ink">Fix missing job times</div>
             <div className="text-[12px] font-normal text-ink-3 mt-0.5">Jobs showing "– –" get a sensible default (turnovers → property checkout, others → 9:00). Review before applying.</div>
@@ -162,7 +162,7 @@ export function PurgeGhostsModal({ state, onCancel, onRun }) {
       ariaLabel="Remove cancelled turnover clutter"
       title={
         <div className="flex items-center gap-2.5 min-w-0">
-          <Trash2 className="w-5 h-5 text-indigo-600 shrink-0" />
+          <Trash2 className="w-5 h-5 text-link shrink-0" />
           <div className="min-w-0">
             <div className="text-sm font-semibold text-ink">Remove cancelled turnover clutter</div>
             <div className="text-[12px] font-normal text-ink-3 mt-0.5">Deletes cancelled duplicate turnovers a flapping feed left behind. Live jobs and anything with an invoice are never touched.</div>
@@ -261,7 +261,7 @@ export function OpenToCrewModal({ state, onCancel, onConfirm }) {
       ariaLabel="Open to the crew"
       title={
         <div className="flex items-center gap-2.5 min-w-0">
-          <Sparkles className="w-5 h-5 text-indigo-600 shrink-0" />
+          <Sparkles className="w-5 h-5 text-link shrink-0" />
           <div className="min-w-0">
             <div className="text-sm font-semibold text-ink">Open to the crew</div>
             <div className="text-[12px] font-normal text-ink-3 mt-0.5">

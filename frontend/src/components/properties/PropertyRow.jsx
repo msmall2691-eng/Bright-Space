@@ -56,7 +56,7 @@ export function PropertyRow({
                     propagation so it doesn't also toggle the row's expand. */}
                 <button
                   onClick={(e) => { e.stopPropagation(); navigate(`/properties/${p.id}`) }}
-                  className="font-semibold text-ink hover:text-indigo-600 no-underline transition-colors text-left truncate">
+                  className="font-semibold text-ink hover:text-link no-underline transition-colors text-left truncate">
                   {p.name}
                 </button>
                 <span className="inline-flex items-center gap-1.5 text-xs font-medium text-ink-3">
@@ -122,7 +122,7 @@ export function PropertyRow({
                     {(p.ical_health === 'no_feed' || p.ical_health === 'stale') && (
                       <button
                         onClick={(e) => { e.stopPropagation(); navigate(`/properties/${p.id}/icals`) }}
-                        className="text-[11px] font-semibold text-indigo-600 hover:text-indigo-700 hover:underline"
+                        className="text-[11px] font-semibold text-link hover:text-link hover:underline"
                       >
                         {p.ical_health === 'no_feed' ? 'Add feed →' : 'Check feed →'}
                       </button>

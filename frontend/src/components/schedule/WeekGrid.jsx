@@ -345,7 +345,7 @@ export default function WeekGrid({
                 key={d}
                 className="px-2 py-2 text-center border-r border-hairline last:border-r-0"
               >
-                <div className={`text-[10px] uppercase font-semibold tracking-wide ${isToday ? 'text-indigo-600' : 'text-ink-3'}`}>
+                <div className={`text-[10px] uppercase font-semibold tracking-wide ${isToday ? 'text-link' : 'text-ink-3'}`}>
                   {DAY_LABELS[i]}
                 </div>
                 {/* Today reads as a filled date badge (same bg-accent token

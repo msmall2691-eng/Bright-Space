@@ -99,7 +99,7 @@ export default function AgendaUpcoming({
       <div className="flex-1 overflow-auto">
         <div className="max-w-2xl mx-auto px-3 py-10 text-center">
           <p className="text-[13px] text-ink-3">Couldn’t load the upcoming schedule.</p>
-          <button onClick={load} className="mt-3 inline-flex items-center gap-1.5 text-[13px] font-semibold text-indigo-600">
+          <button onClick={load} className="mt-3 inline-flex items-center gap-1.5 text-[13px] font-semibold text-link">
             <RefreshCw className="w-4 h-4" /> Try again
           </button>
         </div>
@@ -112,7 +112,7 @@ export default function AgendaUpcoming({
       <div className="max-w-2xl mx-auto px-3 pb-24 sm:pb-6">
         {/* Header band: what range you're looking at + total. */}
         <div className="sticky top-0 z-6 -mx-3 px-3 pt-3 pb-2 mb-1 bg-bg border-b border-hairline/50 flex items-center gap-2">
-          <span className="grid place-items-center w-8 h-8 shrink-0 text-indigo-600 dark:text-indigo-300">
+          <span className="grid place-items-center w-8 h-8 shrink-0 text-link">
             <CalendarRange className="w-4 h-4" />
           </span>
           <div className="min-w-0">
@@ -145,14 +145,14 @@ export default function AgendaUpcoming({
                   <h3 className="text-[13px] font-bold text-ink">
                     {fmtDay(g.date)}
                     {relLabel(g.date) && (
-                      <span className="ml-2 text-[10px] font-bold uppercase tracking-wide text-indigo-600">{relLabel(g.date)}</span>
+                      <span className="ml-2 text-[10px] font-bold uppercase tracking-wide text-link">{relLabel(g.date)}</span>
                     )}
                   </h3>
                   <span className="text-[11px] text-ink-3">{g.visits.length}</span>
                   {onCreateForDay && (
                     <button
                       onClick={() => onCreateForDay(g.date)}
-                      className="ml-auto inline-flex items-center gap-1 text-[11px] font-semibold text-indigo-600 hover:text-indigo-700 px-1.5 py-0.5 rounded-md hover:bg-indigo-500/10"
+                      className="ml-auto inline-flex items-center gap-1 text-[11px] font-semibold text-link hover:text-link px-1.5 py-0.5 rounded-md hover:bg-indigo-500/10"
                       title={`Add a job on ${fmtDay(g.date)}`}
                     >
                       <Plus className="w-3.5 h-3.5" /> Add

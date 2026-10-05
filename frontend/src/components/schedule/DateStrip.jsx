@@ -43,7 +43,7 @@ export default function DateStrip({ weekDates, loadByDate, currentDate, onSelect
                   isSelected
                     ? 'bg-ink text-panel'
                     : isToday
-                      ? 'text-indigo-600 font-bold'
+                      ? 'text-link font-bold'
                       : ''
                 }`}
               >

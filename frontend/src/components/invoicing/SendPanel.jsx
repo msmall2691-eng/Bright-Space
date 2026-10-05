@@ -89,7 +89,7 @@ export function SendPanel({
           <div className="flex items-center justify-between mb-1.5">
             <label className={lbl + ' mb-0'}>Message <span className="normal-case text-ink-3 font-normal">(optional)</span></label>
             <button onClick={draftReminder} disabled={drafting}
-              className="flex items-center gap-1 text-[11px] font-semibold text-indigo-600 hover:text-indigo-700 disabled:opacity-50 transition-colors">
+              className="flex items-center gap-1 text-[11px] font-semibold text-link hover:text-link disabled:opacity-50 transition-colors">
               <Sparkles className="w-3 h-3" />
               {drafting ? 'Drafting…' : 'Draft reminder'}
             </button>

@@ -236,7 +236,7 @@ export default function QuoteEditPanel({
               <label className="block text-xs text-ink-3">Client *</label>
               <button type="button"
                 onClick={() => { setAddingClient(a => !a); setClientErr(''); setClientDupes?.([]) }}
-                className="text-xs text-indigo-600 hover:text-indigo-700 font-medium">
+                className="text-xs text-link hover:text-link font-medium">
                 {addingClient ? 'Cancel' : '+ New client'}
               </button>
             </div>
@@ -360,10 +360,10 @@ export default function QuoteEditPanel({
             )}
             {specsState === 'done' && specs && (
               <div className="mt-1.5 flex items-center gap-2 rounded-lg border border-hairline bg-bg-2 px-2.5 py-1.5">
-                <Home className="w-3.5 h-3.5 text-indigo-600 shrink-0" />
+                <Home className="w-3.5 h-3.5 text-link shrink-0" />
                 <span className="text-[12px] text-ink-2 flex-1 truncate">{specsSummary(specs) || 'Property found'}</span>
                 <button type="button" onClick={addSpecsToScope}
-                  className="text-[11px] font-semibold text-indigo-600 hover:text-indigo-700 shrink-0">Add to scope</button>
+                  className="text-[11px] font-semibold text-link hover:text-link shrink-0">Add to scope</button>
               </div>
             )}
             {specsState === 'none' && (

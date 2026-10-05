@@ -167,7 +167,7 @@ export default function OpportunityDetail() {
               <div className="text-[10px] uppercase tracking-wide text-ink-3 mb-1">Client</div>
               {opp.client_id ? (
                 <Link to={`/clients/${opp.client_id}`}
-                  className="flex items-center gap-2 text-[13px] text-ink hover:text-indigo-600 no-underline">
+                  className="flex items-center gap-2 text-[13px] text-ink hover:text-link no-underline">
                   <Building2 className="w-3.5 h-3.5 shrink-0" /> {opp.client_name || `Client #${opp.client_id}`}
                 </Link>
               ) : <span className="text-[12px] text-ink-3 italic">No client linked</span>}

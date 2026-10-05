@@ -42,14 +42,14 @@ export function InvoiceRow({
         <div className="min-w-0">
           {inv.client_id ? (
             <Link to={`/clients/${inv.client_id}`} onClick={e => e.stopPropagation()}
-              className="block text-sm text-ink truncate no-underline hover:text-indigo-600">
+              className="block text-sm text-ink truncate no-underline hover:text-link">
               {clientName(inv.client_id)}
             </Link>
           ) : (
             <div className="text-sm text-ink truncate">{clientName(inv.client_id)}</div>
           )}
           <Link to={`/invoices/${inv.id}`} onClick={e => e.stopPropagation()}
-            className="block text-[11px] text-ink-3 no-underline hover:text-indigo-600 truncate">
+            className="block text-[11px] text-ink-3 no-underline hover:text-link truncate">
             {inv.invoice_number}
           </Link>
         </div>

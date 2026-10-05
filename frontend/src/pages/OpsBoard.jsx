@@ -180,7 +180,7 @@ function BoardRow({ item, cleared, onToggle, onAction, actioningKey, confirmingK
                   if (a.kind !== 'api') {
                     return (
                       <button key={i} onClick={() => onAction(item, a)}
-                        className="inline-flex items-center gap-0.5 text-[11px] font-semibold text-indigo-600 transition-all hover:gap-1 dark:text-indigo-400">
+                        className="inline-flex items-center gap-0.5 text-[11px] font-semibold text-link transition-all hover:gap-1">
                         {a.label}<ArrowRight className="h-3 w-3" />
                       </button>
                     )
@@ -255,14 +255,14 @@ function Section({ section, items, clearedSet, onToggle, onAction, actioningKey,
             }}
             disabled={clearingSection === section.key}
             className={`ml-auto shrink-0 text-[11px] font-semibold disabled:opacity-40 ${
-              confirmingClear ? 'text-amber-700 dark:text-amber-400' : 'text-indigo-600 hover:text-indigo-700 dark:text-indigo-400'
+              confirmingClear ? 'text-amber-700 dark:text-amber-400' : 'text-link hover:text-link'
             }`}>
             {clearingSection === section.key ? 'Clearing…' : confirmingClear ? 'Confirm?' : 'Clear all'}
           </button>
         )}
         {headerLink && (
           <button onClick={() => navigate(headerLink.to)}
-            className="inline-flex items-center gap-0.5 text-[11px] font-semibold text-indigo-600 transition-all hover:gap-1 dark:text-indigo-400">
+            className="inline-flex items-center gap-0.5 text-[11px] font-semibold text-link transition-all hover:gap-1">
             {headerLink.label}<ArrowRight className="h-3 w-3" />
           </button>
         )}
@@ -556,7 +556,7 @@ export default function OpsBoard() {
                       {' '}{needsCleanerItems.length === 1 ? 'job' : 'jobs'} still {needsCleanerItems.length === 1 ? 'needs' : 'need'} a cleaner
                     </span>
                     <button onClick={() => navigate('/schedule?view=dispatch')}
-                      className="inline-flex shrink-0 items-center gap-0.5 text-[11px] font-semibold text-indigo-600 transition-all hover:gap-1 dark:text-indigo-400">
+                      className="inline-flex shrink-0 items-center gap-0.5 text-[11px] font-semibold text-link transition-all hover:gap-1">
                       Open to crew<ArrowRight className="h-3 w-3" />
                     </button>
                   </div>

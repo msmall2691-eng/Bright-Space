@@ -119,7 +119,7 @@ export default function UsersAdmin() {
       <p className="text-[13px] text-ink-3 mb-4">
         Invite anyone directly — they get an email link to set their own password.
         Cleaners get a crew login (schedule, time clock, weekly pay); manage their
-        pay and crew IDs here or on the <Link to="/crew" className="text-indigo-600 font-medium hover:text-indigo-700">Crew page</Link>.
+        pay and crew IDs here or on the <Link to="/crew" className="text-link font-medium hover:text-link">Crew page</Link>.
       </p>
 
       {error && (
@@ -132,7 +132,7 @@ export default function UsersAdmin() {
       {/* Invite someone */}
       <form onSubmit={sendInvite} className="border border-hairline bg-bg-2/40 rounded-xl p-4 mb-5">
         <div className="flex items-center gap-2 text-ink font-semibold text-sm mb-3">
-          <UserPlus className="w-4 h-4 text-indigo-500" /> Invite someone
+          <UserPlus className="w-4 h-4 text-link" /> Invite someone
         </div>
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
           <label className="block">
@@ -278,7 +278,7 @@ export default function UsersAdmin() {
                 <div className="flex flex-wrap items-center gap-2 mt-3">
                   {st.key === 'invited' && (
                     <button onClick={() => resend(u)} disabled={busyId === u.id}
-                      className="text-sm font-medium px-3.5 py-2 text-indigo-600 hover:text-indigo-700 hover:bg-indigo-50 rounded-lg disabled:opacity-60 inline-flex items-center gap-1.5 transition-colors">
+                      className="text-sm font-medium px-3.5 py-2 text-link hover:text-link hover:bg-indigo-50 rounded-lg disabled:opacity-60 inline-flex items-center gap-1.5 transition-colors">
                       <Mail className="w-4 h-4" /> Resend invite
                     </button>
                   )}

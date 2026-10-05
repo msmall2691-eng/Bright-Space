@@ -748,7 +748,7 @@ export default function JobEditModal({ job, properties = [], clients = [], onClo
                 type="checkbox"
                 checked={notifyCustomer}
                 onChange={e => setNotifyCustomer(e.target.checked)}
-                className="mt-0.5 w-4 h-4 rounded border-hairline text-indigo-600 focus:ring-indigo-500"
+                className="mt-0.5 w-4 h-4 rounded border-hairline text-link focus:ring-indigo-500"
               />
               <span className="text-xs text-ink-2">
                 Notify customer of this change

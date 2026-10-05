@@ -109,7 +109,7 @@ export function PropertyForm({
                 onClick={() => setForm(f => ({ ...f, property_type: type }))}
                 className={`flex-1 px-3 py-2 rounded-lg border-2 text-sm font-medium transition-all ${
                   form.property_type === type
-                    ? 'border-indigo-600 bg-panel text-indigo-700 dark:text-indigo-300'
+                    ? 'border-indigo-600 bg-panel text-link'
                     : 'border-hairline text-ink-2 hover:border-hairline'
                 }`}
               >
@@ -124,7 +124,7 @@ export function PropertyForm({
             <label className="block text-xs text-ink-3">Client *</label>
             <button type="button"
               onClick={() => { setAddingClient(a => !a); setClientErr(''); setClientDupes?.([]) }}
-              className="text-xs text-indigo-600 hover:text-indigo-700 font-medium">
+              className="text-xs text-link hover:text-link font-medium">
               {addingClient ? 'Cancel' : '+ New client'}
             </button>
           </div>
@@ -244,7 +244,7 @@ export function PropertyForm({
             <h3 className="text-xs font-semibold text-ink-2 uppercase">Property Details</h3>
             <button type="button" onClick={runLookup} disabled={looking || !(form.address || '').trim()}
               title={!(form.address || '').trim() ? 'Enter an address first' : 'Fill sq ft, beds, baths & year built from public records'}
-              className="flex items-center gap-1.5 text-xs font-medium text-indigo-600 hover:text-indigo-700 disabled:text-ink-3 disabled:cursor-not-allowed">
+              className="flex items-center gap-1.5 text-xs font-medium text-link hover:text-link disabled:text-ink-3 disabled:cursor-not-allowed">
               {looking ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Sparkles className="w-3.5 h-3.5" />}
               {looking ? 'Looking up…' : 'Look up specs'}
             </button>

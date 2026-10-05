@@ -134,7 +134,7 @@ export function InboxLeftPanel({
               <SlidersHorizontal className="w-4 h-4" />
               <span className="hidden shell:inline">Filter</span>
               {activeFilterCount > 0 && (
-                <span className="text-[10px] font-bold tabular-nums text-indigo-600" aria-label={`${activeFilterCount} filters active`}>{activeFilterCount}</span>
+                <span className="text-[10px] font-bold tabular-nums text-link" aria-label={`${activeFilterCount} filters active`}>{activeFilterCount}</span>
               )}
             </button>
             <button onClick={onCompose}
@@ -163,7 +163,7 @@ export function InboxLeftPanel({
               }`}>
               <span>{f.label}</span>
               {f.count != null && f.count > 0 && (
-                <span className={`text-[10px] font-bold tabular-nums ${folder === f.key ? 'text-indigo-600' : 'text-ink-3'}`}>
+                <span className={`text-[10px] font-bold tabular-nums ${folder === f.key ? 'text-link' : 'text-ink-3'}`}>
                   {f.count}
                 </span>
               )}
@@ -217,12 +217,12 @@ export function InboxLeftPanel({
             </p>
             {channelFilter && (channelCount('') - channelCount(channelFilter)) > 0 && (
               <button onClick={() => setChannelFilter('')}
-                className="mt-4 text-[12px] font-semibold text-indigo-600 hover:text-indigo-700 flex items-center gap-1 transition-colors">
+                className="mt-4 text-[12px] font-semibold text-link hover:text-link flex items-center gap-1 transition-colors">
                 Show all messages
               </button>
             )}
             <button onClick={onCompose}
-              className="mt-4 text-[12px] font-semibold text-indigo-600 hover:text-indigo-700 flex items-center gap-1 transition-colors">
+              className="mt-4 text-[12px] font-semibold text-link hover:text-link flex items-center gap-1 transition-colors">
               <Plus className="w-3.5 h-3.5" /> New Message
             </button>
           </div>

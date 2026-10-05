@@ -110,7 +110,7 @@ export default function TemplateManagerModal({ initial, templatesLoaded, onClose
                     <button onClick={() => removeTplItem(ti, ii)} className="p-1.5 text-ink-3 hover:text-red-600"><X className="w-3.5 h-3.5" /></button>
                   </div>
                 ))}
-                <button onClick={() => addTplItem(ti)} className="text-xs text-indigo-600 hover:text-indigo-700 font-medium">+ Add line item</button>
+                <button onClick={() => addTplItem(ti)} className="text-xs text-link hover:text-link font-medium">+ Add line item</button>
               </div>
             </div>
           ))}

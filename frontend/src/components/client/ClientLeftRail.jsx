@@ -65,7 +65,7 @@ export default function ClientLeftRail({
         </button>
         <div className="relative flex items-center gap-3">
           <div className="w-12 h-12 rounded-2xl bg-indigo-500/15 flex items-center justify-center shrink-0">
-            <span className="text-indigo-600 dark:text-indigo-300 font-bold text-lg">{(client.first_name || client.name || '?')[0]?.toUpperCase()}</span>
+            <span className="text-link font-bold text-lg">{(client.first_name || client.name || '?')[0]?.toUpperCase()}</span>
           </div>
           <div className="min-w-0">
             <h1 className="text-base font-bold text-ink truncate">{client.name}</h1>

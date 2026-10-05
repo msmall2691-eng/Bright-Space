@@ -655,7 +655,7 @@ export default function MyDay({ previewUserId = null }) {
             </span>
             ’s app
           </span>
-          <a href="/crew" className="text-ink-3 underline underline-offset-2 hover:text-indigo-600">
+          <a href="/crew" className="text-ink-3 underline underline-offset-2 hover:text-link">
             Back to Crew
           </a>
         </div>
