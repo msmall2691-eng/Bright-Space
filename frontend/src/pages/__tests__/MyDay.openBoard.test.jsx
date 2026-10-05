@@ -165,6 +165,18 @@ it('never puts the house on an offer', async () => {
   expect(page).toMatch(/Camden/)
 })
 
+it('on an empty day, shows the next assigned job and jumps to the Schedule', async () => {
+  // A clear day should still answer "when do I work next?" — the next assigned
+  // job rides the payload, so surface it rather than only a grab-work board.
+  const next = { id: 9, scheduled_date: '2026-09-10', start_time: '09:00',
+                 property_name: 'Harbour House', status: 'scheduled' }
+  await show({ ...DAY, open_jobs: [], upcoming: [next] })
+  expect(await screen.findByText('Your next job')).toBeTruthy()
+  expect(screen.getByText('Harbour House')).toBeTruthy()
+  fireEvent.click(screen.getByText('Your next job').closest('button'))
+  expect(await screen.findByText('My Schedule')).toBeTruthy()   // the Schedule tab header
+})
+
 // ── The dedicated Jobs tab (the marketplace's real home) ────────────────────
 
 it('has a Jobs tab that lists every open job to claim', async () => {

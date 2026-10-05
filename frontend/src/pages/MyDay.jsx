@@ -786,6 +786,32 @@ export default function MyDay({ previewUserId = null }) {
               </div>
             )}
 
+            {/* A clear day still answers "when do I work next?". When nothing is
+                booked today, surface the next ASSIGNED job (already in the
+                payload the Schedule tab reads — no extra fetch) so an off day
+                doesn't read as an empty market; it sits above the grab-work
+                board below. Taps through to the Schedule. */}
+            {data.today.length === 0 && (data.upcoming || []).length > 0 && (() => {
+              const next = data.upcoming[0]
+              return (
+                <button type="button" onClick={() => setTab('schedule')}
+                  className="w-full rounded-xl border border-hairline bg-panel px-4 py-3 text-left hover:bg-bg-2 active:bg-bg-2 transition-colors">
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="min-w-0">
+                      <div className="text-[11px] font-medium uppercase tracking-wide text-ink-3">Your next job</div>
+                      <div className="mt-0.5 text-[14px] font-semibold text-ink truncate">
+                        {dayLabel(next.scheduled_date)}{next.start_time ? ` · ${next.start_time}` : ''}
+                      </div>
+                      {next.property_name && (
+                        <div className="text-[12px] text-ink-2 truncate">{next.property_name}</div>
+                      )}
+                    </div>
+                    <span className="shrink-0 text-ink-3" aria-hidden="true">›</span>
+                  </div>
+                </button>
+              )
+            })()}
+
             <section>
               <div className="flex items-center justify-between mb-2">
                 <SectionLabel>{boardIsToday ? 'Up for grabs' : 'Today'}</SectionLabel>
