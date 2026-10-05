@@ -190,3 +190,31 @@ def test_summary_counts_include_legacy_null_org_rows():
         assert after["unread_messages"] == base["unread_messages"] + 5
     finally:
         _cleanup(db, [legacy.id])
+
+def test_null_org_rows_are_NOT_visible_to_a_non_default_workspace():
+    """Codex review on #1083, P1: a NULL org_id means THE DEFAULT workspace,
+    not every workspace. The first cut of the NULL arm admitted orphan rows for
+    any tenant — harmless today with one workspace, a real leak the moment a
+    second exists. Only the default workspace may see them."""
+    from modules.comms import router as comms_router
+    from modules.auth.router import _default_org_id
+    db = SessionLocal()
+    legacy = _mk_conv(db, None, contact=f"+1777{uuid.uuid4().hex[:7]}")
+    try:
+        default_org = _default_org_id(db); db.commit()
+        # The caller in this suite IS the default workspace, so it sees it...
+        assert client.get(f"/api/comms/conversations/{legacy.id}").status_code == 200
+
+        # ...but the predicate for any OTHER workspace must exclude NULL.
+        comms_router._DEFAULT_ORG_CACHE = None
+        other = comms_router._org(Conversation, OTHER_ORG, db)
+        rendered = str(other.compile(compile_kwargs={"literal_binds": True}))
+        assert "IS NULL" not in rendered, (
+            f"non-default workspace got the NULL arm: {rendered}")
+
+        # and the default workspace's predicate does carry it
+        mine = comms_router._org(Conversation, default_org, db)
+        assert "IS NULL" in str(mine.compile(compile_kwargs={"literal_binds": True}))
+    finally:
+        comms_router._DEFAULT_ORG_CACHE = None
+        _cleanup(db, [legacy.id])

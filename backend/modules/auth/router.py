@@ -240,6 +240,34 @@ def current_org_id(current_user: User = Depends(get_current_user),
     return oid
 
 
+def current_org_id_without_rls_guc(current_user: User = Depends(get_current_user),
+                                   db: Session = Depends(get_db)) -> int:
+    """The caller's workspace id, WITHOUT setting `app.current_org_id`.
+
+    BB-SEC-24. Identical to `current_org_id` except it does not arm the MT-3
+    RLS backstop, and it exists for exactly one reason:
+
+    `apply_org_rls()` ENABLEs and **FORCEs** RLS, and the policy is
+    `org_id = <guc> OR <guc> IS NULL`. A row with org_id IS NULL satisfies
+    NEITHER arm once the GUC is set — Postgres drops it before any application
+    predicate runs. A production census found 85 of 126 conversations and 517
+    of 1,304 messages carry a NULL org_id (they are the unknown-sender inbound
+    leads: comms/router.py deliberately leaves org_id unset when there is no
+    client to inherit it from). So merely ADDING `current_org_id` to a route
+    that reads those tables hides most of their rows.
+
+    Using this instead keeps the route's explicit `org_id` filters — the real
+    tenant enforcement, and what every other module in this app relies on —
+    while leaving RLS in the permissive state it was already in before
+    BB-SEC-22, so legacy rows stay readable.
+
+    THIS IS A STOPGAP. The correct fix is to backfill those rows to the default
+    workspace and then switch back to `current_org_id` so the backstop is armed
+    again. Do not use it on new code; see BB-SEC-24 in modules/comms/router.py.
+    """
+    return getattr(current_user, "org_id", None) or _default_org_id(db)
+
+
 def set_rls_org_context(db: Session, org_id: int) -> None:
     """Set the per-transaction Postgres GUC that MT-3 RLS policies read. Safe
     no-op on non-Postgres (SQLite tests). Errors are logged at ERROR — the RLS
