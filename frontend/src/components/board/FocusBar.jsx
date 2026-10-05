@@ -12,6 +12,13 @@ import { FOCUS_DOT } from './tokens'
  *   { tone, headline?, primary?: {label, to}, ghost?: {label, to} }
  * `tone` only colors the 6px dot (amber = needs attention, emerald = calm).
  *
+ * The headline is an `<h2>`, not an `<h1>`, even though it is the biggest type
+ * on the page. Heading level is document structure, not size: the page's `<h1>`
+ * is the identity line in OpsBoard's command row, which is always there. This
+ * one is conditional — so if it carried the `<h1>` the outline would appear and
+ * disappear depending on how busy the morning was, and a quiet morning would
+ * leave the page with no top-level heading at all.
+ *
  * `headline` IS OPTIONAL, and that is the quiet morning: when nothing is
  * pressing the hero line is omitted entirely rather than filled with a
  * reassurance ("You're on top of it this morning."), which spent the largest
@@ -42,9 +49,9 @@ export default function FocusBar({ firstName, focus, navigate }) {
       {(focus.headline || focus.primary || focus.ghost) && (
       <div className="mt-1.5 flex flex-wrap items-end justify-between gap-x-6 gap-y-2">
         {focus.headline && (
-          <h1 className="max-w-2xl text-balance text-[22px] font-semibold leading-tight tracking-tight text-ink shell:text-[26px]">
+          <h2 className="max-w-2xl text-balance text-[22px] font-semibold leading-tight tracking-tight text-ink shell:text-[26px]">
             {focus.headline}
-          </h1>
+          </h2>
         )}
         {(focus.primary || focus.ghost) && (
           <div className="flex items-center gap-2">

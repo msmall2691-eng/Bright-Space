@@ -22,14 +22,20 @@ const BTN =
 
 const SHOW = 4
 
-export default function NeedsDateStrip({ jobs, onSchedule }) {
+/**
+ * `className` replaces the outer inset. The default suits the Schedule page,
+ * where this sits INSIDE the calendar card and needs to clear its edge; the
+ * dashboard mounts it as its own block in a gap-4 column and passes '' so it
+ * lines up with the cards above and below it instead of sitting 12px narrower.
+ */
+export default function NeedsDateStrip({ jobs, onSchedule, className = 'px-3 pt-1 pb-2' }) {
   const list = Array.isArray(jobs) ? jobs : []
   if (list.length === 0) return null
   const shown = list.slice(0, SHOW)
   const more = list.length - shown.length
 
   return (
-    <div className="px-3 pt-1 pb-2" data-testid="needs-date-strip">
+    <div className={className} data-testid="needs-date-strip">
       <div className="rounded-lg border border-hairline bg-panel text-[12.5px]">
         <div className="flex items-center gap-2.5 px-3 pt-2 pb-1">
           <span className="w-1.5 h-1.5 rounded-full shrink-0 bg-amber-500" aria-hidden="true" />

@@ -134,24 +134,67 @@ const CREW_THREADS = [
 ]
 
 function LocationProbe() {
-  return <div data-testid="loc">{useLocation().pathname}</div>
+  const { pathname, search } = useLocation()
+  return (
+    <>
+      <div data-testid="loc">{pathname}</div>
+      <div data-testid="loc-search">{search}</div>
+    </>
+  )
 }
 
 function renderBoard() {
   return render(<MemoryRouter><OpsBoard /><LocationProbe /></MemoryRouter>)
 }
 
-// Home now makes up to three GETs: the board payload, one month of
-// /api/schedule/week for the Today list, and (office roles only) one
+// Home makes up to three GETs: the board payload, ONE /api/schedule/week
+// (a Sunday-Saturday WEEK, not a month -- `HomeToday` passes view 'week', so
+// `rangeForView` returns `weekRange`), and (office roles only) one
 // /api/crew/threads for the Crew box. Route by URL.
-const EMPTY_DAY = { visits: [], jobs: [], properties: [], clients: [] }
-function mockGet(boardPayload = PAYLOAD, crewThreads = []) {
+//
+// The mock mirrors the REAL response keys (scheduling/router.py:5177):
+// visits / jobs / unscheduled / properties / clients / degraded / coverage.
+// It used to carry only four of them, so anything reading `unscheduled` tested
+// as permanently empty while the hook quietly coerced it to [] -- a feature
+// could ship broken and stay green. Tests that want rows override.
+const EMPTY_WEEK = {
+  visits: [], jobs: [], unscheduled: [], properties: [], clients: [],
+  degraded: false, coverage: {},
+}
+function mockGet(boardPayload = PAYLOAD, crewThreads = [], week = EMPTY_WEEK) {
   get.mockImplementation((url) => {
     const u = String(url)
-    if (u.startsWith('/api/schedule/week')) return Promise.resolve(EMPTY_DAY)
+    if (u.startsWith('/api/schedule/week')) return Promise.resolve(week)
     if (u.startsWith('/api/crew/threads')) return Promise.resolve(crewThreads)
     return Promise.resolve(boardPayload)
   })
+}
+
+/** A week whose days carry jobs, for the rail. Dates are derived from today so
+ *  the fixture never goes stale -- the rail's day keys come from the RANGE the
+ *  hook fetched, which is always the current week. */
+function weekWithJobs() {
+  const now = new Date()
+  const sunday = new Date(now.getFullYear(), now.getMonth(), now.getDate() - now.getDay(), 12)
+  const ymd = (n) => {
+    const d = new Date(sunday)
+    d.setDate(sunday.getDate() + n)
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+  }
+  const todayIdx = now.getDay()
+  // Two on today, one on the day after Sunday, nothing anywhere else.
+  const spec = [[todayIdx, 2], [(todayIdx + 2) % 7, 1]]
+  const visits = []
+  const jobs = {}
+  let id = 1
+  for (const [dayIdx, n] of spec) {
+    for (let k = 0; k < n; k++) {
+      const vid = id++
+      visits.push({ id: vid, job_id: vid, scheduled_date: ymd(dayIdx), start_time: `0${8 + k}:00:00`, status: 'scheduled', cleaner_ids: [7] })
+      jobs[vid] = { id: vid, title: `Job ${vid}`, scheduled_date: ymd(dayIdx), client_id: null, cleaner_ids: [7] }
+    }
+  }
+  return { ...EMPTY_WEEK, visits, jobs, todayIdx, ymd }
 }
 
 beforeEach(() => {
@@ -402,6 +445,97 @@ describe('OpsBoard', () => {
   })
 })
 
+/* ── Everything that rides the ONE schedule-week fetch ────────────────────── */
+describe('OpsBoard — the week fetch, read three ways', () => {
+  it('still costs exactly ONE /api/schedule/week with the rail and the strip mounted', async () => {
+    // The assertion this whole slice turns on. `useScheduleData` keeps its
+    // state in per-instance refs with no module cache and no in-flight map, so
+    // a second mount is a second identical request. The rail and the
+    // needs-a-date strip therefore live INSIDE HomeToday, reading the hook
+    // result it already has -- not calling the hook again.
+    const wk = weekWithJobs()
+    mockGet(PAYLOAD, CREW_THREADS, { ...wk, unscheduled: [{ id: 77, client_name: 'Nina Cole', property_name: '4 Elm St' }] })
+    renderBoard()
+    await screen.findByTestId('home-week-rail')
+    await screen.findByTestId('needs-date-strip')
+
+    const weekCalls = get.mock.calls.map(c => String(c[0])).filter(u => u.startsWith('/api/schedule/week'))
+    expect(weekCalls).toHaveLength(1)
+  })
+
+  it('derives a 7-day load rail from the week it already fetched', async () => {
+    const wk = weekWithJobs()
+    mockGet(PAYLOAD, [], wk)
+    renderBoard()
+    const rail = await screen.findByTestId('home-week-rail')
+    const cells = within(rail).getAllByRole('button')
+    // Seven, always -- the day keys come from the fetched RANGE, not from the
+    // visits, so a day with nothing booked still gets a column.
+    expect(cells).toHaveLength(7)
+
+    // Each cell says something out loud. The visible glyphs are "S", "2", "5",
+    // which is all a screen reader would otherwise get.
+    expect(cells[wk.todayIdx].getAttribute('aria-label')).toMatch(/, today — 2 jobs$/)
+    expect(cells[wk.todayIdx].getAttribute('aria-current')).toBe('date')
+    const empty = cells.find(c => /nothing booked$/.test(c.getAttribute('aria-label') || ''))
+    expect(empty, 'an empty day should say so, not read as a bare dash').toBeTruthy()
+
+    // Today holds 2; the day two later holds 1; the rest are empty and read as
+    // a dash rather than a 0, so the eye skips them instead of parsing them.
+    expect(cells[wk.todayIdx].textContent).toContain('2')
+    expect(cells[(wk.todayIdx + 2) % 7].textContent).toContain('1')
+    const dashes = cells.filter(c => c.textContent.includes('\u2013'))
+    expect(dashes).toHaveLength(5)
+
+    // Today is marked by ink weight + a hairline rule, never a fill: a filled
+    // cell in a seven-cell strip reads as a selected tab (owner veto).
+    expect(cells[wk.todayIdx].className).toMatch(/border-b-2 border-ink/)
+    for (const c of cells) expect(c.className).not.toMatch(/bg-(amber|rose|blue|emerald|violet|indigo)-/)
+  })
+
+  it('a rail cell opens that day on the calendar', async () => {
+    const wk = weekWithJobs()
+    mockGet(PAYLOAD, [], wk)
+    renderBoard()
+    const rail = await screen.findByTestId('home-week-rail')
+    fireEvent.click(within(rail).getAllByRole('button')[wk.todayIdx])
+    await waitFor(() => expect(screen.getByTestId('loc').textContent).toBe('/schedule'))
+    // ?date is a real anchor Schedule.jsx parses (it stores currentDate there
+    // so a reload stays put), and view=day is its drawn default.
+    const search = screen.getByTestId('loc-search').textContent
+    expect(search).toContain(`date=${wk.ymd(wk.todayIdx)}`)
+    expect(search).toContain('view=day')
+  })
+
+  it('surfaces jobs with no date from the SAME response, reusing NeedsDateStrip', async () => {
+    // Accepting a quote converts it to a job with no date, and a date-bounded
+    // week query can never show those -- they were invisible on the dashboard.
+    mockGet(PAYLOAD, [], {
+      ...EMPTY_WEEK,
+      unscheduled: [
+        { id: 77, client_name: 'Nina Cole', property_name: '4 Elm St', quote_id: 9 },
+        { id: 78, title: 'Deep clean', property_name: '12 Oak Ave' },
+      ],
+    })
+    renderBoard()
+    const strip = await screen.findByTestId('needs-date-strip')
+    expect(within(strip).getByText('Needs a date')).toBeTruthy()
+    expect(within(strip).getByText('Nina Cole')).toBeTruthy()
+    expect(within(strip).getByText('Deep clean')).toBeTruthy()
+    // No "Schedule" button here: picking the date is the job page's modal, and
+    // the row already links there. (The Schedule page passes onSchedule; we
+    // deliberately don't.)
+    expect(within(strip).queryByRole('button', { name: /^schedule$/i })).toBeNull()
+  })
+
+  it('renders no needs-a-date block when every job has a date', async () => {
+    mockGet(PAYLOAD, [], EMPTY_WEEK)
+    renderBoard()
+    await screen.findByText('Reply overdue — Jess Racco')
+    expect(screen.queryByTestId('needs-date-strip')).toBeNull()
+  })
+})
+
 /* ── The comms rail (new centerpiece) ─────────────────────────────────────── */
 describe('OpsBoard — comms rail', () => {
   it('renders the Crew box from one /api/crew/threads fetch', async () => {
@@ -422,6 +556,27 @@ describe('OpsBoard — comms rail', () => {
     expect(get).toHaveBeenCalledWith('/api/crew/threads')
     expect(screen.getByText('2 new')).toBeTruthy()
     expect(screen.getByText('Pat Lee')).toBeTruthy()
+  })
+
+  it('says which channel a client wrote in on', async () => {
+    mockGet(PAYLOAD, CREW_THREADS)
+    renderBoard()
+    const row = await screen.findByTestId('client-row-conv:7')
+    // board_service puts the channel in tags[0].label, capitalized. The box
+    // had been dropping it since it shipped -- on a surface whose job is "who
+    // is waiting on a reply", how to reply is not a detail.
+    expect(within(row).getByText(/Sms/)).toBeTruthy()
+    // The other row's channel too, so this isn't passing off one lucky fixture.
+    const waiting = screen.getByTestId('client-row-wait-conv:8')
+    expect(within(waiting).getByText(/Email/)).toBeTruthy()
+
+    // Rendered as a word, with no second coloured mark: tags[0].tone encodes
+    // SEVERITY (rose breached / blue waiting), not channel, and the row's
+    // leading dot already says severity. Colouring by urgency while labelling
+    // by channel would be the same fact twice in two vocabularies.
+    const channel = within(row).getByText(/Sms/)
+    expect(channel.className).not.toMatch(/text-(rose|amber|blue|emerald|violet)-/)
+    expect(channel.querySelector('.rounded-full')).toBeNull()
   })
 
   it('opens a cleaner thread in a drawer on tap', async () => {
@@ -458,6 +613,36 @@ describe('OpsBoard — layout', () => {
     expect(grid.className).toMatch(/shell:grid-cols-/)
     expect(within(grid).getByTestId('home-today')).toBeTruthy()
     expect(within(grid).getByTestId('home-comms-rail')).toBeTruthy()
+  })
+
+  it('never gives the tail a column it has no child for', async () => {
+    const withNotice = {
+      ...PAYLOAD,
+      sections: PAYLOAD.sections.map(sec => sec.key === 'systems'
+        ? { ...sec, items: [{ id: 'sys:1', severity: 'urgent', title: 'iCal feed stalled', body: '', meta: '', tags: [], actions: [] }] }
+        : sec),
+    }
+    // Office: create flows AND notices -> two up.
+    mockGet(withNotice)
+    renderBoard()
+    let row = await screen.findByTestId('home-tail-row')
+    expect(row.className).toContain('shell:grid-cols-2')
+
+    // Office, nothing wrong: Quick actions alone -> one track, not a half-empty
+    // two-up and not a spacer div shoving it to the right.
+    cleanup(); mockGet(PAYLOAD)
+    renderBoard()
+    row = await screen.findByTestId('home-tail-row')
+    expect(row.className).toContain('shell:grid-cols-1')
+
+    // Viewer: no create flows (they are all writes), so the notices stand alone.
+    cleanup()
+    localStorage.setItem('brightbase_user', JSON.stringify({ role: 'viewer' }))
+    mockGet(withNotice)
+    renderBoard()
+    row = await screen.findByTestId('home-tail-row')
+    expect(row.className).toContain('shell:grid-cols-1')
+    expect(screen.queryByTestId('home-quick-actions')).toBeNull()
   })
 
   it('puts the bench below the fold, in two packing columns', async () => {
@@ -547,9 +732,57 @@ describe('OpsBoard — layout', () => {
     // to the focus section — the slim identity bar above it owns an h1 too.
     expect(within(screen.getByTestId('home-focus')).queryByRole('heading')).toBeNull()
     expect(screen.queryByText(/on top of it/i)).toBeNull()
-    // And the middle column collapses out rather than leaving a blank track.
+    // And the middle column collapses out rather than leaving a blank track:
+    // two children (Today + comms) means a two-track template.
     const grid = screen.getByTestId('home-grid')
-    expect(grid.className).toContain('shell:grid-cols-[minmax(0,1.5fr)_minmax(0,1.1fr)]')
+    expect(grid.className).toContain('shell:grid-cols-[minmax(0,1.5fr)_minmax(0,1.15fr)]')
+    // The page still has exactly one h1 -- the identity line. That is the whole
+    // reason the focus headline is an h2: it is conditional, so if it carried
+    // the h1 a quiet morning would leave the document with no top-level
+    // heading at all.
+    expect(screen.getAllByRole('heading', { level: 1 })).toHaveLength(1)
+  })
+
+  it('has exactly one h1 on a busy morning too', async () => {
+    renderBoard()
+    await screen.findByText('1 job still needs a cleaner')
+    const h1s = screen.getAllByRole('heading', { level: 1 })
+    expect(h1s).toHaveLength(1)
+    expect(h1s[0].textContent).toBe('The Maine Cleaning Co.')
+    // The hero line is the biggest type on the page and still an h2 -- heading
+    // level is structure, not size.
+    expect(screen.getByRole('heading', { level: 2, name: '1 job still needs a cleaner' })).toBeTruthy()
+  })
+
+  it('gives the grid a template that matches its child count, per role', async () => {
+    // The template used to be keyed on showMiddle ALONE, so a non-office role
+    // got a three-track grid holding two children -- a blank column. The role
+    // test below checked the rail was gone but never the template it left.
+    const quiet = {
+      ...PAYLOAD,
+      stats: PAYLOAD.stats.filter(st => st.key !== 'overdue'),
+      sections: PAYLOAD.sections.map(sec => ['requests', 'money', 'needs_cleaner'].includes(sec.key)
+        ? { ...sec, items: [] } : sec),
+    }
+    const T3 = 'shell:grid-cols-[minmax(0,1.5fr)_minmax(0,1.15fr)_minmax(0,1.15fr)]'
+    const T2 = 'shell:grid-cols-[minmax(0,1.5fr)_minmax(0,1.15fr)]'
+
+    const cases = [
+      { role: 'admin', payload: PAYLOAD, cols: T3, why: 'work + comms = 3' },
+      { role: 'admin', payload: quiet, cols: T2, why: 'comms only = 2' },
+      { role: 'viewer', payload: PAYLOAD, cols: T2, why: 'work, no comms = 2' },
+      { role: 'viewer', payload: quiet, cols: 'shell:grid-cols-1', why: 'Today alone = 1' },
+    ]
+    for (const { role, payload, cols, why } of cases) {
+      cleanup()
+      localStorage.setItem('brightbase_user', JSON.stringify({ role, full_name: 'Mariah Small' }))
+      mockGet(payload)
+      renderBoard()
+      const grid = await screen.findByTestId('home-grid')
+      expect(grid.className, `${role}, ${why}`).toContain(cols)
+      // Never a wider template than there are children to fill it.
+      if (cols !== T3) expect(grid.className, `${role}: ${why}`).not.toContain(T3)
+    }
   })
 
   it('costs exactly one board fetch (plus the schedule + crew reads)', async () => {
