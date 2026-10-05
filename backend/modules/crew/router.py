@@ -585,10 +585,13 @@ def my_day(
         # isn't linked to a crew ID yet (nothing to total).
         "week": (_week_earnings(db, oid, current_user.cleaner_id, today)
                  if current_user.cleaner_id else None),
-        # Two pro cleaning tips on the home screen — a quiet, always-there way
-        # to train the team, rotating daily. Built-in text, so it rides this
+        # The pro-tip deck for the home screen — a quiet, always-there way to
+        # train the team. Ordered so TODAY's tip leads (rotates daily) and the
+        # rest follow, so the crew can flip through the whole set. The office's
+        # OWN tips (published "tip" CrewDocs) when it has written any, else the
+        # built-in library — either way short static text that rides this
         # payload with no extra fetch and no per-house weight (brightbase-economy).
-        "tips": _daily_tips(today),
+        "tips": _daily_tips(today, _tip_deck(db, oid)),
     }
 
 
@@ -621,11 +624,40 @@ _PRO_TIPS = [
 ]
 
 
-def _daily_tips(today) -> list:
-    """Two pro tips for the crew home, rotating by date."""
-    n = len(_PRO_TIPS)
+def _tip_deck(db: Session, oid: int) -> list:
+    """The office's OWN crew tips if they've written any, else the built-in
+    library.
+
+    A tip is a published company CrewDoc in the "tip" category — so the office
+    edits its own tips in the same Crew docs screen as everything else, in its
+    own words, and they also show in the Learn tab. Pinned first, then
+    oldest-first for a stable deck order. When the office has written none, the
+    built-in `_PRO_TIPS` are the starter set."""
+    rows = (db.query(CrewDoc)
+            .filter(or_(CrewDoc.org_id == oid, CrewDoc.org_id.is_(None)),
+                    CrewDoc.published.is_(True),
+                    CrewDoc.owner_user_id.is_(None),   # company tips, not a cleaner's private note
+                    CrewDoc.category == "tip")
+            .order_by(CrewDoc.pinned.desc(), CrewDoc.id.asc())
+            .all())
+    owner = [{"title": d.title, "body": (d.body or "").strip()}
+             for d in rows if (d.title or "").strip()]
+    return owner or _PRO_TIPS
+
+
+def _daily_tips(today, deck=None) -> list:
+    """The whole pro-tip deck for the crew home, ordered so TODAY's tip is first
+    and the rest follow for flip-through.
+
+    Rotates by the Maine-local date, so the lead tip is stable within a day and
+    changes daily; the full deck rides along (it's a handful of short strings)
+    so the crew can page through every tip without a second fetch — the home's
+    "Tip of the day" is just deck[0]. `deck` is the office's own tips when they
+    have them (see `_tip_deck`), else the built-in library."""
+    deck = deck or _PRO_TIPS
+    n = len(deck)
     i = today.toordinal() % n
-    return [_PRO_TIPS[i], _PRO_TIPS[(i + 1) % n]]
+    return [deck[(i + k) % n] for k in range(n)]
 
 
 def _week_earnings(db: Session, oid: int, cleaner_id: str, today, *,

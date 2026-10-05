@@ -113,19 +113,6 @@ function WeekPayBreakdown({ week, onOpenJob }) {
   )
 }
 
-// A couple of pro-tip titles for the faint lines in the Home header, rotating
-// by the day so they change without any state. The full set lives in Learn.
-function pickDailyTips(tips, n = 2) {
-  if (!tips || !tips.length) return []
-  const start = Math.floor(Date.now() / 86400000) % tips.length
-  const out = []
-  for (let i = 0; i < Math.min(n, tips.length); i++) {
-    const t = tips[(start + i) % tips.length]
-    if (t?.title) out.push(t.title)
-  }
-  return out
-}
-
 
 /** The day at a glance — the quiet dashboard strip that makes the home more
  *  than a second jobs list. Three things a subcontractor actually opens the
@@ -764,7 +751,8 @@ export default function MyDay({ previewUserId = null }) {
 
         {tab === 'today' && !loading && !error && data && (
           <>
-            <HeroBanner firstName={data.first_name} jobCount={(data.today || []).length} />
+            <HeroBanner firstName={data.first_name} jobCount={(data.today || []).length}
+              tips={data.tips} />
 
             {/* The day at a glance — what makes this a home and not the jobs
                 list. Only for a sub who can actually take work; a not-cleared
@@ -905,10 +893,8 @@ export default function MyDay({ previewUserId = null }) {
             {/* The cleaner's own reminders — their notes, saved to their
                 account (/api/notes), the same sticky board the office Home has.
                 A scratchpad at hand: "bring the tall ladder", "gate sticks".
-                The daily training tip pins read-only at the top of this card as
-                its own sticky — the owner wanted tips "like a sticky note" that
-                change daily and tap through to the full set in Learn. */}
-            <StickyNotes tip={pickDailyTips(data.tips, 1)[0]} onTipTap={() => setTab('learn')} />
+                (The training tip lives up in the header now, not here.) */}
+            <StickyNotes />
 
             {/* Save-to-phone + notifications setup. Dismissible here (sticks
                 via localStorage); always reachable again from the Me tab. */}

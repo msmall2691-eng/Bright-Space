@@ -23,8 +23,11 @@ log = logging.getLogger("uvicorn.error")
 router = APIRouter()
 
 # Fixed vocabulary keeps the Learn tab's grouping sane; "other" is the
-# catch-all so an unknown value can't scatter the list.
-CATEGORIES = ("training", "how-to", "products", "policy", "safety", "other")
+# catch-all so an unknown value can't scatter the list. "tip" is special: a
+# published "tip" doc is a short training tip that ALSO rotates on the crew's
+# home screen (see modules/crew/router._tip_deck) — the office writes its own
+# tips here instead of the built-in library.
+CATEGORIES = ("training", "how-to", "products", "policy", "safety", "tip", "other")
 MAX_BODY = 20_000
 
 

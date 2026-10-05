@@ -60,25 +60,12 @@ describe('StickyNotes', () => {
     await waitFor(() => expect(screen.queryByDisplayValue('toss')).toBeNull())
   })
 
-  it('pins the daily tip as a read-only sticky when one is passed', async () => {
-    api.get.mockResolvedValue([])
-    const onTipTap = vi.fn()
-    render(<StickyNotes tip="Microfiber beats paper towel on glass" onTipTap={onTipTap} />)
-    // The tip shows above the member's own notes, and the header reflects it.
-    expect(await screen.findByText('Microfiber beats paper towel on glass')).toBeTruthy()
-    expect(screen.getByText('Tip of the day')).toBeTruthy()
-    expect(screen.getByText('Tips & notes')).toBeTruthy()
-    // Tapping it jumps to Learn; it is NOT one of the editable notes (no textarea for it).
-    fireEvent.click(screen.getByText('Microfiber beats paper towel on glass'))
-    expect(onTipTap).toHaveBeenCalled()
-  })
-
-  it('shows plain "Notes" with no tip (office Home) and no tip sticky', async () => {
+  it('is just "Notes" — the training tip lives in the My Day header, not here', async () => {
     api.get.mockResolvedValue([])
     render(<StickyNotes />)
     await waitFor(() => expect(screen.getByText(/no notes yet/i)).toBeTruthy())
     expect(screen.getByText('Notes')).toBeTruthy()
-    expect(screen.queryByText('Tip of the day')).toBeNull()
+    expect(screen.queryByText(/tip of the day/i)).toBeNull()
   })
 
   it('shows a retry affordance when loading fails', async () => {

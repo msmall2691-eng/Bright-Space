@@ -104,7 +104,7 @@ function MyNotes() {
 
 const CAT_LABELS = {
   training: 'Training', 'how-to': 'How-to', products: 'Products',
-  policy: 'Policy', safety: 'Safety', other: 'Other',
+  policy: 'Policy', safety: 'Safety', tip: 'Tip', other: 'Other',
 }
 
 function DocReader({ doc, onClose }) {
