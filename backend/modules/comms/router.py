@@ -494,6 +494,39 @@ def _apply_outbound(conv: Conversation, msg: Message):
 
 # ---------------------------------------------------------------------------
 # Conversation endpoints
+#
+# BB-SEC-22 (MT-2) — every endpoint below is org-scoped. Read this before
+# adding another one; the gap it closes was not visible by inspection.
+#
+# What it was: all thirteen authenticated routes here resolved their row with
+# `db.query(Conversation).filter(Conversation.id == conv_id)` and no org
+# filter, carrying only `require_role("admin", "manager")`. Two of them
+# (`/conversations`, `/conversations/summary`) queried the table globally.
+#
+# Why RLS did not catch it: `conversations` IS in TENANT_TABLES, but the MT-3
+# policy reads the `app.current_org_id` GUC, and that GUC is set ONLY by the
+# `current_org_id` dependency (modules/auth/router.py). None of these routes
+# depended on it, so the GUC was unset — and the policy's USING clause ends in
+# `OR current_setting('app.current_org_id', true) IS NULL`, i.e. it fails OPEN.
+# A role check plus an RLS-registered table read as two yeses in review while
+# the actual isolation was zero.
+#
+# What it allowed: any authenticated admin/manager in ANY workspace could read
+# another workspace's entire thread by id, and POST a reply on it — `send_reply`
+# resolves `to_addr` server-side from that org's client, so the SMS or email
+# reached their customer, billed to this account's Twilio. It could also
+# reassign, re-tag, resolve and mark-read their threads, link one to a client,
+# enumerate every workspace's staff via `/assignees`, and read global unread
+# counts.
+#
+# The rule: the org filter belongs IN the query, never in an `if` after it — a
+# row that isn't the caller's must never load, and "not found" and "not yours"
+# must both be 404 so the response cannot be used to probe which ids exist.
+# Strict `== org_id` is correct for `conversations`/`messages`/`clients`/
+# `contact_phones` (migration 027 backfilled them, so no NULL-org rows exist);
+# `users` and `crew_messages` keep an `or_(..., .is_(None))` arm because `users`
+# was deliberately excluded from that backfill — see the long note in
+# database/rls.py. Covered by tests/test_tenancy_scope_comms.py.
 # ---------------------------------------------------------------------------
 
 @router.get("/conversations", dependencies=[Depends(require_role("admin", "manager"))])
@@ -507,6 +540,7 @@ def list_conversations(
     tag: Optional[str] = None,
     limit: int = Query(100, le=500),
     db: Session = Depends(get_db),
+    org_id: int = Depends(current_org_id),
 ):
     """List conversations with rich filters. Ordered newest-first by activity."""
     # Eager-load the client (many-to-one) in one batched query. We deliberately
@@ -517,7 +551,7 @@ def list_conversations(
     # (see _last_message_previews) — one small query instead of thousands of rows.
     query = db.query(Conversation).options(
         selectinload(Conversation.client),
-    )
+    ).filter(Conversation.org_id == org_id)  # BB-SEC-22
     if status:
         query = query.filter(Conversation.status == status)
     if assignee == "unassigned":
@@ -583,7 +617,8 @@ def _last_message_previews(db: Session, conv_ids: list[int]) -> dict:
 
 
 @router.get("/conversations/summary", dependencies=[Depends(require_role("admin", "manager"))])
-def conversations_summary(db: Session = Depends(get_db)):
+def conversations_summary(db: Session = Depends(get_db),
+                          org_id: int = Depends(current_org_id)):
     """Quick counts for inbox filter badges.
 
     Returns global totals (back-compat for the unread chime poller) PLUS a
@@ -600,7 +635,7 @@ def conversations_summary(db: Session = Depends(get_db)):
     total = _blank()
     by_channel: dict[str, dict] = {}
 
-    for c in db.query(Conversation).all():
+    for c in db.query(Conversation).filter(Conversation.org_id == org_id).all():  # BB-SEC-22
         ch = c.channel or "other"
         for b in (total, by_channel.setdefault(ch, _blank())):
             if c.status in ("open", "pending", "snoozed", "resolved"):
@@ -621,8 +656,14 @@ def conversations_summary(db: Session = Depends(get_db)):
     # sidebar/bottom-nav Messages badge honest about BOTH inboxes without a
     # second poll loop.
     from database.models import CrewMessage
+    # BB-SEC-22: was a global count — this badge reported every workspace's
+    # unread crew messages. The NULL arm matches the thread list this badge
+    # points at (modules/crew/router.py office_crew_threads), so the count and
+    # the list can't disagree.
     crew_q = db.query(CrewMessage).filter(CrewMessage.sender == "cleaner",
-                                          CrewMessage.read_at.is_(None))
+                                          CrewMessage.read_at.is_(None),
+                                          or_(CrewMessage.org_id == org_id,
+                                              CrewMessage.org_id.is_(None)))
     total["crew_unread_messages"] = crew_q.count()
     total["crew_unread_threads"] = (
         crew_q.with_entities(func.count(func.distinct(CrewMessage.user_id))).scalar() or 0)
@@ -630,8 +671,12 @@ def conversations_summary(db: Session = Depends(get_db)):
 
 
 @router.get("/conversations/{conv_id}", dependencies=[Depends(require_role("admin", "manager"))])
-def get_conversation(conv_id: int, db: Session = Depends(get_db)):
-    conv = db.query(Conversation).filter(Conversation.id == conv_id).first()
+def get_conversation(conv_id: int, db: Session = Depends(get_db),
+                     org_id: int = Depends(current_org_id)):
+    conv = (db.query(Conversation)
+            .filter(Conversation.id == conv_id,
+                    Conversation.org_id == org_id)
+            .first())
     if not conv:
         raise HTTPException(404, "Conversation not found")
     return {
@@ -641,9 +686,13 @@ def get_conversation(conv_id: int, db: Session = Depends(get_db)):
 
 
 @router.post("/conversations/{conv_id}/messages", dependencies=[Depends(require_role("admin", "manager"))])
-def send_reply(conv_id: int, data: SendReplyRequest, db: Session = Depends(get_db)):
+def send_reply(conv_id: int, data: SendReplyRequest, db: Session = Depends(get_db),
+               org_id: int = Depends(current_org_id)):
     """Send an outbound message on this conversation via its channel."""
-    conv = db.query(Conversation).filter(Conversation.id == conv_id).first()
+    conv = (db.query(Conversation)
+            .filter(Conversation.id == conv_id,
+                    Conversation.org_id == org_id)
+            .first())
     if not conv:
         raise HTTPException(404, "Conversation not found")
 
@@ -708,9 +757,13 @@ def send_reply(conv_id: int, data: SendReplyRequest, db: Session = Depends(get_d
 
 
 @router.post("/conversations/{conv_id}/notes", dependencies=[Depends(require_role("admin", "manager"))])
-def add_internal_note(conv_id: int, data: InternalNoteRequest, db: Session = Depends(get_db)):
+def add_internal_note(conv_id: int, data: InternalNoteRequest, db: Session = Depends(get_db),
+                      org_id: int = Depends(current_org_id)):
     """Attach an internal-only note to this conversation."""
-    conv = db.query(Conversation).filter(Conversation.id == conv_id).first()
+    conv = (db.query(Conversation)
+            .filter(Conversation.id == conv_id,
+                    Conversation.org_id == org_id)
+            .first())
     if not conv:
         raise HTTPException(404, "Conversation not found")
     msg = Message(
@@ -774,8 +827,12 @@ def add_internal_note(conv_id: int, data: InternalNoteRequest, db: Session = Dep
 
 
 @router.post("/conversations/{conv_id}/assign", dependencies=[Depends(require_role("admin", "manager"))])
-def assign_conversation(conv_id: int, data: AssignRequest, db: Session = Depends(get_db)):
-    conv = db.query(Conversation).filter(Conversation.id == conv_id).first()
+def assign_conversation(conv_id: int, data: AssignRequest, db: Session = Depends(get_db),
+                       org_id: int = Depends(current_org_id)):
+    conv = (db.query(Conversation)
+            .filter(Conversation.id == conv_id,
+                    Conversation.org_id == org_id)
+            .first())
     if not conv:
         raise HTTPException(404, "Conversation not found")
     if data.assignee_user_id is not None:
@@ -783,7 +840,19 @@ def assign_conversation(conv_id: int, data: AssignRequest, db: Session = Depends
         # derive the display label from their name so `assignee` stays populated
         # for old readers and list rendering.
         from database.models import User
-        user = db.query(User).filter(User.id == data.assignee_user_id).first()
+        # BB-SEC-22: `users` is deliberately NOT an RLS tenant table (see the
+        # long note in database/rls.py), so this filter is the ONLY thing
+        # stopping a conversation being assigned to a user in another
+        # workspace. The NULL arm is required, not slack: `users` was excluded
+        # from migration 027's org_id backfill and from 049's (which never ran
+        # against production), so NULL-org staff rows are live and mean "the
+        # default workspace". Strict equality here would 404 on assigning a
+        # legacy admin — the same regression rls.py's note describes for
+        # rosters, payroll lookups and dispatch.
+        user = (db.query(User)
+                .filter(User.id == data.assignee_user_id,
+                        or_(User.org_id == org_id, User.org_id.is_(None)))
+                .first())
         if not user:
             raise HTTPException(404, "User not found")
         conv.assignee_user_id = user.id
@@ -802,13 +871,18 @@ def assign_conversation(conv_id: int, data: AssignRequest, db: Session = Depends
 
 
 @router.get("/assignees", dependencies=[Depends(require_role("admin", "manager"))])
-def list_assignees(db: Session = Depends(get_db)):
+def list_assignees(db: Session = Depends(get_db),
+                   org_id: int = Depends(current_org_id)):
     """Staff who can own a conversation — powers the inbox assignee picker.
     Returns [{id, name, email}] of active, non-client users. Manager-accessible
     (the admin-only /auth/users list is for the Users admin screen)."""
     from database.models import User
+    # BB-SEC-22: was unscoped — the picker listed every workspace's staff by
+    # name, email and role. NULL-org arm per rls.py: `users` has no RLS policy
+    # and no completed org_id backfill, so legacy staff must stay pickable.
     rows = (db.query(User)
-            .filter(User.role != "client", User.status != "disabled")
+            .filter(User.role != "client", User.status != "disabled",
+                    or_(User.org_id == org_id, User.org_id.is_(None)))
             .all())
     out = [{"id": u.id, "name": u.full_name or u.email, "email": u.email, "role": u.role} for u in rows]
     out.sort(key=lambda r: (r["name"] or "").lower())
@@ -816,7 +890,9 @@ def list_assignees(db: Session = Depends(get_db)):
 
 
 @router.post("/conversations/{conv_id}/link-client", dependencies=[Depends(require_role("admin", "manager"))])
-def link_conversation_client(conv_id: int, data: LinkClientRequest, db: Session = Depends(get_db)):
+def link_conversation_client(conv_id: int, data: LinkClientRequest,
+                            db: Session = Depends(get_db),
+                            org_id: int = Depends(current_org_id)):
     """Attach (or detach) a conversation to a client — the Twenty-style
     "link to contact" merge the inbox was missing. Unknown-sender threads come in
     with client_id NULL (kept, not dropped, by design) and stay unlinked until
@@ -826,11 +902,20 @@ def link_conversation_client(conv_id: int, data: LinkClientRequest, db: Session 
     (`GET /client/{id}`, which unions by client_id) picks the whole thread up —
     otherwise linking the header alone would leave the messages orphaned.
     Passing client_id=null unlinks. Returns the updated conversation."""
-    conv = db.query(Conversation).filter(Conversation.id == conv_id).first()
+    conv = (db.query(Conversation)
+            .filter(Conversation.id == conv_id,
+                    Conversation.org_id == org_id)
+            .first())
     if not conv:
         raise HTTPException(404, "Conversation not found")
     if data.client_id is not None:
-        client = db.query(Client).filter(Client.id == data.client_id).first()
+        # BB-SEC-22: scope the TARGET too — an unscoped lookup here would let a
+        # thread be linked to another workspace's client, leaking that client's
+        # name into this org's inbox and dragging the thread into their
+        # `GET /client/{id}` view.
+        client = (db.query(Client)
+                  .filter(Client.id == data.client_id, Client.org_id == org_id)
+                  .first())
         if not client:
             raise HTTPException(404, "Client not found")
     prev_client_id = conv.client_id
@@ -847,8 +932,12 @@ def link_conversation_client(conv_id: int, data: LinkClientRequest, db: Session 
 
 
 @router.post("/conversations/{conv_id}/status", dependencies=[Depends(require_role("admin", "manager"))])
-def set_status(conv_id: int, data: StatusRequest, db: Session = Depends(get_db)):
-    conv = db.query(Conversation).filter(Conversation.id == conv_id).first()
+def set_status(conv_id: int, data: StatusRequest, db: Session = Depends(get_db),
+               org_id: int = Depends(current_org_id)):
+    conv = (db.query(Conversation)
+            .filter(Conversation.id == conv_id,
+                    Conversation.org_id == org_id)
+            .first())
     if not conv:
         raise HTTPException(404, "Conversation not found")
     if data.status not in ("open", "pending", "snoozed", "resolved"):
@@ -867,8 +956,12 @@ def set_status(conv_id: int, data: StatusRequest, db: Session = Depends(get_db))
 
 
 @router.post("/conversations/{conv_id}/priority", dependencies=[Depends(require_role("admin", "manager"))])
-def set_priority(conv_id: int, data: PriorityRequest, db: Session = Depends(get_db)):
-    conv = db.query(Conversation).filter(Conversation.id == conv_id).first()
+def set_priority(conv_id: int, data: PriorityRequest, db: Session = Depends(get_db),
+                 org_id: int = Depends(current_org_id)):
+    conv = (db.query(Conversation)
+            .filter(Conversation.id == conv_id,
+                    Conversation.org_id == org_id)
+            .first())
     if not conv:
         raise HTTPException(404, "Conversation not found")
     if data.priority not in ("low", "normal", "high", "urgent"):
@@ -885,8 +978,12 @@ def set_priority(conv_id: int, data: PriorityRequest, db: Session = Depends(get_
 
 
 @router.post("/conversations/{conv_id}/tags", dependencies=[Depends(require_role("admin", "manager"))])
-def set_tags(conv_id: int, data: TagsRequest, db: Session = Depends(get_db)):
-    conv = db.query(Conversation).filter(Conversation.id == conv_id).first()
+def set_tags(conv_id: int, data: TagsRequest, db: Session = Depends(get_db),
+             org_id: int = Depends(current_org_id)):
+    conv = (db.query(Conversation)
+            .filter(Conversation.id == conv_id,
+                    Conversation.org_id == org_id)
+            .first())
     if not conv:
         raise HTTPException(404, "Conversation not found")
     conv.tags = data.tags
@@ -896,8 +993,12 @@ def set_tags(conv_id: int, data: TagsRequest, db: Session = Depends(get_db)):
 
 
 @router.post("/conversations/{conv_id}/read", dependencies=[Depends(require_role("admin", "manager"))])
-def mark_read(conv_id: int, db: Session = Depends(get_db)):
-    conv = db.query(Conversation).filter(Conversation.id == conv_id).first()
+def mark_read(conv_id: int, db: Session = Depends(get_db),
+              org_id: int = Depends(current_org_id)):
+    conv = (db.query(Conversation)
+            .filter(Conversation.id == conv_id,
+                    Conversation.org_id == org_id)
+            .first())
     if not conv:
         raise HTTPException(404, "Conversation not found")
     conv.unread_count = 0
@@ -907,7 +1008,8 @@ def mark_read(conv_id: int, db: Session = Depends(get_db)):
 
 
 @router.get("/client/{client_id}", dependencies=[Depends(require_role("admin", "manager"))])
-def client_comms(client_id: int, db: Session = Depends(get_db)):
+def client_comms(client_id: int, db: Session = Depends(get_db),
+                 org_id: int = Depends(current_org_id)):
     """Unified, contact-linked communications for one client (Twenty-style).
 
     Returns every email + SMS message linked to the client by client_id OR by a
@@ -915,7 +1017,9 @@ def client_comms(client_id: int, db: Session = Depends(get_db)):
     E.164) — so messages that were never explicitly tied to the client_id still
     surface, the same way calendar events link by email. The frontend splits the
     flat ``messages`` list by channel for the SMS and Email tabs."""
-    client = db.query(Client).filter(Client.id == client_id).first()
+    client = (db.query(Client)
+              .filter(Client.id == client_id, Client.org_id == org_id)  # BB-SEC-22
+              .first())
     if not client:
         raise HTTPException(404, "Client not found")
 
@@ -924,7 +1028,9 @@ def client_comms(client_id: int, db: Session = Depends(get_db)):
     if client.email:
         contacts.add(client.email.strip().lower())
     phones = [client.phone] if client.phone else []
-    for cp in db.query(ContactPhone).filter(ContactPhone.client_id == client_id).all():
+    for cp in (db.query(ContactPhone)
+               .filter(ContactPhone.client_id == client_id,
+                       ContactPhone.org_id == org_id).all()):  # BB-SEC-22
         if cp.phone:
             phones.append(cp.phone)
     for p in phones:
@@ -932,12 +1038,15 @@ def client_comms(client_id: int, db: Session = Depends(get_db)):
         if n:
             contacts.add(n.lower())
 
+    # BB-SEC-22: the contact-match arm below is a string comparison on
+    # external_contact, so without an org filter a shared phone number or email
+    # would union in ANOTHER workspace's conversations.
     conds = [Conversation.client_id == client_id]
     if contacts:
         conds.append(func.lower(Conversation.external_contact).in_(list(contacts)))
     convs = (
         db.query(Conversation)
-        .filter(or_(*conds))
+        .filter(Conversation.org_id == org_id, or_(*conds))
         .order_by(Conversation.last_message_at.desc().nulls_last())
         .all()
     )
