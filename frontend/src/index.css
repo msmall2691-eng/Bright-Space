@@ -327,6 +327,24 @@ layer(base);
 }
 
 @layer base {
+  /* BB-A11Y-01 — `--ink-3` is contrast-corrected in EVERY theme block below.
+     It is the app's tertiary ink: column labels, metadata, timestamps, sub-lines
+     on stat tiles — ~1800 `text-ink-3` uses, essentially all of them small text.
+     Every theme shipped it failing WCAG AA 4.5:1 on its own surfaces:
+
+       paper   #8a857a  3.49:1 on panel, 2.89:1 on bg-3  ->  #69655d  5.51 / 4.56
+       console #6b6860  3.34:1 on panel, 3.13:1 on bg-3  ->  #858278  4.84 / 4.53
+       clean   #8b8e99  3.27:1 on panel, 2.65:1 on bg-3  ->  #666870  5.56 / 4.50
+       clean+console #686b76  3.27 / 2.91                ->  #878a98  5.06 / 4.50
+       neon    #7c8397  4.35:1 on panel, 4.10:1 on bg-3  ->  #838a9f  4.78 / 4.51
+
+     Each replacement is the ORIGINAL hue scaled in linear-light until it clears
+     4.5:1 against all four of that theme's grounds (panel / bg / bg-2 / bg-3),
+     so the token is safe wherever it lands — including on a hovered row (bg-2)
+     and in an inset well (bg-3) — and the hue does not shift. Fixed at the token
+     level on purpose: no component changes, and the four skins stay in step.
+     Before editing these, re-run the ratios; don't lighten them back by eye. */
+
   :root {
     --font-ui: 'Inter', system-ui, sans-serif;
     --font-mono: 'JetBrains Mono', ui-monospace, monospace;
@@ -338,7 +356,7 @@ layer(base);
     --panel: #fbf9f3;
     --ink: #171512;
     --ink-2: #4a4740;
-    --ink-3: #8a857a;
+    --ink-3: #69655d;
     --hairline: #e4e0d4;
     --hairline-2: #d4cfbe;
     --accent: oklch(0.62 0.14 55);
@@ -371,7 +389,7 @@ layer(base);
     --panel: #111317;
     --ink: #e8e6e0;
     --ink-2: #a5a297;
-    --ink-3: #6b6860;
+    --ink-3: #858278;
     --hairline: #20232a;
     --hairline-2: #2a2e37;
     --accent: oklch(0.72 0.14 200);
@@ -395,7 +413,7 @@ layer(base);
     --panel: #ffffff;
     --ink: #191a1f;
     --ink-2: #52545e;
-    --ink-3: #8b8e99;
+    --ink-3: #666870;
     --hairline: #ececee;
     --hairline-2: #dfe0e4;
     --accent: oklch(0.55 0.2 264);
@@ -414,7 +432,7 @@ layer(base);
     --panel: #1a1a1e;
     --ink: #ededf0;
     --ink-2: #a4a6b0;
-    --ink-3: #686b76;
+    --ink-3: #878a98;
     --hairline: #26262b;
     --hairline-2: #313138;
     --accent: oklch(0.72 0.16 264);
@@ -431,7 +449,7 @@ layer(base);
     --panel: #1b1f2a;
     --ink: #f4f6fb;
     --ink-2: #b6bccb;
-    --ink-3: #7c8397;
+    --ink-3: #838a9f;
     --hairline: rgba(255, 255, 255, 0.08);
     --hairline-2: rgba(255, 255, 255, 0.14);
     --accent: #7c5cff;
@@ -792,7 +810,7 @@ layer(base);
     --panel: #fbf9f3;
     --ink: #171512;
     --ink-2: #4a4740;
-    --ink-3: #8a857a;
+    --ink-3: #69655d;
     --hairline: #e4e0d4;
     --hairline-2: #d4cfbe;
     --frame: #e8e4d7;
