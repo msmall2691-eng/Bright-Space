@@ -3,8 +3,9 @@ import { useNavigate, useSearchParams } from 'react-router-dom'
 import { Users } from 'lucide-react'
 import { post } from '../api'
 import JobCreateModal from '../components/JobCreateModal'
-import { EmptyState, PageHero, SubNav } from '../components/ui'
+import { EmptyState, SubNav } from '../components/ui'
 import CRMHealthPanel from "../components/CRMHealthPanel"
+import { SEV_DOT } from '../components/board/tokens'
 import { toast } from '../utils/toastBus'
 import { confirmDialog } from '../utils/confirmBus'
 import { useClients } from '../hooks/useClients'
@@ -153,7 +154,10 @@ function BucketFilterBanner({
     <div className="mb-3 rounded-lg border border-hairline bg-panel px-3 py-2 text-[12px] text-ink">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <span className="flex items-center gap-2">
-          <span className="w-1.5 h-1.5 rounded-full shrink-0 bg-amber-500" aria-hidden="true" />
+          {/* BB-A11Y-02 — amber-500 is 1.77:1 against this page's grounds,
+              under the 3:1 non-text floor, on the one mark that says the list
+              you are looking at is not the whole list. */}
+          <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${SEV_DOT.watch}`} aria-hidden="true" />
           Showing <span className="font-semibold">{bucketFilter.label}</span> —
           {' '}{filteredCount} of {baseCount}
         </span>
@@ -387,17 +391,14 @@ export default function Clients() {
     <div className="flex h-full">
       {/* Main list */}
       <div className="flex-1 flex flex-col min-w-0">
-        <div className="px-4 sm:px-8 pt-4">
-          {/* No status pods here — the status counts + filter live in one
-              always-visible segmented control in the toolbar below, so the
-              count isn't shown twice and the active tab is never ambiguous. */}
-          <PageHero
-            title="Clients"
-            subtitle="Search, filter, and manage your customer list"
-            icon={Users}
-          >
-            <SubNav />
-          </PageHero>
+        {/* Nav only — a ~30px strip, not a header. The PageHero that used to
+            sit here contributed the word "Clients", an icon, and a subtitle
+            saying a list page lets you search and filter; the toolbar below
+            carries the title now. No status pods either way: the counts and
+            the filter are one segmented control in the toolbar, so the count
+            is never shown twice and the active tab is never ambiguous. */}
+        <div className="shrink-0 border-b border-hairline px-4 sm:px-8">
+          <SubNav />
         </div>
 
         <div className="flex-1 flex flex-col min-h-0 px-4 sm:px-8 pb-4 sm:pb-6 pt-4">
@@ -411,9 +412,28 @@ export default function Clients() {
           openNew={openNew}
         />
 
+        {/* One list-meta row. The selection controls and the CRM-health
+            disclosure were two separate full-width bands, and both rendered at
+            full height with nothing selected and nothing expanded — a
+            checkbox, a count, and a collapsed one-liner costing two bands
+            above an already-dense list. `flex-wrap` is what lets them share:
+            the health body is `w-full` in inline mode, so it drops onto its
+            own line underneath when expanded and takes no space when not. */}
+        <div className="mb-3 flex flex-wrap items-center gap-x-4 gap-y-2">
+        <BulkActionBar
+          filtered={filtered}
+          selectedIds={selectedIds}
+          toggleSelectAll={toggleSelectAll}
+          clearSelection={clearSelection}
+          openMerge={openMerge}
+          bulkDelete={bulkDelete}
+          bulkDeleting={bulkDeleting}
+        />
+
         {/* Read-only CRM health snapshot — see the real/dup/spam breakdown before cleanup.
             Bucket clicks narrow the list below to that bucket's members. */}
         <CRMHealthPanel
+          inline
           onSelectBucket={(key, ids) => {
             const label = ({
               duplicate: 'Duplicates', spam_marketing: 'Spam / marketing',
@@ -423,6 +443,7 @@ export default function Clients() {
             clearSelection()
           }}
         />
+        </div>
 
         {bucketFilter && (
           <BucketFilterBanner
@@ -448,16 +469,6 @@ export default function Clients() {
         {importResult && (
           <ImportResultBanner importResult={importResult} onDismiss={() => setImportResult(null)} />
         )}
-
-        <BulkActionBar
-          filtered={filtered}
-          selectedIds={selectedIds}
-          toggleSelectAll={toggleSelectAll}
-          clearSelection={clearSelection}
-          openMerge={openMerge}
-          bulkDelete={bulkDelete}
-          bulkDeleting={bulkDeleting}
-        />
 
         {/* List region — a single quiet fade-up as the rows paint, matching
             the Home board / Customer 360 reveal (held to the 150–350ms
