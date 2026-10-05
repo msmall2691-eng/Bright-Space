@@ -225,7 +225,7 @@ function RespondRow({ job, onRespond, onDecline, busy }) {
   )
 }
 
-export default function JobCard({ job, onMarkDone, onPhotos, onRespond, onDecline, onClaim, onAccept, onTextClient, onHouseInfo, onHelpers, onOpenDetails, busy = false, showDate = false }) {
+export default function JobCard({ job, onMarkDone, onPhotos, onRespond, onDecline, onClaim, onAccept, onTextClient, onOnMyWay, onHouseInfo, onHelpers, onOpenDetails, busy = false, showDate = false }) {
   const isTurnover = job.job_type === 'str_turnover'
   const done = job.status === 'completed'
   const houseLine = houseSpecsLine(job)
@@ -581,6 +581,20 @@ export default function JobCard({ job, onMarkDone, onPhotos, onRespond, onDeclin
         )
       })()}
 
+
+      {/* ON MY WAY — one tap tells the customer the cleaner is coming, texted
+          from the business number and logged where the office reads it (the
+          same structured 'on_the_way' message the Text-client sheet sends,
+          lifted out to a single tap). Only on a job that's theirs, with a
+          phone on file, on the day of the job — the caller only passes the
+          handler for today's jobs, and the server refuses it otherwise. Cuts
+          the "where's the cleaner?" calls to the office. */}
+      {onOnMyWay && !done && !job.open && job.can_text_client && (
+        <button onClick={onOnMyWay} disabled={busy}
+          className="mt-3 w-full min-h-[44px] text-[13px] font-semibold rounded-xl border border-hairline-2 bg-panel text-ink-2 hover:bg-bg-2 active:bg-bg-2 disabled:opacity-60 transition-colors inline-flex items-center justify-center gap-2">
+          <Navigation className="w-4 h-4" aria-hidden="true" /> On my way — text the customer
+        </button>
+      )}
 
       {/* MARK DONE — the cleaner's single most important action, and the whole
           point of the card on an assigned job. It opens the completion sheet
