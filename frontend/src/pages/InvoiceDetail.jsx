@@ -3,9 +3,9 @@ import { useParams, useNavigate, Link } from 'react-router-dom'
 import {
   ArrowLeft, Building2, TrendingUp, Calendar, FileText, Receipt, CheckCircle, Send, Trash2, Repeat,
 } from 'lucide-react'
-import { get, patch, post, del } from '../api'
+import { get, patch, post } from '../api'
 import { toast } from '../utils/toastBus'
-import { confirmDialog } from '../utils/confirmBus'
+import { confirmAndDeleteInvoice } from '../utils/invoiceDelete'
 import { formatDateShort as fmtDate } from '../utils/format'
 import { canEdit } from '../utils/perms'
 import InlineSelect from '../components/InlineSelect'
@@ -88,33 +88,22 @@ export default function InvoiceDetail() {
   }
 
   // DELETE /api/invoices/{id} is a HARD delete with no backend guard — it
-  // removes even a paid invoice and its payment record. The confirm has to
-  // say so plainly.
+  // removes even a paid invoice and its payment record. The confirm, the
+  // paid-case wording and the `?force=true` escalation all live in
+  // utils/invoiceDelete now, shared with the Invoicing list panel, which
+  // called this same endpoint with no confirmation at all.
   const deleteInvoice = async () => {
-    const paid = inv.status === 'paid'
-    const ok = await confirmDialog(
-      `Permanently delete invoice ${inv.invoice_number || ''}?\n\n` +
-      (paid
-        ? 'This invoice is PAID — deleting it erases the record of that payment from BrightBase. '
-        : '') +
-      'The invoice is removed entirely and cannot be recovered. If it was sent to the client, ' +
-      'their copy stops working.',
-      { title: 'Delete invoice?', confirmLabel: 'Delete permanently', danger: true }
-    )
-    if (!ok) return
     setActing(true)
     try {
-      // BB-SEC-10: a paid invoice 409s without force. The confirm above
-      // already escalated for the paid case the UI knows about; force is sent
-      // only then. A surprise 409 (stale status) falls through to the toast
-      // rather than silently forcing.
-      await del(`/api/invoices/${id}${paid ? '?force=true' : ''}`)
-      toast.success('Invoice deleted')
-      navigate('/billing?view=invoices')
+      if (await confirmAndDeleteInvoice(inv)) {
+        toast.success('Invoice deleted')
+        navigate('/billing?view=invoices')
+        return
+      }
     } catch (e) {
       toast.error(e?.message || 'Could not delete invoice')
-      setActing(false)
     }
+    setActing(false)
   }
 
   if (loading) return <RecordSkeleton />
