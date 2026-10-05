@@ -36,10 +36,11 @@
  * refreshed file so a decision costs one call, not two.
  */
 import { useCallback, useEffect, useState } from 'react'
-import { Check, ExternalLink, FileCheck, Smartphone, Users, X } from 'lucide-react'
+import { Check, ExternalLink, FileCheck, Send, Smartphone, Users, X } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { download, get, post } from '../../api'
 import { toast } from '../../utils/toastBus'
+import { reportInvite } from '../../utils/inviteFallback'
 import { EmptyState } from '../ui'
 
 const DOC = {
@@ -98,6 +99,20 @@ export default function CrewFiles() {
     await review(userId, kind, 'pending', { notes })
   }
 
+  // Re-send the set-password invite to someone still stuck at "invited" — the
+  // link is single-use + 7 days, so a missed email used to mean no way in.
+  const resend = async (person) => {
+    setBusy(`invite:${person.user_id}`)
+    try {
+      const r = await post(`/api/auth/users/${person.user_id}/resend-invite`)
+      // Mail unconfigured/failed → reportInvite surfaces the live link to copy.
+      if (reportInvite(r, person.email)) return
+      toast.success('Invite sent again')
+    } catch (e) {
+      toast.error(e?.detail || e?.message || 'Couldn’t resend that invite')
+    } finally { setBusy(null) }
+  }
+
   if (error) {
     return (
       <p className="text-[13px] text-ink-3">
@@ -119,9 +134,14 @@ export default function CrewFiles() {
   }
 
   const t = data.totals || {}
-  const waiting = people.filter(c => c.awaiting_review.length)
-  const owing = people.filter(c => !c.awaiting_review.length && !c.complete)
-  const done = people.filter(c => c.complete)
+  // Invited-but-never-signed-in sit before everything else: they can't upload a
+  // thing until they set a password, so they're stuck at step one and the only
+  // action is to (re)send the invite — not document review.
+  const invited = people.filter(c => c.status === 'invited')
+  const active = people.filter(c => c.status !== 'invited')
+  const waiting = active.filter(c => c.awaiting_review.length)
+  const owing = active.filter(c => !c.awaiting_review.length && !c.complete)
+  const done = active.filter(c => c.complete)
 
   return (
     <div className="space-y-4">
@@ -160,6 +180,32 @@ export default function CrewFiles() {
             you collect their documents. Anyone added after needs a complete file first.
           </span>
         </p>
+      )}
+
+      {invited.length > 0 && (
+        <section>
+          <h3 className="mb-1.5 text-[10px] uppercase tracking-wide text-ink-3">
+            Invited — waiting for them to sign in
+          </h3>
+          <div className="divide-y divide-hairline rounded-lg border border-hairline">
+            {invited.map(person => (
+              <div key={person.user_id} className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2 px-3 py-2.5">
+                <div className="min-w-0">
+                  <div className="text-[14px] font-medium text-ink">{person.name}</div>
+                  <div className="mt-0.5 inline-flex items-center gap-1.5 text-[12px] text-ink-2">
+                    <span className="h-1.5 w-1.5 rounded-full bg-violet-500" aria-hidden="true" />
+                    Haven’t set their password yet{person.email ? ` · ${person.email}` : ''}
+                  </div>
+                </div>
+                <button type="button" disabled={busy === `invite:${person.user_id}`}
+                  onClick={() => resend(person)}
+                  className="inline-flex shrink-0 items-center gap-1 rounded-md border border-hairline-2 bg-panel px-2.5 py-1.5 text-xs font-medium text-ink-2 transition-colors hover:bg-bg-2 disabled:opacity-50">
+                  <Send className="h-3.5 w-3.5" /> Resend invite
+                </button>
+              </div>
+            ))}
+          </div>
+        </section>
       )}
 
       {[['Waiting for you', waiting], ['Still owed', owing], ['Complete', done]]
