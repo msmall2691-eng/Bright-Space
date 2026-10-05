@@ -296,6 +296,14 @@ export default function MyDay({ previewUserId = null }) {
   const [textNote, setTextNote] = useState('')
   const [textSent, setTextSent] = useState(null)   // backend's sent preview
 
+  // Which jobs we've already sent "on my way" for, so the card shows a done
+  // state instead of letting a second tap fire a duplicate. Keyed jobId→date
+  // and kept on THIS phone (the server is the real once-per-job guard); the
+  // date pins it to the right day so a reused id can't carry over.
+  const [onMyWaySent, setOnMyWaySent] = useState(() => {
+    try { return JSON.parse(localStorage.getItem('bb_onmyway_sent') || '{}') } catch { return {} }
+  })
+
   const [weekPay, setWeekPay] = useState(null)
   // Photos waiting for WiFi (see components/crew/photoQueue.js).
   const [queuedPhotos, setQueuedPhotos] = useState(0)
@@ -499,11 +507,20 @@ export default function MyDay({ previewUserId = null }) {
   // often "already sent for this job" — shows the server's own words.
   const notifyOnMyWay = useCallback(async (job) => {
     setActionBusy(true)
+    const markSent = () => setOnMyWaySent(prev => {
+      const next = { ...prev, [job.id]: job.scheduled_date || null }
+      try { localStorage.setItem('bb_onmyway_sent', JSON.stringify(next)) } catch { /* ignore */ }
+      return next
+    })
     try {
       await post(`/api/crew/jobs/${job.id}/notify-client`, { template: 'on_the_way' })
       toast.success(`Texted ${job.client_name || 'the customer'} — on your way`)
+      markSent()
     } catch (e) {
-      toast.error(e.detail || e.message || "Couldn't text the customer")
+      // 409 = the server already has it logged (sent earlier, maybe on another
+      // device) — reflect that as done rather than an error the cleaner can't act on.
+      if (e.status === 409) { markSent(); toast.info('Already let the customer know.') }
+      else toast.error(e.detail || e.message || "Couldn't text the customer")
     } finally {
       setActionBusy(false)
     }
@@ -849,6 +866,7 @@ export default function MyDay({ previewUserId = null }) {
                       onDecline={() => requestDecline(j)}
                       onTextClient={() => { setTextNote(''); setTextSent(null); setActionError(null); setTextJob(j) }}
                       onOnMyWay={() => notifyOnMyWay(j)}
+                      clientNotified={onMyWaySent[j.id] !== undefined && onMyWaySent[j.id] === (j.scheduled_date || null)}
                       onHouseInfo={() => setHouseJob(j)}
                       onHelpers={() => { setActionError(null); setHelperName(''); setHelperPhone(''); setHelperJob(j) }}
                       busy={actionBusy}

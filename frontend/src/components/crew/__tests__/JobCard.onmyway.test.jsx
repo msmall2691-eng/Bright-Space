@@ -57,3 +57,11 @@ it('is absent without the handler (e.g. a future job in the schedule list)', () 
   show({ ...BASE, open: false })
   expect(onMyWay()).toBeNull()
 })
+
+it('shows a done state (not a button) once the customer has been notified', () => {
+  const onOnMyWay = vi.fn()
+  show({ ...BASE, open: false }, { onOnMyWay, clientNotified: true })
+  // No tappable "On my way" button — a quiet confirmation instead.
+  expect(onMyWay()).toBeNull()
+  expect(screen.getByText(/customer knows you're on the way/i)).toBeTruthy()
+})
