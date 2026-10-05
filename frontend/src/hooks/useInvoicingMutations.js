@@ -1,5 +1,6 @@
 import { useState } from 'react'
-import { del, get, patch, post } from '../api'
+import { get, patch, post } from '../api'
+import { confirmAndDeleteInvoice } from '../utils/invoiceDelete'
 
 /** Owns every server-hitting mutation on the Invoicing list page:
  *  save / delete a single invoice, mark paid / overdue, send an
@@ -67,13 +68,23 @@ export function useInvoicingMutations({
     }
   }
 
+  // Deleting an invoice is permanent and had NO confirmation here, while the
+  // same endpoint was gated behind a danger dialog on InvoiceDetail. Both go
+  // through confirmAndDeleteInvoice now, so there is one dialog to maintain
+  // rather than two to drift apart.
   const deleteInvoice = async () => {
     if (!selected) return
     setDeleting(true)
     try {
-      await del(`/api/invoices/${selected.id}`)
-      await load(); setPanel(null); toast('Invoice deleted')
-    } catch { toast('Failed to delete invoice', 'error') }
+      if (await confirmAndDeleteInvoice(selected)) {
+        await load(); setPanel(null); toast('Invoice deleted')
+      }
+    } catch (e) {
+      // Surface what the API said. The bare `catch {}` here threw the message
+      // away, so the backend's "cannot delete a paid invoice" 409 reached the
+      // operator as a generic failure with no hint of what to do.
+      toast(e?.message || 'Failed to delete invoice', 'error')
+    }
     setDeleting(false)
   }
 
