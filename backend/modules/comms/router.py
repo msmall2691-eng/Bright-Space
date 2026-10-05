@@ -53,6 +53,19 @@ SLA_FRT_MINUTES = {
 
 DEFAULT_ASSIGNEE = os.getenv("DEFAULT_CONVERSATION_ASSIGNEE") or None
 
+# The channels we can actually send OUT on. Stated once here because two places
+# depend on it and they used to disagree by omission: send_reply raised
+# "Channel X not sendable" from the tail of an if/elif, and nothing else knew
+# the rule at all.
+#
+# It matters more since threads became person-keyed (alembic 131). A thread's
+# `channel` is now its DEFAULT REPLY CHANNEL rather than its identity, and
+# _apply_inbound keeps it pointed at however the customer last reached us — so
+# without this guard, one voicemail would set conv.channel = "voice" and every
+# reply on that thread would 400 until someone edited the database. Voice is
+# receive-only: a transcript arrives, the reply goes back by text or email.
+SENDABLE_CHANNELS = ("sms", "email")
+
 # Phase 4 — operator notification: when an inbound SMS arrives, forward a
 # copy to this number so on-call staff get the message even when the
 # BrightBase tab/laptop is closed. Unset (default) disables forwarding.
@@ -405,19 +418,38 @@ def find_or_create_conversation(
     org_id: Optional[int] = None,
 ) -> Conversation:
     """
-    Find the conversation for this contact + channel, or create a new one.
-    Preference: match by client_id, else by contact.
+    Find this person's conversation, or create one.
 
-    Prefers the active (non-resolved) thread — but for a known client a
-    RESOLVED conversation is reused, never duplicated:
-    uq_conversations_client_channel allows exactly ONE row per
-    (client_id, channel), so inserting a sibling is a guaranteed
-    IntegrityError. (That poisoned the whole Gmail sync transaction every
-    tick once a client's only conversation was resolved — the June 10
-    incident.) Callers re-open a resolved thread on the next inbound via
-    _apply_inbound. The insert runs in a savepoint so a lost race with a
-    concurrent writer (e.g. the SMS webhook) degrades to returning the
-    surviving row instead of aborting the caller's transaction.
+    THREAD IDENTITY IS THE PERSON, NOT THE PERSON-AND-CHANNEL (Tier 4a,
+    alembic 131). A known client has ONE thread: if they texted last week and
+    email today, both land in it, and the office reads one conversation
+    instead of half of one in each of two. `channel` is a property of each
+    MESSAGE (messages.channel, already written on every row); on the thread it
+    now means only "the channel to reply on by default".
+
+    An UNLINKED contact is still channel-scoped, deliberately. A phone number
+    and an email address are two different `external_contact` values with no
+    way to know they are the same human, so unifying them is not something
+    this function can do honestly — it would just be guessing. Linking the
+    contact to a client is what unifies them, and _link_and_merge_conversations
+    (modules/clients/router.py) already does that merge.
+
+    Prefers the active (non-resolved) thread, and for a known client reuses a
+    RESOLVED one rather than opening a second. That was originally forced by
+    uq_conversations_client_channel — inserting a sibling was a guaranteed
+    IntegrityError, which poisoned the whole Gmail sync transaction every tick
+    once a client's only conversation was resolved (the June 10 incident).
+    Alembic 131 drops that index, so the constraint no longer compels it; the
+    behaviour stays because it was always the right answer. A customer
+    replying to a closed thread should re-open it, which _apply_inbound does,
+    not start a parallel one. The June 10 guard in
+    tests/test_conversation_get_or_create.py still holds it.
+
+    The insert still runs in a savepoint. Without the unique index an
+    IntegrityError is far less likely, but the savepoint costs nothing and a
+    lost race with a concurrent writer (e.g. the SMS webhook) still degrades
+    to returning the surviving row rather than aborting the caller's
+    transaction.
 
     org_id (BB-MT-01): stamped on a newly-created Conversation only — this was
     never set anywhere in the codebase, so every conversation's org_id was
@@ -426,11 +458,15 @@ def find_or_create_conversation(
     with no resolvable org (e.g. the shared legacy Gmail inbox) may omit it.
     """
     external_contact = _normalize_contact(external_contact)
-    q = db.query(Conversation).filter(Conversation.channel == channel)
     if client_id:
-        q = q.filter(Conversation.client_id == client_id)
+        # Person-keyed. No channel filter: this is the whole change.
+        q = db.query(Conversation).filter(Conversation.client_id == client_id)
     elif external_contact:
-        q = q.filter(Conversation.external_contact == external_contact)
+        # Still channel-scoped — see the docstring.
+        q = db.query(Conversation).filter(
+            Conversation.external_contact == external_contact,
+            Conversation.channel == channel,
+        )
     else:
         q = None
 
@@ -473,6 +509,15 @@ def _apply_inbound(conv: Conversation, msg: Message):
     conv.last_message_at = now
     conv.last_inbound_at = now
     conv.unread_count = (conv.unread_count or 0) + 1
+    # Point the thread's default reply channel at however the customer last
+    # reached us, so answering a text does not email them (threads hold mixed
+    # channels now — alembic 131). Only ever a channel we can send on: a
+    # voicemail must not leave the thread unanswerable, since send_reply 400s
+    # on anything outside SENDABLE_CHANNELS. A voice-only thread keeps
+    # whatever channel it was created with, which is what the operator sees
+    # and can still reply on.
+    if msg.channel in SENDABLE_CHANNELS:
+        conv.channel = msg.channel
     # Re-open if resolved
     if conv.status == "resolved":
         conv.status = "open"
@@ -617,7 +662,18 @@ def list_conversations(
     elif assignee:
         query = query.filter(Conversation.assignee == assignee)
     if channel:
-        query = query.filter(Conversation.channel == channel)
+        # "Threads CONTAINING a message on this channel", not "threads whose
+        # channel is this". Since alembic 131 a thread holds every channel the
+        # person used, and `Conversation.channel` means only "reply here by
+        # default" — so the old equality filter would have quietly broken the
+        # inbox's own tabs: a voicemail now joins the person's existing SMS
+        # thread, whose channel stays "sms", and the Voicemail tab would have
+        # matched nothing at all.
+        #
+        # EXISTS rather than a join, so a thread with twenty emails appears
+        # once. Backed by ix_messages_conversation_id_channel (alembic 131);
+        # unindexed this would scan `messages` once per conversation row.
+        query = query.filter(Conversation.messages.any(Message.channel == channel))
     if unread_only:
         query = query.filter(Conversation.unread_count > 0)
     if q:
@@ -776,6 +832,9 @@ def send_reply(conv_id: int, data: SendReplyRequest, db: Session = Depends(get_d
             _send_email(to=to_addr, subject=subject, html_body=data.body, text_body=data.body)
             from_addr = os.getenv("SMTP_FROM", os.getenv("SMTP_USER", ""))
         else:
+            # SENDABLE_CHANNELS is the single statement of this rule;
+            # _apply_inbound reads it too so a thread can never be parked on a
+            # receive-only channel in the first place.
             raise HTTPException(400, f"Channel {conv.channel} not sendable")
     except HTTPException:
         raise
