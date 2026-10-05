@@ -21,8 +21,8 @@ from database.db import SessionLocal
 from database.models import SubAgreement, SubDocument, User
 from modules.auth.router import get_current_user, current_org_id
 from services.sub_vetting import (
-    CURRENT_AGREEMENT_VERSION, can_take_jobs, expiring_documents, is_expired,
-    missing_requirements, vetting_status,
+    CURRENT_AGREEMENT_VERSION, blocking_requirements, can_take_jobs,
+    expiring_documents, is_expired, missing_requirements, vetting_status,
 )
 from utils.dates import business_today
 
@@ -391,3 +391,83 @@ def test_accepting_text_the_server_no_longer_serves_is_refused(sub):
     finally:
         _clear()
     assert db.query(SubAgreement).filter(SubAgreement.user_id == uid).count() == 0
+
+
+# ── admin "work now, collect the docs later" override (migration 130) ─────────
+
+def test_override_clears_the_gate_but_leaves_the_file_honest(sub):
+    db, uid = sub
+    u = db.query(User).filter(User.id == uid).first()
+    assert blocking_requirements(db, u)          # empty file → blocked
+    assert not can_take_jobs(db, uid)
+
+    r = _as(_Admin()).post(f"/api/auth/users/{uid}/vetting-override",
+                           json={"enabled": True, "reason": "same-day cover"})
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["override"] is True and body["cleared"] is True
+    # The file's honest answer is UNCHANGED — this is what instant auto-award
+    # reads, so it stays fail-closed; the bench still shows what's owed.
+    assert body["can_take_jobs"] is False
+    assert body["missing"]
+    _clear()
+
+    db.expire_all()
+    u = db.query(User).filter(User.id == uid).first()
+    assert blocking_requirements(db, u) == []    # office-approved path is clear
+    assert not can_take_jobs(db, uid)            # but auto-award is not
+    assert u.vetting_override_reason == "same-day cover"
+
+
+def test_override_shows_on_the_bench_loudly(sub):
+    db, uid = sub
+    from services.sub_vetting import roster
+    db.query(User).filter(User.id == uid).update(
+        {"vetting_override": True, "vetting_override_reason": "covering today"})
+    db.commit()
+    row = next(p for p in roster(db, 1)["crew"] if p["user_id"] == uid)
+    assert row["override"] is True
+    assert row["can_work"] is True               # can work...
+    assert row["complete"] is False              # ...but the file isn't complete
+    assert row["missing"]                        # and the gaps are still named
+
+
+def test_override_is_admin_only(sub):
+    db, uid = sub
+
+    class _Manager:
+        id, org_id, role, status, active = 9971, 1, "manager", "active", True
+        email = "mgr2@example.com"; full_name = "Mgr"; cleaner_id = None
+
+    r = _as(_Manager()).post(f"/api/auth/users/{uid}/vetting-override",
+                             json={"enabled": True})
+    assert r.status_code == 403
+    _clear()
+
+
+def test_override_can_be_revoked(sub):
+    db, uid = sub
+    _as(_Admin()).post(f"/api/auth/users/{uid}/vetting-override", json={"enabled": True})
+    _clear()
+    r = _as(_Admin()).post(f"/api/auth/users/{uid}/vetting-override", json={"enabled": False})
+    assert r.status_code == 200
+    _clear()
+    db.expire_all()
+    u = db.query(User).filter(User.id == uid).first()
+    assert not u.vetting_override and u.vetting_override_reason is None
+    assert blocking_requirements(db, u)          # blocked again
+
+
+def test_only_a_cleaners_file_can_be_overridden(sub):
+    db, _ = sub
+    other = User(email=f"off-{uuid.uuid4().hex[:6]}@example.com", role="manager",
+                 status="active", org_id=1)
+    db.add(other); db.commit(); db.refresh(other)
+    oid = other.id
+    try:
+        r = _as(_Admin()).post(f"/api/auth/users/{oid}/vetting-override",
+                               json={"enabled": True})
+        assert r.status_code == 422
+    finally:
+        _clear()
+        db.query(User).filter(User.id == oid).delete(); db.commit()
