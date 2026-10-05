@@ -5051,7 +5051,7 @@ def schedule_week(
                 limit=PAGE_SIZE, offset=offset, paginated=False,
                 db=db, org_id=org_id,
             )
-        except Exception:
+        except Exception as e:
             # Jobs ARE the schedule, so this stays a hard failure — but log the
             # traceback with the range and org first. Without this the Railway
             # log showed an unattributed 500 and we could not tell a bad job row
@@ -5060,7 +5060,16 @@ def schedule_week(
                 "[schedule_week] jobs failed for org_id=%s range=%s..%s offset=%s",
                 org_id, scheduled_date_from, scheduled_date_to, offset,
             )
-            raise
+            # Name the real cause in the response. This endpoint is office-only
+            # (admin/manager/viewer/cleaner, and a cleaner's own jobs can't
+            # trip the bulk-office path), so a short error summary on the
+            # Schedule's error screen is safe and turns a generic "Internal
+            # Server Error" into something diagnosable without Railway logs.
+            # The full traceback is in the log line above.
+            raise HTTPException(
+                status_code=500,
+                detail=f"Couldn't load the schedule's jobs — {type(e).__name__}: {str(e)[:300]}",
+            )
         jobs.extend(page)
         if len(page) < PAGE_SIZE:
             break
@@ -5079,7 +5088,17 @@ def schedule_week(
     # `visits`, the exact side door the strip closes, reopened through the
     # compat shim. Stripping first means the copies never see the fields.
     role = getattr(current_user, "role", None)
-    stripped_jobs = strip_office_only_for_crew(jobs, role)
+    # strip_office_only_for_crew and the visits shim below are the other two
+    # unwrapped spots on the jobs path; if either throws, name it on the error
+    # screen rather than a bare 500 (full traceback logged).
+    try:
+        stripped_jobs = strip_office_only_for_crew(jobs, role)
+    except Exception as e:
+        logger.exception("[schedule_week] stripping jobs failed for org_id=%s", org_id)
+        raise HTTPException(
+            status_code=500,
+            detail=f"Couldn't prepare the schedule's jobs — {type(e).__name__}: {str(e)[:300]}",
+        )
 
     # Each delegate in its own blast radius — see _week_section.
     is_office = role in ("admin", "manager", "viewer")
@@ -5096,10 +5115,19 @@ def schedule_week(
     )
     degraded = [f for f in (f1, f2, f3) if f]
 
+    try:
+        visits = [_job_as_visit(j) for j in (stripped_jobs or [])]
+    except Exception as e:
+        logger.exception("[schedule_week] building visits failed for org_id=%s", org_id)
+        raise HTTPException(
+            status_code=500,
+            detail=f"Couldn't shape the schedule's visits — {type(e).__name__}: {str(e)[:300]}",
+        )
+
     return {
         # Visits are derived from jobs post-unification; the shape mirrors what
         # /api/visits used to emit so the FE fallback keeps rendering unchanged.
-        "visits": [_job_as_visit(j) for j in (stripped_jobs or [])],
+        "visits": visits,
         "jobs": stripped_jobs,
         # Date-less jobs (quote accepted → auto-converted, nobody picked a day
         # yet). The date-range query above can never return them, so the
