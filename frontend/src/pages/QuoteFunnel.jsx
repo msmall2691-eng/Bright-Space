@@ -17,7 +17,9 @@ import {
 import { get } from '../api'
 import { fmtMoney } from '../components/dashboard/utils'
 import { KpiCard, Tile, TileLoading } from '../components/dashboard/primitives'
+import { Link } from 'react-router-dom'
 import { ErrorState, PageHeader, SubNav } from '../components/ui'
+import { SEV_DOT } from '../components/board/tokens'
 
 const RANGES = [
   { days: 7, label: '7d' },
@@ -35,16 +37,72 @@ const STEP_KEY = {
   won: 'accepted_to_won_pct',
 }
 
-// Current-status outcome mix among the quoted requests. Tone is semantic
-// (green = won, red = lost), never decorative.
+// Current-status outcome mix among the quoted requests.
+//
+// COLOUR DOES TWO SEPARATE JOBS HERE and it used to do them with one channel.
+// Every row carried its own hue on BOTH the bar and the count, which was wrong
+// twice over (dataviz): "text wears text tokens, never the series colour", and
+// "status tokens only when the colour means good/bad — never both in one chart".
+// Quote outcomes do mean good/bad, so the six-hue palette was a categorical
+// treatment doing a status job — `teal` was invented for it and is not in the
+// design language's vocabulary at all. Measured, every step also failed its
+// floor against this page's own grounds: bars at 1.77-2.09:1 against a 3:1
+// non-text floor, counts at 3.99-4.19:1 against 4.5:1.
+//
+// So: the BAR encodes share, which is magnitude, and magnitude is one hue (the
+// accent). The DOT encodes state, from the house vocabulary only. The count is
+// plain ink. Rows may share a dot colour — right, because the dot says what KIND
+// of state this is, not which row it is, and the label disambiguates.
+//
+// `to` is the quotes list filtered to this state, or null where no such filter
+// exists. See the comment on OUTCOME_LINK below — three of the six genuinely
+// cannot be linked, and pretending otherwise would be worse than not linking.
 const OUTCOME_ORDER = [
-  { key: 'won', label: 'Won', bar: 'bg-emerald-500', tone: 'text-emerald-600 dark:text-emerald-300' },
-  { key: 'accepted', label: 'Accepted · to schedule', bar: 'bg-teal-500', tone: 'text-teal-600 dark:text-teal-300' },
-  { key: 'changes_requested', label: 'Changes requested', bar: 'bg-amber-500', tone: 'text-amber-600 dark:text-amber-300' },
-  { key: 'open', label: 'In play · awaiting reply', bar: 'bg-indigo-500', tone: 'text-link' },
-  { key: 'declined', label: 'Declined', bar: 'bg-red-500', tone: 'text-red-600 dark:text-red-300' },
-  { key: 'expired', label: 'Expired', bar: 'bg-ink-3', tone: 'text-ink-3' },
+  { key: 'won', label: 'Won', dot: SEV_DOT.good },
+  { key: 'accepted', label: 'Accepted · to schedule', dot: SEV_DOT.watch },
+  { key: 'changes_requested', label: 'Changes requested', dot: SEV_DOT.watch },
+  { key: 'open', label: 'In play · awaiting reply', dot: 'bg-ink-3' },
+  { key: 'declined', label: 'Declined', dot: SEV_DOT.urgent },
+  { key: 'expired', label: 'Expired', dot: 'bg-ink-3' },
 ]
+
+// Where a number can take you. Verified against the backend's own mapping
+// (dashboard/analytics.py — `st == "converted"` lands in `won`, and so on), not
+// assumed, because a link to the wrong list is worse than no link.
+//
+// THREE OUTCOMES ARE DELIBERATELY ABSENT. `expired` and `changes_requested` have
+// no segment in QuotesToolbar's STATUS_SEGMENTS, and `open` is three statuses at
+// once (draft / sent / viewed) which one query param cannot express. A link for
+// those would land you on a list whose own filter UI cannot show the state you
+// asked for. They stay plain rows until the quotes list can express them.
+const OUTCOME_LINK = {
+  won: '/quotes?status=converted',
+  accepted: '/quotes/accepted',
+  declined: '/quotes?status=declined',
+}
+
+// Funnel stages → the page that owns those records. `quoted` has no single
+// status (it means "a quote exists at all"), so it points at the unfiltered
+// list rather than a wrong filter.
+const STAGE_LINK = {
+  requests: '/requests',
+  quoted: '/quotes',
+  sent: '/quotes?status=sent',
+  viewed: '/quotes?status=viewed',
+  accepted: '/quotes/accepted',
+  won: '/quotes?status=converted',
+}
+
+/** A number that goes somewhere. Falls back to plain text when it does not. */
+function Reach({ to, title, className = '', children }) {
+  if (!to) return <span className={className}>{children}</span>
+  return (
+    <Link to={to} title={title}
+      className={`bb-focus rounded-sm no-underline hover:text-link ${className}`}>
+      {children}
+    </Link>
+  )
+}
 
 const pctLabel = (p) => (p == null ? 'n/a' : `${p}%`)
 
@@ -75,7 +133,11 @@ function FunnelBars({ funnel, conversion }) {
           <div key={stage.key}>
             <div className="flex items-baseline justify-between gap-3 mb-1">
               <div className="flex items-center gap-2 min-w-0">
-                <span className="text-sm font-medium text-ink truncate">{stage.label}</span>
+                <Reach to={STAGE_LINK[stage.key]}
+                  title={`Open the ${stage.label.toLowerCase()} behind this number`}
+                  className="text-sm font-medium text-ink truncate">
+                  {stage.label}
+                </Reach>
                 {step != null && (
                   <span className="text-[10px] font-semibold text-ink-3 tabular-nums">↓ {step}%</span>
                 )}
@@ -84,11 +146,16 @@ function FunnelBars({ funnel, conversion }) {
                 {stage.value != null && (
                   <span className="text-[11px] text-ink-3 tabular-nums">{fmtMoney(stage.value)}</span>
                 )}
-                <span className="text-sm font-semibold text-ink tabular-nums">{stage.count}</span>
+                <Reach to={STAGE_LINK[stage.key]}
+                  title={`Open the ${stage.label.toLowerCase()} behind this number`}
+                  className="text-sm font-semibold text-ink tabular-nums">
+                  {stage.count}
+                </Reach>
                 <span className="text-[11px] text-ink-3 tabular-nums w-10 text-right">{shareOfTop}%</span>
               </div>
             </div>
-            <div className="h-2 bg-bg-2 rounded-full overflow-hidden">
+            <div className="h-2 bg-bg-2 rounded-full overflow-hidden"
+              title={`${stage.count} of ${requests} — ${shareOfTop}% of requests`}>
               <div className="h-full bg-indigo-500 rounded-full" style={{ width: `${widthPct}%` }} />
             </div>
           </div>
@@ -134,7 +201,6 @@ export default function QuoteFunnel() {
         title="Quote Funnel"
         subtitle={`Where requests turn into booked work — last ${days} days${data?.as_of ? ` · as of ${data.as_of}` : ''}`}
         icon={TrendingUp}
-        iconColor="violet"
       >
         <SubNav />
       </PageHeader>
@@ -175,7 +241,6 @@ export default function QuoteFunnel() {
             <div className="grid grid-cols-2 shell:grid-cols-4 gap-3">
               <KpiCard
                 icon={Inbox}
-                chip="bg-bg-2 text-ink-2"
                 label="Requests"
                 loading={loading}
                 value={requests}
@@ -183,7 +248,6 @@ export default function QuoteFunnel() {
               />
               <KpiCard
                 icon={FileText}
-                chip="bg-bg-2 text-ink-2"
                 label="Request → quote"
                 loading={loading}
                 value={pctLabel(conversion.request_to_quote_pct)}
@@ -191,7 +255,6 @@ export default function QuoteFunnel() {
               />
               <KpiCard
                 icon={Trophy}
-                chip="bg-bg-2 text-ink-2"
                 label="Win rate"
                 loading={loading}
                 value={pctLabel(conversion.overall_pct)}
@@ -199,7 +262,6 @@ export default function QuoteFunnel() {
               />
               <KpiCard
                 icon={DollarSign}
-                chip="bg-bg-2 text-ink-2"
                 label="Won value"
                 loading={loading}
                 value={fmtMoney(value.won || 0)}
@@ -207,14 +269,54 @@ export default function QuoteFunnel() {
               />
             </div>
 
-            {/* Funnel */}
-            <Tile icon={TrendingUp} iconColor="text-violet-500" title={`Conversion funnel · last ${days} days`}>
-              {loading ? <TileLoading /> : <FunnelBars funnel={funnel} conversion={conversion} />}
-            </Tile>
+            {/* THE BENTO. This was three stacked full-width zones — the funnel
+                tile, a 2-up pair, then the by-source table — on a page with no
+                scroll region, so the page simply WAS the stack and you scrolled
+                past four tiles to reach the fourth.
 
-            <div className="grid grid-cols-1 shell:grid-cols-2 gap-5">
-              {/* Outcomes */}
-              <Tile icon={Layers} iconColor="text-purple-500" title="Quote outcomes">
+                Two columns of per-column flex stacks, not a grid of rows: a grid
+                ties every tile in a row to the tallest one, which is how a
+                2-number turnaround box ends up as tall as a 6-row funnel (owner:
+                "too much empty spaces"). Stacks let a short tile sit directly on
+                the next. Paired so the heights balance — the tall funnel against
+                the two medium tables.
+
+                `shell:` (900px), never `lg:` (1024): the owner's window is
+                ~940px and a plain lg: has hidden a whole redesign from her once.
+                One column below that, same reading order. */}
+            <div className="grid grid-cols-1 items-start gap-5 shell:grid-cols-2">
+              <div className="flex min-w-0 flex-col gap-5">
+                <Tile icon={TrendingUp} title={`Conversion funnel · last ${days} days`}>
+                  {loading ? <TileLoading /> : <FunnelBars funnel={funnel} conversion={conversion} />}
+                </Tile>
+                <Tile icon={Clock} title="Turnaround (median)">
+                  {loading ? <TileLoading /> : (
+                    <div className="px-5 py-4 grid grid-cols-2 gap-4">
+                      <div>
+                        <div className="text-[11px] font-semibold text-ink-3 uppercase tracking-wide">Request → quote</div>
+                        <div className="text-2xl font-bold text-ink mt-1 tabular-nums">
+                          {fmtDuration(timing.time_to_quote_hours_median)}
+                        </div>
+                        <div className="text-[11px] text-ink-3 mt-0.5">
+                          {timing.quoted_sample || 0} {timing.quoted_sample === 1 ? 'quote' : 'quotes'}
+                        </div>
+                      </div>
+                      <div>
+                        <div className="text-[11px] font-semibold text-ink-3 uppercase tracking-wide">Sent → accepted</div>
+                        <div className="text-2xl font-bold text-ink mt-1 tabular-nums">
+                          {fmtDuration(timing.time_to_accept_hours_median)}
+                        </div>
+                        <div className="text-[11px] text-ink-3 mt-0.5">
+                          {timing.accepted_sample || 0} {timing.accepted_sample === 1 ? 'accept' : 'accepts'}
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </Tile>
+              </div>
+
+              <div className="flex min-w-0 flex-col gap-5">
+                <Tile icon={Layers} title="Quote outcomes">
                 {loading ? <TileLoading /> : quotedTotal === 0 ? (
                   <div className="px-5 py-8 text-center text-sm text-ink-3">No quotes in the window yet.</div>
                 ) : (
@@ -222,76 +324,70 @@ export default function QuoteFunnel() {
                     {OUTCOME_ORDER.map(o => {
                       const n = outcomes[o.key] || 0
                       const pct = quotedTotal > 0 ? Math.round((n / quotedTotal) * 100) : 0
+                      const to = OUTCOME_LINK[o.key]
+                      const hint = to
+                        ? `Open the ${o.label.split(' · ')[0].toLowerCase()} quotes`
+                        : `${n} of ${quotedTotal} quotes`
                       return (
                         <div key={o.key}>
-                          <div className="flex items-center justify-between mb-1">
-                            <span className="text-sm text-ink-2">{o.label}</span>
-                            <span className={`text-sm tabular-nums ${o.tone}`}>
-                              {n} <span className="text-[11px] text-ink-3">· {pct}%</span>
+                          <div className="flex items-center justify-between gap-3 mb-1">
+                            {/* Bare dot + word: the dot says what kind of state
+                                this is, the label says which one. */}
+                            <span className="flex min-w-0 items-center gap-2">
+                              <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${o.dot}`} aria-hidden="true" />
+                              <Reach to={to} title={hint} className="truncate text-sm text-ink-2">
+                                {o.label}
+                              </Reach>
                             </span>
+                            {/* Plain ink. The count is text, and text wears text
+                                tokens — the series colour lives on the dot. */}
+                            <Reach to={to} title={hint} className="shrink-0 text-sm tabular-nums text-ink">
+                              {n} <span className="text-[11px] text-ink-3">· {pct}%</span>
+                            </Reach>
                           </div>
-                          <div className="h-1.5 bg-bg-2 rounded-full overflow-hidden">
-                            <div className={`h-full rounded-full ${o.bar}`} style={{ width: `${pct}%` }} />
+                          <div className="h-1.5 bg-bg-2 rounded-full overflow-hidden" title={hint}>
+                            {/* One hue for every row: the bar encodes share,
+                                and share is magnitude. */}
+                            <div className="h-full rounded-full bg-indigo-500" style={{ width: `${pct}%` }} />
                           </div>
                         </div>
                       )
                     })}
                   </div>
                 )}
-              </Tile>
-
-              {/* Turnaround */}
-              <Tile icon={Clock} iconColor="text-blue-500" title="Turnaround (median)">
-                {loading ? <TileLoading /> : (
-                  <div className="px-5 py-4 grid grid-cols-2 gap-4">
-                    <div>
-                      <div className="text-[11px] font-semibold text-ink-3 uppercase tracking-wide">Request → quote</div>
-                      <div className="text-2xl font-bold text-ink mt-1 tabular-nums">
-                        {fmtDuration(timing.time_to_quote_hours_median)}
+                </Tile>
+                <Tile icon={Globe} title="By lead source">
+                  {loading ? <TileLoading /> : bySource.length === 0 ? (
+                    <div className="px-5 py-8 text-center text-sm text-ink-3">No requests in the window yet.</div>
+                  ) : (
+                    <div className="divide-y divide-hairline">
+                      <div className="grid grid-cols-12 gap-2 px-5 py-2 text-[10px] font-semibold text-ink-3 uppercase tracking-wide">
+                        <span className="col-span-5">Source</span>
+                        <span className="col-span-2 text-right">Requests</span>
+                        <span className="col-span-2 text-right">Quoted</span>
+                        <span className="col-span-3 text-right">Won</span>
                       </div>
-                      <div className="text-[11px] text-ink-3 mt-0.5">
-                        {timing.quoted_sample || 0} {timing.quoted_sample === 1 ? 'quote' : 'quotes'}
-                      </div>
+                      {bySource.map(r => (
+                        <div key={r.source} className="grid grid-cols-12 gap-2 px-5 py-2.5 items-center">
+                          {/* ?source= became a real filter in #1095 — before that
+                              this table counted leads it could not show you. */}
+                          <Reach to={`/requests?source=${encodeURIComponent(r.source)}`}
+                            title={`Open the ${r.source} leads`}
+                            className="col-span-5 truncate text-sm capitalize text-ink">
+                            {r.source}
+                          </Reach>
+                          <span className="col-span-2 text-sm text-ink-2 tabular-nums text-right">{r.requests}</span>
+                          <span className="col-span-2 text-sm text-ink-2 tabular-nums text-right">{r.quoted}</span>
+                          <span className="col-span-3 text-sm tabular-nums text-right text-ink">
+                            {r.won} <span className="text-[11px] text-ink-3">· {pctLabel(r.won_pct)}</span>
+                          </span>
+                        </div>
+                      ))}
                     </div>
-                    <div>
-                      <div className="text-[11px] font-semibold text-ink-3 uppercase tracking-wide">Sent → accepted</div>
-                      <div className="text-2xl font-bold text-ink mt-1 tabular-nums">
-                        {fmtDuration(timing.time_to_accept_hours_median)}
-                      </div>
-                      <div className="text-[11px] text-ink-3 mt-0.5">
-                        {timing.accepted_sample || 0} {timing.accepted_sample === 1 ? 'accept' : 'accepts'}
-                      </div>
-                    </div>
-                  </div>
-                )}
-              </Tile>
+                  )}
+                </Tile>
+              </div>
             </div>
-
-            {/* By source */}
-            <Tile icon={Globe} iconColor="text-blue-500" title="By lead source">
-              {loading ? <TileLoading /> : bySource.length === 0 ? (
-                <div className="px-5 py-8 text-center text-sm text-ink-3">No requests in the window yet.</div>
-              ) : (
-                <div className="divide-y divide-hairline">
-                  <div className="grid grid-cols-12 gap-2 px-5 py-2 text-[10px] font-semibold text-ink-3 uppercase tracking-wide">
-                    <span className="col-span-5">Source</span>
-                    <span className="col-span-2 text-right">Requests</span>
-                    <span className="col-span-2 text-right">Quoted</span>
-                    <span className="col-span-3 text-right">Won</span>
-                  </div>
-                  {bySource.map(r => (
-                    <div key={r.source} className="grid grid-cols-12 gap-2 px-5 py-2.5 items-center">
-                      <span className="col-span-5 text-sm text-ink capitalize truncate">{r.source}</span>
-                      <span className="col-span-2 text-sm text-ink-2 tabular-nums text-right">{r.requests}</span>
-                      <span className="col-span-2 text-sm text-ink-2 tabular-nums text-right">{r.quoted}</span>
-                      <span className="col-span-3 text-sm tabular-nums text-right text-ink">
-                        {r.won} <span className="text-[11px] text-ink-3">· {pctLabel(r.won_pct)}</span>
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </Tile>
           </>
         )}
       </div>
