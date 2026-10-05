@@ -28,9 +28,10 @@ export function CrewCard({ className = '', children }) {
 }
 
 /** One section-heading treatment for every crew surface. */
-export function SectionLabel({ className = '', children }) {
+export function SectionLabel({ className = '', icon: Icon = null, children }) {
   return (
-    <h2 className={`text-[11px] font-semibold uppercase tracking-wide text-ink-3 ${className}`}>
+    <h2 className={`flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-ink-3 ${className}`}>
+      {Icon && <Icon className="h-3 w-3 shrink-0 text-[color:var(--accent)]" aria-hidden="true" />}
       {children}
     </h2>
   )
@@ -79,7 +80,7 @@ export function SettingRow({ icon: Icon, label, summary, defaultOpen = false, ch
       <button onClick={() => setOpen(o => !o)}
         className="w-full min-h-12 py-3 flex items-center justify-between gap-3 text-left active:opacity-70">
         <span className="flex items-center gap-2.5 min-w-0">
-          {Icon && <Icon className="w-4 h-4 text-ink-3 shrink-0" />}
+          {Icon && <Icon className="w-4 h-4 text-[color:var(--accent)] shrink-0" />}
           <span className="min-w-0 leading-tight">
             <span className="block text-[13px] font-semibold text-ink">{label}</span>
             {summary && <span className="block text-[11px] text-ink-3 truncate mt-0.5">{summary}</span>}
