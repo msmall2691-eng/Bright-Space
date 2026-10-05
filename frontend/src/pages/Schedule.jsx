@@ -114,7 +114,7 @@ export default function Schedule() {
     jobs, setJobs,
     properties, clients,
     unscheduled, setUnscheduled,
-    loading, loadError,
+    loading, loadError, loadErrorMsg,
     refresh,
     employees, empName,
     range: dataRange,
@@ -482,7 +482,9 @@ export default function Schedule() {
         <div className="flex flex-1 flex-col items-center justify-center">
         <ErrorState
           title="Couldn't load the schedule"
-          description="The server didn't respond. Check your connection and try again."
+          description={loadErrorMsg
+            ? `The server returned an error: ${loadErrorMsg}`
+            : "The server didn't respond. Check your connection and try again."}
           onRetry={refresh}
         />
         </div>

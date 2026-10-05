@@ -51,6 +51,11 @@ export function useScheduleData(currentDate, viewMode = 'week', { pollMs = 45000
   const [unscheduled, setUnscheduled] = useState([])
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState(false)
+  // The actual reason the week fetch failed (status + server detail), so the
+  // error screen can say WHY instead of a generic "didn't respond" — a 500
+  // from a bad row reads very differently from a 504 timeout, and the operator
+  // (or we) can act on the real message.
+  const [loadErrorMsg, setLoadErrorMsg] = useState(null)
   const [refreshKey, setRefreshKey] = useState(0)
 
   // Employees roster comes from the shared useEmployees hook so this
@@ -100,6 +105,7 @@ export function useScheduleData(currentDate, viewMode = 'week', { pollMs = 45000
       if (!backgroundPoll) {
         setLoading(true)
         setLoadError(false)
+        setLoadErrorMsg(null)
       }
       try {
         const start = range.start
@@ -123,6 +129,7 @@ export function useScheduleData(currentDate, viewMode = 'week', { pollMs = 45000
           console.error('[Schedule] Week API error:', e)
           if (!backgroundPoll) {
             setLoadError(true)
+            setLoadErrorMsg(e?.detail || e?.message || null)
             setLoading(false)
           }
           return
@@ -216,7 +223,7 @@ export function useScheduleData(currentDate, viewMode = 'week', { pollMs = 45000
     properties,
     clients,
     unscheduled, setUnscheduled,
-    loading, loadError,
+    loading, loadError, loadErrorMsg,
     refresh,
     employees, empName,
     // The range that's actually loaded. CalendarView reads this to decide
