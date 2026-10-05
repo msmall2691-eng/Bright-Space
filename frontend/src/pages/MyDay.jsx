@@ -489,42 +489,50 @@ export default function MyDay({ previewUserId = null }) {
     setDeclineReason(''); setActionError(null); setDeclineJob(job)
   }, [])
 
+  // Remember an "on my way" went out for this job (per phone), so the card
+  // shows the done state. Shared by the one-tap button and the text sheet.
+  const markOnMyWaySent = useCallback((job) => setOnMyWaySent(prev => {
+    const next = { ...prev, [job.id]: job.scheduled_date || null }
+    try { localStorage.setItem('bb_onmyway_sent', JSON.stringify(next)) } catch { /* ignore */ }
+    return next
+  }), [])
+
   const sendClientText = useCallback(async (job, template, note) => {
     setActionBusy(true); setActionError(null)
     try {
       const r = await post(`/api/crew/jobs/${job.id}/notify-client`,
         note ? { template, note } : { template })
       setTextSent(r.preview || 'Sent!')
+      // Keep the card's "on my way" done-state in sync when it's sent from the
+      // sheet too — otherwise the card still offers the button and a re-tap 409s.
+      if (template === 'on_the_way') markOnMyWaySent(job)
     } catch (e) {
       setActionError(e.detail || e.message || 'Could not send')
     } finally {
       setActionBusy(false)
     }
-  }, [])
+  }, [markOnMyWaySent])
 
   // One-tap "On my way" from the job card (the common case lifted out of the
-  // text sheet). Toasts the outcome instead of opening the sheet; a 409 — most
-  // often "already sent for this job" — shows the server's own words.
+  // text sheet). Toasts the outcome instead of opening the sheet.
   const notifyOnMyWay = useCallback(async (job) => {
     setActionBusy(true)
-    const markSent = () => setOnMyWaySent(prev => {
-      const next = { ...prev, [job.id]: job.scheduled_date || null }
-      try { localStorage.setItem('bb_onmyway_sent', JSON.stringify(next)) } catch { /* ignore */ }
-      return next
-    })
     try {
       await post(`/api/crew/jobs/${job.id}/notify-client`, { template: 'on_the_way' })
       toast.success(`Texted ${job.client_name || 'the customer'} — on your way`)
-      markSent()
+      markOnMyWaySent(job)
     } catch (e) {
-      // 409 = the server already has it logged (sent earlier, maybe on another
-      // device) — reflect that as done rather than an error the cleaner can't act on.
-      if (e.status === 409) { markSent(); toast.info('Already let the customer know.') }
+      // ONLY the duplicate 409 ("already sent for this job") means the customer
+      // was told — treat that as done. The same endpoint also 409s for no phone
+      // on file, the job not being today, or SMS being unconfigured; those are
+      // real failures (no text went out), so surface them and keep the button.
+      const alreadySent = e.status === 409 && /already\s+sent/i.test(e.detail || '')
+      if (alreadySent) { markOnMyWaySent(job); toast.info('Already let the customer know.') }
       else toast.error(e.detail || e.message || "Couldn't text the customer")
     } finally {
       setActionBusy(false)
     }
-  }, [])
+  }, [markOnMyWaySent])
 
   // Ask for an open job (marketplace pivot, migration 097). This files a
   // REQUEST — it doesn't assign anything, so there's no race to lose. A 409
@@ -756,8 +764,7 @@ export default function MyDay({ previewUserId = null }) {
 
         {tab === 'today' && !loading && !error && data && (
           <>
-            <HeroBanner firstName={data.first_name} jobCount={(data.today || []).length}
-              tips={pickDailyTips(data.tips, 2)} onTipTap={() => setTab('learn')} />
+            <HeroBanner firstName={data.first_name} jobCount={(data.today || []).length} />
 
             {/* The day at a glance — what makes this a home and not the jobs
                 list. Only for a sub who can actually take work; a not-cleared
@@ -897,12 +904,11 @@ export default function MyDay({ previewUserId = null }) {
 
             {/* The cleaner's own reminders — their notes, saved to their
                 account (/api/notes), the same sticky board the office Home has.
-                A scratchpad at hand: "bring the tall ladder", "gate sticks". */}
-            <StickyNotes />
-
-            {/* Pro tips moved to the faint line in the header (and the full set
-                lives in Learn) — the owner wanted them quiet and up top, not a
-                block at the bottom of the home. */}
+                A scratchpad at hand: "bring the tall ladder", "gate sticks".
+                The daily training tip pins read-only at the top of this card as
+                its own sticky — the owner wanted tips "like a sticky note" that
+                change daily and tap through to the full set in Learn. */}
+            <StickyNotes tip={pickDailyTips(data.tips, 1)[0]} onTipTap={() => setTab('learn')} />
 
             {/* Save-to-phone + notifications setup. Dismissible here (sticks
                 via localStorage); always reachable again from the Me tab. */}

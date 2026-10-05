@@ -32,6 +32,7 @@ vi.mock('../../utils/toastBus', () => ({
 }))
 
 import { get, post } from '../../api'
+import { toast } from '../../utils/toastBus'
 import MyDay from '../MyDay'
 
 const TODAY = '2026-09-07'
@@ -175,6 +176,25 @@ it('on an empty day, shows the next assigned job and jumps to the Schedule', asy
   expect(screen.getByText('Harbour House')).toBeTruthy()
   fireEvent.click(screen.getByText('Your next job').closest('button'))
   expect(await screen.findByText('My Schedule')).toBeTruthy()   // the Schedule tab header
+})
+
+it('a non-duplicate 409 on "On my way" is a real failure, not a false "sent"', async () => {
+  // The endpoint 409s for no-phone / not-today / SMS-unconfigured too. Those
+  // mean NO text went out, so the card must stay actionable, not flip to done.
+  toast.error.mockClear(); toast.info.mockClear()
+  post.mockRejectedValue(Object.assign(new Error('no phone'),
+    { status: 409, detail: 'This client has no phone on file — tell the office.' }))
+  const job = {
+    id: 7, title: 'Portland', scheduled_date: TODAY, status: 'scheduled',
+    start_time: '09:00', end_time: '12:00', can_text_client: true, address: '9 Elm St',
+  }
+  await show({ ...DAY, today: [job], open_jobs: [] })
+  fireEvent.click(screen.getByRole('button', { name: /on my way/i }))
+  await waitFor(() => expect(post).toHaveBeenCalled())
+  await waitFor(() => expect(toast.error).toHaveBeenCalled())
+  expect(toast.info).not.toHaveBeenCalled()
+  // Still offered — no false "customer knows".
+  expect(screen.getByRole('button', { name: /on my way/i })).toBeTruthy()
 })
 
 // ── The dedicated Jobs tab (the marketplace's real home) ────────────────────

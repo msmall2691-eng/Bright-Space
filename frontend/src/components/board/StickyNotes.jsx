@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { Plus, X, RefreshCw } from 'lucide-react'
+import { Plus, X, RefreshCw, Lightbulb } from 'lucide-react'
 import { get, post, patch, del } from '../../api'
 
 /**
@@ -10,6 +10,11 @@ import { get, post, patch, del } from '../../api'
  * The soft paper tints are the note metaphor the owner asked for — deliberately
  * distinct from the status chrome the app keeps quiet. Kept muted, and each
  * tint has a dark-mode pairing so notes stay legible on either ground.
+ *
+ * The crew board also passes a `tip` — a daily-rotating training tip the owner
+ * wanted "like a sticky note": it pins read-only at the top (not one of the
+ * member's own notes, so no edit/delete), taps through to Learn, and sits above
+ * the notes they add themselves. Office Home passes no tip, so it's absent there.
  */
 const COLORS = ['amber', 'blue', 'green', 'pink']
 
@@ -22,7 +27,7 @@ const TINT = {
 }
 const SWATCH = { amber: 'bg-amber-400', blue: 'bg-blue-400', green: 'bg-emerald-400', pink: 'bg-pink-400' }
 
-export default function StickyNotes() {
+export default function StickyNotes({ tip = null, onTipTap = null }) {
   const [notes, setNotes] = useState([])
   const [state, setState] = useState('loading')   // loading | ready | error
   const timers = useRef({})
@@ -83,7 +88,7 @@ export default function StickyNotes() {
     <section className="overflow-hidden rounded-2xl border border-hairline bg-panel" data-testid="home-sticky-notes">
       <header className="flex items-center gap-2 border-b border-hairline px-3.5 py-2.5">
         <span className="text-[13px] leading-none" aria-hidden="true">🗒️</span>
-        <h2 className="text-[11px] font-medium text-ink-3">Notes</h2>
+        <h2 className="text-[11px] font-medium text-ink-3">{tip ? 'Tips & notes' : 'Notes'}</h2>
         <div className="ml-auto">
           <button onClick={add}
             className="inline-flex items-center gap-1 text-[11px] font-semibold text-indigo-600 hover:text-indigo-700 dark:text-indigo-400">
@@ -91,6 +96,21 @@ export default function StickyNotes() {
           </button>
         </div>
       </header>
+
+      {/* Tip of the day — a read-only sticky, pinned above the member's own
+          notes. Changes daily; taps through to Learn for the full set. */}
+      {tip && (
+        <div className="px-3 pt-3">
+          <button type="button" onClick={onTipTap || undefined}
+            className={`block w-full rounded-xl border p-2.5 text-left transition-colors ${TINT.amber} ${onTipTap ? 'hover:border-amber-300' : 'cursor-default'}`}>
+            <span className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wide text-ink-3">
+              <Lightbulb className="h-3 w-3" aria-hidden="true" /> Tip of the day
+            </span>
+            <span className="mt-1 block text-[13px] font-medium leading-snug text-ink">{tip}</span>
+            {onTipTap && <span className="mt-0.5 block text-[11px] text-ink-3">Tap for more in Learn ›</span>}
+          </button>
+        </div>
+      )}
 
       {state === 'error' ? (
         <div className="flex items-center gap-2.5 px-3.5 py-3 text-[12.5px]">
