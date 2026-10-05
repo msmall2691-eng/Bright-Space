@@ -1109,21 +1109,32 @@ def client_comms(client_id: int, db: Session = Depends(get_db),
     )
 
     messages: list[dict] = []
-    sms_count = email_count = 0
+    # Per-CHANNEL thread counts. `voice` was missing, so a client whose only
+    # contact was an inbound call counted as zero of everything while their
+    # messages were still returned in the flat list below (BB-VOICE-01 writes
+    # channel="voice" from the Twilio voice webhook). Counted generically now,
+    # so the next channel that gets added cannot repeat this.
+    by_channel: dict[str, int] = {}
     for c in convs:
         for m in c.messages:
             if m.is_internal_note:
                 continue
             messages.append(msg_to_dict(m))
-        if c.channel == "sms":
-            sms_count += 1
-        elif c.channel == "email":
-            email_count += 1
+        if c.channel:
+            by_channel[c.channel] = by_channel.get(c.channel, 0) + 1
     messages.sort(key=lambda m: m.get("created_at") or "")
 
     return {
         "messages": messages,
-        "counts": {"sms": sms_count, "email": email_count, "total": len(messages)},
+        # NOTE the asymmetry, which predates this change and is kept for
+        # compatibility: the per-channel entries count CONVERSATIONS while
+        # `total` counts MESSAGES, so `total` is not the sum of the others.
+        "counts": {
+            "sms": by_channel.get("sms", 0),
+            "email": by_channel.get("email", 0),
+            "voice": by_channel.get("voice", 0),
+            "total": len(messages),
+        },
         "client_email": client.email,
         "client_phone": client.phone,
     }

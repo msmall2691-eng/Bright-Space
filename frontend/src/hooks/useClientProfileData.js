@@ -64,7 +64,12 @@ export function useClientProfileData(id) {
         get(`/api/comms/client/${id}`).then(r => {
           if (isStale()) return
           const all = Array.isArray(r?.messages) ? r.messages : []
-          setMessages(all.filter(m => m.channel === 'sms'))
+          // `voice` rides with the texts rather than getting a third tab: a
+          // voicemail is the phone channel, and MessagesTab labels it inside
+          // the bubble. It used to match NEITHER filter, so a client's
+          // voicemails were fetched and then dropped on the floor — the
+          // server had already sent them and nothing rendered them anywhere.
+          setMessages(all.filter(m => m.channel === 'sms' || m.channel === 'voice'))
           setEmails(all.filter(m => m.channel === 'email').reverse())  // newest first
         }).catch(() => {}),
         get(`/api/properties?client_id=${id}&include_inactive=true`).then(props => { if (!isStale()) setProperties(Array.isArray(props) ? props : []) }).catch(() => {}),
