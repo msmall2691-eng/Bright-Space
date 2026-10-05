@@ -122,24 +122,26 @@ function WeekPayBreakdown({ week, onOpenJob }) {
  *  Plain ink numbers with 11px ink-3 labels, dots only where they carry
  *  meaning (violet = open to crew, amber = unread) — never a count bubble. */
 function DayGlance({ week, openCount, unread, onTab }) {
+  // A small coloured line icon per tile — a touch of friendly colour without a
+  // filled chip. Violet for open work matches the "open to crew" convention.
   const cells = [
-    { key: 'week', to: 'me', label: 'this week',
+    { key: 'week', to: 'me', label: 'this week', Icon: DollarSign, tint: 'text-emerald-500',
       value: week?.week_total != null ? fmtMoney(week.week_total) : '—' },
-    { key: 'open', to: 'jobs', label: 'up for grabs', value: openCount,
-      dot: openCount > 0 ? 'bg-violet-500' : null },
-    { key: 'chat', to: 'chat', label: unread === 1 ? 'message' : 'messages', value: unread,
-      dot: unread > 0 ? 'bg-amber-500' : null },
+    { key: 'open', to: 'jobs', label: 'up for grabs', Icon: Sparkles, tint: 'text-violet-500',
+      value: openCount },
+    { key: 'chat', to: 'chat', label: unread === 1 ? 'message' : 'messages', Icon: MessageSquare,
+      tint: 'text-amber-500', value: unread },
   ]
   return (
     <div className="grid grid-cols-3 divide-x divide-hairline rounded-xl border border-hairline bg-panel">
-      {cells.map(c => (
-        <button key={c.key} type="button" onClick={() => onTab(c.to)}
+      {cells.map(({ key, to, label, Icon, tint, value }) => (
+        <button key={key} type="button" onClick={() => onTab(to)}
           className="min-h-[58px] px-2.5 py-2.5 text-left transition-colors hover:bg-bg-2 active:bg-bg-2 first:rounded-l-xl last:rounded-r-xl">
           <span className="flex items-center gap-1.5">
-            {c.dot && <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${c.dot}`} aria-hidden="true" />}
-            <span className="text-[18px] font-bold text-ink tabular-nums leading-none">{c.value}</span>
+            <Icon className={`h-3.5 w-3.5 shrink-0 ${tint}`} aria-hidden="true" />
+            <span className="text-[18px] font-bold text-ink tabular-nums leading-none">{value}</span>
           </span>
-          <span className="mt-1 block text-[11px] leading-tight text-ink-3">{c.label}</span>
+          <span className="mt-1 block text-[11px] leading-tight text-ink-3">{label}</span>
         </button>
       ))}
     </div>
