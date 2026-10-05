@@ -12,7 +12,9 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { renderHook, act } from '@testing-library/react'
 
 vi.mock('../../api', () => ({ del: vi.fn(), get: vi.fn(), patch: vi.fn(), post: vi.fn() }))
-import { patch } from '../../api'
+vi.mock('../../utils/confirmBus', () => ({ confirmDialog: vi.fn() }))
+import { del, patch } from '../../api'
+import { confirmDialog } from '../../utils/confirmBus'
 import { useInvoicingMutations } from '../useInvoicingMutations'
 
 function setup(extra = {}) {
@@ -69,5 +71,50 @@ describe('optimistic markOverdue', () => {
     expect(byId(state, 2).status).toBe('sent')
     expect(toast).toHaveBeenCalledWith(expect.any(String), 'error')
     expect(toast).not.toHaveBeenCalledWith('Marked as overdue')
+  })
+})
+
+/* ---------------------------------------------------------------------- */
+
+/**
+ * deleteInvoice is a HARD delete and used to run with no confirmation at all,
+ * while InvoiceDetail gated the same endpoint behind a danger dialog. It goes
+ * through utils/invoiceDelete now. These cover the hook's half of that: it
+ * asks, it only touches the list when something was actually deleted, and it
+ * no longer eats the API's error message.
+ */
+describe('deleteInvoice asks first', () => {
+  const selected = { id: 1, status: 'sent', invoice_number: 'INV-1' }
+
+  it('does not touch the list when the operator backs out', async () => {
+    confirmDialog.mockResolvedValue(false)
+    const { result, load, toast, setPanel } = setup({ selected })
+    await act(async () => { await result.current.deleteInvoice() })
+    expect(del).not.toHaveBeenCalled()
+    expect(load).not.toHaveBeenCalled()
+    expect(setPanel).not.toHaveBeenCalled()
+    expect(toast).not.toHaveBeenCalled()
+  })
+
+  it('deletes, refreshes and closes the panel once confirmed', async () => {
+    confirmDialog.mockResolvedValue(true)
+    del.mockResolvedValue({})
+    const { result, load, toast, setPanel } = setup({ selected })
+    await act(async () => { await result.current.deleteInvoice() })
+    expect(del).toHaveBeenCalledWith('/api/invoices/1')
+    expect(load).toHaveBeenCalled()
+    expect(setPanel).toHaveBeenCalledWith(null)
+    expect(toast).toHaveBeenCalledWith('Invoice deleted')
+  })
+
+  it("surfaces the API's message instead of a generic failure", async () => {
+    // The old `catch {}` discarded it, so a 409 explaining exactly why the
+    // delete was refused reached the operator as "Failed to delete invoice".
+    confirmDialog.mockResolvedValue(true)
+    del.mockRejectedValue(new Error('Cannot delete a paid invoice'))
+    const { result, toast, load } = setup({ selected })
+    await act(async () => { await result.current.deleteInvoice() })
+    expect(toast).toHaveBeenCalledWith('Cannot delete a paid invoice', 'error')
+    expect(load).not.toHaveBeenCalled()
   })
 })
