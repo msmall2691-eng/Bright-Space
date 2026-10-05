@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from sqlalchemy import func, text
+from sqlalchemy import func, or_, text
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
 from typing import Optional
@@ -1157,6 +1157,62 @@ def review_sub_document(user_id: int, kind: str, body: SubDocumentReview,
             # Only when there's a reason — a bare "rejected" push tells them
             # nothing they can act on.
             notify_user(user_id, "Document needs another look", body.notes,
+                        url="/crew", category="crew")
+    except Exception:
+        pass
+    return vetting_status(db, user_id)
+
+
+class VettingOverride(BaseModel):
+    enabled: bool
+    reason: Optional[str] = None
+
+
+@router.post("/users/{user_id}/vetting-override",
+             dependencies=[Depends(require_role("admin"))])
+def set_vetting_override(user_id: int, body: VettingOverride,
+                         db: Session = Depends(get_db),
+                         current_user: User = Depends(get_current_user),
+                         org_id: int = Depends(current_org_id)):
+    """Admin grants (or clears) a "work now, collect the docs later" override on
+    one cleaner — the owner's call to get someone working before their file is
+    complete.
+
+    ADMIN ONLY on purpose: this is the uninsured-person-in-a-customer's-house
+    risk the whole vetting gate exists to prevent, so it is not a manager power.
+    It clears the OFFICE-APPROVED path only (sub_vetting.blocking_requirements);
+    the file's honest answer (can_take_jobs) is untouched, so instant auto-award
+    stays fail-closed and the bench keeps showing exactly what's owed. Holds
+    until an admin clears it or the real documents land."""
+    from datetime import datetime as _dt, timezone as _tz
+    from services.sub_vetting import vetting_status
+
+    oid = resolve_org_id(org_id, db)
+    u = (db.query(User)
+         .filter(User.id == user_id,
+                 or_(User.org_id == oid, User.org_id.is_(None)))
+         .first())
+    if u is None:
+        raise HTTPException(status_code=404, detail="No such user")
+    if (u.role or "") != "cleaner":
+        raise HTTPException(status_code=422,
+                            detail="Only a cleaner's file can be overridden.")
+    u.vetting_override = bool(body.enabled)
+    if body.enabled:
+        u.vetting_override_by = current_user.id
+        u.vetting_override_at = _dt.now(_tz.utc).replace(tzinfo=None)
+        u.vetting_override_reason = (body.reason or "").strip() or None
+    else:
+        u.vetting_override_by = None
+        u.vetting_override_at = None
+        u.vetting_override_reason = None
+    db.commit()
+
+    try:
+        from services.push_service import notify_user
+        if body.enabled:
+            notify_user(user_id, "You're cleared to take jobs",
+                        "The office is still collecting your file — keep it moving.",
                         url="/crew", category="crew")
     except Exception:
         pass

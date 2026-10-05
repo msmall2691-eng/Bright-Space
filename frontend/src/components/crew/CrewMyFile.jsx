@@ -250,6 +250,29 @@ export default function CrewMyFile({ bare = false, previewUserId = null }) {
             </p>
           </div>
         </div>
+      ) : file.override ? (
+        // The office cleared them to work before the file is complete. Say so
+        // warmly, and keep the remaining items below as a gentle to-do, not a
+        // "you can't work yet" wall.
+        <div className="flex items-start gap-2">
+          <ShieldCheck className="w-5 h-5 text-emerald-500 shrink-0" />
+          <div>
+            <p className="text-[14px] font-semibold text-ink">You’re cleared to take jobs{firstName ? `, ${firstName}` : ''} 🎉</p>
+            <p className="text-[12.5px] text-ink-2">
+              The office set you up to start — finish the few things below when you can so your file’s complete.
+            </p>
+            {file.missing.length > 0 && (
+              <ul className="mt-1.5 space-y-1">
+                {file.missing.map(m => (
+                  <li key={m} className="flex items-start gap-1.5 text-[12.5px] text-ink-3">
+                    <span className="mt-1.5 w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0" aria-hidden="true" />
+                    <span>{m}</span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        </div>
       ) : (
         <div>
           {/* Warm welcome + a sense of how close they are — the "a lot at the

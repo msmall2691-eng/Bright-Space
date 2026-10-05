@@ -173,6 +173,22 @@ class User(Base):
     # falls back to the residential rate). Native payroll only.
     pay_rate_deep = Column(Float, nullable=True)
 
+    # Admin vetting override (migration 130): lets a specific cleaner take work
+    # while their file is still incomplete — the owner's "get them working now,
+    # collect the docs later" call. Mirrors the grandfather exemption
+    # (sub_vetting.exempt_against) but per-person and admin-granted, so it clears
+    # the OFFICE-approved path (blocking_requirements) while the file's honest
+    # answer (can_take_jobs) stays False — instant auto-award is kept fail-closed
+    # and the bench always shows the gap, never a silent green tick. Admin-only
+    # to grant; holds until an admin clears it or the real documents land.
+    vetting_override = Column(Boolean, nullable=False, server_default="0", default=False)
+    # Plain Integer (not a FK): an audit reference to the admin's user id. Added
+    # by ALTER on a live table, and SQLite can't add a FK constraint that way —
+    # the link is enforced at the app layer, like other audit ids here.
+    vetting_override_by = Column(Integer, nullable=True)
+    vetting_override_at = Column(DateTime, nullable=True)
+    vetting_override_reason = Column(String, nullable=True)
+
     # Emergency contact, self-maintained from the crew app's Me tab (migration
     # 082) — on file for people working alone in clients' homes.
     emergency_contact_name = Column(String, nullable=True)

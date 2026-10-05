@@ -75,17 +75,20 @@ SAFETY
 Revision ID: 129_backfill_null_org_tenant_rows
 Revises: 128_invoice_due_date_d_backfill
 """
-from typing import Sequence, Union
-
 import sqlalchemy as sa
 from alembic import op
 
 from database.rls import TENANT_TABLES
 
-revision: str = "129_backfill_null_org_tenant_rows"
-down_revision: Union[str, None] = "128_invoice_due_date_d_backfill"
-branch_labels: Union[str, Sequence[str], None] = None
-depends_on: Union[str, Sequence[str], None] = None
+# Plain (un-annotated) assignments — same revision STRINGS, so Alembic's
+# recorded history is unchanged, but now the regex-based single-head guard
+# (tests/test_alembic_single_head.py) can see this revision. In the annotated
+# `revision: str = ...` form it was invisible to that guard, which masked the
+# chain the moment a later plain-form migration (130) chained off it.
+revision = "129_backfill_null_org_tenant_rows"
+down_revision = "128_invoice_due_date_d_backfill"
+branch_labels = None
+depends_on = None
 
 # The canonical append-only event log — see the module docstring.
 EXCLUDED = {"schedule_events"}

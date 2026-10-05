@@ -171,6 +171,59 @@ it('resends the invite to a stuck applicant', async () => {
   await waitFor(() => expect(post).toHaveBeenCalledWith('/api/auth/users/9/resend-invite'))
 })
 
+// ── admin "work now, collect later" override ────────────────────────────────
+
+const OWING = {
+  user_id: 11, name: 'Pat Partial', email: 'pat@example.com', cleaner_id: 'CT-PAT',
+  status: 'active', complete: false, exempt: false, can_work: false, override: false,
+  awaiting_review: [], agreement_signed: true, documents: [],
+  missing: ['Upload their certificate of insurance'],
+  work: { completed: 0, on_day: 0, upcoming: 0, last_worked: null, pending_requests: 0, history_days: 90 },
+  paid_ytd: 0, form_1099_due: false, form_1099_threshold: 2000,
+}
+const OWING_BENCH = {
+  ...BENCH, people: [OWING],
+  totals: { ...BENCH.totals, people: 1, can_work: 0, incomplete: 1, blocked: 1 },
+}
+
+it('offers an admin "Let them work now" override on an incomplete file', async () => {
+  localStorage.setItem('brightbase_user', JSON.stringify({ role: 'admin' }))
+  get.mockResolvedValue(OWING_BENCH)
+  post.mockResolvedValue({})
+  const promptSpy = vi.spyOn(window, 'prompt').mockReturnValue('same-day cover')
+  render(<BenchRoster />)
+  await screen.findByText('Pat Partial')
+  fireEvent.click(screen.getByRole('button', { name: /let them work now/i }))
+  await waitFor(() => expect(post).toHaveBeenCalledWith(
+    '/api/auth/users/11/vetting-override', { enabled: true, reason: 'same-day cover' }))
+  promptSpy.mockRestore()
+  localStorage.removeItem('brightbase_user')
+})
+
+it('shows an override loudly and lets an admin remove it', async () => {
+  localStorage.setItem('brightbase_user', JSON.stringify({ role: 'admin' }))
+  get.mockResolvedValue({ ...OWING_BENCH,
+    people: [{ ...OWING, override: true, can_work: true, override_reason: 'covering today' }] })
+  post.mockResolvedValue({})
+  render(<BenchRoster />)
+  await screen.findByText('Pat Partial')
+  expect(screen.getByText(/Working on an override/)).toBeTruthy()
+  expect(screen.getByText(/covering today/)).toBeTruthy()
+  fireEvent.click(screen.getByRole('button', { name: /remove override/i }))
+  await waitFor(() => expect(post).toHaveBeenCalledWith(
+    '/api/auth/users/11/vetting-override', { enabled: false, reason: null }))
+  localStorage.removeItem('brightbase_user')
+})
+
+it('hides the override control from a non-admin', async () => {
+  localStorage.setItem('brightbase_user', JSON.stringify({ role: 'manager' }))
+  get.mockResolvedValue(OWING_BENCH)
+  render(<BenchRoster />)
+  await screen.findByText('Pat Partial')
+  expect(screen.queryByRole('button', { name: /let them work now/i })).toBeNull()
+  localStorage.removeItem('brightbase_user')
+})
+
 it('degrades to a sentence rather than an empty page', async () => {
   get.mockRejectedValue(new Error('nope'))
   render(<BenchRoster />)
