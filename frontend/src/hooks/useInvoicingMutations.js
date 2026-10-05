@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { del, get, patch, post } from '../api'
+import { confirmDialog } from '../utils/confirmBus'
 
 /** Owns every server-hitting mutation on the Invoicing list page:
  *  save / delete a single invoice, mark paid / overdue, send an
@@ -67,11 +68,31 @@ export function useInvoicingMutations({
     }
   }
 
+  // Deleting an invoice is the only unrecoverable action on this page, so
+  // unlike markPaid/markOverdue above it asks first and is deliberately NOT
+  // optimistic. Copy is kept in step with the same action on InvoiceDetail —
+  // the two surfaces delete the same record and must not disagree about what
+  // that costs.
   const deleteInvoice = async () => {
     if (!selected) return
+    // BB-SEC-10: the backend 409s on a PAID invoice unless ?force=true. The
+    // escalated warning below is what earns the force flag. Lowercased to
+    // match the server's own comparison.
+    const paid = (selected.status || '').toLowerCase() === 'paid'
+    const label = selected.invoice_number ? `invoice ${selected.invoice_number}` : 'this invoice'
+    const ok = await confirmDialog(
+      `Permanently delete ${label}?\n\n` +
+      (paid
+        ? 'This invoice is PAID — deleting it erases the record of that payment from BrightBase. '
+        : '') +
+      'The invoice is removed entirely and cannot be recovered. If it was sent to the client, ' +
+      'their copy stops working.',
+      { title: 'Delete invoice?', confirmLabel: 'Delete permanently', danger: true }
+    )
+    if (!ok) return
     setDeleting(true)
     try {
-      await del(`/api/invoices/${selected.id}`)
+      await del(`/api/invoices/${selected.id}${paid ? '?force=true' : ''}`)
       await load(); setPanel(null); toast('Invoice deleted')
     } catch { toast('Failed to delete invoice', 'error') }
     setDeleting(false)

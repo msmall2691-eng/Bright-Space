@@ -577,10 +577,21 @@ export default function Requests() {
     }
   }
 
+  // Reversible — the row stays under the Archived filter — so this is a plain
+  // confirm, not a danger one. Delete (below) is the destructive sibling.
   const handleArchive = async (intake) => {
+    const label = intake.name || intake.email || intake.phone || `Request #${intake.id}`
+    if (!(await confirmDialog(
+      `Archive "${label}"?\n\nIt drops off the active list but stays under the Archived filter, so you can pull it back any time. Nothing is deleted.`,
+      { confirmLabel: 'Archive' }
+    ))) return
     try {
       await patch(`/api/intake/${intake.id}`, { status: 'archived' })
-      setRequests(requests.filter(r => r.id !== intake.id))
+      // Functional updater, like handleDelete: the confirm puts human-paced
+      // time between the click and the write, so two overlapping archives
+      // would otherwise let the slower one's stale `requests` snapshot
+      // resurrect the row the faster one removed.
+      setRequests(prev => prev.filter(r => r.id !== intake.id))
     } catch (err) {
       console.error('[Requests] Archive failed:', err)
     }

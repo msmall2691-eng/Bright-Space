@@ -12,7 +12,12 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { renderHook, act } from '@testing-library/react'
 
 vi.mock('../../api', () => ({ del: vi.fn(), get: vi.fn(), patch: vi.fn(), post: vi.fn() }))
-import { patch } from '../../api'
+// Deleting an invoice now asks first. The spy has to be a module-level const
+// wrapped in an arrow inside the factory — vi.mock is hoisted above the
+// imports, so referencing it directly would hit the TDZ.
+const confirmDialog = vi.fn(() => Promise.resolve(true))
+vi.mock('../../utils/confirmBus', () => ({ confirmDialog: (...a) => confirmDialog(...a) }))
+import { del, patch } from '../../api'
 import { useInvoicingMutations } from '../useInvoicingMutations'
 
 function setup(extra = {}) {
@@ -25,7 +30,12 @@ function setup(extra = {}) {
 }
 const byId = (state, id) => state.invoices.find(i => i.id === id)
 
-beforeEach(() => vi.clearAllMocks())
+const SENT = { id: 7, status: 'sent', invoice_number: 'INV-007' }
+const PAID = { id: 9, status: 'paid', invoice_number: 'INV-009' }
+
+// clearAllMocks clears calls but not implementations; re-arm the default yes so
+// each test states its own answer.
+beforeEach(() => { vi.clearAllMocks(); confirmDialog.mockResolvedValue(true) })
 
 describe('optimistic markPaid', () => {
   it('flips the row at once, then confirms + reconciles on success', async () => {
@@ -69,5 +79,70 @@ describe('optimistic markOverdue', () => {
     expect(byId(state, 2).status).toBe('sent')
     expect(toast).toHaveBeenCalledWith(expect.any(String), 'error')
     expect(toast).not.toHaveBeenCalledWith('Marked as overdue')
+  })
+})
+
+/**
+ * The delete gate. DELETE /api/invoices/{id} is the only unrecoverable action
+ * on this page and it used to fire straight off a single click in the edit
+ * panel's footer, while the same endpoint on InvoiceDetail was already gated.
+ * BB-SEC-10: the backend 409s a PAID invoice unless ?force=true, so the
+ * escalated warning and the force flag have to travel together — a confirm
+ * that warns about erasing a payment record and then fails is worse than none.
+ */
+describe('delete gate', () => {
+  const run = async (selected) => {
+    const ctx = setup({ selected })
+    await act(async () => { await ctx.result.current.deleteInvoice() })
+    return ctx
+  }
+
+  it('sends nothing when the confirm is cancelled', async () => {
+    confirmDialog.mockResolvedValue(false)
+    const { load, toast, setPanel } = await run(SENT)
+    expect(confirmDialog).toHaveBeenCalledTimes(1)
+    expect(del).not.toHaveBeenCalled()
+    expect(load).not.toHaveBeenCalled()
+    expect(setPanel).not.toHaveBeenCalled()
+    expect(toast).not.toHaveBeenCalled()
+  })
+
+  it('deletes, refetches and closes the panel on a yes', async () => {
+    del.mockResolvedValue({})
+    const { load, toast, setPanel } = await run(SENT)
+    expect(del).toHaveBeenCalledWith('/api/invoices/7')   // no force on an unpaid invoice
+    expect(load).toHaveBeenCalled()
+    expect(setPanel).toHaveBeenCalledWith(null)
+    expect(toast).toHaveBeenCalledWith('Invoice deleted')
+  })
+
+  it('names the invoice and escalates the copy for a paid one', async () => {
+    del.mockResolvedValue({})
+    await run(PAID)
+    const [msg, opts] = confirmDialog.mock.calls[0]
+    expect(msg).toContain('INV-009')
+    expect(msg).toMatch(/PAID/)
+    expect(msg).toMatch(/cannot be recovered/)
+    expect(opts).toMatchObject({ confirmLabel: 'Delete permanently', danger: true })
+  })
+
+  it('leaves the paid warning out when the invoice is unpaid', async () => {
+    del.mockResolvedValue({})
+    await run(SENT)
+    expect(confirmDialog.mock.calls[0][0]).not.toMatch(/PAID/)
+  })
+
+  it('backs the escalated warning with force, so the delete actually lands', async () => {
+    // Without ?force=true the server 409s and the dialog would have promised
+    // something it can't do (BB-SEC-10).
+    del.mockResolvedValue({})
+    await run(PAID)
+    expect(del).toHaveBeenCalledWith('/api/invoices/9?force=true')
+  })
+
+  it('asks nothing when no invoice is selected', async () => {
+    await run(null)
+    expect(confirmDialog).not.toHaveBeenCalled()
+    expect(del).not.toHaveBeenCalled()
   })
 })
