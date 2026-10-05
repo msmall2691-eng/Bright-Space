@@ -116,8 +116,14 @@ export function useScheduleData(currentDate, viewMode = 'week', { pollMs = 45000
         // to the standalone endpoints the server delegates to.
         let week
         try {
+          // The month view asks for ~6 weeks of fully-enriched jobs — on a busy
+          // org that aggregate runs well past the 15s default and the client was
+          // aborting it ("the schedule won't load at all"). Give this one heavy
+          // read a generous ceiling; a successful response inside it also avoids
+          // api()'s timeout-retry firing a SECOND heavy query at the server.
           week = await get(
-            `/api/schedule/week?scheduled_date_from=${start}&scheduled_date_to=${end}`
+            `/api/schedule/week?scheduled_date_from=${start}&scheduled_date_to=${end}`,
+            { timeout: 60000 }
           )
         } catch (e) {
           if (cancelled) return

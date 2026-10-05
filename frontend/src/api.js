@@ -158,8 +158,9 @@ export async function api(url, options = {}) {
   return res.json()
 }
 
-/** GET helper */
-export const get = (url) => api(url);
+/** GET helper. Forwards options (e.g. `{ timeout }`) so a heavy aggregate like
+ *  the Schedule's month view can ask for more than the 15s default. */
+export const get = (url, options) => api(url, options);
 
 /**
  * GET helper that de-duplicates concurrent and rapidly-repeated fetches of the

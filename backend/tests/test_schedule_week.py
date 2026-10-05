@@ -246,3 +246,22 @@ def test_one_poison_row_does_not_kill_the_whole_list(client, monkeypatch):
     # The poison row still renders, flagged, instead of killing the page.
     assert by_id[poison_id]["_degraded"] is True
     assert by_id[poison_id]["id"] == poison_id
+
+
+def test_a_jobs_bulk_failure_names_the_real_error_not_a_bare_500(client, monkeypatch):
+    """A throw in the jobs path (before the per-row guard) used to return a
+    generic 'Internal Server Error' — undiagnosable without Railway logs. The
+    office-only endpoint now names the cause so the Schedule's error screen
+    says what broke."""
+    api, _ = client
+    import modules.scheduling.router as sched
+
+    def _boom(*a, **k):
+        raise ValueError("poison row kaboom")
+
+    monkeypatch.setattr(sched, "get_jobs", _boom)
+    res = api.get("/api/schedule/week?scheduled_date_from=2026-09-01&scheduled_date_to=2026-09-30")
+    assert res.status_code == 500
+    detail = res.json()["detail"]
+    assert "ValueError" in detail
+    assert "poison row kaboom" in detail
