@@ -146,7 +146,7 @@ export default function Invoicing() {
                       : 'Invoices you create or send will show up here.'}
                     action={!search && (
                       <button onClick={openNew}
-                        className="text-xs font-semibold text-indigo-600 hover:text-indigo-700">
+                        className="text-xs font-semibold text-link hover:text-link">
                         Create one →
                       </button>
                     )}

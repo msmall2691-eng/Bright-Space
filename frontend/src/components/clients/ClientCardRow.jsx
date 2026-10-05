@@ -34,7 +34,7 @@ export function ClientCardRow({ c, selected, toggleSelect, setJobClient, navigat
       </div>
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-2 min-w-0">
-          <span className="text-[13px] font-medium text-ink truncate group-hover:text-indigo-600 transition-colors">{name}</span>
+          <span className="text-[13px] font-medium text-ink truncate group-hover:text-link transition-colors">{name}</span>
           <span className="inline-flex items-center gap-1.5 text-[11px] text-ink-3 capitalize shrink-0 ml-auto">
             <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${STATUS_COLORS[c.status] || STATUS_COLORS.inactive}`} aria-hidden="true" />
             {c.status}

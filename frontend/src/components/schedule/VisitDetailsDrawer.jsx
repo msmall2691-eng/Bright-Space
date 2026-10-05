@@ -62,7 +62,7 @@ export default function VisitDetailsDrawer({
               {job?.id && (
                 <button
                   onClick={() => onNavigateJob(job.id)}
-                  className="text-[12px] font-medium text-ink hover:text-indigo-600 no-underline px-2 py-1"
+                  className="text-[12px] font-medium text-ink hover:text-link no-underline px-2 py-1"
                 >
                   Open full page
                 </button>
@@ -102,7 +102,7 @@ export default function VisitDetailsDrawer({
               // drawer close is needed.
               const propId = property?.id ?? job?.property_id
               const asPropertyLink = (text, cls) => propId != null ? (
-                <Link to={`/properties/${propId}`} className={`${cls} text-ink hover:text-indigo-600 no-underline`}>{text}</Link>
+                <Link to={`/properties/${propId}`} className={`${cls} text-ink hover:text-link no-underline`}>{text}</Link>
               ) : (
                 <span className={`${cls} text-ink`}>{text}</span>
               )
@@ -161,7 +161,7 @@ export default function VisitDetailsDrawer({
                 {/* Name links to the client record — it used to be dead text,
                     forcing a detour through search to reach the client page. */}
                 {job?.client_id != null ? (
-                  <Link to={`/clients/${job.client_id}`} className="text-sm sm:text-base text-ink hover:text-indigo-600 no-underline truncate">
+                  <Link to={`/clients/${job.client_id}`} className="text-sm sm:text-base text-ink hover:text-link no-underline truncate">
                     {job?.client_name}
                   </Link>
                 ) : (
@@ -174,7 +174,7 @@ export default function VisitDetailsDrawer({
                   <button
                     type="button"
                     onClick={() => onMessageClient(job)}
-                    className="inline-flex items-center gap-1 text-[12px] font-semibold text-indigo-600 hover:text-indigo-700 shrink-0 px-2 py-1 rounded-lg hover:bg-indigo-50"
+                    className="inline-flex items-center gap-1 text-[12px] font-semibold text-link hover:text-link shrink-0 px-2 py-1 rounded-lg hover:bg-indigo-50"
                   >
                     <MessageSquare className="w-3.5 h-3.5" /> Message
                   </button>

@@ -34,7 +34,7 @@ export default function CrewAppPreview() {
       <div className="max-w-lg px-4 py-10 sm:px-8">
         <p className="text-[13px] text-ink-2">
           That isn’t a cleaner I can show you.{' '}
-          <a href="/crew" className="text-ink underline underline-offset-2 hover:text-indigo-600">
+          <a href="/crew" className="text-ink underline underline-offset-2 hover:text-link">
             Back to Crew
           </a>
         </p>

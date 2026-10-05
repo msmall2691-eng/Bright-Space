@@ -291,7 +291,7 @@ function Person({ person, busy, admin, onOverride, onAccept, onSendBack, onView 
           while looking at Dana. Read-only — the API refuses every crew action
           to an office role. */}
       <Link to={`/crew/${person.user_id}/app`}
-        className="mt-1.5 inline-flex items-center gap-1 text-[12px] text-ink-3 no-underline hover:text-indigo-600">
+        className="mt-1.5 inline-flex items-center gap-1 text-[12px] text-ink-3 no-underline hover:text-link">
         <Smartphone className="h-3 w-3" /> See their app
       </Link>
 

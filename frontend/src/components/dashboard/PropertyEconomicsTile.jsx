@@ -48,7 +48,7 @@ export function PropertyEconomicsTile({ loading, data, error, navigate }) {
                   <tr key={p.property_id} className="border-b border-hairline last:border-b-0">
                     <td className="bb-td pl-5 max-w-[16rem]">
                       <a href={`/properties/${p.property_id}`}
-                         className="block truncate font-medium text-ink hover:text-indigo-600 no-underline">
+                         className="block truncate font-medium text-ink hover:text-link no-underline">
                         {p.property_name}
                       </a>
                     </td>

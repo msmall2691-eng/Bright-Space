@@ -52,7 +52,7 @@ export function ArAgingTile({ loading, arAging, navigate }) {
           <h2 className="text-sm font-semibold text-ink truncate">Collect this morning</h2>
         </div>
         <button onClick={() => go('overdue')}
-          className="text-xs font-semibold text-indigo-600 hover:text-indigo-700 inline-flex items-center gap-0.5 shrink-0">
+          className="text-xs font-semibold text-link hover:text-link inline-flex items-center gap-0.5 shrink-0">
           Invoices <ArrowRight className="w-3 h-3" />
         </button>
       </div>

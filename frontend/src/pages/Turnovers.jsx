@@ -153,11 +153,11 @@ export default function Turnovers() {
           </p>
           <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-[13px]">
             <Link to="/properties?type=str"
-              className="font-medium text-ink-2 underline decoration-hairline-2 underline-offset-2 hover:text-indigo-600">
+              className="font-medium text-ink-2 underline decoration-hairline-2 underline-offset-2 hover:text-link">
               Rental feeds
             </Link>
             <Link to="/sync"
-              className="font-medium text-ink-2 underline decoration-hairline-2 underline-offset-2 hover:text-indigo-600">
+              className="font-medium text-ink-2 underline decoration-hairline-2 underline-offset-2 hover:text-link">
               Calendar sync
             </Link>
           </div>

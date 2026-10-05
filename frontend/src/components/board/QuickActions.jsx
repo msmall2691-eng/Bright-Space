@@ -41,7 +41,7 @@ export default function QuickActions({ navigate }) {
             <button key={a.label} onClick={() => run(a)} data-testid={`qa-${a.label}`}
               className="flex flex-col items-center gap-2 rounded-xl border border-hairline bg-bg-2/40 px-2 py-3 text-ink-2 transition-colors hover:border-indigo-500 hover:bg-indigo-500/5 hover:text-ink">
               <span className="grid h-8 w-8 place-items-center rounded-lg border border-hairline bg-panel">
-                <a.icon className="h-4 w-4 text-indigo-600 dark:text-indigo-400" />
+                <a.icon className="h-4 w-4 text-link" />
               </span>
               <span className="text-center text-[11px] font-semibold leading-tight">{a.label}</span>
             </button>

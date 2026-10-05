@@ -78,7 +78,7 @@ export default function InviteCleaners() {
   return (
     <div className="rounded-xl border border-hairline bg-panel p-5 sm:p-6">
       <h2 className="flex items-center gap-2 text-lg font-bold text-ink">
-        <UserPlus className="h-5 w-5 text-indigo-500" /> Add cleaners
+        <UserPlus className="h-5 w-5 text-link" /> Add cleaners
       </h2>
       <p className="mt-1 text-[13px] text-ink-3">
         Two ways to bring someone on. You approve who joins, and they get set up on

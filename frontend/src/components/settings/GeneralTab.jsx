@@ -432,7 +432,7 @@ export default function GeneralTab({ toast, active, automation, dangerZone }) {
               data-quality gaps intake dedup can't reach.
             </p>
             <Link to="/cleanup"
-              className="mt-3 inline-flex items-center gap-1 text-sm font-semibold text-indigo-600 transition-all hover:gap-1.5 dark:text-indigo-400">
+              className="mt-3 inline-flex items-center gap-1 text-sm font-semibold text-link transition-all hover:gap-1.5">
               Open Tidy Up<ArrowRight className="h-3.5 w-3.5" />
             </Link>
           </div>

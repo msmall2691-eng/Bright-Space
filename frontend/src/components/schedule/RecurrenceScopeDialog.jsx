@@ -103,7 +103,7 @@ export default function RecurrenceScopeDialog({
                 }`}
               >
                 <span className={`mt-0.5 w-8 h-8 shrink-0 rounded-lg flex items-center justify-center bg-bg-2 ${
-                  s.primary ? 'text-indigo-600 dark:text-indigo-300' : 'text-ink-3'
+                  s.primary ? 'text-link' : 'text-ink-3'
                 }`}>
                   <Icon className="w-4 h-4" />
                 </span>

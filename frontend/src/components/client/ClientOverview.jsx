@@ -22,7 +22,7 @@ import {
  */
 
 const money = (n) => `$${Number(n || 0).toLocaleString(undefined, { maximumFractionDigits: 0 })}`
-const LINK = 'text-ink hover:text-indigo-600 no-underline font-medium'
+const LINK = 'text-ink hover:text-link no-underline font-medium'
 
 // dot + sentence-case word, the app's one status vocabulary (no pills, no bubbles).
 function Status({ map, value }) {
@@ -50,7 +50,7 @@ function SectionHead({ eyebrow, count, action }) {
 }
 
 const viewAll = (onClick, label = 'View all') => (
-  <button onClick={onClick} className="text-[11px] text-ink-3 hover:text-indigo-600 shrink-0">{label} →</button>
+  <button onClick={onClick} className="text-[11px] text-ink-3 hover:text-link shrink-0">{label} →</button>
 )
 
 // One record row: title (linked), a line of meta, and a right-aligned value/status.
@@ -82,7 +82,7 @@ function activityLine(item) {
   const d = item.data || {}
   switch (item.type) {
     case 'job': return { icon: Briefcase, tone: 'text-blue-500', text: `Job — ${d.title || 'Cleaning'}` }
-    case 'quote': return { icon: FileText, tone: 'text-indigo-500', text: `Quote ${d.quote_number || ''}`.trim() }
+    case 'quote': return { icon: FileText, tone: 'text-link', text: `Quote ${d.quote_number || ''}`.trim() }
     case 'invoice': return { icon: Receipt, tone: 'text-emerald-500', text: `Invoice ${d.invoice_number || ''}`.trim() }
     case 'message': return { icon: MessageSquare, tone: 'text-purple-500', text: `${d.direction === 'inbound' ? 'Received' : 'Sent'} ${d.channel || 'message'}` }
     case 'email': return { icon: Mail, tone: 'text-violet-500', text: d.subject || 'Email' }
@@ -193,11 +193,11 @@ export default function ClientOverview({
               // instead of hunting for the quote and a buried button.
               const bookable = q.status === 'accepted'
               return (
-                <Row key={q.id} icon={FileText} tone="text-indigo-500"
+                <Row key={q.id} icon={FileText} tone="text-link"
                   title={`${q.quote_number || `Quote ${q.id}`} · ${money(q.total)}`}
                   meta={q.created_at ? formatDateShort(q.created_at) : null}
                   right={bookable
-                    ? <span className="inline-flex items-center gap-1 text-[12px] font-semibold text-indigo-600">
+                    ? <span className="inline-flex items-center gap-1 text-[12px] font-semibold text-link">
                         <CalendarCheck className="w-3.5 h-3.5" /> Book
                       </span>
                     : <Status map={QUOTE_COLORS} value={q.status} />}

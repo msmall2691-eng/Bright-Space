@@ -104,7 +104,7 @@ export default function SubApplications() {
     return (
       <div className="mt-5 rounded-xl border border-hairline bg-panel p-5 sm:p-6">
         <h2 className="flex items-center gap-2 text-lg font-bold text-ink">
-          <UserPlus className="h-5 w-5 text-indigo-500" /> Onboarding
+          <UserPlus className="h-5 w-5 text-link" /> Onboarding
         </h2>
         <p className="mt-2 flex items-start gap-1.5 text-[13px] text-ink-3">
           <span className="mt-[6px] h-1.5 w-1.5 shrink-0 rounded-full bg-red-500" aria-hidden="true" />
@@ -123,7 +123,7 @@ export default function SubApplications() {
   return (
     <div className="mt-5 rounded-xl border border-hairline bg-panel p-5 sm:p-6">
       <h2 className="flex items-center gap-2 text-lg font-bold text-ink">
-        <UserPlus className="h-5 w-5 text-indigo-500" /> Onboarding
+        <UserPlus className="h-5 w-5 text-link" /> Onboarding
       </h2>
       <p className="mb-4 mt-1 text-[13px] text-ink-3">
         People getting set up to clean with you — from the form at{' '}

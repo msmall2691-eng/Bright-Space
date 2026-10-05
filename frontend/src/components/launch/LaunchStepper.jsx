@@ -107,7 +107,7 @@ export default function LaunchStepper({ opportunityId, title, onClose }) {
         onClick={e => e.stopPropagation()}>
         <div className="flex items-center justify-between gap-3 px-5 py-3.5 border-b border-hairline">
           <div className="flex items-center gap-2 min-w-0">
-            <span className="grid place-items-center w-8 h-8 rounded-lg bg-indigo-500/10 text-indigo-600 dark:text-indigo-300 shrink-0"><Rocket className="w-4 h-4" /></span>
+            <span className="grid place-items-center w-8 h-8 rounded-lg bg-indigo-500/10 text-link shrink-0"><Rocket className="w-4 h-4" /></span>
             <div className="min-w-0">
               <h2 className="text-sm font-semibold text-ink truncate">Launch{title ? ` · ${title}` : ''}</h2>
               <p className="text-[11px] text-ink-3">Run this deal through to the schedule</p>
@@ -134,7 +134,7 @@ export default function LaunchStepper({ opportunityId, title, onClose }) {
               ) : (
                 <>
                   <div className="flex items-center gap-2 mb-1">
-                    <meta.icon className="w-4 h-4 text-indigo-600 dark:text-indigo-300" />
+                    <meta.icon className="w-4 h-4 text-link" />
                     <h3 className="text-sm font-semibold text-ink">{meta.label}</h3>
                   </div>
                   <p className="text-[13px] text-ink-2 mb-4">{meta.blurb}</p>

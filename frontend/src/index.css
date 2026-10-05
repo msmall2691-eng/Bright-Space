@@ -33,6 +33,12 @@ layer(base);
   --color-indigo-900: rgb(var(--accent-900));
   --color-indigo-950: rgb(var(--accent-950));
 
+  /* Accent as TEXT. Not the same step as accent as a FILL — see --accent-link
+     below (BB-A11Y-03). Use `text-link` / `hover:text-link` for a link, an
+     active nav label or an accent-coloured word; `bg-indigo-600` stays the
+     fill, because it carries white ink on top. */
+  --color-link: rgb(var(--accent-link));
+
   --color-brand-50: #f0f9ff;
   --color-brand-100: #e0f2fe;
   --color-brand-200: #bae6fd;
@@ -134,7 +140,7 @@ layer(base);
 }
 
 @utility btn-tertiary {
-  @apply btn text-indigo-600 hover:text-indigo-700 hover:bg-blue-50 focus:ring-indigo-500;
+  @apply btn text-link hover:text-link hover:bg-blue-50 focus:ring-indigo-500;
 }
 
 @utility btn-danger {
@@ -707,6 +713,38 @@ layer(base);
     --accent-900: 22 78 99;
     --accent-950: 8 51 68;
   }
+
+  /* BB-A11Y-03 — accent as TEXT needs a different step from accent as a fill.
+     `text-link` resolved to --accent-600, the same value `bg-indigo-600`
+     uses as a fill under white ink. As a fill that is right; as text it was
+     failing in 170 places (RecordLink, the active BottomNav tab, every
+     SnapshotBoxes record link), and failing WIDER than it looked:
+
+       as link text, worst of panel / bg / bg-2 / bg-3
+       accent     light           console
+       indigo     5.09 pass       2.46 FAIL
+       violet     4.62 pass       2.71 FAIL
+       blue       4.19 FAIL       2.99 FAIL
+       rose       3.81 FAIL       3.29 FAIL
+       cyan       2.98 FAIL       4.20 FAIL
+
+     So only the DEFAULT accent passed, and only in light — which is exactly
+     why nobody caught it. Pick an accent of your own and your links were
+     under AA in both themes.
+
+     One rule, no per-accent special cases: the 800 step in light, the 300 step
+     in dark. 800 is the first step every selectable accent clears (5.75-8.05);
+     700 gets four of five and cyan still fails at 4.34 on bg-3. 300 in dark
+     clears 7.75-10.71 for all of them. Both are `var()`s into the live ramp,
+     so this follows the body.accent-* choice for free.
+     Held by __tests__/inkContrast.test.js — re-run the ratios before moving it. */
+  :root {
+    --accent-link: var(--accent-800);
+  }
+  body.theme-console,
+  body.theme-neon {
+    --accent-link: var(--accent-300);
+  }
 }
 
 /* Dark theme — toggled with body.theme-console */
@@ -832,6 +870,12 @@ layer(base);
     --frame: #ececee;
     --accent: oklch(0.55 0.2 264);
     --accent-ink: #ffffff;
+    /* Caught by the contract test above, which is exactly what it is for: the
+       dark themes point --accent-link at the 300 step, and without this reset a
+       viewer on Console would carry that light indigo onto this light page and
+       read a link at about 1.6:1. Public pages are always light, so the link
+       step here is always the deep one. */
+    --accent-link: var(--accent-800);
     --c-residential: oklch(0.58 0.12 245);
     --c-residential-bg: oklch(0.92 0.03 245);
     --c-commercial: oklch(0.60 0.14 60);
@@ -899,7 +943,7 @@ layer(base);
   h5 { @apply text-base font-semibold text-neutral-900; }
 
   p { @apply text-sm text-neutral-600 leading-relaxed; }
-  a { @apply text-indigo-600 hover:text-indigo-700 underline; }
+  a { @apply text-link hover:text-link underline; }
   strong { @apply font-semibold; }
 }
 

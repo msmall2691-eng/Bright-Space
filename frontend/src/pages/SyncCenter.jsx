@@ -167,7 +167,7 @@ function ChannelCard({ ch, canToggle, canSync, busy, onToggle, onSync }) {
         {ch.sync_action && SYNC_ENDPOINT[ch.sync_action] && (
           <button
             onClick={() => onSync(ch)} disabled={!canSync || syncing}
-            className="inline-flex items-center gap-1.5 text-xs font-semibold text-indigo-600 hover:text-indigo-700 disabled:opacity-40 disabled:cursor-not-allowed">
+            className="inline-flex items-center gap-1.5 text-xs font-semibold text-link hover:text-link disabled:opacity-40 disabled:cursor-not-allowed">
             {syncing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
             Sync now
           </button>
@@ -199,7 +199,7 @@ function ChannelCard({ ch, canToggle, canSync, busy, onToggle, onSync }) {
                   : relTime(f.last_synced_at)
                 return (
                   <li key={f.id} className="flex items-center justify-between gap-2 text-xs">
-                    <Link to={`/properties/${f.property_id}`} className="truncate text-ink-2 hover:text-indigo-600">
+                    <Link to={`/properties/${f.property_id}`} className="truncate text-ink-2 hover:text-link">
                       <span className="capitalize">{f.source}</span> · {f.property}
                     </Link>
                     <span className={`inline-flex items-center gap-1 shrink-0 ${tone}`}
@@ -236,12 +236,12 @@ function AttentionCard({ item, canSync, busy, onAction }) {
       {item.action && (
         item.action.kind === 'link' ? (
           <Link to={item.action.href}
-            className="text-xs font-semibold text-indigo-600 hover:text-indigo-700 shrink-0 inline-flex items-center gap-1">
+            className="text-xs font-semibold text-link hover:text-link shrink-0 inline-flex items-center gap-1">
             {item.action.label} <ExternalLink className="w-3 h-3" />
           </Link>
         ) : (
           <button onClick={() => onAction(item)} disabled={!canSync || acting}
-            className="text-xs font-semibold text-indigo-600 hover:text-indigo-700 disabled:opacity-40 shrink-0 inline-flex items-center gap-1">
+            className="text-xs font-semibold text-link hover:text-link disabled:opacity-40 shrink-0 inline-flex items-center gap-1">
             {acting ? <Loader2 className="w-3 h-3 animate-spin" /> : <RefreshCw className="w-3 h-3" />}
             {item.action.label}
           </button>
@@ -466,7 +466,7 @@ export default function SyncCenter() {
           <div className="flex items-center gap-3 shrink-0">
             <div className="text-right">
               <div className="text-xs font-semibold text-ink flex items-center gap-1.5 justify-end">
-                {ap.on ? <Zap className="w-3.5 h-3.5 text-indigo-500" /> : <PauseCircle className="w-3.5 h-3.5 text-ink-3" />}
+                {ap.on ? <Zap className="w-3.5 h-3.5 text-link" /> : <PauseCircle className="w-3.5 h-3.5 text-ink-3" />}
                 Auto-pilot {ap.on ? 'on' : 'off'}
               </div>
               <div className="text-[11px] text-ink-3">{ap.on ? 'Runs itself' : 'Manual syncs only'}</div>

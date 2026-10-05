@@ -109,7 +109,7 @@ function FlowRow({ item, onAction, confirmingKey, busyKey, selectMode, selected,
                       <button
                         key={i}
                         onClick={(e) => { e.stopPropagation(); onAction(item, a) }}
-                        className="inline-flex items-center gap-0.5 text-[11px] font-semibold text-indigo-600 transition-all hover:gap-1 dark:text-indigo-400"
+                        className="inline-flex items-center gap-0.5 text-[11px] font-semibold text-link transition-all hover:gap-1"
                       >
                         {a.label}<ArrowRight className="h-3 w-3" />
                       </button>
@@ -290,7 +290,7 @@ export default function Flow() {
         {anyArchivable && (
           <button
             onClick={() => (selectMode ? exitSelect() : setSelectMode(true))}
-            className="shrink-0 text-[12px] font-semibold text-indigo-600 hover:text-indigo-700 dark:text-indigo-400"
+            className="shrink-0 text-[12px] font-semibold text-link hover:text-link"
           >
             {selectMode ? 'Cancel' : 'Select'}
           </button>

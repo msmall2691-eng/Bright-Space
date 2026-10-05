@@ -258,7 +258,7 @@ export default function PublicQuote() {
     </div>
   ) : requested ? (
     <div className="no-print mb-3 flex items-center gap-2 rounded-xl bg-panel border border-hairline px-4 py-3">
-      <CheckCircle className="w-5 h-5 text-indigo-600 shrink-0" />
+      <CheckCircle className="w-5 h-5 text-link shrink-0" />
       <p className="text-sm text-ink-2 font-medium">Change request sent — we'll review and send an updated quote shortly.</p>
     </div>
   ) : isDeclined ? (

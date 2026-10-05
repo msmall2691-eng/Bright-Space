@@ -17,7 +17,7 @@ export default function MiniListBox({ title, link, rows, navigate }) {
         <h2 className="text-[11px] font-medium uppercase tracking-wide text-ink-3">{title}</h2>
         {link && (
           <button onClick={() => navigate(link.to)}
-            className="ml-auto inline-flex items-center gap-0.5 text-[11px] font-semibold text-indigo-600 transition-all hover:gap-1 dark:text-indigo-400">
+            className="ml-auto inline-flex items-center gap-0.5 text-[11px] font-semibold text-link transition-all hover:gap-1">
             {link.label}<ArrowRight className="h-3 w-3" />
           </button>
         )}

@@ -245,7 +245,7 @@ export default function PageAssistant() {
                   ? <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Working…</>
                   : <>
                       <span>{actionMsg.text}</span>
-                      {actionMsg.to && <button onClick={() => { setOpen(false); navigate(actionMsg.to) }} className="font-semibold text-indigo-600 hover:text-blue-500">Open →</button>}
+                      {actionMsg.to && <button onClick={() => { setOpen(false); navigate(actionMsg.to) }} className="font-semibold text-link hover:text-blue-500">Open →</button>}
                     </>}
               </div>
             )}

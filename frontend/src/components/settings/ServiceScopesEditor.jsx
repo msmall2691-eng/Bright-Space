@@ -115,7 +115,7 @@ export default function ServiceScopesEditor({ toast }) {
             ))}
 
             <button onClick={addService}
-              className="flex items-center gap-1.5 text-sm text-indigo-600 hover:text-indigo-700 font-medium">
+              className="flex items-center gap-1.5 text-sm text-link hover:text-link font-medium">
               <Plus className="w-4 h-4" /> Add a service
             </button>
 

@@ -81,7 +81,7 @@ export default function ScheduleSyncSettings({ open, onClose }) {
         <style>{`@keyframes slidein{from{transform:translateX(24px);opacity:.6}to{transform:none;opacity:1}}`}</style>
         <div className="flex items-center justify-between px-4 py-3.5 border-b border-hairline shrink-0">
           <div className="flex items-center gap-2">
-            <Zap className="w-4 h-4 text-indigo-500" />
+            <Zap className="w-4 h-4 text-link" />
             <h2 className="font-semibold text-ink">Sync &amp; automation</h2>
           </div>
           <button onClick={onClose} className="p-1.5 hover:bg-bg-2 rounded-lg text-ink-3"><X className="w-4.5 h-4.5" /></button>
@@ -124,14 +124,14 @@ export default function ScheduleSyncSettings({ open, onClose }) {
               </div>
               <div className="px-4 pb-4">
                 <Link to="/recurring" onClick={onClose}
-                  className="inline-flex items-center gap-1.5 text-xs text-ink hover:text-indigo-600 no-underline">
+                  className="inline-flex items-center gap-1.5 text-xs text-ink hover:text-link no-underline">
                   Manage recurring series <ExternalLink className="w-3 h-3" />
                 </Link>
               </div>
             </div>
 
             <div className="px-4 py-3 text-[11px] text-ink-3">
-              Changes save automatically. More options (customer reminders, invites) live in <Link to="/settings" onClick={onClose} className="text-ink hover:text-indigo-600 no-underline">Settings → Automation</Link>.
+              Changes save automatically. More options (customer reminders, invites) live in <Link to="/settings" onClick={onClose} className="text-ink hover:text-link no-underline">Settings → Automation</Link>.
             </div>
           </div>
         )}

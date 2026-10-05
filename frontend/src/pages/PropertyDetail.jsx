@@ -53,7 +53,7 @@ function CalendarFeedsCard({ property, navigate }) {
         <h3 className="text-sm font-semibold text-ink">Calendar feeds</h3>
         <button
           onClick={() => navigate(`/properties/${property.id}/icals`)}
-          className="text-xs font-semibold text-indigo-600 hover:text-indigo-700 hover:underline"
+          className="text-xs font-semibold text-link hover:text-link hover:underline"
         >
           Manage feeds →
         </button>
@@ -149,9 +149,9 @@ function RecurringSeriesCard({ schedules, jobs }) {
     <div className="bg-panel border border-hairline rounded-lg p-4 mb-4" data-testid="detail-recurring-card">
       <div className="flex items-center justify-between gap-2 mb-2">
         <h3 className="text-sm font-semibold text-ink flex items-center gap-1.5">
-          <Repeat className="w-3.5 h-3.5 text-indigo-500" /> Recurring series
+          <Repeat className="w-3.5 h-3.5 text-link" /> Recurring series
         </h3>
-        <Link to="/recurring" className="text-xs font-semibold text-indigo-600 hover:text-indigo-700 hover:underline">
+        <Link to="/recurring" className="text-xs font-semibold text-link hover:text-link hover:underline">
           All series →
         </Link>
       </div>
@@ -162,7 +162,7 @@ function RecurringSeriesCard({ schedules, jobs }) {
             <li key={s.id} className="py-2 first:pt-0 last:pb-0">
               <div className="flex items-center gap-2 flex-wrap">
                 <Link to={`/recurring?series=${s.id}`}
-                  className="text-[13px] font-medium text-ink hover:text-indigo-600 no-underline truncate">
+                  className="text-[13px] font-medium text-ink hover:text-link no-underline truncate">
                   {s.title}
                 </Link>
                 <span className="inline-flex items-center gap-1.5 text-[10px] text-ink-3">
@@ -174,7 +174,7 @@ function RecurringSeriesCard({ schedules, jobs }) {
                 <span>{cadence(s)} · {s.start_time}–{s.end_time}</span>
                 <span className="text-ink-3/50">·</span>
                 {next ? (
-                  <Link to={`/jobs/${next.id}`} className="text-ink hover:text-indigo-600 no-underline">
+                  <Link to={`/jobs/${next.id}`} className="text-ink hover:text-link no-underline">
                     Next {formatDateShort(next.scheduled_date)}{next.start_time ? ` · ${next.start_time.slice(0, 5)}` : ''}
                   </Link>
                 ) : (
@@ -199,14 +199,14 @@ function QuotesCard({ quotes }) {
     <div className="bg-panel border border-hairline rounded-lg p-4 mb-4" data-testid="detail-quotes-card">
       <div className="flex items-center justify-between gap-2 mb-2">
         <h3 className="text-sm font-semibold text-ink flex items-center gap-1.5">
-          <FileText className="w-3.5 h-3.5 text-indigo-500" /> Quotes
+          <FileText className="w-3.5 h-3.5 text-link" /> Quotes
         </h3>
       </div>
       <ul className="divide-y divide-hairline/60">
         {quotes.map(q => (
           <li key={q.id} className="py-2 first:pt-0 last:pb-0">
             <Link to={`/quotes/${q.id}`}
-              className="flex items-center justify-between gap-2 text-[13px] font-medium text-ink hover:text-indigo-600 no-underline">
+              className="flex items-center justify-between gap-2 text-[13px] font-medium text-ink hover:text-link no-underline">
               <span className="truncate">{q.title || q.quote_number}</span>
               <span className="shrink-0 text-[11px] text-ink-3">{STATUS_LABEL[q.status] || q.status}</span>
             </Link>
@@ -263,7 +263,7 @@ function ChecklistEditor({ template, onSave }) {
     <div className="bg-panel border border-hairline rounded-lg p-4 mb-4">
       <div className="flex items-center justify-between mb-3">
         <div className="flex items-center gap-2">
-          <ClipboardList className="w-4 h-4 text-indigo-600" />
+          <ClipboardList className="w-4 h-4 text-link" />
           <h3 className="text-sm font-semibold text-ink">Cleaning Checklist</h3>
         </div>
         {dirty && (
@@ -300,7 +300,7 @@ function ChecklistEditor({ template, onSave }) {
               placeholder="Add task..."
               className="flex-1 bg-panel border border-hairline rounded px-2 py-1 text-xs focus:outline-hidden focus:border-blue-400"
             />
-            <button onClick={() => addTask(ai)} className="text-xs text-indigo-600 font-semibold px-2">Add</button>
+            <button onClick={() => addTask(ai)} className="text-xs text-link font-semibold px-2">Add</button>
           </div>
         </div>
       ))}
@@ -313,7 +313,7 @@ function ChecklistEditor({ template, onSave }) {
           placeholder="New area (e.g. Kitchen, Bathrooms)..."
           className="flex-1 bg-panel border border-hairline rounded px-2 py-1.5 text-xs focus:outline-hidden focus:border-blue-400"
         />
-        <button onClick={addArea} className="text-xs text-indigo-600 font-semibold px-2 shrink-0">+ Area</button>
+        <button onClick={addArea} className="text-xs text-link font-semibold px-2 shrink-0">+ Area</button>
       </div>
     </div>
   )
@@ -358,7 +358,7 @@ function VisitChecklistRow({ visit, checklistTemplate, onComplete }) {
         {!isCompleted && totalTasks > 0 && (
           <button
             onClick={() => setOpen(!open)}
-            className="text-indigo-600 font-semibold hover:text-indigo-700"
+            className="text-link font-semibold hover:text-link"
           >
             {open ? 'Close' : `Complete (${doneTasks}/${totalTasks})`}
           </button>
@@ -580,7 +580,7 @@ export default function PropertyDetail() {
                 {property.property_type === 'str' && (property.ical_health === 'no_feed' || property.ical_health === 'stale') && (
                   <button
                     onClick={() => navigate(`/properties/${propertyId}/icals`)}
-                    className="text-xs font-semibold text-indigo-600 hover:text-indigo-700 hover:underline"
+                    className="text-xs font-semibold text-link hover:text-link hover:underline"
                   >
                     {property.ical_health === 'no_feed' ? 'Add feed →' : 'Check feed →'}
                   </button>
@@ -599,7 +599,7 @@ export default function PropertyDetail() {
               {property.client_id && (
                 <button
                   onClick={() => navigate(`/clients/${property.client_id}`)}
-                  className="flex items-center gap-1.5 text-sm text-ink hover:text-indigo-600 no-underline mt-1"
+                  className="flex items-center gap-1.5 text-sm text-ink hover:text-link no-underline mt-1"
                 >
                   <Building2 className="w-4 h-4 shrink-0" />
                   <span>View client</span>

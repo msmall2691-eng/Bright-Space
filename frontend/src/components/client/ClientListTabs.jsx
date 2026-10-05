@@ -73,7 +73,7 @@ export function RecurringTab({ schedules, upcomingJobs = [], properties = [] }) 
                 <div className="min-w-0">
                   <div className="flex items-center gap-2 mb-0.5 flex-wrap">
                     <Link to={`/recurring?series=${s.id}`}
-                      className="text-sm font-medium text-ink hover:text-indigo-600 no-underline truncate">
+                      className="text-sm font-medium text-ink hover:text-link no-underline truncate">
                       {s.title}
                     </Link>
                     <span className={DOT_CHIP}>
@@ -89,7 +89,7 @@ export function RecurringTab({ schedules, upcomingJobs = [], properties = [] }) 
                     <MapPin className="w-2.5 h-2.5 shrink-0" />
                     {property ? (
                       <Link to={`/properties/${property.id}`}
-                        className="text-ink hover:text-indigo-600 no-underline truncate">
+                        className="text-ink hover:text-link no-underline truncate">
                         {property.name || property.address}
                       </Link>
                     ) : (
@@ -98,7 +98,7 @@ export function RecurringTab({ schedules, upcomingJobs = [], properties = [] }) 
                     <span className="text-ink-3/50">·</span>
                     {nextVisit ? (
                       <Link to={`/jobs/${nextVisit.id}`}
-                        className="text-ink hover:text-indigo-600 no-underline">
+                        className="text-ink hover:text-link no-underline">
                         Next {formatDateShort(nextVisit.scheduled_date)}{nextVisit.start_time ? ` · ${nextVisit.start_time}` : ''}
                       </Link>
                     ) : (
@@ -134,7 +134,7 @@ export function JobsListTab({ jobs, upcomingJobs, pastJobs, clientId, onLinked }
             {upcomingJobs.map(j => (
               <div key={j.id} className="bg-panel border border-blue-400/30 rounded-xl p-4 flex items-center gap-4">
                 <div className="text-center w-16 shrink-0">
-                  <div className="text-sm font-semibold text-indigo-600">
+                  <div className="text-sm font-semibold text-link">
                     {new Date(j.scheduled_date + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
                   </div>
                   <div className="text-xs text-blue-500">{j.start_time}</div>

@@ -185,7 +185,7 @@ function LinkedCard({ icon: Icon, label, to, primary, secondary }) {
       <div className="flex items-center gap-1.5 text-[10px] uppercase tracking-wide text-ink-3 mb-1">
         <Icon className="w-3.5 h-3.5" /> {label}
       </div>
-      <div className={`text-[13px] truncate ${to ? 'text-ink hover:text-indigo-600 no-underline' : 'text-ink-2'}`}>{primary}</div>
+      <div className={`text-[13px] truncate ${to ? 'text-ink hover:text-link no-underline' : 'text-ink-2'}`}>{primary}</div>
       {secondary && <div className="text-[11px] text-ink-3 truncate">{secondary}</div>}
     </div>
   )
@@ -474,7 +474,7 @@ export default function JobDetail() {
           {job.client_id && (
             <>
               <span className="text-ink-3/50" aria-hidden="true">›</span>
-              <Link to={`/clients/${job.client_id}`} className="truncate max-w-[11rem] text-ink hover:text-indigo-600 no-underline">
+              <Link to={`/clients/${job.client_id}`} className="truncate max-w-[11rem] text-ink hover:text-link no-underline">
                 {job.client_name || `Client #${job.client_id}`}
               </Link>
             </>
@@ -482,7 +482,7 @@ export default function JobDetail() {
           {job.property_id && (
             <>
               <span className="text-ink-3/50" aria-hidden="true">›</span>
-              <Link to={`/properties/${job.property_id}`} className="truncate max-w-[11rem] text-ink hover:text-indigo-600 no-underline">
+              <Link to={`/properties/${job.property_id}`} className="truncate max-w-[11rem] text-ink hover:text-link no-underline">
                 {job.property_name || 'Property'}
               </Link>
             </>
@@ -636,7 +636,7 @@ export default function JobDetail() {
                   <span>
                     This visit repeats.{' '}
                     <Link to={`/recurring?series=${job.recurring_schedule_id}`}
-                      className="text-ink hover:text-indigo-600 no-underline font-medium">
+                      className="text-ink hover:text-link no-underline font-medium">
                       See the series
                     </Link>
                     {' '}— changing the date or time will ask what it applies to.
@@ -778,7 +778,7 @@ export default function JobDetail() {
             <div className="border-t border-hairline pt-3">
               <div className="text-[10px] uppercase tracking-wide text-ink-3 mb-1">Client</div>
               {job.client_id ? (
-                <Link to={`/clients/${job.client_id}`} className="flex items-center gap-2 text-[13px] text-ink hover:text-indigo-600 no-underline">
+                <Link to={`/clients/${job.client_id}`} className="flex items-center gap-2 text-[13px] text-ink hover:text-link no-underline">
                   <Building2 className="w-3.5 h-3.5 shrink-0" /> {job.client_name || `Client #${job.client_id}`}
                 </Link>
               ) : <span className="text-[12px] text-ink-3 italic">No client linked</span>}

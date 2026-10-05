@@ -51,8 +51,8 @@ function Stat({ label, value, sub, tone = 'text-ink', className = '' }) {
 // (a mobile tap-target rule). These links sit inside two-line rows that are
 // already a comfortable target; without the opt-out each one-line link
 // inflates its row to 44px and the card sprouts a dead band underneath.
-const RECORD_LINK = 'touch-none truncate text-[13px] text-ink no-underline hover:text-indigo-600'
-const META_LINK = 'touch-none shrink-0 truncate text-[11px] text-ink-3 no-underline hover:text-indigo-600'
+const RECORD_LINK = 'touch-none truncate text-[13px] text-ink no-underline hover:text-link'
+const META_LINK = 'touch-none shrink-0 truncate text-[11px] text-ink-3 no-underline hover:text-link'
 
 function Row({ children }) {
   return <div className="flex items-baseline gap-2 px-3.5 py-2">{children}</div>
@@ -69,7 +69,7 @@ function Foot({ children }) {
 function FootLink({ to, children }) {
   return (
     <Link to={to}
-      className="touch-sm inline-flex items-center text-[11px] text-ink-2 no-underline hover:text-indigo-600">
+      className="touch-sm inline-flex items-center text-[11px] text-ink-2 no-underline hover:text-link">
       {children}
     </Link>
   )

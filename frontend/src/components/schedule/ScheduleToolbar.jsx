@@ -312,7 +312,7 @@ function IconButton({ onClick, label, active, children }) {
   return (
     <button onClick={onClick} aria-label={label}
       className={`relative shrink-0 grid place-items-center w-9 h-9 rounded-lg active:scale-95 transition-transform ${
-        active ? 'bg-indigo-500/15 text-indigo-600 dark:text-indigo-300' : 'bg-bg-2 text-ink-2'}`}>
+        active ? 'bg-indigo-500/15 text-link' : 'bg-bg-2 text-ink-2'}`}>
       {children}
     </button>
   )

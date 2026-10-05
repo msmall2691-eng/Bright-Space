@@ -211,7 +211,7 @@ export default function PropertyIcalsBulk() {
   if (!property) {
     return (
       <div className="p-6 text-sm text-ink-3">
-        Property not found. <button onClick={() => navigate('/properties')} className="text-indigo-600 underline">Back to Properties</button>
+        Property not found. <button onClick={() => navigate('/properties')} className="text-link underline">Back to Properties</button>
       </div>
     )
   }
@@ -229,7 +229,7 @@ export default function PropertyIcalsBulk() {
         <div className="flex items-start justify-between gap-3 flex-wrap">
           <div className="min-w-0">
             <h1 className="text-lg sm:text-xl font-bold truncate">
-              <Link to={`/properties/${propertyId}`} className="text-ink hover:text-indigo-600 hover:underline">
+              <Link to={`/properties/${propertyId}`} className="text-ink hover:text-link hover:underline">
                 {property.name}
               </Link>
             </h1>
@@ -357,7 +357,7 @@ export default function PropertyIcalsBulk() {
                       <button onClick={() => syncFeed(ical.id)}
                         disabled={syncingFeed === ical.id}
                         data-testid="existing-feed-sync"
-                        className="text-ink-3 hover:text-indigo-600 p-1 disabled:opacity-50"
+                        className="text-ink-3 hover:text-link p-1 disabled:opacity-50"
                         aria-label="Sync this feed"
                         title="Sync just this feed">
                         <RefreshCw className={`w-4 h-4 ${syncingFeed === ical.id ? 'animate-spin' : ''}`} />
@@ -469,7 +469,7 @@ export default function PropertyIcalsBulk() {
                 <li className="pt-1">
                   <button onClick={sync}
                     disabled={syncing}
-                    className="text-xs text-indigo-600 hover:text-indigo-700 font-medium">
+                    className="text-xs text-link hover:text-link font-medium">
                     {syncing ? 'Syncing…' : 'Sync now to create turnover jobs →'}
                   </button>
                 </li>
@@ -479,7 +479,7 @@ export default function PropertyIcalsBulk() {
         </section>
 
         <p className="text-[11px] text-ink-3">
-          Looking for this property? <Link to={`/properties/${propertyId}`} className="text-indigo-600">Open property details</Link>
+          Looking for this property? <Link to={`/properties/${propertyId}`} className="text-link">Open property details</Link>
         </p>
       </div>
     </div>

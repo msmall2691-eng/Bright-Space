@@ -55,7 +55,7 @@ function MonthDayCell({
       <div className="flex items-center justify-between mb-0.5 sm:mb-1">
         <div className={`text-[10px] sm:text-xs font-semibold w-5 h-5 sm:w-6 sm:h-6 flex items-center justify-center rounded-full ${
           isToday ? 'bg-accent text-accent-ink bb-today-badge' :
-          isSelected ? 'text-indigo-600' :
+          isSelected ? 'text-link' :
           'text-ink-2'
         }`}>
           {parseInt(date.slice(8))}
@@ -76,7 +76,7 @@ function MonthDayCell({
             <button
               type="button"
               onClick={e => { e.stopPropagation(); onQuickAdd(date) }}
-              className="grid place-items-center w-5 h-5 rounded text-ink-3 hover:text-indigo-600 hover:bg-indigo-500/10 transition-opacity sm:opacity-0 sm:group-hover/day:opacity-100 focus:opacity-100"
+              className="grid place-items-center w-5 h-5 rounded text-ink-3 hover:text-link hover:bg-indigo-500/10 transition-opacity sm:opacity-0 sm:group-hover/day:opacity-100 focus:opacity-100"
               title="Add a job on this day"
               aria-label={`Add a job on ${date}`}
             >
@@ -225,7 +225,7 @@ function MonthDayCell({
           <button
             type="button"
             onClick={e => { e.stopPropagation(); onToggleMore?.(date) }}
-            className="text-[9px] sm:text-[10px] font-medium text-indigo-600 hover:text-indigo-700 hover:underline px-0.5 sm:px-1 py-0.5 w-full text-left"
+            className="text-[9px] sm:text-[10px] font-medium text-link hover:text-link hover:underline px-0.5 sm:px-1 py-0.5 w-full text-left"
           >
             +{hiddenCount} more
           </button>
