@@ -139,6 +139,38 @@ it('opens a document instead of throwing', async () => {
     '/api/auth/users/7/file/coi/download', 'coi.pdf'))
 })
 
+// ── invited, still stuck at step one ───────────────────────────────────────
+
+const INVITED = {
+  user_id: 9, name: 'Sam New', email: 'sam@example.com', cleaner_id: 'bb9',
+  status: 'invited', complete: false, exempt: false, can_work: false,
+  awaiting_review: [], agreement_signed: false, documents: [],
+  missing: ['Sign the subcontractor agreement', 'Upload their certificate of insurance'],
+  work: { completed: 0, on_day: 0, upcoming: 0, last_worked: null, pending_requests: 0, history_days: 90 },
+  paid_ytd: 0, form_1099_due: false, form_1099_threshold: 2000,
+}
+const INVITED_BENCH = {
+  ...BENCH, people: [INVITED],
+  totals: { ...BENCH.totals, people: 1, can_work: 0, incomplete: 1, blocked: 1 },
+}
+
+it('surfaces an invited cleaner who hasn’t signed in, with a resend', async () => {
+  get.mockResolvedValue(INVITED_BENCH)
+  render(<BenchRoster />)
+  expect(await screen.findByText('Sam New')).toBeTruthy()
+  expect(screen.getByText(/Invited — waiting for them to sign in/)).toBeTruthy()
+  expect(screen.getByRole('button', { name: /resend invite/i })).toBeTruthy()
+})
+
+it('resends the invite to a stuck applicant', async () => {
+  get.mockResolvedValue(INVITED_BENCH)
+  post.mockResolvedValue({ ok: true, invite_sent: true })
+  render(<BenchRoster />)
+  await screen.findByText('Sam New')
+  fireEvent.click(screen.getByRole('button', { name: /resend invite/i }))
+  await waitFor(() => expect(post).toHaveBeenCalledWith('/api/auth/users/9/resend-invite'))
+})
+
 it('degrades to a sentence rather than an empty page', async () => {
   get.mockRejectedValue(new Error('nope'))
   render(<BenchRoster />)
