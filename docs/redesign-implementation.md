@@ -121,7 +121,8 @@ fetched but never rendered · orphaned components · page-level test.
 ### Build order
 
 **QuoteFunnel → Cleanup → Requests → Clients (chrome only) → Recurring (split
-the file).** Then stop: the remaining eight are not revamp candidates, and
+the file).** Shipped so far: QuoteFunnel (#1096), Cleanup/Tidy Up (#1097),
+Requests (#1101), Clients chrome. **Recurring is the one left.** Then stop: the remaining eight are not revamp candidates, and
 Payouts / Owner / Sync Center / Settings / Marketplace / Roster / Thresholds /
 detail pages were not surveyed and get their own pass before anyone assumes.
 
@@ -137,7 +138,14 @@ longer visits its page:
 
 - **Two hard deletes with no confirm.** `Invoicing`'s EditPanel
   `DELETE /api/invoices/{id}` has none, while `InvoiceDetail` gates the *same*
-  endpoint behind a danger dialog. `Requests`' "Archive" PATCH has none either.
+  endpoint behind a danger dialog. ~~`Requests`' "Archive" PATCH has none
+  either.~~ — **resolved in #1101, but not with a confirm.** Archive is
+  reversible, and a confirm on every one would tax the main triage loop to
+  guard something undoable; the real defect was that it reported nothing at
+  all, and that a FAILED archive dropped the row too (the error went only to
+  the console). It raises a toast with Undo now, restoring the exact prior
+  status. The Invoicing one is still open, and is a true hard delete, so it
+  does want a confirm.
 - **A field built for a page the page never read.** `invoice_to_dict`'s
   `public_token` carries a backend comment saying it exists so "InvoiceDetail
   can show/copy the customer's pay-page link". `InvoiceDetail` never reads it.
