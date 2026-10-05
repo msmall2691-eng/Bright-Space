@@ -225,7 +225,7 @@ function RespondRow({ job, onRespond, onDecline, busy }) {
   )
 }
 
-export default function JobCard({ job, onMarkDone, onPhotos, onRespond, onDecline, onClaim, onAccept, onTextClient, onOnMyWay, onHouseInfo, onHelpers, onOpenDetails, busy = false, showDate = false }) {
+export default function JobCard({ job, onMarkDone, onPhotos, onRespond, onDecline, onClaim, onAccept, onTextClient, onOnMyWay, clientNotified = false, onHouseInfo, onHelpers, onOpenDetails, busy = false, showDate = false }) {
   const isTurnover = job.job_type === 'str_turnover'
   const done = job.status === 'completed'
   const houseLine = houseSpecsLine(job)
@@ -590,10 +590,20 @@ export default function JobCard({ job, onMarkDone, onPhotos, onRespond, onDeclin
           handler for today's jobs, and the server refuses it otherwise. Cuts
           the "where's the cleaner?" calls to the office. */}
       {onOnMyWay && !done && !job.open && job.can_text_client && (
-        <button onClick={onOnMyWay} disabled={busy}
-          className="mt-3 w-full min-h-[44px] text-[13px] font-semibold rounded-xl border border-hairline-2 bg-panel text-ink-2 hover:bg-bg-2 active:bg-bg-2 disabled:opacity-60 transition-colors inline-flex items-center justify-center gap-2">
-          <Navigation className="w-4 h-4" aria-hidden="true" /> On my way — text the customer
-        </button>
+        clientNotified ? (
+          /* Already told them — a quiet confirmed state (not a button), so a
+             second tap can't fire a duplicate and the cleaner can see it's
+             done. Persists for the day on this phone. */
+          <div className="mt-3 flex min-h-[44px] w-full items-center justify-center gap-2 rounded-xl border border-hairline bg-bg text-[13px] font-medium text-ink-2">
+            <Check className="w-4 h-4 text-emerald-600 dark:text-emerald-400" aria-hidden="true" />
+            Customer knows you're on the way
+          </div>
+        ) : (
+          <button onClick={onOnMyWay} disabled={busy}
+            className="mt-3 w-full min-h-[44px] text-[13px] font-semibold rounded-xl border border-hairline-2 bg-panel text-ink-2 hover:bg-bg-2 active:bg-bg-2 disabled:opacity-60 transition-colors inline-flex items-center justify-center gap-2">
+            <Navigation className="w-4 h-4" aria-hidden="true" /> On my way — text the customer
+          </button>
+        )
       )}
 
       {/* MARK DONE — the cleaner's single most important action, and the whole
