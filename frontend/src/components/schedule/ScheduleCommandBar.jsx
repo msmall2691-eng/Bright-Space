@@ -33,10 +33,12 @@ export default function ScheduleCommandBar({
   todayStats,
   unassignedToday,
   awaitingReply,
+  rescheduleRequests,
   unscheduled,
   onSchedule,
   onFocusUnassigned,
   onOpenToCrew,
+  onOpenJob,
 }) {
   const needsDate = Array.isArray(unscheduled) ? unscheduled : []
   const hasNeedsDate = needsDate.length > 0
@@ -46,8 +48,10 @@ export default function ScheduleCommandBar({
   // needs-a-date day would leave a dead half-width cell (owner: "too much empty
   // spaces lol").
   const waiting = awaitingReply || []
+  const moves = rescheduleRequests || []
   const hasAlerts =
     waiting.length > 0
+    || moves.length > 0
     || (todayStats?.unassigned || 0) > 0
     || ((todayStats?.jobs || 0) > 0 && (todayStats?.capacityPct || 0) >= 90)
 
@@ -86,8 +90,10 @@ export default function ScheduleCommandBar({
                   stats={todayStats}
                   unassignedToday={unassignedToday}
                   awaitingReply={awaitingReply}
+                  rescheduleRequests={rescheduleRequests}
                   onFocusUnassigned={onFocusUnassigned}
                   onOpenToCrew={onOpenToCrew}
+                  onOpenJob={onOpenJob}
                 />
               </div>
             )}

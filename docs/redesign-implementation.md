@@ -80,19 +80,99 @@ deletion without its mount loses the signal — that is exactly how the
 **2c — polish.** Surface "Needs a date" from `unscheduled`; key the grid
 template on `canComms`; add the channel tag to client rows; trim the tail.
 
-## Tier 3 — the per-page revamps · ~15 PRs, one page each
+## Tier 3 — re-ordered by evidence · far fewer than 15 PRs
 
-Mechanical but not quick: each page is its own diff, its own veto grep, its own
-check at ~380px and ~940px. The `ui-reviser` agent exists for exactly this and
-should drive them. Order by how much time she spends in each:
+**The original plan ordered this tier by how much time she spends in each page.
+That is not the same list as where the problem is, and the difference turned out
+to be most of the tier.** Schedule was first on time-spent; reading it showed it
+had already had the whole treatment (see below). So before building anything
+else, all 13 office pages were surveyed against one countable rubric.
 
-Schedule → Money → Clients (+ Tidy Up) → Flow → Leads and Quotes → Recurring and
-Turnovers → Properties and feeds → Job / Quote / Client detail → Owner → Sync
-Center → Settings → Marketplace and Roster → Payouts → Thresholds.
+**Eight of the thirteen do not have the problem.** They are already dense,
+already actionable, and in several cases their own comments record the revamp
+that produced them. Revamping them would manufacture change on pages already
+iterated with the owner.
 
-Per page: no new fetch, reuse the existing payload, bento instead of full-width
+### The rubric
+
+Per page: full-width bands stacked above the first dense region · inline actions
+from shipped endpoints · `lg:` hits (should be `shell:`) · mount-time fetches and
+any duplicate · 500-step status colours · `.bb-focus` present · payload fields
+fetched but never rendered · orphaned components · page-level test.
+
+### Ranked
+
+| Page | Bands | Inline actions | Verdict |
+|---|---|---|---|
+| **QuoteFunnel** | **6**, two gridded, no scroll region | **0** | **Worst. The problem in its purest form** — read-only, actionless, tall. No number on the page clicks through to the records behind it. |
+| **Cleanup** (Tidy Up) | 3 + 3 stacked sections, no scroll region | 3 | **The tall-stack page.** 1-up cards in a 1100px column; keeps a permanent all-clear card where its own siblings self-suppress. |
+| **Requests** | 1 band of 5 stacked rows, then 1-up cards of 6–9 lines | 7, five buried in a kebab | Sprawling and low-density with its actionability hidden. No inline status; Archive fires with no confirm. |
+| **Clients** | **4 always, up to 6** | **12** (strongest) | The stack is in the *chrome*, not the list — the list is already a 2-up grid and says so. Bulk bar renders with nothing selected. Densify the header. |
+| **Recurring** | 5 (list) / 6 (detail) | 0 on list rows; 21 elsewhere | Banded, and list rows are read-only. But the real problem is **4 screens + 3 modals in one 1795-line file**, all already props-only. |
+| Schedule | 3, filter row hidden | many | **Already done.** `ScheduleCommandBar` merged two bands into a bento; `PageHeader` already dropped; power tools already behind one menu. |
+| Flow | 2 | 5, 4 confirmed | **The reference shape.** Best-tested page in the app. |
+| Quoting | 1 (deliberately pod-free) | 12, role-gated | Two-pane shell over a divided row list. Dense. |
+| Deals | 2 | 6 incl. drag-and-drop | Already a sortable grid *and* a kanban. |
+| Properties | 3 + transient panels | 11, 4 confirmed | Toolbar over a `flex-1 overflow-y-auto` list. |
+| PropertyIcalsBulk | 1 | 7 | First interactive content appears immediately. |
+| Invoicing | 3, two of them grids | 8 | Aging strip self-suppresses when nothing is outstanding. |
+| InvoiceDetail | 1 | 6 | Already a responsive bento; a comment documents the move off the old 3-column layout. |
+
+### Build order
+
+**QuoteFunnel → Cleanup → Requests → Clients (chrome only) → Recurring (split
+the file).** Then stop: the remaining eight are not revamp candidates, and
+Payouts / Owner / Sync Center / Settings / Marketplace / Roster / Thresholds /
+detail pages were not surveyed and get their own pass before anyone assumes.
+
+Per page, unchanged: no new fetch, reuse the existing payload, bento instead of
 bands, ≥1 inline action from a shipped endpoint with confirm + toast, motion
-150–350ms wrapped in `prefers-reduced-motion`, veto grep clean.
+150–350ms under `prefers-reduced-motion`, veto grep clean, ~380px and ~940px,
+and **the mount-time request count asserted** — the Tier 2c lesson.
+
+### What the survey found that is not layout
+
+Each of these is a real defect, logged here so none is lost to a tier that no
+longer visits its page:
+
+- **Two hard deletes with no confirm.** `Invoicing`'s EditPanel
+  `DELETE /api/invoices/{id}` has none, while `InvoiceDetail` gates the *same*
+  endpoint behind a danger dialog. `Requests`' "Archive" PATCH has none either.
+- **A field built for a page the page never read.** `invoice_to_dict`'s
+  `public_token` carries a backend comment saying it exists so "InvoiceDetail
+  can show/copy the customer's pay-page link". `InvoiceDetail` never reads it.
+- **A 1000-row fetch for a field already in the payload.** `Quoting` fetches
+  `/api/clients?limit=1000` solely to derive `clientName()`, while
+  `_quote_dict` already ships `client_name`, which the page never reads.
+- **A raw `fetch()` outside `api.js`.** `PropertyPhoto` bypasses the client
+  entirely and reads the JWT straight from localStorage; each call is a paid
+  Street View call, it fires once per card on `Requests`, and the drawer fires
+  the *same URL again* for the row already on screen.
+- **A search that silently matches nothing.** `usePropertyFilters` searches
+  `p.client_name`, which `prop_to_dict` never returns — so searching Properties
+  by client name is dead.
+- **Codes and passwords fetched to render six fields.** `PropertyIcalsBulk`
+  pulls the whole property record — house codes, wifi passwords, access notes —
+  and displays none of it. Office-role, so not a BB-SEC violation, but needless.
+- **Filter-independent aggregates refetched per keystroke.**
+  `/api/invoices/summary` and `/api/clients/counts` re-fire with every tab click
+  and debounced keystroke.
+- **No cached hook for the client book.** Four pages each fetch
+  `?limit=1000` raw. `getCached` exists; nothing wraps this.
+- **A hand-written mirror of backend logic.** `Recurring`'s `computeUpcoming`
+  reimplements `generate_dates` in the browser — the highest-risk duplicate in
+  the file.
+- **The same fact counted four ways.** "Quoted" is computed on Requests, Deals,
+  Quoting and QuoteFunnel from four different sources. `Quoting` already deleted
+  its own hero pods so a count isn't shown twice; the other three still do it.
+  Lead rows render on both Requests and Deals; the lead→quote→job hand-off is
+  implemented three times.
+- **Six pages have no test at all**: Invoicing, InvoiceDetail, Clients,
+  Properties, PropertyIcalsBulk, Recurring. `PropertyIcalsBulk` is fully
+  instrumented with testids that nothing references.
+- **`.bb-focus` exists only on OpsBoard.** Tier 2a's focus ring never reached any
+  other page, so keyboard focus is still invisible app-wide under
+  `overflow-hidden`. That is one app-wide PR, not thirteen page PRs.
 
 ## Tier 4 — the two real builds · weeks each, own design pass
 

@@ -1,7 +1,6 @@
 import { useState, useEffect, useMemo } from 'react'
 import { useSearchParams, useNavigate, Navigate } from 'react-router-dom'
 import { get, post, patch } from '../api'
-import Button from '../components/ui/Button'
 import ErrorState from '../components/ui/ErrorState'
 import JobEditModal from '../components/JobEditModal'
 import JobCreateModal from '../components/JobCreateModal'
@@ -24,7 +23,6 @@ import SubNav from '../components/ui/SubNav'
 import ScheduleSyncSettings from '../components/schedule/ScheduleSyncSettings'
 import { AutoAssignModal, FixTimesModal, OpenToCrewModal, PurgeGhostsModal } from '../components/schedule/PowerToolModals'
 import { AvailabilityPanel } from '../components/schedule/ScheduleTabs'
-import { VISIT_STATUS_CONFIG, shortDate, cleanerInitials } from '../components/schedule/constants'
 import { useScheduleData } from '../hooks/useScheduleData'
 import { useScheduleAnalytics } from '../hooks/useScheduleAnalytics'
 import { useScheduleTools } from '../hooks/useScheduleTools'
@@ -62,7 +60,6 @@ export default function Schedule() {
   const normalizeView = (v) =>
     (v === 'agenda' || v === 'dispatch') ? 'day' : (v === 'google' ? 'month' : v)
   const rawView = normalizeView(searchParams.get('view'))
-  const isMobile = useIsMobile(768)
   // Half-screen fix: below this width the wide Day timeline stops earning
   // its keep, so Day renders the agenda (card) layout — the same one phones
   // get. A half-snapped 1440p window (~960-1280px) lands here, which is
@@ -148,6 +145,23 @@ export default function Schedule() {
       .sort((a, b) => (a.scheduled_date || '').localeCompare(b.scheduled_date || '')),
     [visits],
   )
+  // Customers who asked to move a visit and are waiting on an answer.
+  //
+  // `reschedule_requested_at` / `_date` / `_scope` / `_message` have ridden
+  // every job in the week payload since the customer confirm/reschedule page
+  // shipped, and NOTHING on this page read them — the request was visible only
+  // on the job's own page and in the owner's inbox. So the one screen the
+  // office actually sits on could not tell you a customer was waiting. Free:
+  // no fetch, same payload.
+  //
+  // Whole loaded range, not just today, for the reason `awaitingReply` is: a
+  // customer asks about next Tuesday far more often than about this afternoon.
+  const rescheduleRequests = useMemo(
+    () => (visits || [])
+      .filter(v => v.reschedule_requested_at && v.status !== 'cancelled')
+      .sort((a, b) => (a.reschedule_requested_date || '').localeCompare(b.reschedule_requested_date || '')),
+    [visits],
+  )
   const [showFilters, setShowFilters] = useState(false)  // filters hidden by default; most days show everything
   // (The day view's crew-availability fetch was removed with the dispatch
   // board — those chips lived on the crew-capacity column, which is gone now
@@ -226,7 +240,7 @@ export default function Schedule() {
     selectedStatus, setSelectedStatus,
     unassignedOnly, setUnassignedOnly,
     noGcalOnly, setNoGcalOnly,
-    filteredVisits, unassignedCount, visitsByDate, scheduleStats,
+    filteredVisits, unassignedCount, scheduleStats,
   } = useScheduleFilters({ visits, jobs, properties, viewMode, dateStr })
 
   const handleEdit = (visit, job, property) => {
@@ -574,10 +588,12 @@ export default function Schedule() {
           todayStats={todayStats}
           unassignedToday={unassignedToday}
           awaitingReply={awaitingReply}
+          rescheduleRequests={rescheduleRequests}
           unscheduled={unscheduled}
           onSchedule={handleEditJob}
           onFocusUnassigned={() => setUnassignedOnly(v => !v)}
           onOpenToCrew={handleOpenToCrew}
+          onOpenJob={(jobId) => navigate(`/jobs/${jobId}`)}
         />
       )}
 
@@ -605,6 +621,8 @@ export default function Schedule() {
             todayStats={todayStats}
             unassignedToday={unassignedToday}
             awaitingReply={awaitingReply}
+            rescheduleRequests={rescheduleRequests}
+            onOpenJob={(jobId) => navigate(`/jobs/${jobId}`)}
             weekDates={weekDates}
             loadByDate={loadByDate}
             jobs={jobs}

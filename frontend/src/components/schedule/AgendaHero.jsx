@@ -31,6 +31,7 @@ export default function AgendaHero({
   todayStats,
   unassignedToday,
   awaitingReply,
+  rescheduleRequests,
   weekDates,
   loadByDate,
   jobs,
@@ -40,6 +41,7 @@ export default function AgendaHero({
   onDateSelect,
   onFocusUnassigned,
   onOpenToCrew,
+  onOpenJob,
   onSchedule,
 }) {
   const dateLabel = new Date(`${toLocalYMD(currentDate)}T00:00`).toLocaleDateString('en-US', {
@@ -94,8 +96,10 @@ export default function AgendaHero({
           stats={todayStats}
           unassignedToday={unassignedToday}
           awaitingReply={awaitingReply}
+          rescheduleRequests={rescheduleRequests}
           onFocusUnassigned={onFocusUnassigned}
           onOpenToCrew={onOpenToCrew}
+          onOpenJob={onOpenJob}
         />
         {/* Accepted jobs that still need a date. This used to live only on the
             office command bar, so on a phone those undated jobs were invisible
