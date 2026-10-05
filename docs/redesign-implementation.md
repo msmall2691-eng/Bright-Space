@@ -149,9 +149,15 @@ and **the mount-time request count asserted** — the Tier 2c lesson.
 Each of these is a real defect, logged here so none is lost to a tier that no
 longer visits its page:
 
-- **Two hard deletes with no confirm.** `Invoicing`'s EditPanel
-  `DELETE /api/invoices/{id}` has none, while `InvoiceDetail` gates the *same*
-  endpoint behind a danger dialog. ~~`Requests`' "Archive" PATCH has none
+- ~~**Two hard deletes with no confirm.**~~ **Both resolved.** `Invoicing`'s
+  list panel called `DELETE /api/invoices/{id}` with no confirmation while
+  `InvoiceDetail` gated the *same* endpoint behind a danger dialog — and the
+  list panel's `catch {}` also threw away the API's message, so the backend's
+  "cannot delete a paid invoice" 409 arrived as a generic failure. Fixed by
+  giving both one shared path (`utils/invoiceDelete.js`) rather than copying
+  the dialog, since two copies drifting apart is how it happened; a test reads
+  both call sites' source and fails if either reaches for `del` directly
+  again. ~~`Requests`' "Archive" PATCH has none
   either.~~ — **resolved in #1101, but not with a confirm.** Archive is
   reversible, and a confirm on every one would tax the main triage loop to
   guard something undoable; the real defect was that it reported nothing at
