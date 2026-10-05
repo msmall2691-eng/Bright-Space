@@ -32,8 +32,8 @@ const app = readFileSync(join(here, '..', 'App.jsx'), 'utf8')
  *  live inside `@layer base { … }`, and a `[^}]*` body stops at the first
  *  closing brace of the nested block — which found nothing at all and would
  *  have made this whole test pass vacuously. */
-function tokensIn(selectorStartsWith) {
-  const found = new Set()
+function blockBodies(selectorStartsWith) {
+  const bodies = []
   let i = 0
   while ((i = css.indexOf(selectorStartsWith, i)) !== -1) {
     const open = css.indexOf('{', i)
@@ -48,10 +48,27 @@ function tokensIn(selectorStartsWith) {
       if (css[end] === '{') depth++
       else if (css[end] === '}' && --depth === 0) break
     }
-    for (const [, name] of css.slice(open, end).matchAll(/(--[\w-]+)\s*:/g)) found.add(name)
+    bodies.push(css.slice(open, end))
     i = end
   }
+  return bodies
+}
+
+function tokensIn(selectorStartsWith) {
+  const found = new Set()
+  for (const body of blockBodies(selectorStartsWith)) {
+    for (const [, name] of body.matchAll(/(--[\w-]+)\s*:/g)) found.add(name)
+  }
   return found
+}
+
+/** Comments are stripped first: a declaration that follows one is preceded by
+ *  the comment's closing marker, not by `;` or `{` — which is exactly how the
+ *  first version of this guard reported a reset that was sitting in the file. */
+function setsFontSize(selectorStartsWith) {
+  return blockBodies(selectorStartsWith).some(b =>
+    /(?:^|[;{}])\s*font-size\s*:/.test(b.replace(/\/\*[\s\S]*?\*\//g, '')),
+  )
 }
 
 describe('public surfaces are theme-proof', () => {
@@ -65,6 +82,23 @@ describe('public surfaces are theme-proof', () => {
     const publicTokens = tokensIn('.public-surface')
     const missing = [...themed].filter(t => !publicTokens.has(t))
     expect(missing, `.public-surface must also reset: ${missing.join(', ')}`).toEqual([])
+  })
+
+  it('resets the root font-size a theme block sets for office density', () => {
+    // font-size is the one themed property that is NOT a custom property, so
+    // the contract test above cannot see it. body.mode-clean drops the root to
+    // 13px and applyTheme() adds that class at boot, before any route decision
+    // — and most text on a public page carries no size utility, so it inherits.
+    // The asymmetry that hid it: a neon viewer, whose theme block sets no
+    // font-size, read the same page at 16px.
+    expect(
+      setsFontSize('body.mode-clean') || setsFontSize('body.theme-'),
+      'no theme block sets font-size any more — this guard can go',
+    ).toBe(true)
+    expect(
+      setsFontSize('.public-surface'),
+      '.public-surface must set its own font-size, or a customer reads the page at the viewer\'s density',
+    ).toBe(true)
   })
 
   it('paints its own ground so ink and background come from one set', () => {

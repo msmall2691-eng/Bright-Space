@@ -803,19 +803,35 @@ layer(base);
      background) is the deliberate choice: a recruiting page, a quote and an
      invoice should look the same to everyone who opens the link, and a
      viewer's app theme has no business reaching them. */
+  /* The palette here is the EFFECTIVE CLEAN one (body.mode-clean layered over
+     :root), not the warm Paper one this block used to pin. Owner's call, made
+     deliberately in Oct 2026: quote, portal and invoice now read as the same
+     product as the app, where brightbase-design-language had kept the two
+     families apart. Anything mode-clean does not override is taken from :root,
+     which is why the --c-* service hues and the *-bg washes keep their values.
+
+     It also retires a live AA failure. Paper's accent was oklch(0.62 0.14 55)
+     = #c56c21 with white ink on top: 3.79:1 as a button fill and 3.60:1 as a
+     link — both under AA, on the two controls that accept a quote and pay an
+     invoice. #3266e4 is 5.05:1 either way.
+
+     Known and app-wide, NOT introduced here: the clean accent as TEXT is
+     4.44:1 on bg-2 and 4.09:1 on bg-3, so keep accent-coloured text on panel
+     or bg rather than in a hovered row or an inset well. tokens.json names the
+     fix (an accent-strong step for text); the repo has no such token yet. */
   .public-surface {
-    --bg: #f7f5ef;
-    --bg-2: #efece3;
-    --bg-3: #e8e4d7;
-    --panel: #fbf9f3;
-    --ink: #171512;
-    --ink-2: #4a4740;
-    --ink-3: #69655d;
-    --hairline: #e4e0d4;
-    --hairline-2: #d4cfbe;
-    --frame: #e8e4d7;
-    --accent: oklch(0.62 0.14 55);
-    --accent-ink: #fff;
+    --bg: #f7f7f8;
+    --bg-2: #f0f0f2;
+    --bg-3: #e7e7ea;
+    --panel: #ffffff;
+    --ink: #191a1f;
+    --ink-2: #52545e;
+    --ink-3: #666870;
+    --hairline: #ececee;
+    --hairline-2: #dfe0e4;
+    --frame: #ececee;
+    --accent: oklch(0.55 0.2 264);
+    --accent-ink: #ffffff;
     --c-residential: oklch(0.58 0.12 245);
     --c-residential-bg: oklch(0.92 0.03 245);
     --c-commercial: oklch(0.60 0.14 60);
@@ -825,14 +841,24 @@ layer(base);
     --c-alert: oklch(0.55 0.18 25);
     --c-alert-bg: oklch(0.93 0.05 25);
     --c-ok: oklch(0.55 0.12 155);
-    --shadow-1: 0 1px 0 rgba(23,21,18,0.04), 0 2px 8px rgba(23,21,18,0.04);
-    --shadow-2: 0 1px 2px rgba(23,21,18,0.05), 0 2px 6px rgba(23,21,18,0.05);
+    --shadow-1: 0 1px 2px rgba(25, 26, 31, 0.04);
+    --shadow-2:
+      0 1px 2px rgba(25, 26, 31, 0.04), 0 12px 28px -14px rgba(25, 26, 31, 0.14);
     /* Neon-only additions. Defined nowhere but that theme, so a public page
        under it picked up a glow and a backdrop blur the paper design has no
        concept of. Neutralised rather than left to inherit. */
     --blur: 0px;
     --glow-accent: var(--shadow-2);
     --glow-cyan: var(--shadow-2);
+    /* The one themed property that is NOT a custom property, so the contract
+       test in __tests__/publicSurface.test.js could not see it: body.mode-clean
+       drops the root to 13px for office density, applyTheme() adds that class
+       at boot BEFORE any route decision, and a public page inherits it. Most
+       text on these pages carries no size utility, so a stranger read the quote
+       at the office's compact scale — while a neon viewer, whose theme block
+       sets no font-size, read the same page at 16px. Reset so every customer
+       gets the same page whatever the viewer happens to have. */
+    font-size: 16px;
     background: var(--bg);
     color: var(--ink);
     min-height: 100vh;
