@@ -9,6 +9,7 @@ import EmptyState from '../ui/EmptyState'
 import ModalShell from './ModalShell'
 import { computeUpcoming, fmtDate, fmtTime, ruleSummary } from './helpers'
 import { Pause, Repeat } from 'lucide-react'
+import { SEV_DOT } from '../board/tokens'
 
 export default function DuplicateReviewPanel({ schedules, clientsById, reviewedKeys, onToggleReviewed, onChanged, onClose }) {
   // Snapshot group membership (and the keeper suggestion) at open, so acting
@@ -108,7 +109,7 @@ export default function DuplicateReviewPanel({ schedules, clientsById, reviewedK
           return (
             <div key={g.key}
               className="flex items-center gap-2 rounded-md border border-hairline bg-bg-2/50 px-3 py-2 text-[12px] text-ink-3">
-              <span className="h-1.5 w-1.5 rounded-full bg-gray-400 shrink-0" />
+              <span className="h-1.5 w-1.5 rounded-full bg-ink-3 shrink-0" />
               <span className="min-w-0 truncate">
                 Skipped — not duplicates · {clientName} · {ruleSummary(first)}
               </span>
@@ -125,7 +126,7 @@ export default function DuplicateReviewPanel({ schedules, clientsById, reviewedK
           return (
             <div key={g.key}
               className="flex items-center gap-2 rounded-md border border-hairline bg-bg-2/50 px-3 py-2 text-[12px] text-ink-3">
-              <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 shrink-0" />
+              <span className={`h-1.5 w-1.5 rounded-full ${SEV_DOT.good} shrink-0`} />
               <span className="min-w-0 truncate">
                 Resolved · {clientName} · {ruleSummary(first)}
                 {kept ? <> — keeping “{kept.title || 'Untitled'}”</> : ' — no active series left'}
@@ -169,10 +170,14 @@ export default function DuplicateReviewPanel({ schedules, clientsById, reviewedK
                           {' · '}{s.address}
                         </div>
                       </div>
-                      <span className="inline-flex h-5 items-center gap-1.5 rounded-sm border border-hairline-2 bg-panel px-2 text-[11px] font-medium text-ink-2 shrink-0">
+                      {/* Bare dot + word. This was an `h-5` capsule with
+                          `border border-hairline-2 bg-panel px-2` around a dot
+                          and a word — the boxed "dot-pill" the design language
+                          names as vetoed, in those exact classes. */}
+                      <span className="inline-flex items-center gap-1.5 text-[11px] font-medium text-ink-2 shrink-0">
                         <span className={`h-1.5 w-1.5 rounded-full ${
-                          state === 'active' ? 'bg-emerald-500'
-                          : state === 'cancelled' ? 'bg-red-500' : 'bg-gray-500'}`} />
+                          state === 'active' ? SEV_DOT.good
+                          : state === 'cancelled' ? SEV_DOT.urgent : 'bg-ink-3'}`} />
                         {state === 'active' ? 'Active'
                           : state === 'cancelled' ? 'Cancelled'
                           : SERIES_STATE_LABEL[state] || 'Paused'}
@@ -192,7 +197,7 @@ export default function DuplicateReviewPanel({ schedules, clientsById, reviewedK
                       isKeeper ? (
                         <div className="mt-3 flex items-center gap-2 flex-wrap">
                           <span className="inline-flex h-5 items-center gap-1.5 rounded-sm border border-emerald-300 dark:border-emerald-800 bg-panel px-2 text-[11px] font-medium text-emerald-700 dark:text-emerald-400">
-                            <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+                            <span className={`h-1.5 w-1.5 rounded-full ${SEV_DOT.good}`} />
                             Keeper
                           </span>
                           {suggested && (

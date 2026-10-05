@@ -26,6 +26,7 @@ import { confirmDialog } from '../utils/confirmBus'
 import { groupDuplicateSeries, loadReviewedDupKeys, saveReviewedDupKeys, seriesState } from '../utils/recurringDuplicates'
 import { toast } from '../utils/toastBus'
 import { AlertTriangle, Calendar, Plus, RefreshCw, Repeat } from 'lucide-react'
+import { SEV_DOT } from '../components/board/tokens'
 
 export default function Recurring() {
   const [params, setParams] = useSearchParams()
@@ -225,7 +226,7 @@ export default function Recurring() {
       <div className="max-w-5xl mx-auto px-4 sm:px-8 pb-8">
         {autoGenOff && (
           <div className="mt-4 mb-4 flex items-start gap-2.5 rounded-lg bg-panel border border-hairline px-3.5 py-3 text-sm text-ink-2">
-            <span className="w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0 mt-1.5" aria-hidden="true" />
+            <span className={`w-1.5 h-1.5 rounded-full ${SEV_DOT.watch} shrink-0 mt-1.5`} aria-hidden="true" />
             <div>
               <p className="font-semibold text-ink">Recurring auto-generate is off</p>
               <p className="text-[13px] mt-0.5 text-ink-3">
@@ -277,7 +278,7 @@ export default function Recurring() {
 
         {dupGroupCount > 0 && (
           <div className="flex items-center gap-2.5 mb-4 px-3 py-2.5 rounded-lg bg-panel border border-hairline text-ink-2 text-sm">
-            <span className="w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0" aria-hidden="true" />
+            <span className={`w-1.5 h-1.5 rounded-full ${SEV_DOT.watch} shrink-0`} aria-hidden="true" />
             <span className="flex-1 min-w-0">
               {dupGroupCount} possible duplicate group{dupGroupCount === 1 ? '' : 's'} — same client,
               property, cadence, and time on overlapping days. Review them side by side and pick

@@ -6,6 +6,7 @@
  * React or the network: date maths, label formatting, and the client-side
  * occurrence projection.
  */
+import { SEV_DOT } from '../board/tokens'
 
 /** Resolve a roster employee to an id+name pair, defensively. Mirrors
  *  JobEditModal's normalizeEmployee — legacy roster rows carry shapes like
@@ -195,5 +196,15 @@ export function computeUpcoming(schedule, exceptions, maxCount = 8) {
 
 // ─── Skip modal ──────────────────────────────────────────────────────────
 
-/** Health-scan severity → the leading dot. */
-export const SEVERITY_DOT = { error: 'bg-red-500', warn: 'bg-amber-500', info: 'bg-gray-400' }
+/**
+ * Health-scan severity → the leading dot.
+ *
+ * BB-A11Y-02 — a dot is non-text, so the floor is 3:1, and all three steps
+ * were under it against this page's grounds (amber-500 1.77, red-500 2.55,
+ * gray-400 1.69, measured as the worst of panel / bg / bg-2 / bg-3). These
+ * are the marks that say which rows of a health scan are errors, so they are
+ * exactly the wrong place to lose a signal. Routed through the measured
+ * `SEV_DOT` map rather than keeping a fourth copy of the steps; `info` was
+ * doing a neutral job, which the design language spells as the ink-3 token.
+ */
+export const SEVERITY_DOT = { error: SEV_DOT.urgent, warn: SEV_DOT.watch, info: 'bg-ink-3' }

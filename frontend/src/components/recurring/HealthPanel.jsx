@@ -261,7 +261,7 @@ export default function HealthPanel({ onClose, onChanged, onOpenSeries, onOpenDu
                   const fix = fixFor(issue, prob)
                   return (
                     <li key={prob.code} className="flex items-start gap-2 text-[13px] text-ink-2">
-                      <span className={`mt-1.5 h-1.5 w-1.5 rounded-full shrink-0 ${SEVERITY_DOT[prob.severity] || 'bg-gray-400'}`} />
+                      <span className={`mt-1.5 h-1.5 w-1.5 rounded-full shrink-0 ${SEVERITY_DOT[prob.severity] || 'bg-ink-3'}`} />
                       <span className="min-w-0 flex-1" title={prob.suggestion}>{prob.message}</span>
                       <button
                         onClick={fix.run}

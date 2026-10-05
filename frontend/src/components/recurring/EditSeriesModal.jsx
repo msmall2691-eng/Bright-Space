@@ -8,6 +8,7 @@ import Button from '../ui/Button'
 import ErrorNote from '../ui/ErrorNote'
 import ModalShell from './ModalShell'
 import { DAY_LABELS, normalizeEmployee } from './helpers'
+import { SEV_DOT } from '../board/tokens'
 
 export default function EditSeriesModal({ schedule, onClose, onDone }) {
   const [form, setForm] = useState({
@@ -100,7 +101,7 @@ export default function EditSeriesModal({ schedule, onClose, onDone }) {
   return (
     <ModalShell title="Edit recurring rule" onClose={onClose} wide>
       <div className="p-3 rounded-lg bg-panel border border-hairline text-ink-2 text-[13px] flex gap-2">
-        <span className="w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0 mt-1.5" aria-hidden="true" />
+        <span className={`w-1.5 h-1.5 rounded-full ${SEV_DOT.watch} shrink-0 mt-1.5`} aria-hidden="true" />
         <div>
           <div className="font-semibold text-ink">These changes apply to future visits only.</div>
           Visits already on the calendar keep their current time and cleaners.

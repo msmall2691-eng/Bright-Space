@@ -12,6 +12,7 @@ import RescheduleModal from './RescheduleModal'
 import SkipModal from './SkipModal'
 import { computeUpcoming, endsSummary, fmtDate, fmtTime, ruleSummary } from './helpers'
 import { ArrowLeft, Calendar, Clock, Pause, Pencil, Play, RefreshCw, SkipForward, Undo2 } from 'lucide-react'
+import { SEV_DOT } from '../board/tokens'
 
 export default function SeriesDetail({ id, onBack, onChanged, toast }) {
   const [schedule, setSchedule] = useState(null)
@@ -168,8 +169,8 @@ export default function SeriesDetail({ id, onBack, onChanged, toast }) {
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2 mb-1">
             <h1 className="text-xl sm:text-2xl font-bold text-ink">{schedule.title || 'Untitled'}</h1>
-            <span className="inline-flex h-5 items-center gap-1.5 rounded-sm border border-hairline-2 bg-panel px-2 text-[11px] font-medium text-ink-2">
-              <span className={`h-1.5 w-1.5 rounded-full ${isLiveSeries(schedule) ? 'bg-emerald-500' : 'bg-gray-500'}`} />
+            <span className="inline-flex items-center gap-1.5 text-[11px] font-medium text-ink-2">
+              <span className={`h-1.5 w-1.5 rounded-full ${isLiveSeries(schedule) ? '${SEV_DOT.good}' : 'bg-ink-3'}`} />
               {SERIES_STATE_LABEL[seriesState(schedule)]}
             </span>
           </div>
@@ -236,7 +237,7 @@ export default function SeriesDetail({ id, onBack, onChanged, toast }) {
           <>
             {generatedCount < upcoming.length && (
               <div className="mb-2 flex items-start gap-2 text-xs text-ink-2 bg-panel border border-hairline rounded-lg px-3 py-2">
-                <span className="w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0 mt-1" aria-hidden="true" />
+                <span className={`w-1.5 h-1.5 rounded-full ${SEV_DOT.watch} shrink-0 mt-1`} aria-hidden="true" />
                 <span>
                 Only {generatedCount} of these {upcoming.length} dates {generatedCount === 1 ? 'has' : 'have'} an
                 actual job on the Schedule — the rest are projected from the rule but haven't been generated yet.
@@ -252,8 +253,8 @@ export default function SeriesDetail({ id, onBack, onChanged, toast }) {
                   <div className="text-sm font-semibold text-ink">
                     {fmtDate(u.date)}
                     {u.rescheduled && (
-                      <span className="ml-2 inline-flex h-5 items-center gap-1.5 rounded-sm border border-hairline-2 bg-panel px-2 text-[11px] font-medium text-ink-2">
-                        <span className="h-1.5 w-1.5 rounded-full bg-amber-500" />
+                      <span className="ml-2 inline-flex items-center gap-1.5 text-[11px] font-medium text-ink-2">
+                        <span className={`h-1.5 w-1.5 rounded-full ${SEV_DOT.watch}`} />
                         rescheduled
                       </span>
                     )}
