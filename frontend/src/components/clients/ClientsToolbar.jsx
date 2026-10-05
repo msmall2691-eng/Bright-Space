@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Plus, Search, Upload, LayoutGrid, TableProperties, SlidersHorizontal, ChevronDown } from 'lucide-react'
+import { Plus, Search, Upload, LayoutGrid, TableProperties, SlidersHorizontal, ChevronDown, Users } from 'lucide-react'
 import SavedViewsBar from '../SavedViewsBar'
 import ColumnsButton from '../ColumnsButton'
 
@@ -21,7 +21,13 @@ const STATUS_PILLS = [
  *  secondary controls (saved views, columns, import). Fully controlled — the
  *  parent owns every piece of state; only the open/closed of the panel lives
  *  here. The status segment is a neutral token-built control (bg-bg-2 track,
- *  bg-panel on the active segment) — not a filled colored pill. */
+ *  bg-panel on the active segment) — not a filled colored pill.
+ *
+ *  It also carries the page's TITLE. There used to be a separate PageHero
+ *  above it whose only unique content was the word "Clients" and a subtitle
+ *  describing what a list page obviously is — a full band of top space above
+ *  an already-dense list. Same move Schedule made, and for the same reason:
+ *  the toolbar IS this page's header. */
 export function ClientsToolbar({
   search, setSearch,
   viewConfig, applyView,
@@ -36,6 +42,11 @@ export function ClientsToolbar({
   return (
     <div className="mb-3">
       <div className="flex flex-wrap items-center gap-2 sm:gap-3">
+        <h1 className="flex shrink-0 items-center gap-2 text-lg font-semibold tracking-tight text-ink">
+          <Users className="h-[18px] w-[18px] shrink-0 text-ink-3" aria-hidden="true" />
+          Clients
+        </h1>
+
         <div className="relative w-full sm:w-auto sm:flex-1 sm:min-w-[180px] sm:max-w-xs">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-ink-3" />
           <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search clients..."

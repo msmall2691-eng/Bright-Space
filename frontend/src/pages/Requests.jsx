@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
+import { useUrlFilters } from '../hooks/useUrlFilters'
 import {
   MoreVertical, Plus, Search, FileText, Archive, AlertCircle,
   Home, Building2, Wind, Zap, Mail, Phone, MapPin, X, MessageSquare, Globe,
@@ -17,6 +18,7 @@ import SavedViewsBar from '../components/SavedViewsBar'
 import { RequestThreadPanel } from '../components/requests/RequestThreadPanel'
 import PropertyPhoto from '../components/PropertyPhoto'
 import AiInsight from '../components/AiInsight'
+import { SEV_DOT } from '../components/board/tokens'
 import { toast } from '../utils/toastBus'
 import { confirmDialog } from '../utils/confirmBus'
 
@@ -29,11 +31,17 @@ const SERVICE_TYPE_CONFIG = {
   str: { label: 'STR', badge: 'bg-bg-2 text-ink-2', icon: Wind },
 }
 
-const STATUS_CONFIG = {
+// BB-A11Y-02. The dots came off the 500 ramp, which missed even the 3:1
+// non-text floor against this page's grounds (amber-500 1.77, emerald-500
+// 2.09). `SEV_DOT` is the measured map the board already holds, so there is
+// one set of steps to maintain rather than a second copy that drifts.
+// `new` keeps indigo because indigo is remapped onto the accent (BB-A11Y-03)
+// and "new" is informational, not a severity.
+export const STATUS_CONFIG = {
   new: { label: 'New', badge: 'bg-bg-2 text-ink-2', dot: 'bg-indigo-500' },
   reviewed: { label: 'Reviewed', badge: 'bg-bg-2 text-ink-2', dot: 'bg-ink-3' },
-  quoted: { label: 'Quoted', badge: 'bg-bg-2 text-ink-2', dot: 'bg-amber-500' },
-  converted: { label: 'Converted', badge: 'bg-bg-2 text-ink-2', dot: 'bg-emerald-500' },
+  quoted: { label: 'Quoted', badge: 'bg-bg-2 text-ink-2', dot: SEV_DOT.watch },
+  converted: { label: 'Converted', badge: 'bg-bg-2 text-ink-2', dot: SEV_DOT.good },
   archived: { label: 'Archived', badge: 'bg-bg-2 text-ink-2', dot: 'bg-ink-3' },
 }
 
@@ -47,11 +55,14 @@ const ARRIVAL_WINDOW_LABELS = {
   flexible: 'Flexible',
 }
 
-const PRIORITY_CONFIG = {
+// BB-A11Y-02 — priority is TEXT, so the floor is 4.5:1. Measured against the
+// worst of panel / bg / bg-2 / bg-3, amber-600 is 2.63 and red-600 is 3.99;
+// both were unreadable exactly on the two rows an operator most needs to see.
+export const PRIORITY_CONFIG = {
   low: { label: 'Low', color: 'text-ink-3' },
   normal: { label: 'Normal', color: 'text-ink-2' },
-  high: { label: 'High', color: 'text-amber-600' },
-  urgent: { label: 'Urgent', color: 'text-red-600' },
+  high: { label: 'High', color: 'text-amber-800 dark:text-amber-300' },
+  urgent: { label: 'Urgent', color: 'text-red-700 dark:text-red-300' },
 }
 
 // Source chip on every Lead row — makes it obvious whether a lead came
@@ -62,6 +73,12 @@ const SOURCE_CONFIG = {
   email:   { label: 'Email',   icon: Mail,          badge: 'bg-bg-2 text-ink-3' },
   chat:    { label: 'Chat',    icon: MessageSquare, badge: 'bg-bg-2 text-ink-3' },
 }
+
+// The filters this page keeps in the URL. Module-level because `useUrlFilters`
+// memoises on this object's identity — an inline literal would recompute every
+// render. Keys are the query-param names, values the "no filter" default, and
+// a filter at its default is omitted from the URL.
+const REQUEST_FILTERS = { status: 'all', service_type: 'all', priority: 'all', source: 'all' }
 
 // The customer's ACTUAL service pick + the two pricing inputs (condition, pet
 // hair) that the website quote engine uses. A Deep Clean with pets is bucketed
@@ -190,6 +207,18 @@ const RequestCard = ({ intake, onViewDetails, onCreateQuote, onConvertToClient, 
 
   const [showMenu, setShowMenu] = useState(false)
 
+  // On-site booking details the customer filled in on maineclean.co. Hoisted
+  // out of the JSX because the card's footer now reads it twice — once to
+  // decide whether the row has a left-hand link at all, once to render it.
+  const cf = intake.custom_fields
+  const hasBookingDetails = !!cf && !!(
+    cf.entry_method || cf.parking_notes || cf.pets_detail
+    || (cf.focus_areas && cf.focus_areas.length)
+    || cf.special_instructions || cf.listing_url || cf.turnover_day
+    || cf.pets_allowed || cf.arrival_window
+    || (Array.isArray(cf.photos) && cf.photos.length)
+  )
+
   return (
     <div className={`bg-panel rounded-lg border px-4 py-2.5 hover:bg-bg-2/60 transition-colors ${selected ? 'border-indigo-400' : 'border-hairline'}`}>
       <div className="flex items-start justify-between gap-3 mb-3">
@@ -211,7 +240,15 @@ const RequestCard = ({ intake, onViewDetails, onCreateQuote, onConvertToClient, 
           <div className="flex-1 min-w-0">
             {/* Name + Source + Status */}
             <div className="flex items-center gap-2 mb-2 flex-wrap">
-              <h3 className="font-semibold text-ink truncate">{displayContactName(intake)}</h3>
+              {/* The name identifies the record, so it opens it — the design
+                  language's rule, and the reason "View details" no longer has
+                  to be hunted for in the kebab. */}
+              <h3 className="font-semibold truncate min-w-0">
+                <button type="button" onClick={() => onViewDetails(intake)}
+                  className="bb-focus rounded-sm text-ink hover:text-link transition-colors truncate max-w-full">
+                  {displayContactName(intake)}
+                </button>
+              </h3>
               <SourceChip source={intake.source || 'website'} />
               <span className="inline-flex items-center gap-1.5 text-[11px] font-medium text-ink-2 whitespace-nowrap">
                 <span className={`h-1.5 w-1.5 rounded-full ${statusConfig.dot}`} />
@@ -232,32 +269,40 @@ const RequestCard = ({ intake, onViewDetails, onCreateQuote, onConvertToClient, 
               {intake._possibleDuplicate && (
                 <span className="inline-flex items-center gap-1.5 text-[11px] font-medium text-ink-2 whitespace-nowrap"
                   title="Shares a name or address with another lead — check for a duplicate">
-                  <span className="h-1.5 w-1.5 rounded-full bg-amber-500 shrink-0" /> Possible duplicate
+                  <span className={`h-1.5 w-1.5 rounded-full ${SEV_DOT.watch} shrink-0`} /> Possible duplicate
                 </span>
               )}
             </div>
 
-            {/* Contact + Priority */}
-            <div className="space-y-1 mb-2">
-              {intake.email && (
-                <div className="flex items-center gap-1.5 text-xs text-ink-2">
-                  <Mail className="w-3.5 h-3.5 shrink-0" />
-                  <span className="truncate">{intake.email}</span>
-                </div>
-              )}
-              {intake.phone && (
-                <div className="flex items-center gap-1.5 text-xs text-ink-2">
-                  <Phone className="w-3.5 h-3.5 shrink-0" />
-                  <span>{intake.phone}</span>
-                </div>
-              )}
-              {intake.address && (
-                <div className="flex items-center gap-1.5 text-xs text-ink-2">
-                  <MapPin className="w-3.5 h-3.5 shrink-0" />
-                  <span className="truncate">{intake.address}</span>
-                </div>
-              )}
-            </div>
+            {/* Contact — one wrapping line, not three stacked rows. Email,
+                phone and address were each their own full-width row, which
+                made every card three lines taller than it needed to be and
+                was most of why this list only fit four leads on a screen.
+                They wrap to a second line on a phone, where there is no
+                horizontal room, which is the only place the stack earned
+                its height. */}
+            {(intake.email || intake.phone || intake.address) && (
+              <div className="flex items-center gap-x-3 gap-y-1 mb-2 flex-wrap text-xs text-ink-2 min-w-0">
+                {intake.email && (
+                  <span className="inline-flex items-center gap-1.5 min-w-0 max-w-full">
+                    <Mail className="w-3.5 h-3.5 shrink-0" />
+                    <span className="truncate">{intake.email}</span>
+                  </span>
+                )}
+                {intake.phone && (
+                  <span className="inline-flex items-center gap-1.5">
+                    <Phone className="w-3.5 h-3.5 shrink-0" />
+                    <span>{intake.phone}</span>
+                  </span>
+                )}
+                {intake.address && (
+                  <span className="inline-flex items-center gap-1.5 min-w-0 max-w-full">
+                    <MapPin className="w-3.5 h-3.5 shrink-0" />
+                    <span className="truncate">{intake.address}</span>
+                  </span>
+                )}
+              </div>
+            )}
 
             {/* Metadata */}
             <div className="flex items-center gap-3 text-xs text-ink-3 flex-wrap">
@@ -266,7 +311,7 @@ const RequestCard = ({ intake, onViewDetails, onCreateQuote, onConvertToClient, 
               {intake.frequency && <span>• {intake.frequency}</span>}
               {estimateText(intake.estimate_min, intake.estimate_max) ? (
                 <span className="inline-flex items-center gap-1.5 text-[11px] font-medium text-ink-2">
-                  <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+                  <span className={`h-1.5 w-1.5 rounded-full ${SEV_DOT.good}`} />
                   {estimateText(intake.estimate_min, intake.estimate_max)}
                 </span>
               ) : ['str', 'commercial'].includes(intake.service_type) ? (
@@ -303,7 +348,7 @@ const RequestCard = ({ intake, onViewDetails, onCreateQuote, onConvertToClient, 
               <div className="flex items-center gap-1.5 flex-wrap mt-1.5">
                 {pricingFactors(intake).map((f, idx) => (
                   <span key={idx} className="inline-flex items-center gap-1.5 text-[11px] font-medium text-ink-3">
-                    <span className="w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0" aria-hidden="true" />
+                    <span className={`w-1.5 h-1.5 rounded-full ${SEV_DOT.watch} shrink-0`} aria-hidden="true" />
                     {f}
                   </span>
                 ))}
@@ -325,7 +370,9 @@ const RequestCard = ({ intake, onViewDetails, onCreateQuote, onConvertToClient, 
         <div className="relative">
           <button
             onClick={() => setShowMenu(!showMenu)}
-            className="p-2 hover:bg-bg-2 rounded transition-colors"
+            aria-label="More actions"
+            aria-expanded={showMenu}
+            className="bb-focus p-2 hover:bg-bg-2 rounded transition-colors"
           >
             <MoreVertical className="w-4 h-4 text-ink-3" />
           </button>
@@ -343,16 +390,6 @@ const RequestCard = ({ intake, onViewDetails, onCreateQuote, onConvertToClient, 
               </button>
               <button
                 onClick={() => {
-                  onCreateQuote(intake)
-                  setShowMenu(false)
-                }}
-                className="w-full text-left px-4 py-2 text-sm text-ink hover:bg-bg flex items-center gap-2"
-              >
-                <FileText className="w-4 h-4" />
-                Create Quote
-              </button>
-              <button
-                onClick={() => {
                   onConvertToClient(intake)
                   setShowMenu(false)
                 }}
@@ -361,24 +398,12 @@ const RequestCard = ({ intake, onViewDetails, onCreateQuote, onConvertToClient, 
                 <UserPlus className="w-4 h-4" />
                 Convert to client
               </button>
-              {intake.status !== 'archived' && (
-                <button
-                  onClick={() => {
-                    onArchive(intake)
-                    setShowMenu(false)
-                  }}
-                  className="w-full text-left px-4 py-2 text-sm text-ink hover:bg-bg flex items-center gap-2"
-                >
-                  <Archive className="w-4 h-4" />
-                  Archive
-                </button>
-              )}
               <button
                 onClick={() => {
                   onDelete(intake)
                   setShowMenu(false)
                 }}
-                className="w-full text-left px-4 py-2 text-sm text-red-600 hover:bg-red-50 flex items-center gap-2 last:rounded-b-lg"
+                className="w-full text-left px-4 py-2 text-sm text-red-700 dark:text-red-300 hover:bg-red-50 dark:hover:bg-red-950/40 flex items-center gap-2 last:rounded-b-lg"
               >
                 <Trash2 className="w-4 h-4" />
                 Delete permanently
@@ -398,28 +423,34 @@ const RequestCard = ({ intake, onViewDetails, onCreateQuote, onConvertToClient, 
         </p>
       )}
 
-      {/* On-site booking details (arrival, entry, listing, parking, pets,
-          focus, notes, photos) live in the detail drawer now — the card stays
-          a triage surface. This one quiet line signals they're on file and
-          opens the drawer, which renders the full block. */}
-      {intake.custom_fields && (
-        intake.custom_fields.entry_method
-        || intake.custom_fields.parking_notes
-        || intake.custom_fields.pets_detail
-        || (intake.custom_fields.focus_areas && intake.custom_fields.focus_areas.length)
-        || intake.custom_fields.special_instructions
-        || intake.custom_fields.listing_url
-        || intake.custom_fields.turnover_day
-        || intake.custom_fields.pets_allowed
-        || intake.custom_fields.arrival_window
-        || (Array.isArray(intake.custom_fields.photos) && intake.custom_fields.photos.length)
-      ) && (
-        <button onClick={() => onViewDetails(intake)}
-          className="mt-1 inline-flex items-center gap-1 text-[11px] font-medium text-ink-3 hover:text-link transition-colors">
-          Booking details
-          <ChevronRight className="w-3 h-3" />
-        </button>
-      )}
+      {/* Footer: the booking-details link on the left, the two triage verbs on
+          the right. Quoting and archiving are what an operator actually DOES
+          to a lead, and both used to sit behind a kebab that had to be opened
+          first — five of seven actions were hidden. These two come out; View
+          details is now the name, and Convert/Delete stay in the menu because
+          they are not part of the triage loop. */}
+      <div className="mt-1.5 flex items-center justify-between gap-2 flex-wrap">
+        {hasBookingDetails ? (
+          <button onClick={() => onViewDetails(intake)}
+            className="bb-focus rounded-sm inline-flex items-center gap-1 text-[11px] font-medium text-ink-3 hover:text-link transition-colors">
+            Booking details
+            <ChevronRight className="w-3 h-3" />
+          </button>
+        ) : <span />}
+
+        <div className="flex items-center gap-2">
+          {intake.status !== 'archived' && (
+            <button onClick={() => onArchive(intake)}
+              className="bb-focus bg-panel border border-hairline-2 text-ink-2 hover:bg-bg-2 rounded-md px-2 py-1 text-[11px] font-medium transition-colors inline-flex items-center gap-1.5">
+              <Archive className="w-3 h-3" /> Archive
+            </button>
+          )}
+          <button onClick={() => onCreateQuote(intake)}
+            className="bb-focus bg-panel border border-hairline-2 text-ink-2 hover:bg-bg-2 rounded-md px-2 py-1 text-[11px] font-medium transition-colors inline-flex items-center gap-1.5">
+            <FileText className="w-3 h-3" /> Quote
+          </button>
+        </div>
+      </div>
     </div>
   )
 }
@@ -430,9 +461,13 @@ export default function Requests() {
   const navigate = useNavigate()
   const [requests, setRequests] = useState([])
   const [loading, setLoading] = useState(false)
-  const [selectedStatus, setSelectedStatus] = useState('all')
-  const [selectedServiceType, setSelectedServiceType] = useState('all')
-  const [selectedPriority, setSelectedPriority] = useState('all')
+  // Filters live in the URL, not in useState — so the Quote funnel can link
+  // straight to "the 25 website requests" it is counting, and so an operator
+  // who filters to commercial leads and reloads is still looking at them. A
+  // filter at its default is omitted, so a bare /requests means no filters.
+  const [filters, setFilter] = useUrlFilters(REQUEST_FILTERS)
+  const { status: selectedStatus, service_type: selectedServiceType,
+          priority: selectedPriority, source: selectedSource } = filters
   const [searchTerm, setSearchTerm] = useState('')
   const [filtersOpen, setFiltersOpen] = useState(false)
   // "Possible duplicates" view — leads sharing a name or address with another
@@ -473,6 +508,10 @@ export default function Requests() {
       if (selectedStatus !== 'all') params.append('status', selectedStatus)
       if (selectedServiceType !== 'all') params.append('service_type', selectedServiceType)
       if (selectedPriority !== 'all') params.append('priority', selectedPriority)
+      // `/api/intake` has always accepted `source` (intake/router.py) — the
+      // frontend just never sent it, so "where did this lead come from" was
+      // displayable but not filterable.
+      if (selectedSource !== 'all') params.append('source', selectedSource)
 
       const intakes = await get(`/api/intake?${params.toString()}`).catch(() => [])
       setRequests(Array.isArray(intakes) ? intakes : [])
@@ -484,7 +523,7 @@ export default function Requests() {
 
   useEffect(() => {
     loadRequests()
-  }, [selectedStatus, selectedServiceType, selectedPriority])
+  }, [selectedStatus, selectedServiceType, selectedPriority, selectedSource])
 
   // Saved-views glue: the snapshot a view persists, and the inverse that
   // applies a stored config back onto the page. Status/service/priority are
@@ -494,12 +533,14 @@ export default function Requests() {
     status: selectedStatus,
     serviceType: selectedServiceType,
     priority: selectedPriority,
+    source: selectedSource,
     duplicatesOnly: showDuplicatesOnly,
   }
   const applyView = (cfg) => {
-    setSelectedStatus(cfg.status || 'all')
-    setSelectedServiceType(cfg.serviceType || 'all')
-    setSelectedPriority(cfg.priority || 'all')
+    setFilter('status', cfg.status || 'all')
+    setFilter('service_type', cfg.serviceType || 'all')
+    setFilter('priority', cfg.priority || 'all')
+    setFilter('source', cfg.source || 'all')
     setShowDuplicatesOnly(!!cfg.duplicatesOnly)
   }
 
@@ -577,23 +618,37 @@ export default function Requests() {
     }
   }
 
-  // Reversible — the row stays under the Archived filter — so this is a plain
-  // confirm, not a danger one. Delete (below) is the destructive sibling.
+  // Archive is now one click on the card rather than two through a kebab, so
+  // it owes the operator feedback. It gets Undo rather than a confirm: a
+  // confirm would tax the main triage loop (working down 25 website leads) to
+  // guard an action that is reversible anyway, and the old version was worse
+  // than either — the row just vanished, and a FAILED archive vanished too,
+  // because the error went only to the console while the UI had already
+  // dropped the row. The undo restores the exact prior status, not a guess.
   const handleArchive = async (intake) => {
-    const label = intake.name || intake.email || intake.phone || `Request #${intake.id}`
-    if (!(await confirmDialog(
-      `Archive "${label}"?\n\nIt drops off the active list but stays under the Archived filter, so you can pull it back any time. Nothing is deleted.`,
-      { confirmLabel: 'Archive' }
-    ))) return
+    const prevStatus = intake.status
     try {
       await patch(`/api/intake/${intake.id}`, { status: 'archived' })
-      // Functional updater, like handleDelete: the confirm puts human-paced
-      // time between the click and the write, so two overlapping archives
-      // would otherwise let the slower one's stale `requests` snapshot
-      // resurrect the row the faster one removed.
       setRequests(prev => prev.filter(r => r.id !== intake.id))
+      toast.success('Archived', {
+        action: {
+          label: 'Undo',
+          onClick: async () => {
+            try {
+              await patch(`/api/intake/${intake.id}`, { status: prevStatus })
+              // Put it back where it was rather than appending — the feed is
+              // sorted newest-first downstream, so a plain re-add is enough.
+              setRequests(prev => prev.some(r => r.id === intake.id) ? prev : [...prev, intake])
+            } catch (err) {
+              console.error('[Requests] Undo archive failed:', err)
+              toast.error('Could not restore that lead.')
+            }
+          },
+        },
+      })
     } catch (err) {
       console.error('[Requests] Archive failed:', err)
+      toast.error('Archive failed. The lead is still here.')
     }
   }
 
@@ -702,7 +757,7 @@ export default function Requests() {
               className="flex shrink-0 items-center gap-1.5 px-3 py-2 rounded-lg text-sm border border-hairline bg-panel text-ink-2 hover:bg-bg-2 transition-colors">
               <SlidersHorizontal className="w-3.5 h-3.5" />
               <span className="hidden sm:inline">Filters</span>
-              {(selectedStatus !== 'all' || selectedServiceType !== 'all' || selectedPriority !== 'all' || showDuplicatesOnly) && (
+              {(selectedStatus !== 'all' || selectedServiceType !== 'all' || selectedPriority !== 'all' || selectedSource !== 'all' || showDuplicatesOnly) && (
                 <span className="w-1.5 h-1.5 rounded-full bg-indigo-500" aria-hidden="true" />
               )}
               <ChevronDown className={`w-3 h-3 transition-transform ${filtersOpen ? 'rotate-180' : ''}`} />
@@ -717,7 +772,7 @@ export default function Requests() {
             <SavedViewsBar entityType="lead" currentConfig={viewConfig} onApply={applyView} defaultLabel="All requests" />
             <select
               value={selectedStatus}
-              onChange={(e) => setSelectedStatus(e.target.value)}
+              onChange={(e) => setFilter('status', e.target.value)}
               className="px-3 py-2 border border-hairline rounded-lg text-sm bg-panel"
             >
               <option value="all">All Statuses</option>
@@ -730,7 +785,7 @@ export default function Requests() {
 
             <select
               value={selectedServiceType}
-              onChange={(e) => setSelectedServiceType(e.target.value)}
+              onChange={(e) => setFilter('service_type', e.target.value)}
               className="px-3 py-2 border border-hairline rounded-lg text-sm bg-panel"
             >
               <option value="all">All Service Types</option>
@@ -739,9 +794,25 @@ export default function Requests() {
               <option value="str">STR</option>
             </select>
 
+            {/* Source was displayable (SourceChip on every card) but not
+                filterable, which is why the funnel's "by lead source" table had
+                nowhere to send you. Options derive from SOURCE_CONFIG so the
+                chip labels and the filter cannot drift apart. */}
+            <select
+              value={selectedSource}
+              onChange={(e) => setFilter('source', e.target.value)}
+              className="px-3 py-2 border border-hairline rounded-lg text-sm bg-panel"
+              aria-label="Filter by lead source"
+            >
+              <option value="all">All Sources</option>
+              {Object.entries(SOURCE_CONFIG).map(([value, cfg]) => (
+                <option key={value} value={value}>{cfg.label}</option>
+              ))}
+            </select>
+
             <select
               value={selectedPriority}
-              onChange={(e) => setSelectedPriority(e.target.value)}
+              onChange={(e) => setFilter('priority', e.target.value)}
               className="px-3 py-2 border border-hairline rounded-lg text-sm bg-panel"
             >
               <option value="all">All Priorities</option>
@@ -775,7 +846,7 @@ export default function Requests() {
 
       {/* Content */}
       <div className="flex-1 overflow-auto">
-        <div className="max-w-6xl mx-auto p-4">
+        <div className="max-w-7xl mx-auto p-4">
           {selectedIntakes.size > 0 && (
             <div className="flex items-center justify-between gap-3 mb-3 bg-panel border border-hairline rounded-lg px-3 py-2 sticky top-0 z-10">
               <span className="text-[12px] text-ink-2 font-medium">{selectedIntakes.size} selected</span>
@@ -802,7 +873,13 @@ export default function Requests() {
               </div>
             </GlassCard>
           ) : (
-            <div className="grid gap-3">
+            // Two columns from `shell:` (900px — the owner's window is ~940px,
+            // so a plain `lg:` would hide this from her). Reading order stays
+            // left-to-right by row, which keeps the newest-first sort legible;
+            // an even/odd column split would have read down one column and
+            // skipped every other lead. `items-start` stops the shorter card
+            // of a pair stretching to match the taller one.
+            <div className="grid gap-3 items-start shell:grid-cols-2">
               {feed.map(data => (
                 <RequestCard
                   key={`intake-${data.id}`}
@@ -1159,7 +1236,7 @@ export default function Requests() {
             <div className="border-t border-hairline bg-bg p-4 sm:p-6 flex flex-col-reverse sm:flex-row gap-3 justify-end sticky bottom-0">
               <button
                 onClick={() => handleDelete(selectedRequest)}
-                className="w-full sm:w-auto sm:mr-auto inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium text-red-600 hover:bg-red-50 border border-transparent hover:border-red-200"
+                className="w-full sm:w-auto sm:mr-auto inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium text-red-700 dark:text-red-300 hover:bg-red-50 dark:hover:bg-red-950/40 border border-transparent hover:border-red-200"
               >
                 <Trash2 className="w-4 h-4" /> Delete
               </button>
