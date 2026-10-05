@@ -233,6 +233,15 @@ def prop_to_dict(p: Property, include_icals: bool = True, turnovers_next_30d: Op
     data = {
         "id": p.id,
         "client_id": p.client_id,
+        # The frontend's property search has always included this field —
+        # usePropertyFilters filters on `name / address / client_name`, and its
+        # docstring advertises it — but the API never sent it, so searching
+        # Properties by client name matched nothing and failed silently. It
+        # rides the existing payload rather than costing a second request
+        # (brightbase-economy rule 3), the same way `_quote_dict` already
+        # ships `client_name` for quotes. Callers eager-load Property.client,
+        # so this is not an N+1.
+        "client_name": p.client.name if p.client else None,
         "name": p.name,
         "address": p.address,
         "city": p.city,
@@ -316,7 +325,10 @@ def get_properties(
     org_id: int = Depends(current_org_id),
 ):
     # MT-2: scope to the caller's workspace; tolerate legacy NULL-org rows.
-    q = (db.query(Property).options(joinedload(Property.property_icals))
+    # Property.client is eager-loaded because prop_to_dict reads client.name;
+    # lazily it would be one extra query per property on every list load.
+    q = (db.query(Property)
+         .options(joinedload(Property.property_icals), joinedload(Property.client))
          .filter(or_(Property.org_id == org_id, Property.org_id.is_(None))))
     if not include_inactive:
         q = q.filter(Property.active == True)
@@ -496,7 +508,9 @@ def get_property(property_id: int, db: Session = Depends(get_db), org_id: int = 
     only now (matches the list endpoint above); the crew app reads properties
     through /api/crew/*, which serves access details solely for the cleaner's
     own assigned jobs."""
-    prop = db.query(Property).options(joinedload(Property.property_icals)).filter(
+    prop = db.query(Property).options(
+        joinedload(Property.property_icals), joinedload(Property.client),
+    ).filter(
         Property.id == property_id,
         or_(Property.org_id == org_id, Property.org_id.is_(None)),  # MT-2 tenant scope
     ).first()
