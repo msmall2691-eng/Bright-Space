@@ -1,4 +1,5 @@
 import { ArrowRight } from 'lucide-react'
+import { FOCUS_DOT } from './tokens'
 
 /**
  * The calm, airy top of Home: a greeting eyebrow + the single most pressing
@@ -8,14 +9,16 @@ import { ArrowRight } from 'lucide-react'
  * through size, the dot through meaning.
  *
  * `focus` is computed by OpsBoard from the board payload:
- *   { tone, headline, primary?: {label, to}, ghost?: {label, to} }
+ *   { tone, headline?, primary?: {label, to}, ghost?: {label, to} }
  * `tone` only colors the 6px dot (amber = needs attention, emerald = calm).
+ *
+ * `headline` IS OPTIONAL, and that is the quiet morning: when nothing is
+ * pressing the hero line is omitted entirely rather than filled with a
+ * reassurance ("You're on top of it this morning."), which spent the largest
+ * type on the page on the one sentence you can't act on. The greeting eyebrow
+ * and the date carry the section alone, and the board underneath — with no
+ * rows in it — already says the rest.
  */
-const DOT = {
-  attention: 'bg-amber-500',
-  calm: 'bg-emerald-500',
-}
-
 function greetingFor(d) {
   const h = d.getHours()
   if (h < 12) return 'Good morning'
@@ -31,15 +34,18 @@ export default function FocusBar({ firstName, focus, navigate }) {
   return (
     <section data-testid="home-focus" className="mt-5 bb-board-in">
       <p className="flex items-center gap-1.5 text-[11px] font-medium uppercase tracking-wide text-ink-3">
-        <span className={`h-1.5 w-1.5 rounded-full ${DOT[focus.tone] || DOT.calm}`} aria-hidden="true" />
+        <span className={`h-1.5 w-1.5 rounded-full ${FOCUS_DOT[focus.tone] || FOCUS_DOT.calm}`} aria-hidden="true" />
         {eyebrow}
         <span className="text-ink-3/70">·</span>
         <span className="normal-case tracking-normal text-ink-3">{dateLabel}</span>
       </p>
+      {(focus.headline || focus.primary || focus.ghost) && (
       <div className="mt-1.5 flex flex-wrap items-end justify-between gap-x-6 gap-y-2">
-        <h1 className="max-w-2xl text-balance text-[22px] font-semibold leading-tight tracking-tight text-ink shell:text-[26px]">
-          {focus.headline}
-        </h1>
+        {focus.headline && (
+          <h1 className="max-w-2xl text-balance text-[22px] font-semibold leading-tight tracking-tight text-ink shell:text-[26px]">
+            {focus.headline}
+          </h1>
+        )}
         {(focus.primary || focus.ghost) && (
           <div className="flex items-center gap-2">
             {focus.ghost && (
@@ -59,6 +65,7 @@ export default function FocusBar({ firstName, focus, navigate }) {
           </div>
         )}
       </div>
+      )}
       <div className="mt-4 border-b border-hairline" />
     </section>
   )

@@ -97,7 +97,7 @@ export function MoneyToday({ snap }) {
   }
 
   return (
-    <Box dot="bg-emerald-500" title="Today">
+    <Box dot="bg-emerald-700 dark:bg-emerald-400" title="Today">
       {/* 2×2 so the four numbers read as one glance, not a list to scan.
           Borders are per-cell rather than `divide-*`: on a grid, divide-x/y
           paint a left border on the first cell of every row. */}
@@ -132,7 +132,7 @@ export function CrewToday({ snap }) {
       <div className="divide-y divide-hairline">
         {working.map(c => (
           <Row key={`on-${c.cleaner_id}`}>
-            <span className="h-1.5 w-1.5 shrink-0 -translate-y-px rounded-full bg-emerald-500" />
+            <span className="h-1.5 w-1.5 shrink-0 -translate-y-px rounded-full bg-emerald-700 dark:bg-emerald-400" />
             <span className="min-w-0 flex-1 truncate text-[13px] text-ink">{c.name}</span>
             <span className="shrink-0 text-[11px] tabular-nums text-ink-3">
               {c.done ? `${c.done}/${c.jobs} done` : `${c.jobs} ${c.jobs === 1 ? 'job' : 'jobs'}`}
@@ -141,7 +141,7 @@ export function CrewToday({ snap }) {
         ))}
         {off.map(c => (
           <Row key={`off-${c.cleaner_id}`}>
-            <span className="h-1.5 w-1.5 shrink-0 -translate-y-px rounded-full bg-amber-500" />
+            <span className="h-1.5 w-1.5 shrink-0 -translate-y-px rounded-full bg-amber-700 dark:bg-amber-400" />
             <span className="min-w-0 flex-1 truncate text-[13px] text-ink-2">{c.name}</span>
             <span className="shrink-0 truncate text-[11px] text-ink-3">{c.reason}</span>
           </Row>
@@ -175,7 +175,7 @@ export function CrewToday({ snap }) {
 
 /* ── 3. Turnover feed health ──────────────────────────────────────────────── */
 
-const FEED_DOT = { failing: 'bg-rose-500', never: 'bg-ink-3', stale: 'bg-amber-500' }
+const FEED_DOT = { failing: 'bg-rose-600 dark:bg-rose-400', never: 'bg-ink-3', stale: 'bg-amber-700 dark:bg-amber-400' }
 
 export function FeedHealth({ snap }) {
   // No short-term-rental calendars connected → this box has no subject.
@@ -183,7 +183,7 @@ export function FeedHealth({ snap }) {
   const { total, ok, problems, problem_total } = snap
 
   return (
-    <Box dot={problem_total ? 'bg-amber-500' : 'bg-emerald-500'}
+    <Box dot={problem_total ? 'bg-amber-700 dark:bg-amber-400' : 'bg-emerald-700 dark:bg-emerald-400'}
       title="Turnover feeds"
       right={`${ok}/${total} feeding`}>
       {problem_total === 0 ? (
@@ -226,7 +226,7 @@ export function RecurringHealth({ snap }) {
   const { scanned, stalled, stalled_total } = snap
 
   return (
-    <Box dot={stalled_total ? 'bg-amber-500' : 'bg-emerald-500'}
+    <Box dot={stalled_total ? 'bg-amber-700 dark:bg-amber-400' : 'bg-emerald-700 dark:bg-emerald-400'}
       title="Recurring series"
       right={`${scanned} total`}>
       {stalled_total === 0 ? (
@@ -236,7 +236,7 @@ export function RecurringHealth({ snap }) {
           {stalled.map(s => (
             <div key={s.schedule_id} className="px-3.5 py-2">
               <div className="flex items-baseline gap-2">
-                <span className="h-1.5 w-1.5 shrink-0 -translate-y-px rounded-full bg-amber-500" />
+                <span className="h-1.5 w-1.5 shrink-0 -translate-y-px rounded-full bg-amber-700 dark:bg-amber-400" />
                 <Link to="/recurring" className={`${RECORD_LINK} flex-1`}>{s.title}</Link>
                 {s.client_id ? (
                   <Link to={`/clients/${s.client_id}`} className={META_LINK}>

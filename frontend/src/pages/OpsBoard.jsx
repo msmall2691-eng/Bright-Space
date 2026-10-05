@@ -3,23 +3,28 @@
  *
  * APPROVED LAYOUT (Oct 2026 rebuild). Top to bottom:
  *   1. FOCUS BAR — a greeting eyebrow + ONE headline for the single most
- *      pressing thing (unassigned-urgent coverage → overdue money → calm),
- *      derived from the board payload already fetched. One primary + one ghost
- *      action, hairline divider below.
+ *      pressing thing (unassigned-urgent coverage → overdue money), derived
+ *      from the board payload already fetched. One primary + one ghost action,
+ *      hairline divider below. On a quiet morning there is NO headline — see
+ *      FocusBar; the reassurance sentence was retired.
  *   2. KPI STRIP — the trimmed stat tiles (TopBand), one compact quiet row.
  *   3. THREE-COLUMN GRID (3 cols at shell:, 2 mid, 1 on phone):
  *      A — Today (compact list of today's visits, from the SAME schedule-week
- *          fetch the old Home calendar used) + a quiet "needs a cleaner" card.
- *      B — Flow + Money summaries, DERIVED from the board payload (no fetch).
+ *          fetch the old Home calendar used) + the needs-a-cleaner JOBS.
+ *      B — incoming work, money, and anything broken: the board payload's own
+ *          `requests` / `money` rows with the actions it already ships, plus
+ *          problem-gated feed + recurring health from `snapshot`.
  *      C — the comms rail: Crew (one new fetch, /api/crew/threads) + Clients
  *          (the board payload's messages). Office-only.
  *   4. BELOW — Quick actions, Systems + Safe-to-Ignore (collapsed one-liners),
  *      the bench, then Notes + Ask Nova as the smallest last zone.
  *
- * ECONOMY. `GET /api/dashboard/board` drives the strip, the focus bar, the
- * Flow/Money summaries AND the Clients box (all derived client-side — no new
- * field, no new request). HomeToday reuses the one /api/schedule/week fetch the
- * Home calendar already made. The ONLY new call this page adds is CrewBox's
+ * ECONOMY. `GET /api/dashboard/board` drives the strip, the focus bar, every
+ * row in the middle column, the two health boxes AND the Clients box (all from
+ * the one payload — no new field, no new request; `snapshot` has been in it
+ * since board_snapshot.py shipped, it was simply not mounted here). HomeToday
+ * reuses the one /api/schedule/week fetch the Home calendar already made.
+ * The ONLY new call this page adds is CrewBox's
  * single `GET /api/crew/threads` on mount (+ a refetch after a crew send). No
  * polling loop is added; the shared summary poll (useUnreadCount) still drives
  * unread counts. Don't add an eager fetch here.
@@ -42,8 +47,8 @@ import { TAG_TONE, STAT_TONE, INT_DOT } from '../components/board/tokens'
 import BoardAssistant from '../components/board/BoardAssistant'
 import FocusBar from '../components/board/FocusBar'
 import HomeToday from '../components/board/HomeToday'
-import MiniListBox from '../components/board/MiniListBox'
 import CrewBox from '../components/board/CrewBox'
+import { FeedHealth, RecurringHealth } from '../components/board/SnapshotBoxes'
 import ClientsBox from '../components/board/ClientsBox'
 import HomeWidgets from '../components/board/HomeWidgets'
 import WhenVisible from '../components/board/WhenVisible'
@@ -57,6 +62,10 @@ import { useUnreadCount } from '../hooks/useUnreadCount'
 import { currentRole } from '../nav/routes'
 
 const CLEARED_KEY = 'brightbase_board_cleared'
+
+// Endpoints that cost money per call. Every one of these gets a confirm step
+// client-side, whether or not the payload shipped a `confirm` string.
+const METERED = /^\/api\/ai\//
 
 /* ── localStorage cleared-set ─────────────────────────────────────────────── */
 function loadCleared() {
@@ -226,20 +235,22 @@ function IntChip({ chip }) {
   )
 }
 
-function BoardRow({ item, cleared, onToggle, onAction, actioningKey, confirmingKey }) {
+function BoardRow({ item, cleared, onToggle, onAction, actioningKey, confirmingKey, dismissable = true }) {
   return (
     <div data-testid={`board-row-${item.id}`}
       className={`flex items-start gap-2.5 px-3.5 py-2.5 transition-opacity ${cleared ? 'opacity-40' : ''}`}>
-      <button
-        onClick={() => onToggle(item.id)}
-        aria-label={cleared ? 'Restore' : 'Clear'}
-        className={`mt-0.5 grid h-[18px] w-[18px] shrink-0 place-items-center rounded-md border transition-colors ${
-          cleared
-            ? 'border-emerald-500 bg-emerald-500 text-white'
-            : 'border-hairline-2 text-transparent hover:border-ink-3'
-        }`}>
-        <Check className="h-3 w-3" strokeWidth={3} />
-      </button>
+      {dismissable && (
+        <button
+          onClick={() => onToggle(item.id)}
+          aria-label={cleared ? 'Restore' : 'Clear'}
+          className={`mt-0.5 grid h-[18px] w-[18px] shrink-0 place-items-center rounded-md border transition-colors ${
+            cleared
+              ? 'border-emerald-500 bg-emerald-500 text-white'
+              : 'border-hairline-2 text-transparent hover:border-ink-3'
+          }`}>
+          <Check className="h-3 w-3" strokeWidth={3} />
+        </button>
+      )}
       <div className="min-w-0 flex-1">
         <div className="flex items-start justify-between gap-2">
           <p className={`text-[13px] font-semibold leading-snug text-ink ${cleared ? 'line-through' : ''}`}>
@@ -288,6 +299,15 @@ function BoardRow({ item, cleared, onToggle, onAction, actioningKey, confirmingK
 
 // Plumbing + inbox noise fold to one quiet line each by default.
 const COLLAPSED_BY_DEFAULT = new Set(['systems', 'safe_to_ignore'])
+// Sections whose rows carry the check-off box. This is a per-DEVICE
+// localStorage hide, not a state change on the record, so it belongs only
+// where "I've seen this" is the whole point: a system notice you've read, a
+// promo email you don't care about. It must NOT appear on work — a job with
+// nobody on it and an invoice nobody has paid are things you fix, and a board
+// that lets you tick away an overdue invoice on one laptop (while it stays on
+// your phone) is a way to lose money. Those rows get their real actions
+// instead: Open, Mark paid, Open to crew.
+const DISMISSABLE = new Set(['systems', 'safe_to_ignore'])
 // Only Safe-to-Ignore has a server-side bulk clear (the Gmail-triage delete-all).
 const BULK_CLEARABLE = new Set(['safe_to_ignore'])
 
@@ -304,6 +324,7 @@ function Section({ section, items, clearedSet, onToggle, onAction, actioningKey,
   const visibleItems = maxRows ? items.slice(0, maxRows) : items
   const hiddenCount = items.length - visibleItems.length
   const canClearAll = BULK_CLEARABLE.has(section.key) && !filtersActive
+  const dismissable = DISMISSABLE.has(section.key)
   const clearKey = `clear-section:${section.key}`
   const confirmingClear = confirmingKey === clearKey
   return (
@@ -348,7 +369,8 @@ function Section({ section, items, clearedSet, onToggle, onAction, actioningKey,
       {open && (
         <div className="divide-y divide-hairline">
           {visibleItems.map(it => (
-            <BoardRow key={it.id} item={it} cleared={clearedSet.has(it.id)} onToggle={onToggle}
+            <BoardRow key={it.id} item={it} dismissable={dismissable}
+              cleared={dismissable && clearedSet.has(it.id)} onToggle={onToggle}
               onAction={onAction} actioningKey={actioningKey} confirmingKey={confirmingKey} />
           ))}
           {hiddenCount > 0 && (
@@ -362,12 +384,6 @@ function Section({ section, items, clearedSet, onToggle, onAction, actioningKey,
       )}
     </section>
   )
-}
-
-/* ── derivations from the board payload ───────────────────────────────────── */
-function firstMoney(s) {
-  const m = (s || '').match(/\$[\d,]+(?:\.\d+)?/)
-  return m ? m[0] : s
 }
 
 /* ── Page ─────────────────────────────────────────────────────────────────── */
@@ -436,7 +452,15 @@ export default function OpsBoard() {
   const runAction = useCallback(async (item, action) => {
     if (action.kind !== 'api') { navigate(action.href); return }
     const key = `${item.id}:${action.label}`
-    if (action.confirm && confirmingKey !== key) { setConfirmingKey(key); return }
+    // Confirm when the payload asks for one, OR when the endpoint is metered.
+    // `Draft quote` (/api/ai/quote-from-lead) ships WITHOUT a confirm string
+    // (board_service.py), which was fine while it sat behind a page but is not
+    // fine now that it's a one-tap button on the landing screen: every tap is
+    // a billed Anthropic call, and a mis-tap costs money rather than a click.
+    // brightbase-economy — a metered API is never a single accidental tap.
+    if ((action.confirm || METERED.test(action.endpoint || '')) && confirmingKey !== key) {
+      setConfirmingKey(key); return
+    }
     setConfirmingKey(null); setActioningKey(key)
     try {
       const res = await post(action.endpoint, action.body || {})
@@ -482,41 +506,30 @@ export default function OpsBoard() {
   const requestItems = useMemo(() => byKey.requests?.items || [], [byKey])
   const moneyItems = useMemo(() => byKey.money?.items || [], [byKey])
 
-  // Flow summary — pipeline counts derived from the board payload's item lists
-  // (no pipeline fetch). Each row links out to the Flow page that owns it.
-  const flowRows = useMemo(() => {
-    const leads = requestItems.filter(it => it.id.startsWith('lead:')).length
-    const ready = requestItems.filter(it => it.id.startsWith('quote-stranded:')).length
-    const overdueInv = moneyItems.filter(it => it.id.startsWith('invoice:')).length
-    return [
-      leads && { label: 'New leads', value: leads, to: '/flow', dot: 'bg-amber-500' },
-      ready && { label: 'Ready to book', value: ready, to: '/flow', dot: 'bg-rose-500' },
-      overdueInv && { label: 'Overdue invoices', value: overdueInv, to: '/flow', dot: 'bg-rose-500' },
-    ].filter(Boolean)
-  }, [requestItems, moneyItems])
+  // Plumbing health, PROBLEM-GATED. `build_snapshot` ships these inside the
+  // board payload already, so mounting them costs no request. They render only
+  // when something is actually wrong — a permanent "3/3 feeding" card is
+  // furniture that never tells you anything (SnapshotBoxes' own rule), and both
+  // components self-hide on a missing subject anyway. Gating on the PROBLEM
+  // count rather than on the subject means a business with feeds sees this
+  // column only on the mornings a feed broke.
+  const feedSnap = data?.snapshot?.feeds
+  const recurringSnap = data?.snapshot?.recurring
+  const showFeeds = (feedSnap?.problem_total || 0) > 0
+  const showRecurring = (recurringSnap?.stalled_total || 0) > 0
 
-  // Money summary — Outstanding + Collected today from the board payload.
-  // (A "To send" / draft-invoices count isn't in the board payload — see the
-  // follow-up note in the PR; designed around what's shipped.)
-  const moneyRows = useMemo(() => {
-    const outstanding = moneyItems.find(it => it.id === 'money:outstanding')
-    const collected = (data?.stats || []).find(s => s.key === 'collected')
-    const rows = []
-    if (outstanding) rows.push({ label: 'Outstanding', value: firstMoney(outstanding.title), to: '/billing?view=invoices' })
-    if (collected && collected.value && collected.value !== '$0') {
-      rows.push({ label: 'Collected today', value: collected.value, to: '/billing?view=invoices', dot: 'bg-emerald-500' })
-    }
-    return rows
-  }, [moneyItems, data])
+  // Whether the middle column has anything to show. Every box in it self-hides
+  // when empty, so on a quiet morning the column would render as a blank track
+  // in the middle of the grid — the lopsided "empty space" the owner flagged.
+  // When it's empty we drop the column entirely and the grid narrows to
+  // Today + comms, so there is never a hole (see the grid).
+  const showMiddle = requestItems.length > 0 || moneyItems.length > 0 || showFeeds || showRecurring
 
-  // Whether the middle column (Flow + Money) has anything to show. Both
-  // MiniListBoxes self-hide when empty, so on a quiet morning this column would
-  // render as a blank track in the middle of the grid — the lopsided "empty
-  // space" the owner flagged. When it's empty we drop the column entirely and
-  // the grid narrows to Today + comms, so there is never a hole (see the grid).
-  const showFlowMoney = flowRows.length > 0 || moneyRows.length > 0
-
-  // The single most pressing thing for the focus headline.
+  // The single most pressing thing for the focus headline. When nothing is
+  // pressing there is NO headline: the hero slot stays empty and the greeting
+  // line carries the section on its own. A 26px "You're on top of it this
+  // morning." spent the largest type on the page saying nothing actionable —
+  // the quiet morning is already legible from a board with no rows on it.
   const focus = useMemo(() => {
     const n = needsCleanerItems.length
     if (n > 0) return {
@@ -532,7 +545,7 @@ export default function OpsBoard() {
       headline: `${oc} ${oc === 1 ? 'invoice' : 'invoices'} overdue`,
       primary: { label: 'Chase', to: '/billing?view=invoices&status=overdue' },
     }
-    return { tone: 'calm', headline: "You're on top of it this morning." }
+    return { tone: 'calm' }
   }, [needsCleanerItems, data])
 
   const systemsSection = byKey.systems
@@ -608,42 +621,69 @@ export default function OpsBoard() {
             {/* 3 — THREE-COLUMN GRID. Per-column flex stacks so a short box packs
                 onto the next instead of height-locking to the tallest in its row
                 (owner: "too much empty spaces"). The middle column collapses out
-                entirely when Flow + Money are both empty, so the grid is never
-                left with a blank track (owner: Home "looks empty/awkward"). */}
+                entirely when there is no incoming work, no money and nothing
+                broken, so the grid is never left with a blank track (owner:
+                Home "looks empty/awkward"). */}
             <div data-testid="home-grid"
               className={`mt-4 grid grid-cols-1 items-start gap-4 sm:grid-cols-2 bb-board-in ${
-                showFlowMoney
-                  ? 'shell:grid-cols-[minmax(0,1.5fr)_minmax(0,1fr)_minmax(0,1.15fr)]'
+                showMiddle
+                  ? 'shell:grid-cols-[minmax(0,1.5fr)_minmax(0,1.15fr)_minmax(0,1.15fr)]'
                   : 'shell:grid-cols-[minmax(0,1.5fr)_minmax(0,1.1fr)]'
               }`}>
 
               {/* Column A — Today + needs-a-cleaner. Spans the full width at the
                   2-col (sm) size when the middle column is gone, so Today never
                   sits beside an empty cell. */}
-              <div className={`flex flex-col gap-4 ${showFlowMoney ? '' : 'sm:col-span-2 shell:col-span-1'}`}>
+              <div className={`flex flex-col gap-4 ${showMiddle ? '' : 'sm:col-span-2 shell:col-span-1'}`}>
                 <HomeToday navigate={navigate} />
-                {needsCleanerItems.length > 0 && (
-                  <div className="flex items-center gap-2.5 rounded-2xl border border-hairline bg-panel px-3.5 py-3">
-                    <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-amber-500" aria-hidden="true" />
-                    <span className="min-w-0 flex-1 text-[12.5px] text-ink-2">
-                      <span className="font-semibold text-ink">{needsCleanerItems.length}</span>
-                      {' '}{needsCleanerItems.length === 1 ? 'job' : 'jobs'} still {needsCleanerItems.length === 1 ? 'needs' : 'need'} a cleaner
-                    </span>
-                    <button onClick={() => navigate('/schedule?view=dispatch')}
-                      className="inline-flex shrink-0 items-center gap-0.5 text-[11px] font-semibold text-link transition-all hover:gap-1">
-                      Open to crew<ArrowRight className="h-3 w-3" />
-                    </button>
-                  </div>
+                {/* The jobs with nobody on them, as the JOBS — not as the
+                    integer "3 jobs still need a cleaner" that used to sit here.
+                    Each row names the house and the day and links to the job,
+                    where it gets opened to the crew. The office never assigns
+                    (brightbase-marketplace): there is no action on the row that
+                    puts a person on a job. Capped at 3 — the focus bar already
+                    carries the count, and the rest is the schedule's job. */}
+                {byKey.needs_cleaner && (
+                  <Section section={byKey.needs_cleaner} items={needsCleanerItems}
+                    clearedSet={cleared} onToggle={toggleCleared}
+                    onAction={runAction} actioningKey={actioningKey} confirmingKey={confirmingKey}
+                    setConfirmingKey={setConfirmingKey}
+                    headerLink={{ label: 'Open to crew', to: '/schedule?view=dispatch' }}
+                    navigate={navigate} onClearAll={clearAllInSection} clearingSection={clearingSection}
+                    filtersActive={false} maxRows={3} />
                 )}
               </div>
 
-              {/* Column B — Flow + Money. Dropped entirely when both are empty
-                  (each MiniListBox already self-hides) so the grid narrows
-                  rather than showing a blank middle track. */}
-              {showFlowMoney && (
+              {/* Column B — incoming work, money, and anything broken. These are
+                  the SAME rows the board payload already builds, with the
+                  actions it already ships (`Draft quote`, `Book it`,
+                  `Mark paid`) — the two count boxes that used to stand here
+                  collapsed all of it into integers you then had to go find.
+                  Dropped entirely when there's nothing in it (every box
+                  self-hides) so the grid narrows rather than showing a blank
+                  middle track. */}
+              {showMiddle && (
                 <div className="flex flex-col gap-4">
-                  <MiniListBox title="Flow" link={{ label: 'Open Flow', to: '/flow' }} rows={flowRows} navigate={navigate} />
-                  <MiniListBox title="Money" link={{ label: 'Billing', to: '/billing' }} rows={moneyRows} navigate={navigate} />
+                  {byKey.requests && (
+                    <Section section={byKey.requests} items={requestItems}
+                      clearedSet={cleared} onToggle={toggleCleared}
+                      onAction={runAction} actioningKey={actioningKey} confirmingKey={confirmingKey}
+                      setConfirmingKey={setConfirmingKey}
+                      headerLink={{ label: 'Open Flow', to: '/flow' }}
+                      navigate={navigate} onClearAll={clearAllInSection} clearingSection={clearingSection}
+                      filtersActive={false} maxRows={4} />
+                  )}
+                  {byKey.money && (
+                    <Section section={byKey.money} items={moneyItems}
+                      clearedSet={cleared} onToggle={toggleCleared}
+                      onAction={runAction} actioningKey={actioningKey} confirmingKey={confirmingKey}
+                      setConfirmingKey={setConfirmingKey}
+                      headerLink={{ label: 'Billing', to: '/billing' }}
+                      navigate={navigate} onClearAll={clearAllInSection} clearingSection={clearingSection}
+                      filtersActive={false} maxRows={4} />
+                  )}
+                  {showFeeds && <FeedHealth snap={feedSnap} />}
+                  {showRecurring && <RecurringHealth snap={recurringSnap} />}
                 </div>
               )}
 
