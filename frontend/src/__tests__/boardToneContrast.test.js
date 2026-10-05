@@ -127,14 +127,18 @@ const MAPS = [
   { name: 'STAT_TONE', floor: 4.5, what: 'a stat-tile number' },
   { name: 'SEV_DOT', floor: 3, what: 'a severity DOT' },
   { name: 'INT_DOT', floor: 3, what: 'an integration DOT' },
+  { name: 'FOCUS_DOT', floor: 3, what: "the focus bar's DOT" },
 ]
 
 describe('BB-A11Y-02 — the board tone maps clear their floors', () => {
   it('parsed the maps and both themes at all', () => {
     expect(LIGHT.length, 'no light grounds parsed from index.css').toBeGreaterThan(2)
     expect(DARK.length, 'no console grounds parsed from index.css').toBeGreaterThan(2)
+    // >= 2 rather than > 2: the guard exists to catch a tokens.js shape change
+    // that makes the parse come back EMPTY (which would turn every assertion
+    // below into a silent no-op). FOCUS_DOT genuinely has two entries.
     for (const { name } of MAPS) {
-      expect(mapEntries(name).length, `${name} did not parse — tokens.js shape changed`).toBeGreaterThan(2)
+      expect(mapEntries(name).length, `${name} did not parse — tokens.js shape changed`).toBeGreaterThanOrEqual(2)
     }
   })
 

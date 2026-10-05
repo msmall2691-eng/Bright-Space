@@ -47,10 +47,20 @@ const PAYLOAD = {
         tags: [{ label: 'Email', tone: 'blue' }],
         actions: [{ label: 'Reply', kind: 'link', href: '/comms?conversation=8' }] },
     ] },
-    // requests → Flow summary rows (derived from the item ids).
+    // requests → the middle column's incoming-work rows, with the actions
+    // board_service.py really attaches: `Draft quote` is an api action with NO
+    // confirm string (it is metered — OpsBoard adds one client-side), `Book it`
+    // carries its own.
     { key: 'requests', title: 'Requests & quotes', icon: '📋', items: [
-      { id: 'lead:5', severity: 'watch', title: 'New lead — inquiry', body: 'Wants a quote', meta: '1h', tags: [], actions: [] },
-      { id: 'quote-stranded:2', severity: 'urgent', title: 'Accepted, not booked — Jess', body: '$300', meta: 'Sat', tags: [], actions: [] },
+      { id: 'lead:5', severity: 'watch', title: 'New lead — inquiry', body: 'Wants a quote', meta: '1h', tags: [],
+        actions: [
+          { label: 'Draft quote', kind: 'api', method: 'POST', endpoint: '/api/ai/quote-from-lead/5', done: 'Draft ready' },
+        ] },
+      { id: 'quote-stranded:2', severity: 'urgent', title: 'Accepted, not booked — Jess', body: '$300', meta: 'Sat', tags: [],
+        actions: [
+          { label: 'Book it', kind: 'api', method: 'POST', endpoint: '/api/quotes/2/schedule', body: {},
+            confirm: 'Book this job?', done: 'Booked' },
+        ] },
     ] },
     { key: 'needs_cleaner', title: 'Needs a cleaner', icon: '🧹', items: [
       { id: 'job:1', severity: 'urgent', title: 'No cleaner assigned', body: 'Denmark Rental', meta: 'today',
@@ -58,9 +68,13 @@ const PAYLOAD = {
     ] },
     { key: 'money', title: 'Money', icon: '💵', items: [
       { id: 'money:outstanding', severity: 'watch', title: '$250 outstanding', body: 'across 1 invoice', meta: '',
-        tags: [{ label: 'AR', tone: 'amber' }], actions: [] },
+        tags: [{ label: 'AR', tone: 'amber' }], actions: [{ label: 'Chase', kind: 'link', href: '/billing?view=invoices&status=overdue' }] },
       { id: 'invoice:9', severity: 'watch', title: 'INV-9 — Acme', body: '$520 · 12d overdue', meta: '',
-        tags: [{ label: 'OVERDUE', tone: 'rose' }], actions: [] },
+        tags: [{ label: 'OVERDUE', tone: 'rose' }],
+        actions: [
+          { label: 'Mark paid', kind: 'api', method: 'POST', endpoint: '/api/invoices/9/pay', body: {},
+            confirm: 'Mark this invoice paid?', done: 'Paid' },
+        ] },
     ] },
     { key: 'systems', title: 'Systems', icon: '🧰', items: [] },
     { key: 'safe_to_ignore', title: 'Safe to Ignore', icon: '🗑️', items: [] },
@@ -167,20 +181,94 @@ describe('OpsBoard', () => {
     expect(screen.getByText('Dana Smith')).toBeTruthy()
   })
 
-  it('derives Flow and Money summaries from the board payload', async () => {
+  it('shows incoming work and money as actionable ROWS, not counts', async () => {
     renderBoard()
     await screen.findByText('Reply overdue — Jess Racco')
-    // Flow rows derived from the requests/money item ids.
-    expect(screen.getByText('New leads')).toBeTruthy()
-    expect(screen.getByText('Ready to book')).toBeTruthy()
-    // Money rows: Outstanding (parsed from the money item) + Collected today
-    // (the label also appears on the KPI tile, so assert at least one).
-    expect(screen.getByText('Outstanding')).toBeTruthy()
-    expect(screen.getByText('$250')).toBeTruthy()
-    expect(screen.getAllByText('Collected today').length).toBeGreaterThanOrEqual(1)
-    // The Money box hands off to Billing.
-    fireEvent.click(screen.getByText('Outstanding'))
-    await waitFor(() => expect(screen.getByTestId('loc').textContent).toBe('/billing'))
+    // The rows themselves, with the names and the money on them.
+    expect(screen.getByText('New lead — inquiry')).toBeTruthy()
+    expect(screen.getByText('Accepted, not booked — Jess')).toBeTruthy()
+    expect(screen.getByText('$250 outstanding')).toBeTruthy()
+    expect(screen.getByText('INV-9 — Acme')).toBeTruthy()
+    // And the actions, on the dashboard, where the work is.
+    expect(screen.getByRole('button', { name: /^draft quote$/i })).toBeTruthy()
+    expect(screen.getByRole('button', { name: /^book it$/i })).toBeTruthy()
+    expect(screen.getByRole('button', { name: /^mark paid$/i })).toBeTruthy()
+    // The integer summaries these replaced are GONE. A mount without its
+    // deletion shows the same signal twice — that is exactly how the
+    // OwnerDashboard duplication happened.
+    expect(screen.queryByText('New leads')).toBeNull()
+    expect(screen.queryByText('Ready to book')).toBeNull()
+    expect(screen.queryByText('Overdue invoices')).toBeNull()
+    expect(screen.queryByText('Outstanding')).toBeNull()
+  })
+
+  it('runs Mark paid from the dashboard, behind its confirm', async () => {
+    renderBoard()
+    await screen.findByText('INV-9 — Acme')
+    fireEvent.click(screen.getByRole('button', { name: /^mark paid$/i }))
+    expect(post).not.toHaveBeenCalled()                  // first click only asks
+    fireEvent.click(screen.getByRole('button', { name: /confirm\?/i }))
+    expect(post).toHaveBeenCalledWith('/api/invoices/9/pay', {})
+    expect(await screen.findByText(/Paid — INV-9 — Acme/i)).toBeTruthy()
+  })
+
+  it('confirms a METERED action even when the payload ships no confirm', async () => {
+    // `Draft quote` hits /api/ai/quote-from-lead — a billed Anthropic call,
+    // and board_service.py attaches no confirm string to it. That was fine
+    // while it lived behind a page; as a one-tap button on the landing screen
+    // a mis-tap costs money, so OpsBoard adds the step itself (METERED).
+    renderBoard()
+    await screen.findByText('New lead — inquiry')
+    fireEvent.click(screen.getByRole('button', { name: /^draft quote$/i }))
+    expect(post).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByRole('button', { name: /confirm\?/i }))
+    expect(post).toHaveBeenCalledWith('/api/ai/quote-from-lead/5', {})
+  })
+
+  it('will not let you tick away work — only read-it-and-move-on noise', async () => {
+    const withNoise = {
+      ...PAYLOAD,
+      sections: PAYLOAD.sections.map(sec => sec.key === 'safe_to_ignore'
+        ? { ...sec, items: [
+            { id: 'triage:1', severity: 'info', title: 'Jotform promo', body: 'Last chance', meta: '1d',
+              tags: [], actions: [] },
+          ] }
+        : sec),
+    }
+    mockGet(withNoise)
+    renderBoard()
+    await screen.findByText('Reply overdue — Jess Racco')
+
+    // An unassigned job and an overdue invoice have NO check-off box. The box
+    // is a per-device localStorage hide, so ticking one would bury real work
+    // on this laptop while it stayed live on the phone.
+    for (const id of ['job:1', 'invoice:9', 'money:outstanding', 'lead:5']) {
+      const row = screen.getByTestId(`board-row-${id}`)
+      expect(within(row).queryByRole('button', { name: /^(clear|restore)$/i })).toBeNull()
+    }
+
+    // Safe-to-ignore noise keeps it — "I've seen this" is that row's whole job.
+    fireEvent.click(screen.getByText('1 item you can ignore'))
+    const noise = await screen.findByTestId('board-row-triage:1')
+    const tick = within(noise).getByRole('button', { name: /^clear$/i })
+    fireEvent.click(tick)
+    expect(JSON.parse(localStorage.getItem('brightbase_board_cleared'))).toContain('triage:1')
+  })
+
+  it('shows the jobs with nobody on them, and never offers to assign one', async () => {
+    renderBoard()
+    await screen.findByText('Reply overdue — Jess Racco')
+    // The job row, not the "1 job still needs a cleaner" count card.
+    const rows = screen.getAllByTestId('board-row-job:1')
+    expect(rows.length).toBe(1)
+    expect(within(rows[0]).getByText('Denmark Rental')).toBeTruthy()
+    // brightbase-marketplace: the office does not put a person on a job. The
+    // only way off this row is Open (the job) or Open to crew (the schedule).
+    // Scoped to the ACTIONS — the row's own title is "No cleaner assigned".
+    const labels = within(rows[0]).getAllByRole('button').map(b => b.textContent)
+    expect(labels.some(t => /assign|dispatch/i.test(t))).toBe(false)
+    expect(labels).toContain('Open')
+    expect(screen.getByText('Open to crew')).toBeTruthy()
   })
 
   it('the focus bar greets the user by first name', async () => {
@@ -388,9 +476,9 @@ describe('OpsBoard — layout', () => {
         : s),
     })
     renderBoard()
-    // Money: a summary row previewing the outstanding total + a Billing hand-off.
-    expect(await screen.findByText('Outstanding')).toBeTruthy()
-    expect(screen.getByText('$250')).toBeTruthy()
+    // Money: the real rows plus a Billing hand-off in the header.
+    expect(await screen.findByText('$250 outstanding')).toBeTruthy()
+    expect(screen.getByText('Billing')).toBeTruthy()
     // Systems: present, but one quiet collapsed line (row behind it).
     expect(screen.getByText('1 system notice')).toBeTruthy()
     expect(screen.queryByText('iCal feed stalled')).toBeNull()
@@ -398,20 +486,70 @@ describe('OpsBoard — layout', () => {
     expect(await screen.findByText('iCal feed stalled')).toBeTruthy()
   })
 
-  it('no longer renders the snapshot boxes or AI strips on the landing page', async () => {
+  it('keeps the charts, the money tile and the AI strips off the landing page', async () => {
     mockGet(WITH_SNAPSHOT)
     renderBoard()
     await screen.findByText('Reply overdue — Jess Racco')
 
+    // MoneyToday stays unmounted deliberately: it reads hours/on-clock fields
+    // the payload stopped filling when the native time clock was removed, so
+    // it would render a confident 0 rather than nothing.
     expect(screen.queryByText('$480')).toBeNull()                   // money today
-    expect(screen.queryByText('9 Lakeshore Dr')).toBeNull()         // feed health
-    expect(screen.queryByText('Weekly kitchen + baths')).toBeNull() // recurring
     expect(screen.queryByText('Money, last 12 weeks')).toBeNull()   // trend chart
     expect(screen.queryByText('Requests, last 30 days')).toBeNull() // lead funnel
 
     const urls = get.mock.calls.map(c => String(c[0]))
     expect(urls.some(u => u.startsWith('/api/ai/daily-brief'))).toBe(false)
     expect(urls.some(u => u.startsWith('/api/ai/proposals'))).toBe(false)
+  })
+
+  it('mounts feed + recurring health only when something is actually broken', async () => {
+    // WITH_SNAPSHOT carries problem_total 1 and stalled_total 1, so both fire,
+    // and both come out of the payload the page already fetched.
+    mockGet(WITH_SNAPSHOT)
+    renderBoard()
+    expect(await screen.findByText('9 Lakeshore Dr')).toBeTruthy()      // failing feed
+    expect(screen.getByText('Weekly kitchen + baths')).toBeTruthy()     // stalled series
+    expect(get.mock.calls.filter(c => String(c[0]) === '/api/dashboard/board')).toHaveLength(1)
+  })
+
+  it('renders no health box when the feeds and series are fine', async () => {
+    // The subject EXISTS — 3 feeds, 9 series — and both boxes still render
+    // nothing. Gating on the subject would leave a permanent "3/3 feeding"
+    // card on Home: furniture that never tells you anything.
+    mockGet({
+      ...WITH_SNAPSHOT,
+      snapshot: {
+        ...WITH_SNAPSHOT.snapshot,
+        feeds: { total: 3, ok: 3, problem_total: 0, stale_hours: 6, problems: [] },
+        recurring: { scanned: 9, healthy: 9, other_issues: 0, stalled_total: 0, stalled: [] },
+      },
+    })
+    renderBoard()
+    await screen.findByText('Reply overdue — Jess Racco')
+    expect(screen.queryByText('Turnover feeds')).toBeNull()
+    expect(screen.queryByText('Recurring series')).toBeNull()
+  })
+
+  it('drops the focus headline, and the middle column, on a quiet morning', async () => {
+    mockGet({
+      ...PAYLOAD,
+      stats: PAYLOAD.stats.filter(st => st.key !== 'overdue'),
+      sections: PAYLOAD.sections.map(sec => ['requests', 'money', 'needs_cleaner'].includes(sec.key)
+        ? { ...sec, items: [] } : sec),
+    })
+    renderBoard()
+    await screen.findByText('Reply overdue — Jess Racco')
+    // The greeting and the date stay — they're the section, not the verdict.
+    expect(screen.getByTestId('home-focus')).toBeTruthy()
+    expect(screen.getByText(/, Mariah/)).toBeTruthy()
+    // But no hero line, and above all not a reassurance in 26px type. Scoped
+    // to the focus section — the slim identity bar above it owns an h1 too.
+    expect(within(screen.getByTestId('home-focus')).queryByRole('heading')).toBeNull()
+    expect(screen.queryByText(/on top of it/i)).toBeNull()
+    // And the middle column collapses out rather than leaving a blank track.
+    const grid = screen.getByTestId('home-grid')
+    expect(grid.className).toContain('shell:grid-cols-[minmax(0,1.5fr)_minmax(0,1.1fr)]')
   })
 
   it('costs exactly one board fetch (plus the schedule + crew reads)', async () => {

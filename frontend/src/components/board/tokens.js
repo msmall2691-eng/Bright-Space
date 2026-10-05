@@ -50,6 +50,16 @@ export const SEV_DOT = {
   recurring: 'bg-violet-600 dark:bg-violet-400',
 }
 
+// The focus bar's single dot — amber when something needs attention, emerald
+// on a quiet morning. It lives here rather than in FocusBar.jsx so it is one
+// of the maps __tests__/boardToneContrast.test.js measures: at bg-amber-500 it
+// was 1.77:1 against this page's own grounds, which made the LARGEST status
+// signal on the landing screen the worst-contrast one. Same steps as SEV_DOT.
+export const FOCUS_DOT = {
+  attention: 'bg-amber-700 dark:bg-amber-400',
+  calm: 'bg-emerald-700 dark:bg-emerald-400',
+}
+
 export const SEV_LABEL = {
   all: 'All',
   urgent: 'Urgent',
