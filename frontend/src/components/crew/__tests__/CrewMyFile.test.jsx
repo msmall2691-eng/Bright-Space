@@ -106,30 +106,35 @@ it('signs with the hash of the text it actually showed', async () => {
   expect(container).toBeTruthy()
 })
 
-it('will not let a certificate be uploaded before its expiry date is set', async () => {
-  // The server refuses it, and the date is how the office knows when to ask
-  // for the next one — so it's asked for before the file picker opens rather
-  // than surfacing as a failed upload.
+it('lets a certificate be uploaded without its expiry date (added after)', async () => {
+  // Upload-first: the date must NOT block the file picker — a sub in a driveway
+  // shouldn't fight a date field to get the file on. It's added after.
   mount()
   await screen.findByText('Certificate of insurance')
   const coiRow = screen.getByText('Certificate of insurance').closest('.py-3')
-  const upload = [...coiRow.querySelectorAll('button')].find(b => /Upload/.test(b.textContent))
-  expect(upload.disabled).toBe(true)
-  // The reason is a VISIBLE line on the row, not a hover-only title= (dead on
-  // a phone, where the whole crew works). The tooltip is gone on purpose.
-  expect(upload.getAttribute('title')).toBeNull()
-  expect(coiRow.textContent).toMatch(/Add the date first/)
-})
-
-it('drops the date hint once the expiry is filled in, so Upload turns on', async () => {
-  mount()
-  await screen.findByText('Certificate of insurance')
-  const coiRow = screen.getByText('Certificate of insurance').closest('.py-3')
-  const dateField = coiRow.querySelector('input[type="date"]')
-  fireEvent.change(dateField, { target: { value: '2027-01-01' } })
-  expect(coiRow.textContent).not.toMatch(/Add the date first/)
   const upload = [...coiRow.querySelectorAll('button')].find(b => /Upload/.test(b.textContent))
   expect(upload.disabled).toBe(false)
+  expect(coiRow.textContent).not.toMatch(/Add the date first/)
+})
+
+it('adds the expiry after upload, without re-picking the file', async () => {
+  // A COI on file but still dateless: a gentle nudge, and a Save-date that
+  // patches only the date through the expiry endpoint.
+  mount({ ...INCOMPLETE, documents: [
+    INCOMPLETE.documents[0],
+    { ...INCOMPLETE.documents[1], status: 'pending', expires_at: null },
+    INCOMPLETE.documents[2],
+  ] })
+  await screen.findByText('Certificate of insurance')
+  const coiRow = screen.getByText('Certificate of insurance').closest('.py-3')
+  expect(coiRow.textContent).toMatch(/Add the date from the certificate/)
+  const dateField = coiRow.querySelector('input[type="date"]')
+  fireEvent.change(dateField, { target: { value: '2027-01-01' } })
+  const save = [...coiRow.querySelectorAll('button')].find(b => /Save date/.test(b.textContent))
+  expect(save).toBeTruthy()
+  fireEvent.click(save)
+  await waitFor(() => expect(post).toHaveBeenCalledWith(
+    '/api/crew/my-file/coi/expiry', { expires_at: '2027-01-01' }))
 })
 
 it('a document with no expiry can be uploaded straight away', async () => {

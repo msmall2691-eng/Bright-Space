@@ -193,6 +193,12 @@ def missing_requirements(db: Session, user_id: int) -> list:
             missing.append(f"Upload your {label.lower()}")
         elif is_expired(doc, today):
             missing.append(f"Your {label.lower()} expired — upload a current one")
+        elif kind in EXPIRING_KINDS and not doc.expires_at:
+            # Upload-first: the file is on, but a dated doc with no date can't
+            # prove it's current, so it must not clear anyone. The sub can add
+            # the date (POST /my-file/{kind}/expiry) — it's theirs to do, so
+            # this is named as their action, before "waiting on the office".
+            missing.append(f"Add the expiry date to your {label.lower()}")
         elif doc.status != "accepted":
             # Uploaded and waiting on the office. Named separately because the
             # sub has nothing left to do about it, and telling them to upload
@@ -327,6 +333,10 @@ def roster(db: Session, org_id: int) -> dict:
                 missing.append(f"Upload their {label.lower()}")
             elif is_expired(doc, today):
                 missing.append(f"Their {label.lower()} has expired")
+            elif kind in EXPIRING_KINDS and not doc.expires_at:
+                # Upload-first: on file but no date, so it can't prove it's
+                # current — set the expiry from the certificate when reviewing.
+                missing.append(f"{label} needs an expiry date")
             elif doc.status != "accepted":
                 missing.append(f"{label} is waiting for you to review it")
 

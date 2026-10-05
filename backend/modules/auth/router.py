@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from sqlalchemy import func, or_, text
+from sqlalchemy import func, text
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
 from typing import Optional
@@ -1163,37 +1163,6 @@ def review_sub_document(user_id: int, kind: str, body: SubDocumentReview,
     return vetting_status(db, user_id)
 
 
-@router.post("/users/{user_id}/resend-invite",
-             dependencies=[Depends(require_role("admin", "manager"))])
-def resend_staff_invite_endpoint(user_id: int, db: Session = Depends(get_db),
-                                 org_id: int = Depends(current_org_id)):
-    """Re-send the set-password invite to someone who hasn't accepted it yet.
-
-    The invite link is single-use and expires in 7 days, and an `invited`
-    account has no password — so if the email was missed or has lapsed, the
-    only way in was for the office to hand-copy the link out of the approve
-    response. This gives onboarding a one-tap recovery instead.
-
-    Only for a still-`invited` account: once they've set a password (`active`)
-    there is nothing to resend, and a reset is a different (self-serve) flow.
-    Nothing to reset here — the token is derived from the email, so this just
-    mints a fresh one and sends it. Same contract as approve/add: the live link
-    rides the response ONLY when the mail failed (invite_status_fields)."""
-    oid = resolve_org_id(org_id, db)
-    u = (db.query(User)
-         .filter(User.id == user_id,
-                 or_(User.org_id == oid, User.org_id.is_(None)))
-         .first())
-    if u is None:
-        raise HTTPException(status_code=404, detail="No such user")
-    if u.status != "invited":
-        raise HTTPException(
-            status_code=409,
-            detail="They've already set up their login — nothing to resend.")
-    result = send_staff_invite(u)
-    return {"ok": True, "email": u.email, **invite_status_fields(result)}
-
-
 @router.post("/users/invite")
 def invite_user(data: InviteUser, db: Session = Depends(get_db),
                 current_user: User = Depends(require_role("admin")),
@@ -1230,12 +1199,17 @@ def invite_user(data: InviteUser, db: Session = Depends(get_db),
     return {**_user_row(db, u), **invite_status_fields(invite)}
 
 
-@router.post("/users/{user_id}/resend-invite")
-def resend_user_invite(user_id: int, db: Session = Depends(get_db),
-                       current_user: User = Depends(require_role("admin"))):
+@router.post("/users/{user_id}/resend-invite",
+             dependencies=[Depends(require_role("admin", "manager"))])
+def resend_user_invite(user_id: int, db: Session = Depends(get_db)):
     """Re-email the set-password link to anyone who hasn't activated yet — the
     link expires after 7 days, or the first email got lost. 409 once a password
-    exists: resend must never become a password-reset backdoor."""
+    exists: resend must never become a password-reset backdoor.
+
+    Admin OR manager: re-sending a link to someone already approved is low
+    stakes (unlike approval, which is admin-only) and is the onboarding recovery
+    the bench screen's "Resend invite" button calls — the bench is a
+    manager-reachable screen."""
     u = db.query(User).filter(User.id == user_id).first()
     if not u:
         raise HTTPException(status_code=404, detail="User not found")

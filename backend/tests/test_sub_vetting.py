@@ -226,19 +226,52 @@ def test_an_old_agreement_version_does_not_count_as_current(sub):
 
 # ── uploads ─────────────────────────────────────────────────────────────────
 
-def test_uploading_a_coi_requires_its_expiry_date(sub):
+def test_a_coi_uploads_without_an_expiry_then_the_date_is_added_after(sub):
+    # Upload-first: the date must not block getting the file on (a sub in a
+    # driveway). But a dated doc with no date can't prove it's current, so it
+    # must not clear anyone until the date is on it.
+    db, uid = sub
+    _sign(db, uid); _doc(db, uid, "w9")   # everything else complete
+    u = db.query(User).filter(User.id == uid).first()
+    api = _as(_Cleaner(uid, u.cleaner_id))
+
+    # 1) Uploads with NO expiry — used to 422, now 200.
+    r = api.post("/api/crew/my-file/coi",
+                 files={"file": ("coi.pdf", io.BytesIO(b"%PDF-1.4"), "application/pdf")})
+    assert r.status_code == 200, r.text
+
+    # 2) On file but dateless → still not cleared, with a clear "add the date".
+    miss = missing_requirements(db, uid)
+    assert any("expiry date" in m.lower() for m in miss)
+    assert not can_take_jobs(db, uid)
+
+    # 3) Add the date after, without re-uploading the file.
+    good = (business_today() + timedelta(days=365)).isoformat()
+    r2 = api.post("/api/crew/my-file/coi/expiry", json={"expires_at": good})
+    assert r2.status_code == 200, r2.text
+    db.expire_all()
+    coi = db.query(SubDocument).filter(SubDocument.user_id == uid,
+                                       SubDocument.kind == "coi").first()
+    assert coi.expires_at and coi.expires_at.isoformat() == good
+    assert coi.data, "the file is untouched by a date-only update"
+    # The date no longer blocks clearance; only the office's review remains.
+    assert "expiry date" not in " ".join(missing_requirements(db, uid)).lower()
+    _clear()
+
+
+def test_expiry_endpoint_needs_the_doc_first_and_only_expiring_kinds(sub):
     db, uid = sub
     u = db.query(User).filter(User.id == uid).first()
     api = _as(_Cleaner(uid, u.cleaner_id))
-    r = api.post("/api/crew/my-file/coi",
-                 files={"file": ("coi.pdf", io.BytesIO(b"%PDF-1.4"), "application/pdf")})
-    assert r.status_code == 422
-    assert "expiry" in r.json()["detail"]
-
-    r2 = api.post("/api/crew/my-file/coi",
-                  files={"file": ("coi.pdf", io.BytesIO(b"%PDF-1.4"), "application/pdf")},
-                  data={"expires_at": (business_today() + timedelta(days=365)).isoformat()})
-    assert r2.status_code == 200, r2.text
+    # No COI uploaded yet → nothing to date.
+    r = api.post("/api/crew/my-file/coi/expiry",
+                 json={"expires_at": business_today().isoformat()})
+    assert r.status_code == 404
+    # A W-9 doesn't carry an expiry at all.
+    _doc(db, uid, "w9", status="pending")
+    r2 = api.post("/api/crew/my-file/w9/expiry",
+                  json={"expires_at": business_today().isoformat()})
+    assert r2.status_code == 422
     _clear()
 
 
