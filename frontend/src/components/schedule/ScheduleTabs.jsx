@@ -5,6 +5,7 @@ import Button from '../ui/Button'
 import GlassCard from '../ui/GlassCard'
 import { toast } from '../../utils/toastBus'
 import { confirmDialog } from '../../utils/confirmBus'
+import { STATUS_DOT } from '../../theme/statusDots'
 
 /** AvailabilityPanel: cleaner time-off entries (CRUD against /api/jobs/time-off).
  *  Mounts as a top-level view (no props) when ?tab=availability routes the
@@ -144,7 +145,7 @@ export function AvailabilityPanel() {
                 {e.reason && <span className="text-[11px] text-ink-3 ml-2 capitalize">· {e.reason}</span>}
                 {e.status === 'requested' && (
                   <span className="inline-flex items-center gap-1 text-[10px] font-medium text-amber-700 dark:text-amber-300 ml-2">
-                    <span className="w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0" aria-hidden="true" /> Requested
+                    <span className={`w-1.5 h-1.5 rounded-full ${STATUS_DOT.attention} shrink-0`} aria-hidden="true" /> Requested
                   </span>
                 )}
                 {e.status === 'denied' && (

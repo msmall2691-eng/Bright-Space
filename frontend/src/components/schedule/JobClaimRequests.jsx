@@ -27,6 +27,7 @@ import { get, post } from '../../api'
 import { toast } from '../../utils/toastBus'
 import { confirmDialog } from '../../utils/confirmBus'
 import JobMargin from './JobMargin'
+import { STATUS_DOT } from '../../theme/statusDots'
 
 const money = (n) => n == null || n === '' ? null :
   `$${Number(n).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`
@@ -56,8 +57,8 @@ function TrackRecord({ h }) {
 
 /** Dot + word, per the design language — never a filled pill. */
 const STATE = {
-  pending: { dot: 'bg-amber-500', label: 'Waiting on you' },
-  approved: { dot: 'bg-emerald-500', label: 'Approved' },
+  pending: { dot: STATUS_DOT.attention, label: 'Waiting on you' },
+  approved: { dot: STATUS_DOT.ok, label: 'Approved' },
   declined: { dot: 'bg-ink-3/50', label: 'Declined' },
   withdrawn: { dot: 'bg-ink-3/50', label: 'Withdrawn' },
 }
@@ -220,7 +221,7 @@ export default function JobClaimRequests({ jobId, postedRate, onDecided }) {
                       Settings → Rules. */}
                   {req.high_bid && (
                     <p className="flex items-start gap-1.5 text-[11px] text-ink-2 mt-1">
-                      <span className="mt-1 h-1.5 w-1.5 shrink-0 rounded-full bg-amber-500" aria-hidden="true" />
+                      <span className={`mt-1 h-1.5 w-1.5 shrink-0 rounded-full ${STATUS_DOT.attention}`} aria-hidden="true" />
                       <span>Well over your asking price</span>
                     </p>
                   )}
@@ -247,7 +248,7 @@ export default function JobClaimRequests({ jobId, postedRate, onDecided }) {
                       their own day. */}
                   {(req.heads_up || []).map((note, i) => (
                     <p key={i} className="flex items-start gap-1.5 text-[11px] text-ink-2 mt-1">
-                      <span className="mt-1 h-1.5 w-1.5 shrink-0 rounded-full bg-amber-500" aria-hidden="true" />
+                      <span className={`mt-1 h-1.5 w-1.5 shrink-0 rounded-full ${STATUS_DOT.attention}`} aria-hidden="true" />
                       <span>{note}</span>
                     </p>
                   ))}
