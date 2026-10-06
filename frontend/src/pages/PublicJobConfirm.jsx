@@ -3,6 +3,7 @@ import { useParams } from 'react-router-dom'
 import { CheckCircle, AlertCircle, Clock, Calendar, MapPin } from 'lucide-react'
 import WhosComing from '../components/customer/WhosComing'
 import { publicFetch } from '../utils/publicFetch'
+import { STATUS_DOT } from '../theme/statusDots'
 
 function formatTime(t) {
   if (!t) return ''
@@ -202,7 +203,7 @@ export default function PublicJobConfirm() {
       <div className="max-w-lg mx-auto px-4 py-6 sm:px-6 sm:py-10">
         {error && (
           <div className="flex items-center gap-2 bg-panel border border-hairline rounded-lg px-4 py-3 mb-4">
-            <span className="w-1.5 h-1.5 rounded-full bg-red-500 shrink-0" aria-hidden="true" />
+            <span className={`w-1.5 h-1.5 rounded-full ${STATUS_DOT.problem} shrink-0`} aria-hidden="true" />
             <p className="text-sm text-ink-2">{error}</p>
           </div>
         )}
@@ -339,7 +340,7 @@ export default function PublicJobConfirm() {
 
                         {selectedBusy() && (
                           <p className="flex items-center gap-1.5 text-[12px] text-ink-2 bg-panel border border-hairline rounded-lg px-3 py-2">
-                            <span className="w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0" aria-hidden="true" />
+                            <span className={`w-1.5 h-1.5 rounded-full ${STATUS_DOT.attention} shrink-0`} aria-hidden="true" />
                             That time is popular — we'll confirm it with you before it's locked in.
                           </p>
                         )}

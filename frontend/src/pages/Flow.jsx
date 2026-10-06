@@ -6,6 +6,7 @@ import { toast } from '../utils/toastBus'
 import PageTitle from '../components/ui/PageTitle'
 import SubNav from '../components/ui/SubNav'
 import { ErrorState, EmptyState, ListSkeleton } from '../components/ui'
+import { STATUS_DOT } from '../theme/statusDots'
 
 /**
  * Flow — the lead→cash pipeline as one calm, prioritized list.
@@ -26,24 +27,24 @@ import { ErrorState, EmptyState, ListSkeleton } from '../components/ui'
 // Stage header dot — semantic, literal strings (Tailwind JIT needs them whole).
 const STAGE_DOT = {
   indigo: 'bg-indigo-500',
-  amber: 'bg-amber-500',
-  emerald: 'bg-emerald-500',
-  red: 'bg-rose-500',
-  blue: 'bg-blue-500',
+  amber: STATUS_DOT.attention,
+  emerald: STATUS_DOT.ok,
+  red: STATUS_DOT.problem,
+  blue: STATUS_DOT.info,
 }
 
 // Per-row severity dot + the tone used by row tags (dot + word, never a pill).
 const DOT = {
-  urgent: 'bg-rose-500',
-  watch: 'bg-amber-500',
-  info: 'bg-blue-500',
-  good: 'bg-emerald-500',
+  urgent: STATUS_DOT.problem,
+  watch: STATUS_DOT.attention,
+  info: STATUS_DOT.info,
+  good: STATUS_DOT.ok,
   recurring: 'bg-violet-500',
   // tag tones
-  amber: 'bg-amber-500',
-  emerald: 'bg-emerald-500',
-  rose: 'bg-rose-500',
-  blue: 'bg-blue-500',
+  amber: STATUS_DOT.attention,
+  emerald: STATUS_DOT.ok,
+  rose: STATUS_DOT.problem,
+  blue: STATUS_DOT.info,
   indigo: 'bg-indigo-500',
   violet: 'bg-violet-500',
   gray: 'bg-ink-3',

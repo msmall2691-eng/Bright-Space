@@ -32,6 +32,7 @@ import { Link } from 'react-router-dom'
 import { Store } from 'lucide-react'
 import { get } from '../api'
 import { PageTitle, ErrorState, Skeleton } from '../components/ui'
+import { STATUS_DOT } from '../theme/statusDots'
 
 const money = (n) => `$${(Number(n) || 0).toLocaleString('en-US', {
   minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
@@ -196,7 +197,7 @@ export default function Marketplace() {
           {/* ── Column A — the work flowing through the board ───────────────── */}
           <div className="flex flex-col gap-4">
             <Box
-              dot={nothingWaiting ? 'bg-ink-3/40' : 'bg-amber-500'}
+              dot={nothingWaiting ? 'bg-ink-3/40' : STATUS_DOT.attention}
               title="Waiting on you"
               count={waiting.application_count + waiting.people_waiting}>
               {nothingWaiting ? (
@@ -208,7 +209,7 @@ export default function Marketplace() {
                       /* Amber: somebody asked for this job and is sitting there.
                          The link goes to the job, which is where answering lives
                          — this page never approves anything. */
-                      <Row key={`job-${j.job_id}`} dot="bg-amber-500" to={`/jobs/${j.job_id}`}
+                      <Row key={`job-${j.job_id}`} dot={STATUS_DOT.attention} to={`/jobs/${j.job_id}`}
                         right={fmtDate(j.scheduled_date)}>
                         <span className="flex flex-col gap-1">
                           <span>
@@ -232,7 +233,7 @@ export default function Marketplace() {
                                   )}
                                   {a.high_bid && (
                                     <span className="flex items-center gap-1 text-ink-2">
-                                      <span className="h-1.5 w-1.5 rounded-full bg-amber-500" aria-hidden="true" />
+                                      <span className={`h-1.5 w-1.5 rounded-full ${STATUS_DOT.attention}`} aria-hidden="true" />
                                       over asking
                                     </span>
                                   )}
@@ -244,7 +245,7 @@ export default function Marketplace() {
                       </Row>
                     ))}
                     {waiting.applications.map(a => (
-                      <Row key={`app-${a.id}`} dot="bg-amber-500" to="/crew"
+                      <Row key={`app-${a.id}`} dot={STATUS_DOT.attention} to="/crew"
                         right="Review on Crew">
                         <span className="text-ink">{a.name}</span>
                         {' applied to join'}{a.towns ? ` · ${a.towns}` : ''}
@@ -276,7 +277,7 @@ export default function Marketplace() {
                   {data.open_jobs.map(j => (
                     <Row key={j.job_id} to={`/jobs/${j.job_id}`}
                       /* Violet is "open to crew" in the shared vocabulary. */
-                      dot={j.asked ? 'bg-amber-500' : 'bg-violet-500'}
+                      dot={j.asked ? STATUS_DOT.attention : 'bg-violet-500'}
                       right={[
                         fmtDate(j.scheduled_date),
                         j.posted_rate ? money(j.posted_rate) : null,
@@ -299,7 +300,7 @@ export default function Marketplace() {
             {/* Count lives in the header stat ("On the bench"). */}
             <Box
               dot={bench.people === 0 ? 'bg-ink-3/40'
-                : bench.can_work ? 'bg-emerald-500' : 'bg-amber-500'}
+                : bench.can_work ? STATUS_DOT.ok : STATUS_DOT.attention}
               title="The bench" to="/crew"
               linkLabel="Manage on Crew" shortLabel="Crew">
               {bench.people === 0 ? (
@@ -309,24 +310,24 @@ export default function Marketplace() {
                 </Quiet>
               ) : (
                 <List>
-                  <Row dot={bench.can_work ? 'bg-emerald-500' : 'bg-amber-500'} to="/crew">
+                  <Row dot={bench.can_work ? STATUS_DOT.ok : STATUS_DOT.attention} to="/crew">
                     <span className="text-ink">{bench.can_work}</span>
                     {` of ${bench.people} cleared to work`}
                     <span className="text-ink-3"> — insurance and paperwork accepted</span>
                   </Row>
                   {bench.awaiting_review > 0 && (
-                    <Row dot="bg-amber-500" to="/crew">
+                    <Row dot={STATUS_DOT.attention} to="/crew">
                       <span className="text-ink">{bench.awaiting_review}</span>
                       {' waiting on you to review a document'}
                     </Row>
                   )}
                   {bench.blocked > 0 && (
-                    <Row dot="bg-red-500" to="/crew">
+                    <Row dot={STATUS_DOT.problem} to="/crew">
                       <span className="text-ink">{bench.blocked}</span>
                       {' can’t take jobs — something on file expired or was rejected'}
                     </Row>
                   )}
-                  <Row dot={bench.direct_deposit ? 'bg-emerald-500' : 'bg-ink-3/40'} to="/payroll">
+                  <Row dot={bench.direct_deposit ? STATUS_DOT.ok : 'bg-ink-3/40'} to="/payroll">
                     <span className="text-ink">{bench.direct_deposit}</span>
                     {` of ${bench.people} set up for direct deposit`}
                     <span className="text-ink-3">
@@ -338,10 +339,10 @@ export default function Marketplace() {
             </Box>
 
             <Box
-              dot={cash.owed > 0 ? 'bg-amber-500' : 'bg-emerald-500'}
+              dot={cash.owed > 0 ? STATUS_DOT.attention : STATUS_DOT.ok}
               title="Money" to="/payroll" linkLabel="Open Payouts" shortLabel="Payouts">
               <List>
-                <Row dot={cash.owed > 0 ? 'bg-amber-500' : 'bg-emerald-500'} to="/payroll"
+                <Row dot={cash.owed > 0 ? STATUS_DOT.attention : STATUS_DOT.ok} to="/payroll"
                   right={money(cash.owed)}>
                   {cash.owed > 0 ? 'Owed to subcontractors' : 'Nothing outstanding'}
                   <span className="text-ink-3">

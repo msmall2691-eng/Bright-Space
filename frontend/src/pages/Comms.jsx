@@ -43,6 +43,7 @@ import { useCommsMutations } from '../hooks/useCommsMutations'
 import { useCommsFilters } from '../hooks/useCommsFilters'
 import { useCustomerContext } from '../hooks/useCustomerContext'
 import { useCompanyName } from '../hooks/useCompanyName'
+import { STATUS_DOT } from '../theme/statusDots'
 
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -363,7 +364,7 @@ export default function Comms() {
             onClick={() => { setFolder('active'); setChipFilters(new Set(['overdue'])) }}
             title="Show conversations past their reply SLA"
             className="inline-flex items-center gap-1.5 text-[12px] font-medium px-3 py-1.5 rounded-md border border-hairline-2 bg-panel text-ink-2 hover:bg-bg-2 transition-colors">
-            <span className="w-1.5 h-1.5 rounded-full bg-red-500 shrink-0" aria-hidden="true" />
+            <span className={`w-1.5 h-1.5 rounded-full ${STATUS_DOT.problem} shrink-0`} aria-hidden="true" />
             <span className="font-semibold tabular-nums text-ink">{summary.breached}</span>
             <span className="text-ink-3">past SLA</span>
           </button>

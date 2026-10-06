@@ -10,6 +10,7 @@ import { post } from '../api'
 import { toast } from '../utils/toastBus'
 import { useSyncOverview } from '../hooks/useSyncOverview'
 import { isStaleSync } from '../components/properties/utils'
+import { STATUS_DOT } from '../theme/statusDots'
 
 /**
  * Sync Control Center (`/sync`) — one screen for the whole scheduling nervous
@@ -81,11 +82,11 @@ function cadence(mins) {
 const ICON = { calendar: Calendar, users: Users, home: Home, repeat: Repeat }
 
 const STATUS = {
-  ok:           { dot: 'bg-emerald-500', text: 'text-emerald-600', label: 'In sync' },
-  syncing:      { dot: 'bg-blue-500 animate-pulse', text: 'text-blue-600', label: 'Syncing' },
-  paused:       { dot: 'bg-slate-400', text: 'text-ink-3', label: 'Paused' },
-  attention:    { dot: 'bg-amber-500', text: 'text-amber-600', label: 'Needs attention' },
-  disconnected: { dot: 'bg-red-500', text: 'text-red-600', label: 'Not connected' },
+  ok:           { dot: STATUS_DOT.ok, text: 'text-emerald-600', label: 'In sync' },
+  syncing:      { dot: `${STATUS_DOT.info} animate-pulse`, text: 'text-blue-600', label: 'Syncing' },
+  paused:       { dot: STATUS_DOT.neutral, text: 'text-ink-3', label: 'Paused' },
+  attention:    { dot: STATUS_DOT.attention, text: 'text-amber-600', label: 'Needs attention' },
+  disconnected: { dot: STATUS_DOT.problem, text: 'text-red-600', label: 'Not connected' },
 }
 
 function DirectionChip({ direction }) {
@@ -191,7 +192,7 @@ function ChannelCard({ ch, canToggle, canSync, busy, onToggle, onSync }) {
                 const bad = f.status === 'failed' || f.status === 'retrying'
                 const never = !f.last_synced_at
                 const stale = !bad && !never && isStaleSync(f.last_synced_at)
-                const dot = bad ? 'bg-red-500' : never ? 'bg-slate-400' : stale ? 'bg-amber-500' : 'bg-emerald-500'
+                const dot = bad ? STATUS_DOT.problem : never ? STATUS_DOT.neutral : stale ? STATUS_DOT.attention : STATUS_DOT.ok
                 const tone = bad ? 'text-red-600' : stale ? 'text-amber-600' : 'text-ink-3'
                 const label = bad ? (f.last_synced_at ? `failed · last ok ${relTime(f.last_synced_at)}` : 'failed')
                   : never ? 'never synced'
@@ -228,7 +229,7 @@ function AttentionCard({ item, canSync, busy, onAction }) {
   const acting = busy === `attn:${item.key}`
   return (
     <div className="flex items-start gap-3 p-3.5 rounded-xl border border-hairline bg-panel">
-      <span className={`w-1.5 h-1.5 rounded-full shrink-0 mt-2 ${warn ? 'bg-amber-500' : 'bg-ink-3/40'}`} aria-hidden="true" />
+      <span className={`w-1.5 h-1.5 rounded-full shrink-0 mt-2 ${warn ? STATUS_DOT.attention : 'bg-ink-3/40'}`} aria-hidden="true" />
       <div className="min-w-0 flex-1">
         <div className="text-sm font-semibold text-ink">{item.title}</div>
         {item.detail && <div className="text-xs text-ink-3 mt-0.5">{item.detail}</div>}
@@ -277,7 +278,7 @@ function BackgroundJobsPanel({ jobs }) {
                   {rows.map(j => (
                     <li key={j.key} className="flex items-center justify-between gap-2 text-sm">
                       <span className="flex items-center gap-2 min-w-0">
-                        <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${j.enabled ? 'bg-emerald-500' : 'bg-slate-400'}`} />
+                        <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${j.enabled ? STATUS_DOT.ok: STATUS_DOT.neutral}`} />
                         <span className="text-ink-2 truncate">{j.name}</span>
                       </span>
                       <span className="text-xs text-ink-3 shrink-0">{cadence(j.cadence_minutes)}</span>
@@ -309,7 +310,7 @@ function ScheduleLogPanel({ log }) {
           <ScrollText className="w-4 h-4 text-ink-3 shrink-0" />
           <span className="font-semibold text-ink text-sm">Schedule log</span>
           <span className="inline-flex h-5 items-center gap-1.5 rounded-sm border border-hairline-2 bg-panel px-2 text-[11px] font-medium text-ink-2">
-            <span className={`w-1.5 h-1.5 rounded-full ${live ? 'bg-emerald-500' : 'bg-slate-400'}`} />
+            <span className={`w-1.5 h-1.5 rounded-full ${live ? STATUS_DOT.ok: STATUS_DOT.neutral}`} />
             {live ? 'Capturing' : 'Dark'}
           </span>
         </div>

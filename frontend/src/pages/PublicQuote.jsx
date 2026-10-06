@@ -3,6 +3,7 @@ import { useParams } from 'react-router-dom'
 import { CheckCircle, AlertCircle, Clock, X, Download, Printer } from 'lucide-react'
 import QuoteDocument from '../components/QuoteDocument'
 import { publicFetch } from '../utils/publicFetch'
+import { STATUS_DOT } from '../theme/statusDots'
 
 export default function PublicQuote() {
   const { token } = useParams()
@@ -426,7 +427,7 @@ export default function PublicQuote() {
       <div className="max-w-2xl mx-auto px-4 py-6 sm:px-6 sm:py-10">
         {error && (
           <div className="no-print flex items-center gap-2 bg-panel border border-hairline rounded-lg px-4 py-3 mb-6">
-            <span className="w-1.5 h-1.5 rounded-full bg-red-500 shrink-0" aria-hidden="true" />
+            <span className={`w-1.5 h-1.5 rounded-full ${STATUS_DOT.problem} shrink-0`} aria-hidden="true" />
             <p className="text-sm text-ink-2">{error}</p>
           </div>
         )}
