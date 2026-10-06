@@ -162,7 +162,7 @@ export default function ClientCRMSummary({ clientId }) {
           </div>
           <div className="border-t border-hairline pt-3 flex justify-between items-center">
             <span className="text-sm font-medium text-ink-2">Outstanding</span>
-            <span className={`font-bold ${crm.financial.outstanding > 0 ? `${STATUS_TEXT.attention}` : `${STATUS_TEXT.ok}`}`}>
+            <span className={`font-bold ${crm.financial.outstanding > 0 ? STATUS_TEXT.attention : STATUS_TEXT.ok}`}>
               ${crm.financial.outstanding.toLocaleString('en-US', {maximumFractionDigits: 2})}
             </span>
           </div>

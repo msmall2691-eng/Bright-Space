@@ -42,7 +42,7 @@ export function WeekCapacityTile({ loading, data, error, navigate }) {
             </span>
             <span className="text-[11px] text-ink-3">booked</span>
             {over && (
-              <span className={`inline-flex items-center gap-1.5 text-[11px] ${STATUS_TEXT.attention} dark:text-amber-300`}>
+              <span className={`inline-flex items-center gap-1.5 text-[11px] ${STATUS_TEXT.attention}`}>
                 <span className={`w-1.5 h-1.5 rounded-full ${STATUS_DOT.attention}`} aria-hidden="true" />
                 over capacity
               </span>

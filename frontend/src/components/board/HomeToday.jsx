@@ -202,7 +202,7 @@ export default function HomeToday({ navigate }) {
                   )}
                 </span>
                 {needsCleaner ? (
-                  <span className={`inline-flex shrink-0 items-center gap-1 text-[11px] font-medium ${STATUS_TEXT.attention} dark:text-amber-300`}>
+                  <span className={`inline-flex shrink-0 items-center gap-1 text-[11px] font-medium ${STATUS_TEXT.attention}`}>
                     <span className={`h-1.5 w-1.5 rounded-full ${STATUS_DOT.attention}`} aria-hidden="true" /> needs a cleaner
                   </span>
                 ) : crew ? (

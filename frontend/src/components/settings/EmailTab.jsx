@@ -249,14 +249,14 @@ export default function EmailTab({ toast, active }) {
               <>
                 <div className="flex items-center gap-2 text-sm">
                   {testResult.imap === 'connected'
-                    ? <><CheckCircle className={`w-4 h-4 ${STATUS_ICON.ok}`} /><span className={`${STATUS_TEXT.ok} dark:text-emerald-300`}>IMAP: Connected ({testResult.email_count} emails)</span></>
-                    : <><AlertTriangle className={`w-4 h-4 ${STATUS_ICON.problem}`} /><span className={`${STATUS_TEXT.problem}`}>IMAP: {testResult.imap}</span></>
+                    ? <><CheckCircle className={`w-4 h-4 ${STATUS_ICON.ok}`} /><span className={STATUS_TEXT.ok}>IMAP: Connected ({testResult.email_count} emails)</span></>
+                    : <><AlertTriangle className={`w-4 h-4 ${STATUS_ICON.problem}`} /><span className={STATUS_TEXT.problem}>IMAP: {testResult.imap}</span></>
                   }
                 </div>
                 <div className="flex items-center gap-2 text-sm">
                   {testResult.smtp === 'connected'
-                    ? <><CheckCircle className={`w-4 h-4 ${STATUS_ICON.ok}`} /><span className={`${STATUS_TEXT.ok} dark:text-emerald-300`}>SMTP: Connected (outbound email ready)</span></>
-                    : <><AlertTriangle className={`w-4 h-4 ${STATUS_ICON.problem}`} /><span className={`${STATUS_TEXT.problem}`}>SMTP: {testResult.smtp}</span></>
+                    ? <><CheckCircle className={`w-4 h-4 ${STATUS_ICON.ok}`} /><span className={STATUS_TEXT.ok}>SMTP: Connected (outbound email ready)</span></>
+                    : <><AlertTriangle className={`w-4 h-4 ${STATUS_ICON.problem}`} /><span className={STATUS_TEXT.problem}>SMTP: {testResult.smtp}</span></>
                   }
                 </div>
               </>

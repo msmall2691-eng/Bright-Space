@@ -5,9 +5,9 @@ import { STATUS_DOT } from '../../theme/statusDots'
 import { STATUS_TEXT } from '../../theme/statusText'
 export const STATUS = {
   draft:   { dot: 'bg-ink-3',        text: 'text-ink-3',        label: 'Draft'   },
-  sent:    { dot: STATUS_DOT.info,     text: `${STATUS_TEXT.info}`,     label: 'Sent'    },
+  sent:    { dot: STATUS_DOT.info,     text: STATUS_TEXT.info,     label: 'Sent'    },
   paid:    { dot: STATUS_DOT.ok,  text: 'text-emerald-400',  label: 'Paid'    },
-  overdue: { dot: STATUS_DOT.problem,      text: `${STATUS_TEXT.problem}`,      label: 'Overdue' },
+  overdue: { dot: STATUS_DOT.problem,      text: STATUS_TEXT.problem,      label: 'Overdue' },
 }
 
 /** Invoice status filter options for the list toolbar. `''` = All.

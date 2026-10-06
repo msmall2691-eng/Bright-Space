@@ -35,7 +35,7 @@ function Rail({ steps, currentStep }) {
           <li key={s.key} className="flex items-center sm:items-stretch gap-2.5 sm:gap-3 shrink-0">
             <div className="flex flex-col items-center">
               <span className={`grid place-items-center w-7 h-7 rounded-full border text-[12px] font-semibold shrink-0 ${
-                s.done ? `bg-emerald-500/15 border-emerald-500/30 ${STATUS_TEXT.ok} dark:text-emerald-300`
+                s.done ? `bg-emerald-500/15 border-emerald-500/30 ${STATUS_TEXT.ok}`
                 : active ? 'bg-indigo-600 border-indigo-600 text-white'
                 : 'bg-bg-2 border-hairline text-ink-3'}`}>
                 <Icon className="w-3.5 h-3.5" />
@@ -120,7 +120,7 @@ export default function LaunchStepper({ opportunityId, title, onClose }) {
         {loading ? (
           <div className="p-8 text-center text-ink-3 text-sm">Loading deal…</div>
         ) : error ? (
-          <div className={`p-8 text-center ${STATUS_TEXT.problem} dark:text-red-300 text-sm`}>{error}</div>
+          <div className={`p-8 text-center ${STATUS_TEXT.problem} text-sm`}>{error}</div>
         ) : (
           <div className="flex-1 overflow-y-auto overscroll-contain p-5 grid sm:grid-cols-[130px_1fr] gap-5">
             <Rail steps={steps} currentStep={currentStep} />
@@ -128,7 +128,7 @@ export default function LaunchStepper({ opportunityId, title, onClose }) {
             <div className="min-w-0">
               {allDone ? (
                 <div className="text-center py-6">
-                  <span className={`grid place-items-center w-12 h-12 rounded-2xl bg-emerald-500/15 ${STATUS_TEXT.ok} dark:text-emerald-300 mx-auto mb-3`}><Check className="w-6 h-6" /></span>
+                  <span className={`grid place-items-center w-12 h-12 rounded-2xl bg-emerald-500/15 ${STATUS_TEXT.ok} mx-auto mb-3`}><Check className="w-6 h-6" /></span>
                   <p className="text-sm font-semibold text-ink">Launched</p>
                   <p className="text-[12px] text-ink-3 mt-0.5">This deal is on the schedule — the assigned crew sees it on My Day.</p>
                 </div>

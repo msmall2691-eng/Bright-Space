@@ -281,7 +281,7 @@ export default function CrewAvailability({ bare = false, previewUserId = null })
 
       {flash && (
         <div className="text-[12px] text-ink-2 flex items-start gap-1.5">
-          <BadgeCheck className={`w-4 h-4 shrink-0 mt-px ${STATUS_ICON.ok} dark:text-emerald-400`} />
+          <BadgeCheck className={`w-4 h-4 shrink-0 mt-px ${STATUS_ICON.ok}`} />
           <span>{flash}</span>
         </div>
       )}

@@ -113,7 +113,7 @@ export default function ClientLeftRail({
         <div className="text-[10px] font-semibold uppercase tracking-widest text-ink-3 mb-1">Pipeline</div>
         <div className="flex justify-between text-xs"><span className="text-ink-3">Upcoming</span><span className="font-semibold text-ink">{visitStats?.upcoming ?? upcomingJobs.length}</span></div>
         <div className="flex justify-between text-xs"><span className="text-ink-3">Revenue</span><span className={`font-semibold ${STATUS_TEXT.ok}`}>${totalRevenue.toFixed(0)}</span></div>
-        <div className="flex justify-between text-xs"><span className="text-ink-3">Outstanding</span><span className={`font-semibold ${outstanding > 0 ? `${STATUS_TEXT.attention}` : 'text-ink'}`}>${outstanding.toFixed(0)}</span></div>
+        <div className="flex justify-between text-xs"><span className="text-ink-3">Outstanding</span><span className={`font-semibold ${outstanding > 0 ? STATUS_TEXT.attention : 'text-ink'}`}>${outstanding.toFixed(0)}</span></div>
       </div>
 
       {/* Crew access — opt this customer's uncovered recurring visits onto the

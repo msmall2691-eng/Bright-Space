@@ -197,7 +197,7 @@ export default function DuplicateReviewPanel({ schedules, clientsById, reviewedK
                     {state === 'active' ? (
                       isKeeper ? (
                         <div className="mt-3 flex items-center gap-2 flex-wrap">
-                          <span className={`inline-flex h-5 items-center gap-1.5 rounded-sm border border-emerald-300 dark:border-emerald-800 bg-panel px-2 text-[11px] font-medium ${STATUS_TEXT.ok} dark:text-emerald-400`}>
+                          <span className={`inline-flex h-5 items-center gap-1.5 rounded-sm border border-emerald-300 dark:border-emerald-800 bg-panel px-2 text-[11px] font-medium ${STATUS_TEXT.ok}`}>
                             <span className={`h-1.5 w-1.5 rounded-full ${SEV_DOT.good}`} />
                             Keeper
                           </span>

@@ -11,12 +11,12 @@ import { STATUS_TEXT } from '../../theme/statusText'
  * up for anyone who opts into Neon without changing the light/dark look.
  */
 export const ICON_CHIP = {
-  blue: `bg-blue-50 dark:bg-blue-500/15 ${STATUS_TEXT.info} dark:text-blue-300`,
+  blue: `bg-blue-50 dark:bg-blue-500/15 ${STATUS_TEXT.info}`,
   violet: 'bg-violet-50 dark:bg-violet-500/15 text-violet-600 dark:text-violet-300',
   purple: 'bg-purple-50 dark:bg-purple-500/15 text-purple-600 dark:text-purple-300',
-  amber: `bg-amber-50 dark:bg-amber-500/15 ${STATUS_TEXT.attention} dark:text-amber-300`,
-  emerald: `bg-emerald-50 dark:bg-emerald-500/15 ${STATUS_TEXT.ok} dark:text-emerald-300`,
-  rose: `bg-rose-50 dark:bg-rose-500/15 ${STATUS_TEXT.problem} dark:text-rose-300`,
+  amber: `bg-amber-50 dark:bg-amber-500/15 ${STATUS_TEXT.attention}`,
+  emerald: `bg-emerald-50 dark:bg-emerald-500/15 ${STATUS_TEXT.ok}`,
+  rose: `bg-rose-50 dark:bg-rose-500/15 ${STATUS_TEXT.problem}`,
   cyan: 'bg-cyan-50 dark:bg-cyan-500/15 text-cyan-600 dark:text-cyan-300',
   slate: 'bg-bg-2 text-ink-2',
 }

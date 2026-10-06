@@ -66,7 +66,7 @@ function MyNotes() {
             </p>
           )}
           <button onClick={() => { setForm({ title: '', body: '' }); setEditing('new') }}
-            className={`text-[12px] font-semibold ${STATUS_TEXT.info} dark:text-blue-400 inline-flex items-center gap-0.5`}>
+            className={`text-[12px] font-semibold ${STATUS_TEXT.info} inline-flex items-center gap-0.5`}>
             <Plus className="w-3.5 h-3.5" /> New note
           </button>
         </div>

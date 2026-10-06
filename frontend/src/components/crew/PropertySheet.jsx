@@ -99,7 +99,7 @@ export default function PropertySheet({ propertyId, propertyName, onClose }) {
         <section>
           <div className="flex items-center justify-between mb-2">
             <SectionLabel>How it should look</SectionLabel>
-            <label className={`text-[12px] font-semibold ${STATUS_TEXT.info} dark:text-blue-400 inline-flex items-center gap-1 cursor-pointer`}>
+            <label className={`text-[12px] font-semibold ${STATUS_TEXT.info} inline-flex items-center gap-1 cursor-pointer`}>
               <Camera className="w-3.5 h-3.5" /> Add photo
               <input type="file" accept="image/*" multiple className="hidden" disabled={busy}
                 onChange={e => { uploadPhotos([...e.target.files]); e.target.value = '' }} />
@@ -128,7 +128,7 @@ export default function PropertySheet({ propertyId, propertyName, onClose }) {
             <SectionLabel>House notes</SectionLabel>
             {!addingNote && (
               <button onClick={() => setAddingNote(true)}
-                className={`text-[12px] font-semibold ${STATUS_TEXT.info} dark:text-blue-400 inline-flex items-center gap-0.5`}>
+                className={`text-[12px] font-semibold ${STATUS_TEXT.info} inline-flex items-center gap-0.5`}>
                 <Plus className="w-3.5 h-3.5" /> Add note
               </button>
             )}

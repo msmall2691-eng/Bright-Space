@@ -116,7 +116,7 @@ export default function CrewProfile({ bare = false, previewUserId = null }) {
               ? 'bg-panel border border-hairline text-ink-2'
               : 'bg-blue-600 hover:bg-blue-700 text-white disabled:opacity-60'}`}>
           {savedFlash && !dirty
-            ? (<><BadgeCheck className={`w-4 h-4 ${STATUS_ICON.ok} dark:text-emerald-400`} /> Saved</>)
+            ? (<><BadgeCheck className={`w-4 h-4 ${STATUS_ICON.ok}`} /> Saved</>)
             : saving ? 'Saving…' : 'Save changes'}
         </button>
       )}

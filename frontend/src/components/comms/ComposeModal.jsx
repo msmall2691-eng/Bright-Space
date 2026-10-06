@@ -161,7 +161,7 @@ export function ComposeModal({ onClose, onSent, clients, initialTo = '', initial
         </div>
 
         {error && (
-          <div className={`text-[12px] ${STATUS_TEXT.problem} dark:text-red-300 bg-panel border border-hairline rounded-xl px-3 py-2 flex items-center gap-1.5`}>
+          <div className={`text-[12px] ${STATUS_TEXT.problem} bg-panel border border-hairline rounded-xl px-3 py-2 flex items-center gap-1.5`}>
             <AlertTriangle className="w-3.5 h-3.5 shrink-0" /> {error}
           </div>
         )}

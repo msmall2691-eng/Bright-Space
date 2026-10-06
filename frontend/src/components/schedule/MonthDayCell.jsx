@@ -107,7 +107,7 @@ function MonthDayCell({
 
       {dayReschedFrom.length > 0 && (
         <div
-          className={`flex items-center gap-0.5 text-[9px] sm:text-[10px] px-1 sm:px-1.5 py-0.5 mb-0.5 rounded border bg-panel ${STATUS_TEXT.open} dark:text-purple-300 border-hairline italic truncate leading-tight`}
+          className={`flex items-center gap-0.5 text-[9px] sm:text-[10px] px-1 sm:px-1.5 py-0.5 mb-0.5 rounded border bg-panel ${STATUS_TEXT.open} border-hairline italic truncate leading-tight`}
           title={`Moved to ${dayReschedFrom[0].rescheduled_date}`}
         >
           <ArrowRight className="w-2.5 h-2.5 shrink-0" />

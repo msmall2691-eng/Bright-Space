@@ -303,7 +303,7 @@ export default function PropertiesTab({
             )}
             {editingProp && (
               <button onClick={() => deletePropPermanent(editingProp.id)}
-                className={`px-3 py-2 text-sm ${STATUS_TEXT.problem} hover:text-red-600 border border-hairline hover:bg-bg-2 rounded-lg transition-colors`}
+                className={`px-3 py-2 text-sm ${STATUS_TEXT.problem} hover:text-rose-800 border border-hairline hover:bg-bg-2 rounded-lg transition-colors`}
                 title="Permanently delete (only if the property has no jobs)">
                 Delete
               </button>

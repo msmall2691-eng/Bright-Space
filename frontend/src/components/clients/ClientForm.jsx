@@ -312,7 +312,7 @@ export function ClientForm({
       <div className="p-6 pb-bottomnav sm:pb-6 border-t border-hairline flex gap-3">
         {selected && (
           <button onClick={() => deleteClient(selected.id)}
-            className={`px-4 py-2 text-[13px] ${STATUS_TEXT.problem} hover:text-red-600 border border-hairline hover:border-red-300 rounded-lg transition-colors font-medium`}>
+            className={`px-4 py-2 text-[13px] ${STATUS_TEXT.problem} hover:text-rose-800 border border-hairline hover:border-red-300 rounded-lg transition-colors font-medium`}>
             Delete
           </button>
         )}

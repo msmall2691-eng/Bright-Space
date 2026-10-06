@@ -172,7 +172,7 @@ export default function CrewDocsAdmin() {
             <div className="flex items-center justify-between gap-2 pt-1">
               {editing !== 'new' ? (
                 <button onClick={() => remove(editing)} disabled={saving}
-                  className={`text-[12.5px] font-semibold ${STATUS_TEXT.problem} hover:text-red-700 disabled:opacity-60`}>
+                  className={`text-[12.5px] font-semibold ${STATUS_TEXT.problem} hover:text-rose-800 disabled:opacity-60`}>
                   Delete
                 </button>
               ) : <span />}

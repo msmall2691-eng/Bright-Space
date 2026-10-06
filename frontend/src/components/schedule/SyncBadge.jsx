@@ -70,14 +70,14 @@ export const TurnoverInfo = ({ job, compact = false }) => {
     <div className={`flex items-center gap-2 flex-wrap ${compact ? 'mt-1' : 'mt-2'}`}>
       {immediate && (
         // Quiet dot+word — red text carries the urgency, no filled capsule.
-        <span className={`inline-flex items-center gap-1.5 text-[10.5px] font-semibold ${STATUS_TEXT.problem} dark:text-red-300`}
+        <span className={`inline-flex items-center gap-1.5 text-[10.5px] font-semibold ${STATUS_TEXT.problem}`}
           title="Next guest checks in today — same-day turnaround">
           <span className={`w-1.5 h-1.5 rounded-full ${STATUS_DOT.problem} shrink-0`} aria-hidden="true" />
           <Zap className="w-2.5 h-2.5" /> Immediate turnover
         </span>
       )}
       {tight && (
-        <span className={`inline-flex items-center gap-1.5 text-[10.5px] font-semibold ${STATUS_TEXT.attention} dark:text-amber-300`}
+        <span className={`inline-flex items-center gap-1.5 text-[10.5px] font-semibold ${STATUS_TEXT.attention}`}
           title={`Only ~${Math.max(0, Math.round(job.turnover_lead_hours))}h before the next guest checks in`}>
           <span className={`w-1.5 h-1.5 rounded-full ${STATUS_DOT.attention} shrink-0`} aria-hidden="true" />
           <Zap className="w-2.5 h-2.5" /> Tight turnaround

@@ -54,7 +54,7 @@ export function RecurringTab({ schedules, upcomingJobs = [], properties = [] }) 
         <div className="text-center py-10">
           <RefreshCw className="w-8 h-8 mx-auto mb-2 text-ink-2" />
           <p className="text-ink-3 text-sm mb-3">No recurring schedules</p>
-          <a href="/recurring" className={`text-xs ${STATUS_TEXT.info} hover:text-sky-300`}>Set one up on the Recurring page</a>
+          <a href="/recurring" className={`text-xs ${STATUS_TEXT.info} hover:text-blue-800`}>Set one up on the Recurring page</a>
         </div>
       )}
       <div className="space-y-2">
