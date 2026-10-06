@@ -62,7 +62,13 @@ export default function PropertyIcalsBulk() {
   const load = async () => {
     setLoading(true)
     try {
-      const p = await get(`/api/properties/${propertyId}`)
+      // BB-SEC-13: the narrow feed payload, not `GET /api/properties/{id}`.
+      // That route returns the full property dict — house_code, access_notes,
+      // wifi_password — and its own BB-SEC-11 comment says so; this screen
+      // renders seven fields and none of them. Office-only either way, so it
+      // was never a BB-SEC-08..12 violation; it just put a door code on the
+      // wire every time anyone opened a feed screen.
+      const p = await get(`/api/properties/${propertyId}/icals`)
       setProperty(p)
     } catch (e) {
       console.error('[PropertyIcalsBulk load]', e)

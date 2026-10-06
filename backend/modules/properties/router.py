@@ -1109,6 +1109,63 @@ def remove_ical_url(property_id: int, ical_id: int, db: Session = Depends(get_db
     db.commit()
 
 
+@router.get("/{property_id}/icals", dependencies=[Depends(require_role("admin", "manager"))])
+def list_property_icals(
+    property_id: int,
+    db: Session = Depends(get_db),
+    org_id: int = Depends(current_org_id),
+):
+    """The feed-management screen's own payload — BB-SEC-13.
+
+    `PropertyIcalsBulk` needs a property's feeds plus enough of the property to
+    label the page, and got them by reading `GET /{property_id}`, which that
+    endpoint's own BB-SEC-11 comment describes as "the full property dict —
+    house_code, access_notes, wifi_password included". The page displays none
+    of it, and the per-feed dicts there carry `house_code` / `access_links` /
+    `instructions` as well, so every load of a feed screen put a property's
+    door codes and wifi password on the wire to render seven fields.
+
+    Both endpoints are office-only, so this was never a BB-SEC-08..12
+    violation — a manager may read access details. It is the same
+    least-privilege reasoning BB-SEC-11 applied to the role, applied here to a
+    caller that never wanted them: the fewer screens a code reaches, the fewer
+    places it can be logged, screenshotted or left open on a laptop.
+
+    The field list is exactly what the page reads, plus `active` (a feed's
+    state, not a secret, and the sync logic keys off it). Adding a field here
+    is a deliberate act — `tests/test_property_icals_payload.py` fails if an
+    access detail appears.
+    """
+    prop = db.query(Property).options(joinedload(Property.property_icals)).filter(
+        Property.id == property_id,
+        or_(Property.org_id == org_id, Property.org_id.is_(None)),  # MT-2 tenant scope
+    ).first()
+    if not prop:
+        raise HTTPException(status_code=404, detail="Property not found")
+
+    return {
+        "id": prop.id,
+        "name": prop.name,
+        "address": prop.address,
+        "city": prop.city,
+        "state": prop.state,
+        "property_type": prop.property_type,
+        "default_duration_hours": prop.default_duration_hours,
+        "icals": [
+            {
+                "id": pi.id,
+                "url": pi.url,
+                "source": pi.source,
+                "active": pi.active,
+                "last_synced_at": pi.last_synced_at.isoformat() if pi.last_synced_at else None,
+                "last_sync_status": pi.last_sync_status,
+                "last_sync_error": pi.last_sync_error,
+            }
+            for pi in (prop.property_icals or [])
+        ],
+    }
+
+
 # Admin utilities
 
 STATE_ABBREVIATIONS = {
