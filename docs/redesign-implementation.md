@@ -221,14 +221,19 @@ longer visits its page:
   its own hero pods so a count isn't shown twice; the other three still do it.
   Lead rows render on both Requests and Deals; the lead→quote→job hand-off is
   implemented three times.
-- **Pages with no test at all.** Was six; `Clients` was already miscounted
-  (`pages/__tests__/Clients.chrome.test.jsx` exists), and `Invoicing` and
-  `InvoiceDetail` now have one each — the invoice record page because it is
-  where a send that never reached the customer can be reported as sent, and
-  the list because the dashboard's money links depend on its `?status=`
-  contract. **Still bare: `Properties`, `PropertyIcalsBulk`, `Recurring`.**
-  `PropertyIcalsBulk` is fully instrumented with testids that nothing
-  references, so it is the cheapest of the three.
+- ~~**Six pages have no test at all.**~~ **Closed — and it was five, not six.**
+  `Clients` was miscounted from the start (`Clients.chrome.test.jsx` existed),
+  and `Recurring`'s only real risk had already moved out of the page and been
+  covered (see the hand-written-mirror entry above). The other four now have
+  one each, and in every case the thing pinned is a decision that was holding
+  in prose only:
+
+  | page | what the test is actually about |
+  |---|---|
+  | `InvoiceDetail` | `/send` answers 200 with a per-channel result, so a bounced email is a SUCCESSFUL request — reporting it as sent leaves the owner chasing a payment for an invoice nobody got |
+  | `Invoicing` | the `?status=` the dashboard's money links point at, including the strip that stops a tab click snapping back |
+  | `PropertyIcalsBulk` | which endpoint it reads (BB-SEC-13), plus the case-insensitive paste dedupe — without it one feed added twice makes every turnover twice |
+  | `Properties` | `?edit=<id>` waits for the rows rather than stripping the param while they load. "Tidy up the URL" is the obvious refactor and it breaks the deep link on any slow connection, silently |
 - ~~**`.bb-focus` exists only on OpsBoard.**~~ **Done, and it was two defects.**
   The reach was the smaller one: the ring is now a base-layer
   `:where(…):focus-visible` default covering the ~1140 focusable elements that
