@@ -19,6 +19,7 @@ import { ErrorNote, SectionLabel } from './primitives'
 // {area, tasks}) as a raw React child and crashed for properties that had one.
 import CrewJobSheet from './CrewJobSheet'
 import { STATUS_DOT } from '../../theme/statusDots'
+import { STATUS_TEXT } from '../../theme/statusText'
 
 const DOW = ['S', 'M', 'T', 'W', 'T', 'F', 'S']   // Sunday-first, US calendar
 const ymd = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
@@ -145,7 +146,7 @@ export default function CrewMonth({ previewUserId = null }) {
                     </span>
                     <span className="text-[11.5px] font-mono text-ink-3 shrink-0">
                       {j.start_time ? `${j.start_time}${j.end_time ? `–${j.end_time}` : ''}` : 'anytime'}
-                      {j.mine && <span className="text-blue-500 ml-1">›</span>}
+                      {j.mine && <span className={`${STATUS_TEXT.info} ml-1`}>›</span>}
                     </span>
                   </div>
                   {!j.mine && j.cleaners.length > 0 && (

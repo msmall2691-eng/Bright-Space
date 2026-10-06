@@ -20,6 +20,7 @@ import { Check, FileText, FileUp, ShieldCheck } from 'lucide-react'
 import { get, post, upload as uploadFile } from '../../api'
 import { toast } from '../../utils/toastBus'
 import { STATUS_DOT } from '../../theme/statusDots'
+import { STATUS_ICON } from '../../theme/statusText'
 
 /** Dot + word, per the design language — never a filled pill. */
 const STATE = {
@@ -243,7 +244,7 @@ export default function CrewMyFile({ bare = false, previewUserId = null }) {
     <>
       {file.can_take_jobs ? (
         <div className="flex items-start gap-2">
-          <ShieldCheck className="w-5 h-5 text-emerald-500 shrink-0" />
+          <ShieldCheck className={`w-5 h-5 ${STATUS_ICON.ok} shrink-0`} />
           <div>
             <p className="text-[14px] font-semibold text-ink">You’re all set{firstName ? `, ${firstName}` : ''} 🎉</p>
             <p className="text-[12.5px] text-ink-2">
@@ -256,7 +257,7 @@ export default function CrewMyFile({ bare = false, previewUserId = null }) {
         // warmly, and keep the remaining items below as a gentle to-do, not a
         // "you can't work yet" wall.
         <div className="flex items-start gap-2">
-          <ShieldCheck className="w-5 h-5 text-emerald-500 shrink-0" />
+          <ShieldCheck className={`w-5 h-5 ${STATUS_ICON.ok} shrink-0`} />
           <div>
             <p className="text-[14px] font-semibold text-ink">You’re cleared to take jobs{firstName ? `, ${firstName}` : ''} 🎉</p>
             <p className="text-[12.5px] text-ink-2">

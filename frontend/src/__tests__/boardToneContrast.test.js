@@ -49,6 +49,7 @@ const here = dirname(fileURLToPath(import.meta.url))
 const SOURCES = [
   join(here, '..', 'components', 'board', 'tokens.js'),
   join(here, '..', 'theme', 'statusDots.js'),
+  join(here, '..', 'theme', 'statusText.js'),
 ].map(p => readFileSync(p, 'utf8'))
 const tokens = SOURCES.join('\n')
 const css = readFileSync(join(here, '..', 'index.css'), 'utf8')
@@ -145,6 +146,11 @@ const MAPS = [
   // theme/statusDots.js — the app-wide dot, not just the board's. Same 3:1
   // non-text floor: a dot carries meaning but is not text.
   { name: 'STATUS_DOT', floor: 3, what: 'the app-wide status DOT' },
+  // theme/statusText.js. The two floors are the whole reason these are two
+  // maps: the same `text-amber-600` is 2.58:1, which fails as text AND as an
+  // icon, and the fix is a different step for each.
+  { name: 'STATUS_TEXT', floor: 4.5, what: 'semantic TEXT' },
+  { name: 'STATUS_ICON', floor: 3, what: 'a semantic ICON' },
 ]
 
 describe('BB-A11Y-02 — the board tone maps clear their floors', () => {

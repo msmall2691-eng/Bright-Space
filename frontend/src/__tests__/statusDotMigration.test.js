@@ -61,6 +61,25 @@ const STATUS_HUES = 'emerald|amber|red|rose|blue|green|yellow|orange|gray|slate|
 const RAW_DOT = new RegExp(String.raw`(?<![\w:-])bg-(?:${STATUS_HUES})-(?:400|500)\b(?!/)`, 'g')
 
 /**
+ * A resting semantic TEXT colour on a step that misses the 4.5:1 text floor.
+ *
+ * Measured against this app's own light grounds: amber-600 2.58, emerald-600
+ * 3.05, rose-600 3.81, blue-600 4.19 — and the 700 step is still short for
+ * amber (4.07) and emerald (4.44), which is why `STATUS_TEXT` puts those two
+ * on the 800. `violet-600` clears at 4.62 and is deliberately absent.
+ *
+ * Narrower than RAW_DOT on purpose: it lists the steps that actually fail
+ * rather than a blanket 500/600, because `text-blue-800` and friends are fine
+ * and flagging them would make this noise.
+ */
+const RAW_TEXT = new RegExp(String.raw`(?<![\w:-])text-(?:emerald|green)-(?:500|600|700)\b(?!/)|(?<![\w:-])text-(?:amber|yellow)-(?:500|600|700)\b(?!/)|(?<![\w:-])text-(?:red|rose)-(?:400|500|600)\b(?!/)|(?<![\w:-])text-blue-(?:400|500|600)\b(?!/)`, 'g')
+
+/** Surfaces where the TEXT half has been done. Separate from MIGRATED because
+ *  it is a separate slice running behind it, and conflating the two would
+ *  claim ground that has not been taken. */
+const TEXT_MIGRATED = ['crew', 'schedule']
+
+/**
  * Surfaces migrated so far, newest last. Adding one is a one-line change
  * here plus the migration itself.
  */
@@ -181,6 +200,9 @@ const EXEMPT = {
     reason: 'an orange booking-source dot — categorical, and orange is outside the status vocabulary entirely' },
 }
 
+/** TEXT-half exemptions, same {reason, allow} contract as EXEMPT above. */
+const TEXT_EXEMPT = {}
+
 function walk(dir) {
   const out = []
   for (const name of readdirSync(dir)) {
@@ -296,6 +318,40 @@ describe('BB-A11Y-02 — migrated surfaces go through the measured map', () => {
       expect(n, `${path}: allowance is ${ex.allow} but only ${n} raw steps remain — lower it`)
         .toBe(ex.allow)
     }
+  })
+
+  for (const surface of MIGRATED.filter(s => TEXT_MIGRATED.includes(s.name))) {
+    it(`${surface.name}: no hand-written semantic text colour outside the named exemptions`, () => {
+      const offenders = []
+      for (const { path, src } of filesFor(surface)) {
+        const ex = TEXT_EXEMPT[rel(path)]
+        const hits = []
+        src.split('\n').forEach((line, i) => {
+          for (const m of line.matchAll(RAW_TEXT)) hits.push(`${rel(path)}:${i + 1}  ${m[0]}`)
+        })
+        if (!ex) offenders.push(...hits)
+        else if (hits.length > ex.allow) {
+          offenders.push(`${rel(path)} has ${hits.length} raw text steps, allowed ${ex.allow} (${ex.reason})`)
+        }
+      }
+      expect(offenders,
+        'Resting semantic text on a step under the 4.5:1 floor (amber-600 is ' +
+        '2.58:1). Use STATUS_TEXT from src/theme/statusText.js — or STATUS_ICON ' +
+        'if it is an icon, which is a graphical object at 3:1, not text:\n  '
+        + offenders.join('\n  ')).toEqual([])
+    })
+  }
+
+  it('the text pattern catches what was there and spares what already passes', () => {
+    const caught = s => [...s.matchAll(RAW_TEXT)].map(m => m[0])
+    expect(caught('<span className="text-amber-600">Needs a cleaner</span>')).toEqual(['text-amber-600'])
+    expect(caught('text-emerald-700')).toEqual(['text-emerald-700'])  // 4.44, still short
+    expect(caught('text-red-600 text-rose-600')).toEqual(['text-red-600', 'text-rose-600'])
+    // Already clear the floor, or are not semantic at all.
+    expect(caught('text-violet-600')).toEqual([])        // 4.62
+    expect(caught('text-amber-800 text-emerald-800 text-blue-700 text-rose-700')).toEqual([])
+    expect(caught('hover:text-amber-600 dark:text-amber-300')).toEqual([])
+    expect(caught('text-ink-2 text-link text-slate-900')).toEqual([])
   })
 
   it('the pattern it bans is the pattern that was there, and it spares hover', () => {
