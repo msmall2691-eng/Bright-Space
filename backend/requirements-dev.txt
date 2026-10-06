@@ -4,7 +4,7 @@
 # Install locally with:
 #   pip install -r requirements-dev.txt
 
-mypy==2.3.1
+mypy==2.4.0
 types-python-dateutil==2.9.0.20260807
 
 # Test runner. httpx (FastAPI's TestClient dependency) is pinned once in
