@@ -13,6 +13,7 @@ import RecordLink from '../RecordLink'
 import OpportunityLinker from '../OpportunityLinker'
 import { JOB_COLORS, INVOICE_COLORS, QUOTE_COLORS, OPP_COLORS, DOT_CHIP, DOT } from './constants'
 import { formatDateShort } from '../../utils/format'
+import { STATUS_DOT } from '../../theme/statusDots'
 
 // Compact cadence line for a series row — same vocabulary as Recurring.jsx's
 // ruleSummary (weekly / biweekly / every N weeks / monthly / daily).
@@ -32,7 +33,7 @@ function cadenceLine(s) {
 function SeriesStatusPill({ active }) {
   return (
     <span className={DOT_CHIP}>
-      <span className={`${DOT} ${active ? 'bg-emerald-500' : 'bg-ink-3'}`} aria-hidden="true" />
+      <span className={`${DOT} ${active ? STATUS_DOT.ok : 'bg-ink-3'}`} aria-hidden="true" />
       {active ? 'Active' : 'Paused'}
     </span>
   )

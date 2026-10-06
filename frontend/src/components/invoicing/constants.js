@@ -1,11 +1,12 @@
 /** Status chip config for invoices — dot + text color + display label
  *  keyed by the persisted status. Consumed by both the row summary
  *  and the send/edit slide-over header. */
+import { STATUS_DOT } from '../../theme/statusDots'
 export const STATUS = {
   draft:   { dot: 'bg-ink-3',        text: 'text-ink-3',        label: 'Draft'   },
-  sent:    { dot: 'bg-blue-400',     text: 'text-blue-400',     label: 'Sent'    },
-  paid:    { dot: 'bg-emerald-400',  text: 'text-emerald-400',  label: 'Paid'    },
-  overdue: { dot: 'bg-red-400',      text: 'text-red-400',      label: 'Overdue' },
+  sent:    { dot: STATUS_DOT.info,     text: 'text-blue-400',     label: 'Sent'    },
+  paid:    { dot: STATUS_DOT.ok,  text: 'text-emerald-400',  label: 'Paid'    },
+  overdue: { dot: STATUS_DOT.problem,      text: 'text-red-400',      label: 'Overdue' },
 }
 
 /** Invoice status filter options for the list toolbar. `''` = All.

@@ -12,12 +12,13 @@ import InlineSelect from '../components/InlineSelect'
 import InlineEditField from '../components/InlineEditField'
 import RecordSkeleton from '../components/record/RecordSkeleton'
 import { EmptyState } from '../components/ui'
+import { STATUS_DOT } from '../theme/statusDots'
 
 const STATUS_OPTIONS = [
   { value: 'draft',   label: 'draft',   dot: 'bg-ink-3' },
-  { value: 'sent',    label: 'sent',    dot: 'bg-blue-500' },
-  { value: 'overdue', label: 'overdue', dot: 'bg-red-500' },
-  { value: 'paid',    label: 'paid',    dot: 'bg-emerald-500' },
+  { value: 'sent',    label: 'sent',    dot: STATUS_DOT.info },
+  { value: 'overdue', label: 'overdue', dot: STATUS_DOT.problem },
+  { value: 'paid',    label: 'paid',    dot: STATUS_DOT.ok },
 ]
 
 const money = (n) => n == null || n === '' ? '$0' :

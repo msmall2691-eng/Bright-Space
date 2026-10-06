@@ -15,14 +15,15 @@ import RecordSkeleton from '../components/record/RecordSkeleton'
 import { EmptyState } from '../components/ui'
 import StatusBadge from '../components/ui/StatusBadge'
 import { statusTone, statusLabel } from '../utils/statusTone'
+import { STATUS_DOT } from '../theme/statusDots'
 
 // Pipeline stages (mirrors the kanban + backend enum).
 const STAGE_OPTIONS = [
   { value: 'new',       label: 'new',       dot: 'bg-ink-3' },
-  { value: 'qualified', label: 'qualified', dot: 'bg-blue-500' },
-  { value: 'quoted',    label: 'quoted',    dot: 'bg-amber-500' },
-  { value: 'won',       label: 'won',       dot: 'bg-emerald-500' },
-  { value: 'lost',      label: 'lost',      dot: 'bg-red-500' },
+  { value: 'qualified', label: 'qualified', dot: STATUS_DOT.info },
+  { value: 'quoted',    label: 'quoted',    dot: STATUS_DOT.attention },
+  { value: 'won',       label: 'won',       dot: STATUS_DOT.ok },
+  { value: 'lost',      label: 'lost',      dot: STATUS_DOT.problem },
 ]
 const SERVICE_OPTIONS = [
   { value: 'residential', label: 'residential' },

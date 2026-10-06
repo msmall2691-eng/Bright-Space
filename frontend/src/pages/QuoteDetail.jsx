@@ -20,15 +20,16 @@ import { jobPropertyOption } from '../utils/jobPropertyOption'
 import SendQuotePanel from '../components/quoting/SendQuotePanel'
 import OriginalRequestCard from '../components/quoting/OriginalRequestCard'
 import { isPlaceholderName } from '../components/quoting/constants'
+import { STATUS_DOT } from '../theme/statusDots'
 
 const STATUS_OPTIONS = [
   { value: 'draft',     label: 'draft',     dot: 'bg-ink-3' },
-  { value: 'sent',      label: 'sent',      dot: 'bg-blue-500' },
+  { value: 'sent',      label: 'sent',      dot: STATUS_DOT.info },
   { value: 'viewed',    label: 'viewed',    dot: 'bg-cyan-500' },
-  { value: 'accepted',  label: 'accepted',  dot: 'bg-emerald-500' },
-  { value: 'declined',  label: 'declined',  dot: 'bg-red-500' },
+  { value: 'accepted',  label: 'accepted',  dot: STATUS_DOT.ok },
+  { value: 'declined',  label: 'declined',  dot: STATUS_DOT.problem },
   { value: 'converted', label: 'converted', dot: 'bg-violet-500' },
-  { value: 'expired',   label: 'expired',   dot: 'bg-amber-500' },
+  { value: 'expired',   label: 'expired',   dot: STATUS_DOT.attention },
   { value: 'archived',  label: 'archived',  dot: 'bg-ink-3' },
 ]
 const SERVICE_OPTIONS = [
@@ -513,9 +514,9 @@ export default function QuoteDetail() {
                           <span className="text-ink-2 truncate">{d.recipient}</span>
                           <span className="shrink-0 inline-flex items-center gap-1 text-[10px] font-medium text-ink-3">
                             <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${
-                              d.status === 'sent' || d.status === 'delivered' ? 'bg-emerald-500'
-                              : d.status === 'failed' || d.status === 'bounced' || d.status === 'undelivered' ? 'bg-red-500'
-                              : 'bg-amber-500'
+                              d.status === 'sent' || d.status === 'delivered' ? STATUS_DOT.ok
+                              : d.status === 'failed' || d.status === 'bounced' || d.status === 'undelivered' ? STATUS_DOT.problem
+                              : STATUS_DOT.attention
                             }`} aria-hidden="true" />{d.status}</span>
                         </div>
                         <div className="text-[11px] text-ink-3">{d.sent_at ? new Date(d.sent_at).toLocaleString() : ''}</div>

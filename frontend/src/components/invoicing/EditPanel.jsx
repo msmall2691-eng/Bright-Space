@@ -1,6 +1,7 @@
 import { ChevronRight, FileText, Plus, Send, Trash2, X } from 'lucide-react'
 import { CustomFieldsForm } from '../CustomFields'
 import { EMPTY_ITEM, inp, lbl, sub, totalAmt } from './constants'
+import { STATUS_DOT } from '../../theme/statusDots'
 
 /** Slide-over Edit/Create invoice form: client picker, dynamic
  *  line items (add / remove / edit qty + unit price), tax + due
@@ -137,7 +138,7 @@ export function EditPanel({
           className="flex items-center gap-1.5 text-xs font-semibold text-ink-2 hover:text-ink">
           <ChevronRight className={`w-3.5 h-3.5 transition-transform ${showInvAdvanced ? 'rotate-90' : ''}`} />
           Notes &amp; more
-          {!showInvAdvanced && form.notes && <span className="w-1.5 h-1.5 rounded-full bg-blue-500" />}
+          {!showInvAdvanced && form.notes && <span className={`w-1.5 h-1.5 rounded-full ${STATUS_DOT.info}`} />}
         </button>
 
         {showInvAdvanced && (<>

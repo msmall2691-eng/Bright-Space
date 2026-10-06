@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { Trash2, X, Plus, Search, RefreshCw, SlidersHorizontal, ChevronDown } from 'lucide-react'
 import SavedViewsBar from '../SavedViewsBar'
+import { STATUS_DOT } from '../../theme/statusDots'
 
 // Type buckets shown in the segmented control — the synthetic "all" plus the
 // three real property types. Counts come from usePropertyFilters.typeCounts.
@@ -153,7 +154,7 @@ export function BulkActionBar({
 export function SyncResultBanner({ syncResult, onDismiss }) {
   return (
     <div className="flex items-center gap-2.5 rounded-lg border border-hairline bg-panel px-3 py-2 mb-4 text-[12.5px]">
-      <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${syncResult.ok ? 'bg-emerald-500' : 'bg-red-500'}`} aria-hidden="true" />
+      <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${syncResult.ok ? STATUS_DOT.ok : STATUS_DOT.problem}`} aria-hidden="true" />
       <span className="flex-1 text-ink">
         {syncResult.ok
           ? `Sync complete — ${syncResult.jobs_created ?? syncResult.results?.reduce((s, r) => s + (r.jobs_created || 0), 0) ?? 0} new turnover job(s) created`

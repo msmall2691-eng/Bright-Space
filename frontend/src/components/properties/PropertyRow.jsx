@@ -2,6 +2,7 @@ import { AlertTriangle, Calendar, Clock, Home, Link, RefreshCw, Users } from 'lu
 import { ICAL_SOURCES, PROPERTY_TYPE_CONFIG } from './constants'
 import { IcalFeedRow } from './IcalFeedRow'
 import PropertyPhoto from '../PropertyPhoto'
+import { STATUS_DOT } from '../../theme/statusDots'
 
 const propType = (p) => (p?.property_type || '').toLowerCase()
 
@@ -61,7 +62,7 @@ export function PropertyRow({
                 </button>
                 <span className="inline-flex items-center gap-1.5 text-xs font-medium text-ink-3">
                   <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${
-                    pType === 'str' ? 'bg-amber-500' : pType === 'commercial' ? 'bg-purple-500' : 'bg-blue-500'
+                    pType === 'str' ? STATUS_DOT.attention : pType === 'commercial' ? 'bg-purple-500' : STATUS_DOT.info
                   }`} aria-hidden="true" />
                   {Config?.label}
                 </span>
@@ -106,14 +107,14 @@ export function PropertyRow({
                           ? 'A feed synced cleanly within the last 24h'
                           : "No feed has synced cleanly in 24h+ — check it"}
                       >
-                        <span className={`h-1.5 w-1.5 rounded-full ${p.ical_health === 'healthy' ? 'bg-emerald-500' : 'bg-amber-500'}`} />
+                        <span className={`h-1.5 w-1.5 rounded-full ${p.ical_health === 'healthy' ? STATUS_DOT.ok : STATUS_DOT.attention}`} />
                         {p.ical_health === 'healthy' ? 'Feed healthy' : 'Feed stale'}
                       </span>
                     )}
                     {p.ical_health === 'no_feed' && (
                       <span className="inline-flex h-5 items-center gap-1.5 rounded-sm border border-hairline-2 bg-panel px-2 text-[11px] font-medium text-ink-2"
                         title="STR property with no active calendar feed configured">
-                        <span className="h-1.5 w-1.5 rounded-full bg-red-500" />No feed
+                        <span className={`h-1.5 w-1.5 rounded-full ${STATUS_DOT.problem}`} />No feed
                       </span>
                     )}
                     {/* A missed turnover means a guest walks into a dirty

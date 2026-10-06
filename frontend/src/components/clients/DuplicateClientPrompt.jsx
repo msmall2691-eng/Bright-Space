@@ -8,6 +8,7 @@
  * this" is the quiet secondary button (the preferred path), "Create anyway" and
  * "Back" are tertiary text links. See brightbase-design-language.
  */
+import { STATUS_DOT } from '../../theme/statusDots'
 export default function DuplicateClientPrompt({
   duplicates = [],
   busy = false,
@@ -19,7 +20,7 @@ export default function DuplicateClientPrompt({
   return (
     <div className="rounded-lg border border-hairline bg-panel p-2.5 space-y-2" data-testid="duplicate-client-prompt">
       <div className="flex items-center gap-1.5 text-xs text-ink-2">
-        <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-amber-500 dark:bg-amber-400" aria-hidden />
+        <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${STATUS_DOT.attention} dark:bg-amber-400`} aria-hidden />
         <span>
           {duplicates.length === 1 ? 'Possible duplicate' : `${duplicates.length} possible duplicates`}
           {' '}— already in your clients

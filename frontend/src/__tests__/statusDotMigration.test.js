@@ -47,17 +47,32 @@ const SRC = join(dirname(fileURLToPath(import.meta.url)), '..')
 /** Hues that carry status meaning. `indigo` is the accent; see the header. */
 const STATUS_HUES = 'emerald|amber|red|rose|blue|green|yellow|orange|gray|slate|zinc'
 
-/** A RESTING background on a failing step. The negative lookbehind is what
- *  exempts `hover:` / `active:` / `dark:` and every other variant prefix. */
-const RAW_DOT = new RegExp(String.raw`(?<![\w:-])bg-(?:${STATUS_HUES})-(?:400|500)\b`, 'g')
+/**
+ * A SOLID resting background on a failing step.
+ *
+ * The negative lookbehind exempts `hover:` / `active:` / `dark:` and every
+ * other variant prefix. The trailing `(?!/)` exempts an opacity modifier:
+ * `bg-blue-500/10` is a 10% wash behind text, not a dot. Its contrast question
+ * is about whatever sits ON it, which is a different pair and a different
+ * floor, so folding those in would stop this test stating one clear rule.
+ * (Whether a resting tint belongs there at all is the design language's
+ * bubble veto, which other tests already grep for.)
+ */
+const RAW_DOT = new RegExp(String.raw`(?<![\w:-])bg-(?:${STATUS_HUES})-(?:400|500)\b(?!/)`, 'g')
 
 /**
  * Surfaces migrated so far, newest last. Adding one is a one-line change
  * here plus the migration itself.
  */
 const MIGRATED = [
+  // MyDay is a page but belongs to the crew surface; the `pages` entry below
+  // covers it too, which is harmless — both assert the same thing about it.
   { name: 'crew', dirs: ['components/crew'], files: ['pages/MyDay.jsx'] },
   { name: 'schedule', dirs: ['components/schedule'], files: [] },
+  { name: 'client', dirs: ['components/client', 'components/clients'], files: [] },
+  { name: 'office', dirs: ['components/settings', 'components/invoicing', 'components/quoting',
+                           'components/properties', 'components/comms', 'components/ui'], files: [] },
+  { name: 'pages', dirs: ['pages'], files: [] },
 ]
 
 /**
@@ -67,22 +82,22 @@ const MIGRATED = [
  * revisited.
  */
 const EXEMPT = {
-  // The colour encodes WHICH TYPE of property, not whether something is good
-  // or bad — STR / commercial / residential. Mapping identity onto
-  // ok/attention/problem would be wrong, and the dataviz rule is explicit:
-  // status tokens only when the colour means good/bad, categorical when it is
-  // identity, never both. Needs its own measured categorical ramp.
-  'components/schedule/VisitCard.jsx':
-    'categorical property-type bar + a ringed halo dot',
-  'components/schedule/MonthDayCell.jsx':
-    'ringed halo dot — the ring changes the effective contrast, which this harness does not model',
-  'components/schedule/WeekGrid.jsx':
-    'alpha drag preview, the now-line (position, not good/bad), and ringed halo dots',
+  // Was 4: the categorical property-type bar accounted for two of them
+  // (amber + blue; purple is not a STATUS_HUE). That bar now takes the
+  // measured JOB_TYPE_EDGE value off the shared config, so what is left is the
+  // iCal-source dot and the ringed needs-a-cleaner halo — both ringed, and the
+  // ring changes the effective contrast in a way this harness does not model.
+  'components/schedule/VisitCard.jsx': { allow: 2,
+    reason: 'the iCal-source dot and a ringed halo dot — the ring changes the effective contrast, which this harness does not model' },
+  'components/schedule/MonthDayCell.jsx': { allow: 1,
+    reason: 'ringed halo dot — the ring changes the effective contrast, which this harness does not model' },
+  'components/schedule/WeekGrid.jsx': { allow: 4,
+    reason: 'alpha drag preview, the now-line (position, not good/bad), and ringed halo dots' },
   // bg-emerald-500 with text-white ON it. The contrast that matters is
   // white-on-emerald, which passes; darkening the fill would make it WORSE.
   // The single most important site not to sweep.
-  'components/schedule/CompleteVisitModal.jsx':
-    'a filled control with white text on it — different contrast pair entirely',
+  'components/schedule/CompleteVisitModal.jsx': { allow: 1,
+    reason: 'a filled control with white text ON it — the pair is white-on-emerald, which passes; darkening the fill would make it worse' },
   // components/schedule/constants.js was the last entry here and is MIGRATED
   // (Oct 2026). Its two maps were never a severity palette and so could not go
   // through STATUS_DOT — job type is identity, the lifecycle is a nine-state
@@ -93,6 +108,48 @@ const EXEMPT = {
   // clears the floor in both. `boardToneContrast` measures the first two;
   // `jobTypeEdgeContrast` measures the vars and holds them in step with the
   // dots. Don't re-add an exemption here without re-reading those.
+
+  // --- client surface ---
+  // The same shape as the schedule's, which is the point: the maps that resist
+  // STATUS_DOT across this app are consistently ORDERED or CATEGORICAL, not
+  // severity. Three of this file's six maps migrated; these three did not:
+  //   QUOTE_COLORS   seven states with TWO good ends — `accepted` and
+  //                  `converted` would both collapse to `ok` and stop being
+  //                  distinguishable. Already off-vocabulary (teal; indigo is
+  //                  the accent).
+  //   OPP_COLORS     a pipeline, new -> qualified -> quoted -> won/lost.
+  //                  Ordered, and `purple` is off-vocabulary too.
+  //   PROPERTY_TYPE  residential / commercial / str is IDENTITY.
+  'components/client/constants.js': { allow: 11,
+    reason: 'quote/opportunity pipelines and the categorical property-type map — need a measured ordinal ramp' },
+  'components/client/ActivityTimeline.jsx': { allow: 1,
+    reason: 'falls back to the opportunity-stage colour, which is part of that deferred ordinal map' },
+  'components/client/ClientCalendarTab.jsx': { allow: 2,
+    reason: 'falls back to the categorical job-type dot, deferred with the rest of that map' },
+  'components/client/ClientListTabs.jsx': { allow: 2,
+    reason: 'a local residential/commercial type map — categorical, same decision as PROPERTY_TYPE_COLORS' },
+
+  // --- office surface ---
+  // Two button FILLS with white text on them. The pair is white-on-amber,
+  // which passes; darkening the fill would make it worse, not better.
+  'components/settings/DangerZone.jsx': { allow: 1,
+    reason: 'a filled button with white text on it — the contrast pair is white-on-amber, which passes' },
+  'components/comms/ComposeBar.jsx': { allow: 1,
+    reason: 'a filled send button with white text on it — same pair, passes as is' },
+  // Categorical, not severity.
+  'components/settings/constants.js': { allow: 3,
+    reason: 'TYPE_BADGE maps FIELD TYPES (text/number/date/select/…) — identity, not severity; needs a categorical ramp' },
+  'components/quoting/constants.js': { allow: 8,
+    reason: 'quote lifecycle with two good ends plus a lead pipeline — same decision as client QUOTE_COLORS, deferred with it' },
+  'components/quoting/FollowUpRow.jsx': { allow: 1,
+    reason: 'two follow-up REASONS (opened / not opened) — categorical, and purple is off-vocabulary' },
+
+  // --- pages surface ---
+  // A filled checkbox: `border-emerald-500 bg-emerald-500 text-white`. The pair
+  // that matters is the white check ON the fill, which passes; darkening the
+  // fill would reduce it. Same call as CompleteVisitModal.
+  'pages/OpsBoard.jsx': { allow: 1,
+    reason: 'a filled checkbox with a white check on it — the pair is white-on-emerald, which passes' },
 }
 
 function walk(dir) {
@@ -137,7 +194,7 @@ describe('BB-A11Y-02 — migrated surfaces go through the measured map', () => {
     // the achieved set here means removing one takes a deliberate edit in two
     // places, and the list doubles as the record of how far this has got.
     const done = MIGRATED.map(s => s.name)
-    for (const name of ['crew', 'schedule']) {
+    for (const name of ['crew', 'schedule', 'client', 'office', 'pages']) {
       expect(done, `surface "${name}" was migrated and must stay covered`).toContain(name)
     }
   })
@@ -156,10 +213,21 @@ describe('BB-A11Y-02 — migrated surfaces go through the measured map', () => {
     it(`${surface.name}: no hand-written status dot outside the named exemptions`, () => {
       const offenders = []
       for (const { path, src } of filesFor(surface)) {
-        if (EXEMPT[rel(path)]) continue
+        const hits = []
         src.split('\n').forEach((line, i) => {
-          for (const m of line.matchAll(RAW_DOT)) offenders.push(`${rel(path)}:${i + 1}  ${m[0]}`)
+          for (const m of line.matchAll(RAW_DOT)) hits.push(`${rel(path)}:${i + 1}  ${m[0]}`)
         })
+        const ex = EXEMPT[rel(path)]
+        // An exemption carries an EXACT allowance, not a blanket pass. A file
+        // can be partly migrated — client/constants.js keeps three ordinal and
+        // categorical maps while its status maps move — and the deferred sites
+        // must not become an unguarded hole that new ones can hide in.
+        if (!ex) offenders.push(...hits)
+        else if (hits.length > ex.allow) {
+          offenders.push(
+            `${rel(path)} has ${hits.length} raw steps but is only allowed ${ex.allow} ` +
+            `(${ex.reason}) — migrate the new one or raise the allowance deliberately`)
+        }
       }
       expect(offenders,
         'Resting status fills on a step that misses the 3:1 non-text floor ' +
@@ -173,8 +241,12 @@ describe('BB-A11Y-02 — migrated surfaces go through the measured map', () => {
       // `undefined` into the class string — a dot with NO colour, which a
       // contrast test passes happily. This caught six real files on the
       // schedule surface.
+      //
+      // Matches `STATUS_DOT.` specifically, not the bare word: several files
+      // name it in a comment explaining why a map was NOT migrated, and that
+      // is prose, not a use.
       const missing = filesFor(surface)
-        .filter(({ src }) => src.includes('STATUS_DOT') && !src.includes('statusDots'))
+        .filter(({ src }) => /STATUS_DOT\./.test(src) && !src.includes('statusDots'))
         .map(({ path }) => rel(path))
       expect(missing, `uses STATUS_DOT without importing it: ${missing.join(', ')}`).toEqual([])
     })
@@ -184,12 +256,16 @@ describe('BB-A11Y-02 — migrated surfaces go through the measured map', () => {
     // An exemption for a file that was renamed or deleted silently widens the
     // ban's blind spot. Each one must still exist AND still contain the thing
     // it is excused for.
-    for (const [path, reason] of Object.entries(EXEMPT)) {
+    for (const [path, ex] of Object.entries(EXEMPT)) {
       const src = readFileSync(join(SRC, path), 'utf8')
-      expect(reason.length, `${path}: exemption has no reason`).toBeGreaterThan(20)
-      expect([...src.matchAll(RAW_DOT)].length,
-        `${path} is exempt but no longer has a raw step — drop the exemption`,
-      ).toBeGreaterThan(0)
+      const n = [...src.matchAll(RAW_DOT)].length
+      expect(ex.reason.length, `${path}: exemption has no reason`).toBeGreaterThan(20)
+      expect(n, `${path} is exempt but no longer has a raw step — drop the exemption`)
+        .toBeGreaterThan(0)
+      // An allowance larger than reality is a hole that opens quietly as the
+      // file gets migrated, so it has to track exactly.
+      expect(n, `${path}: allowance is ${ex.allow} but only ${n} raw steps remain — lower it`)
+        .toBe(ex.allow)
     }
   })
 

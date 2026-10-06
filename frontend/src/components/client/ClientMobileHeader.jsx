@@ -3,6 +3,7 @@ import {
 } from 'lucide-react'
 import { STATUS_COLORS } from './constants'
 import StatCard from '../ui/StatCard'
+import { STATUS_DOT } from '../../theme/statusDots'
 
 /** Mobile-only client identity header. The desktop >= lg viewport uses
  *  ClientLeftRail instead — this component is `lg:hidden`. */
@@ -87,7 +88,7 @@ export default function ClientMobileHeader({
               onClick={openQuickContact}
               data-testid="missing-contact-open"
               className="w-full flex items-center gap-2.5 p-3 min-h-[44px] text-left hover:bg-bg-2 transition-colors">
-              <span className="w-1.5 h-1.5 rounded-full shrink-0 bg-amber-500" aria-hidden="true" />
+              <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${STATUS_DOT.attention}`} aria-hidden="true" />
               <div className="flex-1 min-w-0">
                 <div className="text-sm font-medium text-ink">Add {!client.phone && !client.email ? 'phone and email' : !client.phone ? 'phone number' : 'email'}</div>
                 <p className="text-xs text-ink-3 mt-0.5">Tap to add now</p>
