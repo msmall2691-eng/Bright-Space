@@ -30,8 +30,14 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { render, screen, cleanup, waitFor } from '@testing-library/react'
 import { MemoryRouter, Routes, Route, useSearchParams } from 'react-router-dom'
 
+// `getCached` is here because `useProperties` loads the client book through
+// it. A partial mock of ../api is a trap: the missing export is `undefined`,
+// the hook calls it, and the page throws before anything renders — so this
+// file went red on a change that had nothing to do with the deep link. Mock
+// the whole surface the page reaches for, not the part the test is about.
 vi.mock('../../api', () => ({
-  get: vi.fn(), post: vi.fn(), put: vi.fn(), patch: vi.fn(), del: vi.fn(),
+  get: vi.fn(), getCached: vi.fn(), post: vi.fn(), put: vi.fn(),
+  patch: vi.fn(), del: vi.fn(),
 }))
 vi.mock('../../utils/toastBus', () => ({
   toast: { success: vi.fn(), error: vi.fn(), info: vi.fn() },
@@ -39,7 +45,7 @@ vi.mock('../../utils/toastBus', () => ({
 }))
 vi.mock('../../utils/confirmBus', () => ({ confirmDialog: vi.fn() }))
 
-import { get } from '../../api'
+import { get, getCached } from '../../api'
 import Properties from '../Properties'
 
 const PROPERTIES = [
@@ -53,11 +59,16 @@ const CLIENTS = [{ id: 3, name: 'Anna Sweet' }]
 /** `/api/properties` resolves through `gate`, so a test can hold the list
  *  back and reproduce the slow-load case the guard exists for. */
 function mockApi({ properties = PROPERTIES, gate = Promise.resolve() } = {}) {
-  get.mockImplementation((url) => {
+  const route = (url) => {
     if (url.startsWith('/api/properties')) return gate.then(() => properties)
     if (url.startsWith('/api/clients')) return Promise.resolve(CLIENTS)
     return Promise.resolve([])
-  })
+  }
+  // Both helpers, routed the same: the client book comes through `getCached`
+  // and the property rows through `get`, and the test does not care which is
+  // which — it cares that the deep link survives the load.
+  get.mockImplementation(route)
+  getCached.mockImplementation(route)
 }
 
 function UrlSpy() {
