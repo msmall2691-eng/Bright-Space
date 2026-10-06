@@ -4,6 +4,7 @@ import { useScheduleData } from '../../hooks/useScheduleData'
 import { daysInRange } from '../../utils/dateRange'
 import { todayYMD } from '../../utils/format'
 import NeedsDateStrip from '../schedule/NeedsDateStrip'
+import { STATUS_DOT } from '../../theme/statusDots'
 
 /**
  * Today's visits as a COMPACT list — the glanceable replacement for the full
@@ -39,9 +40,9 @@ import NeedsDateStrip from '../schedule/NeedsDateStrip'
  */
 function statusDot(v, job) {
   const cleanerIds = v.cleaner_ids?.length ? v.cleaner_ids : job?.cleaner_ids
-  if (v.status === 'completed') return { cls: 'bg-emerald-500', label: 'Done' }
+  if (v.status === 'completed') return { cls: STATUS_DOT.ok, label: 'Done' }
   if (v.status === 'cancelled') return { cls: 'bg-ink-3', label: 'Cancelled' }
-  if (Array.isArray(cleanerIds) && cleanerIds.length === 0) return { cls: 'bg-amber-500', label: 'Needs a cleaner' }
+  if (Array.isArray(cleanerIds) && cleanerIds.length === 0) return { cls: STATUS_DOT.attention, label: 'Needs a cleaner' }
   return { cls: 'bg-indigo-500', label: 'Scheduled' }
 }
 
@@ -161,7 +162,7 @@ export default function HomeToday({ navigate }) {
         </div>
       ) : loadError ? (
         <div className="flex items-center gap-2.5 px-3.5 py-3 text-[12.5px]">
-          <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-amber-500" aria-hidden="true" />
+          <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${STATUS_DOT.attention}`} aria-hidden="true" />
           <span className="min-w-0 flex-1 text-ink-2">Couldn't load today's schedule.</span>
           <button onClick={refresh}
             className="inline-flex shrink-0 items-center gap-1 text-[11px] font-semibold text-link hover:text-link">
@@ -170,7 +171,7 @@ export default function HomeToday({ navigate }) {
         </div>
       ) : rows.length === 0 ? (
         <div className="flex items-center gap-2.5 px-3.5 py-3.5">
-          <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-emerald-500" aria-hidden="true" />
+          <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${STATUS_DOT.ok}`} aria-hidden="true" />
           <span className="text-[12.5px] text-ink-2">Nothing on the calendar today.</span>
         </div>
       ) : (
@@ -201,7 +202,7 @@ export default function HomeToday({ navigate }) {
                 </span>
                 {needsCleaner ? (
                   <span className="inline-flex shrink-0 items-center gap-1 text-[11px] font-medium text-amber-700 dark:text-amber-300">
-                    <span className="h-1.5 w-1.5 rounded-full bg-amber-500" aria-hidden="true" /> needs a cleaner
+                    <span className={`h-1.5 w-1.5 rounded-full ${STATUS_DOT.attention}`} aria-hidden="true" /> needs a cleaner
                   </span>
                 ) : crew ? (
                   <span className="inline-flex shrink-0 items-center gap-1 text-[11px] text-ink-3" title="Assigned">

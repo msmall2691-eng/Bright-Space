@@ -12,6 +12,7 @@ import FrequencyPicker from './schedule/FrequencyPicker'
 import { ErrorNote } from './ui'
 import { createClientChecked } from '../utils/clientCreate'
 import DuplicateClientPrompt from './clients/DuplicateClientPrompt'
+import { STATUS_DOT } from '../theme/statusDots'
 
 // Where an in-progress booking is parked if the session expires mid-submit, so
 // it can be restored after re-login instead of being silently lost.
@@ -35,7 +36,7 @@ function ConflictPrompt({ conflict, saving, onCancel, onOverride }) {
   if (!conflict) return null
   return (
     <div className="flex items-start gap-2.5 px-3 py-2.5 rounded-lg border border-hairline bg-panel text-xs">
-      <span className="w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0 mt-1" aria-hidden="true" />
+      <span className={`w-1.5 h-1.5 rounded-full ${STATUS_DOT.attention} shrink-0 mt-1`} aria-hidden="true" />
       <div className="flex-1 min-w-0">
         <p className="font-medium text-ink mb-1">Scheduling conflict</p>
         <p className="text-ink-2 mb-2">{conflict}</p>
@@ -69,7 +70,7 @@ function EmptySeriesPrompt({ info, onDone }) {
       : 'Every date in range is already booked, so there was nothing new to add.'
   return (
     <div className="flex items-start gap-2.5 px-3 py-2.5 rounded-lg border border-hairline bg-panel text-xs">
-      <span className="w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0 mt-1" aria-hidden="true" />
+      <span className={`w-1.5 h-1.5 rounded-full ${STATUS_DOT.attention} shrink-0 mt-1`} aria-hidden="true" />
       <div className="flex-1 min-w-0">
         <p className="font-medium text-ink mb-1">Series saved — but no visits were added</p>
         <p className="text-ink-2 mb-2">
@@ -102,7 +103,7 @@ export function DuplicateSeriesPrompt({ matches, saving, onCancel, onOverride })
   return (
     <div className="flex items-start gap-2.5 px-3 py-2.5 rounded-lg border border-hairline bg-panel text-xs"
       data-testid="job-create-duplicate-series-prompt">
-      <span className="w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0 mt-1" aria-hidden="true" />
+      <span className={`w-1.5 h-1.5 rounded-full ${STATUS_DOT.attention} shrink-0 mt-1`} aria-hidden="true" />
       <div className="flex-1 min-w-0">
         <p className="font-medium text-ink mb-0.5">
           {one ? 'This client already has a matching recurring series'
@@ -844,7 +845,7 @@ export default function JobCreateModal({
                                     title="Same name as a cleaner on your crew roster — confirm this is the customer, not the crew."
                                     className="shrink-0 inline-flex items-center gap-1 text-[10px] font-medium text-amber-700 dark:text-amber-400"
                                   >
-                                    <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-amber-500 dark:bg-amber-400" aria-hidden />
+                                    <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${STATUS_DOT.attention} dark:${STATUS_DOT.attention}`} aria-hidden />
                                     Also a cleaner
                                   </span>
                                 )}

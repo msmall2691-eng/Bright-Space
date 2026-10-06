@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from 'react'
 import { Plus, MoreHorizontal, Star, Trash2 } from 'lucide-react'
 import { useSavedViews } from '../hooks/useSavedViews'
+import { STATUS_DOT } from '../theme/statusDots'
 
 /**
  * Deep, key-order-insensitive equality for saved-view config blobs.
@@ -113,7 +114,7 @@ export default function SavedViewsBar({ entityType, currentConfig, onApply, defa
                 className={`${tabBase} ${isActive ? tabActive : tabIdle} ${isActive ? 'mr-0.5' : ''}`}>
                 <span className="max-w-[180px] truncate inline-block align-middle">{v.name}</span>
                 {isActive && dirty && (
-                  <span className="ml-1.5 inline-block w-1.5 h-1.5 rounded-full bg-blue-500 align-middle" title="Unsaved changes" />
+                  <span className={`ml-1.5 inline-block w-1.5 h-1.5 rounded-full ${STATUS_DOT.info} align-middle`} title="Unsaved changes" />
                 )}
               </button>
               {/* Per-view management, only on the active tab */}

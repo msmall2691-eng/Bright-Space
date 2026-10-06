@@ -30,13 +30,14 @@ import { Download, Send, Check, Ban, RefreshCw } from 'lucide-react'
 import { get, post } from '../../api'
 import { toast } from '../../utils/toastBus'
 import { confirmDialog } from '../../utils/confirmBus'
+import { STATUS_DOT } from '../../theme/statusDots'
 
 const money = (n) => `$${(Number(n) || 0).toFixed(2)}`
 
 const STATE = {
-  due: { dot: 'bg-amber-500', word: 'Due' },
-  sent: { dot: 'bg-blue-500', word: 'Sent' },
-  paid: { dot: 'bg-emerald-500', word: 'Paid' },
+  due: { dot: STATUS_DOT.attention, word: 'Due' },
+  sent: { dot: STATUS_DOT.info, word: 'Sent' },
+  paid: { dot: STATUS_DOT.ok, word: 'Paid' },
   void: { dot: 'bg-ink-3/40', word: 'Void' },
 }
 
@@ -89,7 +90,7 @@ function RailChoice({ rail, rails, isAdmin, busy, onChoose }) {
       {rail.detail && (
         <span className="flex items-center gap-1.5">
           <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${
-            rail.ready === false ? 'bg-amber-500' : 'bg-emerald-500'}`}
+            rail.ready === false ? STATUS_DOT.attention : STATUS_DOT.ok}`}
             aria-hidden="true" />
           {rail.detail}
         </span>
@@ -108,11 +109,11 @@ function RailChoice({ rail, rails, isAdmin, busy, onChoose }) {
  */
 function SendReport({ report }) {
   const rows = [
-    ...(report.blocked || []).map(r => ({ ...r, tone: 'bg-amber-500' })),
-    ...(report.failed || []).map(r => ({ ...r, tone: 'bg-red-500' })),
+    ...(report.blocked || []).map(r => ({ ...r, tone: STATUS_DOT.attention })),
+    ...(report.failed || []).map(r => ({ ...r, tone: STATUS_DOT.problem })),
     // Never re-sent automatically. A previous attempt's outcome is unknown, so
     // a person checks Stripe before anyone risks paying twice.
-    ...(report.needs_check || []).map(r => ({ ...r, tone: 'bg-red-500' })),
+    ...(report.needs_check || []).map(r => ({ ...r, tone: STATUS_DOT.problem })),
   ]
   if (!rows.length) return null
   return (
@@ -269,7 +270,7 @@ export default function SubcontractorPayroll({ startDate, endDate, isAdmin }) {
   if (error) {
     return (
       <div className="flex items-start gap-2 rounded-xl border border-hairline bg-panel p-4 text-sm text-ink-2">
-        <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-red-500" aria-hidden="true" />
+        <span className={`mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full ${STATUS_DOT.problem}`} aria-hidden="true" />
         {error}
       </div>
     )
@@ -300,7 +301,7 @@ export default function SubcontractorPayroll({ startDate, endDate, isAdmin }) {
         /* Work done by a crew ID with no login behind it — the one case where
            nothing here can say who to pay. A sentence and a dot, not a banner. */
         <p className="flex items-start gap-1.5 text-[13px] text-ink-2">
-          <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-amber-500" aria-hidden="true" />
+          <span className={`mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full ${STATUS_DOT.attention}`} aria-hidden="true" />
           <span>
             {data.unmatched.length} job{data.unmatched.length === 1 ? '' : 's'} done by a crew ID
             with no account ({[...new Set(data.unmatched.map(u => u.cleaner_id))].join(', ')}) —

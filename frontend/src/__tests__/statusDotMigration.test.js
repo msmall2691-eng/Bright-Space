@@ -73,6 +73,10 @@ const MIGRATED = [
   { name: 'office', dirs: ['components/settings', 'components/invoicing', 'components/quoting',
                            'components/properties', 'components/comms', 'components/ui'], files: [] },
   { name: 'pages', dirs: ['pages'], files: [] },
+  // The remaining top-level components, which is everything under
+  // `components/` not already named above — so between this and `pages`, the
+  // guard now covers the whole of src/ rather than a growing list of corners.
+  { name: 'components', dirs: ['components'], files: [] },
 ]
 
 /**
@@ -159,6 +163,22 @@ const EXEMPT = {
   // fill would reduce it. Same call as CompleteVisitModal.
   'pages/OpsBoard.jsx': { allow: 1,
     reason: 'a filled checkbox with a white check on it — the pair is white-on-emerald, which passes' },
+
+  // --- remaining components ---
+  // The opportunity pipeline again (new -> qualified -> quoted -> won/lost,
+  // with purple), deferred alongside its twins in client/ and quoting/ so one
+  // decision is not split across four files. ClientCRMSummary also carries a
+  // StatCard `color` prop map keyed by COLOUR NAME, which is a presentational
+  // API rather than a severity.
+  'components/ClientCRMSummary.jsx': { allow: 8,
+    reason: 'opportunity pipeline plus a colour-name-keyed StatCard prop map — ordinal and presentational, not severity' },
+  'components/OpportunityLinker.jsx': { allow: 3,
+    reason: 'the same opportunity pipeline, deferred with it' },
+  // The user PICKS these: they are sticky-note paper colours, not a status.
+  'components/board/StickyNotes.jsx': { allow: 3,
+    reason: 'note paper swatches the user chooses — decorative, carrying no state at all' },
+  'components/CalendarView.jsx': { allow: 1,
+    reason: 'an orange booking-source dot — categorical, and orange is outside the status vocabulary entirely' },
 }
 
 function walk(dir) {
@@ -203,7 +223,7 @@ describe('BB-A11Y-02 — migrated surfaces go through the measured map', () => {
     // the achieved set here means removing one takes a deliberate edit in two
     // places, and the list doubles as the record of how far this has got.
     const done = MIGRATED.map(s => s.name)
-    for (const name of ['crew', 'schedule', 'client', 'office', 'pages']) {
+    for (const name of ['crew', 'schedule', 'client', 'office', 'pages', 'components']) {
       expect(done, `surface "${name}" was migrated and must stay covered`).toContain(name)
     }
   })
