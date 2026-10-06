@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Plus, X, RefreshCw } from 'lucide-react'
 import { get, post, patch, del } from '../../api'
+import { STATUS_DOT } from '../../theme/statusDots'
 
 /**
  * Sticky notes on Home — saved to the member's account (/api/notes), so they
@@ -97,7 +98,7 @@ export default function StickyNotes() {
 
       {state === 'error' ? (
         <div className="flex items-center gap-2.5 px-3.5 py-3 text-[12.5px]">
-          <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-amber-500" aria-hidden="true" />
+          <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${STATUS_DOT.attention}`} aria-hidden="true" />
           <span className="min-w-0 flex-1 text-ink-2">Couldn't load your notes.</span>
           <button onClick={load} className="inline-flex shrink-0 items-center gap-1 text-[11px] font-semibold text-link hover:text-link">
             <RefreshCw className="h-3 w-3" /> Retry

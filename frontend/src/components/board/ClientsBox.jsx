@@ -3,6 +3,7 @@ import { ArrowRight, Loader2, PenLine } from 'lucide-react'
 import { pushToast } from '../../utils/toastBus'
 import { ComposeModal } from '../comms/ComposeModal'
 import { SEV_DOT } from './tokens'
+import { STATUS_DOT } from '../../theme/statusDots'
 
 /**
  * The second box in Home's comms rail: client conversations waiting on a reply,
@@ -68,7 +69,7 @@ export default function ClientsBox({ items, cleared, onAction, actioningKey, con
 
       {visible.length === 0 ? (
         <div className="flex items-center gap-2.5 px-3.5 py-3.5">
-          <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-emerald-500" aria-hidden="true" />
+          <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${STATUS_DOT.ok}`} aria-hidden="true" />
           <span className="text-[12.5px] text-ink-2">No client replies waiting.</span>
         </div>
       ) : (

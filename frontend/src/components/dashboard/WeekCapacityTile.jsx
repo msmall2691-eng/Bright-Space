@@ -21,6 +21,7 @@
  */
 import { Gauge } from 'lucide-react'
 import { Tile, TileLoading, BarTip } from './primitives'
+import { STATUS_DOT } from '../../theme/statusDots'
 
 const DAY_LETTER = { mon: 'M', tue: 'T', wed: 'W', thu: 'T', fri: 'F', sat: 'S', sun: 'S' }
 
@@ -41,7 +42,7 @@ export function WeekCapacityTile({ loading, data, error, navigate }) {
             <span className="text-[11px] text-ink-3">booked</span>
             {over && (
               <span className="inline-flex items-center gap-1.5 text-[11px] text-amber-600 dark:text-amber-300">
-                <span className="w-1.5 h-1.5 rounded-full bg-amber-500" aria-hidden="true" />
+                <span className={`w-1.5 h-1.5 rounded-full ${STATUS_DOT.attention}`} aria-hidden="true" />
                 over capacity
               </span>
             )}
@@ -55,7 +56,7 @@ export function WeekCapacityTile({ loading, data, error, navigate }) {
           {/* Week bar */}
           <div className="mt-3 h-1.5 rounded-full bg-bg-2 overflow-hidden">
             <div
-              className={`h-full rounded-full ${over ? 'bg-amber-500' : 'bg-indigo-500'}`}
+              className={`h-full rounded-full ${over ? STATUS_DOT.attention : 'bg-indigo-500'}`}
               style={{ width: `${Math.min(100, pct || 0)}%` }}
             />
           </div>
@@ -81,7 +82,7 @@ export function WeekCapacityTile({ loading, data, error, navigate }) {
                           {/* Rounded data-end at the fill's top (away from the
                               baseline), square at the bottom — mark spec. */}
                           <div
-                            className={`absolute bottom-0 inset-x-0 rounded-t-sm ${dayOver ? 'bg-amber-500' : 'bg-indigo-500'}`}
+                            className={`absolute bottom-0 inset-x-0 rounded-t-sm ${dayOver ? STATUS_DOT.attention : 'bg-indigo-500'}`}
                             style={{ height: `${bookedPct}%` }}
                           />
                           {d.available_hours > 0 && (

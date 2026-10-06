@@ -25,11 +25,12 @@ import { get, patch, post } from '../api'
 import { toast } from '../utils/toastBus'
 import { confirmDialog } from '../utils/confirmBus'
 import { reportInvite } from '../utils/inviteFallback'
+import { STATUS_DOT } from '../theme/statusDots'
 
 const STATE = {
-  new: { dot: 'bg-amber-500', word: 'New' },
-  reviewing: { dot: 'bg-blue-500', word: 'Looking at it' },
-  approved: { dot: 'bg-emerald-500', word: 'Approved' },
+  new: { dot: STATUS_DOT.attention, word: 'New' },
+  reviewing: { dot: STATUS_DOT.info, word: 'Looking at it' },
+  approved: { dot: STATUS_DOT.ok, word: 'Approved' },
   declined: { dot: 'bg-ink-3/40', word: 'Declined' },
 }
 
@@ -107,7 +108,7 @@ export default function SubApplications() {
           <UserPlus className="h-5 w-5 text-link" /> Onboarding
         </h2>
         <p className="mt-2 flex items-start gap-1.5 text-[13px] text-ink-3">
-          <span className="mt-[6px] h-1.5 w-1.5 shrink-0 rounded-full bg-red-500" aria-hidden="true" />
+          <span className={`mt-[6px] h-1.5 w-1.5 shrink-0 rounded-full ${STATUS_DOT.problem}`} aria-hidden="true" />
           <span>Couldn’t load this just now. Nothing has changed — reload to try again.</span>
         </p>
       </div>

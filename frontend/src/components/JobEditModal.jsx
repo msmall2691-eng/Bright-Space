@@ -9,16 +9,17 @@ import { isoDateToBackendDow, shiftSeriesWeekday } from '../utils/recurringResch
 import { FIELD_LABELS } from './schedule/constants'
 import { confirmDialog } from '../utils/confirmBus'
 import { normalizeEmployee } from '../utils/employees'
+import { STATUS_DOT } from '../theme/statusDots'
 
 // Same dot+word vocabulary as JobDetail's STATUS_OPTIONS — this modal used to
 // render status as solid-filled pill buttons (a different idiom from every
 // other status control in the app). Kept local rather than importing from
 // JobDetail so the two pages don't couple on each other's module.
 const STATUS_OPTIONS = [
-  { value: 'unscheduled', label: 'unscheduled', dot: 'bg-amber-500' },
-  { value: 'scheduled',   label: 'scheduled',   dot: 'bg-blue-500' },
-  { value: 'in_progress', label: 'in progress', dot: 'bg-amber-500' },
-  { value: 'completed',   label: 'completed',   dot: 'bg-emerald-500' },
+  { value: 'unscheduled', label: 'unscheduled', dot: STATUS_DOT.attention },
+  { value: 'scheduled',   label: 'scheduled',   dot: STATUS_DOT.info },
+  { value: 'in_progress', label: 'in progress', dot: STATUS_DOT.attention },
+  { value: 'completed',   label: 'completed',   dot: STATUS_DOT.ok },
   { value: 'cancelled',   label: 'cancelled',   dot: 'bg-ink-3' },
 ]
 
@@ -787,7 +788,7 @@ export default function JobEditModal({ job, properties = [], clients = [], onClo
               informational and dismissible, not a validation error. */}
           {!dismissedPropertyWarning && propertyConflicts.length > 0 && (
             <div className="flex items-start gap-2.5 rounded-lg border border-hairline bg-panel px-3 py-2.5 text-sm">
-              <span className="w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0 mt-1.5" aria-hidden="true" />
+              <span className={`w-1.5 h-1.5 rounded-full ${STATUS_DOT.attention} shrink-0 mt-1.5`} aria-hidden="true" />
               <div className="flex-1 min-w-0">
                 <p className="font-medium text-ink">
                   {propertyConflicts.some(c => c.overlaps) ? 'Overlapping job at this property' : 'Another job at this property that day'}
@@ -824,7 +825,7 @@ export default function JobEditModal({ job, properties = [], clients = [], onClo
               <div className="flex flex-wrap gap-1.5 mb-3">
                 {assignedCleaners.map(cleaner => (
                   <div key={cleaner.id} className="flex items-center gap-1.5 bg-bg-2 border border-hairline-2 text-ink-2 px-2.5 py-1.5 rounded-md text-xs sm:text-sm">
-                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" aria-hidden="true" />
+                    <span className={`w-1.5 h-1.5 rounded-full ${STATUS_DOT.ok} shrink-0`} aria-hidden="true" />
                     <span className="truncate">{cleaner.name}</span>
                     <button
                       onClick={() => handleRemoveCleaner(cleaner.id)}
@@ -873,9 +874,9 @@ export default function JobEditModal({ job, properties = [], clients = [], onClo
                         ? 'text-amber-700'
                         : status === 'usually_off' ? 'text-ink-3' : 'text-emerald-600'
                     const dotCls = status === 'conflict' || status === 'off' || status === 'unavailable'
-                      ? 'bg-red-500' : status === 'same_day'
-                        ? 'bg-amber-500'
-                        : status === 'usually_off' ? 'bg-ink-3' : 'bg-emerald-500'
+                      ? STATUS_DOT.problem : status === 'same_day'
+                        ? STATUS_DOT.attention
+                        : status === 'usually_off' ? 'bg-ink-3' : STATUS_DOT.ok
                     /* Known statuses render their detail; anything the server
                        adds later degrades to NO hint, never to green "Free" —
                        an unrecognized "can't work" must not read as available. */
@@ -909,7 +910,7 @@ export default function JobEditModal({ job, properties = [], clients = [], onClo
 
             {assignedCleaners.length === 0 && (
               <p className="text-xs text-ink-3 mt-2 flex items-center gap-1.5">
-                <span className="w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0" aria-hidden="true" />
+                <span className={`w-1.5 h-1.5 rounded-full ${STATUS_DOT.attention} shrink-0`} aria-hidden="true" />
                 No cleaners assigned
               </p>
             )}
@@ -926,7 +927,7 @@ export default function JobEditModal({ job, properties = [], clients = [], onClo
               <ChevronDown className={`w-4 h-4 transition-transform ${showAdvanced ? 'rotate-180' : ''}`} />
               Advanced options
               {!showAdvanced && formData.notes && (
-                <span className="w-1.5 h-1.5 rounded-full bg-blue-500" />
+                <span className={`w-1.5 h-1.5 rounded-full ${STATUS_DOT.info}`} />
               )}
             </button>
           </div>
@@ -986,7 +987,7 @@ export default function JobEditModal({ job, properties = [], clients = [], onClo
             {/* Dispatch status */}
             {!isNew && (
               <div className="flex items-center gap-2.5 rounded-lg border border-hairline bg-panel px-3 py-2.5">
-                <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${job?.dispatched ? 'bg-emerald-500' : 'bg-ink-3'}`} aria-hidden="true" />
+                <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${job?.dispatched ? STATUS_DOT.ok : 'bg-ink-3'}`} aria-hidden="true" />
                 <div className="min-w-0 text-sm">
                   <p className="font-medium text-ink">
                     {job?.dispatched ? 'Dispatched' : 'Not dispatched'}
@@ -1001,14 +1002,14 @@ export default function JobEditModal({ job, properties = [], clients = [], onClo
 
           {error && (
             <div className="flex items-start gap-2.5 bg-panel border border-hairline text-ink-2 px-4 py-3 rounded-lg text-sm">
-              <span className="w-1.5 h-1.5 rounded-full bg-red-500 shrink-0 mt-1.5" aria-hidden="true" />
+              <span className={`w-1.5 h-1.5 rounded-full ${STATUS_DOT.problem} shrink-0 mt-1.5`} aria-hidden="true" />
               <span className="min-w-0">{error}</span>
             </div>
           )}
 
           {conflict && (
             <div className="flex items-start gap-2.5 rounded-lg border border-hairline bg-panel px-3 py-2.5 text-sm">
-              <span className="w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0 mt-1.5" aria-hidden="true" />
+              <span className={`w-1.5 h-1.5 rounded-full ${STATUS_DOT.attention} shrink-0 mt-1.5`} aria-hidden="true" />
               <div className="flex-1 min-w-0">
                 <p className="font-medium text-ink mb-1">Scheduling conflict</p>
                 <p className="text-ink-2 mb-2">{conflict}</p>

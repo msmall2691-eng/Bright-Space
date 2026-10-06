@@ -7,6 +7,7 @@ import { logout } from '../api'
 import { sidebarSectionsFor, SETTINGS_ITEM, iconFor } from '../nav/routes'
 import { useFavorites, toggleFavorite, isFavorite } from '../nav/favorites'
 import Kbd from './ui/Kbd'
+import { STATUS_DOT } from '../theme/statusDots'
 
 /**
  * Sidebar — the quiet Notion/Twenty-style nav. It sits directly on the app
@@ -60,7 +61,7 @@ function NavRow({ item, badge, pinnable = false, pinned = false }) {
           <span className="flex-1 truncate">{item.label}</span>
           {badge > 0 && (
             <span className="flex items-center gap-1.5">
-              <span className="h-1.5 w-1.5 rounded-full bg-red-500" />
+              <span className={`h-1.5 w-1.5 rounded-full ${STATUS_DOT.problem}`} />
               <span className="text-[11px] font-semibold tabular-nums text-ink-3">
                 {badge > 99 ? '99+' : badge}
               </span>
