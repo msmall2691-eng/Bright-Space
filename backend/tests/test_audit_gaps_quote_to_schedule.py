@@ -376,9 +376,12 @@ def test_quote_sourced_job_created_with_a_date_sends_the_dated_notice(ctx):
     from modules.scheduling.router import create_job, JobCreate
     db, c, p = ctx
     q = _mk_quote(db, c, status="accepted", property_id=p.id)
+    # A future date, relative to today — a hardcoded literal goes stale the day
+    # after it's written and create_job rejects a job in the past.
+    d = business_today() + timedelta(days=2)
     with patch("services.scheduled_notice.notify_customer_scheduled") as notice:
         create_job(JobCreate(client_id=c.id, title="From quote", property_id=p.id,
-                             scheduled_date="2026-10-05", start_time="09:00", end_time="12:00",
+                             scheduled_date=d.isoformat(), start_time="09:00", end_time="12:00",
                              quote_id=q.id), db=db, org_id=1)
     assert notice.call_count == 1
     assert notice.call_args.args[1].quote_id == q.id
@@ -392,8 +395,9 @@ def test_dating_the_auto_converted_job_sends_the_dated_notice(ctx):
     public_accept_quote(q.public_token, PublicAcceptRequest(name="Gap"), db=db)
     job = db.query(Job).filter(Job.quote_id == q.id).one()
     assert job.scheduled_date is None
+    d = business_today() + timedelta(days=2)
     with patch("services.scheduled_notice.notify_customer_scheduled") as notice:
-        update_job(job.id, JobUpdate(scheduled_date="2026-10-06", start_time="09:00",
+        update_job(job.id, JobUpdate(scheduled_date=d.isoformat(), start_time="09:00",
                                      end_time="12:00", allow_conflicts=True), db=db, org_id=1)
     assert notice.call_count == 1
 
