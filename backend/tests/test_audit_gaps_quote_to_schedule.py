@@ -376,9 +376,14 @@ def test_quote_sourced_job_created_with_a_date_sends_the_dated_notice(ctx):
     from modules.scheduling.router import create_job, JobCreate
     db, c, p = ctx
     q = _mk_quote(db, c, status="accepted", property_id=p.id)
+    # Relative, not a literal: create_job's _validate_job_timing rejects a past
+    # date (is_new=True only), so a hardcoded date here is a test that passes
+    # until the calendar reaches it and then fails forever. This one was
+    # "2026-10-05" and went red on 2026-10-06 with no code change.
+    soon = (business_today() + timedelta(days=7)).isoformat()
     with patch("services.scheduled_notice.notify_customer_scheduled") as notice:
         create_job(JobCreate(client_id=c.id, title="From quote", property_id=p.id,
-                             scheduled_date="2026-10-05", start_time="09:00", end_time="12:00",
+                             scheduled_date=soon, start_time="09:00", end_time="12:00",
                              quote_id=q.id), db=db, org_id=1)
     assert notice.call_count == 1
     assert notice.call_args.args[1].quote_id == q.id
