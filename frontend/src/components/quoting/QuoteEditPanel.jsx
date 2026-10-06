@@ -331,7 +331,7 @@ export default function QuoteEditPanel({
                 type="button"
                 onClick={() => lookupSpecs()}
                 disabled={!form.address?.trim() || specsState === 'loading'}
-                className={`flex items-center gap-1 text-[11px] font-medium ${STATUS_TEXT.info} hover:text-blue-400 disabled:text-ink-3 disabled:cursor-not-allowed`}>
+                className={`flex items-center gap-1 text-[11px] font-medium ${STATUS_TEXT.info} hover:text-blue-800 disabled:text-ink-3 disabled:cursor-not-allowed`}>
                 {specsState === 'loading' ? <Loader2 className="w-3 h-3 animate-spin" /> : <Search className="w-3 h-3" />}
                 Look up property
               </button>
@@ -352,11 +352,11 @@ export default function QuoteEditPanel({
             {form.address?.trim() && (
               <div className="mt-1.5 flex items-center gap-3 text-[11px] text-ink-3">
                 <span>Look up specs:</span>
-                <a className={`${STATUS_TEXT.info} hover:text-blue-400`} target="_blank" rel="noopener noreferrer"
+                <a className={`${STATUS_TEXT.info} hover:text-blue-800`} target="_blank" rel="noopener noreferrer"
                   href={`https://www.google.com/search?q=${encodeURIComponent(form.address + ' property records bedrooms bathrooms square feet')}`}>Google records</a>
-                <a className={`${STATUS_TEXT.info} hover:text-blue-400`} target="_blank" rel="noopener noreferrer"
+                <a className={`${STATUS_TEXT.info} hover:text-blue-800`} target="_blank" rel="noopener noreferrer"
                   href={`https://www.zillow.com/homes/${encodeURIComponent(form.address)}_rb/`}>Zillow</a>
-                <a className={`${STATUS_TEXT.info} hover:text-blue-400`} target="_blank" rel="noopener noreferrer"
+                <a className={`${STATUS_TEXT.info} hover:text-blue-800`} target="_blank" rel="noopener noreferrer"
                   href={`https://www.google.com/maps/search/${encodeURIComponent(form.address)}`}>Maps</a>
               </div>
             )}
@@ -403,7 +403,7 @@ export default function QuoteEditPanel({
                   ))}
                 </select>
                 <button onClick={() => setForm(f => ({ ...f, items: [...f.items, { ...EMPTY_ITEM }] }))}
-                  className={`text-xs ${STATUS_TEXT.info} hover:text-blue-400 flex items-center gap-1`}>
+                  className={`text-xs ${STATUS_TEXT.info} hover:text-blue-800 flex items-center gap-1`}>
                   <Plus className="w-3 h-3" /> Add
                 </button>
               </div>
@@ -543,7 +543,7 @@ export default function QuoteEditPanel({
             </button>
           )}
           {sendDirty && (
-            <span className={`self-center text-[11px] ${STATUS_TEXT.attention} dark:text-amber-300 shrink-0`}>
+            <span className={`self-center text-[11px] ${STATUS_TEXT.attention} shrink-0`}>
               Update to send
             </span>
           )}

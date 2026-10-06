@@ -41,6 +41,11 @@ import { describe, it, expect } from 'vitest'
 import { readFileSync, readdirSync, statSync } from 'node:fs'
 import { dirname, join, relative } from 'node:path'
 import { fileURLToPath } from 'node:url'
+// Imported, not re-stated: the three guards at the bottom derive what a dark
+// half and a hover step should be FROM the maps, so a re-measure that moves a
+// step moves them with it.
+import { STATUS_DOT } from '../theme/statusDots'
+import { STATUS_TEXT, STATUS_ICON } from '../theme/statusText'
 
 const SRC = join(dirname(fileURLToPath(import.meta.url)), '..')
 
@@ -437,6 +442,110 @@ describe('BB-A11Y-02 — migrated surfaces go through the measured map', () => {
         src.split('\n').forEach((line, i) => {
           if (/\w+=`\$\{STATUS_/.test(line)) {
             offenders.push(`${rel(path)}:${i + 1}  attribute takes a bare template; use ={STATUS_...}`)
+          }
+        })
+      }
+    }
+    expect(offenders, offenders.join('\n  ')).toEqual([])
+  })
+
+  /**
+   * The three things a half-finished replacement leaves behind.
+   *
+   * None of these is caught by the bans above — the class that remains is a
+   * perfectly legal one, it is just in the wrong relationship with the map now
+   * sitting next to it. All three shipped across several merged slices before
+   * anyone looked, which is the argument for pinning them rather than trusting
+   * the next sweep to be tidier.
+   *
+   * `STEP_OF` reads the maps rather than restating them, so re-measuring a hue
+   * moves these assertions with it.
+   */
+  const STEP_OF = {}
+  for (const [name, map] of [['STATUS_TEXT', STATUS_TEXT], ['STATUS_ICON', STATUS_ICON], ['STATUS_DOT', STATUS_DOT]]) {
+    for (const [key, value] of Object.entries(map)) {
+      const parts = value.split(' ')
+      STEP_OF[`${name}.${key}`] = {
+        kind: name === 'STATUS_DOT' ? 'bg' : 'text',
+        light: parts.find(p => !p.startsWith('dark:')) || '',
+        dark: parts.find(p => p.startsWith('dark:')) || '',
+      }
+    }
+  }
+  /** Backtick segments, with the `${STATUS_*.x}` names each one mentions. */
+  function segmentsOf(src) {
+    const out = []
+    src.split('\n').forEach((line, i) => {
+      for (const seg of line.match(/`[^`]*`/g) || []) {
+        const refs = [...seg.matchAll(/\$\{(STATUS_(?:TEXT|ICON|DOT)\.[a-z]+)\}/g)].map(m => m[1])
+        if (refs.length) out.push({ line: i + 1, seg, refs })
+      }
+    })
+    return out
+  }
+
+  it('a map that brings its own dark half does not sit next to a second one', () => {
+    // Every site read `text-rose-600 dark:text-rose-400`. Replacing the light
+    // half alone leaves TWO dark:text-* classes on the element — the map's and
+    // the leftover — and which one applies is Tailwind's emission order, not
+    // the order in the class attribute. 69 of these shipped.
+    //
+    // A `dark:bg-*` beside a TEXT map is a background, not a duplicate, and is
+    // deliberately allowed: components/comms/primitives.jsx and
+    // components/dashboard/constants.js both rely on that pair.
+    const offenders = []
+    for (const surface of MIGRATED) {
+      for (const { path, src } of filesFor(surface)) {
+        for (const { line, seg, refs } of segmentsOf(src)) {
+          const kinds = new Set(refs.map(r => STEP_OF[r]).filter(s => s && s.dark).map(s => s.kind))
+          for (const m of seg.matchAll(/dark:(text|bg)-[a-z]+-\d{3}(?![\w/])/g)) {
+            if (kinds.has(m[1])) offenders.push(`${rel(path)}:${line}  ${m[0]} duplicates the map's own dark half`)
+          }
+        }
+      }
+    }
+    expect(offenders, 'Drop the leftover; the map already carries its dark ' +
+      'step:\n  ' + offenders.join('\n  ')).toEqual([])
+  })
+
+  it('a hover step is a darker step of the resting hue, not a jump or a no-op', () => {
+    // Each of these was a coherent one-step-darker ramp before the migration —
+    // `text-red-600 hover:text-red-700`. Moving only the resting step left the
+    // hover stranded: `rose-700 hover:text-red-700` changes hue mid-interaction,
+    // `emerald-800 hover:text-emerald-800` does nothing at all, and
+    // `blue-700 hover:text-blue-400` goes LIGHTER, which is a legibility
+    // regression exactly when the pointer is on the control.
+    const offenders = []
+    for (const surface of MIGRATED) {
+      for (const { path, src } of filesFor(surface)) {
+        for (const { line, seg, refs } of segmentsOf(src)) {
+          const wants = new Set(refs.map(r => STEP_OF[r]).filter(Boolean).map(s => {
+            const m = /^text-([a-z]+)-(\d{3})$/.exec(s.light)
+            return m ? `hover:text-${m[1]}-${Math.min(900, Number(m[2]) + 100)}` : null
+          }).filter(Boolean))
+          // Two different maps in one segment cannot name one right answer.
+          if (wants.size !== 1) continue
+          const want = [...wants][0]
+          for (const m of seg.matchAll(/hover:text-[a-z]+-\d{3}\b/g)) {
+            if (m[0] !== want) offenders.push(`${rel(path)}:${line}  ${m[0]} — want ${want}`)
+          }
+        }
+      }
+    }
+    expect(offenders, offenders.join('\n  ')).toEqual([])
+  })
+
+  it('a template holding one interpolation and nothing else is just the value', () => {
+    // `${STATUS_TEXT.ok}` in backticks IS STATUS_TEXT.ok. Harmless, but it is
+    // the same shape as the inert-interpolation bug above, so a reader has to
+    // stop and check the quoting every time. 67 of them, from the repair pass
+    // that fixed that bug.
+    const offenders = []
+    for (const surface of MIGRATED) {
+      for (const { path, src } of filesFor(surface)) {
+        src.split('\n').forEach((line, i) => {
+          for (const m of line.matchAll(/`(\$\{STATUS_(?:TEXT|ICON|DOT)\.[a-z]+\})`/g)) {
+            offenders.push(`${rel(path)}:${i + 1}  ${m[0]} — drop the backticks`)
           }
         })
       }

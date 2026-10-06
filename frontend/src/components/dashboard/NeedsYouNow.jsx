@@ -126,7 +126,7 @@ export function NeedsYouNow({ attention = [], loading, navigate }) {
                 </div>
                 <div className="text-[11px] text-ink-3 truncate">
                   {r.needs_approval
-                    ? <>{fmt(r.current_date)} → <span className={`${STATUS_TEXT.attention} dark:text-amber-300 font-medium`}>{fmt(r.requested_date)}</span>{r.requested_scope === 'future' ? ' · + all future' : ''} — busy slot</>
+                    ? <>{fmt(r.current_date)} → <span className={`${STATUS_TEXT.attention} font-medium`}>{fmt(r.requested_date)}</span>{r.requested_scope === 'future' ? ' · + all future' : ''} — busy slot</>
                     : (r.message ? `“${r.message}”` : 'Customer asked to move this visit')}
                 </div>
               </button>

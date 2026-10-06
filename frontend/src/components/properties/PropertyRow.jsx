@@ -184,7 +184,7 @@ export function PropertyRow({
                 (active=false) — jobs and history stay, so no "Delete" here. */}
             <button onClick={(e) => { e.stopPropagation(); deactivateOne(p) }}
               title={`Deactivate ${p.name} — hides it from lists, keeps its jobs and history`}
-              className={`text-xs ${STATUS_TEXT.problem} hover:text-red-700 border border-hairline hover:border-red-300 hover:bg-red-50 dark:hover:bg-red-500/10 px-3 py-1.5 rounded-lg transition-colors`}>
+              className={`text-xs ${STATUS_TEXT.problem} hover:text-rose-800 border border-hairline hover:border-red-300 hover:bg-red-50 dark:hover:bg-red-500/10 px-3 py-1.5 rounded-lg transition-colors`}>
               Deactivate
             </button>
           </div>

@@ -143,7 +143,7 @@ export default function UsersAdmin() {
               placeholder="Full name" disabled={inviting} className={inputCls} />
           </label>
           <label className="block">
-            <span className={labelCls}>Email <span className={`${STATUS_TEXT.problem}`}>*</span></span>
+            <span className={labelCls}>Email <span className={STATUS_TEXT.problem}>*</span></span>
             <input type="email" value={invEmail} onChange={e => setInvEmail(e.target.value)}
               placeholder="person@email.com" disabled={inviting} className={inputCls} />
           </label>

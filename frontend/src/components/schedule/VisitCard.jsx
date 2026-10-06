@@ -153,7 +153,7 @@ export default function VisitCard({ v, jobs, properties, clients, onSelect, empN
           {needsCleaner && (
             // Same calm amber-dot cue as the month chips — a word plus a dot,
             // never color alone.
-            <span className={`inline-flex items-center gap-1.5 ${STATUS_TEXT.attention} dark:text-amber-300 font-medium`}>
+            <span className={`inline-flex items-center gap-1.5 ${STATUS_TEXT.attention} font-medium`}>
               <span className="w-[7px] h-[7px] rounded-full bg-amber-400 ring-2 ring-amber-200/70 dark:ring-amber-500/25" aria-hidden="true" />
               Needs a cleaner
             </span>

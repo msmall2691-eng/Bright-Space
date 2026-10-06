@@ -27,7 +27,7 @@ export function IcalFeedRow({ ical, onRemove }) {
   let statusPill
   if (status === 'failed' || status === 'retrying') {
     statusPill = (
-      <span className={`inline-flex items-center gap-1.5 text-[11px] font-medium ${STATUS_TEXT.problem} dark:text-red-300`} title={ical.last_sync_error || ''}>
+      <span className={`inline-flex items-center gap-1.5 text-[11px] font-medium ${STATUS_TEXT.problem}`} title={ical.last_sync_error || ''}>
         <span className={`w-1.5 h-1.5 rounded-full ${STATUS_DOT.problem} shrink-0`} aria-hidden="true" /> Failed {lastAt || ''}
       </span>
     )
@@ -37,7 +37,7 @@ export function IcalFeedRow({ ical, onRemove }) {
     // means the feed is stale (same cutoff as the property-level rollup).
     const stale = isStaleSync(ical.last_synced_at)
     statusPill = stale ? (
-      <span className={`inline-flex items-center gap-1.5 text-[11px] font-medium ${STATUS_TEXT.attention} dark:text-amber-300`}
+      <span className={`inline-flex items-center gap-1.5 text-[11px] font-medium ${STATUS_TEXT.attention}`}
         title="No clean sync in 24h+ — check this feed">
         <span className={`w-1.5 h-1.5 rounded-full ${STATUS_DOT.attention} shrink-0`} aria-hidden="true" /> Stale · synced {lastAt || '—'}
       </span>
@@ -75,7 +75,7 @@ export function IcalFeedRow({ ical, onRemove }) {
         <div className="flex items-center gap-1 shrink-0">
           <button
             onClick={onRemove}
-            className={`${STATUS_TEXT.problem} hover:text-red-600 p-2 -m-1 rounded-lg`}
+            className={`${STATUS_TEXT.problem} hover:text-rose-800 p-2 -m-1 rounded-lg`}
             title="Remove feed"
           >
             <Trash2 className="w-3.5 h-3.5" />

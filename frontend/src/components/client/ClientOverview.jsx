@@ -82,12 +82,12 @@ function Empty({ icon: Icon, children }) {
 function activityLine(item) {
   const d = item.data || {}
   switch (item.type) {
-    case 'job': return { icon: Briefcase, tone: `${STATUS_TEXT.info}`, text: `Job — ${d.title || 'Cleaning'}` }
+    case 'job': return { icon: Briefcase, tone: STATUS_TEXT.info, text: `Job — ${d.title || 'Cleaning'}` }
     case 'quote': return { icon: FileText, tone: 'text-link', text: `Quote ${d.quote_number || ''}`.trim() }
-    case 'invoice': return { icon: Receipt, tone: `${STATUS_TEXT.ok}`, text: `Invoice ${d.invoice_number || ''}`.trim() }
+    case 'invoice': return { icon: Receipt, tone: STATUS_TEXT.ok, text: `Invoice ${d.invoice_number || ''}`.trim() }
     case 'message': return { icon: MessageSquare, tone: 'text-purple-500', text: `${d.direction === 'inbound' ? 'Received' : 'Sent'} ${d.channel || 'message'}` }
     case 'email': return { icon: Mail, tone: 'text-violet-500', text: d.subject || 'Email' }
-    case 'opportunity': return { icon: TrendingUp, tone: `${STATUS_TEXT.attention}`, text: `Deal — ${d.title || 'Opportunity'}` }
+    case 'opportunity': return { icon: TrendingUp, tone: STATUS_TEXT.attention, text: `Deal — ${d.title || 'Opportunity'}` }
     case 'gcal_event': return { icon: CalendarDays, tone: 'text-cyan-500', text: d.title || 'Calendar event' }
     default: return { icon: Clock, tone: 'text-ink-3', text: d.summary || 'Activity' }
   }
@@ -129,12 +129,12 @@ export default function ClientOverview({
             icon={DollarSign} accent={STATUS_TEXT.ok} onClick={() => setTab('invoices')} />
           <StatCard label="Balance owed" value={money(outstanding)}
             sub={`${unpaidInvoices.length} unpaid`} icon={AlertCircle}
-            accent={outstanding > 0 ? `${STATUS_TEXT.attention}` : 'text-ink'} onClick={() => setTab('invoices')} />
+            accent={outstanding > 0 ? STATUS_TEXT.attention : 'text-ink'} onClick={() => setTab('invoices')} />
           <StatCard label="Visits done" value={completedVisits} sub="completed"
             icon={CheckCircle2} onClick={() => goToScheduleSection?.('client-all-jobs-section')} />
           <StatCard label="Next visit" value={nextVisit ? formatDateShort(nextVisit.scheduled_date) : '—'}
             sub={nextVisit ? (nextVisit.address || 'scheduled') : 'none scheduled'} icon={CalendarCheck}
-            accent={nextVisit ? `${STATUS_TEXT.info}` : 'text-ink-3'} onClick={() => setTab('calendar')} />
+            accent={nextVisit ? STATUS_TEXT.info : 'text-ink-3'} onClick={() => setTab('calendar')} />
           <StatCard label="Recurring" value={activeSeries.length} sub="active series"
             icon={Repeat} onClick={() => goToScheduleSection?.('client-recurring-section')} />
         </div>
@@ -230,7 +230,7 @@ export default function ClientOverview({
             ? <Empty icon={Receipt}>No invoices yet.</Empty>
             : invoices.slice(0, 4).map(inv => (
               <Row key={inv.id} icon={Receipt}
-                tone={inv.status === 'overdue' ? `${STATUS_TEXT.problem}` : `${STATUS_TEXT.ok}`}
+                tone={inv.status === 'overdue' ? STATUS_TEXT.problem : STATUS_TEXT.ok}
                 title={`${inv.invoice_number || `Invoice ${inv.id}`} · ${money(inv.total)}`}
                 meta={inv.status === 'overdue' ? 'Overdue'
                   : inv.status === 'paid' ? 'Paid'

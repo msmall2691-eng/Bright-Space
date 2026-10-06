@@ -17,7 +17,7 @@ const MENTION_RE = /(@[A-Z][\w'’.\-]*(?:\s[A-Z][\w'’.\-]*)?)/g
 function withMentions(text) {
   return String(text).split(MENTION_RE).map((part, i) =>
     i % 2 === 1
-      ? <span key={i} className={`font-semibold ${STATUS_TEXT.attention} dark:text-amber-400`}>{part}</span>
+      ? <span key={i} className={`font-semibold ${STATUS_TEXT.attention}`}>{part}</span>
       : part)
 }
 
@@ -44,7 +44,7 @@ export function MessageBubble({ m, isFirst, showTime, contactName }) {
     return (
       <div className="flex justify-center my-3">
         <div className="max-w-[min(85%,40rem)] bg-bg-2 border border-hairline text-ink text-[13px] px-4 py-2.5 rounded-2xl">
-          <div className={`flex items-center gap-1.5 text-[10px] font-semibold ${STATUS_TEXT.attention} dark:text-amber-400 mb-1`}>
+          <div className={`flex items-center gap-1.5 text-[10px] font-semibold ${STATUS_TEXT.attention} mb-1`}>
             <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${STATUS_DOT.attention}`} aria-hidden="true" />
             <StickyNote className="w-3 h-3" />
             Internal note
@@ -126,7 +126,7 @@ export function MessageBubble({ m, isFirst, showTime, contactName }) {
             to skim past. Visual only: no retry affordance exists in the app,
             so none is invented here. */}
         {failed && (
-          <div className={`flex items-center justify-end gap-1 mt-1 px-1 text-[11px] font-medium ${STATUS_TEXT.problem} dark:text-red-400`}>
+          <div className={`flex items-center justify-end gap-1 mt-1 px-1 text-[11px] font-medium ${STATUS_TEXT.problem}`}>
             <AlertTriangle className="w-3 h-3" /> Not delivered
           </div>
         )}

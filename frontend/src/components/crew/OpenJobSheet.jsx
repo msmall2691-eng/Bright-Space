@@ -117,7 +117,7 @@ export default function OpenJobSheet({ job, onClose, onClaim, onAccept, busy = f
         {job.address ? (
           <a href={`https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(job.address)}`}
             target="_blank" rel="noopener noreferrer"
-            className={`mt-0.5 flex items-center gap-1 text-[13px] ${STATUS_TEXT.info} dark:text-blue-400 active:opacity-60`}>
+            className={`mt-0.5 flex items-center gap-1 text-[13px] ${STATUS_TEXT.info} active:opacity-60`}>
             <MapPin className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
             <span className="underline decoration-blue-400/40 underline-offset-2">{job.address}</span>
           </a>

@@ -133,7 +133,7 @@ export default function SavedViewsBar({ entityType, currentConfig, onApply, defa
         {/* Push the drifted filters into the active view */}
         {active && dirty && (
           <button type="button" onClick={() => updateView(active.id, { config: currentConfig })}
-            className={`h-8 min-h-0 px-1 mx-2 text-[12px] font-medium ${STATUS_TEXT.info} hover:text-blue-700 whitespace-nowrap shrink-0`}>
+            className={`h-8 min-h-0 px-1 mx-2 text-[12px] font-medium ${STATUS_TEXT.info} hover:text-blue-800 whitespace-nowrap shrink-0`}>
             Update “{active.name}”
           </button>
         )}

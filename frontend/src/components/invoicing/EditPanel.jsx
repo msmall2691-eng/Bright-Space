@@ -73,7 +73,7 @@ export function EditPanel({
           <div className="flex items-center justify-between mb-3">
             <label className={lbl.replace('mb-1.5', '')}>Line Items</label>
             <button onClick={() => setForm(f => ({ ...f, items: [...f.items, { ...EMPTY_ITEM }] }))}
-              className={`flex items-center gap-1 text-[11px] ${STATUS_TEXT.info} hover:text-blue-400 transition-colors`}>
+              className={`flex items-center gap-1 text-[11px] ${STATUS_TEXT.info} hover:text-blue-800 transition-colors`}>
               <Plus className="w-3 h-3" /> Add line
             </button>
           </div>

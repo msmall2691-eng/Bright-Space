@@ -844,7 +844,7 @@ export default function JobCreateModal({
                                 {namesCollide && (
                                   <span
                                     title="Same name as a cleaner on your crew roster — confirm this is the customer, not the crew."
-                                    className={`shrink-0 inline-flex items-center gap-1 text-[10px] font-medium ${STATUS_TEXT.attention} dark:text-amber-400`}
+                                    className={`shrink-0 inline-flex items-center gap-1 text-[10px] font-medium ${STATUS_TEXT.attention}`}
                                   >
                                     <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${STATUS_DOT.attention} dark:${STATUS_DOT.attention}`} aria-hidden />
                                     Also a cleaner

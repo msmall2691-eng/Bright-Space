@@ -25,7 +25,7 @@ export default function ClientDetailsTab({
                 no way to open the job it named. */}
             {upcomingJobs.slice(0, 5).map(j => {
               const typeColor = j.job_type === 'str_turnover' ? 'border-orange-400/30 bg-orange-500/10' : j.job_type === 'commercial' ? 'border-green-400/30 bg-green-500/10' : 'border-blue-400/30 bg-blue-500/10'
-              const textColor = j.job_type === 'str_turnover' ? 'text-orange-600' : j.job_type === 'commercial' ? `${STATUS_TEXT.ok}` : 'text-link'
+              const textColor = j.job_type === 'str_turnover' ? 'text-orange-600' : j.job_type === 'commercial' ? STATUS_TEXT.ok : 'text-link'
               return (
                 <Link key={j.id} to={`/jobs/${j.id}`}
                   className={`shrink-0 ${typeColor} border rounded-lg px-3 py-2 min-w-[130px] no-underline hover:brightness-95 transition-[filter]`}>

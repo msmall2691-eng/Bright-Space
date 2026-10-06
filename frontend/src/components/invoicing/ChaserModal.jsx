@@ -46,12 +46,12 @@ export function ChaserModal({ chaser, setChaser, sendChaserItem, updateChaserMsg
                 <div className="text-[11px] text-ink-3">
                   {item.invoice_number} · ${(item.amount || 0).toFixed(2)}
                   {item.days_overdue ? <span className={`${STATUS_TEXT.problem} font-medium`}> · {item.days_overdue}d overdue</span> : null}
-                  {!item.client_email && <span className={`${STATUS_TEXT.attention}`}> · no email, will SMS</span>}
+                  {!item.client_email && <span className={STATUS_TEXT.attention}> · no email, will SMS</span>}
                 </div>
               </div>
               <button onClick={() => sendChaserItem(item)} disabled={item.sending || item.sent}
                 className={`flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg font-medium shrink-0 transition-colors ${
-                  item.sent ? `bg-panel border border-hairline-2 ${STATUS_TEXT.ok} dark:text-emerald-300 cursor-default`
+                  item.sent ? `bg-panel border border-hairline-2 ${STATUS_TEXT.ok} cursor-default`
                   : 'bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-50'}`}>
                 {item.sent ? <><CheckCircle className="w-3.5 h-3.5" /> Sent</>
                   : item.sending ? 'Sending…'

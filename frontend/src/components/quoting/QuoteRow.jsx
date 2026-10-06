@@ -73,7 +73,7 @@ export default function QuoteRow({
             )}
             {q.status === 'changes_requested' && <span className={`w-2 h-2 rounded-full ${STATUS_DOT.attention}`} title="Customer requested changes" />}
             {q.last_send_error && ['draft', 'sent', 'viewed'].includes(q.status) && (
-              <span className={`inline-flex items-center gap-1.5 text-xs font-medium ${STATUS_TEXT.problem} dark:text-red-300`}
+              <span className={`inline-flex items-center gap-1.5 text-xs font-medium ${STATUS_TEXT.problem}`}
                 title={q.last_send_error}>
                 <span className={`w-1.5 h-1.5 rounded-full ${STATUS_DOT.problem} shrink-0`} aria-hidden="true" />
                 send failed
@@ -113,7 +113,7 @@ export default function QuoteRow({
           )}
           {canEdit && q.status === 'sent' && (
             <button onClick={() => onCopyLink(q)}
-              className={`flex items-center gap-1 text-xs px-2.5 py-1.5 rounded-lg border transition-colors ${copiedQuoteId === q.id ? `border-hairline-2 bg-panel ${STATUS_TEXT.ok} dark:text-emerald-300` : 'border-transparent bg-bg-2 text-ink-2 hover:bg-bg-3 hover:text-ink'}`}>
+              className={`flex items-center gap-1 text-xs px-2.5 py-1.5 rounded-lg border transition-colors ${copiedQuoteId === q.id ? `border-hairline-2 bg-panel ${STATUS_TEXT.ok}` : 'border-transparent bg-bg-2 text-ink-2 hover:bg-bg-3 hover:text-ink'}`}>
               {copiedQuoteId === q.id ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
               {copiedQuoteId === q.id ? 'Copied' : 'Copy Link'}
             </button>

@@ -43,7 +43,7 @@ export default function OpsSummary({ stats, isToday, compact = false }) {
               {c.warn && (
                 <span className={`w-1.5 h-1.5 rounded-full ${STATUS_DOT.attention} shrink-0`} aria-hidden="true" />
               )}
-              <span className={`font-semibold tabular-nums ${c.warn ? `${STATUS_TEXT.attention}` : 'text-ink'}`}>
+              <span className={`font-semibold tabular-nums ${c.warn ? STATUS_TEXT.attention : 'text-ink'}`}>
                 {c.value}
               </span>
               <span className="text-ink-3">{c.label}</span>

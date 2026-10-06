@@ -74,7 +74,7 @@ export default function ClientMobileHeader({
         <StatCard label="Upcoming" value={visitStats?.upcoming ?? upcomingJobs.length} className="p-0 pr-2" />
         <StatCard label="Revenue" value={`$${totalRevenue.toFixed(0)}`} accent={STATUS_TEXT.ok} className="p-0 px-2" />
         <StatCard label="Outstanding" value={`$${outstanding.toFixed(0)}`}
-          accent={outstanding > 0 ? `${STATUS_TEXT.attention}` : 'text-ink-2'} className="p-0 pl-2" />
+          accent={outstanding > 0 ? STATUS_TEXT.attention : 'text-ink-2'} className="p-0 pl-2" />
       </div>
 
 

@@ -58,10 +58,10 @@ export function SweepResultsPanel({ sweep, onDismiss, rebuildOne, rebuildingId }
         {(sweep.properties || []).map(p => (
           <div key={p.property_id} className="flex items-start justify-between gap-3 text-xs border-b border-hairline/60 last:border-0 py-1.5">
             <div className="min-w-0">
-              <span className={`mr-1.5 ${p.ok ? `${STATUS_TEXT.ok}` : `${STATUS_TEXT.attention}`}`}>{p.ok ? '✓' : '⚠'}</span>
+              <span className={`mr-1.5 ${p.ok ? STATUS_TEXT.ok : STATUS_TEXT.attention}`}>{p.ok ? '✓' : '⚠'}</span>
               <span className="text-ink font-medium">{p.property}</span>
               <span className="text-ink-3"> — {p.scheduled} scheduled, {p.on_google} on Google</span>
-              {p.sync_error && <span className={`${STATUS_TEXT.problem}`}> · {p.sync_error}</span>}
+              {p.sync_error && <span className={STATUS_TEXT.problem}> · {p.sync_error}</span>}
               {p.missing_dates?.length > 0 && (
                 <div className={`${STATUS_TEXT.attention} mt-0.5`}>Missing turnover: {p.missing_dates.join(', ')}</div>
               )}

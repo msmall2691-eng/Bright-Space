@@ -836,7 +836,7 @@ export default function CalendarView({
                             </span>
                           )}
                           {!j.is_immediate_turnover && j.turnover_lead_warning && (
-                            <span className={`inline-flex items-center gap-1 text-[9px] font-bold uppercase tracking-wide ${STATUS_TEXT.attention} dark:text-amber-300 shrink-0`}
+                            <span className={`inline-flex items-center gap-1 text-[9px] font-bold uppercase tracking-wide ${STATUS_TEXT.attention} shrink-0`}
                                   title={`Only ~${Math.max(0, Math.round(j.turnover_lead_hours))}h before the next guest checks in`}>
                               <span className={`w-1.5 h-1.5 rounded-full ${STATUS_DOT.attention} shrink-0`} aria-hidden="true" />
                               tight

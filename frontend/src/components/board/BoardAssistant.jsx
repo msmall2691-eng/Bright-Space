@@ -173,7 +173,7 @@ export default function BoardAssistant({ open, onClose, sections, navigate, onAc
                   <button onClick={clearNoise}
                     className={`inline-flex items-center gap-1 rounded-md border px-2.5 py-1.5 text-[12px] font-medium ${
                       confirmClear
-                        ? `border-rose-400 ${STATUS_TEXT.problem} dark:text-rose-300`
+                        ? `border-rose-400 ${STATUS_TEXT.problem}`
                         : 'border-hairline-2 bg-panel text-ink-2 hover:bg-bg-2'}`}>
                     <Trash2 className="h-3 w-3" />
                     {confirmClear

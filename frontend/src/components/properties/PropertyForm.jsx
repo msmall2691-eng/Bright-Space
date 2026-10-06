@@ -279,7 +279,7 @@ export function PropertyForm({
           </div>
 
           {lookupMsg && (
-            <div className={`mt-2 text-xs ${lookupMsg.tone === 'ok' ? `${STATUS_TEXT.ok}` : lookupMsg.tone === 'err' ? `${STATUS_TEXT.problem}` : 'text-ink-3'}`}>
+            <div className={`mt-2 text-xs ${lookupMsg.tone === 'ok' ? STATUS_TEXT.ok : lookupMsg.tone === 'err' ? STATUS_TEXT.problem : 'text-ink-3'}`}>
               {lookupMsg.text}
             </div>
           )}

@@ -268,7 +268,7 @@ export default function HealthPanel({ onClose, onChanged, onOpenSeries, onOpenDu
                         onClick={fix.run}
                         disabled={busyId === issue.schedule_id}
                         className={`shrink-0 text-[12px] font-medium underline underline-offset-2 disabled:opacity-50 ${
-                          fix.danger ? `${STATUS_TEXT.problem} hover:text-red-700` : 'text-ink-2 hover:text-ink'
+                          fix.danger ? `${STATUS_TEXT.problem} hover:text-rose-800` : 'text-ink-2 hover:text-ink'
                         }`}>
                         {fix.short}
                       </button>

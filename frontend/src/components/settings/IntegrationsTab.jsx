@@ -218,7 +218,7 @@ export default function IntegrationsTab({ toast, active }) {
                     <code className="bg-bg-2 px-1 rounded text-ink-2">{a.email}</code>
                     {a.needs_reconnect
                       ? <span className={`${STATUS_TEXT.problem} font-medium`}>— reconnect needed{a.last_sync_error ? ` (${a.last_sync_error})` : ''}</span>
-                      : <span className={`${STATUS_TEXT.ok}`}>✓ syncing</span>}
+                      : <span className={STATUS_TEXT.ok}>✓ syncing</span>}
                   </div>
                 ))}
               </div>

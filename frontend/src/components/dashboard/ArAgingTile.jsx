@@ -27,11 +27,11 @@ import { STATUS_TEXT } from '../../theme/statusText'
 const BUCKETS = [
   { key: 'current', label: 'Current', hint: 'not yet 30 days', sumTone: 'text-ink',
     status: 'sent' },
-  { key: '30', label: '30–60 days', hint: 'past due', sumTone: `${STATUS_TEXT.attention} dark:text-amber-300`,
+  { key: '30', label: '30–60 days', hint: 'past due', sumTone: STATUS_TEXT.attention,
     status: 'overdue' },
-  { key: '60', label: '60–90 days', hint: 'past due', sumTone: `${STATUS_TEXT.attention} dark:text-amber-400`,
+  { key: '60', label: '60–90 days', hint: 'past due', sumTone: STATUS_TEXT.attention,
     status: 'overdue' },
-  { key: '90', label: '90+ days', hint: 'at risk', sumTone: `${STATUS_TEXT.problem} dark:text-red-300`,
+  { key: '90', label: '90+ days', hint: 'at risk', sumTone: STATUS_TEXT.problem,
     status: 'overdue' },
 ]
 

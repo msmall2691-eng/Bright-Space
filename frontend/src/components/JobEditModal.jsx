@@ -762,7 +762,7 @@ export default function JobEditModal({ job, properties = [], clients = [], onClo
           {/* Property Picker */}
           <div>
             <label className="block text-sm font-semibold text-ink-2 mb-3">
-              Property <span className={`${STATUS_TEXT.problem}`}>*</span>
+              Property <span className={STATUS_TEXT.problem}>*</span>
             </label>
             <select
               value={formData.property_id}
@@ -871,9 +871,9 @@ export default function JobEditModal({ job, properties = [], clients = [], onClo
                         ? 'hover:bg-amber-50 dark:hover:bg-amber-500/10'
                         : 'hover:bg-bg-2'
                     const hintCls = status === 'conflict' || status === 'off' || status === 'unavailable'
-                      ? `${STATUS_TEXT.problem}` : status === 'same_day'
-                        ? `${STATUS_TEXT.attention}`
-                        : status === 'usually_off' ? 'text-ink-3' : `${STATUS_TEXT.ok}`
+                      ? STATUS_TEXT.problem : status === 'same_day'
+                        ? STATUS_TEXT.attention
+                        : status === 'usually_off' ? 'text-ink-3' : STATUS_TEXT.ok
                     const dotCls = status === 'conflict' || status === 'off' || status === 'unavailable'
                       ? STATUS_DOT.problem : status === 'same_day'
                         ? STATUS_DOT.attention

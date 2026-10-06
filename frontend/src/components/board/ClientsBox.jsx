@@ -104,7 +104,7 @@ export default function ClientsBox({ items, cleared, onAction, actioningKey, con
                   <button onClick={() => onAction(it, resolve)} disabled={busy}
                     className={`mt-0.5 inline-flex shrink-0 items-center gap-1 rounded-md border px-2 py-1 text-[11px] font-semibold transition-colors disabled:opacity-60 ${
                       confirming
-                        ? `border-rose-400 bg-rose-500/10 ${STATUS_TEXT.problem} dark:text-rose-300`
+                        ? `border-rose-400 bg-rose-500/10 ${STATUS_TEXT.problem}`
                         : 'border-hairline bg-bg-2 text-ink-2 hover:border-hairline-2 hover:text-ink'
                     }`}>
                     {busy && <Loader2 className="h-3 w-3 animate-spin" />}
