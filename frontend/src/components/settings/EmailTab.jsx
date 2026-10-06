@@ -215,7 +215,7 @@ export default function EmailTab({ toast, active }) {
           <label className="flex items-center gap-3 cursor-pointer">
             <input type="checkbox" checked={emailConfig.email_auto_enrich === 'true'}
               onChange={e => setEmailConfig(c => ({ ...c, email_auto_enrich: e.target.checked ? 'true' : 'false' }))}
-              className="w-4 h-4 rounded border-hairline text-link focus:ring-0" />
+              className="w-4 h-4 rounded border-hairline text-link" />
             <div>
               <div className="text-sm font-medium text-ink">Auto-create contacts from emails</div>
               <div className="text-xs text-ink-3">When enabled, unknown email senders are automatically added as leads</div>
