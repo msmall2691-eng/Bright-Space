@@ -10,6 +10,7 @@ import { FIELD_LABELS } from './schedule/constants'
 import { confirmDialog } from '../utils/confirmBus'
 import { normalizeEmployee } from '../utils/employees'
 import { STATUS_DOT } from '../theme/statusDots'
+import { STATUS_TEXT } from '../theme/statusText'
 
 // Same dot+word vocabulary as JobDetail's STATUS_OPTIONS — this modal used to
 // render status as solid-filled pill buttons (a different idiom from every
@@ -761,7 +762,7 @@ export default function JobEditModal({ job, properties = [], clients = [], onClo
           {/* Property Picker */}
           <div>
             <label className="block text-sm font-semibold text-ink-2 mb-3">
-              Property <span className="text-red-500">*</span>
+              Property <span className={`${STATUS_TEXT.problem}`}>*</span>
             </label>
             <select
               value={formData.property_id}
@@ -870,9 +871,9 @@ export default function JobEditModal({ job, properties = [], clients = [], onClo
                         ? 'hover:bg-amber-50 dark:hover:bg-amber-500/10'
                         : 'hover:bg-bg-2'
                     const hintCls = status === 'conflict' || status === 'off' || status === 'unavailable'
-                      ? 'text-red-600' : status === 'same_day'
-                        ? 'text-amber-700'
-                        : status === 'usually_off' ? 'text-ink-3' : 'text-emerald-600'
+                      ? `${STATUS_TEXT.problem}` : status === 'same_day'
+                        ? `${STATUS_TEXT.attention}`
+                        : status === 'usually_off' ? 'text-ink-3' : `${STATUS_TEXT.ok}`
                     const dotCls = status === 'conflict' || status === 'off' || status === 'unavailable'
                       ? STATUS_DOT.problem : status === 'same_day'
                         ? STATUS_DOT.attention
@@ -1043,7 +1044,7 @@ export default function JobEditModal({ job, properties = [], clients = [], onClo
               <button
                 onClick={handleDelete}
                 disabled={removing || saving}
-                className="inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium text-red-600 hover:bg-red-50 disabled:opacity-60 transition-colors"
+                className={`inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium ${STATUS_TEXT.problem} hover:bg-red-50 disabled:opacity-60 transition-colors`}
               >
                 <Trash2 className="w-4 h-4" /> Delete
               </button>

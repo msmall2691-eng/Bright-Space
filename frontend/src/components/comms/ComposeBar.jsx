@@ -3,6 +3,7 @@ import { Send, StickyNote, Sparkles, Loader2, BellRing, CalendarCheck, AtSign } 
 import { Kbd } from './primitives'
 import { apptDatePhrase, apptReminderText, apptConfirmText } from './utils'
 import { STATUS_DOT } from '../../theme/statusDots'
+import { STATUS_TEXT } from '../../theme/statusText'
 
 const roleLabel = (r) => (r === 'cleaner' ? 'cleaner' : 'office')
 
@@ -114,7 +115,7 @@ export function ComposeBar({
           {allowNotes && (
             <button onClick={() => setNoteMode(true)}
               className={`inline-flex items-center gap-1.5 text-[12px] font-medium px-3 py-1.5 rounded-md transition-colors ${
-                noteMode ? 'bg-panel text-amber-600 dark:text-amber-400 shadow-xs' : 'text-ink-3 hover:text-ink-2'
+                noteMode ? `bg-panel ${STATUS_TEXT.attention} dark:text-amber-400 shadow-xs` : 'text-ink-3 hover:text-ink-2'
               }`}>
               <StickyNote className="w-3 h-3" /> Note
             </button>
@@ -136,7 +137,7 @@ export function ComposeBar({
 
         {flash && (
           <span className={`inline-flex items-center gap-1.5 text-[11px] font-medium animate-fade-in ${
-            flash.ok ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400'
+            flash.ok ? `${STATUS_TEXT.ok} dark:text-emerald-400` : `${STATUS_TEXT.problem} dark:text-red-400`
           }`}>
             <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${flash.ok ? STATUS_DOT.ok : STATUS_DOT.problem}`} aria-hidden="true" />
             {flash.msg}

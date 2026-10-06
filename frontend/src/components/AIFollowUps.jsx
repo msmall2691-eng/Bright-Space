@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom'
 import { AlertTriangle, ArrowRight } from 'lucide-react'
 import { get } from '../api'
 import { STATUS_DOT } from '../theme/statusDots'
+import { STATUS_ICON } from '../theme/statusText'
 
 export function AIFollowUps({ title, className = '' }) {
   const [data, setData] = useState(null)
@@ -21,7 +22,7 @@ export function AIFollowUps({ title, className = '' }) {
   return (
     <div className={`bg-panel rounded-2xl border border-hairline p-5 ${className}`}>
       <div className="flex items-center gap-2 mb-3">
-        <AlertTriangle className="w-4 h-4 text-amber-500" />
+        <AlertTriangle className={`w-4 h-4 ${STATUS_ICON.attention}`} />
         <h3 className="text-sm font-semibold text-ink">
           {title || `${data.total} Item${data.total !== 1 ? 's' : ''} Need Attention`}
         </h3>

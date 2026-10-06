@@ -3,6 +3,7 @@ import { Mail, Plug, Shield, ChevronDown, CheckCircle, AlertTriangle, Loader2 } 
 import { get, post } from '../../api'
 import { inp, lbl } from './constants'
 import { STATUS_DOT } from '../../theme/statusDots'
+import { STATUS_TEXT, STATUS_ICON } from '../../theme/statusText'
 
 /** "3m ago" / "2h ago" / "yesterday" from an ISO timestamp. */
 function relAgo(iso) {
@@ -132,7 +133,7 @@ export default function EmailTab({ toast, active }) {
         {/* Credentials form */}
         <div className="bg-panel border border-hairline rounded-xl p-5 space-y-4 mb-5">
           <div className="flex items-center gap-2 text-sm font-semibold text-ink">
-            <Shield className="w-4 h-4 text-blue-500" /> Credentials
+            <Shield className={`w-4 h-4 ${STATUS_ICON.info}`} /> Credentials
           </div>
 
           <div>
@@ -241,21 +242,21 @@ export default function EmailTab({ toast, active }) {
           <div className="mt-4 bg-panel border border-hairline rounded-xl p-4 space-y-2">
             <div className="text-sm font-semibold text-ink">Connection Test Results</div>
             {testResult.error ? (
-              <div className="flex items-center gap-2 text-sm text-red-600">
+              <div className={`flex items-center gap-2 text-sm ${STATUS_TEXT.problem}`}>
                 <AlertTriangle className="w-4 h-4" /> {testResult.error}
               </div>
             ) : (
               <>
                 <div className="flex items-center gap-2 text-sm">
                   {testResult.imap === 'connected'
-                    ? <><CheckCircle className="w-4 h-4 text-emerald-500" /><span className="text-emerald-700 dark:text-emerald-300">IMAP: Connected ({testResult.email_count} emails)</span></>
-                    : <><AlertTriangle className="w-4 h-4 text-red-500" /><span className="text-red-600">IMAP: {testResult.imap}</span></>
+                    ? <><CheckCircle className={`w-4 h-4 ${STATUS_ICON.ok}`} /><span className={`${STATUS_TEXT.ok} dark:text-emerald-300`}>IMAP: Connected ({testResult.email_count} emails)</span></>
+                    : <><AlertTriangle className={`w-4 h-4 ${STATUS_ICON.problem}`} /><span className={`${STATUS_TEXT.problem}`}>IMAP: {testResult.imap}</span></>
                   }
                 </div>
                 <div className="flex items-center gap-2 text-sm">
                   {testResult.smtp === 'connected'
-                    ? <><CheckCircle className="w-4 h-4 text-emerald-500" /><span className="text-emerald-700 dark:text-emerald-300">SMTP: Connected (outbound email ready)</span></>
-                    : <><AlertTriangle className="w-4 h-4 text-red-500" /><span className="text-red-600">SMTP: {testResult.smtp}</span></>
+                    ? <><CheckCircle className={`w-4 h-4 ${STATUS_ICON.ok}`} /><span className={`${STATUS_TEXT.ok} dark:text-emerald-300`}>SMTP: Connected (outbound email ready)</span></>
+                    : <><AlertTriangle className={`w-4 h-4 ${STATUS_ICON.problem}`} /><span className={`${STATUS_TEXT.problem}`}>SMTP: {testResult.smtp}</span></>
                   }
                 </div>
               </>

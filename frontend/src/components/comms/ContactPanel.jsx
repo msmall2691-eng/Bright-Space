@@ -11,6 +11,7 @@ import RecordLink from '../RecordLink'
 import AiInsight from '../AiInsight'
 import { LinkClientControl } from './LinkClientControl'
 import { STATUS_DOT } from '../../theme/statusDots'
+import { STATUS_TEXT } from '../../theme/statusText'
 
 const money = (n) => `$${(Number(n) || 0).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`
 
@@ -256,7 +257,7 @@ export function ContactPanel({ detail, context, onRemind, onClose, onDraftQuote,
                 {unpaidInvoices.map(inv => (
                   <div key={`inv-${inv.id}`} className="flex items-center justify-between gap-2 text-[12px] bg-bg-2 rounded-lg px-2.5 py-1.5">
                     <RecordLink type="invoice" id={inv.id} label={inv.invoice_number || 'Invoice'} icon className="min-w-0" />
-                    <span className={`text-[10px] font-medium shrink-0 flex items-center gap-0.5 ${inv.status === 'overdue' ? 'text-red-500' : 'text-ink-2'}`}>
+                    <span className={`text-[10px] font-medium shrink-0 flex items-center gap-0.5 ${inv.status === 'overdue' ? `${STATUS_TEXT.problem}` : 'text-ink-2'}`}>
                       <DollarSign className="w-2.5 h-2.5" />{money(inv.total)}
                     </span>
                   </div>
@@ -295,7 +296,7 @@ export function ContactPanel({ detail, context, onRemind, onClose, onDraftQuote,
                   // Neutral bg-2 circles; the icon shape + a subtle icon tone
                   // carry note/in/out, not a tinted fill (owner veto).
                   const iconConfig = {
-                    note:     { icon: StickyNote, bg: 'bg-bg-2', text: 'text-amber-600 dark:text-amber-300' },
+                    note:     { icon: StickyNote, bg: 'bg-bg-2', text: `${STATUS_TEXT.attention} dark:text-amber-300` },
                     inbound:  { icon: ArrowLeft,  bg: 'bg-bg-2', text: 'text-ink-3' },
                     outbound: { icon: Send,       bg: 'bg-bg-2', text: 'text-link' },
                   }

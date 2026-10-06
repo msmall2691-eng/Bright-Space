@@ -5,6 +5,7 @@ import {
 } from 'lucide-react'
 import { crumbsFor, createActionsFor, currentRole } from '../nav/routes'
 import { useFavorites, toggleFavorite } from '../nav/favorites'
+import { STATUS_TEXT } from '../theme/statusText'
 
 function NewMenu({ actions }) {
   const navigate = useNavigate()
@@ -128,7 +129,7 @@ export default function Header({ onMenuToggle, sidebarCollapsed, onSidebarExpand
             onClick={pinRecord}
             title={isPinned ? 'Remove from favorites' : 'Add to favorites'}
             className={`flex h-6 w-6 min-h-0 shrink-0 items-center justify-center rounded-md transition-colors ${
-              isPinned ? 'text-amber-500 hover:text-ink-3' : 'text-ink-3 hover:text-amber-500'
+              isPinned ? `${STATUS_TEXT.attention} hover:text-ink-3` : 'text-ink-3 hover:text-amber-500'
             }`}
           >
             <Star className={`h-3.5 w-3.5 ${isPinned ? 'fill-current' : ''}`} />

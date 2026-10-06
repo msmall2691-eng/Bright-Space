@@ -4,6 +4,7 @@ import {
 import { STATUS_COLORS } from './constants'
 import StatCard from '../ui/StatCard'
 import { STATUS_DOT } from '../../theme/statusDots'
+import { STATUS_TEXT } from '../../theme/statusText'
 
 /** Mobile-only client identity header. The desktop >= lg viewport uses
  *  ClientLeftRail instead — this component is `lg:hidden`. */
@@ -24,7 +25,7 @@ export default function ClientMobileHeader({
       <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
         <div className="flex items-center gap-3 sm:gap-4 min-w-0">
           <div className="w-11 h-11 sm:w-14 sm:h-14 rounded-2xl bg-blue-500/10 flex items-center justify-center shrink-0">
-            <span className="text-blue-500 font-bold text-lg sm:text-xl">{(client.first_name || client.name)[0]?.toUpperCase()}</span>
+            <span className={`${STATUS_TEXT.info} font-bold text-lg sm:text-xl`}>{(client.first_name || client.name)[0]?.toUpperCase()}</span>
           </div>
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-2 flex-wrap">
@@ -71,9 +72,9 @@ export default function ClientMobileHeader({
           summary applies to the desktop rail's Pipeline block too. */}
       <div className="grid grid-cols-3 gap-2 mt-3 pt-3 border-t border-hairline divide-x divide-hairline">
         <StatCard label="Upcoming" value={visitStats?.upcoming ?? upcomingJobs.length} className="p-0 pr-2" />
-        <StatCard label="Revenue" value={`$${totalRevenue.toFixed(0)}`} accent="text-emerald-600" className="p-0 px-2" />
+        <StatCard label="Revenue" value={`$${totalRevenue.toFixed(0)}`} accent={STATUS_TEXT.ok} className="p-0 px-2" />
         <StatCard label="Outstanding" value={`$${outstanding.toFixed(0)}`}
-          accent={outstanding > 0 ? 'text-amber-600' : 'text-ink-2'} className="p-0 pl-2" />
+          accent={outstanding > 0 ? `${STATUS_TEXT.attention}` : 'text-ink-2'} className="p-0 pl-2" />
       </div>
 
 

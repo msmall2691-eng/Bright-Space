@@ -3,6 +3,7 @@ import { ICAL_SOURCES, PROPERTY_TYPE_CONFIG } from './constants'
 import { IcalFeedRow } from './IcalFeedRow'
 import PropertyPhoto from '../PropertyPhoto'
 import { STATUS_DOT } from '../../theme/statusDots'
+import { STATUS_TEXT, STATUS_ICON } from '../../theme/statusText'
 
 const propType = (p) => (p?.property_type || '').toLowerCase()
 
@@ -69,7 +70,7 @@ export function PropertyRow({
               </div>
               <div className="text-sm text-ink-2 flex items-center gap-2 mt-1">
                 {!clients.find(c => c.id === p.client_id) && (
-                  <AlertTriangle className="w-3 h-3 text-red-400" title="Client not found" />
+                  <AlertTriangle className={`w-3 h-3 ${STATUS_ICON.problem}`} title="Client not found" />
                 )}
                 {clientName(p.client_id)}
               </div>
@@ -93,7 +94,7 @@ export function PropertyRow({
                       </span>
                     )}
                     {(p.icals?.length || 0) > 0 && (
-                      <span className="flex items-center gap-1 text-xs text-green-600">
+                      <span className={`flex items-center gap-1 text-xs ${STATUS_TEXT.ok}`}>
                         <Link className="w-3 h-3" />{p.icals.length} feed{p.icals.length !== 1 ? 's' : ''}
                       </span>
                     )}
@@ -183,7 +184,7 @@ export function PropertyRow({
                 (active=false) — jobs and history stay, so no "Delete" here. */}
             <button onClick={(e) => { e.stopPropagation(); deactivateOne(p) }}
               title={`Deactivate ${p.name} — hides it from lists, keeps its jobs and history`}
-              className="text-xs text-red-600 hover:text-red-700 border border-hairline hover:border-red-300 hover:bg-red-50 dark:hover:bg-red-500/10 px-3 py-1.5 rounded-lg transition-colors">
+              className={`text-xs ${STATUS_TEXT.problem} hover:text-red-700 border border-hairline hover:border-red-300 hover:bg-red-50 dark:hover:bg-red-500/10 px-3 py-1.5 rounded-lg transition-colors`}>
               Deactivate
             </button>
           </div>

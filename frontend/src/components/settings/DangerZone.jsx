@@ -4,6 +4,7 @@ import { post } from '../../api'
 import { confirmDialog } from '../../utils/confirmBus'
 import { inp, lbl } from './constants'
 import { STATUS_DOT } from '../../theme/statusDots'
+import { STATUS_TEXT } from '../../theme/statusText'
 
 /** Danger Zone — collapsed by default at the bottom of the General tab.
  *  Owns three destructive actions:
@@ -90,7 +91,7 @@ export default function DangerZone({ toast, automationSettings, setAutomationSet
   return (
     <div className="pt-8" data-testid="danger-zone">
       <button type="button" onClick={() => setShowDangerZone(v => !v)}
-        className="text-lg font-bold text-red-600 mb-2 flex items-center gap-2 hover:text-red-700">
+        className={`text-lg font-bold ${STATUS_TEXT.problem} mb-2 flex items-center gap-2 hover:text-red-700`}>
         <AlertTriangle className="w-5 h-5" /> Danger Zone
         <ChevronDown className={`w-4 h-4 transition-transform ${showDangerZone ? 'rotate-180' : ''}`} />
       </button>

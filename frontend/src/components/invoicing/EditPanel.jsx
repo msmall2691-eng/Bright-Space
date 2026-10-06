@@ -2,6 +2,7 @@ import { ChevronRight, FileText, Plus, Send, Trash2, X } from 'lucide-react'
 import { CustomFieldsForm } from '../CustomFields'
 import { EMPTY_ITEM, inp, lbl, sub, totalAmt } from './constants'
 import { STATUS_DOT } from '../../theme/statusDots'
+import { STATUS_TEXT } from '../../theme/statusText'
 
 /** Slide-over Edit/Create invoice form: client picker, dynamic
  *  line items (add / remove / edit qty + unit price), tax + due
@@ -72,7 +73,7 @@ export function EditPanel({
           <div className="flex items-center justify-between mb-3">
             <label className={lbl.replace('mb-1.5', '')}>Line Items</label>
             <button onClick={() => setForm(f => ({ ...f, items: [...f.items, { ...EMPTY_ITEM }] }))}
-              className="flex items-center gap-1 text-[11px] text-blue-500 hover:text-blue-400 transition-colors">
+              className={`flex items-center gap-1 text-[11px] ${STATUS_TEXT.info} hover:text-blue-400 transition-colors`}>
               <Plus className="w-3 h-3" /> Add line
             </button>
           </div>

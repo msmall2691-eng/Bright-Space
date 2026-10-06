@@ -3,6 +3,7 @@ import { Mail, Calendar, Link2, Unlink, CheckCircle } from 'lucide-react'
 import { get, patch, del } from '../api'
 import { confirmDialog } from '../utils/confirmBus'
 import { STATUS_DOT } from '../theme/statusDots'
+import { STATUS_ICON } from '../theme/statusText'
 
 /**
  * "Your Google account" — the per-user Gmail + Calendar grant (Twenty-style
@@ -86,7 +87,7 @@ export default function GoogleAccountCard() {
             your Calendar drives scheduling — separate from the shared business connection.
           </p>
         </div>
-        {acct?.connected && acct.status === 'connected' && <CheckCircle className="w-5 h-5 text-emerald-500 shrink-0" />}
+        {acct?.connected && acct.status === 'connected' && <CheckCircle className={`w-5 h-5 ${STATUS_ICON.ok} shrink-0`} />}
       </div>
 
       {notice && (

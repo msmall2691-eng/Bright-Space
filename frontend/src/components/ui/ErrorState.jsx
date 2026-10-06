@@ -1,5 +1,6 @@
 import { AlertTriangle } from 'lucide-react'
 import Button from './Button'
+import { STATUS_ICON } from '../../theme/statusText'
 
 /**
  * ErrorState — consistent "this failed, here's how to recover" placeholder.
@@ -30,7 +31,7 @@ export default function ErrorState({
       } ${className}`}
     >
       <div className="w-12 h-12 rounded-2xl bg-bg border border-hairline flex items-center justify-center mb-3">
-        <AlertTriangle className="w-5 h-5 text-amber-500" />
+        <AlertTriangle className={`w-5 h-5 ${STATUS_ICON.attention}`} />
       </div>
       {title && <p className="text-sm font-semibold text-ink">{title}</p>}
       {description && (
