@@ -6,11 +6,14 @@ address (workflow guardrail — a job always hangs off a property). A client wit
 no property AND no address now 422s instead of silently making an empty-address
 property; that case is covered in test_require_property.py.
 """
+from datetime import timedelta
+
 import pytest
 
 from database.db import SessionLocal
 from database.models import Client, Property, Job
 from modules.scheduling.router import create_job, JobCreate
+from utils.dates import business_today
 
 
 @pytest.fixture
@@ -30,9 +33,13 @@ def bare_client():
 
 
 def _payload(client_id):
+    # Relative, not a literal: create_job rejects a past date, so "2026-12-15"
+    # would have started failing on 2026-12-16. The date is incidental here —
+    # every assertion in this file is about the property, not the day.
     return JobCreate(
         client_id=client_id, title="Quick Clean", job_type="residential",
-        scheduled_date="2026-12-15", start_time="09:00", end_time="12:00",
+        scheduled_date=(business_today() + timedelta(days=7)).isoformat(),
+        start_time="09:00", end_time="12:00",
     )
 
 
