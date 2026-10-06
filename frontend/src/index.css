@@ -5,9 +5,38 @@ layer(base);
 
 @custom-variant dark (&:where(.theme-console, .theme-console *));
 
-@theme {
-  --breakpoint-shell: 900px;
+/* BB-A11Y-04 — every token below is an INDIRECTION into a design token that a
+   `body.theme-*` / `body.mode-clean` / `body.accent-*` block redefines, so this
+   block MUST stay `inline`. It is not a style preference; it is the difference
+   between the theme picker working and doing nothing at all.
 
+   A plain `@theme` is emitted as `:root, :host { --color-panel: var(--panel); … }`.
+   Per the custom-property spec a `var()` reference is substituted at
+   computed-value time ON THE ELEMENT THE DECLARATION APPLIES TO — here `:root` —
+   and children inherit the already-resolved result. Every theme in this app is
+   declared on `body` (see theme.js: applyTheme toggles classes on document.body,
+   and the selectors are `body.mode-clean` / `body.mode-clean.theme-console` /
+   `body.theme-neon`), one level BELOW `:root`. So `--color-panel` resolved once,
+   against the Paper defaults on `:root`, and every `bg-panel` / `bg-bg` /
+   `text-ink` / `text-ink-3` / `border-hairline` / `text-link` / `bg-indigo-*`
+   utility in the app was pinned to Paper in all four themes — including the
+   DEFAULT one, whose `--panel` is `#ffffff` while cards painted `#fbf9f3`.
+   Picking Console in Settings changed `--panel` to `#1a1a1e` and repainted
+   nothing: the shell went dark through the raw-var rules (`.public-surface`,
+   `body.theme-console .bb-surface`) and the `dark:` variant, which key off the
+   class rather than a token, while every panel, card and line of body text
+   stayed on the cream palette.
+
+   `@theme inline` substitutes the value INTO the utility — `.bg-panel` becomes
+   `background-color: var(--panel)` — so it resolves at the element and picks up
+   whatever `body` declares. Nothing reads `var(--color-*)` by hand (only
+   `--color-gray-200`, stock Tailwind, in the border-compat rule below), so
+   inlining costs nothing.
+
+   The rule for anything added here: if the value is a `var()` into a token any
+   theme block redefines, it belongs in THIS block, not the static one below.
+   Held by __tests__/themeTokenIndirection.test.js. */
+@theme inline {
   --color-frame: var(--frame, var(--bg-2));
   --color-bg: var(--bg);
   --color-bg-2: var(--bg-2);
@@ -38,6 +67,10 @@ layer(base);
      active nav label or an accent-coloured word; `bg-indigo-600` stays the
      fill, because it carries white ink on top. */
   --color-link: rgb(var(--accent-link));
+}
+
+@theme {
+  --breakpoint-shell: 900px;
 
   --color-brand-50: #f0f9ff;
   --color-brand-100: #e0f2fe;
