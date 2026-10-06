@@ -9,6 +9,7 @@ import AiInsight from '../AiInsight'
 import { get } from '../../api'
 import { EMPTY_ITEM, isPlaceholderName, serviceOptions, scopeForService } from './constants'
 import DuplicateClientPrompt from '../clients/DuplicateClientPrompt'
+import { STATUS_DOT } from '../../theme/statusDots'
 
 /** Right-side (bottom-sheet on mobile) quote-editor panel.
  *
@@ -176,7 +177,7 @@ export default function QuoteEditPanel({
           {selected && selected.last_send_error && ['draft', 'sent', 'viewed'].includes(selected.status) && (
             <div className="rounded-lg border border-hairline bg-panel p-3 text-sm">
               <div className="flex items-start gap-2">
-                <span className="w-1.5 h-1.5 rounded-full shrink-0 mt-1.5 bg-red-500" aria-hidden="true" />
+                <span className={`w-1.5 h-1.5 rounded-full shrink-0 mt-1.5 ${STATUS_DOT.problem}`} aria-hidden="true" />
                 <div className="min-w-0">
                   <div className="font-semibold text-ink mb-1">Last send failed — the customer didn't get this quote</div>
                   <div className="text-ink-2">{selected.last_send_error}</div>
@@ -189,7 +190,7 @@ export default function QuoteEditPanel({
           {selected && selected.requested_changes_message && (
             <div className="rounded-lg border border-hairline bg-panel p-3 text-sm">
               <div className="flex items-start gap-2">
-                <span className="w-1.5 h-1.5 rounded-full shrink-0 mt-1.5 bg-amber-500" aria-hidden="true" />
+                <span className={`w-1.5 h-1.5 rounded-full shrink-0 mt-1.5 ${STATUS_DOT.attention}`} aria-hidden="true" />
                 <div className="min-w-0">
                   <div className="font-semibold text-ink mb-1">Customer requested changes</div>
                   <div className="text-ink-2 whitespace-pre-wrap">“{selected.requested_changes_message}”</div>
@@ -201,7 +202,7 @@ export default function QuoteEditPanel({
           {selected && selected.status === 'accepted' && (
             <div className="rounded-lg border border-hairline bg-panel p-3 text-sm">
               <div className="flex items-start gap-2">
-                <span className="w-1.5 h-1.5 rounded-full shrink-0 mt-1.5 bg-emerald-500" aria-hidden="true" />
+                <span className={`w-1.5 h-1.5 rounded-full shrink-0 mt-1.5 ${STATUS_DOT.ok}`} aria-hidden="true" />
                 <div className="min-w-0">
                   <div className="font-semibold text-ink">Accepted{selected.accepted_by_name ? ` by ${selected.accepted_by_name}` : ''} ✓</div>
                   {selected.accepted_at && <div className="text-[11px] text-ink-3 mt-0.5">{new Date(selected.accepted_at).toLocaleString()}</div>}
@@ -212,7 +213,7 @@ export default function QuoteEditPanel({
           {selected && selected.status === 'declined' && (
             <div className="rounded-lg border border-hairline bg-panel p-3 text-sm">
               <div className="flex items-start gap-2">
-                <span className="w-1.5 h-1.5 rounded-full shrink-0 mt-1.5 bg-red-500" aria-hidden="true" />
+                <span className={`w-1.5 h-1.5 rounded-full shrink-0 mt-1.5 ${STATUS_DOT.problem}`} aria-hidden="true" />
                 <div className="min-w-0">
                   <div className="font-semibold text-ink">Declined{selected.declined_by_name ? ` by ${selected.declined_by_name}` : ''}</div>
                   {selected.declined_reason && <div className="text-ink-2 mt-0.5">“{selected.declined_reason}”</div>}

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { Mail, Plug, Shield, ChevronDown, CheckCircle, AlertTriangle, Loader2 } from 'lucide-react'
 import { get, post } from '../../api'
 import { inp, lbl } from './constants'
+import { STATUS_DOT } from '../../theme/statusDots'
 
 /** "3m ago" / "2h ago" / "yesterday" from an ISO timestamp. */
 function relAgo(iso) {
@@ -92,7 +93,7 @@ export default function EmailTab({ toast, active }) {
 
         {/* Status indicator — hairline card + dot (design law: no filled/tinted banners). */}
         <div className="flex items-start gap-3 p-4 rounded-xl border border-hairline bg-panel mb-5">
-          <span className={`mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full ${hasCredentials ? 'bg-emerald-500' : 'bg-amber-500'}`} aria-hidden="true" />
+          <span className={`mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full ${hasCredentials ? STATUS_DOT.ok : STATUS_DOT.attention}`} aria-hidden="true" />
           {hasCredentials
             ? <div><div className="text-sm font-medium text-ink">Credentials Found</div><div className="text-xs text-ink-3">{credentialsSource === 'env' ? 'Using Railway environment variables (SMTP_USER / SMTP_PASS)' : 'Using saved database settings'}</div></div>
             : <div><div className="text-sm font-medium text-ink">Not Connected</div><div className="text-xs text-ink-3">Enter your Gmail address and App Password, or set SMTP_USER and SMTP_PASS env vars on Railway</div></div>
@@ -107,7 +108,7 @@ export default function EmailTab({ toast, active }) {
           const ok = lastSync.status === 'ok'
           const authFail = lastSync.status === 'auth_failed'
           const noCreds = lastSync.status === 'no_credentials'
-          const dot = ok ? 'bg-emerald-500' : authFail ? 'bg-red-500' : 'bg-amber-500'
+          const dot = ok ? STATUS_DOT.ok : authFail ? STATUS_DOT.problem : STATUS_DOT.attention
           const when = relAgo(lastSync.at)
           const title = ok ? 'Auto-sync is working'
             : authFail ? 'Authentication failed — check your App Password'
