@@ -161,16 +161,24 @@ export const SETTINGS_ITEM = {
 const TOP_LEVEL = [...NAV_SECTIONS.flatMap(s => s.items), SETTINGS_ITEM]
 
 /**
- * The global create actions — shared by the topbar "+ New" menu and the quick
- * switcher. Each deep-links to the page that owns the create flow with the
- * param that auto-opens its modal (?new=1 / ?compose=1), so neither consumer
- * has to mount those modals itself.
+ * The global create actions — shared by the topbar "+ New" menu (Header.jsx),
+ * the quick switcher (GlobalSearch.jsx), and Home's "Quick actions" tiles
+ * (components/board/QuickActions.jsx). Each deep-links to the page that owns
+ * the create flow with the param that auto-opens its modal (?new=1 /
+ * ?compose=1), so no consumer has to mount those modals itself.
+ *
+ * Every entry MUST have a `to`: all three consumers navigate with it AND key
+ * off it (Header.jsx:44-46, GlobalSearch.jsx:126/131/187), so a URL-less entry
+ * is a dead row with a colliding key. An action with no URL belongs to the page
+ * that can perform it, not here — see the "Quick note" note in QuickActions.jsx.
+ * routes.test.js enforces both halves of this.
  */
 export const CREATE_ACTIONS = [
   { label: 'New lead',    icon: Inbox,         to: '/requests?new=1',            keywords: 'create lead request intake' },
   { label: 'New message', icon: MessageSquare, to: '/comms?compose=1',           keywords: 'create message sms text compose' },
   { label: 'New job',     icon: CalendarDays,  to: '/schedule?new=1',            keywords: 'create job visit book schedule appointment' },
   { label: 'New quote',   icon: FileText,      to: '/quotes?new=1',              keywords: 'create quote estimate billing' },
+  { label: 'New invoice', icon: Receipt,       to: '/billing?view=invoices&new=1', keywords: 'create invoice bill money payment receivable' },
   { label: 'New client',  icon: Users,         to: '/clients?new=1',             keywords: 'create client customer contact person' },
 ]
 
@@ -223,9 +231,11 @@ export function sidebarSectionsFor(role) {
     .filter(section => section.items.length > 0)
 }
 
-/** Create actions visible to a role. Every create flow (lead, message, job,
- *  quote, client) is an admin/manager write in the backend, so viewers get
- *  none — the "+ New" menu and switcher hide rather than offer 403s. */
+/** Create actions visible to a role. Every flow in CREATE_ACTIONS is an
+ *  admin/manager write in the backend, so viewers get none — the "+ New" menu,
+ *  the switcher and Home's quick-action tiles hide rather than offer 403s.
+ *  This is the ONE role gate for creates: consumers test the returned list's
+ *  length instead of re-deriving the predicate (Header.jsx:146). */
 export function createActionsFor(role) {
   return role === 'admin' || role === 'manager' ? CREATE_ACTIONS : []
 }

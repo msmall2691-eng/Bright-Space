@@ -5,7 +5,7 @@ fastapi==0.142.2
 # of every advisory affecting the versions in that range.
 starlette==1.7.0
 uvicorn[standard]==0.54.0
-sqlalchemy==2.1.1
+sqlalchemy==2.1.2
 # BB-DEPS-03: psycopg 3, not psycopg2. SQLAlchemy 2.1 changed what a bare
 # postgresql:// URL resolves to (psycopg2 -> psycopg 3), so staying on
 # psycopg2 meant the DBAPI was decided by whichever SQLAlchemy was pinned --
@@ -15,8 +15,8 @@ sqlalchemy==2.1.1
 # [binary] ships wheels, so no libpq build step in the Docker image.
 psycopg[binary]==3.3.6
 anthropic==1.11.0
-google-genai==2.26.0
-python-dotenv==1.2.3
+google-genai==2.27.0
+python-dotenv==1.2.4
 pyyaml==6.0.3
 twilio==9.11.2
 httpx==0.28.1
@@ -29,10 +29,10 @@ httpx==0.28.1
 # widens its pin; check its metadata first, not just whether tests pass.
 websockets==16.1.1
 python-multipart==0.0.32
-icalendar==6.1.0
+icalendar==7.3.0
 alembic==1.20.0
 google-api-python-client==2.201.0
-google-auth-httplib2==0.4.3
+google-auth-httplib2==0.4.4
 google-auth-oauthlib==1.5.0
 aiofiles==25.1.0
 openpyxl==3.1.5
@@ -49,4 +49,4 @@ reportlab==5.0.1
 
 jinja2==3.1.6
 pywebpush==2.5.0
-stripe==15.6.1
+stripe==16.0.0

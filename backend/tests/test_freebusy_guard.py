@@ -5,6 +5,8 @@ Two layers:
 - create_job(): blocks a booking that lands on a busy slot (409), overridable
   via allow_conflicts, and skippable via the freebusy_check setting.
 """
+from datetime import timedelta
+
 import pytest
 
 import integrations.google_calendar as gcal
@@ -13,6 +15,7 @@ from fastapi import HTTPException
 from database.db import SessionLocal
 from database.models import Client, Property, Job
 from modules.scheduling.router import create_job, JobCreate
+from utils.dates import business_today
 
 
 # ── free_busy_conflicts() unit tests (no network) ──
@@ -84,9 +87,14 @@ def bare_client():
 
 
 def _payload(client_id, allow_conflicts=False):
+    # Relative, not a literal: this goes through create_job, which rejects a
+    # past date, so "2026-12-16" would have started failing on 2026-12-17. The
+    # unit tests above call free_busy_conflicts() directly — no date guard
+    # there — so their literals are inputs, not time bombs, and stay put.
     return JobCreate(
         client_id=client_id, title="FB Clean", job_type="residential",
-        scheduled_date="2026-12-16", start_time="09:00", end_time="12:00",
+        scheduled_date=(business_today() + timedelta(days=7)).isoformat(),
+        start_time="09:00", end_time="12:00",
         allow_conflicts=allow_conflicts,
     )
 

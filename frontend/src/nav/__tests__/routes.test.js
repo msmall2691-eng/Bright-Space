@@ -16,7 +16,7 @@ import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { dirname, resolve } from 'node:path'
 
-import { NAV_SECTIONS, SETTINGS_ITEM, crumbsFor } from '../routes'
+import { NAV_SECTIONS, SETTINGS_ITEM, CREATE_ACTIONS, createActionsFor, crumbsFor } from '../routes'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const appSource = readFileSync(resolve(here, '../../App.jsx'), 'utf8')
@@ -47,6 +47,12 @@ function reachable() {
   }
   add(SETTINGS_ITEM.to)
   for (const tab of SETTINGS_ITEM.tabs || []) add(tab.to)
+  // The create actions are a way in too — the topbar "+ New", the quick
+  // switcher and Home's quick-action tiles all render this one list (this
+  // file's docstring always said "the quick actions"; the walk didn't). Every
+  // target is already a nav destination, so this adds no paths — it just stops
+  // a create flow from pointing somewhere the nav can't otherwise reach.
+  for (const a of CREATE_ACTIONS) add(a.to)
   return paths
 }
 
@@ -138,6 +144,41 @@ describe('the nav stays small', () => {
     for (const item of NAV_SECTIONS.flatMap(s => s.items)) {
       if (!item.tabs?.length) continue
       expect(item.tabs.map(t => t.to)).toContain(item.to)
+    }
+  })
+})
+
+describe('the create actions stay one list', () => {
+  it('gives every create action a label, an icon, keywords, and a real URL', () => {
+    // Three surfaces render this list: the topbar "+ New" (Header.jsx), the
+    // quick switcher (GlobalSearch.jsx), and Home's quick-action tiles
+    // (components/board/QuickActions.jsx). All three key off `to` and navigate
+    // with it, and the switcher searches label + keywords — so an entry
+    // missing any of these is a dead or unfindable row in all three at once.
+    expect(CREATE_ACTIONS.length).toBeGreaterThanOrEqual(6)
+    const routes = new Set(realRoutes())
+    for (const a of CREATE_ACTIONS) {
+      expect(a.label, a.to).toBeTruthy()
+      expect(a.icon, a.to).toBeTruthy()
+      expect(typeof a.keywords, a.label).toBe('string')
+      expect(a.to, a.label).toBeTruthy()
+      expect(routes.has(a.to.split('?')[0]), a.to).toBe(true)
+      // An action with no URL is page-local, not global: it would key as
+      // `ac-undefined` and navigate(undefined) in the menu and the switcher.
+      // Home's "Quick note" is the live example — it lives in QuickActions.jsx.
+      expect(a.event, a.label).toBeUndefined()
+    }
+    // Labels key Home's tiles; `to` keys the menu and the switcher rows.
+    expect(new Set(CREATE_ACTIONS.map(a => a.label)).size).toBe(CREATE_ACTIONS.length)
+    expect(new Set(CREATE_ACTIONS.map(a => a.to)).size).toBe(CREATE_ACTIONS.length)
+  })
+
+  it('gates every create behind one predicate, not three', () => {
+    for (const role of ['admin', 'manager']) {
+      expect(createActionsFor(role), role).toHaveLength(CREATE_ACTIONS.length)
+    }
+    for (const role of ['viewer', 'cleaner', null, undefined]) {
+      expect(createActionsFor(role), String(role)).toEqual([])
     }
   })
 })
