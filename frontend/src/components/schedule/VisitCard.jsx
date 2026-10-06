@@ -55,12 +55,12 @@ export default function VisitCard({ v, jobs, properties, clients, onSelect, empN
           : 'border-hairline hover:border-hairline hover:shadow-xs'
       }`}
     >
-      {/* Color bar — job type signal */}
-      <span className={`w-1.5 shrink-0 ${
-        propertyType === 'str' ? 'bg-amber-400'
-        : propertyType === 'commercial' ? 'bg-purple-400'
-        : 'bg-blue-400'
-      }`} />
+      {/* Color bar — job type signal. Takes the measured `edge` value off the
+          shared config rather than re-deciding the hue here: this bar, the
+          WeekGrid block's left rule and the dispatch timeline block are the
+          same signal on the same job, and the hand-written ternary this
+          replaces is how they drift apart (BB-A11Y-02). */}
+      <span className="w-1.5 shrink-0" style={{ background: typeCfg.edge }} />
       <div className="flex-1 min-w-0 p-3">
         {/* Time row */}
         <div className="flex items-center justify-between mb-1.5">

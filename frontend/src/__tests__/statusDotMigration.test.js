@@ -83,25 +83,16 @@ const EXEMPT = {
   // The single most important site not to sweep.
   'components/schedule/CompleteVisitModal.jsx':
     'a filled control with white text on it — different contrast pair entirely',
-  // KNOWN FAILURE, not a non-issue. Two maps here, both ORDERED/CATEGORICAL
-  // rather than severity, so neither fits STATUS_DOT:
-  //
-  //   JOB_TYPE  — str / residential / commercial. Identity, not good-or-bad.
-  //               Each entry also carries a paired `hex` feeding inline-styled
-  //               blocks (dispatch timeline, route ribbon, week blocks), and
-  //               the comment there warns those must not drift from it — as
-  //               CalendarView once did. Dot and hex have to move together.
-  //
-  //   STATUS    — needs_setup → scheduled → dispatched → en_route →
-  //               in_progress → completed, plus no_show / cancelled. A nine
-  //               state SEQUENCE. Collapsing it onto six severity tokens would
-  //               render `dispatched` and `completed` identically, which is a
-  //               worse bug than the contrast one.
-  //
-  // Both need a measured ordinal/categorical ramp, which is a design decision
-  // about how the schedule reads, not a contrast swap. Tracked separately.
-  'components/schedule/constants.js':
-    'ordered job-lifecycle and categorical job-type ramps — needs its own measured scale, see the note above',
+  // components/schedule/constants.js was the last entry here and is MIGRATED
+  // (Oct 2026). Its two maps were never a severity palette and so could not go
+  // through STATUS_DOT — job type is identity, the lifecycle is a nine-state
+  // sequence where `dispatched` and `completed` both landed on `ok`. They got
+  // measured scales of their own in `theme/scheduleScales.js`: JOB_TYPE_DOT
+  // (categorical, CVD-validated), JOB_STAGE_DOT (ordinal) and JOB_TYPE_EDGE,
+  // whose inline-style values are per-theme CSS vars because no single literal
+  // clears the floor in both. `boardToneContrast` measures the first two;
+  // `jobTypeEdgeContrast` measures the vars and holds them in step with the
+  // dots. Don't re-add an exemption here without re-reading those.
 }
 
 function walk(dir) {
