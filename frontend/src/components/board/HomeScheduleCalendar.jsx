@@ -4,6 +4,7 @@ import CalendarView from '../CalendarView'
 import { useScheduleData } from '../../hooks/useScheduleData'
 import { toast } from '../../utils/toastBus'
 import { toLocalYMD } from '../../utils/format'
+import { STATUS_DOT } from '../../theme/statusDots'
 
 /**
  * The REAL Schedule calendar, embedded on Home.
@@ -77,7 +78,7 @@ export default function HomeScheduleCalendar({ navigate }) {
 
       {loadError ? (
         <div className="flex items-center gap-2.5 px-3.5 py-3 text-[12.5px]">
-          <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-amber-500" aria-hidden="true" />
+          <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${STATUS_DOT.attention}`} aria-hidden="true" />
           <span className="min-w-0 flex-1 text-ink-2">Couldn't load the schedule.</span>
           <button
             onClick={refresh}

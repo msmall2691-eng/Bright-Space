@@ -22,6 +22,7 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { get } from '../../api'
+import { STATUS_DOT } from '../../theme/statusDots'
 
 const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`
 const money = (n) => `$${(Number(n) || 0).toLocaleString('en-US', { maximumFractionDigits: 0 })}`
@@ -51,7 +52,7 @@ export default function MarketplaceBoard() {
   const lines = []
   if (peopleWaiting > 0) {
     lines.push({
-      key: 'waiting', dot: 'bg-amber-500', to: '/marketplace', label: 'Review',
+      key: 'waiting', dot: STATUS_DOT.attention, to: '/marketplace', label: 'Review',
       text: (
         <>
           {plural(peopleWaiting, 'cleaner', 'cleaners')} waiting on your yes
@@ -62,7 +63,7 @@ export default function MarketplaceBoard() {
   }
   if (applications > 0) {
     lines.push({
-      key: 'apps', dot: 'bg-amber-500', to: '/crew', label: 'Review',
+      key: 'apps', dot: STATUS_DOT.attention, to: '/crew', label: 'Review',
       text: <>{plural(applications, 'cleaner', 'cleaners')} applied to join</>,
     })
   }

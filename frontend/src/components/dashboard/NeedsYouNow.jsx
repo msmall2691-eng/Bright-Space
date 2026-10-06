@@ -3,6 +3,7 @@ import { Zap, Check, X, ChevronRight, Sparkles, ChevronDown, Send } from 'lucide
 import { get, post } from '../../api'
 import { toast } from '../../utils/toastBus'
 import { SOFT_CARD } from './constants'
+import { STATUS_DOT } from '../../theme/statusDots'
 
 /** The note prepended to the invoice email when the owner taps "Remind"
  *  from the dashboard — a plain, friendly nudge. The invoice body (amount,
@@ -19,7 +20,8 @@ const REMINDER_NOTE =
  * Nothing else on the dashboard should nag — this is the command center.
  */
 const dotFor = (tone) => ({
-  red: 'bg-red-500', amber: 'bg-amber-500', rose: 'bg-rose-500', blue: 'bg-blue-500', violet: 'bg-violet-500',
+  red: STATUS_DOT.problem, amber: STATUS_DOT.attention, rose: STATUS_DOT.problem,
+  blue: STATUS_DOT.info, violet: STATUS_DOT.open,
 }[tone] || 'bg-ink-3')
 
 const CAP = 6  // show this many by default; the rest collapse behind "Show all"
