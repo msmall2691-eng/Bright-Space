@@ -7,11 +7,17 @@
  * into ~one-third columns — same "let the density show" trade-off as
  * the horizontal route ribbon on mobile.
  *
- * Type color drives the block fill (matches PROPERTY_TYPE_CONFIG). Blocks
- * without a crew get a dashed border in the job's type color and a plain
- * panel background instead of a filled color — the "Needs crew" line reads
- * in amber text so the cue doesn't rely on a tinted block, matching the
- * quiet hairline-card treatment used elsewhere for the same state.
+ * Every block is a quiet panel card with a 3px left edge in the job's type
+ * colour (`PROPERTY_TYPE_CONFIG.edge`), solid when a crew is assigned and
+ * dashed when one isn't, so "needs crew" reads from the outline alone and the
+ * "Needs crew" line repeats it in amber text — the cue never rests on colour.
+ *
+ * It used to be a saturated fill carrying white text, which the owner replaced
+ * in Oct 2026 (BB-A11Y-02). That shape was also why the type colour could
+ * never clear its contrast floor: one value had to be light enough to read as
+ * a colour and dark enough to hold white text on it, and white on amber-500
+ * was 1.9:1. A WeekGrid block is the same shape, so one job now reads the same
+ * in both views.
  *
  * Drag-to-assign is gone with the old dispatch board (a sub is never
  * assigned — see the marketplace skill's Rule 0). The drag props are
@@ -135,7 +141,7 @@ export default function DispatchTimeline({
             const height = Math.max(30, (e - s) * ROW_PX - 2)
             const widthPct = 100 / total
             const leftPct = col * widthPct
-            const color = PROPERTY_TYPE_CONFIG[type]?.hex || PROPERTY_TYPE_CONFIG.residential.hex
+            const color = PROPERTY_TYPE_CONFIG[type]?.edge || PROPERTY_TYPE_CONFIG.residential.edge
             const start = (v.start_time || '').slice(0, 5)
             const end = (v.end_time || '').slice(0, 5)
             const crewLabel = (v.cleaner_ids || [])
@@ -157,20 +163,30 @@ export default function DispatchTimeline({
                 } : undefined}
                 onDragEnd={onDragEndVisit}
                 onClick={() => onOpen?.(v, job, prop)}
-                className={`absolute rounded-lg text-left px-2 py-1.5 overflow-hidden transition-shadow hover:shadow-md ${
-                  unassigned ? 'bg-panel text-ink' : 'text-white'
-                } ${onDragStartVisit ? 'cursor-grab active:cursor-grabbing' : ''}`}
+                // Quiet block, coloured left edge — the owner's call (Oct 2026),
+                // and the same shape as a WeekGrid block, so one job reads the
+                // same in both views. It used to be a saturated fill carrying
+                // white text, which is why the type colour could never clear
+                // its floor: one value had to be light enough to be a colour
+                // and dark enough to hold white text, and white on amber-500
+                // was 1.9:1. Ink on panel is the app's normal pair, and the
+                // hue does what the design language asks of colour — a thin
+                // signal, not a surface.
+                className={`absolute rounded-lg text-left px-2 py-1.5 overflow-hidden border border-hairline bg-panel text-ink shadow-xs transition-shadow hover:shadow-md ${
+                  onDragStartVisit ? 'cursor-grab active:cursor-grabbing' : ''
+                }`}
                 style={{
                   top: `${top}px`,
                   height: `${height}px`,
                   left: `calc(${leftPct}% + 3px)`,
                   width: `calc(${widthPct}% - 6px)`,
-                  background: unassigned ? undefined : color,
-                  border: unassigned ? `1.5px dashed ${color}` : `1px solid rgba(0,0,0,0.08)`,
+                  // Dashed while nobody is assigned, so "needs crew" still
+                  // reads at a glance from the block's outline alone.
+                  borderLeft: `3px ${unassigned ? 'dashed' : 'solid'} ${color}`,
                 }}
                 title={`${start}${end ? ' – ' + end : ''} · ${blockLabel}${prop?.address && prop.address !== blockLabel ? ' · ' + prop.address : ''}${unassigned ? ' · needs crew' : crewLabel ? ' · ' + crewLabel : ''}${isDone ? ' · done' : ''}`}
               >
-                <div className="text-[10.5px] font-mono tabular-nums opacity-90 flex items-center gap-1">
+                <div className="text-[10.5px] font-mono tabular-nums text-ink-3 flex items-center gap-1">
                   {start}{end && ` – ${end}`}
                   {/* Worded/iconic "done" cue — a completed block otherwise looks
                       identical to a scheduled one (fill color is job type). */}
@@ -180,7 +196,7 @@ export default function DispatchTimeline({
                   {blockLabel}
                 </div>
                 {(crewLabel || unassigned) && (
-                  <div className={`text-[10.5px] mt-0.5 truncate flex items-center gap-1 ${unassigned ? 'font-semibold text-amber-700 dark:text-amber-400' : 'opacity-90'}`}>
+                  <div className={`text-[10.5px] mt-0.5 truncate flex items-center gap-1 ${unassigned ? 'font-semibold text-amber-700 dark:text-amber-400' : 'text-ink-3'}`}>
                     <span className="truncate">{unassigned ? 'Needs crew' : crewLabel}</span>
                   </div>
                 )}

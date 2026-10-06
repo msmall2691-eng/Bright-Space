@@ -86,13 +86,13 @@ const MIGRATED = [
  * revisited.
  */
 const EXEMPT = {
-  // The colour encodes WHICH TYPE of property, not whether something is good
-  // or bad — STR / commercial / residential. Mapping identity onto
-  // ok/attention/problem would be wrong, and the dataviz rule is explicit:
-  // status tokens only when the colour means good/bad, categorical when it is
-  // identity, never both. Needs its own measured categorical ramp.
-  'components/schedule/VisitCard.jsx': { allow: 4,
-    reason: 'categorical property-type bar + a ringed halo dot' },
+  // Was 4: the categorical property-type bar accounted for two of them
+  // (amber + blue; purple is not a STATUS_HUE). That bar now takes the
+  // measured JOB_TYPE_EDGE value off the shared config, so what is left is the
+  // iCal-source dot and the ringed needs-a-cleaner halo — both ringed, and the
+  // ring changes the effective contrast in a way this harness does not model.
+  'components/schedule/VisitCard.jsx': { allow: 2,
+    reason: 'the iCal-source dot and a ringed halo dot — the ring changes the effective contrast, which this harness does not model' },
   'components/schedule/MonthDayCell.jsx': { allow: 1,
     reason: 'ringed halo dot — the ring changes the effective contrast, which this harness does not model' },
   'components/schedule/WeekGrid.jsx': { allow: 4,
@@ -102,25 +102,16 @@ const EXEMPT = {
   // The single most important site not to sweep.
   'components/schedule/CompleteVisitModal.jsx': { allow: 1,
     reason: 'a filled control with white text ON it — the pair is white-on-emerald, which passes; darkening the fill would make it worse' },
-  // KNOWN FAILURE, not a non-issue. Two maps here, both ORDERED/CATEGORICAL
-  // rather than severity, so neither fits STATUS_DOT:
-  //
-  //   JOB_TYPE  — str / residential / commercial. Identity, not good-or-bad.
-  //               Each entry also carries a paired `hex` feeding inline-styled
-  //               blocks (dispatch timeline, route ribbon, week blocks), and
-  //               the comment there warns those must not drift from it — as
-  //               CalendarView once did. Dot and hex have to move together.
-  //
-  //   STATUS    — needs_setup → scheduled → dispatched → en_route →
-  //               in_progress → completed, plus no_show / cancelled. A nine
-  //               state SEQUENCE. Collapsing it onto six severity tokens would
-  //               render `dispatched` and `completed` identically, which is a
-  //               worse bug than the contrast one.
-  //
-  // Both need a measured ordinal/categorical ramp, which is a design decision
-  // about how the schedule reads, not a contrast swap. Tracked separately.
-  'components/schedule/constants.js': { allow: 7,
-    reason: 'ordered job-lifecycle and categorical job-type ramps — needs its own measured scale, see the note above' },
+  // components/schedule/constants.js was the last entry here and is MIGRATED
+  // (Oct 2026). Its two maps were never a severity palette and so could not go
+  // through STATUS_DOT — job type is identity, the lifecycle is a nine-state
+  // sequence where `dispatched` and `completed` both landed on `ok`. They got
+  // measured scales of their own in `theme/scheduleScales.js`: JOB_TYPE_DOT
+  // (categorical, CVD-validated), JOB_STAGE_DOT (ordinal) and JOB_TYPE_EDGE,
+  // whose inline-style values are per-theme CSS vars because no single literal
+  // clears the floor in both. `boardToneContrast` measures the first two;
+  // `jobTypeEdgeContrast` measures the vars and holds them in step with the
+  // dots. Don't re-add an exemption here without re-reading those.
 
   // --- client surface ---
   // The same shape as the schedule's, which is the point: the maps that resist
