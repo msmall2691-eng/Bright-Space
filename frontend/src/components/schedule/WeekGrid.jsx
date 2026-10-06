@@ -24,6 +24,7 @@ import {
   planReschedule,
   WEEK_GRID_CONSTANTS,
 } from './weekGridLayout'
+import { STATUS_TEXT, STATUS_ICON } from '../../theme/statusText'
 
 /**
  * Week / time-grid view. Seven day columns × an hour rail; each timed job
@@ -544,7 +545,7 @@ function DayColumn({
       >
         {untimedVisits.length > 0 && (
           <div className="flex items-center gap-1 px-1.5 py-1 overflow-hidden">
-            <AlertCircle className="w-3 h-3 text-amber-600 shrink-0" />
+            <AlertCircle className={`w-3 h-3 ${STATUS_ICON.attention} shrink-0`} />
             <div className="flex gap-1 overflow-x-auto scrollbar-thin">
               {untimedVisits.map(v => (
                 <VisitChip
@@ -731,7 +732,7 @@ const VisitBlock = memo(function VisitBlock({
         {heightPx > 48 && (
           <div className="mt-auto flex items-center gap-1 text-[11px] text-ink-3">
             {cleaners.length === 0 ? (
-              <span className="inline-flex items-center gap-1 text-amber-700 font-medium">
+              <span className={`inline-flex items-center gap-1 ${STATUS_TEXT.attention} font-medium`}>
                 <span className="w-[7px] h-[7px] rounded-full bg-amber-400 ring-2 ring-amber-200/70 dark:ring-amber-500/25 shrink-0" aria-hidden="true" />
                 Needs cleaner
               </span>

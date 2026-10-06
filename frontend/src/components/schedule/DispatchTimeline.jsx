@@ -28,6 +28,7 @@
 import { useEffect, useRef } from 'react'
 import { Check } from 'lucide-react'
 import { PROPERTY_TYPE_CONFIG } from './constants'
+import { STATUS_TEXT } from '../../theme/statusText'
 
 const AXIS_START_HOUR = 6
 const AXIS_END_HOUR = 20
@@ -196,7 +197,7 @@ export default function DispatchTimeline({
                   {blockLabel}
                 </div>
                 {(crewLabel || unassigned) && (
-                  <div className={`text-[10.5px] mt-0.5 truncate flex items-center gap-1 ${unassigned ? 'font-semibold text-amber-700 dark:text-amber-400' : 'text-ink-3'}`}>
+                  <div className={`text-[10.5px] mt-0.5 truncate flex items-center gap-1 ${unassigned ? `font-semibold ${STATUS_TEXT.attention}` : 'text-ink-3'}`}>
                     <span className="truncate">{unassigned ? 'Needs crew' : crewLabel}</span>
                   </div>
                 )}

@@ -13,6 +13,7 @@
  */
 import { memo } from 'react'
 import { Ban, ArrowRight, ArrowLeft, Zap, RotateCw, Plus, ChevronUp } from 'lucide-react'
+import { STATUS_TEXT, STATUS_ICON } from '../../theme/statusText'
 
 function MonthDayCell({
   date, dayJobs, dayBookings, daySkips, dayReschedFrom, dayReschedTo,
@@ -106,7 +107,7 @@ function MonthDayCell({
 
       {dayReschedFrom.length > 0 && (
         <div
-          className="flex items-center gap-0.5 text-[9px] sm:text-[10px] px-1 sm:px-1.5 py-0.5 mb-0.5 rounded border bg-panel text-purple-600 dark:text-purple-300 border-hairline italic truncate leading-tight"
+          className={`flex items-center gap-0.5 text-[9px] sm:text-[10px] px-1 sm:px-1.5 py-0.5 mb-0.5 rounded border bg-panel ${STATUS_TEXT.open} dark:text-purple-300 border-hairline italic truncate leading-tight`}
           title={`Moved to ${dayReschedFrom[0].rescheduled_date}`}
         >
           <ArrowRight className="w-2.5 h-2.5 shrink-0" />
@@ -186,16 +187,16 @@ function MonthDayCell({
                   she scans for; it gets the whole first line. */}
               <div className="flex items-center gap-1.5">
                 <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${tc.dot}`} />
-                {isDuplicate && <span className="shrink-0 text-red-500" title="Duplicate turnover detected">⚠</span>}
+                {isDuplicate && <span className={`shrink-0 ${STATUS_TEXT.problem}`} title="Duplicate turnover detected">⚠</span>}
                 <span className="flex-1 min-w-0 truncate text-[12px] text-ink font-medium">{chipWho}</span>
               </div>
               <div className="mt-0.5 flex min-w-0 items-center gap-1 text-[10.5px] text-ink-2">
                 {chipTime && <span className="font-semibold tabular-nums shrink-0">{chipTime}</span>}
                 {j.is_immediate_turnover && (
-                  <Zap className="w-2.5 h-2.5 shrink-0 text-red-600" title="Immediate turnover — same-day check-in" />
+                  <Zap className={`w-2.5 h-2.5 shrink-0 ${STATUS_ICON.problem}`} title="Immediate turnover — same-day check-in" />
                 )}
                 {!j.is_immediate_turnover && j.turnover_lead_warning && (
-                  <Zap className="w-2.5 h-2.5 shrink-0 text-amber-600"
+                  <Zap className={`w-2.5 h-2.5 shrink-0 ${STATUS_ICON.attention}`}
                        title={`Tight turnaround — only ~${Math.max(0, Math.round(j.turnover_lead_hours))}h before the next guest checks in`} />
                 )}
                 {j.recurring_schedule_id && <RotateCw className="w-2.5 h-2.5 shrink-0 opacity-50" title="Recurring" />}
