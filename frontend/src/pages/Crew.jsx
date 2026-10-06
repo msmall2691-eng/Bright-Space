@@ -25,6 +25,7 @@ import { CrewThreadPane } from '../components/comms/CrewThreadPane'
 import { MessageSquare, Sparkles, X } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { STATUS_DOT } from '../theme/statusDots'
+import { STATUS_TEXT } from '../theme/statusText'
 
 /** Office side of the cleaner↔office thread (crew app "message the office").
  *  One drawer per cleaner; replies push to their phone. The thread body is
@@ -412,7 +413,7 @@ export default function Crew() {
                 className="mt-0.5 w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-hidden focus:ring-2 focus:ring-indigo-500" />
             </label>
             <label className="block">
-              <span className="text-[11px] text-ink-3">Email <span className="text-red-500">*</span></span>
+              <span className="text-[11px] text-ink-3">Email <span className={STATUS_TEXT.problem}>*</span></span>
               <input type="email" value={email} onChange={e => setEmail(e.target.value)}
                 placeholder="cleaner@email.com" disabled={adding}
                 className="mt-0.5 w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-hidden focus:ring-2 focus:ring-indigo-500" />

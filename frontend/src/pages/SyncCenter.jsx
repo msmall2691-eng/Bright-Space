@@ -11,6 +11,7 @@ import { toast } from '../utils/toastBus'
 import { useSyncOverview } from '../hooks/useSyncOverview'
 import { isStaleSync } from '../components/properties/utils'
 import { STATUS_DOT } from '../theme/statusDots'
+import { STATUS_TEXT, STATUS_ICON } from '../theme/statusText'
 
 /**
  * Sync Control Center (`/sync`) — one screen for the whole scheduling nervous
@@ -82,11 +83,11 @@ function cadence(mins) {
 const ICON = { calendar: Calendar, users: Users, home: Home, repeat: Repeat }
 
 const STATUS = {
-  ok:           { dot: STATUS_DOT.ok, text: 'text-emerald-600', label: 'In sync' },
-  syncing:      { dot: `${STATUS_DOT.info} animate-pulse`, text: 'text-blue-600', label: 'Syncing' },
+  ok:           { dot: STATUS_DOT.ok, text: STATUS_TEXT.ok, label: 'In sync' },
+  syncing:      { dot: `${STATUS_DOT.info} animate-pulse`, text: STATUS_TEXT.info, label: 'Syncing' },
   paused:       { dot: STATUS_DOT.neutral, text: 'text-ink-3', label: 'Paused' },
-  attention:    { dot: STATUS_DOT.attention, text: 'text-amber-600', label: 'Needs attention' },
-  disconnected: { dot: STATUS_DOT.problem, text: 'text-red-600', label: 'Not connected' },
+  attention:    { dot: STATUS_DOT.attention, text: STATUS_TEXT.attention, label: 'Needs attention' },
+  disconnected: { dot: STATUS_DOT.problem, text: STATUS_TEXT.problem, label: 'Not connected' },
 }
 
 function DirectionChip({ direction }) {
@@ -112,7 +113,7 @@ function AuthorityLine({ authority }) {
   if (!txt) return null
   return (
     <span className="inline-flex items-center gap-1 text-[11px] text-ink-3">
-      <Crown className="w-3 h-3 text-amber-500" /> {txt}
+      <Crown className={`w-3 h-3 ${STATUS_ICON.attention}`} /> {txt}
     </span>
   )
 }
@@ -193,7 +194,7 @@ function ChannelCard({ ch, canToggle, canSync, busy, onToggle, onSync }) {
                 const never = !f.last_synced_at
                 const stale = !bad && !never && isStaleSync(f.last_synced_at)
                 const dot = bad ? STATUS_DOT.problem : never ? STATUS_DOT.neutral : stale ? STATUS_DOT.attention : STATUS_DOT.ok
-                const tone = bad ? 'text-red-600' : stale ? 'text-amber-600' : 'text-ink-3'
+                const tone = bad ? STATUS_TEXT.problem : stale ? STATUS_TEXT.attention : 'text-ink-3'
                 const label = bad ? (f.last_synced_at ? `failed · last ok ${relTime(f.last_synced_at)}` : 'failed')
                   : never ? 'never synced'
                   : stale ? `stale · ${relTime(f.last_synced_at)}`

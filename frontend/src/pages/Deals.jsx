@@ -38,6 +38,7 @@ import { useDeals } from '../hooks/useDeals'
 import LaunchStepper from '../components/launch/LaunchStepper'
 import { QUOTE_STATUS_VARIANT } from '../components/quoting/constants'
 import { STATUS_DOT } from '../theme/statusDots'
+import { STATUS_TEXT } from '../theme/statusText'
 
 // The continuum, inbox-first. `inbox` is the derived lead phase; the rest are
 // real Opportunity stages a deal can be moved between. `accent` is the
@@ -66,9 +67,9 @@ const ageLabel = (d) => {
 }
 
 const JOB_STATE_TONE = {
-  scheduled: 'text-blue-600 dark:text-blue-300',
+  scheduled: STATUS_TEXT.info,
   dispatched: 'text-violet-600 dark:text-violet-300',
-  done: 'text-emerald-600 dark:text-emerald-300',
+  done: STATUS_TEXT.ok,
 }
 
 function StageDot({ stage }) {

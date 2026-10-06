@@ -32,13 +32,14 @@ import {
   CheckCircle, Clock, AlertCircle, Send, ChevronLeft, ChevronRight, Home, RefreshCw,
   TrendingUp, DollarSign, Target, Inbox, ArrowUpRight, Zap, Trash2, LayoutGrid
 } from 'lucide-react'
+import { STATUS_TEXT, STATUS_ICON } from '../theme/statusText'
 
 function Tab({ label, icon: Icon, active, count, onClick }) {
   return (
     <button onClick={onClick}
       className={`flex items-center gap-2 px-4 py-2.5 text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${
         active
-          ? 'border-blue-500 text-blue-500'
+          ? `border-blue-500 ${STATUS_TEXT.info}`
           : 'border-transparent text-ink-3 hover:text-ink-3'
       }`}>
       <Icon className="w-4 h-4" />
@@ -46,7 +47,7 @@ function Tab({ label, icon: Icon, active, count, onClick }) {
       {/* Plain count next to the label, never a filled chip — owner vetoed
           count bubbles on tabs/nav (matches MessagesTab / ActivityTimeline). */}
       {count > 0 && (
-        <span className={`text-xs tabular-nums ${active ? 'text-blue-500' : 'text-ink-3'}`}>
+        <span className={`text-xs tabular-nums ${active ? STATUS_TEXT.info : 'text-ink-3'}`}>
           {count}
         </span>
       )}
@@ -76,7 +77,7 @@ function SubNav({ items, active, onSelect }) {
         <button key={it.key} onClick={() => onSelect(it.key)}
           className={`px-3 py-1.5 rounded-lg text-xs font-medium whitespace-nowrap border-b-2 transition-colors ${
             active === it.key
-              ? 'border-blue-500 text-blue-500'
+              ? `border-blue-500 ${STATUS_TEXT.info}`
               : 'border-transparent text-ink-3 hover:text-ink-2 hover:bg-bg-2'
           }`}>
           {it.label}
@@ -515,12 +516,12 @@ export default function ClientProfile() {
         <button onClick={() => navigate('/quotes', { state: { openNew: true, clientId: parseInt(id) } })}
           data-testid="client-action-new-quote"
           className="flex items-center justify-center sm:justify-start gap-1.5 text-xs bg-bg-2 hover:bg-bg-2 border border-hairline px-3 py-2 min-h-[44px] sm:min-h-0 sm:py-1.5 rounded-lg transition-colors">
-          <FileText className="w-3.5 h-3.5 text-blue-400 shrink-0" /> <span className="truncate">New Quote</span>
+          <FileText className={`w-3.5 h-3.5 ${STATUS_ICON.info} shrink-0`} /> <span className="truncate">New Quote</span>
         </button>
         <button onClick={() => setJobModal({})}
           data-testid="client-action-schedule-job"
           className="flex items-center justify-center sm:justify-start gap-1.5 text-xs bg-bg-2 hover:bg-bg-2 border border-hairline px-3 py-2 min-h-[44px] sm:min-h-0 sm:py-1.5 rounded-lg transition-colors">
-          <Calendar className="w-3.5 h-3.5 text-blue-500 shrink-0" /> <span className="truncate">Schedule Job</span>
+          <Calendar className={`w-3.5 h-3.5 ${STATUS_ICON.info} shrink-0`} /> <span className="truncate">Schedule Job</span>
         </button>
         <button onClick={() => navigate(`/billing?view=invoices&new=1&client=${id}`)}
           className="flex items-center justify-center sm:justify-start gap-1.5 text-xs bg-bg-2 hover:bg-bg-2 border border-hairline px-3 py-2 min-h-[44px] sm:min-h-0 sm:py-1.5 rounded-lg transition-colors">
@@ -534,7 +535,7 @@ export default function ClientProfile() {
         <button onClick={() => goToCompose('email')}
           data-testid="client-action-email"
           className="flex items-center justify-center sm:justify-start gap-1.5 text-xs bg-bg-2 hover:bg-bg-2 border border-hairline px-3 py-2 min-h-[44px] sm:min-h-0 sm:py-1.5 rounded-lg transition-colors">
-          <Mail className="w-3.5 h-3.5 text-blue-400 shrink-0" /> <span className="truncate">Email</span>
+          <Mail className={`w-3.5 h-3.5 ${STATUS_ICON.info} shrink-0`} /> <span className="truncate">Email</span>
         </button>
       </div>
 

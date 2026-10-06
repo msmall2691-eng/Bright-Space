@@ -7,6 +7,7 @@ import PageTitle from '../components/ui/PageTitle'
 import SubNav from '../components/ui/SubNav'
 import { ErrorState, EmptyState, ListSkeleton } from '../components/ui'
 import { STATUS_DOT } from '../theme/statusDots'
+import { STATUS_TEXT } from '../theme/statusText'
 
 /**
  * Flow — the lead→cash pipeline as one calm, prioritized list.
@@ -124,7 +125,7 @@ function FlowRow({ item, onAction, confirmingKey, busyKey, selectMode, selected,
                       onClick={(e) => { e.stopPropagation(); onAction(item, a) }}
                       disabled={busy}
                       className={`inline-flex items-center gap-1 text-[11px] font-semibold transition-colors disabled:opacity-60 ${
-                        confirming ? 'text-rose-600 dark:text-rose-400' : 'text-ink-3 hover:text-ink-2'
+                        confirming ? STATUS_TEXT.problem : 'text-ink-3 hover:text-ink-2'
                       }`}
                     >
                       {busy && <Loader2 className="h-3 w-3 animate-spin" />}
@@ -335,7 +336,7 @@ export default function Flow() {
               disabled={bulkBusy}
               className={`inline-flex items-center gap-1.5 rounded-lg border px-3 py-2 text-[13px] font-semibold transition-colors disabled:opacity-60 ${
                 bulkConfirming
-                  ? 'border-rose-400 text-rose-600 dark:text-rose-300'
+                  ? `border-rose-400 ${STATUS_TEXT.problem}`
                   : 'border-hairline-2 text-ink-2 hover:bg-bg-2'
               }`}
             >

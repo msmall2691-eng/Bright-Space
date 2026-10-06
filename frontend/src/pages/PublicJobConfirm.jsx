@@ -4,6 +4,7 @@ import { CheckCircle, AlertCircle, Clock, Calendar, MapPin } from 'lucide-react'
 import WhosComing from '../components/customer/WhosComing'
 import { publicFetch } from '../utils/publicFetch'
 import { STATUS_DOT } from '../theme/statusDots'
+import { STATUS_TEXT, STATUS_ICON } from '../theme/statusText'
 
 function formatTime(t) {
   if (!t) return ''
@@ -180,7 +181,7 @@ export default function PublicJobConfirm() {
     return (
       <div className="min-h-screen bg-bg flex items-center justify-center p-4">
         <div className="text-center max-w-sm">
-          <AlertCircle className="w-16 h-16 text-red-400 mx-auto mb-4" />
+          <AlertCircle className={`w-16 h-16 ${STATUS_ICON.problem} mx-auto mb-4`} />
           <h1 className="text-xl font-bold text-ink mb-2">Unable to Load Visit</h1>
           <p className="text-ink-2">{error}</p>
         </div>
@@ -316,7 +317,7 @@ export default function PublicJobConfirm() {
                               className={`py-3 rounded-xl text-sm font-medium border transition-colors ${reschedWindow === w.key ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-panel text-ink-2 border-hairline hover:bg-bg-2'}`}
                             >
                               {w.label}
-                              {w.busy && <span className={`block text-[11px] font-normal ${reschedWindow === w.key ? 'text-blue-100' : 'text-amber-600'}`}>needs approval</span>}
+                              {w.busy && <span className={`block text-[11px] font-normal ${reschedWindow === w.key ? 'text-blue-100' : STATUS_TEXT.attention}`}>needs approval</span>}
                             </button>
                           ))}
                         </div>
