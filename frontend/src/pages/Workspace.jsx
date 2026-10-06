@@ -10,6 +10,7 @@ import MarkdownContent from '../components/workspace/MarkdownContent'
 import { get, post, wsUrl } from '../api'
 import { todayYMD } from '../utils/format'
 import { STATUS_DOT } from '../theme/statusDots'
+import { STATUS_TEXT } from '../theme/statusText'
 
 /**
  * Workspace — the Agent Command Center, rebuilt as a native chat room.
@@ -101,7 +102,7 @@ function QcBadge({ qc }) {
   const flagged = qc.verdict === 'flag'
   const Icon = flagged ? ShieldAlert : ShieldCheck
   return (
-    <div className={`flex items-center gap-1 text-[10px] mt-1.5 ${flagged ? 'text-amber-600' : 'text-ink-3'}`}>
+    <div className={`flex items-center gap-1 text-[10px] mt-1.5 ${flagged ? STATUS_TEXT.attention : 'text-ink-3'}`}>
       <Icon className="w-3 h-3" />
       <span>{flagged ? (qc.note || 'Flagged for review') : 'Reviewed'}</span>
     </div>

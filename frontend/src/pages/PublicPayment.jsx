@@ -3,6 +3,7 @@ import { useParams, useSearchParams } from 'react-router-dom'
 import { CheckCircle, AlertCircle, Clock } from 'lucide-react'
 import { publicFetch } from '../utils/publicFetch'
 import { STATUS_DOT } from '../theme/statusDots'
+import { STATUS_TEXT, STATUS_ICON } from '../theme/statusText'
 
 /**
  * PublicPayment — the customer's no-login invoice page at /pay/:token.
@@ -114,7 +115,7 @@ export default function PublicPayment() {
     return (
       <div className="min-h-screen flex items-center justify-center px-4">
         <div className="max-w-md w-full bg-panel border border-hairline rounded-lg p-6 text-center">
-          <AlertCircle className="w-6 h-6 text-red-500 mx-auto mb-3" />
+          <AlertCircle className={`w-6 h-6 ${STATUS_ICON.problem} mx-auto mb-3`} />
           <p className="text-ink">{error}</p>
         </div>
       </div>
@@ -196,7 +197,7 @@ export default function PublicPayment() {
                 <div className="flex justify-between text-ink-2"><span>Tax{inv.tax_rate ? ` (${inv.tax_rate}%)` : ''}</span><span>{money(inv.tax)}</span></div>
               )}
               {Number(inv.discount) > 0 && (
-                <div className="flex justify-between text-emerald-600"><span>Discount</span><span>-{money(inv.discount)}</span></div>
+                <div className={`flex justify-between ${STATUS_TEXT.ok}`}><span>Discount</span><span>-{money(inv.discount)}</span></div>
               )}
               <div className="flex justify-between pt-2 mt-1 border-t border-hairline text-ink font-bold text-base">
                 <span>{paid ? 'Total paid' : awaitingConfirmation ? 'Total' : 'Total due'}</span><span>{money(inv.total)}</span>
@@ -215,7 +216,7 @@ export default function PublicPayment() {
         {/* Payment panel */}
         {paid ? (
           <div className="mt-4 bg-panel border border-hairline rounded-lg px-6 py-4 flex items-center gap-2">
-            <CheckCircle className="w-4 h-4 text-emerald-500" />
+            <CheckCircle className={`w-4 h-4 ${STATUS_ICON.ok}`} />
             <span className="text-sm text-ink-2">This invoice is paid in full — thank you!</span>
           </div>
         ) : justPaid ? (
@@ -253,7 +254,7 @@ export default function PublicPayment() {
                 )}
                 {payError && (
                   <div className="flex items-start gap-2 mt-3">
-                    <AlertCircle className="w-3.5 h-3.5 text-red-500 mt-0.5 shrink-0" />
+                    <AlertCircle className={`w-3.5 h-3.5 ${STATUS_ICON.problem} mt-0.5 shrink-0`} />
                     <div className="text-xs text-ink-2">
                       {payError}
                       {inv.company_phone ? <> Call or text us at <span className="text-ink">{inv.company_phone}</span>.</> : ''}

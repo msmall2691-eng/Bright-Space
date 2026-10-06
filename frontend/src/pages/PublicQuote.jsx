@@ -4,6 +4,7 @@ import { CheckCircle, AlertCircle, Clock, X, Download, Printer } from 'lucide-re
 import QuoteDocument from '../components/QuoteDocument'
 import { publicFetch } from '../utils/publicFetch'
 import { STATUS_DOT } from '../theme/statusDots'
+import { STATUS_ICON } from '../theme/statusText'
 
 export default function PublicQuote() {
   const { token } = useParams()
@@ -200,7 +201,7 @@ export default function PublicQuote() {
     return (
       <div className="min-h-screen bg-bg flex items-center justify-center p-4">
         <div className="text-center max-w-sm">
-          <AlertCircle className="w-16 h-16 text-red-400 mx-auto mb-4" />
+          <AlertCircle className={`w-16 h-16 ${STATUS_ICON.problem} mx-auto mb-4`} />
           <h1 className="text-xl font-bold text-ink mb-2">Unable to Load Quote</h1>
           <p className="text-ink-2">{error}</p>
         </div>
@@ -270,7 +271,7 @@ export default function PublicQuote() {
   ) : isExpired ? (
     <div className="no-print mb-3 rounded-xl bg-panel border border-hairline px-4 py-3">
       <div className="flex items-center gap-2">
-        <Clock className="w-5 h-5 text-amber-500 shrink-0" />
+        <Clock className={`w-5 h-5 ${STATUS_ICON.attention} shrink-0`} />
         <p className="text-sm text-ink-2 font-medium">
           This quote expired{quote.valid_until ? ` on ${quote.valid_until}` : ''} — contact us for an updated quote.
         </p>

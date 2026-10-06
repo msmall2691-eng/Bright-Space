@@ -44,6 +44,7 @@ import { useCommsFilters } from '../hooks/useCommsFilters'
 import { useCustomerContext } from '../hooks/useCustomerContext'
 import { useCompanyName } from '../hooks/useCompanyName'
 import { STATUS_DOT } from '../theme/statusDots'
+import { STATUS_ICON } from '../theme/statusText'
 
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -556,8 +557,8 @@ export default function Comms() {
             : 'bg-panel border-hairline text-ink-2'
         }`}>
           {toast.ok
-            ? <CheckCircle2 className="w-4 h-4 text-emerald-500 shrink-0" />
-            : <AlertTriangle className="w-4 h-4 text-amber-500 shrink-0" />}
+            ? <CheckCircle2 className={`w-4 h-4 ${STATUS_ICON.ok} shrink-0`} />
+            : <AlertTriangle className={`w-4 h-4 ${STATUS_ICON.attention} shrink-0`} />}
           <span>{toast.msg}</span>
         </div>
       )}

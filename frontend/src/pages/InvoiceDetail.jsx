@@ -13,6 +13,7 @@ import InlineEditField from '../components/InlineEditField'
 import RecordSkeleton from '../components/record/RecordSkeleton'
 import { EmptyState } from '../components/ui'
 import { STATUS_DOT } from '../theme/statusDots'
+import { STATUS_TEXT } from '../theme/statusText'
 
 const STATUS_OPTIONS = [
   { value: 'draft',   label: 'draft',   dot: 'bg-ink-3' },
@@ -149,7 +150,7 @@ export default function InvoiceDetail() {
               {inv.paid_at && (
                 <div>
                   <div className="text-[10px] uppercase tracking-wide text-ink-3 mb-0.5">Paid</div>
-                  <div className="text-[13px] text-emerald-500">{fmtDate(inv.paid_at)}</div>
+                  <div className={`text-[13px] ${STATUS_TEXT.ok}`}>{fmtDate(inv.paid_at)}</div>
                 </div>
               )}
             </div>
@@ -196,7 +197,7 @@ export default function InvoiceDetail() {
             {canEdit() && (
               <div className="border-t border-hairline pt-3">
                 <button onClick={deleteInvoice} disabled={acting}
-                  className="w-full flex items-center justify-center gap-1.5 bg-bg-2 border border-hairline hover:border-red-300 disabled:opacity-50 text-red-600 hover:text-red-700 px-3 py-2 rounded-lg text-[12px] font-medium transition-colors">
+                  className={`w-full flex items-center justify-center gap-1.5 bg-bg-2 border border-hairline hover:border-red-300 disabled:opacity-50 ${STATUS_TEXT.problem} hover:text-rose-800 px-3 py-2 rounded-lg text-[12px] font-medium transition-colors`}>
                   <Trash2 className="w-3.5 h-3.5" /> Delete invoice
                 </button>
               </div>

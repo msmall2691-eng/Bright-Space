@@ -21,6 +21,7 @@ import AiInsight from '../components/AiInsight'
 import { SEV_DOT } from '../components/board/tokens'
 import { toast } from '../utils/toastBus'
 import { confirmDialog } from '../utils/confirmBus'
+import { STATUS_TEXT } from '../theme/statusText'
 
 // Twenty-style: neutral pills carry the label, the icon (type) or a small
 // colored dot (status) carries the signal — so a list of leads isn't a wall of
@@ -1075,7 +1076,7 @@ export default function Requests() {
                   {estimateText(selectedRequest.estimate_min, selectedRequest.estimate_max) ? (
                     <div>
                       <label className="text-xs font-semibold text-ink-2 uppercase">Estimate</label>
-                      <p className="text-sm font-semibold text-emerald-700">
+                      <p className={`text-sm font-semibold ${STATUS_TEXT.ok}`}>
                         {estimateText(selectedRequest.estimate_min, selectedRequest.estimate_max)}
                       </p>
                     </div>

@@ -77,7 +77,7 @@ const RAW_TEXT = new RegExp(String.raw`(?<![\w:-])text-(?:emerald|green)-(?:500|
 /** Surfaces where the TEXT half has been done. Separate from MIGRATED because
  *  it is a separate slice running behind it, and conflating the two would
  *  claim ground that has not been taken. */
-const TEXT_MIGRATED = ['crew', 'schedule', 'client', 'office', 'components']
+const TEXT_MIGRATED = ['crew', 'schedule', 'client', 'office', 'components', 'pages']
 
 /**
  * Surfaces migrated so far, newest last. Adding one is a one-line change
@@ -202,6 +202,45 @@ const TEXT_EXEMPT = {
   // it. Also categorical (one colour per client), not severity.
   'components/clients/constants.js': { allow: 1,
     reason: 'avatar initials palette — text on its own tint, not on a page ground, and categorical rather than severity' },
+
+  // --- pages surface ---
+  // Text-on-tint again, and worth stating plainly because the mechanical pass
+  // got this wrong first time round and half-migrated the map: every colour in
+  // these two files arrives with its OWN `bg-*-50` wash attached —
+  // `<Pill tone="bg-emerald-50 text-emerald-700">`, `STATUS_TONE`, the round
+  // icon tiles. The pair to measure is emerald-700-on-emerald-50, not
+  // emerald-700 against `--panel`. Sweeping half of a map like that is worse
+  // than leaving it: the entries then disagree about which question they are
+  // answering.
+  'pages/CustomerPortal.jsx': { allow: 6,
+    reason: 'STATUS_TONE and the Pills carry their own bg-*-50 wash — the pair is text-on-tint, which the four-grounds measurement does not describe' },
+  'pages/PortalVerify.jsx': { allow: 1,
+    reason: 'an AlertCircle in a rounded bg-red-50 tile — the same text-on-tint pair, not icon-on-ground' },
+  'pages/Login.jsx': { allow: 1,
+    reason: 'an AlertCircle sitting on the error card’s own bg-red-50 — text-on-tint again' },
+
+  // The two customer-facing confirmations. These are LUCIDE ICONS, not text —
+  // `<CheckCircle className="w-10 h-10 text-emerald-600 …" />` on `bg-panel` —
+  // so the floor is 3:1 for a graphical object rather than 4.5:1, and against
+  // `--panel` emerald-600 measures **3.65:1**. RAW_TEXT cannot tell an icon
+  // from a word by regex, which is why these read as offenders and are not.
+  //
+  // One caveat the measurement turned up, recorded because the margin is thin.
+  // 3.65 is the ratio against `--panel` (`#ffffff`), which is the ground these
+  // two actually sit on. Across all four light grounds emerald-600's WORST is
+  // `--bg-3` at **2.96**, which is under the floor — so this exemption is
+  // ground-specific and does not license emerald-600 icons generally. Move one
+  // of these onto an inset well and it stops being true.
+  'pages/PublicQuote.jsx': { allow: 2,
+    reason: 'CheckCircle icons on --panel — 3:1 floor, emerald-600 measures 3.65:1 against that specific ground' },
+  'pages/PublicJobConfirm.jsx': { allow: 2,
+    reason: 'the same two confirmation icons, same --panel ground, same 3.65:1' },
+
+  // The swatch page. Its whole job is to render the palette as literals next
+  // to its own name, so the class IS the content — sweeping it would make the
+  // page document a set of tokens it no longer shows.
+  'pages/DesignSystem.jsx': { allow: 2,
+    reason: 'a StatCard accent demo on the design-system swatch page — the literal class is the thing being displayed' },
 }
 
 function walk(dir) {
@@ -304,22 +343,29 @@ describe('BB-A11Y-02 — migrated surfaces go through the measured map', () => {
     })
   }
 
-  it('every exemption names a real file, so the list cannot rot quietly', () => {
-    // An exemption for a file that was renamed or deleted silently widens the
-    // ban's blind spot. Each one must still exist AND still contain the thing
-    // it is excused for.
-    for (const [path, ex] of Object.entries(EXEMPT)) {
-      const src = readFileSync(join(SRC, path), 'utf8')
-      const n = [...src.matchAll(RAW_DOT)].length
-      expect(ex.reason.length, `${path}: exemption has no reason`).toBeGreaterThan(20)
-      expect(n, `${path} is exempt but no longer has a raw step — drop the exemption`)
-        .toBeGreaterThan(0)
-      // An allowance larger than reality is a hole that opens quietly as the
-      // file gets migrated, so it has to track exactly.
-      expect(n, `${path}: allowance is ${ex.allow} but only ${n} raw steps remain — lower it`)
-        .toBe(ex.allow)
-    }
-  })
+  // Both halves of the ban carry a hand-written exemption list, and both rot
+  // the same way, so they are checked by the same code rather than by one test
+  // and a good intention. TEXT_EXEMPT was added later; leaving it uncovered
+  // would have reopened on the text side the exact hole that was closed on the
+  // dot side.
+  for (const [label, list, rx] of [['EXEMPT', EXEMPT, RAW_DOT], ['TEXT_EXEMPT', TEXT_EXEMPT, RAW_TEXT]]) {
+    it(`every ${label} entry names a real file, so the list cannot rot quietly`, () => {
+      // An exemption for a file that was renamed or deleted silently widens the
+      // ban's blind spot. Each one must still exist AND still contain the thing
+      // it is excused for.
+      for (const [path, ex] of Object.entries(list)) {
+        const src = readFileSync(join(SRC, path), 'utf8')
+        const n = [...src.matchAll(rx)].length
+        expect(ex.reason.length, `${path}: exemption has no reason`).toBeGreaterThan(20)
+        expect(n, `${path} is exempt but no longer has a raw step — drop the exemption`)
+          .toBeGreaterThan(0)
+        // An allowance larger than reality is a hole that opens quietly as the
+        // file gets migrated, so it has to track exactly.
+        expect(n, `${path}: allowance is ${ex.allow} but only ${n} raw steps remain — lower it`)
+          .toBe(ex.allow)
+      }
+    })
+  }
 
   for (const surface of MIGRATED.filter(s => TEXT_MIGRATED.includes(s.name))) {
     it(`${surface.name}: no hand-written semantic text colour outside the named exemptions`, () => {

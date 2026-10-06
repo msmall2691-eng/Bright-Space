@@ -121,7 +121,7 @@ function PropertyAccessCard({ property, canEdit: editable }) {
                       {n.shared ? 'Shared (tap to unshare)' : 'Share with crew'}
                     </button>
                     <button onClick={() => removeNote(n)}
-                      className="text-[10px] text-red-600 underline underline-offset-2">delete</button>
+                      className={`text-[10px] ${STATUS_TEXT.problem} underline underline-offset-2`}>delete</button>
                   </>
                 )}
               </div>
@@ -142,6 +142,7 @@ import { statusTone, statusLabel } from '../utils/statusTone'
 import JobPhotosCard from '../components/schedule/JobPhotosCard'
 import { EmptyState } from '../components/ui'
 import { STATUS_DOT } from '../theme/statusDots'
+import { STATUS_TEXT, STATUS_ICON } from '../theme/statusText'
 
 const STATUS_OPTIONS = [
   // "unscheduled" = converted from a quote but no date yet. Distinct badge so
@@ -213,7 +214,7 @@ function ReviewDraftModal({ draft, onClose }) {
         onClick={e => e.stopPropagation()}>
         <div className="flex items-start justify-between px-5 py-4 border-b border-hairline">
           <div className="flex items-center gap-2.5 min-w-0">
-            <Sparkles className="w-5 h-5 text-amber-500 shrink-0" />
+            <Sparkles className={`w-5 h-5 ${STATUS_ICON.attention} shrink-0`} />
             <div className="min-w-0">
               <h2 className="text-sm font-semibold text-ink">Review request draft</h2>
               <p className="text-[12px] text-ink-3 mt-0.5">Edit if needed, then copy it into a text or email — add your review link.</p>
@@ -229,7 +230,7 @@ function ReviewDraftModal({ draft, onClose }) {
           <div className="flex justify-end mt-2">
             <button onClick={copy}
               className="inline-flex min-h-11 sm:min-h-0 items-center gap-1.5 bg-panel border border-hairline-2 text-ink-2 hover:bg-bg-2 rounded-md text-xs font-medium px-3 py-1.5 transition-colors">
-              {copied ? <><Check className="w-3.5 h-3.5 text-emerald-500" /> Copied</> : <><Copy className="w-3.5 h-3.5" /> Copy message</>}
+              {copied ? <><Check className={`w-3.5 h-3.5 ${STATUS_ICON.ok}`} /> Copied</> : <><Copy className="w-3.5 h-3.5" /> Copy message</>}
             </button>
           </div>
         </div>
@@ -515,7 +516,7 @@ export default function JobDetail() {
               </button>
               <button
                 onClick={() => setShowInvoicePrompt(false)}
-                className="text-[13px] text-emerald-700 hover:text-emerald-800 px-2"
+                className={`text-[13px] ${STATUS_TEXT.ok} hover:text-emerald-900 px-2`}
               >
                 Not now
               </button>
@@ -759,11 +760,11 @@ export default function JobDetail() {
                     <div key={r.cleaner_id} className="text-[12px] flex items-start justify-between gap-2">
                       <span className="text-ink-2 truncate">{r.name}</span>
                       {r.response === 'accepted' ? (
-                        <span className="shrink-0 inline-flex items-center gap-1 text-emerald-600 font-semibold">
+                        <span className={`shrink-0 inline-flex items-center gap-1 ${STATUS_TEXT.ok} font-semibold`}>
                           <CheckCircle className="w-3.5 h-3.5" /> Accepted
                         </span>
                       ) : r.response === 'declined' ? (
-                        <span className="shrink-0 text-red-600 font-semibold text-right">
+                        <span className={`shrink-0 ${STATUS_TEXT.problem} font-semibold text-right`}>
                           Can't make it
                           {r.reason && <span className="block font-normal italic text-[11px] text-red-500/90">“{r.reason}”</span>}
                         </span>
@@ -819,7 +820,7 @@ export default function JobDetail() {
             {canEdit() && (
               <div className="border-t border-hairline pt-3">
                 <button onClick={deleteJob} disabled={deleting}
-                  className="w-full flex items-center justify-center gap-1.5 bg-bg-2 border border-hairline hover:border-red-300 disabled:opacity-50 text-red-600 hover:text-red-700 px-3 py-2 rounded-lg text-[12px] font-medium transition-colors">
+                  className={`w-full flex items-center justify-center gap-1.5 bg-bg-2 border border-hairline hover:border-red-300 disabled:opacity-50 ${STATUS_TEXT.problem} hover:text-rose-800 px-3 py-2 rounded-lg text-[12px] font-medium transition-colors`}>
                   <Trash2 className="w-3.5 h-3.5" /> {deleting ? 'Deleting…' : 'Delete job'}
                 </button>
               </div>
@@ -880,7 +881,7 @@ export default function JobDetail() {
               render={(inv) => (
                 <Link key={inv.id} to={`/invoices/${inv.id}`}
                   className="flex items-center justify-between gap-2 text-[12px] hover:bg-bg-2 rounded px-1 -mx-1 py-0.5 transition-colors">
-                  <span className="text-blue-500 truncate hover:underline">{inv.invoice_number || `#${inv.id}`}</span>
+                  <span className={`${STATUS_TEXT.info} truncate hover:underline`}>{inv.invoice_number || `#${inv.id}`}</span>
                   <span className="flex items-center gap-2 shrink-0">
                     <span className="text-ink-3">{money(inv.total)}</span>
                     <StatusBadge status={statusTone(inv.status)} className="capitalize">{statusLabel(inv.status)}</StatusBadge>
