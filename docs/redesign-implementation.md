@@ -200,12 +200,23 @@ longer visits its page:
   its own hero pods so a count isn't shown twice; the other three still do it.
   Lead rows render on both Requests and Deals; the lead→quote→job hand-off is
   implemented three times.
-- **Six pages have no test at all**: Invoicing, InvoiceDetail, Clients,
-  Properties, PropertyIcalsBulk, Recurring. `PropertyIcalsBulk` is fully
-  instrumented with testids that nothing references.
-- **`.bb-focus` exists only on OpsBoard.** Tier 2a's focus ring never reached any
-  other page, so keyboard focus is still invisible app-wide under
-  `overflow-hidden`. That is one app-wide PR, not thirteen page PRs.
+- **Pages with no test at all.** Was six; `Clients` was already miscounted
+  (`pages/__tests__/Clients.chrome.test.jsx` exists), and `Invoicing` and
+  `InvoiceDetail` now have one each — the invoice record page because it is
+  where a send that never reached the customer can be reported as sent, and
+  the list because the dashboard's money links depend on its `?status=`
+  contract. **Still bare: `Properties`, `PropertyIcalsBulk`, `Recurring`.**
+  `PropertyIcalsBulk` is fully instrumented with testids that nothing
+  references, so it is the cheapest of the three.
+- ~~**`.bb-focus` exists only on OpsBoard.**~~ **Done, and it was two defects.**
+  The reach was the smaller one: the ring is now a base-layer
+  `:where(…):focus-visible` default covering the ~1140 focusable elements that
+  had no focus styling at all, rather than the 14 that had opted in. The larger
+  one only showed up on measuring — the ring was `--accent-500`, which bottoms
+  out at **1.69:1** on light grounds against a 3:1 floor, so on five of the
+  seven selectable accents it could not be seen. No single step clears both
+  ends, so it now uses a per-theme `--accent-focus` (700 light / 500 dark),
+  held by `__tests__/focusRing.test.js`.
 
 ## Tier 4 — the two real builds · weeks each, own design pass
 
