@@ -412,12 +412,34 @@ def test_add_ical_url_stamps_the_property_org():
     prop_id, client_id = prop.id, c.id
     db.close()
     try:
-        client = TestClient(app)
-        r = client.post(
-            f"/api/properties/{prop_id}/icals",
-            json={"url": f"https://www.airbnb.com/calendar/ical/{tag}.ics", "source": "airbnb"},
-        )
-        assert r.status_code == 201, r.text
+        # Called in-process AS org 77 rather than over HTTP.
+        #
+        # This used to POST through TestClient, which authenticates as the
+        # synthetic master-API-key admin — and `current_org_id`'s docstring says
+        # that caller "operates in the primary org" (org 1). So the old version
+        # was a cross-org write, and it only succeeded because
+        # POST /{property_id}/icals had no tenant scope. It would already have
+        # been refused on real Postgres, where `current_org_id` arms MT-3 RLS
+        # and `properties` / `property_icals` are both in TENANT_TABLES; it
+        # passed solely because RLS is a no-op on SQLite.
+        #
+        # The scope is now explicit (via `_property_or_404`), so the request has
+        # to come from org 77 to be legitimate. Calling the handler directly is
+        # how the rest of the suite does that, and it keeps this test's actual
+        # point intact: the stamp is checked against a NON-default org, so a
+        # coincidental match with org 1 still cannot hide a regression.
+        from modules.properties.router import add_ical_url
+        from modules.properties.router import PropertyIcalSchema as _IcalSchema
+        db_w = SessionLocal()
+        try:
+            add_ical_url(
+                prop_id,
+                _IcalSchema(url=f"https://www.airbnb.com/calendar/ical/{tag}.ics", source="airbnb"),
+                db=db_w,
+                org_id=77,
+            )
+        finally:
+            db_w.close()
         db2 = SessionLocal()
         try:
             ical = db2.query(PropertyIcal).filter(PropertyIcal.property_id == prop_id).one()
