@@ -168,19 +168,25 @@ longer visits its page:
 - **A field built for a page the page never read.** `invoice_to_dict`'s
   `public_token` carries a backend comment saying it exists so "InvoiceDetail
   can show/copy the customer's pay-page link". `InvoiceDetail` never reads it.
-- **A 1000-row fetch for a field already in the payload.** `Quoting` fetches
-  `/api/clients?limit=1000` solely to derive `clientName()`, while
-  `_quote_dict` already ships `client_name`, which the page never reads.
-- **A raw `fetch()` outside `api.js`.** `PropertyPhoto` bypasses the client
-  entirely and reads the JWT straight from localStorage; each call is a paid
-  Street View call, it fires once per card on `Requests`, and the drawer fires
-  the *same URL again* for the row already on screen.
-- **A search that silently matches nothing.** `usePropertyFilters` searches
-  `p.client_name`, which `prop_to_dict` never returns — so searching Properties
-  by client name is dead.
-- **Codes and passwords fetched to render six fields.** `PropertyIcalsBulk`
-  pulls the whole property record — house codes, wifi passwords, access notes —
-  and displays none of it. Office-role, so not a BB-SEC violation, but needless.
+- ~~**A 1000-row fetch for a field already in the payload.**~~ **Fixed in
+  `Quoting`** — no `?limit=1000` remains there. Eight such fetches survive
+  elsewhere; see "No cached hook for the client book" below, which is the same
+  problem and still open.
+- ~~**A raw `fetch()` outside `api.js`.**~~ **Half of this was never a defect,
+  and the other half is fixed.** The raw `fetch` and the localStorage read are
+  deliberate and carry their reason in the file: `PropertyPhoto` renders inside
+  the crew `JobCard` and office `PropertyDetail`, so importing a named `api`
+  export would break every test that partially mocks `../api`. `lazy` already
+  stops a list fetching photos nobody scrolled to. What WAS real is the last
+  clause — the drawer buying a second copy of a photo already on screen
+  (`Requests.jsx:364` and `:965` on one address). Fixed by caching the blob per
+  endpoint, not the object URL: an object URL is owned by whoever revokes it,
+  and sharing one would blank the list row when the drawer closed.
+- ~~**A search that silently matches nothing.**~~ **Fixed.** `prop_to_dict`
+  ships `client_name` and carries a comment naming this bug.
+- ~~**Codes and passwords fetched to render six fields.**~~ **Fixed.**
+  `PropertyIcalsBulk` no longer reads `house_code` / `wifi_password` /
+  `access_notes`.
 - **Filter-independent aggregates refetched per keystroke.**
   `/api/invoices/summary` and `/api/clients/counts` re-fire with every tab click
   and debounced keystroke.
