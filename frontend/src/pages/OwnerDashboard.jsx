@@ -34,6 +34,7 @@ import { PropertyEconomicsTile } from '../components/dashboard/PropertyEconomics
 import { WeekCapacityTile } from '../components/dashboard/WeekCapacityTile'
 import { OperatingHealthTile } from '../components/dashboard/OperatingHealthTile'
 import { ErrorState, PageHeader, SubNav } from '../components/ui'
+import { STATUS_DOT } from '../theme/statusDots'
 
 // Human-facing labels for the API's job_type values. The backend returns
 // whatever's on Job.job_type, so unknowns fall through to a Start-Cased
@@ -129,7 +130,7 @@ function AiHealthTile() {
     if (!r) return null
     return (
       <div className="flex items-start gap-2 py-1.5">
-        <span className={`mt-1 w-1.5 h-1.5 rounded-full shrink-0 ${r.ok ? 'bg-emerald-500' : 'bg-red-500'}`} aria-hidden="true" />
+        <span className={`mt-1 w-1.5 h-1.5 rounded-full shrink-0 ${r.ok ? STATUS_DOT.ok : STATUS_DOT.problem}`} aria-hidden="true" />
         <div className="min-w-0 flex-1">
           <div className="text-sm text-ink-2">{name}</div>
           {r.ok
@@ -151,7 +152,7 @@ function AiHealthTile() {
           <Row label="Provider">{info.provider}</Row>
           <Row label="Key configured">
             <span className="inline-flex items-center gap-1.5">
-              <span className={`w-1.5 h-1.5 rounded-full ${info.available ? 'bg-emerald-500' : 'bg-red-500'}`} aria-hidden="true" />
+              <span className={`w-1.5 h-1.5 rounded-full ${info.available ? STATUS_DOT.ok : STATUS_DOT.problem}`} aria-hidden="true" />
               {info.available ? 'yes' : 'no'}
             </span>
           </Row>

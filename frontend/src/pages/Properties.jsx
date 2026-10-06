@@ -13,6 +13,7 @@ import { usePropertyMutations } from '../hooks/usePropertyMutations'
 import { usePropertyForm } from '../hooks/usePropertyForm'
 import { useSelectionSet } from '../hooks/useSelectionSet'
 import { usePropertyFilters } from '../hooks/usePropertyFilters'
+import { STATUS_DOT } from '../theme/statusDots'
 
 export default function Properties() {
   const navigate = useNavigate()
@@ -170,7 +171,7 @@ export default function Properties() {
                     feedAttentionOnly
                       ? 'bg-bg-2 border-hairline-2 text-ink'
                       : 'bg-panel border-hairline text-ink-2 hover:bg-bg-2'}`}>
-                  <span className="w-1.5 h-1.5 rounded-full shrink-0 bg-red-500" aria-hidden="true" />
+                  <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${STATUS_DOT.problem}`} aria-hidden="true" />
                   Turnover feed needs attention ({feedAttentionCount})
                   {feedAttentionOnly && <span className="text-ink-3">· showing only these</span>}
                 </button>
@@ -183,7 +184,7 @@ export default function Properties() {
                     missingAccessOnly
                       ? 'bg-bg-2 border-hairline-2 text-ink'
                       : 'bg-panel border-hairline text-ink-2 hover:bg-bg-2'}`}>
-                  <span className="w-1.5 h-1.5 rounded-full shrink-0 bg-amber-500" aria-hidden="true" />
+                  <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${STATUS_DOT.attention}`} aria-hidden="true" />
                   Missing access info ({missingAccessCount})
                   {missingAccessOnly && <span className="text-ink-3">· showing only these</span>}
                 </button>

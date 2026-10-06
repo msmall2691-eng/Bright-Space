@@ -65,11 +65,14 @@ const RAW_DOT = new RegExp(String.raw`(?<![\w:-])bg-(?:${STATUS_HUES})-(?:400|50
  * here plus the migration itself.
  */
 const MIGRATED = [
+  // MyDay is a page but belongs to the crew surface; the `pages` entry below
+  // covers it too, which is harmless — both assert the same thing about it.
   { name: 'crew', dirs: ['components/crew'], files: ['pages/MyDay.jsx'] },
   { name: 'schedule', dirs: ['components/schedule'], files: [] },
   { name: 'client', dirs: ['components/client', 'components/clients'], files: [] },
   { name: 'office', dirs: ['components/settings', 'components/invoicing', 'components/quoting',
                            'components/properties', 'components/comms', 'components/ui'], files: [] },
+  { name: 'pages', dirs: ['pages'], files: [] },
 ]
 
 /**
@@ -149,6 +152,13 @@ const EXEMPT = {
     reason: 'quote lifecycle with two good ends plus a lead pipeline — same decision as client QUOTE_COLORS, deferred with it' },
   'components/quoting/FollowUpRow.jsx': { allow: 1,
     reason: 'two follow-up REASONS (opened / not opened) — categorical, and purple is off-vocabulary' },
+
+  // --- pages surface ---
+  // A filled checkbox: `border-emerald-500 bg-emerald-500 text-white`. The pair
+  // that matters is the white check ON the fill, which passes; darkening the
+  // fill would reduce it. Same call as CompleteVisitModal.
+  'pages/OpsBoard.jsx': { allow: 1,
+    reason: 'a filled checkbox with a white check on it — the pair is white-on-emerald, which passes' },
 }
 
 function walk(dir) {
@@ -193,7 +203,7 @@ describe('BB-A11Y-02 — migrated surfaces go through the measured map', () => {
     // the achieved set here means removing one takes a deliberate edit in two
     // places, and the list doubles as the record of how far this has got.
     const done = MIGRATED.map(s => s.name)
-    for (const name of ['crew', 'schedule', 'client', 'office']) {
+    for (const name of ['crew', 'schedule', 'client', 'office', 'pages']) {
       expect(done, `surface "${name}" was migrated and must stay covered`).toContain(name)
     }
   })

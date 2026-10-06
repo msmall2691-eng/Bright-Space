@@ -9,6 +9,7 @@ import ProposalsQueue from '../components/board/ProposalsQueue'
 import MarkdownContent from '../components/workspace/MarkdownContent'
 import { get, post, wsUrl } from '../api'
 import { todayYMD } from '../utils/format'
+import { STATUS_DOT } from '../theme/statusDots'
 
 /**
  * Workspace — the Agent Command Center, rebuilt as a native chat room.
@@ -143,7 +144,7 @@ function ErrorBubble({ text }) {
   return (
     <div className="flex justify-center my-2">
       <div className="flex items-center gap-1.5 text-[12px] text-ink-2 bg-panel border border-hairline rounded-lg px-3 py-1.5">
-        <span className="w-1.5 h-1.5 rounded-full bg-red-500 shrink-0" aria-hidden="true" />
+        <span className={`w-1.5 h-1.5 rounded-full ${STATUS_DOT.problem} shrink-0`} aria-hidden="true" />
         {text}
       </div>
     </div>
@@ -167,7 +168,7 @@ function SuggestedTasks({ items, onDismiss, onPick }) {
             onClick={() => onPick(item)}
             className="w-full flex items-start gap-2.5 text-left p-2 rounded-lg hover:bg-bg transition-colors"
           >
-            <span className={`w-2 h-2 rounded-full mt-1.5 shrink-0 ${item.severity === 'high' ? 'bg-red-500' : 'bg-amber-400'}`} />
+            <span className={`w-2 h-2 rounded-full mt-1.5 shrink-0 ${item.severity === 'high' ? STATUS_DOT.problem : STATUS_DOT.attention}`} />
             <span className="min-w-0 flex-1">
               <span className="block text-[13px] font-medium text-ink-2 truncate">{item.title}</span>
               <span className="block text-[11px] text-ink-3 truncate">{item.action}</span>
