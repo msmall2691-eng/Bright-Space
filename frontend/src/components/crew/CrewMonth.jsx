@@ -18,6 +18,8 @@ import { ErrorNote, SectionLabel } from './primitives'
 // summary — which also rendered the structured checklist_template (an array of
 // {area, tasks}) as a raw React child and crashed for properties that had one.
 import CrewJobSheet from './CrewJobSheet'
+import { STATUS_DOT } from '../../theme/statusDots'
+import { STATUS_TEXT } from '../../theme/statusText'
 
 const DOW = ['S', 'M', 'T', 'W', 'T', 'F', 'S']   // Sunday-first, US calendar
 const ymd = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
@@ -114,7 +116,7 @@ export default function CrewMonth({ previewUserId = null }) {
                     {d.getDate()}
                     {(mineCount > 0 || otherCount > 0) && (
                       <span className="absolute bottom-1 left-1/2 -translate-x-1/2 flex gap-0.5">
-                        {mineCount > 0 && <span className={`w-1.5 h-1.5 rounded-full ${selected === k ? 'bg-white' : 'bg-blue-500'}`} />}
+                        {mineCount > 0 && <span className={`w-1.5 h-1.5 rounded-full ${selected === k ? 'bg-white' : STATUS_DOT.info}`} />}
                         {otherCount > 0 && <span className={`w-1.5 h-1.5 rounded-full ${selected === k ? 'bg-white/60' : 'bg-ink-3/50'}`} />}
                       </span>
                     )}
@@ -144,7 +146,7 @@ export default function CrewMonth({ previewUserId = null }) {
                     </span>
                     <span className="text-[11.5px] font-mono text-ink-3 shrink-0">
                       {j.start_time ? `${j.start_time}${j.end_time ? `–${j.end_time}` : ''}` : 'anytime'}
-                      {j.mine && <span className="text-blue-500 ml-1">›</span>}
+                      {j.mine && <span className={`${STATUS_TEXT.info} ml-1`}>›</span>}
                     </span>
                   </div>
                   {!j.mine && j.cleaners.length > 0 && (

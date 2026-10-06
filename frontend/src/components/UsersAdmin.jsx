@@ -5,6 +5,7 @@ import { get, post, patch } from '../api'
 import SubFileReview from './SubFileReview'
 import { pushToast } from '../utils/toastBus'
 import { reportInvite } from '../utils/inviteFallback'
+import { STATUS_DOT } from '../theme/statusDots'
 
 const ROLES = ['admin', 'manager', 'member', 'viewer', 'cleaner']
 
@@ -22,12 +23,12 @@ const ROLES = ['admin', 'manager', 'member', 'viewer', 'cleaner']
 function rowState(u) {
   // dot carries the hue; the chip body stays quiet (owner's bubble veto).
   if (!u.active || u.status === 'disabled')
-    return { key: 'disabled', label: 'Disabled', Icon: Ban, dot: 'bg-red-500' }
+    return { key: 'disabled', label: 'Disabled', Icon: Ban, dot: STATUS_DOT.problem }
   if (u.status === 'pending')
-    return { key: 'pending', label: 'Pending', Icon: Clock, dot: 'bg-amber-500' }
+    return { key: 'pending', label: 'Pending', Icon: Clock, dot: STATUS_DOT.attention }
   if (u.activated === false)
-    return { key: 'invited', label: 'Invited', Icon: Mail, dot: 'bg-amber-500' }
-  return { key: 'active', label: 'Active', Icon: CheckCircle2, dot: 'bg-emerald-500' }
+    return { key: 'invited', label: 'Invited', Icon: Mail, dot: STATUS_DOT.attention }
+  return { key: 'active', label: 'Active', Icon: CheckCircle2, dot: STATUS_DOT.ok }
 }
 
 const inputCls = 'mt-0.5 w-full bg-panel border border-hairline rounded-lg px-2.5 py-2 text-base sm:text-sm focus:outline-hidden focus:ring-2 focus:ring-indigo-500'
@@ -124,7 +125,7 @@ export default function UsersAdmin() {
 
       {error && (
         <div className="flex items-center gap-2 text-[13px] text-ink-2 bg-panel border border-hairline rounded-lg px-3 py-2 mb-3">
-          <span className="w-1.5 h-1.5 rounded-full bg-red-500 shrink-0" aria-hidden="true" />
+          <span className={`w-1.5 h-1.5 rounded-full ${STATUS_DOT.problem} shrink-0`} aria-hidden="true" />
           {error}
         </div>
       )}
@@ -167,7 +168,7 @@ export default function UsersAdmin() {
       {!loading && pending.length > 0 && (
         <div className="mb-5">
           <h3 className="inline-flex items-center gap-1.5 text-xs font-semibold text-ink-3 uppercase tracking-wide mb-2">
-            <span className="w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0" aria-hidden="true" />
+            <span className={`w-1.5 h-1.5 rounded-full ${STATUS_DOT.attention} shrink-0`} aria-hidden="true" />
             Waiting for approval ({pending.length})
           </h3>
           <div className="space-y-2">

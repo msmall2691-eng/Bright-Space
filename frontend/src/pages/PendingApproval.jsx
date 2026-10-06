@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { Clock, LogOut, RefreshCw } from 'lucide-react'
 import { get, logout } from '../api'
+import { STATUS_DOT } from '../theme/statusDots'
 
 /**
  * Waiting room for self-signups that haven't been approved yet. A pending
@@ -47,7 +48,7 @@ export default function PendingApproval({ user, onApproved }) {
           because it wants a second's notice, not alarm. */}
       {note && (
         <div className="flex items-start gap-1.5 rounded-lg border border-hairline bg-panel px-3 py-2 mb-4 max-w-sm text-left text-xs text-ink-2">
-          <span className="mt-[5px] w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0" aria-hidden="true" />
+          <span className={`mt-[5px] w-1.5 h-1.5 rounded-full ${STATUS_DOT.attention} shrink-0`} aria-hidden="true" />
           <span className="min-w-0">{note}</span>
         </div>
       )}

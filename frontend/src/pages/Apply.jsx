@@ -62,6 +62,7 @@
  */
 import { useState } from 'react'
 import { Check, ChevronDown, Loader2 } from 'lucide-react'
+import { STATUS_DOT } from '../theme/statusDots'
 
 const API = '/api/apply'
 
@@ -232,19 +233,19 @@ export default function Apply() {
 
       {/* The four facts that decide it. Everything else folds. */}
       <ul className="mt-6 space-y-2.5">
-        <Line dot="bg-emerald-500">
+        <Line dot={STATUS_DOT.ok}>
           <span className="text-ink">Paid per job</span>, at a price you see
           before you take it.
         </Line>
-        <Line dot="bg-emerald-500">
+        <Line dot={STATUS_DOT.ok}>
           <span className="text-ink">You choose what you take</span> — nothing is
           assigned to you, and there’s no penalty for passing.
         </Line>
-        <Line dot="bg-emerald-500">
+        <Line dot={STATUS_DOT.ok}>
           <span className="text-ink">You can counter.</span> Think a house is
           worth more than the price? Say so.
         </Line>
-        <Line dot="bg-amber-500">
+        <Line dot={STATUS_DOT.attention}>
           <span className="text-ink">You’ll need your own insurance</span>,
           transport and supplies.
         </Line>
@@ -350,7 +351,7 @@ export default function Apply() {
 
         {error && (
           <p className="flex items-start gap-1.5 text-[13px] text-ink-2">
-            <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-red-500" aria-hidden="true" />
+            <span className={`mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full ${STATUS_DOT.problem}`} aria-hidden="true" />
             {error}
           </p>
         )}
@@ -428,12 +429,12 @@ export default function Apply() {
         <Fold title="What you’ll need"
           summary="A W-9, proof of insurance, your own transport and supplies.">
           <ul className="space-y-2">
-              <Line dot="bg-amber-500">
+              <Line dot={STATUS_DOT.attention}>
                 <span className="text-ink">A W-9.</span> Standard IRS form so we can
                 pay you as a business. We never ask for a Social Security number on
                 this page or anywhere in the app.
               </Line>
-              <Line dot="bg-amber-500">
+              <Line dot={STATUS_DOT.attention}>
                 <span className="text-ink">Proof of insurance.</span> Your own
                 liability cover — a certificate from your insurer. This is the one
                 that stops most people, so it’s worth sorting early.

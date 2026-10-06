@@ -1,6 +1,8 @@
 import { CalendarDays, Clock, Users, Home, DollarSign, Lock, Sparkles, MapPin } from 'lucide-react'
 import { Sheet } from './primitives'
 import PropertyPhoto from '../PropertyPhoto'
+import { STATUS_DOT } from '../../theme/statusDots'
+import { STATUS_TEXT } from '../../theme/statusText'
 
 /**
  * The details of a job that's up for grabs — what a cleaner needs to decide
@@ -115,7 +117,7 @@ export default function OpenJobSheet({ job, onClose, onClaim, onAccept, busy = f
         {job.address ? (
           <a href={`https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(job.address)}`}
             target="_blank" rel="noopener noreferrer"
-            className="mt-0.5 flex items-center gap-1 text-[13px] text-blue-600 dark:text-blue-400 active:opacity-60">
+            className={`mt-0.5 flex items-center gap-1 text-[13px] ${STATUS_TEXT.info} dark:text-blue-400 active:opacity-60`}>
             <MapPin className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
             <span className="underline decoration-blue-400/40 underline-offset-2">{job.address}</span>
           </a>
@@ -160,7 +162,7 @@ export default function OpenJobSheet({ job, onClose, onClaim, onAccept, busy = f
       {pending ? (
         <div className="rounded-xl border border-hairline bg-panel px-3 py-2.5 text-[13px] text-ink-2">
           <span className="inline-flex items-center gap-1.5">
-            <span className="h-1.5 w-1.5 rounded-full bg-amber-500" aria-hidden="true" />
+            <span className={`h-1.5 w-1.5 rounded-full ${STATUS_DOT.attention}`} aria-hidden="true" />
             You’ve asked for this{mine.requested_rate != null ? ` at $${mine.requested_rate}` : ''} — the office will confirm.
           </span>
         </div>

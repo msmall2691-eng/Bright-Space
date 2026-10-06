@@ -16,6 +16,7 @@
  * Renders nothing when there's nothing to say.
  */
 import { Link } from 'react-router-dom'
+import { STATUS_DOT } from '../../theme/statusDots'
 
 const BTN =
   'shrink-0 px-2.5 py-1.5 rounded-md bg-panel border border-hairline-2 text-ink-2 hover:bg-bg-2 text-xs font-medium transition-colors'
@@ -38,7 +39,7 @@ export default function NeedsDateStrip({ jobs, onSchedule, className = 'px-3 pt-
     <div className={className} data-testid="needs-date-strip">
       <div className="rounded-lg border border-hairline bg-panel text-[12.5px]">
         <div className="flex items-center gap-2.5 px-3 pt-2 pb-1">
-          <span className="w-1.5 h-1.5 rounded-full shrink-0 bg-amber-500" aria-hidden="true" />
+          <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${STATUS_DOT.attention}`} aria-hidden="true" />
           <span className="font-medium text-ink">Needs a date</span>
           <span className="text-ink-3">{list.length}</span>
         </div>

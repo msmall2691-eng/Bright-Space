@@ -8,6 +8,13 @@ import { toLocalYMD } from '../../utils/format'
 // Status hue lives in a small dot over a quiet chip body (owner's veto of
 // the tinted pill bubbles) — these dot classes feed InlineSelect and the
 // read-only dot+word status renders.
+// NOT migrated to STATUS_DOT (BB-A11Y-02), as a whole and on purpose. Eight
+// states with TWO good ends — `accepted` and `converted` both collapse to `ok`
+// and stop being distinguishable — plus indigo (the accent) and teal, which
+// are off the design language's vocabulary already. Identical shape to
+// client/constants.js QUOTE_COLORS, deferred with it so one decision is not
+// split across two files. LEAD_STATUS_DOTS below is a pipeline for the same
+// reason (and carries purple).
 export const QUOTE_STATUS_DOTS = {
   draft:    'bg-ink-3',
   sent:     'bg-blue-500',

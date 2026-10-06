@@ -14,6 +14,8 @@ import { AuthImage, Skeleton } from '../ui'
 import { prepareForUpload } from '../../utils/imageDownscale'
 import { onCellular, enqueuePhoto } from './photoQueue'
 import { ErrorNote, FullScreenSheet, SectionLabel } from './primitives'
+import { STATUS_DOT } from '../../theme/statusDots'
+import { STATUS_TEXT } from '../../theme/statusText'
 
 export default function PropertySheet({ propertyId, propertyName, onClose }) {
   const [notes, setNotes] = useState(null)
@@ -89,7 +91,7 @@ export default function PropertySheet({ propertyId, propertyName, onClose }) {
         <ErrorNote>{error}</ErrorNote>
         {notice && (
           <p className="text-[12px] text-ink-2 flex items-start gap-1.5">
-            <span className="w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0 mt-[5px]" /> {notice}
+            <span className={`w-1.5 h-1.5 rounded-full ${STATUS_DOT.attention} shrink-0 mt-[5px]`} /> {notice}
           </p>
         )}
 
@@ -97,7 +99,7 @@ export default function PropertySheet({ propertyId, propertyName, onClose }) {
         <section>
           <div className="flex items-center justify-between mb-2">
             <SectionLabel>How it should look</SectionLabel>
-            <label className="text-[12px] font-semibold text-blue-600 dark:text-blue-400 inline-flex items-center gap-1 cursor-pointer">
+            <label className={`text-[12px] font-semibold ${STATUS_TEXT.info} dark:text-blue-400 inline-flex items-center gap-1 cursor-pointer`}>
               <Camera className="w-3.5 h-3.5" /> Add photo
               <input type="file" accept="image/*" multiple className="hidden" disabled={busy}
                 onChange={e => { uploadPhotos([...e.target.files]); e.target.value = '' }} />
@@ -126,7 +128,7 @@ export default function PropertySheet({ propertyId, propertyName, onClose }) {
             <SectionLabel>House notes</SectionLabel>
             {!addingNote && (
               <button onClick={() => setAddingNote(true)}
-                className="text-[12px] font-semibold text-blue-600 dark:text-blue-400 inline-flex items-center gap-0.5">
+                className={`text-[12px] font-semibold ${STATUS_TEXT.info} dark:text-blue-400 inline-flex items-center gap-0.5`}>
                 <Plus className="w-3.5 h-3.5" /> Add note
               </button>
             )}
@@ -163,7 +165,7 @@ export default function PropertySheet({ propertyId, propertyName, onClose }) {
                 <div className="text-[10.5px] text-ink-3 mt-0.5 flex items-center gap-1">
                   {n.author_name}{!n.shared && (
                     <span className="inline-flex items-center gap-1">
-                      <span className="w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0" />
+                      <span className={`w-1.5 h-1.5 rounded-full ${STATUS_DOT.attention} shrink-0`} />
                       <Share2 className="w-3 h-3" /> waiting for the office to share
                     </span>
                   )}

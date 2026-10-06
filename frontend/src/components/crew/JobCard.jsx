@@ -26,6 +26,8 @@ import { copyToClipboard } from '../../utils/clipboard'
 import StatusBadge from '../ui/StatusBadge'
 import { SOFT, SectionLabel, DisclosureRow } from './primitives'
 import PropertyPhoto from '../PropertyPhoto'
+import { STATUS_DOT } from '../../theme/statusDots'
+import { STATUS_TEXT, STATUS_ICON } from '../../theme/statusText'
 
 export function fmtTimeRange(start, end) {
   if (!start && !end) return ''
@@ -119,7 +121,7 @@ function CopyRow({ label, value, mono = false }) {
         </span>
       </span>
       {copied ? (
-        <span className="shrink-0 inline-flex items-center gap-1 text-[12px] font-semibold text-emerald-600 dark:text-emerald-400">
+        <span className={`shrink-0 inline-flex items-center gap-1 text-[12px] font-semibold ${STATUS_TEXT.ok} dark:text-emerald-400`}>
           <Check className="w-3.5 h-3.5" /> Copied
         </span>
       ) : (
@@ -270,7 +272,7 @@ export default function JobCard({ job, onMarkDone, onPhotos, onRespond, onDeclin
               (brightbase-marketplace). */}
           {!job.open && job.agreed_rate != null && (
             <div className="text-xs text-ink-2 mt-0.5">
-              Pays <span className="font-semibold text-emerald-600 dark:text-emerald-400">${Number(job.agreed_rate).toLocaleString(undefined, { maximumFractionDigits: 2 })}</span>
+              Pays <span className={`font-semibold ${STATUS_TEXT.ok} dark:text-emerald-400`}>${Number(job.agreed_rate).toLocaleString(undefined, { maximumFractionDigits: 2 })}</span>
             </div>
           )}
           {/* Open offers: a tap to the full (anonymised) details — size, hours,
@@ -278,7 +280,7 @@ export default function JobCard({ job, onMarkDone, onPhotos, onRespond, onDeclin
               Address/photo still unlock only once it's theirs. */}
           {job.open && onOpenDetails && (
             <button type="button" onClick={() => onOpenDetails(job)}
-              className="mt-1 -mb-0.5 py-1 text-xs font-semibold text-blue-600 dark:text-blue-400 active:opacity-60">
+              className={`mt-1 -mb-0.5 py-1 text-xs font-semibold ${STATUS_TEXT.info} dark:text-blue-400 active:opacity-60`}>
               View details
             </button>
           )}
@@ -286,7 +288,7 @@ export default function JobCard({ job, onMarkDone, onPhotos, onRespond, onDeclin
             /* Tap → the phone's maps app with directions. Generous hit area on
                purpose: this is the most-used tap on the page from a car. */
             <a href={mapsUrl(job.address)} target="_blank" rel="noopener noreferrer"
-              className="text-xs text-blue-600 dark:text-blue-400 mt-1 -mb-1 py-1 flex items-center gap-1 active:opacity-60">
+              className={`text-xs ${STATUS_TEXT.info} dark:text-blue-400 mt-1 -mb-1 py-1 flex items-center gap-1 active:opacity-60`}>
               <MapPin className="w-3 h-3 shrink-0" />
               <span className="truncate underline decoration-blue-400/40 underline-offset-2">{job.address}</span>
               <Navigation className="w-3 h-3 shrink-0 opacity-70" />
@@ -379,7 +381,7 @@ export default function JobCard({ job, onMarkDone, onPhotos, onRespond, onDeclin
            not house trivia). Quiet card + dot, not a colored banner. */
         <div className="mt-3 rounded-lg border border-hairline bg-bg px-3 py-2">
           <div className="text-[11px] font-semibold text-ink flex items-center gap-1.5">
-            <span className="w-1.5 h-1.5 rounded-full bg-blue-500 shrink-0" aria-hidden="true" />
+            <span className={`w-1.5 h-1.5 rounded-full ${STATUS_DOT.info} shrink-0`} aria-hidden="true" />
             From the office
           </div>
           <div className="mt-0.5 text-[12px] text-ink-2 whitespace-pre-wrap">{job.notes}</div>
@@ -407,7 +409,7 @@ export default function JobCard({ job, onMarkDone, onPhotos, onRespond, onDeclin
                cleaner the customer confirmed this visit — the door will be
                open — without a call to the office. */
             <div className="text-[12px] text-ink-2 flex items-center gap-1.5">
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" aria-hidden="true" />
+              <span className={`w-1.5 h-1.5 rounded-full ${STATUS_DOT.ok} shrink-0`} aria-hidden="true" />
               Customer confirmed
             </div>
           )}
@@ -428,7 +430,7 @@ export default function JobCard({ job, onMarkDone, onPhotos, onRespond, onDeclin
       {!job.open && (job.photos?.length || 0) > 0 && onHouseInfo && (
         <button onClick={onHouseInfo}
           className="mt-3 w-full flex items-center gap-2 rounded-lg border border-hairline bg-bg px-3 py-2 text-left active:opacity-70 transition-opacity">
-          <Camera className="w-4 h-4 text-blue-600 dark:text-blue-400 shrink-0" />
+          <Camera className={`w-4 h-4 ${STATUS_ICON.info} dark:text-blue-400 shrink-0`} />
           <span className="text-[13px] font-semibold text-ink">See the house</span>
           <span className="text-[12px] text-ink-3">
             {job.photos.length} photo{job.photos.length > 1 ? 's' : ''}
@@ -461,7 +463,7 @@ export default function JobCard({ job, onMarkDone, onPhotos, onRespond, onDeclin
             )}
             {!job.open && job.property_id && onHouseInfo && (
               <button onClick={onHouseInfo}
-                className="text-[12px] font-semibold text-blue-600 dark:text-blue-400 inline-flex items-center gap-1 active:opacity-60">
+                className={`text-[12px] font-semibold ${STATUS_TEXT.info} dark:text-blue-400 inline-flex items-center gap-1 active:opacity-60`}>
                 <Camera className="w-3.5 h-3.5" /> House photos &amp; all notes ›
               </button>
             )}
@@ -487,7 +489,7 @@ export default function JobCard({ job, onMarkDone, onPhotos, onRespond, onDeclin
           className="mt-2 w-full text-left text-[12px] text-ink-2 hover:bg-bg-2 disabled:opacity-60 py-2 px-2.5 rounded-lg transition-colors border border-dashed border-hairline">
           {(job.my_helpers?.length || 0) > 0 ? (
             <span className="flex items-center gap-1.5">
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" aria-hidden="true" />
+              <span className={`w-1.5 h-1.5 rounded-full ${STATUS_DOT.ok} shrink-0`} aria-hidden="true" />
               Bringing {job.my_helpers.map(h => h.name).join(', ')}
               <span className="text-ink-3">· change</span>
             </span>
@@ -523,20 +525,20 @@ export default function JobCard({ job, onMarkDone, onPhotos, onRespond, onDeclin
               <div className="min-w-0">
                 {claimable ? (
                   <p className="text-[13px] text-ink-2">
-                    Pays <span className="font-semibold text-emerald-600 dark:text-emerald-400">${Number(rate).toLocaleString(undefined, { maximumFractionDigits: 2 })}</span>
+                    Pays <span className={`font-semibold ${STATUS_TEXT.ok} dark:text-emerald-400`}>${Number(rate).toLocaleString(undefined, { maximumFractionDigits: 2 })}</span>
                   </p>
                 ) : (
                   /* No posted price: claiming isn't instant (there's no anchor),
                      so it becomes an offer the office prices. Say so up front
                      rather than letting a blank field 422 at the server. */
                   <p className="flex items-start gap-1.5 text-[13px] text-ink-2">
-                    <span className="mt-1.5 w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0" aria-hidden="true" />
+                    <span className={`mt-1.5 w-1.5 h-1.5 rounded-full ${STATUS_DOT.attention} shrink-0`} aria-hidden="true" />
                     <span>No price set — name yours and the office will confirm.</span>
                   </p>
                 )}
                 {mine?.status === 'pending' && (
                   <p className="flex items-center gap-1.5 text-[13px] text-ink-2 mt-0.5">
-                    <span className="w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0" aria-hidden="true" />
+                    <span className={`w-1.5 h-1.5 rounded-full ${STATUS_DOT.attention} shrink-0`} aria-hidden="true" />
                     You offered{asked != null ? ` $${Number(asked).toLocaleString(undefined, { maximumFractionDigits: 2 })}` : ''} — waiting on the office
                   </p>
                 )}
@@ -595,7 +597,7 @@ export default function JobCard({ job, onMarkDone, onPhotos, onRespond, onDeclin
              second tap can't fire a duplicate and the cleaner can see it's
              done. Persists for the day on this phone. */
           <div className="mt-3 flex min-h-[44px] w-full items-center justify-center gap-2 rounded-xl border border-hairline bg-bg text-[13px] font-medium text-ink-2">
-            <Check className="w-4 h-4 text-emerald-600 dark:text-emerald-400" aria-hidden="true" />
+            <Check className={`w-4 h-4 ${STATUS_ICON.ok} dark:text-emerald-400`} aria-hidden="true" />
             Customer knows you're on the way
           </div>
         ) : (

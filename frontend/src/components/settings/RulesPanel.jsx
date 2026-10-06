@@ -30,6 +30,7 @@
  */
 import { useCallback, useEffect, useState } from 'react'
 import { get, post } from '../../api'
+import { STATUS_DOT } from '../../theme/statusDots'
 
 const inputCls = 'w-24 rounded-md border border-hairline bg-bg px-2 py-1 text-sm text-ink outline-hidden focus:border-hairline-2'
 
@@ -175,7 +176,7 @@ export default function RulesPanel({ active = true, toast }) {
                 /* Dot + sentence, not a tinted warning bar. Her setting is
                    still hers; it just isn't running right now. */
                 <p className="mt-1.5 flex items-start gap-1.5 text-xs text-ink-2">
-                  <span className="mt-1 h-1.5 w-1.5 shrink-0 rounded-full bg-amber-500" aria-hidden="true" />
+                  <span className={`mt-1 h-1.5 w-1.5 shrink-0 rounded-full ${STATUS_DOT.attention}`} aria-hidden="true" />
                   <span>{rule.blocked_reason}</span>
                 </p>
               )}

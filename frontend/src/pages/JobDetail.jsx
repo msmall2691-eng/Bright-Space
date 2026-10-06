@@ -83,7 +83,7 @@ function PropertyAccessCard({ property, canEdit: editable }) {
       </div>
       {missing && (
         <p className="text-[11px] text-ink-2 flex items-center gap-1.5">
-          <span className="w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0" aria-hidden="true" />
+          <span className={`w-1.5 h-1.5 rounded-full ${STATUS_DOT.attention} shrink-0`} aria-hidden="true" />
           Nothing on file — crew cards show no door code for this property.
         </p>
       )}
@@ -117,7 +117,7 @@ function PropertyAccessCard({ property, canEdit: editable }) {
                   <>
                     <button onClick={() => toggleShare(n)}
                       className="inline-flex items-center gap-1.5 text-[10px] font-medium rounded-md px-1.5 py-0.5 border border-hairline-2 bg-panel text-ink-2 hover:bg-bg-2">
-                      <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${n.shared ? 'bg-emerald-500' : 'bg-amber-500'}`} aria-hidden="true" />
+                      <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${n.shared ? STATUS_DOT.ok : STATUS_DOT.attention}`} aria-hidden="true" />
                       {n.shared ? 'Shared (tap to unshare)' : 'Share with crew'}
                     </button>
                     <button onClick={() => removeNote(n)}
@@ -141,15 +141,16 @@ import StatusBadge from '../components/ui/StatusBadge'
 import { statusTone, statusLabel } from '../utils/statusTone'
 import JobPhotosCard from '../components/schedule/JobPhotosCard'
 import { EmptyState } from '../components/ui'
+import { STATUS_DOT } from '../theme/statusDots'
 
 const STATUS_OPTIONS = [
   // "unscheduled" = converted from a quote but no date yet. Distinct badge so
   // an operator can spot date-less jobs at a glance; auto-flips to
   // "scheduled" server-side when a date is saved on the job.
-  { value: 'unscheduled', label: 'unscheduled', dot: 'bg-amber-500' },
-  { value: 'scheduled',   label: 'scheduled',   dot: 'bg-blue-500' },
-  { value: 'in_progress', label: 'in progress', dot: 'bg-amber-500' },
-  { value: 'completed',   label: 'completed',   dot: 'bg-emerald-500' },
+  { value: 'unscheduled', label: 'unscheduled', dot: STATUS_DOT.attention },
+  { value: 'scheduled',   label: 'scheduled',   dot: STATUS_DOT.info },
+  { value: 'in_progress', label: 'in progress', dot: STATUS_DOT.attention },
+  { value: 'completed',   label: 'completed',   dot: STATUS_DOT.ok },
   { value: 'cancelled',   label: 'cancelled',   dot: 'bg-ink-3' },
 ]
 const JOB_TYPE_OPTIONS = [
@@ -494,7 +495,7 @@ export default function JobDetail() {
         {showInvoicePrompt && (
           <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-hairline bg-panel px-4 py-3">
             <div className="flex items-start gap-2 min-w-0">
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0 mt-2" aria-hidden="true" />
+              <span className={`w-1.5 h-1.5 rounded-full ${STATUS_DOT.ok} shrink-0 mt-2`} aria-hidden="true" />
               <Receipt className="w-4 h-4 shrink-0 mt-0.5 text-ink-3" />
               <div className="min-w-0 text-[13px] text-ink-2">
                 <p className="font-semibold text-ink">Ready to bill this job?</p>
@@ -553,7 +554,7 @@ export default function JobDetail() {
                 if (!job.property_id) missing.push('a property')
                 return (
                   <div className="mb-3 flex items-start gap-2 rounded-lg border border-hairline bg-panel px-3 py-2 text-[12px] text-ink-2">
-                    <span className="w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0 mt-1.5" aria-hidden="true" />
+                    <span className={`w-1.5 h-1.5 rounded-full ${STATUS_DOT.attention} shrink-0 mt-1.5`} aria-hidden="true" />
                     <div>
                       <p className="font-semibold text-ink">Needs setup</p>
                       <p className="text-ink-3">
@@ -581,7 +582,7 @@ export default function JobDetail() {
               {job.reschedule_requested_at ? (
                 <div className="mb-3 rounded-lg border border-hairline bg-panel px-3 py-2.5 text-[12px] text-ink-2">
                   <div className="flex items-start gap-2">
-                    <span className="w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0 mt-1.5" aria-hidden="true" />
+                    <span className={`w-1.5 h-1.5 rounded-full ${STATUS_DOT.attention} shrink-0 mt-1.5`} aria-hidden="true" />
                     <CalendarClock className="w-4 h-4 shrink-0 mt-0.5 text-ink-3" />
                     <div className="min-w-0">
                       <p className="font-semibold text-ink">
@@ -619,7 +620,7 @@ export default function JobDetail() {
                 </div>
               ) : job.customer_confirmed_at ? (
                 <div className="mb-3 flex items-center gap-2 rounded-lg border border-hairline bg-panel px-3 py-2 text-[12px] text-ink-2">
-                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" aria-hidden="true" />
+                  <span className={`w-1.5 h-1.5 rounded-full ${STATUS_DOT.ok} shrink-0`} aria-hidden="true" />
                   <p className="font-semibold text-ink">Customer confirmed this visit</p>
                 </div>
               ) : null}
@@ -669,7 +670,7 @@ export default function JobDetail() {
                     onSave={(v) => saveField({ price: v == null ? null : Number(v) })} />
                   {job.price == null && (
                     <p className="mt-1 flex items-start gap-1.5 text-[11px] text-ink-2">
-                      <span className="mt-1 h-1.5 w-1.5 shrink-0 rounded-full bg-amber-500" aria-hidden="true" />
+                      <span className={`mt-1 h-1.5 w-1.5 shrink-0 rounded-full ${STATUS_DOT.attention}`} aria-hidden="true" />
                       <span>No price yet — invoicing this job will start at $0.</span>
                     </p>
                   )}
@@ -690,7 +691,7 @@ export default function JobDetail() {
                     onSave={(v) => saveField({ posted_rate: v == null ? null : Number(v) })} />
                   {job.posted_rate == null && (
                     <p className="mt-1 flex items-start gap-1.5 text-[11px] text-ink-2">
-                      <span className="mt-1 h-1.5 w-1.5 shrink-0 rounded-full bg-amber-500" aria-hidden="true" />
+                      <span className={`mt-1 h-1.5 w-1.5 shrink-0 rounded-full ${STATUS_DOT.attention}`} aria-hidden="true" />
                       <span>Set a price before you open this — or a sub names their own when they ask.</span>
                     </p>
                   )}
@@ -733,7 +734,7 @@ export default function JobDetail() {
                    separate from the asking rate on purpose: they differ
                    whenever the winner countered, and payroll pays THIS one. */
                 <p className="mt-2 flex items-start gap-1.5 text-[12px] text-ink-2">
-                  <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-emerald-500" aria-hidden="true" />
+                  <span className={`mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full ${STATUS_DOT.ok}`} aria-hidden="true" />
                   <span>Agreed at <span className="font-medium text-ink">{money(job.agreed_rate)}</span> — this is what payroll pays for it.</span>
                 </p>
               )}
@@ -834,7 +835,7 @@ export default function JobDetail() {
               /* Field report left by the cleaner at mark-done. Internal-only —
                  stored on its own column so it can never ride onto an invoice. */
               <div className="bg-panel border border-hairline rounded-xl p-3 flex items-start gap-2">
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0 mt-2" aria-hidden="true" />
+                <span className={`w-1.5 h-1.5 rounded-full ${STATUS_DOT.ok} shrink-0 mt-2`} aria-hidden="true" />
                 <div className="min-w-0 text-[13px]">
                   <span className="font-semibold text-ink">Crew note</span>
                   <span className="text-ink-2"> — {job.completion_note}</span>

@@ -23,6 +23,7 @@ import { useEffect, useState } from 'react'
 import { Landmark } from 'lucide-react'
 import { get, post } from '../../api'
 import { ErrorNote } from './primitives'
+import { STATUS_DOT } from '../../theme/statusDots'
 
 export default function CrewPayoutSetup({ previewUserId = null }) {
   const [state, setState] = useState(null)
@@ -94,13 +95,13 @@ export default function CrewPayoutSetup({ previewUserId = null }) {
     <div className="space-y-2.5">
       {state.payouts_enabled ? (
         <p className="flex items-start gap-1.5 text-[12px] text-ink-2">
-          <span className="mt-1 w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" aria-hidden="true" />
+          <span className={`mt-1 w-1.5 h-1.5 rounded-full ${STATUS_DOT.ok} shrink-0`} aria-hidden="true" />
           <span>You’re set up. Payouts go straight to your bank.</span>
         </p>
       ) : state.connected ? (
         <>
           <p className="flex items-start gap-1.5 text-[12px] text-ink-2">
-            <span className="mt-1 w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0" aria-hidden="true" />
+            <span className={`mt-1 w-1.5 h-1.5 rounded-full ${STATUS_DOT.attention} shrink-0`} aria-hidden="true" />
             <span>
               Stripe still needs a bit more from you before it can send money.
               {state.needs ? <span className="text-ink-3"> · {state.needs}</span> : null}

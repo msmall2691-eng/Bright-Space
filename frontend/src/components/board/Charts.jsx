@@ -28,6 +28,7 @@
  */
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
+import { STATUS_DOT } from '../../theme/statusDots'
 
 const money = (n) => {
   const v = Math.round(Number(n) || 0)
@@ -87,7 +88,7 @@ export function MoneyTrend({ snap }) {
   }
 
   return (
-    <Box dot="bg-emerald-500" title="Money, last 12 weeks">
+    <Box dot={STATUS_DOT.ok} title="Money, last 12 weeks">
       <div className="px-3.5 pt-3">
         {/* Legend — two series always get one; identity is never colour alone. */}
         <div className="mb-1.5 flex items-center gap-3">

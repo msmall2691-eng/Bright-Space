@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { useParams, useSearchParams } from 'react-router-dom'
 import { CheckCircle, AlertCircle, Clock } from 'lucide-react'
 import { publicFetch } from '../utils/publicFetch'
+import { STATUS_DOT } from '../theme/statusDots'
 
 /**
  * PublicPayment — the customer's no-login invoice page at /pay/:token.
@@ -146,15 +147,15 @@ export default function PublicPayment() {
           <div className="px-6 py-4 flex items-center justify-between border-b border-hairline">
             <div className="flex items-center gap-2 text-sm">
               {paid ? (
-                <><span className="w-1.5 h-1.5 rounded-full bg-emerald-500" /><span className="text-ink-2">Paid{inv.paid_at ? ` on ${new Date(inv.paid_at).toLocaleDateString()}` : ''}</span></>
+                <><span className={`w-1.5 h-1.5 rounded-full ${STATUS_DOT.ok}`} /><span className="text-ink-2">Paid{inv.paid_at ? ` on ${new Date(inv.paid_at).toLocaleDateString()}` : ''}</span></>
               ) : voided ? (
                 <><span className="w-1.5 h-1.5 rounded-full bg-ink-3" /><span className="text-ink-3">Void</span></>
               ) : awaitingConfirmation ? (
                 <><span className="w-1.5 h-1.5 rounded-full bg-ink-3" /><span className="text-ink-2">Payment processing</span></>
               ) : inv.status === 'overdue' ? (
-                <><span className="w-1.5 h-1.5 rounded-full bg-red-500" /><span className="text-ink-2">Overdue</span></>
+                <><span className={`w-1.5 h-1.5 rounded-full ${STATUS_DOT.problem}`} /><span className="text-ink-2">Overdue</span></>
               ) : (
-                <><span className="w-1.5 h-1.5 rounded-full bg-amber-500" /><span className="text-ink-2">Due</span></>
+                <><span className={`w-1.5 h-1.5 rounded-full ${STATUS_DOT.attention}`} /><span className="text-ink-2">Due</span></>
               )}
             </div>
             {inv.due_date && !paid && !voided && !awaitingConfirmation && (

@@ -39,6 +39,7 @@ import AccentPicker from '../components/crew/AccentPicker'
 import HeroBanner from '../components/crew/HeroBanner'
 import StickyNotes from '../components/board/StickyNotes'
 import { initAccent } from '../utils/accent'
+import { STATUS_DOT } from '../theme/statusDots'
 import { SOFT, CrewCard, SectionLabel, ErrorNote, SettingRow, Sheet, SheetActions } from '../components/crew/primitives'
 // Photos captured on cellular wait on-device and send on WiFi — My Day owns
 // flushing the queue (app open + connectivity changes) and the visible
@@ -47,6 +48,7 @@ import { flushPhotoQueue, subscribeQueue } from '../components/crew/photoQueue'
 import {
   enqueueAction, flushActionQueue, subscribeActions, looksOffline,
 } from '../components/crew/actionQueue'
+import { STATUS_TEXT } from '../theme/statusText'
 
 function fmtDuration(ms) {
   const totalMin = Math.max(0, Math.floor(ms / 60000))
@@ -95,7 +97,7 @@ function WeekPayBreakdown({ week, onOpenJob }) {
               </div>
               <span className="font-semibold tabular-nums text-ink shrink-0">
                 {j.unpriced ? '—' : fmtMoney(j.predicted_pay)}
-                <span className="text-blue-500 ml-1">›</span>
+                <span className={`${STATUS_TEXT.info} ml-1`}>›</span>
               </span>
             </button>
           ))}
@@ -125,12 +127,12 @@ function DayGlance({ week, openCount, unread, onTab }) {
   // A small coloured line icon per tile — a touch of friendly colour without a
   // filled chip. Violet for open work matches the "open to crew" convention.
   const cells = [
-    { key: 'week', to: 'me', label: 'this week', Icon: DollarSign, tint: 'text-emerald-500',
+    { key: 'week', to: 'me', label: 'this week', Icon: DollarSign, tint: `${STATUS_TEXT.ok}`,
       value: week?.week_total != null ? fmtMoney(week.week_total) : '—' },
     { key: 'open', to: 'jobs', label: 'up for grabs', Icon: Sparkles, tint: 'text-violet-500',
       value: openCount },
     { key: 'chat', to: 'chat', label: unread === 1 ? 'message' : 'messages', Icon: MessageSquare,
-      tint: 'text-amber-500', value: unread },
+      tint: `${STATUS_TEXT.attention}`, value: unread },
   ]
   return (
     <div className="grid grid-cols-3 divide-x divide-hairline rounded-xl border border-hairline bg-panel">
@@ -190,13 +192,13 @@ function CrewTabBar({ tab, setTab, chatUnread = 0 }) {
         {TABS.map(({ key, label, icon: Icon }) => (
           <button key={key} onClick={() => setTab(key)}
             className={`py-2.5 flex flex-col items-center gap-0.5 text-[11px] font-semibold transition-colors ${
-              tab === key ? 'text-blue-600 dark:text-blue-400' : 'text-ink-3 hover:text-ink-2'}`}>
+              tab === key ? `${STATUS_TEXT.info}` : 'text-ink-3 hover:text-ink-2'}`}>
             <Icon className="w-5 h-5" strokeWidth={tab === key ? 2.4 : 2} />
             <span className="inline-flex items-center gap-1">
               {label}
               {key === 'chat' && chatUnread > 0 && (
                 <span className="inline-flex items-center gap-1">
-                  <span className="w-1.5 h-1.5 rounded-full bg-red-500" aria-hidden="true" />
+                  <span className={`w-1.5 h-1.5 rounded-full ${STATUS_DOT.problem}`} aria-hidden="true" />
                   <span className="text-[10px] font-bold text-ink tabular-nums">
                     {chatUnread > 99 ? '99+' : chatUnread}
                   </span>
@@ -690,7 +692,7 @@ export default function MyDay({ previewUserId = null }) {
              per the design language rather than a full-bleed colored bar. */
           <div className="flex items-center justify-between gap-2 border-b border-hairline bg-panel px-4 py-2">
             <span className="text-[12px] text-ink-2 flex items-center gap-1.5 min-w-0">
-              <span className="w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0" aria-hidden="true" />
+              <span className={`w-1.5 h-1.5 rounded-full ${STATUS_DOT.attention} shrink-0`} aria-hidden="true" />
               <span className="truncate">
                 No connection — showing your schedule saved at{' '}
                 {new Date(staleAt).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}.
@@ -716,7 +718,7 @@ export default function MyDay({ previewUserId = null }) {
              fired its `online` event yet, which on iOS it often hasn't. */
           <div className="flex items-center justify-between gap-2 rounded-lg border border-hairline bg-panel px-3 py-2">
             <span className="text-[12px] text-ink-2 flex items-center gap-1.5 min-w-0">
-              <span className="w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0" />
+              <span className={`w-1.5 h-1.5 rounded-full ${STATUS_DOT.attention} shrink-0`} />
               {queuedActions} update{queuedActions > 1 ? 's' : ''} saved — sends when you have signal
             </span>
             <button onClick={sendActionsNow} disabled={sendingActions}
@@ -731,7 +733,7 @@ export default function MyDay({ previewUserId = null }) {
              card + amber dot; Send now is the cleaner's override. */
           <div className="flex items-center justify-between gap-2 rounded-lg border border-hairline bg-panel px-3 py-2">
             <span className="text-[12px] text-ink-2 flex items-center gap-1.5 min-w-0">
-              <span className="w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0" />
+              <span className={`w-1.5 h-1.5 rounded-full ${STATUS_DOT.attention} shrink-0`} />
               {queuedPhotos} photo{queuedPhotos > 1 ? 's' : ''} waiting for WiFi
             </span>
             <button onClick={sendQueuedNow} disabled={sendingQueued}
@@ -786,7 +788,7 @@ export default function MyDay({ previewUserId = null }) {
             {data.cleared === false && (data.missing || []).length > 0 && (
               <div className="rounded-xl border border-hairline bg-panel px-4 py-3">
                 <span className="flex items-center gap-1.5 text-[12px] text-ink-2">
-                  <span className="h-1.5 w-1.5 rounded-full bg-amber-500" aria-hidden="true" />
+                  <span className={`h-1.5 w-1.5 rounded-full ${STATUS_DOT.attention}`} aria-hidden="true" />
                   You're not cleared to take jobs yet
                 </span>
                 <p className="mt-0.5 text-[13px] text-ink">
@@ -924,7 +926,7 @@ export default function MyDay({ previewUserId = null }) {
             return (
               <div className="rounded-xl border border-hairline bg-panel px-4 py-3">
                 <span className="flex items-center gap-1.5 text-[12px] text-ink-2">
-                  <span className="h-1.5 w-1.5 rounded-full bg-amber-500" aria-hidden="true" />
+                  <span className={`h-1.5 w-1.5 rounded-full ${STATUS_DOT.attention}`} aria-hidden="true" />
                   You're not cleared to take jobs yet
                 </span>
                 <p className="mt-0.5 text-[13px] text-ink">
@@ -1136,7 +1138,7 @@ export default function MyDay({ previewUserId = null }) {
             </section>
 
             <button onClick={logout}
-              className="w-full text-[13px] font-semibold bg-panel border border-hairline text-red-600 dark:text-red-400 py-2.5 rounded-lg hover:bg-bg-2 transition-colors inline-flex items-center justify-center gap-1.5">
+              className={`w-full text-[13px] font-semibold bg-panel border border-hairline ${STATUS_TEXT.problem} dark:text-red-400 py-2.5 rounded-lg hover:bg-bg-2 transition-colors inline-flex items-center justify-center gap-1.5`}>
               <LogOut className="w-4 h-4" /> Log out
             </button>
           </>
@@ -1282,7 +1284,7 @@ export default function MyDay({ previewUserId = null }) {
             {textSent ? (
               <>
                 <div className="text-[12.5px] text-ink-2 flex items-start gap-1.5">
-                  <span className="mt-[5px] w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" aria-hidden="true" />
+                  <span className={`mt-[5px] w-1.5 h-1.5 rounded-full ${STATUS_DOT.ok} shrink-0`} aria-hidden="true" />
                   <span>Sent — “{textSent}”</span>
                 </div>
                 <button onClick={() => setTextJob(null)}
@@ -1374,7 +1376,7 @@ export default function MyDay({ previewUserId = null }) {
                becomes an offer the office prices. Say what's needed rather than
                letting a blank field 422. */
             <p className="flex items-start gap-1.5 text-[13px] text-ink-2">
-              <span className="mt-1.5 w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0" aria-hidden="true" />
+              <span className={`mt-1.5 w-1.5 h-1.5 rounded-full ${STATUS_DOT.attention} shrink-0`} aria-hidden="true" />
               <span>No price on this one — say what you'd do it for.</span>
             </p>
           )}
@@ -1406,7 +1408,7 @@ export default function MyDay({ previewUserId = null }) {
             </p>
           ) : (
             <p className="flex items-start gap-1.5 text-[12px] text-ink-3">
-              <span className="mt-1.5 w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0" aria-hidden="true" />
+              <span className={`mt-1.5 w-1.5 h-1.5 rounded-full ${STATUS_DOT.attention} shrink-0`} aria-hidden="true" />
               <span>{abovePosted
                 ? "That's above the posted price, so the office confirms this one."
                 : posted == null

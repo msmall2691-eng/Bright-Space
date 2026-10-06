@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { CalendarCheck, ChevronRight } from 'lucide-react'
 import { get } from '../../api'
 import { SOFT_CARD } from './constants'
+import { STATUS_DOT } from '../../theme/statusDots'
 
 /**
  * CustomerActivity — a quiet, no-action feed of visits customers just
@@ -44,7 +45,7 @@ export function CustomerActivity({ navigate }) {
         {items.map(c => (
           <button key={c.job_id} onClick={() => navigate(`/jobs/${c.job_id}`)}
             className="w-full text-left flex items-center gap-3 px-5 py-2.5 hover:bg-bg active:bg-bg-2 transition-colors">
-            <span className="w-1.5 h-1.5 rounded-full shrink-0 bg-emerald-500" />
+            <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${STATUS_DOT.ok}`} />
             <div className="flex-1 min-w-0">
               <div className="text-[13px] font-medium text-ink truncate">
                 {c.client_name || c.title || `Job #${c.job_id}`} confirmed

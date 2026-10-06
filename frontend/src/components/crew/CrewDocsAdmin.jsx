@@ -14,6 +14,7 @@ import { BookOpen, Pin, Plus, EyeOff } from 'lucide-react'
 import { get, post, patch, del } from '../../api'
 import { pushToast } from '../../utils/toastBus'
 import { confirmDialog } from '../../utils/confirmBus'
+import { STATUS_TEXT, STATUS_ICON } from '../../theme/statusText'
 
 const CATEGORIES = [
   ['training', 'Training'], ['how-to', 'How-to'], ['products', 'Products'],
@@ -89,7 +90,7 @@ export default function CrewDocsAdmin() {
         </button>
       </div>
 
-      {error && <p className="text-sm text-red-600">{error}</p>}
+      {error && <p className={`text-sm ${STATUS_TEXT.problem}`}>{error}</p>}
       {docs && docs.length === 0 && (
         <div className="border border-dashed border-hairline rounded-xl p-6 text-center text-[13px] text-ink-3">
           Nothing yet. Start with the ones you repeat on the phone: bathroom standard,
@@ -104,7 +105,7 @@ export default function CrewDocsAdmin() {
             <div className="flex items-start justify-between gap-2">
               <span className="text-[13.5px] font-semibold text-ink leading-snug">{d.title}</span>
               <span className="flex items-center gap-1 shrink-0">
-                {d.pinned && <Pin className="w-3.5 h-3.5 text-amber-500" />}
+                {d.pinned && <Pin className={`w-3.5 h-3.5 ${STATUS_ICON.attention}`} />}
                 {!d.published && (
                   <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-ink-3 bg-bg-2 border border-hairline rounded-full px-1.5 py-0.5">
                     <EyeOff className="w-3 h-3" /> Draft
@@ -171,7 +172,7 @@ export default function CrewDocsAdmin() {
             <div className="flex items-center justify-between gap-2 pt-1">
               {editing !== 'new' ? (
                 <button onClick={() => remove(editing)} disabled={saving}
-                  className="text-[12.5px] font-semibold text-red-600 hover:text-red-700 disabled:opacity-60">
+                  className={`text-[12.5px] font-semibold ${STATUS_TEXT.problem} hover:text-red-700 disabled:opacity-60`}>
                   Delete
                 </button>
               ) : <span />}

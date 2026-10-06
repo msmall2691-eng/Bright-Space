@@ -25,6 +25,7 @@ import { BadgeCheck, CalendarClock, ChevronDown, ChevronLeft, ChevronRight, Lock
 import { get, put, del } from '../../api'
 import { Skeleton } from '../ui'
 import { ErrorNote } from './primitives'
+import { STATUS_ICON } from '../../theme/statusText'
 
 const DAYS = [
   ['mon', 'Mon'], ['tue', 'Tue'], ['wed', 'Wed'], ['thu', 'Thu'],
@@ -280,7 +281,7 @@ export default function CrewAvailability({ bare = false, previewUserId = null })
 
       {flash && (
         <div className="text-[12px] text-ink-2 flex items-start gap-1.5">
-          <BadgeCheck className="w-4 h-4 shrink-0 mt-px text-emerald-600 dark:text-emerald-400" />
+          <BadgeCheck className={`w-4 h-4 shrink-0 mt-px ${STATUS_ICON.ok} dark:text-emerald-400`} />
           <span>{flash}</span>
         </div>
       )}

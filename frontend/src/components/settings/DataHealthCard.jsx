@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { get } from '../../api'
+import { STATUS_DOT } from '../../theme/statusDots'
 
 // Map a finding's table to the record page, so its sample ids become links you
 // can click straight to the offending record to fix it. Tables with no per-id
@@ -27,7 +28,7 @@ const ROUTE_BY_TABLE = {
  * only (the endpoint enforces it; this hides the card for everyone else so a
  * viewer doesn't get a silently-swallowed 403).
  */
-const DOT = { error: 'bg-red-500', warn: 'bg-amber-500', info: 'bg-ink-3' }
+const DOT = { error: STATUS_DOT.problem, warn: STATUS_DOT.attention, info: 'bg-ink-3' }
 const WORD = { error: 'error', warn: 'needs a look', info: 'note' }
 
 function role() {
@@ -64,7 +65,7 @@ export default function DataHealthCard() {
 
       {state && state.error && (
         <div className="mt-3 flex items-start gap-1.5 text-[12px] text-ink-2">
-          <span className="mt-[5px] h-1.5 w-1.5 shrink-0 rounded-full bg-red-500" aria-hidden="true" />
+          <span className={`mt-[5px] h-1.5 w-1.5 shrink-0 rounded-full ${STATUS_DOT.problem}`} aria-hidden="true" />
           <span>{state.error}</span>
         </div>
       )}
@@ -73,7 +74,7 @@ export default function DataHealthCard() {
         <div className="mt-3 border-t border-hairline pt-3">
           {report.healthy ? (
             <div className="flex items-center gap-1.5 text-[13px] text-ink-2">
-              <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 shrink-0" aria-hidden="true" />
+              <span className={`h-1.5 w-1.5 rounded-full ${STATUS_DOT.ok} shrink-0`} aria-hidden="true" />
               All clear — nothing flagged{report.generated_at ? ` (${report.generated_at})` : ''}.
             </div>
           ) : (

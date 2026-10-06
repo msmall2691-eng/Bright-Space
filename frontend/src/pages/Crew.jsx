@@ -24,6 +24,7 @@ import CrewDocsAdmin from '../components/crew/CrewDocsAdmin'
 import { CrewThreadPane } from '../components/comms/CrewThreadPane'
 import { MessageSquare, Sparkles, X } from 'lucide-react'
 import { Link } from 'react-router-dom'
+import { STATUS_DOT } from '../theme/statusDots'
 
 /** Office side of the cleaner↔office thread (crew app "message the office").
  *  One drawer per cleaner; replies push to their phone. The thread body is
@@ -69,9 +70,9 @@ const isEmail = (s) => /.+@.+\..+/.test(String(s || '').trim())
 // truth: a cleaner is "Active" once they've set a password (accepted the
 // invite), "Invited" until then, and "Disabled" if the account was shut off.
 function pill(row) {
-  if ((row.status || '') === 'disabled') return { label: 'Disabled', dot: 'bg-red-500' }
-  if (row.activated) return { label: 'Active', dot: 'bg-emerald-500' }
-  return { label: 'Invited', dot: 'bg-amber-500' }
+  if ((row.status || '') === 'disabled') return { label: 'Disabled', dot: STATUS_DOT.problem }
+  if (row.activated) return { label: 'Active', dot: STATUS_DOT.ok }
+  return { label: 'Invited', dot: STATUS_DOT.attention }
 }
 
 // "Add & send invite" (POST /api/crew), "Resend" (POST /crew/{id}/resend-invite),
@@ -212,7 +213,7 @@ export default function Crew() {
         {!loading && unclaimed.length > 0 && (
           <div className="bg-panel border border-hairline rounded-lg p-4">
             <div className="flex items-center gap-2 font-semibold text-sm text-ink mb-1">
-              <span className="h-1.5 w-1.5 rounded-full bg-amber-500 shrink-0" aria-hidden="true" />
+              <span className={`h-1.5 w-1.5 rounded-full ${STATUS_DOT.attention} shrink-0`} aria-hidden="true" />
               Crew IDs on the schedule with no login yet
             </div>
             <p className="text-[13px] text-ink-2 mb-3">

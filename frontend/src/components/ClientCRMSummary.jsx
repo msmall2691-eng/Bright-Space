@@ -5,6 +5,7 @@ import {
   CheckCircle, Clock, AlertCircle, Target, Calendar,
   Phone, Eye, Loader
 } from 'lucide-react'
+import { STATUS_DOT } from '../theme/statusDots'
 
 // Stage hue lives in a small dot on quiet hairline cards (owner's veto of
 // the tinted pill/panel bubbles).
@@ -195,7 +196,7 @@ export default function ClientCRMSummary({ clientId }) {
             <div className="space-y-1">
               {crm.contact_emails.map((email, i) => (
                 <div key={i} className="text-sm text-ink-2 flex items-center gap-2">
-                  {email.is_primary && <span className="w-2 h-2 bg-blue-500 rounded-full"></span>}
+                  {email.is_primary && <span className={`w-2 h-2 ${STATUS_DOT.info} rounded-full`}></span>}
                   <span>{email.email}</span>
                   {email.verified && <CheckCircle className="w-3 h-3 text-emerald-500" />}
                 </div>
@@ -209,7 +210,7 @@ export default function ClientCRMSummary({ clientId }) {
             <div className="space-y-1">
               {crm.contact_phones.map((phone, i) => (
                 <div key={i} className="text-sm text-ink-2 flex items-center gap-2">
-                  {phone.is_primary && <span className="w-2 h-2 bg-blue-500 rounded-full"></span>}
+                  {phone.is_primary && <span className={`w-2 h-2 ${STATUS_DOT.info} rounded-full`}></span>}
                   <span>{phone.phone}</span>
                   {phone.type && <span className="text-xs text-ink-3 capitalize">({phone.type})</span>}
                 </div>

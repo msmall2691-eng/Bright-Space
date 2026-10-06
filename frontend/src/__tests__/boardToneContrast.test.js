@@ -36,7 +36,23 @@ import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
 
 const here = dirname(fileURLToPath(import.meta.url))
-const tokens = readFileSync(join(here, '..', 'components', 'board', 'tokens.js'), 'utf8')
+
+/**
+ * Every file that spells out a measured tone map.
+ *
+ * There are two, and they cannot be collapsed into one shared variable:
+ * Tailwind's JIT only emits classes it can see as COMPLETE literal strings, so
+ * `bg-${hue}-700` is purged from the build and the dot renders transparent.
+ * The literals therefore have to be repeated, and measurement — this file,
+ * reading both — is what keeps them honest instead.
+ */
+const SOURCES = [
+  join(here, '..', 'components', 'board', 'tokens.js'),
+  join(here, '..', 'theme', 'statusDots.js'),
+  join(here, '..', 'theme', 'statusText.js'),
+  join(here, '..', 'theme', 'scheduleScales.js'),
+].map(p => readFileSync(p, 'utf8'))
+const tokens = SOURCES.join('\n')
 const css = readFileSync(join(here, '..', 'index.css'), 'utf8')
 
 /** Tailwind's stock palette for the hues the board uses. Only `indigo` is
@@ -47,8 +63,16 @@ const PALETTE = {
   'rose-300': '#fda4af', 'rose-400': '#fb7185', 'rose-500': '#f43f5e', 'rose-600': '#e11d48', 'rose-700': '#be123c',
   'amber-300': '#fcd34d', 'amber-400': '#fbbf24', 'amber-500': '#f59e0b', 'amber-600': '#d97706', 'amber-700': '#b45309', 'amber-800': '#92400e',
   'emerald-300': '#6ee7b7', 'emerald-400': '#34d399', 'emerald-500': '#10b981', 'emerald-600': '#059669', 'emerald-700': '#047857', 'emerald-800': '#065f46',
-  'blue-300': '#93c5fd', 'blue-400': '#60a5fa', 'blue-500': '#3b82f6', 'blue-600': '#2563eb', 'blue-700': '#1d4ed8',
+  'blue-300': '#93c5fd', 'blue-400': '#60a5fa', 'blue-500': '#3b82f6', 'blue-600': '#2563eb', 'blue-700': '#1d4ed8', 'blue-800': '#1e40af',
   'violet-300': '#c4b5fd', 'violet-400': '#a78bfa', 'violet-500': '#8b5cf6', 'violet-600': '#7c3aed', 'violet-700': '#6d28d9',
+  // The schedule's two scales (theme/scheduleScales.js) reach for hues the
+  // board never needed. Missing entries do NOT fail — hexOf returns null and
+  // the step is skipped — so anything added to a measured map has to be added
+  // here too, or it goes unmeasured. The "resolves every step it measures"
+  // test below is what makes that omission loud instead of silent.
+  'slate-300': '#cbd5e1', 'slate-400': '#94a3b8', 'slate-500': '#64748b', 'slate-600': '#475569', 'slate-700': '#334155',
+  'sky-300': '#7dd3fc', 'sky-400': '#38bdf8', 'sky-500': '#0ea5e9', 'sky-600': '#0284c7', 'sky-700': '#0369a1',
+  'purple-300': '#d8b4fe', 'purple-400': '#c084fc', 'purple-500': '#a855f7', 'purple-600': '#9333ea', 'purple-700': '#7e22ce', 'purple-800': '#6b21a8',
 }
 
 /** Classes that resolve through a CSS var, so another test owns them. */
@@ -128,6 +152,19 @@ const MAPS = [
   { name: 'SEV_DOT', floor: 3, what: 'a severity DOT' },
   { name: 'INT_DOT', floor: 3, what: 'an integration DOT' },
   { name: 'FOCUS_DOT', floor: 3, what: "the focus bar's DOT" },
+  // theme/statusDots.js — the app-wide dot, not just the board's. Same 3:1
+  // non-text floor: a dot carries meaning but is not text.
+  { name: 'STATUS_DOT', floor: 3, what: 'the app-wide status DOT' },
+  // theme/statusText.js. The two floors are the whole reason these are two
+  // maps: the same `text-amber-600` is 2.58:1, which fails as text AND as an
+  // icon, and the fix is a different step for each.
+  { name: 'STATUS_TEXT', floor: 4.5, what: 'semantic TEXT' },
+  { name: 'STATUS_ICON', floor: 3, what: 'a semantic ICON' },
+  // theme/scheduleScales.js — the two scales that are NOT severity, so they
+  // could not go through STATUS_DOT and needed measuring of their own. Same
+  // 3:1 non-text floor; both are dots.
+  { name: 'JOB_TYPE_DOT', floor: 3, what: 'a job-type DOT (categorical)' },
+  { name: 'JOB_STAGE_DOT', floor: 3, what: 'a job-stage DOT (ordinal)' },
 ]
 
 describe('BB-A11Y-02 — the board tone maps clear their floors', () => {
@@ -140,6 +177,28 @@ describe('BB-A11Y-02 — the board tone maps clear their floors', () => {
     for (const { name } of MAPS) {
       expect(mapEntries(name).length, `${name} did not parse — tokens.js shape changed`).toBeGreaterThanOrEqual(2)
     }
+  })
+
+  it('resolves every step it measures, so a hue missing from PALETTE is loud', () => {
+    // hexOf returns null for a step PALETTE does not list, and the assertions
+    // below `continue` past it — so adding `bg-teal-700` to a measured map and
+    // forgetting to add teal here measures NOTHING and passes. That is the
+    // same fail-open shape the MIGRATED ratchet was mutation-tested for, and
+    // it bit on the first hue the schedule scales brought in.
+    const unresolved = []
+    for (const { name } of MAPS) {
+      for (const { key, classes } of mapEntries(name)) {
+        if (TOKEN_BASED.test(classes)) continue
+        const { light, dark } = split(classes)
+        for (const cls of [...light, ...dark]) {
+          if (!hexOf(cls)) unresolved.push(`${name}.${key}  ${cls}`)
+        }
+      }
+    }
+    expect(unresolved,
+      'these steps went unmeasured because PALETTE has no hex for them — add it:\n  '
+      + unresolved.join('\n  '),
+    ).toEqual([])
   })
 
   for (const { name, floor, what } of MAPS) {

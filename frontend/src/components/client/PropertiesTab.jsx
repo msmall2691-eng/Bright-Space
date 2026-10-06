@@ -9,6 +9,7 @@ import {
 import PropertyPhoto from '../PropertyPhoto'
 import RentalSummary from './RentalSummary'
 import StandingCleanerField from './StandingCleanerField'
+import { STATUS_DOT } from '../../theme/statusDots'
 
 export default function PropertiesTab({
   properties, navigate, setJobModal,
@@ -37,7 +38,7 @@ export default function PropertiesTab({
 
       {syncBanner && (
         <div className="flex items-start gap-2 rounded-lg p-3 mb-3 text-xs border border-hairline bg-panel">
-          <span className={`w-1.5 h-1.5 rounded-full shrink-0 mt-1 ${syncBanner.ok ? 'bg-emerald-500' : 'bg-red-500'}`} aria-hidden="true" />
+          <span className={`w-1.5 h-1.5 rounded-full shrink-0 mt-1 ${syncBanner.ok ? STATUS_DOT.ok : STATUS_DOT.problem}`} aria-hidden="true" />
           <span className="flex-1 text-ink-2">{syncBanner.message}</span>
           <button onClick={() => setSyncBanner(null)} className="text-ink-3 hover:text-ink-2"><X className="w-3 h-3" /></button>
         </div>
@@ -200,13 +201,13 @@ export default function PropertiesTab({
                                 <div className="flex items-center gap-1.5 text-[10px] mt-1">
                                   {ical.last_sync_status === 'failed' ? (
                                     <>
-                                      <span className="inline-block w-1.5 h-1.5 rounded-full bg-red-500" />
+                                      <span className={`inline-block w-1.5 h-1.5 rounded-full ${STATUS_DOT.problem}`} />
                                       <span className="text-red-600 font-medium">Sync failed</span>
                                       {ical.last_sync_error && <span className="text-ink-3 truncate">{ical.last_sync_error}</span>}
                                     </>
                                   ) : ical.last_synced_at ? (
                                     <>
-                                      <span className="inline-block w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                                      <span className={`inline-block w-1.5 h-1.5 rounded-full ${STATUS_DOT.ok}`} />
                                       <span className="text-ink-2">Synced {new Date(ical.last_synced_at).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}</span>
                                     </>
                                   ) : (
@@ -325,7 +326,7 @@ export default function PropertiesTab({
           const icalPill = isStr
             ? feedCount > 0
               ? { label: `${feedCount} iCal feed${feedCount !== 1 ? 's' : ''}`, dot: 'bg-ink-3/40' }
-              : { label: 'No iCal feeds', dot: 'bg-amber-500' }
+              : { label: 'No iCal feeds', dot: STATUS_DOT.attention }
             : null
           return (
             <div key={p.id}

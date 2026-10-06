@@ -10,6 +10,7 @@ import { Avatar, ChannelBadge } from './primitives'
 import RecordLink from '../RecordLink'
 import AiInsight from '../AiInsight'
 import { LinkClientControl } from './LinkClientControl'
+import { STATUS_DOT } from '../../theme/statusDots'
 
 const money = (n) => `$${(Number(n) || 0).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`
 
@@ -123,7 +124,7 @@ export function ContactPanel({ detail, context, onRemind, onClose, onDraftQuote,
             <h3 className="font-bold text-ink text-[15px] truncate leading-tight">{name}</h3>
             <div className="flex items-center gap-1.5 mt-1 flex-wrap">
               <span className="inline-flex items-center gap-1.5 text-[10px] font-semibold text-ink-2 capitalize">
-                <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${client?.status === 'active' ? 'bg-emerald-500' : 'bg-ink-3'}`} aria-hidden="true" />
+                <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${client?.status === 'active' ? STATUS_DOT.ok : 'bg-ink-3'}`} aria-hidden="true" />
                 {client?.status || 'new'}
               </span>
               <ChannelBadge channel={detail.channel} />

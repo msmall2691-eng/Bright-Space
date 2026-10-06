@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { Bell, Clock } from 'lucide-react'
 import { CHANNEL_CONFIG, PRIORITY_COLORS } from './constants'
 import { isSupported as notificationsSupported, getPermission as getNotifPermission, requestPermission as requestNotifPermission } from '../../utils/notifications'
+import { STATUS_DOT } from '../../theme/statusDots'
 
 /** Small pure display components used across the Comms inbox — no external
  *  state, no closures over the parent. Each takes props and renders. */
@@ -59,7 +60,7 @@ export function Avatar({ name, size = 'md', className = '', online }) {
         {initials}
       </div>
       {online && (
-        <div className="absolute -bottom-0.5 -right-0.5 w-3 h-3 bg-emerald-500 rounded-full border-2 border-panel" />
+        <div className={`absolute -bottom-0.5 -right-0.5 w-3 h-3 ${STATUS_DOT.ok} rounded-full border-2 border-panel`} />
       )}
     </div>
   )
@@ -89,13 +90,13 @@ export function SlaBadge({ state, compact = false }) {
   if (compact) {
     return (
       <span title="Overdue — needs reply" className={`inline-flex items-center gap-1 text-[9px] font-semibold ${tone}`}>
-        <span className="w-1.5 h-1.5 rounded-full bg-red-500 shrink-0" aria-hidden="true" /> Overdue
+        <span className={`w-1.5 h-1.5 rounded-full ${STATUS_DOT.problem} shrink-0`} aria-hidden="true" /> Overdue
       </span>
     )
   }
   return (
     <span className={`inline-flex items-center gap-1.5 text-[10px] font-medium ${tone}`}>
-      <span className="w-1.5 h-1.5 rounded-full bg-red-500 shrink-0" aria-hidden="true" />
+      <span className={`w-1.5 h-1.5 rounded-full ${STATUS_DOT.problem} shrink-0`} aria-hidden="true" />
       <Clock className="w-3 h-3" /> Overdue
     </span>
   )
