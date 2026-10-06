@@ -6,6 +6,7 @@
  * a week's shape scannable at a thumb tap. Sunday-first (US convention).
  */
 import { toLocalYMD } from '../../utils/format'
+import { STATUS_DOT } from '../../theme/statusDots'
 
 const DOW_LABEL = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
 
@@ -56,9 +57,9 @@ export default function DateStrip({ weekDates, loadByDate, currentDate, onSelect
                 <span
                   className={`absolute top-0 left-0 h-full rounded-full ${
                     info.capacityPct >= 85
-                      ? 'bg-amber-500'
+                      ? STATUS_DOT.attention
                       : info.capacityPct > 0
-                        ? 'bg-blue-500'
+                        ? STATUS_DOT.info
                         : ''
                   }`}
                   style={{ width: `${info.capacityPct}%` }}

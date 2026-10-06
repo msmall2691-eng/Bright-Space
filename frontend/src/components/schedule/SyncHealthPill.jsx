@@ -3,6 +3,7 @@ import { CheckCircle2, RefreshCw, AlertTriangle, ChevronDown, Cloud } from 'luci
 import { post } from '../../api'
 import { useSyncHealth } from '../../hooks/useSyncHealth'
 import { canEdit } from '../../utils/perms'
+import { STATUS_DOT } from '../../theme/statusDots'
 
 /**
  * Passive schedule health indicator — the antidote to the "pile of manual push
@@ -61,9 +62,9 @@ export default function SyncHealthPill({ refreshKey = 0, onForced, onOpenSetting
   // not a tinted capsule (owner vetoed the bubble labels). Icons keep a
   // muted tone so "syncing" still visibly spins.
   const style = {
-    ok:        { dot: 'bg-emerald-500', Icon: CheckCircle2, label: 'Auto-sync on' },
-    syncing:   { dot: 'bg-blue-500', Icon: RefreshCw, label: `Syncing ${backlog}…` },
-    attention: { dot: 'bg-amber-500', Icon: AlertTriangle, label: issues ? `${issues} need attention` : 'Needs attention' },
+    ok:        { dot: STATUS_DOT.ok, Icon: CheckCircle2, label: 'Auto-sync on' },
+    syncing:   { dot: STATUS_DOT.info, Icon: RefreshCw, label: `Syncing ${backlog}…` },
+    attention: { dot: STATUS_DOT.attention, Icon: AlertTriangle, label: issues ? `${issues} need attention` : 'Needs attention' },
   }[overall]
   const { dot, Icon, label } = style
 
@@ -110,13 +111,13 @@ export default function SyncHealthPill({ refreshKey = 0, onForced, onOpenSetting
               <div className="mt-2 px-2 py-1.5 rounded-lg border border-hairline bg-bg text-[12px] text-ink-2">
                 {health.issues.duplicate_jobs > 0 && (
                   <div className="flex items-center gap-1.5">
-                    <span className="w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0" aria-hidden="true" />
+                    <span className={`w-1.5 h-1.5 rounded-full ${STATUS_DOT.attention} shrink-0`} aria-hidden="true" />
                     {health.issues.duplicate_jobs} duplicate job group(s)
                   </div>
                 )}
                 {health.issues.orphaned_shifts > 0 && (
                   <div className="flex items-center gap-1.5">
-                    <span className="w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0" aria-hidden="true" />
+                    <span className={`w-1.5 h-1.5 rounded-full ${STATUS_DOT.attention} shrink-0`} aria-hidden="true" />
                     {health.issues.orphaned_shifts} orphaned shift(s)
                   </div>
                 )}
@@ -147,7 +148,7 @@ export default function SyncHealthPill({ refreshKey = 0, onForced, onOpenSetting
             </div>
             {forceError && (
               <p className="mt-2 px-2 py-1.5 rounded-lg border border-hairline bg-panel text-[12px] text-ink-2 flex items-center gap-1.5" role="alert">
-                <span className="w-1.5 h-1.5 rounded-full bg-red-500 shrink-0" aria-hidden="true" />
+                <span className={`w-1.5 h-1.5 rounded-full ${STATUS_DOT.problem} shrink-0`} aria-hidden="true" />
                 {forceError}
               </p>
             )}
@@ -166,7 +167,7 @@ function Row({ Icon, label, ok, note }) {
     <div className="flex items-center gap-2 py-1">
       <Icon className="w-3.5 h-3.5 text-ink-3 shrink-0" />
       <span className="text-[12px] text-ink-2 flex-1">{label}</span>
-      <span className={`w-1.5 h-1.5 rounded-full ${ok ? 'bg-emerald-500' : 'bg-ink-3/40'}`} />
+      <span className={`w-1.5 h-1.5 rounded-full ${ok ? STATUS_DOT.ok : 'bg-ink-3/40'}`} />
       <span className="text-[11px] text-ink-3">{note}</span>
     </div>
   )

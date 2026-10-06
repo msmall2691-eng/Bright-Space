@@ -1,5 +1,6 @@
 import { Zap, Users, LogIn } from 'lucide-react'
 import { shortDate } from './constants'
+import { STATUS_DOT } from '../../theme/statusDots'
 
 /** Small Google sync indicator — quiet dot + word, no tinted capsule.
  *  Sync-OK is a non-event, so it's nearly invisible (gray dot); only the
@@ -11,7 +12,7 @@ export const SyncBadge = ({ state = 'off', label, okTitle, offTitle }) => {
       title={ok ? okTitle : offTitle}
       className="inline-flex items-center gap-1 text-[10px] font-medium text-ink-3"
     >
-      <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${ok ? 'bg-ink-3/40' : 'bg-amber-400'}`} aria-hidden="true" />
+      <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${ok ? 'bg-ink-3/40' : STATUS_DOT.attention}`} aria-hidden="true" />
       {label}
     </span>
   )
@@ -70,14 +71,14 @@ export const TurnoverInfo = ({ job, compact = false }) => {
         // Quiet dot+word — red text carries the urgency, no filled capsule.
         <span className="inline-flex items-center gap-1.5 text-[10.5px] font-semibold text-red-600 dark:text-red-300"
           title="Next guest checks in today — same-day turnaround">
-          <span className="w-1.5 h-1.5 rounded-full bg-red-500 shrink-0" aria-hidden="true" />
+          <span className={`w-1.5 h-1.5 rounded-full ${STATUS_DOT.problem} shrink-0`} aria-hidden="true" />
           <Zap className="w-2.5 h-2.5" /> Immediate turnover
         </span>
       )}
       {tight && (
         <span className="inline-flex items-center gap-1.5 text-[10.5px] font-semibold text-amber-700 dark:text-amber-300"
           title={`Only ~${Math.max(0, Math.round(job.turnover_lead_hours))}h before the next guest checks in`}>
-          <span className="w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0" aria-hidden="true" />
+          <span className={`w-1.5 h-1.5 rounded-full ${STATUS_DOT.attention} shrink-0`} aria-hidden="true" />
           <Zap className="w-2.5 h-2.5" /> Tight turnaround
         </span>
       )}
