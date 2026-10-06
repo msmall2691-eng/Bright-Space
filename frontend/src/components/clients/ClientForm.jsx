@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { Trash2, X } from 'lucide-react'
 import AddressAutocomplete from '../AddressAutocomplete'
 import { CustomFieldsForm } from '../CustomFields'
+import { STATUS_DOT } from '../../theme/statusDots'
 
 const ADDRESS_FIELDS = [
   { label: 'Street', key: 'address' },
@@ -286,7 +287,7 @@ export function ClientForm({
       {dupes.length > 0 && (
         <div className="mx-6 mb-2 text-[12px] text-ink bg-panel border border-hairline rounded-lg px-3 py-2">
           <div className="font-semibold mb-1 flex items-center gap-1.5">
-            <span className="w-1.5 h-1.5 rounded-full shrink-0 bg-amber-500" aria-hidden="true" />
+            <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${STATUS_DOT.attention}`} aria-hidden="true" />
             Possible duplicate{dupes.length > 1 ? 's' : ''} found:
           </div>
           <ul className="space-y-0.5">
@@ -303,7 +304,7 @@ export function ClientForm({
       )}
       {saveError && (
         <div className="mx-6 mb-2 text-[12px] text-ink bg-panel border border-hairline rounded-lg px-3 py-2 flex items-center gap-1.5">
-          <span className="w-1.5 h-1.5 rounded-full shrink-0 bg-red-500" aria-hidden="true" />
+          <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${STATUS_DOT.problem}`} aria-hidden="true" />
           {saveError}
         </div>
       )}
