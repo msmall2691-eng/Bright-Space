@@ -184,9 +184,19 @@ longer visits its page:
   and sharing one would blank the list row when the drawer closed.
 - ~~**A search that silently matches nothing.**~~ **Fixed.** `prop_to_dict`
   ships `client_name` and carries a comment naming this bug.
-- ~~**Codes and passwords fetched to render six fields.**~~ **Fixed.**
-  `PropertyIcalsBulk` no longer reads `house_code` / `wifi_password` /
-  `access_notes`.
+- ~~**Codes and passwords fetched to render six fields.**~~ **Fixed — and the
+  previous note here was wrong.** It said "no longer reads `house_code` /
+  `wifi_password` / `access_notes`", which answered a question nobody asked:
+  the page never *displayed* them. The entry was about them being **fetched**,
+  and they were — `PropertyIcalsBulk` loaded `GET /api/properties/{id}`, which
+  BB-SEC-11's own comment calls "the full property dict — house_code,
+  access_notes, wifi_password included", and whose per-feed dicts carry
+  `house_code` / `access_links` / `instructions` as well. Seven fields
+  rendered, a door code and a wifi password on the wire every time.
+  Now fixed for real: `GET /api/properties/{id}/icals` (BB-SEC-13) serves
+  exactly what the screen reads, held by
+  `backend/tests/test_property_icals_payload.py`, which fails on a sensitive
+  key name AND on a secret VALUE smuggled under an innocent one.
 - ~~**Filter-independent aggregates refetched per keystroke.**~~ **Fixed, and
   half of it was already gone.** `/api/invoices/summary` is no longer called
   from the frontend at all. `/api/clients/counts` was real: it is a whole-DB
