@@ -114,7 +114,7 @@ export default function GlobalSearch() {
     : []
   // Create actions — all when empty, filtered by label/keywords when typing.
   const actions = q
-    ? createActions.filter(a => (a.label + ' ' + a.keywords).toLowerCase().includes(q))
+    ? createActions.filter(a => `${a.label} ${a.keywords || ''}`.toLowerCase().includes(q))
     : createActions
   // Skip the page we're on — "jump to where you already are" is noise.
   const shownRecents = q ? [] : recents.filter(r => r.to !== location.pathname).slice(0, 6)
