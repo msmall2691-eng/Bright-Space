@@ -23,6 +23,8 @@ find_or_create_conversation. A phone number and an email address are two
 different handles with no honest way to know they are one person.
 """
 import uuid
+from datetime import datetime, timedelta, timezone
+
 import pytest
 
 from database.db import SessionLocal
@@ -198,3 +200,174 @@ class TestUnlinkedContactsStayChannelScoped:
         assert a.id == b.id
         db.query(Conversation).filter(Conversation.id == a.id).delete(synchronize_session=False)
         db.commit()
+
+
+class TestABackfillDoesNotHijackTheReplyChannel:
+    """codex P1: the reply channel must follow the CUSTOMER'S clock.
+
+    `_apply_inbound` sets `conv.channel = msg.channel`, and `now` is
+    `msg.created_at` when the message carries one. A first-time Gmail sync or
+    an expired-cursor resync imports real emails with real old timestamps —
+    so without a recency guard a three-week-old email takes over a thread
+    whose customer texted yesterday, and the next reply emails someone who is
+    waiting for a text.
+
+    Before alembic 131 this was impossible: the old email landed in its own
+    email-channel thread and could not touch the SMS one. Unifying the thread
+    is what exposes it, which is why the guard belongs to this change.
+    """
+
+    def test_an_old_email_does_not_steal_a_thread_from_a_recent_text(self, db, client):
+        conv = find_or_create_conversation(db, channel="sms", client_id=client.id,
+                                           external_contact=client.phone, org_id=1)
+        db.commit()
+
+        # Yesterday: the customer texts. This is their latest real contact.
+        recent = Message(conversation_id=conv.id, client_id=client.id, channel="sms",
+                         direction="inbound", body="you coming thursday?",
+                         status="received", org_id=1,
+                         created_at=datetime.now(timezone.utc) - timedelta(days=1))
+        db.add(recent); db.flush(); _apply_inbound(conv, recent); db.commit()
+        assert conv.channel == "sms"
+
+        # Now a backfill drags in an email from three weeks ago.
+        old = Message(conversation_id=conv.id, client_id=client.id, channel="email",
+                      direction="inbound", body="quote request from last month",
+                      status="received", org_id=1,
+                      created_at=datetime.now(timezone.utc) - timedelta(days=21))
+        db.add(old); db.flush(); _apply_inbound(conv, old); db.commit()
+
+        assert conv.channel == "sms", (
+            "a backfilled email took over the reply channel — the next reply "
+            "would email a customer whose latest contact was a text"
+        )
+
+    def test_a_genuinely_newer_email_still_takes_over(self, db, client):
+        """The guard must not freeze the channel — that would break the
+        feature it is protecting. Only BACKWARDS moves are refused."""
+        conv = find_or_create_conversation(db, channel="sms", client_id=client.id,
+                                           external_contact=client.phone, org_id=1)
+        db.commit()
+        old_sms = Message(conversation_id=conv.id, client_id=client.id, channel="sms",
+                          direction="inbound", body="text first", status="received",
+                          org_id=1,
+                          created_at=datetime.now(timezone.utc) - timedelta(days=3))
+        db.add(old_sms); db.flush(); _apply_inbound(conv, old_sms); db.commit()
+
+        newer_email = Message(conversation_id=conv.id, client_id=client.id, channel="email",
+                              direction="inbound", body="switching to email",
+                              status="received", org_id=1,
+                              created_at=datetime.now(timezone.utc))
+        db.add(newer_email); db.flush(); _apply_inbound(conv, newer_email); db.commit()
+
+        assert conv.channel == "email", "the channel stopped following the customer"
+
+    def test_the_first_inbound_sets_the_channel_even_though_there_is_no_baseline(self, db, client):
+        """`last_inbound_at` is NULL on a brand-new thread. A guard written as
+        a bare `>=` against None would raise TypeError and drop the message."""
+        conv = find_or_create_conversation(db, channel="sms", client_id=client.id,
+                                           external_contact=client.phone, org_id=1)
+        db.commit()
+        assert conv.last_inbound_at is None
+        m = Message(conversation_id=conv.id, client_id=client.id, channel="email",
+                    direction="inbound", body="first contact", status="received",
+                    org_id=1, created_at=datetime.now(timezone.utc))
+        db.add(m); db.flush(); _apply_inbound(conv, m); db.commit()
+        assert conv.channel == "email"
+
+    def test_a_naive_stored_timestamp_compares_without_blowing_up(self, db, client):
+        """The trap this nearly shipped with.
+
+        Every datetime column here is `Column(DateTime)` with no
+        `timezone=True`, so a value READ BACK from Postgres is naive while
+        `datetime.now(timezone.utc)` is aware. Comparing them raises
+        `TypeError: can't compare offset-naive and offset-aware datetimes`.
+        A guard that skipped `_as_utc` would pass on freshly-assigned objects
+        and then 500 on every inbound message in production.
+        """
+        conv = find_or_create_conversation(db, channel="sms", client_id=client.id,
+                                           external_contact=client.phone, org_id=1)
+        # Naive, exactly as the DB hands it back.
+        conv.last_inbound_at = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(days=1)
+        db.commit()
+
+        m = Message(conversation_id=conv.id, client_id=client.id, channel="email",
+                    direction="inbound", body="aware timestamp", status="received",
+                    org_id=1, created_at=datetime.now(timezone.utc))
+        db.add(m); db.flush()
+        _apply_inbound(conv, m)          # must not raise
+        db.commit()
+        assert conv.channel == "email"
+
+
+class TestThreadCreationIsSerialized:
+    """codex P1: dropping the unique index removed the concurrency guard.
+
+    `uq_conversations_client_channel` was not only a shape constraint — it was
+    the only thing making find_or_create_conversation's read-then-insert safe.
+    With it, two concurrent first messages for one client both inserted, one
+    raised IntegrityError, and the savepoint returned the survivor. Without it
+    neither insert violates anything, both succeed, and the person's messages
+    split across two threads with no error raised anywhere.
+
+    A true concurrency race needs two connections and is not what the curated
+    suite should spend its time on. What IS worth pinning is that the lock is
+    actually taken, keyed on the same identity the lookup uses, and that it
+    never takes down an inbound message — because a lock keyed on the wrong
+    thing, or one that throws, is worse than none.
+    """
+
+    def test_the_lock_is_taken_before_the_lookup_for_a_known_client(self, db, client, monkeypatch):
+        import modules.comms.router as R
+        calls = []
+        monkeypatch.setattr(R, "_lock_conversation_identity",
+                            lambda db, **kw: calls.append(kw))
+        find_or_create_conversation(db, channel="sms", client_id=client.id,
+                                    external_contact=client.phone, org_id=1)
+        db.commit()
+        assert calls, "thread creation ran with no identity lock at all"
+        assert calls[0]["client_id"] == client.id
+
+    def test_the_lock_key_matches_the_lookup_it_guards(self, db):
+        """A known client locks on the PERSON — no channel. If the key kept
+        the channel, SMS and email would take different locks and could still
+        both insert, which is the exact race this is for."""
+        from modules.comms.router import _conversation_identity_key
+        sms = _conversation_identity_key(client_id=7, external_contact="+12075550143",
+                                         channel="sms")
+        email = _conversation_identity_key(client_id=7, external_contact="a@b.com",
+                                           channel="email")
+        assert sms == email == "conv:client:7"
+
+        # An unlinked contact is channel-scoped, so its key must be too —
+        # otherwise the lock is stricter than the lookup and serializes
+        # unrelated threads.
+        a = _conversation_identity_key(client_id=None, external_contact="+12075550143",
+                                       channel="sms")
+        b = _conversation_identity_key(client_id=None, external_contact="+12075550143",
+                                       channel="email")
+        assert a != b
+
+        # Nothing to key on: no lock, rather than a lock on the empty string
+        # that would serialize every anonymous thread in the system.
+        assert _conversation_identity_key(client_id=None, external_contact=None,
+                                          channel="sms") is None
+
+    def test_a_locking_failure_does_not_drop_the_message(self, db, client, monkeypatch):
+        """Degrade to today's behaviour, never to a lost text."""
+        import modules.comms.router as R
+        monkeypatch.setattr(R, "text",
+                            lambda *a, **k: (_ for _ in ()).throw(RuntimeError("boom")))
+        monkeypatch.setattr(db, "bind", db.bind)
+        conv = find_or_create_conversation(db, channel="sms", client_id=client.id,
+                                           external_contact=client.phone, org_id=1)
+        db.commit()
+        assert conv is not None and conv.client_id == client.id
+
+    def test_sqlite_is_a_no_op_rather_than_an_error(self, db, client):
+        """The suite runs on SQLite, which has no pg_advisory_xact_lock. The
+        guard must notice the dialect instead of raising OperationalError on
+        every inbound message locally."""
+        from modules.comms.router import _lock_conversation_identity
+        _lock_conversation_identity(db, client_id=client.id,
+                                    external_contact=client.phone, channel="sms")

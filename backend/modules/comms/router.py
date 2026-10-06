@@ -17,7 +17,7 @@ import re
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import Response
 from pydantic import BaseModel
-from sqlalchemy import or_, func
+from sqlalchemy import or_, func, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, joinedload, selectinload
 
@@ -408,6 +408,89 @@ def msg_to_dict(m: Message) -> dict:
 # Conversation helpers
 # ---------------------------------------------------------------------------
 
+def _as_utc(v: Optional[datetime]) -> Optional[datetime]:
+    """Make a timestamp safe to compare against an aware `datetime`.
+
+    Every datetime column in this schema is `Column(DateTime)` with no
+    `timezone=True`, so Postgres stores `timestamp without time zone` and hands
+    back a NAIVE value — while `models._utcnow()` and
+    `datetime.now(timezone.utc)` are AWARE. Comparing the two raises
+    `TypeError: can't compare offset-naive and offset-aware datetimes`, so a
+    freshly-assigned timestamp and one round-tripped through the DB cannot be
+    ordered without this.
+
+    Naive means UTC here, the same assumption `utils.dates.business_date` and
+    `add_business_minutes` already make.
+    """
+    if v is None:
+        return None
+    return v if v.tzinfo is not None else v.replace(tzinfo=timezone.utc)
+
+
+def _conversation_identity_key(
+    *, client_id: Optional[int], external_contact: Optional[str], channel: str,
+) -> Optional[str]:
+    """The identity `find_or_create_conversation` keys a thread on, as a lock
+    name. It must match that function's lookup EXACTLY or the lock guards the
+    wrong thing: person for a known client (no channel — that is the Tier 4a
+    change), person-and-channel for an unlinked contact.
+    """
+    if client_id:
+        return f"conv:client:{client_id}"
+    if external_contact:
+        return f"conv:contact:{channel}:{external_contact}"
+    return None
+
+
+def _lock_conversation_identity(
+    db: Session, *, client_id: Optional[int], external_contact: Optional[str], channel: str,
+) -> None:
+    """Serialize thread creation for one person, BEFORE the lookup SELECT.
+
+    Alembic 131 drops `uq_conversations_client_channel`, and that index was
+    doing more than enforcing a shape: it was the only thing making the
+    read-then-insert in `find_or_create_conversation` safe under concurrency.
+    With it, two simultaneous first messages for the same client both saw no
+    conversation, both inserted, one got an `IntegrityError`, and the savepoint
+    recovery returned the survivor. Without it NEITHER insert violates
+    anything — both succeed, and the person's messages are split across two
+    threads permanently, with no error anywhere. The savepoint cannot help: it
+    only catches a constraint that no longer exists.
+
+    This is not theoretical here. The app runs `UVICORN_WORKERS` (default 4)
+    processes, and two inbound messages for one client genuinely do arrive
+    together — a Twilio SMS webhook landing while the Gmail sync tick is
+    writing, or two texts in quick succession.
+
+    Same mechanism as `modules/intake/normalize._lock_contact_for_upsert`,
+    which exists for the identical read-then-insert race on leads (and which
+    the repo added after a codex P1 on #533). `pg_advisory_xact_lock` is held
+    to the end of the surrounding transaction, so a savepoint rollback does not
+    release it, and nothing leaks past the request. ONE key per call, so this
+    function cannot deadlock against itself the way a multi-key lock could.
+
+    SQLite: no-op, as in intake — SQLite serializes writers, so the
+    read-then-insert pair on a single connection is atomic by construction.
+    Never blocks a message on a locking hiccup; a lost lock degrades to
+    today's behaviour, not a dropped text.
+    """
+    key = _conversation_identity_key(
+        client_id=client_id, external_contact=external_contact, channel=channel,
+    )
+    if not key:
+        return
+    try:
+        if db.bind is not None and db.bind.dialect.name == "postgresql":
+            # Reuse intake's hash rather than forking a second one — two
+            # implementations of "string → int8 lock key" would be free to
+            # drift, and a drifted key is a lock that silently guards nothing.
+            from modules.intake.normalize import _stable_lock_key
+            db.execute(text("SELECT pg_advisory_xact_lock(:k)"),
+                       {"k": _stable_lock_key(key)})
+    except Exception as e:  # never block an inbound message on a lock
+        logger.warning("conversation identity lock failed (%s): %s", key, e)
+
+
 def find_or_create_conversation(
     db: Session,
     *,
@@ -431,8 +514,20 @@ def find_or_create_conversation(
     and an email address are two different `external_contact` values with no
     way to know they are the same human, so unifying them is not something
     this function can do honestly — it would just be guessing. Linking the
-    contact to a client is what unifies them, and _link_and_merge_conversations
-    (modules/clients/router.py) already does that merge.
+    contact to a client is what unifies them.
+
+    But NOT every linking path folds the threads, and an earlier version of
+    this docstring claimed otherwise (codex P2). To be exact:
+    `_link_and_merge_conversations` (modules/clients/router.py) does merge, but
+    it is SMS-only (`Conversation.channel == "sms"`, matched on phone tail) and
+    fires when a PHONE is added to a client. The inbox's own "link this thread
+    to this contact" action, `link_conversation_client` below, re-parents the
+    conversation and its messages and does NOT fold it into a thread the client
+    already has. So a client can still end up holding two conversations, and
+    the person-keyed lookup here will pick one and leave the other behind with
+    part of the history. That is tracked separately rather than fixed here —
+    folding two live threads moves message rows, which is the one thing this
+    PR was explicitly scoped NOT to do.
 
     Prefers the active (non-resolved) thread, and for a known client reuses a
     RESOLVED one rather than opening a second. That was originally forced by
@@ -445,11 +540,16 @@ def find_or_create_conversation(
     not start a parallel one. The June 10 guard in
     tests/test_conversation_get_or_create.py still holds it.
 
-    The insert still runs in a savepoint. Without the unique index an
-    IntegrityError is far less likely, but the savepoint costs nothing and a
-    lost race with a concurrent writer (e.g. the SMS webhook) still degrades
-    to returning the surviving row rather than aborting the caller's
-    transaction.
+    Concurrency is handled by a lock, NOT by the savepoint. An earlier version
+    of this docstring said the savepoint still made a lost race "degrade to
+    returning the surviving row" — that was wrong, and codex caught it. The
+    savepoint only ever caught `uq_conversations_client_channel`; once alembic
+    131 drops that index, two concurrent inserts for one person BOTH succeed
+    and nothing raises, so there is no IntegrityError left to recover from.
+    `_lock_conversation_identity` is what prevents that, and it runs before the
+    lookup below. The savepoint stays for the constraints that do remain, so a
+    genuine IntegrityError still cannot poison the caller's whole transaction
+    (the June 10 incident).
 
     org_id (BB-MT-01): stamped on a newly-created Conversation only — this was
     never set anywhere in the codebase, so every conversation's org_id was
@@ -458,6 +558,11 @@ def find_or_create_conversation(
     with no resolvable org (e.g. the shared legacy Gmail inbox) may omit it.
     """
     external_contact = _normalize_contact(external_contact)
+    # BEFORE the lookup, not after: this is what makes read-then-insert safe
+    # now that the unique index is gone. See _lock_conversation_identity.
+    _lock_conversation_identity(
+        db, client_id=client_id, external_contact=external_contact, channel=channel,
+    )
     if client_id:
         # Person-keyed. No channel filter: this is the whole change.
         q = db.query(Conversation).filter(Conversation.client_id == client_id)
@@ -506,17 +611,40 @@ def find_or_create_conversation(
 def _apply_inbound(conv: Conversation, msg: Message):
     """Update conversation aggregates + SLA when an inbound message arrives."""
     now = msg.created_at or datetime.now(timezone.utc)
+    # Read the previous inbound BEFORE overwriting it — it is the baseline the
+    # reply-channel guard below compares against.
+    prev_inbound = _as_utc(conv.last_inbound_at)
     conv.last_message_at = now
     conv.last_inbound_at = now
     conv.unread_count = (conv.unread_count or 0) + 1
     # Point the thread's default reply channel at however the customer last
     # reached us, so answering a text does not email them (threads hold mixed
-    # channels now — alembic 131). Only ever a channel we can send on: a
-    # voicemail must not leave the thread unanswerable, since send_reply 400s
-    # on anything outside SENDABLE_CHANNELS. A voice-only thread keeps
-    # whatever channel it was created with, which is what the operator sees
-    # and can still reply on.
-    if msg.channel in SENDABLE_CHANNELS:
+    # channels now — alembic 131). Two conditions, both load-bearing:
+    #
+    # 1. Only ever a channel we can send on. A voicemail must not leave the
+    #    thread unanswerable, since send_reply 400s on anything outside
+    #    SENDABLE_CHANNELS. A voice-only thread keeps whatever channel it was
+    #    created with, which is what the operator sees and can still reply on.
+    #
+    # 2. Only if this message is ACTUALLY the latest inbound. "Last reached
+    #    us" is about the customer's clock, not about which row we happened to
+    #    write last, and those come apart during a backfill: a first-time
+    #    Gmail sync or an expired-cursor resync imports old emails, and
+    #    `now` is then `msg.created_at` — a real timestamp from weeks ago.
+    #    Unconditionally, a three-week-old email would take over a thread
+    #    whose customer texted yesterday, and the next reply would email
+    #    someone who is expecting a text (codex P1). Before 131 this could not
+    #    happen: the old email landed in its own email-channel thread and
+    #    could not touch the SMS one. Unifying the thread is what exposes it,
+    #    so the guard belongs to this change.
+    #
+    # Note `last_message_at` above is still assigned unconditionally and a
+    # backfill can still move it backwards, reordering the inbox and skewing
+    # the SLA deadline below. That predates this change and is unaltered by
+    # it — an old email did the same to its own thread before — so it is left
+    # alone here rather than quietly widening the diff.
+    if msg.channel in SENDABLE_CHANNELS and (
+            prev_inbound is None or _as_utc(now) >= prev_inbound):
         conv.channel = msg.channel
     # Re-open if resolved
     if conv.status == "resolved":
