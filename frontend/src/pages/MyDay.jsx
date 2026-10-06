@@ -39,6 +39,7 @@ import AccentPicker from '../components/crew/AccentPicker'
 import HeroBanner from '../components/crew/HeroBanner'
 import StickyNotes from '../components/board/StickyNotes'
 import { initAccent } from '../utils/accent'
+import { STATUS_DOT } from '../theme/statusDots'
 import { SOFT, CrewCard, SectionLabel, ErrorNote, SettingRow, Sheet, SheetActions } from '../components/crew/primitives'
 // Photos captured on cellular wait on-device and send on WiFi — My Day owns
 // flushing the queue (app open + connectivity changes) and the visible
@@ -196,7 +197,7 @@ function CrewTabBar({ tab, setTab, chatUnread = 0 }) {
               {label}
               {key === 'chat' && chatUnread > 0 && (
                 <span className="inline-flex items-center gap-1">
-                  <span className="w-1.5 h-1.5 rounded-full bg-red-500" aria-hidden="true" />
+                  <span className={`w-1.5 h-1.5 rounded-full ${STATUS_DOT.problem}`} aria-hidden="true" />
                   <span className="text-[10px] font-bold text-ink tabular-nums">
                     {chatUnread > 99 ? '99+' : chatUnread}
                   </span>
@@ -690,7 +691,7 @@ export default function MyDay({ previewUserId = null }) {
              per the design language rather than a full-bleed colored bar. */
           <div className="flex items-center justify-between gap-2 border-b border-hairline bg-panel px-4 py-2">
             <span className="text-[12px] text-ink-2 flex items-center gap-1.5 min-w-0">
-              <span className="w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0" aria-hidden="true" />
+              <span className={`w-1.5 h-1.5 rounded-full ${STATUS_DOT.attention} shrink-0`} aria-hidden="true" />
               <span className="truncate">
                 No connection — showing your schedule saved at{' '}
                 {new Date(staleAt).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}.
@@ -716,7 +717,7 @@ export default function MyDay({ previewUserId = null }) {
              fired its `online` event yet, which on iOS it often hasn't. */
           <div className="flex items-center justify-between gap-2 rounded-lg border border-hairline bg-panel px-3 py-2">
             <span className="text-[12px] text-ink-2 flex items-center gap-1.5 min-w-0">
-              <span className="w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0" />
+              <span className={`w-1.5 h-1.5 rounded-full ${STATUS_DOT.attention} shrink-0`} />
               {queuedActions} update{queuedActions > 1 ? 's' : ''} saved — sends when you have signal
             </span>
             <button onClick={sendActionsNow} disabled={sendingActions}
@@ -731,7 +732,7 @@ export default function MyDay({ previewUserId = null }) {
              card + amber dot; Send now is the cleaner's override. */
           <div className="flex items-center justify-between gap-2 rounded-lg border border-hairline bg-panel px-3 py-2">
             <span className="text-[12px] text-ink-2 flex items-center gap-1.5 min-w-0">
-              <span className="w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0" />
+              <span className={`w-1.5 h-1.5 rounded-full ${STATUS_DOT.attention} shrink-0`} />
               {queuedPhotos} photo{queuedPhotos > 1 ? 's' : ''} waiting for WiFi
             </span>
             <button onClick={sendQueuedNow} disabled={sendingQueued}
@@ -786,7 +787,7 @@ export default function MyDay({ previewUserId = null }) {
             {data.cleared === false && (data.missing || []).length > 0 && (
               <div className="rounded-xl border border-hairline bg-panel px-4 py-3">
                 <span className="flex items-center gap-1.5 text-[12px] text-ink-2">
-                  <span className="h-1.5 w-1.5 rounded-full bg-amber-500" aria-hidden="true" />
+                  <span className={`h-1.5 w-1.5 rounded-full ${STATUS_DOT.attention}`} aria-hidden="true" />
                   You're not cleared to take jobs yet
                 </span>
                 <p className="mt-0.5 text-[13px] text-ink">
@@ -924,7 +925,7 @@ export default function MyDay({ previewUserId = null }) {
             return (
               <div className="rounded-xl border border-hairline bg-panel px-4 py-3">
                 <span className="flex items-center gap-1.5 text-[12px] text-ink-2">
-                  <span className="h-1.5 w-1.5 rounded-full bg-amber-500" aria-hidden="true" />
+                  <span className={`h-1.5 w-1.5 rounded-full ${STATUS_DOT.attention}`} aria-hidden="true" />
                   You're not cleared to take jobs yet
                 </span>
                 <p className="mt-0.5 text-[13px] text-ink">
@@ -1282,7 +1283,7 @@ export default function MyDay({ previewUserId = null }) {
             {textSent ? (
               <>
                 <div className="text-[12.5px] text-ink-2 flex items-start gap-1.5">
-                  <span className="mt-[5px] w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" aria-hidden="true" />
+                  <span className={`mt-[5px] w-1.5 h-1.5 rounded-full ${STATUS_DOT.ok} shrink-0`} aria-hidden="true" />
                   <span>Sent — “{textSent}”</span>
                 </div>
                 <button onClick={() => setTextJob(null)}
@@ -1374,7 +1375,7 @@ export default function MyDay({ previewUserId = null }) {
                becomes an offer the office prices. Say what's needed rather than
                letting a blank field 422. */
             <p className="flex items-start gap-1.5 text-[13px] text-ink-2">
-              <span className="mt-1.5 w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0" aria-hidden="true" />
+              <span className={`mt-1.5 w-1.5 h-1.5 rounded-full ${STATUS_DOT.attention} shrink-0`} aria-hidden="true" />
               <span>No price on this one — say what you'd do it for.</span>
             </p>
           )}
@@ -1406,7 +1407,7 @@ export default function MyDay({ previewUserId = null }) {
             </p>
           ) : (
             <p className="flex items-start gap-1.5 text-[12px] text-ink-3">
-              <span className="mt-1.5 w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0" aria-hidden="true" />
+              <span className={`mt-1.5 w-1.5 h-1.5 rounded-full ${STATUS_DOT.attention} shrink-0`} aria-hidden="true" />
               <span>{abovePosted
                 ? "That's above the posted price, so the office confirms this one."
                 : posted == null

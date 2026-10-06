@@ -36,7 +36,21 @@ import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
 
 const here = dirname(fileURLToPath(import.meta.url))
-const tokens = readFileSync(join(here, '..', 'components', 'board', 'tokens.js'), 'utf8')
+
+/**
+ * Every file that spells out a measured tone map.
+ *
+ * There are two, and they cannot be collapsed into one shared variable:
+ * Tailwind's JIT only emits classes it can see as COMPLETE literal strings, so
+ * `bg-${hue}-700` is purged from the build and the dot renders transparent.
+ * The literals therefore have to be repeated, and measurement — this file,
+ * reading both — is what keeps them honest instead.
+ */
+const SOURCES = [
+  join(here, '..', 'components', 'board', 'tokens.js'),
+  join(here, '..', 'theme', 'statusDots.js'),
+].map(p => readFileSync(p, 'utf8'))
+const tokens = SOURCES.join('\n')
 const css = readFileSync(join(here, '..', 'index.css'), 'utf8')
 
 /** Tailwind's stock palette for the hues the board uses. Only `indigo` is
@@ -128,6 +142,9 @@ const MAPS = [
   { name: 'SEV_DOT', floor: 3, what: 'a severity DOT' },
   { name: 'INT_DOT', floor: 3, what: 'an integration DOT' },
   { name: 'FOCUS_DOT', floor: 3, what: "the focus bar's DOT" },
+  // theme/statusDots.js — the app-wide dot, not just the board's. Same 3:1
+  // non-text floor: a dot carries meaning but is not text.
+  { name: 'STATUS_DOT', floor: 3, what: 'the app-wide status DOT' },
 ]
 
 describe('BB-A11Y-02 — the board tone maps clear their floors', () => {

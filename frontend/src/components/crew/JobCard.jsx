@@ -26,6 +26,7 @@ import { copyToClipboard } from '../../utils/clipboard'
 import StatusBadge from '../ui/StatusBadge'
 import { SOFT, SectionLabel, DisclosureRow } from './primitives'
 import PropertyPhoto from '../PropertyPhoto'
+import { STATUS_DOT } from '../../theme/statusDots'
 
 export function fmtTimeRange(start, end) {
   if (!start && !end) return ''
@@ -379,7 +380,7 @@ export default function JobCard({ job, onMarkDone, onPhotos, onRespond, onDeclin
            not house trivia). Quiet card + dot, not a colored banner. */
         <div className="mt-3 rounded-lg border border-hairline bg-bg px-3 py-2">
           <div className="text-[11px] font-semibold text-ink flex items-center gap-1.5">
-            <span className="w-1.5 h-1.5 rounded-full bg-blue-500 shrink-0" aria-hidden="true" />
+            <span className={`w-1.5 h-1.5 rounded-full ${STATUS_DOT.info} shrink-0`} aria-hidden="true" />
             From the office
           </div>
           <div className="mt-0.5 text-[12px] text-ink-2 whitespace-pre-wrap">{job.notes}</div>
@@ -407,7 +408,7 @@ export default function JobCard({ job, onMarkDone, onPhotos, onRespond, onDeclin
                cleaner the customer confirmed this visit — the door will be
                open — without a call to the office. */
             <div className="text-[12px] text-ink-2 flex items-center gap-1.5">
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" aria-hidden="true" />
+              <span className={`w-1.5 h-1.5 rounded-full ${STATUS_DOT.ok} shrink-0`} aria-hidden="true" />
               Customer confirmed
             </div>
           )}
@@ -487,7 +488,7 @@ export default function JobCard({ job, onMarkDone, onPhotos, onRespond, onDeclin
           className="mt-2 w-full text-left text-[12px] text-ink-2 hover:bg-bg-2 disabled:opacity-60 py-2 px-2.5 rounded-lg transition-colors border border-dashed border-hairline">
           {(job.my_helpers?.length || 0) > 0 ? (
             <span className="flex items-center gap-1.5">
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" aria-hidden="true" />
+              <span className={`w-1.5 h-1.5 rounded-full ${STATUS_DOT.ok} shrink-0`} aria-hidden="true" />
               Bringing {job.my_helpers.map(h => h.name).join(', ')}
               <span className="text-ink-3">· change</span>
             </span>
@@ -530,13 +531,13 @@ export default function JobCard({ job, onMarkDone, onPhotos, onRespond, onDeclin
                      so it becomes an offer the office prices. Say so up front
                      rather than letting a blank field 422 at the server. */
                   <p className="flex items-start gap-1.5 text-[13px] text-ink-2">
-                    <span className="mt-1.5 w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0" aria-hidden="true" />
+                    <span className={`mt-1.5 w-1.5 h-1.5 rounded-full ${STATUS_DOT.attention} shrink-0`} aria-hidden="true" />
                     <span>No price set — name yours and the office will confirm.</span>
                   </p>
                 )}
                 {mine?.status === 'pending' && (
                   <p className="flex items-center gap-1.5 text-[13px] text-ink-2 mt-0.5">
-                    <span className="w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0" aria-hidden="true" />
+                    <span className={`w-1.5 h-1.5 rounded-full ${STATUS_DOT.attention} shrink-0`} aria-hidden="true" />
                     You offered{asked != null ? ` $${Number(asked).toLocaleString(undefined, { maximumFractionDigits: 2 })}` : ''} — waiting on the office
                   </p>
                 )}

@@ -1,6 +1,7 @@
 import { CalendarDays, Clock, Users, Home, DollarSign, Lock, Sparkles, MapPin } from 'lucide-react'
 import { Sheet } from './primitives'
 import PropertyPhoto from '../PropertyPhoto'
+import { STATUS_DOT } from '../../theme/statusDots'
 
 /**
  * The details of a job that's up for grabs — what a cleaner needs to decide
@@ -160,7 +161,7 @@ export default function OpenJobSheet({ job, onClose, onClaim, onAccept, busy = f
       {pending ? (
         <div className="rounded-xl border border-hairline bg-panel px-3 py-2.5 text-[13px] text-ink-2">
           <span className="inline-flex items-center gap-1.5">
-            <span className="h-1.5 w-1.5 rounded-full bg-amber-500" aria-hidden="true" />
+            <span className={`h-1.5 w-1.5 rounded-full ${STATUS_DOT.attention}`} aria-hidden="true" />
             You’ve asked for this{mine.requested_rate != null ? ` at $${mine.requested_rate}` : ''} — the office will confirm.
           </span>
         </div>
