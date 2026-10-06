@@ -319,7 +319,7 @@ export default function VisitDetailsDrawer({
                   <ul className="text-sm text-ink space-y-0.5">
                     {Object.entries(visit.checklist_results).map(([task, done]) => (
                       <li key={task} className="flex items-center gap-1.5">
-                        <span className={done ? '${STATUS_TEXT.ok}' : 'text-ink-3'}>{done ? '✓' : '○'}</span>
+                        <span className={done ? `${STATUS_TEXT.ok}` : 'text-ink-3'}>{done ? '✓' : '○'}</span>
                         {task}
                       </li>
                     ))}

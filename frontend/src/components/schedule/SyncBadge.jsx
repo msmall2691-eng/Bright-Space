@@ -89,7 +89,7 @@ export const TurnoverInfo = ({ job, compact = false }) => {
         </span>
       )}
       {next?.checkin_date && (
-        <span className={`inline-flex items-center gap-1 text-[11px] ${immediate ? '${STATUS_TEXT.problem} font-semibold' : 'text-ink-3'}`}
+        <span className={`inline-flex items-center gap-1 text-[11px] ${immediate ? `${STATUS_TEXT.problem} font-semibold` : 'text-ink-3'}`}
           title="Next guest check-in">
           <LogIn className="w-3 h-3" /> Next: {shortDate(next.checkin_date)}
         </span>

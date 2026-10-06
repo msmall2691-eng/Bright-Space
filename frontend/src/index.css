@@ -763,6 +763,34 @@ layer(base);
   body.theme-neon {
     --accent-link: var(--accent-300);
   }
+
+  /* BB-A11Y-02 — job type as an EDGE, the one place a schedule colour has to
+     be a real value rather than a Tailwind class: the 3px rule on a week
+     block, the dispatch timeline block and the drag ghost are inline-styled on
+     absolutely-positioned elements.
+
+     Same shape as --accent-link directly above, for the same reason. A single
+     fixed hex cannot serve both themes — it has to clear the 3:1 non-text
+     floor against near-white grounds AND against Console's near-black ones,
+     and of the whole Tailwind palette only amber-700, rose-600 and slate-500
+     manage both. There is no distinct categorical trio in that window, so the
+     step is picked per theme here instead.
+
+     These track theme/scheduleScales.js JOB_TYPE_DOT step for step, so the
+     edge and the dot on one block are one colour. Held by
+     __tests__/jobTypeEdgeContrast.test.js, which measures each value against
+     its own theme's grounds and fails if the two drift apart. */
+  :root {
+    --job-edge-str: #b45309;          /* amber-700  4.07:1 on light grounds */
+    --job-edge-residential: #2563eb;  /* blue-600   4.19:1 */
+    --job-edge-commercial: #6b21a8;   /* purple-800 7.07:1 */
+  }
+  body.theme-console,
+  body.theme-neon {
+    --job-edge-str: #fbbf24;          /* amber-400  9.25:1 on dark grounds */
+    --job-edge-residential: #60a5fa;  /* blue-400   6.08:1 */
+    --job-edge-commercial: #d8b4fe;   /* purple-300 8.74:1 */
+  }
 }
 
 /* Dark theme — toggled with body.theme-console */
@@ -894,6 +922,14 @@ layer(base);
        read a link at about 1.6:1. Public pages are always light, so the link
        step here is always the deep one. */
     --accent-link: var(--accent-800);
+    /* Same reset, same reason: the dark themes point these at their light
+       steps, and a public page is always light. No public route renders a
+       schedule block today, but the contract test above holds every themed
+       token to this, so the next one that does is covered without anyone
+       remembering to opt it in. */
+    --job-edge-str: #b45309;
+    --job-edge-residential: #2563eb;
+    --job-edge-commercial: #6b21a8;
     --c-residential: oklch(0.58 0.12 245);
     --c-residential-bg: oklch(0.92 0.03 245);
     --c-commercial: oklch(0.60 0.14 60);

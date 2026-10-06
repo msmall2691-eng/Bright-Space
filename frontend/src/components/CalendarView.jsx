@@ -1086,7 +1086,7 @@ export default function CalendarView({
           style={{
             left: touchDrag.x + 12,
             top: touchDrag.y + 12,
-            borderLeft: `3px solid ${(TYPE_CONFIG[draggingJob.job_type] || TYPE_CONFIG.residential).hex}`,
+            borderLeft: `3px solid ${(TYPE_CONFIG[draggingJob.job_type] || TYPE_CONFIG.residential).edge}`,
           }}
         >
           {draggingJob.title}
