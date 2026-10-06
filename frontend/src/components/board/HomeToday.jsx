@@ -5,6 +5,7 @@ import { daysInRange } from '../../utils/dateRange'
 import { todayYMD } from '../../utils/format'
 import NeedsDateStrip from '../schedule/NeedsDateStrip'
 import { STATUS_DOT } from '../../theme/statusDots'
+import { STATUS_TEXT } from '../../theme/statusText'
 
 /**
  * Today's visits as a COMPACT list — the glanceable replacement for the full
@@ -201,7 +202,7 @@ export default function HomeToday({ navigate }) {
                   )}
                 </span>
                 {needsCleaner ? (
-                  <span className="inline-flex shrink-0 items-center gap-1 text-[11px] font-medium text-amber-700 dark:text-amber-300">
+                  <span className={`inline-flex shrink-0 items-center gap-1 text-[11px] font-medium ${STATUS_TEXT.attention} dark:text-amber-300`}>
                     <span className={`h-1.5 w-1.5 rounded-full ${STATUS_DOT.attention}`} aria-hidden="true" /> needs a cleaner
                   </span>
                 ) : crew ? (

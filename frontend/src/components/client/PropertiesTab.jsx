@@ -10,6 +10,7 @@ import PropertyPhoto from '../PropertyPhoto'
 import RentalSummary from './RentalSummary'
 import StandingCleanerField from './StandingCleanerField'
 import { STATUS_DOT } from '../../theme/statusDots'
+import { STATUS_TEXT } from '../../theme/statusText'
 
 export default function PropertiesTab({
   properties, navigate, setJobModal,
@@ -202,7 +203,7 @@ export default function PropertiesTab({
                                   {ical.last_sync_status === 'failed' ? (
                                     <>
                                       <span className={`inline-block w-1.5 h-1.5 rounded-full ${STATUS_DOT.problem}`} />
-                                      <span className="text-red-600 font-medium">Sync failed</span>
+                                      <span className={`${STATUS_TEXT.problem} font-medium`}>Sync failed</span>
                                       {ical.last_sync_error && <span className="text-ink-3 truncate">{ical.last_sync_error}</span>}
                                     </>
                                   ) : ical.last_synced_at ? (
@@ -302,7 +303,7 @@ export default function PropertiesTab({
             )}
             {editingProp && (
               <button onClick={() => deletePropPermanent(editingProp.id)}
-                className="px-3 py-2 text-sm text-red-500 hover:text-red-600 border border-hairline hover:bg-bg-2 rounded-lg transition-colors"
+                className={`px-3 py-2 text-sm ${STATUS_TEXT.problem} hover:text-red-600 border border-hairline hover:bg-bg-2 rounded-lg transition-colors`}
                 title="Permanently delete (only if the property has no jobs)">
                 Delete
               </button>
@@ -373,7 +374,7 @@ export default function PropertiesTab({
                         <span className="text-[10px] text-ink-3">{p.default_duration_hours}h turnover</span>
                       )}
                       {isStr && p.house_code && (
-                        <span className="text-[10px] bg-blue-500/10 text-blue-600 px-1.5 py-0.5 rounded">Code: {p.house_code}</span>
+                        <span className={`text-[10px] bg-blue-500/10 ${STATUS_TEXT.info} px-1.5 py-0.5 rounded`}>Code: {p.house_code}</span>
                       )}
                     </div>
                   </div>

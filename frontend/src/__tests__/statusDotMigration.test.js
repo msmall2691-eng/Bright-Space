@@ -77,7 +77,7 @@ const RAW_TEXT = new RegExp(String.raw`(?<![\w:-])text-(?:emerald|green)-(?:500|
 /** Surfaces where the TEXT half has been done. Separate from MIGRATED because
  *  it is a separate slice running behind it, and conflating the two would
  *  claim ground that has not been taken. */
-const TEXT_MIGRATED = ['crew', 'schedule']
+const TEXT_MIGRATED = ['crew', 'schedule', 'client', 'office', 'components']
 
 /**
  * Surfaces migrated so far, newest last. Adding one is a one-line change
@@ -192,7 +192,17 @@ const EXEMPT = {
 }
 
 /** TEXT-half exemptions, same {reason, allow} contract as EXEMPT above. */
-const TEXT_EXEMPT = {}
+const TEXT_EXEMPT = {
+  // Avatar colour pairs for client initials — `bg-rose-600/20 text-rose-400`
+  // and friends. The text sits on ITS OWN tinted background, not on the page
+  // ground, so the four-grounds measurement these steps are judged against
+  // simply does not describe this pair. Measuring it means measuring
+  // text-on-tint, which is a different harness and a different question;
+  // sweeping it here would change a palette on numbers that do not apply to
+  // it. Also categorical (one colour per client), not severity.
+  'components/clients/constants.js': { allow: 1,
+    reason: 'avatar initials palette — text on its own tint, not on a page ground, and categorical rather than severity' },
+}
 
 function walk(dir) {
   const out = []
@@ -364,6 +374,28 @@ describe('BB-A11Y-02 — migrated surfaces go through the measured map', () => {
     expect(offenders,
       'These render the literal text "${STATUS_...}" as a class name, so the ' +
       'element gets no colour at all:\n  ' + offenders.join('\n  ')).toEqual([])
+  })
+
+  it('no JSX attribute takes a bare template where it needs braces', () => {
+    // The mirror of the inert-interpolation bug, and introduced by the FIX for
+    // it: promoting `accent="text-emerald-600"` to a template produced
+    //     accent=`${STATUS_TEXT.ok}`
+    // which is a parse error, because a JSX attribute value is braces or a
+    // plain string, never a bare template. That one was loud — the build
+    // failed — but the two bugs are the same mistake from opposite sides, so
+    // both are worth pinning rather than relying on the compiler for one and
+    // a guard for the other.
+    const offenders = []
+    for (const surface of MIGRATED) {
+      for (const { path, src } of filesFor(surface)) {
+        src.split('\n').forEach((line, i) => {
+          if (/\w+=`\$\{STATUS_/.test(line)) {
+            offenders.push(`${rel(path)}:${i + 1}  attribute takes a bare template; use ={STATUS_...}`)
+          }
+        })
+      }
+    }
+    expect(offenders, offenders.join('\n  ')).toEqual([])
   })
 
   it('the text pattern catches what was there and spares what already passes', () => {

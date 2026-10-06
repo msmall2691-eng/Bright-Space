@@ -8,6 +8,7 @@ import { sidebarSectionsFor, SETTINGS_ITEM, iconFor } from '../nav/routes'
 import { useFavorites, toggleFavorite, isFavorite } from '../nav/favorites'
 import Kbd from './ui/Kbd'
 import { STATUS_DOT } from '../theme/statusDots'
+import { STATUS_TEXT } from '../theme/statusText'
 
 /**
  * Sidebar — the quiet Notion/Twenty-style nav. It sits directly on the app
@@ -71,7 +72,7 @@ function NavRow({ item, badge, pinnable = false, pinned = false }) {
             <button
               onClick={onStar}
               title="Remove from favorites"
-              className="hidden h-5 w-5 min-h-0 shrink-0 items-center justify-center rounded text-amber-500 opacity-0 transition-opacity hover:text-ink-2 focus-visible:opacity-100 group-hover/row:opacity-100 shell:flex"
+              className={`hidden h-5 w-5 min-h-0 shrink-0 items-center justify-center rounded ${STATUS_TEXT.attention} opacity-0 transition-opacity hover:text-ink-2 focus-visible:opacity-100 group-hover/row:opacity-100 shell:flex`}
             >
               <Star className="h-3.5 w-3.5 fill-current" />
             </button>

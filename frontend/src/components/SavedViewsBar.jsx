@@ -2,6 +2,7 @@ import { useState, useRef, useEffect } from 'react'
 import { Plus, MoreHorizontal, Star, Trash2 } from 'lucide-react'
 import { useSavedViews } from '../hooks/useSavedViews'
 import { STATUS_DOT } from '../theme/statusDots'
+import { STATUS_TEXT } from '../theme/statusText'
 
 /**
  * Deep, key-order-insensitive equality for saved-view config blobs.
@@ -132,7 +133,7 @@ export default function SavedViewsBar({ entityType, currentConfig, onApply, defa
         {/* Push the drifted filters into the active view */}
         {active && dirty && (
           <button type="button" onClick={() => updateView(active.id, { config: currentConfig })}
-            className="h-8 min-h-0 px-1 mx-2 text-[12px] font-medium text-blue-600 hover:text-blue-700 whitespace-nowrap shrink-0">
+            className={`h-8 min-h-0 px-1 mx-2 text-[12px] font-medium ${STATUS_TEXT.info} hover:text-blue-700 whitespace-nowrap shrink-0`}>
             Update “{active.name}”
           </button>
         )}
@@ -168,7 +169,7 @@ export default function SavedViewsBar({ entityType, currentConfig, onApply, defa
           </button>
           <button type="button" role="menuitem"
             onClick={() => { deleteView(active.id); setActiveId(null); setMenuOpen(false) }}
-            className="w-full text-left px-3 py-1.5 text-[12px] text-red-600 hover:bg-bg-2 flex items-center gap-2">
+            className={`w-full text-left px-3 py-1.5 text-[12px] ${STATUS_TEXT.problem} hover:bg-bg-2 flex items-center gap-2`}>
             <Trash2 className="w-3.5 h-3.5" /> Delete view
           </button>
         </div>

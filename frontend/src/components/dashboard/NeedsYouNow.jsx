@@ -4,6 +4,7 @@ import { get, post } from '../../api'
 import { toast } from '../../utils/toastBus'
 import { SOFT_CARD } from './constants'
 import { STATUS_DOT } from '../../theme/statusDots'
+import { STATUS_TEXT, STATUS_ICON } from '../../theme/statusText'
 
 /** The note prepended to the invoice email when the owner taps "Remind"
  *  from the dashboard — a plain, friendly nudge. The invoice body (amount,
@@ -108,7 +109,7 @@ export function NeedsYouNow({ attention = [], loading, navigate }) {
         </div>
       ) : total === 0 ? (
         <div className="flex flex-col items-center justify-center text-center py-10 px-6">
-          <Sparkles className="w-6 h-6 text-emerald-500 mb-2.5" />
+          <Sparkles className={`w-6 h-6 ${STATUS_ICON.ok} mb-2.5`} />
           <p className="text-sm font-semibold text-ink">You're all caught up</p>
           <p className="text-[12px] text-ink-3 mt-0.5">No approvals, replies, or overdue items right now.</p>
         </div>
@@ -125,7 +126,7 @@ export function NeedsYouNow({ attention = [], loading, navigate }) {
                 </div>
                 <div className="text-[11px] text-ink-3 truncate">
                   {r.needs_approval
-                    ? <>{fmt(r.current_date)} → <span className="text-amber-600 dark:text-amber-300 font-medium">{fmt(r.requested_date)}</span>{r.requested_scope === 'future' ? ' · + all future' : ''} — busy slot</>
+                    ? <>{fmt(r.current_date)} → <span className={`${STATUS_TEXT.attention} dark:text-amber-300 font-medium`}>{fmt(r.requested_date)}</span>{r.requested_scope === 'future' ? ' · + all future' : ''} — busy slot</>
                     : (r.message ? `“${r.message}”` : 'Customer asked to move this visit')}
                 </div>
               </button>

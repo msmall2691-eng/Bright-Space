@@ -1,4 +1,5 @@
 import { Home, Building2, Wind } from 'lucide-react'
+import { STATUS_TEXT } from '../../theme/statusText'
 
 /** Source dropdown values + their display labels. Keep aligned with the
  *  backend's iCal source labels (used as "ical_source" on Visit rows for
@@ -24,7 +25,7 @@ export const EMPTY = {
 
 /** Per-type visual config: badge color, icon, accent color. */
 export const PROPERTY_TYPE_CONFIG = {
-  residential: { label: 'Residential', badge: 'bg-blue-100 dark:bg-blue-500/15 text-blue-700 dark:text-blue-300',   icon: Home,      color: 'text-blue-600' },
+  residential: { label: 'Residential', badge: 'bg-blue-100 dark:bg-blue-500/15 text-blue-700 dark:text-blue-300',   icon: Home,      color: `${STATUS_TEXT.info}` },
   commercial:  { label: 'Commercial',  badge: 'bg-purple-100 dark:bg-purple-500/15 text-purple-700 dark:text-purple-300', icon: Building2, color: 'text-purple-600' },
-  str:         { label: 'STR',         badge: 'bg-amber-100 dark:bg-amber-500/15 text-amber-700 dark:text-amber-300', icon: Wind,      color: 'text-amber-600' },
+  str:         { label: 'STR',         badge: `bg-amber-100 dark:bg-amber-500/15 ${STATUS_TEXT.attention} dark:text-amber-300`, icon: Wind,      color: `${STATUS_TEXT.attention}` },
 }

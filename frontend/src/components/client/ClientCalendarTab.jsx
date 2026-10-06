@@ -10,6 +10,7 @@ import {
 import { toLocalYMD } from '../../utils/format'
 import { RecurringTab, JobsListTab } from './ClientListTabs'
 import { STATUS_DOT } from '../../theme/statusDots'
+import { STATUS_TEXT } from '../../theme/statusText'
 
 /** Quiet native disclosure — no extra nav layer, just a fold-out section.
  *  Used to carry the client's recurring schedules and full job history
@@ -326,7 +327,7 @@ export default function ClientCalendarTab({ jobs, upcomingJobs, pastJobs, naviga
                   isSelected
                     ? 'bg-indigo-600 text-white'
                     : isToday
-                    ? 'bg-blue-500/10 text-blue-600 font-semibold'
+                    ? `bg-blue-500/10 ${STATUS_TEXT.info} font-semibold`
                     : hasJobs
                     ? 'hover:bg-bg-2 text-ink-2 font-medium'
                     : 'hover:bg-bg text-ink-3'

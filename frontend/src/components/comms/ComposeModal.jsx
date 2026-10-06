@@ -4,6 +4,7 @@ import { post } from '../../api'
 import { formatPhone } from '../../utils/display'
 import { Avatar, Kbd } from './primitives'
 import Modal from '../ui/Modal'
+import { STATUS_TEXT } from '../../theme/statusText'
 
 /** New-message modal — pick SMS or Email, type-ahead client suggestions,
  *  Cmd/Ctrl+Enter to send. Calls onSent(response) then onClose().
@@ -160,7 +161,7 @@ export function ComposeModal({ onClose, onSent, clients, initialTo = '', initial
         </div>
 
         {error && (
-          <div className="text-[12px] text-red-600 dark:text-red-300 bg-panel border border-hairline rounded-xl px-3 py-2 flex items-center gap-1.5">
+          <div className={`text-[12px] ${STATUS_TEXT.problem} dark:text-red-300 bg-panel border border-hairline rounded-xl px-3 py-2 flex items-center gap-1.5`}>
             <AlertTriangle className="w-3.5 h-3.5 shrink-0" /> {error}
           </div>
         )}

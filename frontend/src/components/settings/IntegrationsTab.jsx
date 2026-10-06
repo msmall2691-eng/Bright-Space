@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import GoogleAccountCard from '../GoogleAccountCard'
 import { get, post } from '../../api'
 import { STATUS_DOT } from '../../theme/statusDots'
+import { STATUS_TEXT } from '../../theme/statusText'
 
 /** Integrations tab — the "connect BrightBase to Google / your phone /
  *  external tools" hub, reorganized into two sections:
@@ -143,7 +144,7 @@ export default function IntegrationsTab({ toast, active }) {
                 {gcalConn.account_email && (
                   <div>Connected as <code className="bg-bg-2 px-1 rounded text-ink-2">{gcalConn.account_email}</code>
                     {!/mainecleaningco/i.test(gcalConn.account_email) && (
-                      <span className="ml-1 text-amber-600 font-medium">— is this your work account?</span>
+                      <span className={`ml-1 ${STATUS_TEXT.attention} font-medium`}>— is this your work account?</span>
                     )}
                   </div>
                 )}
@@ -160,7 +161,7 @@ export default function IntegrationsTab({ toast, active }) {
                       <div key={jt} className="flex items-center gap-1.5">
                         <span className="text-ink-3 w-28 shrink-0">{label}</span>
                         <code className="bg-bg-2 px-1 rounded text-ink-2">{cal}</code>
-                        {!ok && <span className="text-red-600 font-medium">— not on this account! Events will fail.</span>}
+                        {!ok && <span className={`${STATUS_TEXT.problem} font-medium`}>— not on this account! Events will fail.</span>}
                       </div>
                     )
                   })}
@@ -216,8 +217,8 @@ export default function IntegrationsTab({ toast, active }) {
                   <div key={a.email} className="flex items-center gap-1.5">
                     <code className="bg-bg-2 px-1 rounded text-ink-2">{a.email}</code>
                     {a.needs_reconnect
-                      ? <span className="text-red-600 font-medium">— reconnect needed{a.last_sync_error ? ` (${a.last_sync_error})` : ''}</span>
-                      : <span className="text-emerald-600">✓ syncing</span>}
+                      ? <span className={`${STATUS_TEXT.problem} font-medium`}>— reconnect needed{a.last_sync_error ? ` (${a.last_sync_error})` : ''}</span>
+                      : <span className={`${STATUS_TEXT.ok}`}>✓ syncing</span>}
                   </div>
                 ))}
               </div>
@@ -423,7 +424,7 @@ function SmsCard({ toast, active }) {
             <span className={testResult.ok ? 'text-ink-2' : 'text-ink'}>
               {testResult.ok
                 ? `Test text sent to ${testResult.to}${testResult.status ? ` (${testResult.status})` : ''} — check that phone.`
-                : <>Couldn't send{testResult.to ? ` to ${testResult.to}` : ''}: <span className="text-red-600 break-words">{testResult.error}</span></>}
+                : <>Couldn't send{testResult.to ? ` to ${testResult.to}` : ''}: <span className={`${STATUS_TEXT.problem} break-words`}>{testResult.error}</span></>}
             </span>
           </div>
         )}
@@ -453,7 +454,7 @@ function SmsCard({ toast, active }) {
                   </div>
                   {e.status === 'failed' && e.error_message && (
                     <div className="mt-0.5">
-                      <div className="text-red-600 break-words">{e.error_message}</div>
+                      <div className={`${STATUS_TEXT.problem} break-words`}>{e.error_message}</div>
                       {errorHint(e.error_message) && (
                         <div className="text-ink-2 mt-0.5">{errorHint(e.error_message)}</div>
                       )}

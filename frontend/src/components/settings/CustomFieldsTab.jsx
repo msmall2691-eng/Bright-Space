@@ -5,6 +5,7 @@ import FieldPreview from './FieldPreview'
 import {
   ENTITY_TABS, FIELD_TYPES, TYPE_BADGE, EMPTY_FORM, lbl, inp,
 } from './constants'
+import { STATUS_TEXT } from '../../theme/statusText'
 
 /** Custom Fields tab — owns its own state (entity tab, fields list, panel,
  *  form, saving flag) and all four CRUD handlers. Layout constraint from
@@ -160,7 +161,7 @@ export function CustomFieldsBody({ state }) {
               </div>
 
               <div className="text-xs text-ink-3">
-                {field.required ? <span className="text-red-500 font-medium">Required</span> : 'Optional'}
+                {field.required ? <span className={`${STATUS_TEXT.problem} font-medium`}>Required</span> : 'Optional'}
               </div>
 
               <button type="button"

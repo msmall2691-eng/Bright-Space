@@ -1,6 +1,7 @@
 import { Link } from 'react-router-dom'
 import { AlertTriangle, Calendar, CheckCircle, ChevronRight, Send } from 'lucide-react'
 import { STATUS, avatar, daysOverdue } from './constants'
+import { STATUS_TEXT } from '../../theme/statusText'
 
 /** One row in the Invoicing list — client avatar + invoice number,
  *  amount, due date (with "Nd overdue" chip when applicable), status
@@ -61,7 +62,7 @@ export function InvoiceRow({
       {/* Due date */}
       <div>
         {days ? (
-          <span className="flex items-center gap-1 text-[11px] text-red-400">
+          <span className={`flex items-center gap-1 text-[11px] ${STATUS_TEXT.problem}`}>
             <AlertTriangle className="w-3 h-3" />{days}d overdue
           </span>
         ) : (
@@ -94,13 +95,13 @@ export function InvoiceRow({
         )}
         {inv.status !== 'paid' && inv.status !== 'overdue' && days && (
           <button onClick={() => markOverdue(inv.id)}
-            className="text-[11px] px-2.5 py-2 sm:px-2 sm:py-1 rounded-md bg-bg text-red-500 hover:bg-bg-2 transition-colors">
+            className={`text-[11px] px-2.5 py-2 sm:px-2 sm:py-1 rounded-md bg-bg ${STATUS_TEXT.problem} hover:bg-bg-2 transition-colors`}>
             Mark overdue
           </button>
         )}
         {inv.status !== 'paid' && (
           <button onClick={() => markPaid(inv.id)}
-            className="flex items-center gap-1 text-[11px] px-2.5 py-2 sm:px-2 sm:py-1 rounded-md bg-bg text-emerald-600 hover:bg-bg-2 transition-colors">
+            className={`flex items-center gap-1 text-[11px] px-2.5 py-2 sm:px-2 sm:py-1 rounded-md bg-bg ${STATUS_TEXT.ok} hover:bg-bg-2 transition-colors`}>
             <CheckCircle className="w-3 h-3" /> Paid
           </button>
         )}

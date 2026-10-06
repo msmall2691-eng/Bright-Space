@@ -6,6 +6,7 @@ import {
   Phone, Eye, Loader
 } from 'lucide-react'
 import { STATUS_DOT } from '../theme/statusDots'
+import { STATUS_TEXT, STATUS_ICON } from '../theme/statusText'
 
 // Stage hue lives in a small dot on quiet hairline cards (owner's veto of
 // the tinted pill/panel bubbles).
@@ -73,7 +74,7 @@ export default function ClientCRMSummary({ clientId }) {
       {/* Lifecycle Status */}
       <div className="bg-panel border border-hairline rounded-lg p-6">
         <h3 className="font-semibold text-ink mb-4 flex items-center gap-2">
-          <Eye className="w-5 h-5 text-blue-500" />
+          <Eye className={`w-5 h-5 ${STATUS_ICON.info}`} />
           Lifecycle Status
         </h3>
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
@@ -131,7 +132,7 @@ export default function ClientCRMSummary({ clientId }) {
       {/* Financial Summary */}
       <div className="bg-panel border border-hairline rounded-lg p-6">
         <h3 className="font-semibold text-ink mb-4 flex items-center gap-2">
-          <DollarSign className="w-5 h-5 text-emerald-500" />
+          <DollarSign className={`w-5 h-5 ${STATUS_ICON.ok}`} />
           Financial Summary
         </h3>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
@@ -157,11 +158,11 @@ export default function ClientCRMSummary({ clientId }) {
           </div>
           <div className="flex justify-between items-center">
             <span className="text-sm text-ink-2">Total Paid</span>
-            <span className="font-semibold text-emerald-600">${crm.financial.total_paid.toLocaleString('en-US', {maximumFractionDigits: 2})}</span>
+            <span className={`font-semibold ${STATUS_TEXT.ok}`}>${crm.financial.total_paid.toLocaleString('en-US', {maximumFractionDigits: 2})}</span>
           </div>
           <div className="border-t border-hairline pt-3 flex justify-between items-center">
             <span className="text-sm font-medium text-ink-2">Outstanding</span>
-            <span className={`font-bold ${crm.financial.outstanding > 0 ? 'text-amber-600' : 'text-emerald-600'}`}>
+            <span className={`font-bold ${crm.financial.outstanding > 0 ? `${STATUS_TEXT.attention}` : `${STATUS_TEXT.ok}`}`}>
               ${crm.financial.outstanding.toLocaleString('en-US', {maximumFractionDigits: 2})}
             </span>
           </div>
@@ -171,7 +172,7 @@ export default function ClientCRMSummary({ clientId }) {
       {/* Communications Summary */}
       <div className="bg-panel border border-hairline rounded-lg p-6">
         <h3 className="font-semibold text-ink mb-4 flex items-center gap-2">
-          <MessageSquare className="w-5 h-5 text-blue-500" />
+          <MessageSquare className={`w-5 h-5 ${STATUS_ICON.info}`} />
           Communications
         </h3>
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
@@ -198,7 +199,7 @@ export default function ClientCRMSummary({ clientId }) {
                 <div key={i} className="text-sm text-ink-2 flex items-center gap-2">
                   {email.is_primary && <span className={`w-2 h-2 ${STATUS_DOT.info} rounded-full`}></span>}
                   <span>{email.email}</span>
-                  {email.verified && <CheckCircle className="w-3 h-3 text-emerald-500" />}
+                  {email.verified && <CheckCircle className={`w-3 h-3 ${STATUS_ICON.ok}`} />}
                 </div>
               ))}
             </div>
@@ -224,7 +225,7 @@ export default function ClientCRMSummary({ clientId }) {
       {crm.recent_activity.length > 0 && (
         <div className="bg-panel border border-hairline rounded-lg p-6">
           <h3 className="font-semibold text-ink mb-4 flex items-center gap-2">
-            <Clock className="w-5 h-5 text-amber-500" />
+            <Clock className={`w-5 h-5 ${STATUS_ICON.attention}`} />
             Recent Activity
           </h3>
           <div className="space-y-3">

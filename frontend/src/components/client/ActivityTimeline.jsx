@@ -3,6 +3,7 @@ import {
   Calendar, FileText, Receipt, MessageSquare, TrendingUp, Mail, Zap, X,
 } from 'lucide-react'
 import { JOB_COLORS, INVOICE_COLORS, QUOTE_COLORS, OPP_COLORS } from './constants'
+import { STATUS_TEXT, STATUS_ICON } from '../../theme/statusText'
 
 // Record types the timeline can link straight through to (each has its own
 // detail page and the activity's `data.id` is that record's id). Everything
@@ -87,16 +88,16 @@ export default function ActivityTimeline({
                 carries the type/status distinction, so this doesn't need to
                 double as a tinted chip (owner's veto of tinted icon chips). */}
             <div className="w-8 h-8 rounded-full flex items-center justify-center shrink-0 bg-bg-2">
-              {item.type === 'job'          && <Calendar className="w-3.5 h-3.5 text-blue-500" />}
+              {item.type === 'job'          && <Calendar className={`w-3.5 h-3.5 ${STATUS_ICON.info}`} />}
               {item.type === 'gcal_event'   && <Calendar className="w-3.5 h-3.5 text-link" />}
-              {item.type === 'quote'        && <FileText className="w-3.5 h-3.5 text-blue-400" />}
+              {item.type === 'quote'        && <FileText className={`w-3.5 h-3.5 ${STATUS_ICON.info}`} />}
               {item.type === 'invoice'      && <Receipt className="w-3.5 h-3.5 text-green-400" />}
               {item.type === 'message'      && <MessageSquare className="w-3.5 h-3.5 text-purple-400" />}
-              {item.type === 'opportunity'  && <TrendingUp className="w-3.5 h-3.5 text-amber-500" />}
+              {item.type === 'opportunity'  && <TrendingUp className={`w-3.5 h-3.5 ${STATUS_ICON.attention}`} />}
               {item.type === 'email'        && <Mail className="w-3.5 h-3.5 text-cyan-500" />}
               {item.type === 'activity_log' && (
                 item.data.extra_data?.source === 'gcal' ? <Calendar className="w-3.5 h-3.5 text-link" />
-                : item.data.extra_data?.single_occurrence ? <X className="w-3.5 h-3.5 text-rose-500" />
+                : item.data.extra_data?.single_occurrence ? <X className={`w-3.5 h-3.5 ${STATUS_ICON.problem}`} />
                 : item.data.activity_type?.startsWith('email_') ? <Mail className="w-3.5 h-3.5 text-cyan-500" />
                 : <Zap className="w-3.5 h-3.5 text-ink-3" />
               )}
@@ -147,7 +148,7 @@ export default function ActivityTimeline({
                     <>
                       <div className="text-sm font-medium text-ink">{item.data.title}</div>
                       <div className="text-xs text-ink-3 mt-0.5">
-                        {item.data.amount != null && <span className="text-emerald-600 font-medium">${item.data.amount.toLocaleString()}</span>}
+                        {item.data.amount != null && <span className={`${STATUS_TEXT.ok} font-medium`}>${item.data.amount.toLocaleString()}</span>}
                         {item.data.service_type && <span className="ml-2">{item.data.service_type.replace('_', ' ')}</span>}
                       </div>
                     </>

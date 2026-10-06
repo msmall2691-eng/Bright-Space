@@ -1,6 +1,7 @@
 import { CheckCircle, Send, Sparkles } from 'lucide-react'
 import Modal from '../ui/Modal'
 import { inp } from './constants'
+import { STATUS_TEXT, STATUS_ICON } from '../../theme/statusText'
 
 /** Batch "chase overdue" modal — after the owner clicks the amber
  *  "Chase overdue" CTA, this modal opens with an AI-drafted
@@ -22,7 +23,7 @@ export function ChaserModal({ chaser, setChaser, sendChaserItem, updateChaserMsg
       ariaLabel="Chase overdue invoices"
       title={
         <div className="flex items-center gap-2.5 min-w-0">
-          <Sparkles className="w-5 h-5 text-amber-500 shrink-0" />
+          <Sparkles className={`w-5 h-5 ${STATUS_ICON.attention} shrink-0`} />
           <div className="min-w-0">
             <div className="text-sm font-semibold text-ink">Chase overdue invoices</div>
             <div className="text-[12px] font-normal text-ink-3 mt-0.5">Review each draft, edit if needed, then send. Nothing is sent automatically.</div>
@@ -33,7 +34,7 @@ export function ChaserModal({ chaser, setChaser, sendChaserItem, updateChaserMsg
       <Modal.Body className="space-y-3 scrollbar-thin">
         {chaser.loading ? (
           <div className="py-16 text-center text-[13px] text-ink-3 flex items-center justify-center gap-2">
-            <Sparkles className="w-4 h-4 animate-pulse text-amber-500" /> Drafting reminders…
+            <Sparkles className={`w-4 h-4 animate-pulse ${STATUS_ICON.attention}`} /> Drafting reminders…
           </div>
         ) : chaser.items.length === 0 ? (
           <div className="py-16 text-center text-[13px] text-ink-3">No overdue invoices to chase.</div>
@@ -44,13 +45,13 @@ export function ChaserModal({ chaser, setChaser, sendChaserItem, updateChaserMsg
                 <div className="text-sm font-semibold text-ink truncate">{item.client_name}</div>
                 <div className="text-[11px] text-ink-3">
                   {item.invoice_number} · ${(item.amount || 0).toFixed(2)}
-                  {item.days_overdue ? <span className="text-red-600 font-medium"> · {item.days_overdue}d overdue</span> : null}
-                  {!item.client_email && <span className="text-amber-600"> · no email, will SMS</span>}
+                  {item.days_overdue ? <span className={`${STATUS_TEXT.problem} font-medium`}> · {item.days_overdue}d overdue</span> : null}
+                  {!item.client_email && <span className={`${STATUS_TEXT.attention}`}> · no email, will SMS</span>}
                 </div>
               </div>
               <button onClick={() => sendChaserItem(item)} disabled={item.sending || item.sent}
                 className={`flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg font-medium shrink-0 transition-colors ${
-                  item.sent ? 'bg-panel border border-hairline-2 text-emerald-700 dark:text-emerald-300 cursor-default'
+                  item.sent ? `bg-panel border border-hairline-2 ${STATUS_TEXT.ok} dark:text-emerald-300 cursor-default`
                   : 'bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-50'}`}>
                 {item.sent ? <><CheckCircle className="w-3.5 h-3.5" /> Sent</>
                   : item.sending ? 'Sending…'
