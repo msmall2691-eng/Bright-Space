@@ -17,6 +17,7 @@ import { AuthImage, Skeleton } from '../ui'
 import { prepareForUpload } from '../../utils/imageDownscale'
 import { onCellular, enqueuePhoto, flushPhotoQueue, subscribeQueue } from './photoQueue'
 import { ErrorNote, Sheet } from './primitives'
+import { STATUS_DOT } from '../../theme/statusDots'
 
 const KIND_LABEL = { before: 'Before', after: 'After' }
 
@@ -145,7 +146,7 @@ export default function JobPhotoSheet({ job, onClose }) {
           /* Quiet heads-up BEFORE the first shot: cellular detected, photos
              will wait. Ties back to the job card's House WiFi block. */
           <p className="text-[11px] text-ink-3 flex items-start gap-1.5">
-            <span className="w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0 mt-[5px]" />
+            <span className={`w-1.5 h-1.5 rounded-full ${STATUS_DOT.attention} shrink-0 mt-[5px]`} />
             You're on cellular — photos will wait and send on WiFi. Joining the
             house WiFi (on the job card) sends them free.
           </p>
@@ -154,7 +155,7 @@ export default function JobPhotoSheet({ job, onClose }) {
         {queued > 0 && (
           <div className="flex items-center justify-between gap-2 rounded-lg border border-hairline bg-bg px-3 py-2">
             <span className="text-[12px] text-ink-2 flex items-center gap-1.5 min-w-0">
-              <span className="w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0" />
+              <span className={`w-1.5 h-1.5 rounded-full ${STATUS_DOT.attention} shrink-0`} />
               {queued} photo{queued > 1 ? 's' : ''} waiting for WiFi
             </span>
             <button onClick={sendNow} disabled={busy}

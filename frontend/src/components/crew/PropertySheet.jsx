@@ -14,6 +14,7 @@ import { AuthImage, Skeleton } from '../ui'
 import { prepareForUpload } from '../../utils/imageDownscale'
 import { onCellular, enqueuePhoto } from './photoQueue'
 import { ErrorNote, FullScreenSheet, SectionLabel } from './primitives'
+import { STATUS_DOT } from '../../theme/statusDots'
 
 export default function PropertySheet({ propertyId, propertyName, onClose }) {
   const [notes, setNotes] = useState(null)
@@ -89,7 +90,7 @@ export default function PropertySheet({ propertyId, propertyName, onClose }) {
         <ErrorNote>{error}</ErrorNote>
         {notice && (
           <p className="text-[12px] text-ink-2 flex items-start gap-1.5">
-            <span className="w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0 mt-[5px]" /> {notice}
+            <span className={`w-1.5 h-1.5 rounded-full ${STATUS_DOT.attention} shrink-0 mt-[5px]`} /> {notice}
           </p>
         )}
 
@@ -163,7 +164,7 @@ export default function PropertySheet({ propertyId, propertyName, onClose }) {
                 <div className="text-[10.5px] text-ink-3 mt-0.5 flex items-center gap-1">
                   {n.author_name}{!n.shared && (
                     <span className="inline-flex items-center gap-1">
-                      <span className="w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0" />
+                      <span className={`w-1.5 h-1.5 rounded-full ${STATUS_DOT.attention} shrink-0`} />
                       <Share2 className="w-3 h-3" /> waiting for the office to share
                     </span>
                   )}
