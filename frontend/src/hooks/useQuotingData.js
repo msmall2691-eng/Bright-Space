@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { get } from '../api'
+import { get, getCached } from '../api'
 
 /** Guard (June 10 P1): one malformed row — legacy JSON shapes where items
  *  is a dict/string, or a non-string status — must never crash or wedge the
@@ -54,7 +54,7 @@ export function useQuotingData() {
     loadFollowUps()
     // T-06: preload up to 1000 so the Quoting page's client name-lookup +
     // "Convert lead to quote" picker cover the whole book.
-    get('/api/clients?limit=1000').then(d => setClients(Array.isArray(d) ? d : [])).catch(err => console.error('[Quoting]', err))
+    getCached('/api/clients?limit=1000').then(d => setClients(Array.isArray(d) ? d : [])).catch(err => console.error('[Quoting]', err))
     get('/api/settings/quote-templates').then(d => {
       // Treat any array as authoritative — including [] — so deleting every
       // template sticks instead of the hardcoded defaults reappearing on reload.

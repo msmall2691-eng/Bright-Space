@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { get } from '../api'
+import { get, getCached } from '../api'
 
 /** Data hook for the Invoicing list page.
  *
@@ -39,7 +39,7 @@ export function useInvoicing({ statusFilter, search }) {
     // T-06: preload up to 1000 so `clientName(id)` resolves for every
     // client (was defaulting to 50 and showing "Client #99" on invoices
     // for clients past position 50).
-    get('/api/clients?limit=1000').then(setClients).catch(err => console.error('[Invoicing]', err))
+    getCached('/api/clients?limit=1000').then(setClients).catch(err => console.error('[Invoicing]', err))
   }, [])
 
   const clientName = (id) => clients.find(c => c.id === id)?.name || `Client #${id}`
