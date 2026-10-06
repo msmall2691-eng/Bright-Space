@@ -2,6 +2,7 @@ import { useRef, useState } from 'react'
 import { Send, StickyNote, Sparkles, Loader2, BellRing, CalendarCheck, AtSign } from 'lucide-react'
 import { Kbd } from './primitives'
 import { apptDatePhrase, apptReminderText, apptConfirmText } from './utils'
+import { STATUS_DOT } from '../../theme/statusDots'
 
 const roleLabel = (r) => (r === 'cleaner' ? 'cleaner' : 'office')
 
@@ -137,7 +138,7 @@ export function ComposeBar({
           <span className={`inline-flex items-center gap-1.5 text-[11px] font-medium animate-fade-in ${
             flash.ok ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400'
           }`}>
-            <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${flash.ok ? 'bg-emerald-500' : 'bg-red-500'}`} aria-hidden="true" />
+            <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${flash.ok ? STATUS_DOT.ok : STATUS_DOT.problem}`} aria-hidden="true" />
             {flash.msg}
           </span>
         )}

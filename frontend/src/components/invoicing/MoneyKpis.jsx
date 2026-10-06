@@ -17,6 +17,7 @@
  * is nothing outstanding — no permanent all-clear furniture.
  */
 import { usd } from './constants'
+import { STATUS_DOT } from '../../theme/statusDots'
 
 /** One headline number. When `onFilter` is set the card body is a button that
  *  narrows the list to that status; `active` marks it as the current filter with
@@ -46,9 +47,9 @@ function StatTile({ dot, label, value, sub, onFilter, active, title }) {
 
 const AGE_ROWS = [
   { key: 'current',  label: 'Not yet due', dot: 'bg-ink-3' },
-  { key: 'd1_30',    label: '1–30 days',   dot: 'bg-amber-500' },
-  { key: 'd31_60',   label: '31–60 days',  dot: 'bg-amber-500' },
-  { key: 'd60_plus', label: '60+ days',    dot: 'bg-red-500' },
+  { key: 'd1_30',    label: '1–30 days',   dot: STATUS_DOT.attention },
+  { key: 'd31_60',   label: '31–60 days',  dot: STATUS_DOT.attention },
+  { key: 'd60_plus', label: '60+ days',    dot: STATUS_DOT.problem },
 ]
 
 /** Outstanding balance broken out by age — answers "how stale is the money
@@ -83,12 +84,12 @@ export function MoneyKpis({
   return (
     <div className="bb-board-in space-y-2.5">
       <div className="grid grid-cols-3 items-start gap-2 shell:gap-3">
-        <StatTile dot="bg-emerald-500" label="Collected" value={usd(collected)}
+        <StatTile dot={STATUS_DOT.ok} label="Collected" value={usd(collected)}
           onFilter={() => setFilter('paid')} active={statusFilter === 'paid'}
           title="Show paid invoices" />
-        <StatTile dot={outstanding > 0 ? 'bg-amber-500' : 'bg-ink-3'}
+        <StatTile dot={outstanding > 0 ? STATUS_DOT.attention : 'bg-ink-3'}
           label="Outstanding" value={usd(outstanding)} />
-        <StatTile dot={overdueCount > 0 ? 'bg-red-500' : 'bg-ink-3'}
+        <StatTile dot={overdueCount > 0 ? STATUS_DOT.problem : 'bg-ink-3'}
           label="Overdue" value={usd(overdue)}
           onFilter={() => setFilter('overdue')} active={statusFilter === 'overdue'}
           title="Show overdue invoices"

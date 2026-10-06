@@ -3,6 +3,7 @@ import { AlertTriangle, ChevronDown, Loader2, RefreshCw, Trash2, Zap } from 'luc
 import { post } from '../../api'
 import { confirmDialog } from '../../utils/confirmBus'
 import { inp, lbl } from './constants'
+import { STATUS_DOT } from '../../theme/statusDots'
 
 /** Danger Zone — collapsed by default at the bottom of the General tab.
  *  Owns three destructive actions:
@@ -169,7 +170,7 @@ export default function DangerZone({ toast, automationSettings, setAutomationSet
         {unlinkResult && !unlinkResult.error && (
           <div className="bg-panel border border-hairline rounded-lg p-3 text-xs">
             <div className="flex items-center gap-1.5 font-semibold text-ink mb-1">
-              <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 shrink-0" aria-hidden="true" /> Unlinked
+              <span className={`h-1.5 w-1.5 rounded-full ${STATUS_DOT.ok} shrink-0`} aria-hidden="true" /> Unlinked
             </div>
             <ul className="list-disc list-inside space-y-0.5 text-ink-2">
               <li>Jobs cleared: {unlinkResult.jobs_unlinked}</li>
@@ -180,7 +181,7 @@ export default function DangerZone({ toast, automationSettings, setAutomationSet
         )}
         {unlinkResult?.error && (
           <div className="bg-panel border border-hairline rounded-lg p-3 text-xs text-ink-2 flex items-start gap-1.5">
-            <span className="h-1.5 w-1.5 rounded-full bg-red-500 shrink-0 mt-1" aria-hidden="true" />
+            <span className={`h-1.5 w-1.5 rounded-full ${STATUS_DOT.problem} shrink-0 mt-1`} aria-hidden="true" />
             Unlink failed: {unlinkResult.error}
           </div>
         )}
@@ -219,7 +220,7 @@ export default function DangerZone({ toast, automationSettings, setAutomationSet
         {resetResult && !resetResult.error && (
           <div className="bg-panel border border-hairline rounded-lg p-3 text-xs">
             <div className="flex items-center gap-1.5 font-semibold text-ink mb-1">
-              <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 shrink-0" aria-hidden="true" />
+              <span className={`h-1.5 w-1.5 rounded-full ${STATUS_DOT.ok} shrink-0`} aria-hidden="true" />
               Deleted {resetResult.deleted_total} rows
             </div>
             <ul className="list-disc list-inside space-y-0.5 text-ink-2">
@@ -233,7 +234,7 @@ export default function DangerZone({ toast, automationSettings, setAutomationSet
         )}
         {resetResult?.error && (
           <div className="bg-panel border border-hairline rounded-lg p-3 text-xs text-ink-2 flex items-start gap-1.5">
-            <span className="h-1.5 w-1.5 rounded-full bg-red-500 shrink-0 mt-1" aria-hidden="true" />
+            <span className={`h-1.5 w-1.5 rounded-full ${STATUS_DOT.problem} shrink-0 mt-1`} aria-hidden="true" />
             Reset failed: {resetResult.error}
           </div>
         )}

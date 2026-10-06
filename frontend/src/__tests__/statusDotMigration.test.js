@@ -68,6 +68,8 @@ const MIGRATED = [
   { name: 'crew', dirs: ['components/crew'], files: ['pages/MyDay.jsx'] },
   { name: 'schedule', dirs: ['components/schedule'], files: [] },
   { name: 'client', dirs: ['components/client', 'components/clients'], files: [] },
+  { name: 'office', dirs: ['components/settings', 'components/invoicing', 'components/quoting',
+                           'components/properties', 'components/comms', 'components/ui'], files: [] },
 ]
 
 /**
@@ -132,6 +134,21 @@ const EXEMPT = {
     reason: 'falls back to the categorical job-type dot, deferred with the rest of that map' },
   'components/client/ClientListTabs.jsx': { allow: 2,
     reason: 'a local residential/commercial type map — categorical, same decision as PROPERTY_TYPE_COLORS' },
+
+  // --- office surface ---
+  // Two button FILLS with white text on them. The pair is white-on-amber,
+  // which passes; darkening the fill would make it worse, not better.
+  'components/settings/DangerZone.jsx': { allow: 1,
+    reason: 'a filled button with white text on it — the contrast pair is white-on-amber, which passes' },
+  'components/comms/ComposeBar.jsx': { allow: 1,
+    reason: 'a filled send button with white text on it — same pair, passes as is' },
+  // Categorical, not severity.
+  'components/settings/constants.js': { allow: 3,
+    reason: 'TYPE_BADGE maps FIELD TYPES (text/number/date/select/…) — identity, not severity; needs a categorical ramp' },
+  'components/quoting/constants.js': { allow: 8,
+    reason: 'quote lifecycle with two good ends plus a lead pipeline — same decision as client QUOTE_COLORS, deferred with it' },
+  'components/quoting/FollowUpRow.jsx': { allow: 1,
+    reason: 'two follow-up REASONS (opened / not opened) — categorical, and purple is off-vocabulary' },
 }
 
 function walk(dir) {
@@ -176,7 +193,7 @@ describe('BB-A11Y-02 — migrated surfaces go through the measured map', () => {
     // the achieved set here means removing one takes a deliberate edit in two
     // places, and the list doubles as the record of how far this has got.
     const done = MIGRATED.map(s => s.name)
-    for (const name of ['crew', 'schedule', 'client']) {
+    for (const name of ['crew', 'schedule', 'client', 'office']) {
       expect(done, `surface "${name}" was migrated and must stay covered`).toContain(name)
     }
   })
@@ -223,8 +240,12 @@ describe('BB-A11Y-02 — migrated surfaces go through the measured map', () => {
       // `undefined` into the class string — a dot with NO colour, which a
       // contrast test passes happily. This caught six real files on the
       // schedule surface.
+      //
+      // Matches `STATUS_DOT.` specifically, not the bare word: several files
+      // name it in a comment explaining why a map was NOT migrated, and that
+      // is prose, not a use.
       const missing = filesFor(surface)
-        .filter(({ src }) => src.includes('STATUS_DOT') && !src.includes('statusDots'))
+        .filter(({ src }) => /STATUS_DOT\./.test(src) && !src.includes('statusDots'))
         .map(({ path }) => rel(path))
       expect(missing, `uses STATUS_DOT without importing it: ${missing.join(', ')}`).toEqual([])
     })

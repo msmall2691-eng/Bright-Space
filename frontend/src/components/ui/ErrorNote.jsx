@@ -6,11 +6,12 @@
  *
  *   <ErrorNote>{error}</ErrorNote>
  */
+import { STATUS_DOT } from '../../theme/statusDots'
 export default function ErrorNote({ children, className = '' }) {
   if (!children) return null
   return (
     <div className={`flex items-start gap-1.5 rounded-lg border border-hairline bg-panel px-3 py-2 text-[12px] text-ink-2 ${className}`}>
-      <span className="mt-[5px] w-1.5 h-1.5 rounded-full bg-red-500 shrink-0" aria-hidden="true" />
+      <span className={`mt-[5px] w-1.5 h-1.5 rounded-full ${STATUS_DOT.problem} shrink-0`} aria-hidden="true" />
       <span className="min-w-0">{children}</span>
     </div>
   )

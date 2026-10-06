@@ -21,6 +21,10 @@ export const FIELD_TYPES = [
 
 // Field-type indicator = dot + word (design law: no tinted pill backgrounds).
 // Keyed by field type value; each entry is just the dot color class.
+//
+// NOT migrated to STATUS_DOT (BB-A11Y-02): a field TYPE is identity, not
+// severity. "a number field is informational" is not a thing anyone means, and
+// text/textarea would collapse onto one another. Needs a categorical ramp.
 export const TYPE_BADGE = {
   text:     'bg-ink-3',
   number:   'bg-blue-500',
