@@ -590,11 +590,9 @@ def update_property(property_id: int, data: PropertyUpdate, db: Session = Depend
 
 
 @router.post("/{property_id}/sync", dependencies=[Depends(require_role("admin", "manager"))])
-def sync_ical(property_id: int, db: Session = Depends(get_db)):
+def sync_ical(property_id: int, db: Session = Depends(get_db), org_id: int = Depends(current_org_id)):
     """Fetch the iCal feed and auto-create turnover jobs."""
-    prop = db.query(Property).filter(Property.id == property_id).first()
-    if not prop:
-        raise HTTPException(status_code=404, detail="Property not found")
+    prop = _property_or_404(db, property_id, org_id)
     result = sync_property(db, prop)
     if "error" in result:
         log.warning(f"iCal sync failed for property {property_id}: {result.get('error')}")
@@ -622,7 +620,7 @@ def _active_turnover_dates(db: Session, property_id: int) -> set:
 
 
 @router.post("/{property_id}/rebuild-turnovers", dependencies=[Depends(require_role("admin", "manager"))])
-def rebuild_turnovers(property_id: int, db: Session = Depends(get_db)):
+def rebuild_turnovers(property_id: int, db: Session = Depends(get_db), org_id: int = Depends(current_org_id)):
     """Rebuild this property's turnovers from its calendar feeds — the safety net.
 
     Force-reconciles against the feeds (Google/iCal are the source of truth):
@@ -632,9 +630,7 @@ def rebuild_turnovers(property_id: int, db: Session = Depends(get_db)):
     it lists the exact checkouts that couldn't be rebuilt (e.g. a failing feed).
     """
     from database.models import Job  # local import: keep module import surface small
-    prop = db.query(Property).filter(Property.id == property_id).first()
-    if not prop:
-        raise HTTPException(status_code=404, detail="Property not found")
+    prop = _property_or_404(db, property_id, org_id)
 
     before = _active_turnover_dates(db, property_id)
     result = sync_property(db, prop)
@@ -659,12 +655,10 @@ def rebuild_turnovers(property_id: int, db: Session = Depends(get_db)):
 
 
 @router.post("/{property_id}/icals/{ical_id}/sync", dependencies=[Depends(require_role("admin", "manager"))])
-def sync_single_ical(property_id: int, ical_id: int, db: Session = Depends(get_db)):
+def sync_single_ical(property_id: int, ical_id: int, db: Session = Depends(get_db), org_id: int = Depends(current_org_id)):
     """Re-sync a single iCal feed — lets staff retry one failing feed without
     re-running every feed on the property."""
-    prop = db.query(Property).filter(Property.id == property_id).first()
-    if not prop:
-        raise HTTPException(status_code=404, detail="Property not found")
+    prop = _property_or_404(db, property_id, org_id)
     ical = db.query(PropertyIcal).filter(
         PropertyIcal.id == ical_id,
         PropertyIcal.property_id == property_id,
@@ -1000,11 +994,9 @@ def unarchive_property_endpoint(property_id: int, db: Session = Depends(get_db),
 # Multiple iCal management endpoints
 
 @router.post("/{property_id}/icals", status_code=201, dependencies=[Depends(require_role("admin", "manager"))])
-def add_ical_url(property_id: int, data: PropertyIcalSchema, db: Session = Depends(get_db)):
+def add_ical_url(property_id: int, data: PropertyIcalSchema, db: Session = Depends(get_db), org_id: int = Depends(current_org_id)):
     """Add another iCal URL to a property (Airbnb, VRBO, etc)"""
-    prop = db.query(Property).filter(Property.id == property_id).first()
-    if not prop:
-        raise HTTPException(status_code=404, detail="Property not found")
+    prop = _property_or_404(db, property_id, org_id)
 
     url = _normalize_ical_url(data.url)
     # Reject a feed already linked to this property (case-insensitive) so we
@@ -1051,11 +1043,14 @@ def add_ical_url(property_id: int, data: PropertyIcalSchema, db: Session = Depen
 
 
 @router.patch("/{property_id}/icals/{ical_id}", dependencies=[Depends(require_role("admin", "manager"))])
-def update_ical_url(property_id: int, ical_id: int, data: PropertyIcalSchema, db: Session = Depends(get_db)):
+def update_ical_url(property_id: int, ical_id: int, data: PropertyIcalSchema, db: Session = Depends(get_db), org_id: int = Depends(current_org_id)):
     """Update an iCal URL"""
+    # Prove the caller owns the property before touching its feed: an ical
+    # cannot belong to another workspace if its property does not.
+    _property_or_404(db, property_id, org_id)
     ical = db.query(PropertyIcal).filter(
         PropertyIcal.id == ical_id,
-        PropertyIcal.property_id == property_id
+        PropertyIcal.property_id == property_id,
     ).first()
 
     if not ical:
@@ -1095,11 +1090,14 @@ def update_ical_url(property_id: int, ical_id: int, data: PropertyIcalSchema, db
 
 
 @router.delete("/{property_id}/icals/{ical_id}", status_code=204, dependencies=[Depends(require_role("admin", "manager"))])
-def remove_ical_url(property_id: int, ical_id: int, db: Session = Depends(get_db)):
+def remove_ical_url(property_id: int, ical_id: int, db: Session = Depends(get_db), org_id: int = Depends(current_org_id)):
     """Remove an iCal URL from a property"""
+    # Prove the caller owns the property before touching its feed: an ical
+    # cannot belong to another workspace if its property does not.
+    _property_or_404(db, property_id, org_id)
     ical = db.query(PropertyIcal).filter(
         PropertyIcal.id == ical_id,
-        PropertyIcal.property_id == property_id
+        PropertyIcal.property_id == property_id,
     ).first()
 
     if not ical:
