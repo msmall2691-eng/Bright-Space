@@ -102,7 +102,7 @@ function FieldInput({ field, value, onChange }) {
       return (
         <label className="flex items-center gap-2 cursor-pointer">
           <input type="checkbox" checked={!!value} onChange={e => onChange(e.target.checked)}
-            className="w-4 h-4 rounded border-hairline text-ink focus:ring-0 cursor-pointer" />
+            className="w-4 h-4 rounded border-hairline text-ink cursor-pointer" />
           <span className="text-sm text-ink-2">{field.name}</span>
         </label>
       )
