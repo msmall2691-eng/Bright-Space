@@ -187,14 +187,25 @@ longer visits its page:
 - ~~**Codes and passwords fetched to render six fields.**~~ **Fixed.**
   `PropertyIcalsBulk` no longer reads `house_code` / `wifi_password` /
   `access_notes`.
-- **Filter-independent aggregates refetched per keystroke.**
-  `/api/invoices/summary` and `/api/clients/counts` re-fire with every tab click
-  and debounced keystroke.
+- ~~**Filter-independent aggregates refetched per keystroke.**~~ **Fixed, and
+  half of it was already gone.** `/api/invoices/summary` is no longer called
+  from the frontend at all. `/api/clients/counts` was real: it is a whole-DB
+  per-status aggregate that rode along with the list fetch, so every tab click
+  and every settled search bought four identical COUNTs. It now reads once on
+  mount, and again only via `load()` — the mutation path, which is the one case
+  where the counts can actually have moved, and not refreshing there is the
+  "All frozen after a create" bug the hook's own comment records. Note
+  "per keystroke" overstated it: the list fetch is debounced at 250ms, so a
+  search burst cost one, not one per character.
 - **No cached hook for the client book.** Four pages each fetch
   `?limit=1000` raw. `getCached` exists; nothing wraps this.
-- **A hand-written mirror of backend logic.** `Recurring`'s `computeUpcoming`
-  reimplements `generate_dates` in the browser — the highest-risk duplicate in
-  the file.
+- **A hand-written mirror of backend logic.** `computeUpcoming` still
+  reimplements `generate_dates` in the browser, so the risk is unchanged — but
+  it is no longer in `Recurring` and no longer untestable. The mega-page split
+  moved it to `components/recurring/helpers.js`, and
+  `components/recurring/__tests__/helpers.test.js` now covers the drift cases,
+  including the one the code's comments single out twice: **phase counted from
+  the anchor, not from today**.
 - **The same fact counted four ways.** "Quoted" is computed on Requests, Deals,
   Quoting and QuoteFunnel from four different sources. `Quoting` already deleted
   its own hero pods so a count isn't shown twice; the other three still do it.
