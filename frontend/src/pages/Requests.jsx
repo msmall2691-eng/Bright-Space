@@ -751,7 +751,7 @@ export default function Requests() {
                 placeholder="Search by name, email, phone, or address..."
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
-                className="w-full pl-10 pr-4 py-2 border border-hairline rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent text-sm"
+                className="w-full pl-10 pr-4 py-2 border border-hairline rounded-lg text-sm"
               />
             </div>
             <button onClick={() => setFiltersOpen(v => !v)} aria-expanded={filtersOpen}

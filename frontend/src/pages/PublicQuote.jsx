@@ -321,14 +321,14 @@ export default function PublicQuote() {
             value={acceptName}
             onChange={(e) => setAcceptName(e.target.value)}
             placeholder="Your name"
-            className="w-full px-3 py-3 border border-hairline rounded-xl text-base focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
+            className="w-full px-3 py-3 border border-hairline rounded-xl text-base"
           />
           <input
             value={acceptEmail}
             onChange={(e) => setAcceptEmail(e.target.value)}
             placeholder="Your email (for the receipt)"
             type="email"
-            className="w-full px-3 py-3 border border-hairline rounded-xl text-base focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
+            className="w-full px-3 py-3 border border-hairline rounded-xl text-base"
           />
         </div>
       )}
@@ -356,7 +356,7 @@ export default function PublicQuote() {
               <select
                 value={schedDate}
                 onChange={(e) => setSchedDate(e.target.value)}
-                className="w-full px-3 py-3 border border-hairline rounded-xl text-base bg-panel focus:ring-2 focus:ring-emerald-500"
+                className="w-full px-3 py-3 border border-hairline rounded-xl text-base bg-panel"
               >
                 {openDates.map(d => (
                   <option key={d.date} value={d.date}>
@@ -449,7 +449,7 @@ export default function PublicQuote() {
                   onChange={(e) => setRequestMsg(e.target.value)}
                   placeholder="e.g. Can we add a deep clean of the kitchen? Or remove the basement?"
                   rows={6}
-                  className="w-full px-3 py-2 border border-hairline rounded-lg text-base focus:ring-2 focus:ring-indigo-500 focus:border-transparent resize-none"
+                  className="w-full px-3 py-2 border border-hairline rounded-lg text-base resize-none"
                   autoFocus
                 />
               </div>
@@ -480,7 +480,7 @@ export default function PublicQuote() {
                   onChange={(e) => setDeclineReason(e.target.value)}
                   placeholder="Reason (optional)"
                   rows={4}
-                  className="w-full px-3 py-2 border border-hairline rounded-lg text-base focus:ring-2 focus:ring-indigo-500 focus:border-transparent resize-none"
+                  className="w-full px-3 py-2 border border-hairline rounded-lg text-base resize-none"
                 />
               </div>
               <div className="p-4 border-t border-hairline bg-bg flex justify-end gap-2">

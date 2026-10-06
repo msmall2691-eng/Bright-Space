@@ -301,7 +301,7 @@ export default function PublicJobConfirm() {
                             const keys = (day?.windows || []).map(w => w.key)
                             if (day && !keys.includes(reschedWindow)) setReschedWindow(keys[0])
                           }}
-                          className="w-full px-3 py-3 border border-hairline rounded-xl text-base bg-panel focus:ring-2 focus:ring-indigo-500"
+                          className="w-full px-3 py-3 border border-hairline rounded-xl text-base bg-panel"
                         >
                           {(availability?.dates || []).map(d => (
                             <option key={d.date} value={d.date}>
@@ -366,7 +366,7 @@ export default function PublicJobConfirm() {
                       onChange={(e) => setRequestMsg(e.target.value)}
                       placeholder="Let us know what you need (optional)"
                       rows={4}
-                      className="w-full px-3 py-2 border border-hairline rounded-lg text-base focus:ring-2 focus:ring-indigo-500 focus:border-transparent resize-none"
+                      className="w-full px-3 py-2 border border-hairline rounded-lg text-base resize-none"
                       autoFocus
                     />
                     <div className="flex gap-2">

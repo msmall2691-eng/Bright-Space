@@ -241,7 +241,7 @@ export function CustomFieldsSidePanel({ state }) {
         <label className="flex items-center gap-3 cursor-pointer py-1">
           <input type="checkbox" checked={form.required}
             onChange={e => setForm(f => ({ ...f, required: e.target.checked }))}
-            className="w-4 h-4 rounded border-hairline text-ink focus:ring-0" />
+            className="w-4 h-4 rounded border-hairline text-ink" />
           <div>
             <div className="text-sm font-medium text-ink">Required</div>
             <div className="text-xs text-ink-3">Must be filled in to save a record</div>
