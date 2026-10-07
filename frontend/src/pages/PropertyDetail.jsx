@@ -31,6 +31,8 @@ function propertySpecs(p) {
 import { ICAL_SOURCES } from '../components/properties/constants'
 import { isStaleSync, relTimeAgo } from '../components/properties/utils'
 import { groupJobsByService } from '../utils/services'
+import { STATUS_DOT } from '../theme/statusDots'
+import { STATUS_TEXT, STATUS_ICON } from '../theme/statusText'
 // Normalize API responses — some endpoints return raw arrays, others return
 // paginated envelopes like { items, total, limit, offset }.
 const toArray = (res) => Array.isArray(res) ? res : (res?.items ?? res?.data ?? [])
@@ -72,16 +74,16 @@ function CalendarFeedsCard({ property, navigate }) {
             let pill
             if (failed) {
               pill = (
-                <span className="inline-flex items-center gap-1.5 text-[11px] font-medium text-red-600 dark:text-red-300"
+                <span className={`inline-flex items-center gap-1.5 text-[11px] font-medium ${STATUS_TEXT.problem}`}
                   title={ical.last_sync_error || ''}>
-                  <span className="w-1.5 h-1.5 rounded-full bg-red-500 shrink-0" aria-hidden="true" /> Failed {lastAt || ''}
+                  <span className={`w-1.5 h-1.5 rounded-full ${STATUS_DOT.problem} shrink-0`} aria-hidden="true" /> Failed {lastAt || ''}
                 </span>
               )
             } else if (ical.last_synced_at) {
               pill = isStaleSync(ical.last_synced_at) ? (
-                <span className="inline-flex items-center gap-1.5 text-[11px] font-medium text-amber-700 dark:text-amber-300"
+                <span className={`inline-flex items-center gap-1.5 text-[11px] font-medium ${STATUS_TEXT.attention}`}
                   title="No clean sync in 24h+ — check this feed">
-                  <span className="w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0" aria-hidden="true" /> Stale · synced {lastAt}
+                  <span className={`w-1.5 h-1.5 rounded-full ${STATUS_DOT.attention} shrink-0`} aria-hidden="true" /> Stale · synced {lastAt}
                 </span>
               ) : (
                 <span className="inline-flex items-center gap-1.5 text-[11px] font-medium text-ink-3">
@@ -166,7 +168,7 @@ function RecurringSeriesCard({ schedules, jobs }) {
                   {s.title}
                 </Link>
                 <span className="inline-flex items-center gap-1.5 text-[10px] text-ink-3">
-                  <span className={`w-1.5 h-1.5 rounded-full ${s.active ? 'bg-emerald-500' : 'bg-ink-3'}`} />
+                  <span className={`w-1.5 h-1.5 rounded-full ${s.active ? STATUS_DOT.ok : 'bg-ink-3'}`} />
                   {s.active ? 'Active' : 'Paused'}
                 </span>
               </div>
@@ -218,12 +220,12 @@ function QuotesCard({ quotes }) {
 }
 
 const JOB_STATUS_CONFIG = {
-  unscheduled: { label: 'Unscheduled', dot: 'bg-amber-500' },
-  scheduled: { label: 'Scheduled', dot: 'bg-blue-500' },
-  dispatched: { label: 'Dispatched', dot: 'bg-green-500' },
-  in_progress: { label: 'In Progress', dot: 'bg-amber-500' },
+  unscheduled: { label: 'Unscheduled', dot: STATUS_DOT.attention },
+  scheduled: { label: 'Scheduled', dot: STATUS_DOT.info },
+  dispatched: { label: 'Dispatched', dot: STATUS_DOT.ok },
+  in_progress: { label: 'In Progress', dot: STATUS_DOT.attention },
   completed: { label: 'Completed', dot: 'bg-green-600' },
-  cancelled: { label: 'Cancelled', dot: 'bg-red-500' },
+  cancelled: { label: 'Cancelled', dot: STATUS_DOT.problem },
 }
 
 // Inline checklist editor. Areas + tasks per property.
@@ -282,13 +284,13 @@ function ChecklistEditor({ template, onSave }) {
         <div key={ai} className="mb-3 bg-bg rounded-lg p-3">
           <div className="flex items-center justify-between mb-2">
             <span className="text-xs font-semibold text-ink-2 uppercase tracking-wide">{area.area}</span>
-            <button onClick={() => removeArea(ai)} className="text-red-400 hover:text-red-600 p-0.5"><X className="w-3 h-3" /></button>
+            <button onClick={() => removeArea(ai)} className={`${STATUS_TEXT.problem} hover:text-rose-800 p-0.5`}><X className="w-3 h-3" /></button>
           </div>
           <ul className="space-y-1 mb-2">
             {area.tasks.map((task, ti) => (
               <li key={ti} className="flex items-center justify-between text-xs text-ink-2 pl-2">
                 <span>• {task}</span>
-                <button onClick={() => removeTask(ai, ti)} className="text-red-400 hover:text-red-600 p-0.5"><X className="w-2.5 h-2.5" /></button>
+                <button onClick={() => removeTask(ai, ti)} className={`${STATUS_TEXT.problem} hover:text-rose-800 p-0.5`}><X className="w-2.5 h-2.5" /></button>
               </li>
             ))}
           </ul>
@@ -364,7 +366,7 @@ function VisitChecklistRow({ visit, checklistTemplate, onComplete }) {
           </button>
         )}
         {isCompleted && totalTasks > 0 && (
-          <span className="text-emerald-600 font-semibold flex items-center gap-1">
+          <span className={`${STATUS_TEXT.ok} font-semibold flex items-center gap-1`}>
             <CheckCircle className="w-3 h-3" /> {doneTasks}/{totalTasks}
           </span>
         )}
@@ -550,8 +552,8 @@ export default function PropertyDetail() {
               <div className="flex items-center gap-2 flex-wrap">
                 <span className="inline-flex items-center gap-1.5 text-xs font-medium text-ink-2">
                   <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${
-                    property.property_type === 'str' ? 'bg-amber-500'
-                    : property.property_type === 'commercial' ? 'bg-purple-500' : 'bg-blue-500'
+                    property.property_type === 'str' ? STATUS_DOT.attention
+                    : property.property_type === 'commercial' ? 'bg-purple-500' : STATUS_DOT.info
                   }`} aria-hidden="true" />
                   {propertyTypeConfig.label}
                 </span>
@@ -566,14 +568,14 @@ export default function PropertyDetail() {
                       ? 'A feed synced cleanly within the last 24h'
                       : "No feed has synced cleanly in 24h+ — check it"}
                   >
-                    <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${property.ical_health === 'healthy' ? 'bg-ink-3/40' : 'bg-amber-500'}`} aria-hidden="true" />
+                    <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${property.ical_health === 'healthy' ? 'bg-ink-3/40' : STATUS_DOT.attention}`} aria-hidden="true" />
                     {property.ical_health === 'healthy' ? 'Feed healthy' : 'Feed stale'}
                   </span>
                 )}
                 {property.property_type === 'str' && property.ical_health === 'no_feed' && (
                   <span className="flex items-center gap-1.5 px-2 py-1 text-xs font-medium text-ink-2"
                     title="No active calendar feed configured">
-                    <span className="w-1.5 h-1.5 rounded-full bg-red-500 shrink-0" aria-hidden="true" />No feed
+                    <span className={`w-1.5 h-1.5 rounded-full ${STATUS_DOT.problem} shrink-0`} aria-hidden="true" />No feed
                   </span>
                 )}
                 {/* One click from "broken" to the fix — feed management page. */}
@@ -664,7 +666,7 @@ export default function PropertyDetail() {
           <AiInsight type="property" id={propertyId} className="mb-4" />
           {error && (
             <div className="flex items-center gap-2 border border-hairline bg-panel rounded-lg px-4 py-3 mb-4 text-sm text-ink">
-              <span className="w-1.5 h-1.5 rounded-full shrink-0 bg-red-500" aria-hidden="true" />
+              <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${STATUS_DOT.problem}`} aria-hidden="true" />
               {error}
             </div>
           )}
@@ -758,7 +760,7 @@ export default function PropertyDetail() {
                           {job.job_type === 'str_turnover' && (
                             <span className="flex items-center gap-1 text-xs font-medium whitespace-nowrap text-ink-3"
                               title="Auto-created from this property's rental calendar feed">
-                              <Wind className="w-3 h-3 text-amber-500" /> Turnover
+                              <Wind className={`w-3 h-3 ${STATUS_ICON.attention}`} /> Turnover
                             </span>
                           )}
                         </div>

@@ -17,6 +17,7 @@ import { get, patch } from '../../api'
 import { Skeleton } from '../ui'
 import CrewHeadshot from './CrewHeadshot'
 import { ErrorNote } from './primitives'
+import { STATUS_ICON } from '../../theme/statusText'
 
 const FIELDS = [
   { key: 'full_name', label: 'Your name', type: 'text', autoComplete: 'name' },
@@ -115,7 +116,7 @@ export default function CrewProfile({ bare = false, previewUserId = null }) {
               ? 'bg-panel border border-hairline text-ink-2'
               : 'bg-blue-600 hover:bg-blue-700 text-white disabled:opacity-60'}`}>
           {savedFlash && !dirty
-            ? (<><BadgeCheck className="w-4 h-4 text-emerald-600 dark:text-emerald-400" /> Saved</>)
+            ? (<><BadgeCheck className={`w-4 h-4 ${STATUS_ICON.ok}`} /> Saved</>)
             : saving ? 'Saving…' : 'Save changes'}
         </button>
       )}

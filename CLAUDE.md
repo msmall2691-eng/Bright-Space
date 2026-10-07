@@ -181,8 +181,18 @@ cd frontend && npm run test
   `tests/conftest.py`: schema-per-session + auto API-key injection). The few
   root-level `test_*.py` files intentionally sit outside `tests/` to bypass the
   auth autouse fixture — don't add there without reason.
-- `pytest.ini` `testpaths` is a **curated, vetted-green list**. Add new
-  shareable test files under `tests/` and, if they should gate CI, list them.
+- `pytest.ini` `testpaths` is **the whole `tests/` directory**, plus four
+  root-level files named individually. So a new file under `tests/` gates CI
+  automatically — nothing to register — while a new root-level one does not
+  and must be added by hand.
+  It *was* a list of 194 entries, and why it stopped being one is worth
+  knowing before anyone changes it back: pytest silently drops an entry that
+  matches nothing (it only warns when *every* entry misses), so renaming or
+  moving a file quietly stopped it running, forever, with no feedback. Fifty
+  of 235 files turned out to be listed nowhere and had never run — among them
+  the sweep asserting every external call has a timeout, and the intake
+  idempotency guardrail this file names below. The comment block in
+  `pytest.ini` has the full account.
 
 ### Type checking (optional, not gated)
 

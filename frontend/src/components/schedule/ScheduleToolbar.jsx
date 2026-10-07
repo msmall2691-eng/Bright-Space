@@ -4,6 +4,7 @@ import {
 } from 'lucide-react'
 import Button from '../ui/Button'
 import SyncHealthPill from './SyncHealthPill'
+import { STATUS_DOT } from '../../theme/statusDots'
 
 // One source of truth for the views so the mobile (full-width, short labels)
 // and desktop (inline, full labels) switchers never drift apart.
@@ -275,7 +276,7 @@ export default function ScheduleToolbar({
                 disabled={unassignedCount === 0 && !unassignedOnly}
                 testid="filter-unassigned"
               >
-                <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${unassignedCount > 0 ? 'bg-amber-500' : 'bg-ink-3/40'}`} aria-hidden="true" />
+                <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${unassignedCount > 0 ? STATUS_DOT.attention : 'bg-ink-3/40'}`} aria-hidden="true" />
                 Needs cleaner ({unassignedCount})
               </ChipToggle>
             )}
@@ -286,7 +287,7 @@ export default function ScheduleToolbar({
                 disabled={notGcalCount === 0 && !noGcalOnly}
                 testid="filter-no-gcal"
               >
-                <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${notGcalCount > 0 ? 'bg-amber-500' : 'bg-ink-3/40'}`} aria-hidden="true" />
+                <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${notGcalCount > 0 ? STATUS_DOT.attention : 'bg-ink-3/40'}`} aria-hidden="true" />
                 Not on Google ({notGcalCount})
               </ChipToggle>
             )}

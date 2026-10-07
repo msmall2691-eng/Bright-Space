@@ -3,6 +3,7 @@ import { Wand2, Clock, Sparkles, Trash2 } from 'lucide-react'
 import Button from '../ui/Button'
 import Modal from '../ui/Modal'
 import { get } from '../../api'
+import { STATUS_DOT } from '../../theme/statusDots'
 
 /** Two preview-then-confirm modals for the Tools menu, plus the price-before-post
  *  "open to crew" dialog. All accept parent-owned FSM state and onCancel + onRun
@@ -45,7 +46,7 @@ export function AutoAssignModal({ state, onCancel, onRun, empName }) {
                       <div className="text-[11px] text-ink-3">{a.date}</div>
                     </div>
                     <span className="inline-flex items-center gap-1.5 text-[11px] font-medium text-ink-2 shrink-0">
-                      <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-emerald-500" aria-hidden />
+                      <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${STATUS_DOT.ok}`} aria-hidden />
                       {empName(a.cleaner_id)}
                     </span>
                   </div>
@@ -56,7 +57,7 @@ export function AutoAssignModal({ state, onCancel, onRun, empName }) {
             )}
             {unassignable.length > 0 && (
               <div className="flex items-start gap-2.5 rounded-lg border border-hairline bg-panel px-3 py-2">
-                <span className="w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0 mt-1" aria-hidden="true" />
+                <span className={`w-1.5 h-1.5 rounded-full ${STATUS_DOT.attention} shrink-0 mt-1`} aria-hidden="true" />
                 <div className="flex-1 min-w-0">
                   <div className="text-[11px] font-medium text-ink mb-1">
                     {unassignable.length} couldn’t be filled (no available cleaner)
@@ -196,7 +197,7 @@ export function PurgeGhostsModal({ state, onCancel, onRun }) {
               </div>
             )}
             <p className="flex items-start gap-1.5 text-[11.5px] text-ink-3">
-              <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-amber-500" aria-hidden="true" />
+              <span className={`mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full ${STATUS_DOT.attention}`} aria-hidden="true" />
               <span>This can't be undone. It only removes cancelled turnovers — your live cleanings stay exactly where they are.</span>
             </p>
           </>

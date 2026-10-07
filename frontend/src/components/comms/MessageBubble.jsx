@@ -2,6 +2,8 @@ import { useState, useMemo } from 'react'
 import { Mail, Voicemail, CheckCircle2, Check, Clock, AlertTriangle, StickyNote, ChevronDown } from 'lucide-react'
 import { fullTime } from './utils'
 import { htmlToText, splitQuotedEmail } from '../../utils/format'
+import { STATUS_DOT } from '../../theme/statusDots'
+import { STATUS_TEXT } from '../../theme/statusText'
 
 /** Outbound delivery indicator. Covers the whole lifecycle so a message
  *  that's accepted-but-not-yet-delivered isn't a blank space:
@@ -15,7 +17,7 @@ const MENTION_RE = /(@[A-Z][\w'’.\-]*(?:\s[A-Z][\w'’.\-]*)?)/g
 function withMentions(text) {
   return String(text).split(MENTION_RE).map((part, i) =>
     i % 2 === 1
-      ? <span key={i} className="font-semibold text-amber-600 dark:text-amber-400">{part}</span>
+      ? <span key={i} className={`font-semibold ${STATUS_TEXT.attention}`}>{part}</span>
       : part)
 }
 
@@ -42,8 +44,8 @@ export function MessageBubble({ m, isFirst, showTime, contactName }) {
     return (
       <div className="flex justify-center my-3">
         <div className="max-w-[min(85%,40rem)] bg-bg-2 border border-hairline text-ink text-[13px] px-4 py-2.5 rounded-2xl">
-          <div className="flex items-center gap-1.5 text-[10px] font-semibold text-amber-600 dark:text-amber-400 mb-1">
-            <span className="w-1.5 h-1.5 rounded-full shrink-0 bg-amber-500" aria-hidden="true" />
+          <div className={`flex items-center gap-1.5 text-[10px] font-semibold ${STATUS_TEXT.attention} mb-1`}>
+            <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${STATUS_DOT.attention}`} aria-hidden="true" />
             <StickyNote className="w-3 h-3" />
             Internal note
             {m.author && <span className="font-normal text-ink-3">— {m.author}</span>}
@@ -124,7 +126,7 @@ export function MessageBubble({ m, isFirst, showTime, contactName }) {
             to skim past. Visual only: no retry affordance exists in the app,
             so none is invented here. */}
         {failed && (
-          <div className="flex items-center justify-end gap-1 mt-1 px-1 text-[11px] font-medium text-red-600 dark:text-red-400">
+          <div className={`flex items-center justify-end gap-1 mt-1 px-1 text-[11px] font-medium ${STATUS_TEXT.problem}`}>
             <AlertTriangle className="w-3 h-3" /> Not delivered
           </div>
         )}

@@ -168,38 +168,81 @@ longer visits its page:
 - **A field built for a page the page never read.** `invoice_to_dict`'s
   `public_token` carries a backend comment saying it exists so "InvoiceDetail
   can show/copy the customer's pay-page link". `InvoiceDetail` never reads it.
-- **A 1000-row fetch for a field already in the payload.** `Quoting` fetches
-  `/api/clients?limit=1000` solely to derive `clientName()`, while
-  `_quote_dict` already ships `client_name`, which the page never reads.
-- **A raw `fetch()` outside `api.js`.** `PropertyPhoto` bypasses the client
-  entirely and reads the JWT straight from localStorage; each call is a paid
-  Street View call, it fires once per card on `Requests`, and the drawer fires
-  the *same URL again* for the row already on screen.
-- **A search that silently matches nothing.** `usePropertyFilters` searches
-  `p.client_name`, which `prop_to_dict` never returns — so searching Properties
-  by client name is dead.
-- **Codes and passwords fetched to render six fields.** `PropertyIcalsBulk`
-  pulls the whole property record — house codes, wifi passwords, access notes —
-  and displays none of it. Office-role, so not a BB-SEC violation, but needless.
-- **Filter-independent aggregates refetched per keystroke.**
-  `/api/invoices/summary` and `/api/clients/counts` re-fire with every tab click
-  and debounced keystroke.
+- ~~**A 1000-row fetch for a field already in the payload.**~~ **Fixed in
+  `Quoting`** — no `?limit=1000` remains there. Eight such fetches survive
+  elsewhere; see "No cached hook for the client book" below, which is the same
+  problem and still open.
+- ~~**A raw `fetch()` outside `api.js`.**~~ **Half of this was never a defect,
+  and the other half is fixed.** The raw `fetch` and the localStorage read are
+  deliberate and carry their reason in the file: `PropertyPhoto` renders inside
+  the crew `JobCard` and office `PropertyDetail`, so importing a named `api`
+  export would break every test that partially mocks `../api`. `lazy` already
+  stops a list fetching photos nobody scrolled to. What WAS real is the last
+  clause — the drawer buying a second copy of a photo already on screen
+  (`Requests.jsx:364` and `:965` on one address). Fixed by caching the blob per
+  endpoint, not the object URL: an object URL is owned by whoever revokes it,
+  and sharing one would blank the list row when the drawer closed.
+- ~~**A search that silently matches nothing.**~~ **Fixed.** `prop_to_dict`
+  ships `client_name` and carries a comment naming this bug.
+- ~~**Codes and passwords fetched to render six fields.**~~ **Fixed — and the
+  previous note here was wrong.** It said "no longer reads `house_code` /
+  `wifi_password` / `access_notes`", which answered a question nobody asked:
+  the page never *displayed* them. The entry was about them being **fetched**,
+  and they were — `PropertyIcalsBulk` loaded `GET /api/properties/{id}`, which
+  BB-SEC-11's own comment calls "the full property dict — house_code,
+  access_notes, wifi_password included", and whose per-feed dicts carry
+  `house_code` / `access_links` / `instructions` as well. Seven fields
+  rendered, a door code and a wifi password on the wire every time.
+  Now fixed for real: `GET /api/properties/{id}/icals` (BB-SEC-13) serves
+  exactly what the screen reads, held by
+  `backend/tests/test_property_icals_payload.py`, which fails on a sensitive
+  key name AND on a secret VALUE smuggled under an innocent one.
+- ~~**Filter-independent aggregates refetched per keystroke.**~~ **Fixed, and
+  half of it was already gone.** `/api/invoices/summary` is no longer called
+  from the frontend at all. `/api/clients/counts` was real: it is a whole-DB
+  per-status aggregate that rode along with the list fetch, so every tab click
+  and every settled search bought four identical COUNTs. It now reads once on
+  mount, and again only via `load()` — the mutation path, which is the one case
+  where the counts can actually have moved, and not refreshing there is the
+  "All frozen after a create" bug the hook's own comment records. Note
+  "per keystroke" overstated it: the list fetch is debounced at 250ms, so a
+  search burst cost one, not one per character.
 - **No cached hook for the client book.** Four pages each fetch
   `?limit=1000` raw. `getCached` exists; nothing wraps this.
-- **A hand-written mirror of backend logic.** `Recurring`'s `computeUpcoming`
-  reimplements `generate_dates` in the browser — the highest-risk duplicate in
-  the file.
+- **A hand-written mirror of backend logic.** `computeUpcoming` still
+  reimplements `generate_dates` in the browser, so the risk is unchanged — but
+  it is no longer in `Recurring` and no longer untestable. The mega-page split
+  moved it to `components/recurring/helpers.js`, and
+  `components/recurring/__tests__/helpers.test.js` now covers the drift cases,
+  including the one the code's comments single out twice: **phase counted from
+  the anchor, not from today**.
 - **The same fact counted four ways.** "Quoted" is computed on Requests, Deals,
   Quoting and QuoteFunnel from four different sources. `Quoting` already deleted
   its own hero pods so a count isn't shown twice; the other three still do it.
   Lead rows render on both Requests and Deals; the lead→quote→job hand-off is
   implemented three times.
-- **Six pages have no test at all**: Invoicing, InvoiceDetail, Clients,
-  Properties, PropertyIcalsBulk, Recurring. `PropertyIcalsBulk` is fully
-  instrumented with testids that nothing references.
-- **`.bb-focus` exists only on OpsBoard.** Tier 2a's focus ring never reached any
-  other page, so keyboard focus is still invisible app-wide under
-  `overflow-hidden`. That is one app-wide PR, not thirteen page PRs.
+- ~~**Six pages have no test at all.**~~ **Closed — and it was five, not six.**
+  `Clients` was miscounted from the start (`Clients.chrome.test.jsx` existed),
+  and `Recurring`'s only real risk had already moved out of the page and been
+  covered (see the hand-written-mirror entry above). The other four now have
+  one each, and in every case the thing pinned is a decision that was holding
+  in prose only:
+
+  | page | what the test is actually about |
+  |---|---|
+  | `InvoiceDetail` | `/send` answers 200 with a per-channel result, so a bounced email is a SUCCESSFUL request — reporting it as sent leaves the owner chasing a payment for an invoice nobody got |
+  | `Invoicing` | the `?status=` the dashboard's money links point at, including the strip that stops a tab click snapping back |
+  | `PropertyIcalsBulk` | which endpoint it reads (BB-SEC-13), plus the case-insensitive paste dedupe — without it one feed added twice makes every turnover twice |
+  | `Properties` | `?edit=<id>` waits for the rows rather than stripping the param while they load. "Tidy up the URL" is the obvious refactor and it breaks the deep link on any slow connection, silently |
+- ~~**`.bb-focus` exists only on OpsBoard.**~~ **Done, and it was two defects.**
+  The reach was the smaller one: the ring is now a base-layer
+  `:where(…):focus-visible` default covering the ~1140 focusable elements that
+  had no focus styling at all, rather than the 14 that had opted in. The larger
+  one only showed up on measuring — the ring was `--accent-500`, which bottoms
+  out at **1.69:1** on light grounds against a 3:1 floor, so on five of the
+  seven selectable accents it could not be seen. No single step clears both
+  ends, so it now uses a per-theme `--accent-focus` (700 light / 500 dark),
+  held by `__tests__/focusRing.test.js`.
 
 ## Tier 4 — the two real builds · weeks each, own design pass
 

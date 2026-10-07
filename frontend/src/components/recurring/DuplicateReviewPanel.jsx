@@ -10,6 +10,7 @@ import ModalShell from './ModalShell'
 import { computeUpcoming, fmtDate, fmtTime, ruleSummary } from './helpers'
 import { Pause, Repeat } from 'lucide-react'
 import { SEV_DOT } from '../board/tokens'
+import { STATUS_TEXT } from '../../theme/statusText'
 
 export default function DuplicateReviewPanel({ schedules, clientsById, reviewedKeys, onToggleReviewed, onChanged, onClose }) {
   // Snapshot group membership (and the keeper suggestion) at open, so acting
@@ -186,7 +187,7 @@ export default function DuplicateReviewPanel({ schedules, clientsById, reviewedK
                     <div className="mt-2 space-y-0.5 text-[12px] text-ink-3">
                       <div>{ruleSummary(s)} · {s.start_time
                         ? <>{fmtTime(s.start_time)}–{fmtTime(s.end_time)}</>
-                        : <span className="text-amber-600 font-medium">no time set</span>}</div>
+                        : <span className={`${STATUS_TEXT.attention} font-medium`}>no time set</span>}</div>
                       <div>Created {fmtDate((s.created_at || '').slice(0, 10)) || 'unknown'}</div>
                       <div>
                         {s.upcoming_job_count || 0} upcoming visit{(s.upcoming_job_count || 0) === 1 ? '' : 's'}
@@ -196,7 +197,7 @@ export default function DuplicateReviewPanel({ schedules, clientsById, reviewedK
                     {state === 'active' ? (
                       isKeeper ? (
                         <div className="mt-3 flex items-center gap-2 flex-wrap">
-                          <span className="inline-flex h-5 items-center gap-1.5 rounded-sm border border-emerald-300 dark:border-emerald-800 bg-panel px-2 text-[11px] font-medium text-emerald-700 dark:text-emerald-400">
+                          <span className={`inline-flex h-5 items-center gap-1.5 rounded-sm border border-emerald-300 dark:border-emerald-800 bg-panel px-2 text-[11px] font-medium ${STATUS_TEXT.ok}`}>
                             <span className={`h-1.5 w-1.5 rounded-full ${SEV_DOT.good}`} />
                             Keeper
                           </span>
@@ -216,7 +217,7 @@ export default function DuplicateReviewPanel({ schedules, clientsById, reviewedK
                               <Pause className="w-3.5 h-3.5 mr-1" />Pause
                             </Button>
                             <button onClick={() => doCancel(s)} disabled={busyId === s.id}
-                              className="inline-flex items-center rounded-md border border-hairline bg-panel px-2.5 py-1.5 text-xs font-medium text-red-600 hover:bg-red-50 dark:hover:bg-red-950/40 disabled:opacity-50 disabled:cursor-not-allowed">
+                              className={`inline-flex items-center rounded-md border border-hairline bg-panel px-2.5 py-1.5 text-xs font-medium ${STATUS_TEXT.problem} hover:bg-red-50 dark:hover:bg-red-950/40 disabled:opacity-50 disabled:cursor-not-allowed`}>
                               Cancel series
                             </button>
                           </span>

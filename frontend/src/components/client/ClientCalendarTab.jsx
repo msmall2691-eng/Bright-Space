@@ -9,6 +9,8 @@ import {
 } from './constants'
 import { toLocalYMD } from '../../utils/format'
 import { RecurringTab, JobsListTab } from './ClientListTabs'
+import { STATUS_DOT } from '../../theme/statusDots'
+import { STATUS_TEXT } from '../../theme/statusText'
 
 /** Quiet native disclosure — no extra nav layer, just a fold-out section.
  *  Used to carry the client's recurring schedules and full job history
@@ -81,7 +83,7 @@ function GcalEventRow({ ev }) {
         </span>
         {invited && (
           <span className="inline-flex items-center gap-1 text-[9px] font-medium text-ink-3" title="Client is an attendee">
-            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" aria-hidden="true" />Invited
+            <span className={`w-1.5 h-1.5 rounded-full ${STATUS_DOT.ok} shrink-0`} aria-hidden="true" />Invited
           </span>
         )}
       </div>
@@ -205,7 +207,7 @@ export default function ClientCalendarTab({ jobs, upcomingJobs, pastJobs, naviga
           <div className="text-center py-8 bg-panel border border-hairline rounded-xl px-4">
             <Calendar className="w-7 h-7 mx-auto mb-2 text-ink-3" />
             <p className="text-sm text-ink font-medium inline-flex items-center gap-1.5">
-              <span className="w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0" aria-hidden="true" />
+              <span className={`w-1.5 h-1.5 rounded-full ${STATUS_DOT.attention} shrink-0`} aria-hidden="true" />
               Google Calendar isn't connected
             </p>
             <p className="text-xs text-ink-3 mt-1 max-w-sm mx-auto">
@@ -325,7 +327,7 @@ export default function ClientCalendarTab({ jobs, upcomingJobs, pastJobs, naviga
                   isSelected
                     ? 'bg-indigo-600 text-white'
                     : isToday
-                    ? 'bg-blue-500/10 text-blue-600 font-semibold'
+                    ? `bg-blue-500/10 ${STATUS_TEXT.info} font-semibold`
                     : hasJobs
                     ? 'hover:bg-bg-2 text-ink-2 font-medium'
                     : 'hover:bg-bg text-ink-3'
@@ -446,12 +448,12 @@ export default function ClientCalendarTab({ jobs, upcomingJobs, pastJobs, naviga
                       )}
                       {j.calendar_invite_sent && (
                         <span className="inline-flex items-center gap-1 text-[9px] font-medium text-ink-3" title="Invite sent">
-                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" aria-hidden="true" />Invited
+                          <span className={`w-1.5 h-1.5 rounded-full ${STATUS_DOT.ok} shrink-0`} aria-hidden="true" />Invited
                         </span>
                       )}
                       {j.dispatched && (
                         <span className="inline-flex items-center gap-1 text-[9px] font-medium text-ink-3" title="Dispatched">
-                          <span className="w-1.5 h-1.5 rounded-full bg-blue-500 shrink-0" aria-hidden="true" />Dispatched
+                          <span className={`w-1.5 h-1.5 rounded-full ${STATUS_DOT.info} shrink-0`} aria-hidden="true" />Dispatched
                         </span>
                       )}
                     </div>

@@ -2,6 +2,8 @@ import { useState } from 'react'
 import { Bell, Clock } from 'lucide-react'
 import { CHANNEL_CONFIG, PRIORITY_COLORS } from './constants'
 import { isSupported as notificationsSupported, getPermission as getNotifPermission, requestPermission as requestNotifPermission } from '../../utils/notifications'
+import { STATUS_DOT } from '../../theme/statusDots'
+import { STATUS_TEXT } from '../../theme/statusText'
 
 /** Small pure display components used across the Comms inbox — no external
  *  state, no closures over the parent. Each takes props and renders. */
@@ -46,8 +48,8 @@ export function Avatar({ name, size = 'md', className = '', online }) {
     'bg-slate-100 text-slate-600 dark:bg-slate-400/15 dark:text-slate-300',
     'bg-stone-100 text-stone-600 dark:bg-stone-400/15 dark:text-stone-300',
     'bg-sky-100 text-sky-700 dark:bg-sky-400/15 dark:text-sky-300',
-    'bg-emerald-100 text-emerald-700 dark:bg-emerald-400/15 dark:text-emerald-300',
-    'bg-amber-100 text-amber-700 dark:bg-amber-400/15 dark:text-amber-300',
+    `bg-emerald-100 ${STATUS_TEXT.ok} dark:bg-emerald-400/15`,
+    `bg-amber-100 ${STATUS_TEXT.attention} dark:bg-amber-400/15`,
     'bg-rose-100 text-rose-700 dark:bg-rose-400/15 dark:text-rose-300',
     'bg-violet-100 text-violet-700 dark:bg-violet-400/15 dark:text-violet-300',
     'bg-teal-100 text-teal-700 dark:bg-teal-400/15 dark:text-teal-300',
@@ -59,7 +61,7 @@ export function Avatar({ name, size = 'md', className = '', online }) {
         {initials}
       </div>
       {online && (
-        <div className="absolute -bottom-0.5 -right-0.5 w-3 h-3 bg-emerald-500 rounded-full border-2 border-panel" />
+        <div className={`absolute -bottom-0.5 -right-0.5 w-3 h-3 ${STATUS_DOT.ok} rounded-full border-2 border-panel`} />
       )}
     </div>
   )
@@ -85,17 +87,17 @@ export function SlaBadge({ state, compact = false }) {
   if (state !== 'breached') return null
   // Quiet dot+word — red text carries the urgency, no tinted capsule
   // (owner's veto of the pill bubbles).
-  const tone = 'text-red-600 dark:text-red-300'
+  const tone = STATUS_TEXT.problem
   if (compact) {
     return (
       <span title="Overdue — needs reply" className={`inline-flex items-center gap-1 text-[9px] font-semibold ${tone}`}>
-        <span className="w-1.5 h-1.5 rounded-full bg-red-500 shrink-0" aria-hidden="true" /> Overdue
+        <span className={`w-1.5 h-1.5 rounded-full ${STATUS_DOT.problem} shrink-0`} aria-hidden="true" /> Overdue
       </span>
     )
   }
   return (
     <span className={`inline-flex items-center gap-1.5 text-[10px] font-medium ${tone}`}>
-      <span className="w-1.5 h-1.5 rounded-full bg-red-500 shrink-0" aria-hidden="true" />
+      <span className={`w-1.5 h-1.5 rounded-full ${STATUS_DOT.problem} shrink-0`} aria-hidden="true" />
       <Clock className="w-3 h-3" /> Overdue
     </span>
   )

@@ -12,6 +12,7 @@ import { useEffect, useRef, useState } from 'react'
 import { Send } from 'lucide-react'
 import { Skeleton } from '../ui'
 import { FullScreenSheet } from './primitives'
+import { STATUS_DOT } from '../../theme/statusDots'
 
 export default function Thread({
   title, subtitle, onClose,
@@ -77,7 +78,7 @@ export default function Thread({
         <div ref={bottomRef} />
       </div>
       {error && <div className="px-4 pb-1 text-[12px] text-ink-2 flex items-center gap-1.5">
-        <span className="w-1.5 h-1.5 rounded-full bg-red-500 shrink-0" aria-hidden="true" /> {error}
+        <span className={`w-1.5 h-1.5 rounded-full ${STATUS_DOT.problem} shrink-0`} aria-hidden="true" /> {error}
       </div>}
       <div className="border-t border-hairline bg-panel px-3 py-2.5 flex items-end gap-2"
         style={{ paddingBottom: 'calc(env(safe-area-inset-bottom) + 10px)' }}>

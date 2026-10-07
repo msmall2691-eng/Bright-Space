@@ -9,6 +9,8 @@ import AiInsight from '../AiInsight'
 import { get } from '../../api'
 import { EMPTY_ITEM, isPlaceholderName, serviceOptions, scopeForService } from './constants'
 import DuplicateClientPrompt from '../clients/DuplicateClientPrompt'
+import { STATUS_DOT } from '../../theme/statusDots'
+import { STATUS_TEXT } from '../../theme/statusText'
 
 /** Right-side (bottom-sheet on mobile) quote-editor panel.
  *
@@ -176,7 +178,7 @@ export default function QuoteEditPanel({
           {selected && selected.last_send_error && ['draft', 'sent', 'viewed'].includes(selected.status) && (
             <div className="rounded-lg border border-hairline bg-panel p-3 text-sm">
               <div className="flex items-start gap-2">
-                <span className="w-1.5 h-1.5 rounded-full shrink-0 mt-1.5 bg-red-500" aria-hidden="true" />
+                <span className={`w-1.5 h-1.5 rounded-full shrink-0 mt-1.5 ${STATUS_DOT.problem}`} aria-hidden="true" />
                 <div className="min-w-0">
                   <div className="font-semibold text-ink mb-1">Last send failed — the customer didn't get this quote</div>
                   <div className="text-ink-2">{selected.last_send_error}</div>
@@ -189,7 +191,7 @@ export default function QuoteEditPanel({
           {selected && selected.requested_changes_message && (
             <div className="rounded-lg border border-hairline bg-panel p-3 text-sm">
               <div className="flex items-start gap-2">
-                <span className="w-1.5 h-1.5 rounded-full shrink-0 mt-1.5 bg-amber-500" aria-hidden="true" />
+                <span className={`w-1.5 h-1.5 rounded-full shrink-0 mt-1.5 ${STATUS_DOT.attention}`} aria-hidden="true" />
                 <div className="min-w-0">
                   <div className="font-semibold text-ink mb-1">Customer requested changes</div>
                   <div className="text-ink-2 whitespace-pre-wrap">“{selected.requested_changes_message}”</div>
@@ -201,7 +203,7 @@ export default function QuoteEditPanel({
           {selected && selected.status === 'accepted' && (
             <div className="rounded-lg border border-hairline bg-panel p-3 text-sm">
               <div className="flex items-start gap-2">
-                <span className="w-1.5 h-1.5 rounded-full shrink-0 mt-1.5 bg-emerald-500" aria-hidden="true" />
+                <span className={`w-1.5 h-1.5 rounded-full shrink-0 mt-1.5 ${STATUS_DOT.ok}`} aria-hidden="true" />
                 <div className="min-w-0">
                   <div className="font-semibold text-ink">Accepted{selected.accepted_by_name ? ` by ${selected.accepted_by_name}` : ''} ✓</div>
                   {selected.accepted_at && <div className="text-[11px] text-ink-3 mt-0.5">{new Date(selected.accepted_at).toLocaleString()}</div>}
@@ -212,7 +214,7 @@ export default function QuoteEditPanel({
           {selected && selected.status === 'declined' && (
             <div className="rounded-lg border border-hairline bg-panel p-3 text-sm">
               <div className="flex items-start gap-2">
-                <span className="w-1.5 h-1.5 rounded-full shrink-0 mt-1.5 bg-red-500" aria-hidden="true" />
+                <span className={`w-1.5 h-1.5 rounded-full shrink-0 mt-1.5 ${STATUS_DOT.problem}`} aria-hidden="true" />
                 <div className="min-w-0">
                   <div className="font-semibold text-ink">Declined{selected.declined_by_name ? ` by ${selected.declined_by_name}` : ''}</div>
                   {selected.declined_reason && <div className="text-ink-2 mt-0.5">“{selected.declined_reason}”</div>}
@@ -253,7 +255,7 @@ export default function QuoteEditPanel({
                     placeholder="Email"
                     className="w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-hidden focus:border-blue-400" />
                 </div>
-                {clientErr && <div className="text-xs text-red-600">{clientErr}</div>}
+                {clientErr && <div className={`text-xs ${STATUS_TEXT.problem}`}>{clientErr}</div>}
                 {clientDupes.length > 0 ? (
                   <DuplicateClientPrompt
                     duplicates={clientDupes}
@@ -329,7 +331,7 @@ export default function QuoteEditPanel({
                 type="button"
                 onClick={() => lookupSpecs()}
                 disabled={!form.address?.trim() || specsState === 'loading'}
-                className="flex items-center gap-1 text-[11px] font-medium text-blue-500 hover:text-blue-400 disabled:text-ink-3 disabled:cursor-not-allowed">
+                className={`flex items-center gap-1 text-[11px] font-medium ${STATUS_TEXT.info} hover:text-blue-800 disabled:text-ink-3 disabled:cursor-not-allowed`}>
                 {specsState === 'loading' ? <Loader2 className="w-3 h-3 animate-spin" /> : <Search className="w-3 h-3" />}
                 Look up property
               </button>
@@ -350,11 +352,11 @@ export default function QuoteEditPanel({
             {form.address?.trim() && (
               <div className="mt-1.5 flex items-center gap-3 text-[11px] text-ink-3">
                 <span>Look up specs:</span>
-                <a className="text-blue-500 hover:text-blue-400" target="_blank" rel="noopener noreferrer"
+                <a className={`${STATUS_TEXT.info} hover:text-blue-800`} target="_blank" rel="noopener noreferrer"
                   href={`https://www.google.com/search?q=${encodeURIComponent(form.address + ' property records bedrooms bathrooms square feet')}`}>Google records</a>
-                <a className="text-blue-500 hover:text-blue-400" target="_blank" rel="noopener noreferrer"
+                <a className={`${STATUS_TEXT.info} hover:text-blue-800`} target="_blank" rel="noopener noreferrer"
                   href={`https://www.zillow.com/homes/${encodeURIComponent(form.address)}_rb/`}>Zillow</a>
-                <a className="text-blue-500 hover:text-blue-400" target="_blank" rel="noopener noreferrer"
+                <a className={`${STATUS_TEXT.info} hover:text-blue-800`} target="_blank" rel="noopener noreferrer"
                   href={`https://www.google.com/maps/search/${encodeURIComponent(form.address)}`}>Maps</a>
               </div>
             )}
@@ -401,7 +403,7 @@ export default function QuoteEditPanel({
                   ))}
                 </select>
                 <button onClick={() => setForm(f => ({ ...f, items: [...f.items, { ...EMPTY_ITEM }] }))}
-                  className="text-xs text-blue-500 hover:text-blue-400 flex items-center gap-1">
+                  className={`text-xs ${STATUS_TEXT.info} hover:text-blue-800 flex items-center gap-1`}>
                   <Plus className="w-3 h-3" /> Add
                 </button>
               </div>
@@ -488,7 +490,7 @@ export default function QuoteEditPanel({
           {showQuoteAdvanced && (
             <>
               <div>
-                <label className="block text-xs text-ink-3 mb-1">Scope / Notes <span className="text-amber-600 font-medium">(customer sees this)</span></label>
+                <label className="block text-xs text-ink-3 mb-1">Scope / Notes <span className={`${STATUS_TEXT.attention} font-medium`}>(customer sees this)</span></label>
                 <textarea value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} rows={3}
                   placeholder="What's included / excluded — shown on the quote the customer opens."
                   className="w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-hidden resize-none" />
@@ -541,7 +543,7 @@ export default function QuoteEditPanel({
             </button>
           )}
           {sendDirty && (
-            <span className="self-center text-[11px] text-amber-600 dark:text-amber-300 shrink-0">
+            <span className={`self-center text-[11px] ${STATUS_TEXT.attention} shrink-0`}>
               Update to send
             </span>
           )}

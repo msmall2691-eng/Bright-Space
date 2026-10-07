@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
-import { get } from '../api'
+import { get, getCached } from '../api'
 
 /** Data hook for the Properties page.
  *
@@ -27,7 +27,7 @@ export function useProperties() {
     // client. Filtering to active-only was wiping out the Client field in
     // Edit Property for every lead-linked property — Save would then unlink
     // the property from a real client.
-    get('/api/clients?limit=1000').then(setClients).catch(err => console.error('[Properties]', err))
+    getCached('/api/clients?limit=1000').then(setClients).catch(err => console.error('[Properties]', err))
   }, [load])
 
   return { properties, clients, setClients, load }

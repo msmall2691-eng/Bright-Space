@@ -13,6 +13,7 @@ import SkipModal from './SkipModal'
 import { computeUpcoming, endsSummary, fmtDate, fmtTime, ruleSummary } from './helpers'
 import { ArrowLeft, Calendar, Clock, Pause, Pencil, Play, RefreshCw, SkipForward, Undo2 } from 'lucide-react'
 import { SEV_DOT } from '../board/tokens'
+import { STATUS_TEXT } from '../../theme/statusText'
 
 export default function SeriesDetail({ id, onBack, onChanged, toast }) {
   const [schedule, setSchedule] = useState(null)
@@ -319,7 +320,7 @@ export default function SeriesDetail({ id, onBack, onChanged, toast }) {
 
       {/* Danger zone */}
       <div className="mt-8 pt-5 border-t border-hairline">
-        <h2 className="text-xs font-semibold text-red-600 uppercase tracking-wide mb-1">Danger zone</h2>
+        <h2 className={`text-xs font-semibold ${STATUS_TEXT.problem} uppercase tracking-wide mb-1`}>Danger zone</h2>
         <div className="flex items-center justify-between gap-3 flex-wrap">
           <p className="text-[13px] text-ink-3">
             Cancels the series so no new jobs are generated.

@@ -60,6 +60,7 @@ import MarketplaceBoard from '../components/board/MarketplaceBoard'
 import SubNav from '../components/ui/SubNav'
 import { useUnreadCount } from '../hooks/useUnreadCount'
 import { currentRole } from '../nav/routes'
+import { STATUS_TEXT, STATUS_ICON } from '../theme/statusText'
 
 const CLEARED_KEY = 'brightbase_board_cleared'
 
@@ -289,7 +290,7 @@ function BoardRow({ item, cleared, onToggle, onAction, actioningKey, confirmingK
                     <button key={i} onClick={() => onAction(item, a)} disabled={busy}
                       className={`inline-flex items-center gap-1 rounded-md border px-2 py-1 text-[11px] font-semibold transition-colors disabled:opacity-60 ${
                         confirming
-                          ? 'border-rose-400 bg-rose-500/10 text-rose-600 dark:text-rose-300'
+                          ? `border-rose-400 bg-rose-500/10 ${STATUS_TEXT.problem}`
                           : 'border-hairline bg-bg-2 text-ink-2 hover:border-hairline-2 hover:text-ink'
                       }`}>
                       {busy && <Loader2 className="h-3 w-3 animate-spin" />}
@@ -363,7 +364,7 @@ function Section({ section, items, clearedSet, onToggle, onAction, actioningKey,
             }}
             disabled={clearingSection === section.key}
             className={`ml-auto shrink-0 text-[11px] font-semibold disabled:opacity-40 ${
-              confirmingClear ? 'text-amber-700 dark:text-amber-400' : 'text-link hover:text-link'
+              confirmingClear ? STATUS_TEXT.attention : 'text-link hover:text-link'
             }`}>
             {clearingSection === section.key ? 'Clearing…' : confirmingClear ? 'Confirm?' : 'Clear all'}
           </button>
@@ -647,7 +648,7 @@ export default function OpsBoard() {
         {note && (
           /* Quiet hairline card + emerald check — not a tinted banner. */
           <div className="mt-3 flex items-center gap-2 rounded-xl border border-hairline bg-panel px-3 py-2 text-[12px] font-medium text-ink-2">
-            <Check className="h-4 w-4 shrink-0 text-emerald-500" /> <span className="min-w-0 flex-1 truncate">{note}</span>
+            <Check className={`h-4 w-4 shrink-0 ${STATUS_ICON.ok}`} /> <span className="min-w-0 flex-1 truncate">{note}</span>
             <button onClick={() => setNote('')} className="text-ink-3 hover:text-ink" aria-label="Dismiss">✕</button>
           </div>
         )}

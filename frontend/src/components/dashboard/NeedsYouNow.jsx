@@ -3,6 +3,8 @@ import { Zap, Check, X, ChevronRight, Sparkles, ChevronDown, Send } from 'lucide
 import { get, post } from '../../api'
 import { toast } from '../../utils/toastBus'
 import { SOFT_CARD } from './constants'
+import { STATUS_DOT } from '../../theme/statusDots'
+import { STATUS_TEXT, STATUS_ICON } from '../../theme/statusText'
 
 /** The note prepended to the invoice email when the owner taps "Remind"
  *  from the dashboard — a plain, friendly nudge. The invoice body (amount,
@@ -19,7 +21,8 @@ const REMINDER_NOTE =
  * Nothing else on the dashboard should nag — this is the command center.
  */
 const dotFor = (tone) => ({
-  red: 'bg-red-500', amber: 'bg-amber-500', rose: 'bg-rose-500', blue: 'bg-blue-500', violet: 'bg-violet-500',
+  red: STATUS_DOT.problem, amber: STATUS_DOT.attention, rose: STATUS_DOT.problem,
+  blue: STATUS_DOT.info, violet: STATUS_DOT.open,
 }[tone] || 'bg-ink-3')
 
 const CAP = 6  // show this many by default; the rest collapse behind "Show all"
@@ -106,7 +109,7 @@ export function NeedsYouNow({ attention = [], loading, navigate }) {
         </div>
       ) : total === 0 ? (
         <div className="flex flex-col items-center justify-center text-center py-10 px-6">
-          <Sparkles className="w-6 h-6 text-emerald-500 mb-2.5" />
+          <Sparkles className={`w-6 h-6 ${STATUS_ICON.ok} mb-2.5`} />
           <p className="text-sm font-semibold text-ink">You're all caught up</p>
           <p className="text-[12px] text-ink-3 mt-0.5">No approvals, replies, or overdue items right now.</p>
         </div>
@@ -123,7 +126,7 @@ export function NeedsYouNow({ attention = [], loading, navigate }) {
                 </div>
                 <div className="text-[11px] text-ink-3 truncate">
                   {r.needs_approval
-                    ? <>{fmt(r.current_date)} → <span className="text-amber-600 dark:text-amber-300 font-medium">{fmt(r.requested_date)}</span>{r.requested_scope === 'future' ? ' · + all future' : ''} — busy slot</>
+                    ? <>{fmt(r.current_date)} → <span className={`${STATUS_TEXT.attention} font-medium`}>{fmt(r.requested_date)}</span>{r.requested_scope === 'future' ? ' · + all future' : ''} — busy slot</>
                     : (r.message ? `“${r.message}”` : 'Customer asked to move this visit')}
                 </div>
               </button>

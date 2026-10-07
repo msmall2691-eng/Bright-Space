@@ -3,6 +3,7 @@ import { CheckCircle, Loader2 } from 'lucide-react'
 import { get, post } from '../../api'
 import RulesPanel from './RulesPanel'
 import { inp, lbl } from './constants'
+import { STATUS_TEXT } from '../../theme/statusText'
 
 /** Automation settings — the sync intervals + auto-generate toggles. State
  *  lives in a hook because Integrations and Danger Zone both read it (for
@@ -148,7 +149,7 @@ export function AutomationSection({ state, toast, active }) {
               <option value="google">Two-way (disabled) — a time/title edit made in Google would sync back into BrightBase</option>
             </select>
             {s.calendar_source_of_truth === 'google' && (
-              <p className="text-xs text-amber-600 mt-2">Two-way is currently disabled: this option is saved but syncing will fail loudly (not silently apply Google's edits) until it's switched back to "BrightBase is the master." Ask an engineer if you actually need Google edits to overwrite jobs here.</p>
+              <p className={`text-xs ${STATUS_TEXT.attention} mt-2`}>Two-way is currently disabled: this option is saved but syncing will fail loudly (not silently apply Google's edits) until it's switched back to "BrightBase is the master." Ask an engineer if you actually need Google edits to overwrite jobs here.</p>
             )}
           </div>
 

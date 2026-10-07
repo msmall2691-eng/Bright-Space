@@ -21,11 +21,12 @@ import { useCallback, useEffect, useState } from 'react'
 import { Check, ExternalLink, FileCheck, X } from 'lucide-react'
 import { download, get, post } from '../api'
 import { toast } from '../utils/toastBus'
+import { STATUS_DOT } from '../theme/statusDots'
 
 const STATE = {
-  accepted: { dot: 'bg-emerald-500', word: 'Accepted' },
-  pending: { dot: 'bg-amber-500', word: 'Needs review' },
-  expired: { dot: 'bg-red-500', word: 'Expired' },
+  accepted: { dot: STATUS_DOT.ok, word: 'Accepted' },
+  pending: { dot: STATUS_DOT.attention, word: 'Needs review' },
+  expired: { dot: STATUS_DOT.problem, word: 'Expired' },
   missing: { dot: 'bg-ink-3/40', word: 'Not uploaded' },
 }
 
@@ -106,12 +107,12 @@ export default function SubFileReview({ userId }) {
         <div className="text-[12px] text-ink-2">
           {file.can_take_jobs ? (
             <span className="inline-flex items-center gap-1.5">
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" aria-hidden="true" />
+              <span className={`w-1.5 h-1.5 rounded-full ${STATUS_DOT.ok}`} aria-hidden="true" />
               Cleared to take jobs
             </span>
           ) : (
             <span className="inline-flex items-center gap-1.5">
-              <span className="w-1.5 h-1.5 rounded-full bg-amber-500" aria-hidden="true" />
+              <span className={`w-1.5 h-1.5 rounded-full ${STATUS_DOT.attention}`} aria-hidden="true" />
               {file.missing.length} thing{file.missing.length === 1 ? '' : 's'} outstanding
             </span>
           )}

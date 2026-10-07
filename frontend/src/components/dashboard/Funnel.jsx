@@ -3,6 +3,7 @@ import { ArrowRight, TrendingUp } from 'lucide-react'
 import { SOFT_CARD } from './constants'
 import { Skeleton } from '../ui'
 import { BarTip } from './primitives'
+import { STATUS_TEXT } from '../../theme/statusText'
 
 /** One stage in the horizontal Lead → Quoted → Accepted → Won strip:
  *  large count on top, tinted relative-volume bar under it, optional
@@ -61,7 +62,7 @@ export function Funnel({ stages, convRate, activeClients, loading }) {
             </span>
             {activeClients != null && (
               <span className="text-ink-3">
-                <span className="font-bold text-emerald-600 tabular-nums">{activeClients}</span> active clients
+                <span className={`font-bold ${STATUS_TEXT.ok} tabular-nums`}>{activeClients}</span> active clients
               </span>
             )}
           </div>

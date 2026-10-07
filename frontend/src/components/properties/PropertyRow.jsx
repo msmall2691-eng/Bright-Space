@@ -2,6 +2,8 @@ import { AlertTriangle, Calendar, Clock, Home, Link, RefreshCw, Users } from 'lu
 import { ICAL_SOURCES, PROPERTY_TYPE_CONFIG } from './constants'
 import { IcalFeedRow } from './IcalFeedRow'
 import PropertyPhoto from '../PropertyPhoto'
+import { STATUS_DOT } from '../../theme/statusDots'
+import { STATUS_TEXT, STATUS_ICON } from '../../theme/statusText'
 
 const propType = (p) => (p?.property_type || '').toLowerCase()
 
@@ -61,14 +63,14 @@ export function PropertyRow({
                 </button>
                 <span className="inline-flex items-center gap-1.5 text-xs font-medium text-ink-3">
                   <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${
-                    pType === 'str' ? 'bg-amber-500' : pType === 'commercial' ? 'bg-purple-500' : 'bg-blue-500'
+                    pType === 'str' ? STATUS_DOT.attention : pType === 'commercial' ? 'bg-purple-500' : STATUS_DOT.info
                   }`} aria-hidden="true" />
                   {Config?.label}
                 </span>
               </div>
               <div className="text-sm text-ink-2 flex items-center gap-2 mt-1">
                 {!clients.find(c => c.id === p.client_id) && (
-                  <AlertTriangle className="w-3 h-3 text-red-400" title="Client not found" />
+                  <AlertTriangle className={`w-3 h-3 ${STATUS_ICON.problem}`} title="Client not found" />
                 )}
                 {clientName(p.client_id)}
               </div>
@@ -92,7 +94,7 @@ export function PropertyRow({
                       </span>
                     )}
                     {(p.icals?.length || 0) > 0 && (
-                      <span className="flex items-center gap-1 text-xs text-green-600">
+                      <span className={`flex items-center gap-1 text-xs ${STATUS_TEXT.ok}`}>
                         <Link className="w-3 h-3" />{p.icals.length} feed{p.icals.length !== 1 ? 's' : ''}
                       </span>
                     )}
@@ -106,14 +108,14 @@ export function PropertyRow({
                           ? 'A feed synced cleanly within the last 24h'
                           : "No feed has synced cleanly in 24h+ — check it"}
                       >
-                        <span className={`h-1.5 w-1.5 rounded-full ${p.ical_health === 'healthy' ? 'bg-emerald-500' : 'bg-amber-500'}`} />
+                        <span className={`h-1.5 w-1.5 rounded-full ${p.ical_health === 'healthy' ? STATUS_DOT.ok : STATUS_DOT.attention}`} />
                         {p.ical_health === 'healthy' ? 'Feed healthy' : 'Feed stale'}
                       </span>
                     )}
                     {p.ical_health === 'no_feed' && (
                       <span className="inline-flex h-5 items-center gap-1.5 rounded-sm border border-hairline-2 bg-panel px-2 text-[11px] font-medium text-ink-2"
                         title="STR property with no active calendar feed configured">
-                        <span className="h-1.5 w-1.5 rounded-full bg-red-500" />No feed
+                        <span className={`h-1.5 w-1.5 rounded-full ${STATUS_DOT.problem}`} />No feed
                       </span>
                     )}
                     {/* A missed turnover means a guest walks into a dirty
@@ -182,7 +184,7 @@ export function PropertyRow({
                 (active=false) — jobs and history stay, so no "Delete" here. */}
             <button onClick={(e) => { e.stopPropagation(); deactivateOne(p) }}
               title={`Deactivate ${p.name} — hides it from lists, keeps its jobs and history`}
-              className="text-xs text-red-600 hover:text-red-700 border border-hairline hover:border-red-300 hover:bg-red-50 dark:hover:bg-red-500/10 px-3 py-1.5 rounded-lg transition-colors">
+              className={`text-xs ${STATUS_TEXT.problem} hover:text-rose-800 border border-hairline hover:border-red-300 hover:bg-red-50 dark:hover:bg-red-500/10 px-3 py-1.5 rounded-lg transition-colors`}>
               Deactivate
             </button>
           </div>

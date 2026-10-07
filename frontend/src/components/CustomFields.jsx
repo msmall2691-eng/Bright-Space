@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { get } from "../api"
+import { STATUS_TEXT } from '../theme/statusText'
 
 
 const lbl = 'block text-[10px] font-semibold uppercase tracking-widest text-ink-3 mb-1.5'
@@ -28,7 +29,7 @@ export function CustomFieldsForm({ entityType, values = {}, onChange }) {
         <div key={field.key}>
           <label className={lbl}>
             {field.name}
-            {field.required && <span className="text-red-400 ml-0.5">*</span>}
+            {field.required && <span className={`${STATUS_TEXT.problem} ml-0.5`}>*</span>}
           </label>
           <FieldInput
             field={field}
@@ -101,7 +102,7 @@ function FieldInput({ field, value, onChange }) {
       return (
         <label className="flex items-center gap-2 cursor-pointer">
           <input type="checkbox" checked={!!value} onChange={e => onChange(e.target.checked)}
-            className="w-4 h-4 rounded border-hairline text-ink focus:ring-0 cursor-pointer" />
+            className="w-4 h-4 rounded border-hairline text-ink cursor-pointer" />
           <span className="text-sm text-ink-2">{field.name}</span>
         </label>
       )

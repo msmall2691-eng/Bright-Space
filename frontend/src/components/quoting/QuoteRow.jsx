@@ -1,6 +1,8 @@
 import { Send, Copy, Check, Calendar, MapPin, Trash2, Eye } from 'lucide-react'
 import InlineSelect from '../InlineSelect'
 import { QUOTE_STATUS_DOTS, QUOTE_STATUS_OPTIONS, QUOTE_NEXT_STEP } from './constants'
+import { STATUS_DOT } from '../../theme/statusDots'
+import { STATUS_TEXT } from '../../theme/statusText'
 
 // "Opened Jul 18, 2:14 PM" read-receipt from the customer's first view of the
 // public quote link. viewed_at is recorded server-side and already on the quote
@@ -69,11 +71,11 @@ export default function QuoteRow({
                 {(q.status || '').replace(/_/g, ' ')}
               </span>
             )}
-            {q.status === 'changes_requested' && <span className="w-2 h-2 rounded-full bg-amber-500" title="Customer requested changes" />}
+            {q.status === 'changes_requested' && <span className={`w-2 h-2 rounded-full ${STATUS_DOT.attention}`} title="Customer requested changes" />}
             {q.last_send_error && ['draft', 'sent', 'viewed'].includes(q.status) && (
-              <span className="inline-flex items-center gap-1.5 text-xs font-medium text-red-600 dark:text-red-300"
+              <span className={`inline-flex items-center gap-1.5 text-xs font-medium ${STATUS_TEXT.problem}`}
                 title={q.last_send_error}>
-                <span className="w-1.5 h-1.5 rounded-full bg-red-500 shrink-0" aria-hidden="true" />
+                <span className={`w-1.5 h-1.5 rounded-full ${STATUS_DOT.problem} shrink-0`} aria-hidden="true" />
                 send failed
               </span>
             )}
@@ -111,7 +113,7 @@ export default function QuoteRow({
           )}
           {canEdit && q.status === 'sent' && (
             <button onClick={() => onCopyLink(q)}
-              className={`flex items-center gap-1 text-xs px-2.5 py-1.5 rounded-lg border transition-colors ${copiedQuoteId === q.id ? 'border-hairline-2 bg-panel text-emerald-600 dark:text-emerald-300' : 'border-transparent bg-bg-2 text-ink-2 hover:bg-bg-3 hover:text-ink'}`}>
+              className={`flex items-center gap-1 text-xs px-2.5 py-1.5 rounded-lg border transition-colors ${copiedQuoteId === q.id ? `border-hairline-2 bg-panel ${STATUS_TEXT.ok}` : 'border-transparent bg-bg-2 text-ink-2 hover:bg-bg-3 hover:text-ink'}`}>
               {copiedQuoteId === q.id ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
               {copiedQuoteId === q.id ? 'Copied' : 'Copy Link'}
             </button>
@@ -133,7 +135,7 @@ export default function QuoteRow({
           {isScheduled && (
             <span className="flex items-center gap-1.5 text-xs px-2.5 py-1.5 text-ink-3"
               title={`This quote's job is scheduled for ${q.job_scheduled_date}`}>
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" aria-hidden="true" />
+              <span className={`w-1.5 h-1.5 rounded-full ${STATUS_DOT.ok} shrink-0`} aria-hidden="true" />
               <Calendar className="w-3 h-3" />
               Scheduled
             </span>

@@ -9,6 +9,8 @@ import { monthGridRange, rangeContains } from '../utils/dateRange'
 import MonthDayCell from './schedule/MonthDayCell'
 import RecurrenceScopeDialog from './schedule/RecurrenceScopeDialog'
 import { rescheduleRecurringVisit } from '../utils/recurringReschedule'
+import { STATUS_DOT } from '../theme/statusDots'
+import { STATUS_TEXT } from '../theme/statusText'
 
 
 // Job-type styling comes from the shared PROPERTY_TYPE_CONFIG so a job is
@@ -24,10 +26,10 @@ const TYPE_CONFIG = {
 // Quiet dot+word status for the day-agenda job cards (design language:
 // emerald = done, amber = needs attention, gray = neutral).
 const JOB_STATUS_META = {
-  unscheduled: { dot: 'bg-amber-500',   label: 'Unscheduled' },
-  in_progress: { dot: 'bg-amber-500',   label: 'In progress' },
-  completed:   { dot: 'bg-emerald-500', label: 'Done' },
-  cancelled:   { dot: 'bg-gray-400',    label: 'Cancelled' },
+  unscheduled: { dot: STATUS_DOT.attention,   label: 'Unscheduled' },
+  in_progress: { dot: STATUS_DOT.attention,   label: 'In progress' },
+  completed:   { dot: STATUS_DOT.ok, label: 'Done' },
+  cancelled:   { dot: STATUS_DOT.neutral,    label: 'Cancelled' },
 }
 
 const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
@@ -829,14 +831,14 @@ export default function CalendarView({
                           {j.recurring_schedule_id && <RotateCw className="w-3 h-3 text-purple-500 shrink-0" title="Recurring" />}
                           {j.is_immediate_turnover && (
                             <span className="inline-flex items-center gap-1 text-[9px] font-bold uppercase tracking-wide text-red-700 dark:text-red-300 shrink-0" title="Same-day check-out and check-in — tight cleaning window">
-                              <span className="w-1.5 h-1.5 rounded-full bg-red-500 shrink-0" aria-hidden="true" />
+                              <span className={`w-1.5 h-1.5 rounded-full ${STATUS_DOT.problem} shrink-0`} aria-hidden="true" />
                               immediate
                             </span>
                           )}
                           {!j.is_immediate_turnover && j.turnover_lead_warning && (
-                            <span className="inline-flex items-center gap-1 text-[9px] font-bold uppercase tracking-wide text-amber-700 dark:text-amber-300 shrink-0"
+                            <span className={`inline-flex items-center gap-1 text-[9px] font-bold uppercase tracking-wide ${STATUS_TEXT.attention} shrink-0`}
                                   title={`Only ~${Math.max(0, Math.round(j.turnover_lead_hours))}h before the next guest checks in`}>
-                              <span className="w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0" aria-hidden="true" />
+                              <span className={`w-1.5 h-1.5 rounded-full ${STATUS_DOT.attention} shrink-0`} aria-hidden="true" />
                               tight
                             </span>
                           )}
@@ -882,7 +884,7 @@ export default function CalendarView({
                               )}
                             </div>
                             {j.next_arrival && (
-                              <div className="flex items-center gap-1 text-[10px] text-emerald-700 mt-1">
+                              <div className={`flex items-center gap-1 text-[10px] ${STATUS_TEXT.ok} mt-1`}>
                                 <span>→ next: {j.next_arrival.checkin_date}</span>
                                 {j.next_arrival.guest_count && (
                                   <span className="text-ink-3">· {j.next_arrival.guest_count} guest{j.next_arrival.guest_count !== 1 ? 's' : ''}</span>
@@ -904,7 +906,7 @@ export default function CalendarView({
                           </span>
                         )}
                         <div className="flex gap-1">
-                          {j.calendar_invite_sent && <span title="Client invited" className="text-[10px] text-blue-500">Invited</span>}
+                          {j.calendar_invite_sent && <span title="Client invited" className={`text-[10px] ${STATUS_TEXT.info}`}>Invited</span>}
                         </div>
                       </div>
                     </div>
@@ -971,7 +973,7 @@ export default function CalendarView({
         {monthError && !monthLoading && (
           <div className="mx-1 mb-1 flex items-center justify-between gap-2 text-[12px] px-3 py-1.5 rounded-md bg-panel border border-hairline text-ink-2">
             <span className="flex items-center gap-1.5 truncate">
-              <span className="w-1.5 h-1.5 rounded-full bg-red-500 shrink-0" aria-hidden="true" />
+              <span className={`w-1.5 h-1.5 rounded-full ${STATUS_DOT.problem} shrink-0`} aria-hidden="true" />
               <span className="truncate">Couldn't load this month — <span className="text-ink-3">{String(monthError).slice(0, 120)}</span></span>
             </span>
             <button
@@ -1085,7 +1087,7 @@ export default function CalendarView({
           style={{
             left: touchDrag.x + 12,
             top: touchDrag.y + 12,
-            borderLeft: `3px solid ${(TYPE_CONFIG[draggingJob.job_type] || TYPE_CONFIG.residential).hex}`,
+            borderLeft: `3px solid ${(TYPE_CONFIG[draggingJob.job_type] || TYPE_CONFIG.residential).edge}`,
           }}
         >
           {draggingJob.title}

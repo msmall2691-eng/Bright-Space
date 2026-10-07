@@ -14,6 +14,7 @@ import { get, post, patch, del } from '../../api'
 import { Skeleton } from '../ui'
 import CrewAsk from './CrewAsk'
 import { CrewCard, ErrorNote, FullScreenSheet, SectionLabel, SettingRow, Sheet } from './primitives'
+import { STATUS_TEXT } from '../../theme/statusText'
 
 /** "My notes" — the cleaner's PRIVATE notes (nobody else sees them, not
  *  even the office). Product codes, gate quirks, personal reminders.
@@ -65,7 +66,7 @@ function MyNotes() {
             </p>
           )}
           <button onClick={() => { setForm({ title: '', body: '' }); setEditing('new') }}
-            className="text-[12px] font-semibold text-blue-600 dark:text-blue-400 inline-flex items-center gap-0.5">
+            className={`text-[12px] font-semibold ${STATUS_TEXT.info} inline-flex items-center gap-0.5`}>
             <Plus className="w-3.5 h-3.5" /> New note
           </button>
         </div>
@@ -83,7 +84,7 @@ function MyNotes() {
           <div className="flex items-center justify-between gap-2">
             {editing !== 'new' ? (
               <button onClick={() => remove(editing.id)} disabled={busy}
-                className="text-red-600 p-1.5" title="Delete"><Trash2 className="w-4 h-4" /></button>
+                className={`${STATUS_TEXT.problem} p-1.5`} title="Delete"><Trash2 className="w-4 h-4" /></button>
             ) : <span />}
             <div className="flex gap-2">
               <button onClick={() => setEditing(null)} disabled={busy}

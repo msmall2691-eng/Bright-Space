@@ -19,6 +19,7 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { get } from '../api'
+import { STATUS_DOT } from '../theme/statusDots'
 
 const LINKS = [
   { match: 'turnover', to: '/turnovers', label: 'Turnovers' },
@@ -61,7 +62,7 @@ export default function BenchDigest() {
           return (
             <li key={i} className="flex items-start justify-between gap-3 px-3.5 py-2.5">
               <span className="flex items-start gap-1.5 text-[13px] text-ink-2">
-                <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-amber-500"
+                <span className={`mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full ${STATUS_DOT.attention}`}
                   aria-hidden="true" />
                 <span>{line}</span>
               </span>

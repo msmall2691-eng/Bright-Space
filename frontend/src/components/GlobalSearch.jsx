@@ -114,7 +114,7 @@ export default function GlobalSearch() {
     : []
   // Create actions — all when empty, filtered by label/keywords when typing.
   const actions = q
-    ? createActions.filter(a => (a.label + ' ' + a.keywords).toLowerCase().includes(q))
+    ? createActions.filter(a => `${a.label} ${a.keywords || ''}`.toLowerCase().includes(q))
     : createActions
   // Skip the page we're on — "jump to where you already are" is noise.
   const shownRecents = q ? [] : recents.filter(r => r.to !== location.pathname).slice(0, 6)
@@ -159,7 +159,7 @@ export default function GlobalSearch() {
             onChange={e => setQuery(e.target.value)}
             onKeyDown={onKeyDown}
             placeholder="Search records, jump to a page, or create…"
-            className="flex-1 bg-transparent text-sm text-ink outline-hidden placeholder:text-ink-3"
+            className="flex-1 bg-transparent text-sm text-ink placeholder:text-ink-3"
           />
           {loading && <Loader2 className="h-4 w-4 animate-spin text-ink-3" />}
           <button onClick={() => setOpen(false)} className="min-h-0 p-1 text-ink-3 hover:text-ink-2">

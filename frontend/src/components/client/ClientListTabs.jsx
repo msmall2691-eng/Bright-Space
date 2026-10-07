@@ -13,6 +13,8 @@ import RecordLink from '../RecordLink'
 import OpportunityLinker from '../OpportunityLinker'
 import { JOB_COLORS, INVOICE_COLORS, QUOTE_COLORS, OPP_COLORS, DOT_CHIP, DOT } from './constants'
 import { formatDateShort } from '../../utils/format'
+import { STATUS_DOT } from '../../theme/statusDots'
+import { STATUS_TEXT, STATUS_ICON } from '../../theme/statusText'
 
 // Compact cadence line for a series row — same vocabulary as Recurring.jsx's
 // ruleSummary (weekly / biweekly / every N weeks / monthly / daily).
@@ -32,7 +34,7 @@ function cadenceLine(s) {
 function SeriesStatusPill({ active }) {
   return (
     <span className={DOT_CHIP}>
-      <span className={`${DOT} ${active ? 'bg-emerald-500' : 'bg-ink-3'}`} aria-hidden="true" />
+      <span className={`${DOT} ${active ? STATUS_DOT.ok : 'bg-ink-3'}`} aria-hidden="true" />
       {active ? 'Active' : 'Paused'}
     </span>
   )
@@ -52,7 +54,7 @@ export function RecurringTab({ schedules, upcomingJobs = [], properties = [] }) 
         <div className="text-center py-10">
           <RefreshCw className="w-8 h-8 mx-auto mb-2 text-ink-2" />
           <p className="text-ink-3 text-sm mb-3">No recurring schedules</p>
-          <a href="/recurring" className="text-xs text-blue-500 hover:text-sky-300">Set one up on the Recurring page</a>
+          <a href="/recurring" className={`text-xs ${STATUS_TEXT.info} hover:text-blue-800`}>Set one up on the Recurring page</a>
         </div>
       )}
       <div className="space-y-2">
@@ -127,7 +129,7 @@ export function JobsListTab({ jobs, upcomingJobs, pastJobs, clientId, onLinked }
       {upcomingJobs.length > 0 && (
         <div>
           <div className="flex items-center gap-2 mb-3">
-            <Calendar className="w-4 h-4 text-blue-500" />
+            <Calendar className={`w-4 h-4 ${STATUS_ICON.info}`} />
             <span className="text-xs font-semibold text-ink-2 uppercase tracking-wide">Upcoming ({upcomingJobs.length})</span>
           </div>
           <div className="space-y-2">
@@ -137,7 +139,7 @@ export function JobsListTab({ jobs, upcomingJobs, pastJobs, clientId, onLinked }
                   <div className="text-sm font-semibold text-link">
                     {new Date(j.scheduled_date + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
                   </div>
-                  <div className="text-xs text-blue-500">{j.start_time}</div>
+                  <div className={`text-xs ${STATUS_TEXT.info}`}>{j.start_time}</div>
                 </div>
                 <div className="flex-1 min-w-0">
                   <RecordLink type="job" id={j.id} label={j.title} className="font-medium" />
@@ -274,7 +276,7 @@ export function OpportunitiesTab({ opportunities, navigate }) {
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0 flex-1">
               <div className="flex items-center gap-2 mb-1">
-                <TrendingUp className="w-4 h-4 text-amber-500" />
+                <TrendingUp className={`w-4 h-4 ${STATUS_ICON.attention}`} />
                 <RecordLink type="opportunity" id={opp.id} label={opp.title} className="font-medium" />
                 <span className={DOT_CHIP}>
                   <span className={`${DOT} ${OPP_COLORS[opp.stage] || 'bg-ink-3'}`} aria-hidden="true" />
@@ -290,7 +292,7 @@ export function OpportunitiesTab({ opportunities, navigate }) {
               {opp.notes && <p className="text-xs text-ink-3 mt-2 italic">{opp.notes}</p>}
             </div>
             {opp.amount != null && (
-              <span className="text-lg font-bold text-emerald-600 shrink-0">${opp.amount.toLocaleString()}</span>
+              <span className={`text-lg font-bold ${STATUS_TEXT.ok} shrink-0`}>${opp.amount.toLocaleString()}</span>
             )}
           </div>
         </div>

@@ -3,6 +3,8 @@ import { useParams } from 'react-router-dom'
 import { CheckCircle, AlertCircle, Clock, X, Download, Printer } from 'lucide-react'
 import QuoteDocument from '../components/QuoteDocument'
 import { publicFetch } from '../utils/publicFetch'
+import { STATUS_DOT } from '../theme/statusDots'
+import { STATUS_ICON } from '../theme/statusText'
 
 export default function PublicQuote() {
   const { token } = useParams()
@@ -199,7 +201,7 @@ export default function PublicQuote() {
     return (
       <div className="min-h-screen bg-bg flex items-center justify-center p-4">
         <div className="text-center max-w-sm">
-          <AlertCircle className="w-16 h-16 text-red-400 mx-auto mb-4" />
+          <AlertCircle className={`w-16 h-16 ${STATUS_ICON.problem} mx-auto mb-4`} />
           <h1 className="text-xl font-bold text-ink mb-2">Unable to Load Quote</h1>
           <p className="text-ink-2">{error}</p>
         </div>
@@ -269,7 +271,7 @@ export default function PublicQuote() {
   ) : isExpired ? (
     <div className="no-print mb-3 rounded-xl bg-panel border border-hairline px-4 py-3">
       <div className="flex items-center gap-2">
-        <Clock className="w-5 h-5 text-amber-500 shrink-0" />
+        <Clock className={`w-5 h-5 ${STATUS_ICON.attention} shrink-0`} />
         <p className="text-sm text-ink-2 font-medium">
           This quote expired{quote.valid_until ? ` on ${quote.valid_until}` : ''} — contact us for an updated quote.
         </p>
@@ -319,14 +321,14 @@ export default function PublicQuote() {
             value={acceptName}
             onChange={(e) => setAcceptName(e.target.value)}
             placeholder="Your name"
-            className="w-full px-3 py-3 border border-hairline rounded-xl text-base focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
+            className="w-full px-3 py-3 border border-hairline rounded-xl text-base"
           />
           <input
             value={acceptEmail}
             onChange={(e) => setAcceptEmail(e.target.value)}
             placeholder="Your email (for the receipt)"
             type="email"
-            className="w-full px-3 py-3 border border-hairline rounded-xl text-base focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
+            className="w-full px-3 py-3 border border-hairline rounded-xl text-base"
           />
         </div>
       )}
@@ -354,7 +356,7 @@ export default function PublicQuote() {
               <select
                 value={schedDate}
                 onChange={(e) => setSchedDate(e.target.value)}
-                className="w-full px-3 py-3 border border-hairline rounded-xl text-base bg-panel focus:ring-2 focus:ring-emerald-500"
+                className="w-full px-3 py-3 border border-hairline rounded-xl text-base bg-panel"
               >
                 {openDates.map(d => (
                   <option key={d.date} value={d.date}>
@@ -426,7 +428,7 @@ export default function PublicQuote() {
       <div className="max-w-2xl mx-auto px-4 py-6 sm:px-6 sm:py-10">
         {error && (
           <div className="no-print flex items-center gap-2 bg-panel border border-hairline rounded-lg px-4 py-3 mb-6">
-            <span className="w-1.5 h-1.5 rounded-full bg-red-500 shrink-0" aria-hidden="true" />
+            <span className={`w-1.5 h-1.5 rounded-full ${STATUS_DOT.problem} shrink-0`} aria-hidden="true" />
             <p className="text-sm text-ink-2">{error}</p>
           </div>
         )}
@@ -447,7 +449,7 @@ export default function PublicQuote() {
                   onChange={(e) => setRequestMsg(e.target.value)}
                   placeholder="e.g. Can we add a deep clean of the kitchen? Or remove the basement?"
                   rows={6}
-                  className="w-full px-3 py-2 border border-hairline rounded-lg text-base focus:ring-2 focus:ring-indigo-500 focus:border-transparent resize-none"
+                  className="w-full px-3 py-2 border border-hairline rounded-lg text-base resize-none"
                   autoFocus
                 />
               </div>
@@ -478,7 +480,7 @@ export default function PublicQuote() {
                   onChange={(e) => setDeclineReason(e.target.value)}
                   placeholder="Reason (optional)"
                   rows={4}
-                  className="w-full px-3 py-2 border border-hairline rounded-lg text-base focus:ring-2 focus:ring-indigo-500 focus:border-transparent resize-none"
+                  className="w-full px-3 py-2 border border-hairline rounded-lg text-base resize-none"
                 />
               </div>
               <div className="p-4 border-t border-hairline bg-bg flex justify-end gap-2">

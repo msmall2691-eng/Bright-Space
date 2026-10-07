@@ -15,6 +15,7 @@ import { Bell, Smartphone, X } from 'lucide-react'
 import { pushSupported, getPushState, enablePush, sendTestPush, isAppInstalled, mobilePlatform, onAppForeground } from '../../utils/push'
 import { useNotificationPrefs } from '../../hooks/useNotificationPrefs'
 import { ErrorNote } from './primitives'
+import { STATUS_DOT } from '../../theme/statusDots'
 
 const DISMISS_KEY = 'bb_crew_setup_dismissed'
 
@@ -45,7 +46,7 @@ function CrewNotificationCategoryList() {
         return (
           <div key={key} className="flex items-center justify-between gap-3 min-h-8">
             <span className="flex items-center gap-2 text-[12px] text-ink-2">
-              <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${on ? 'bg-emerald-500' : 'bg-gray-400'}`} />
+              <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${on ? STATUS_DOT.ok : STATUS_DOT.neutral}`} />
               {label}
             </span>
             <button type="button" onClick={() => toggle(key)} aria-pressed={on}
@@ -168,7 +169,7 @@ export default function CrewSetupCard({ persistent = false, bare = false }) {
           {pushOn ? (
             <>
               <div className="text-[12px] text-ink-2 flex items-center gap-1.5">
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" aria-hidden="true" />
+                <span className={`w-1.5 h-1.5 rounded-full ${STATUS_DOT.ok} shrink-0`} aria-hidden="true" />
                 Notifications are on for this device.
               </div>
               <button onClick={runTest} disabled={busy}

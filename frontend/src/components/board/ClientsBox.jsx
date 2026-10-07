@@ -3,6 +3,8 @@ import { ArrowRight, Loader2, PenLine } from 'lucide-react'
 import { pushToast } from '../../utils/toastBus'
 import { ComposeModal } from '../comms/ComposeModal'
 import { SEV_DOT } from './tokens'
+import { STATUS_DOT } from '../../theme/statusDots'
+import { STATUS_TEXT } from '../../theme/statusText'
 
 /**
  * The second box in Home's comms rail: client conversations waiting on a reply,
@@ -68,7 +70,7 @@ export default function ClientsBox({ items, cleared, onAction, actioningKey, con
 
       {visible.length === 0 ? (
         <div className="flex items-center gap-2.5 px-3.5 py-3.5">
-          <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-emerald-500" aria-hidden="true" />
+          <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${STATUS_DOT.ok}`} aria-hidden="true" />
           <span className="text-[12.5px] text-ink-2">No client replies waiting.</span>
         </div>
       ) : (
@@ -102,7 +104,7 @@ export default function ClientsBox({ items, cleared, onAction, actioningKey, con
                   <button onClick={() => onAction(it, resolve)} disabled={busy}
                     className={`mt-0.5 inline-flex shrink-0 items-center gap-1 rounded-md border px-2 py-1 text-[11px] font-semibold transition-colors disabled:opacity-60 ${
                       confirming
-                        ? 'border-rose-400 bg-rose-500/10 text-rose-600 dark:text-rose-300'
+                        ? `border-rose-400 bg-rose-500/10 ${STATUS_TEXT.problem}`
                         : 'border-hairline bg-bg-2 text-ink-2 hover:border-hairline-2 hover:text-ink'
                     }`}>
                     {busy && <Loader2 className="h-3 w-3 animate-spin" />}
