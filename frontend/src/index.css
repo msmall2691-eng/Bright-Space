@@ -5,7 +5,7 @@ layer(base);
 
 @custom-variant dark (&:where(.theme-console, .theme-console *));
 
-/* BB-A11Y-04 — every token below is an INDIRECTION into a design token that a
+/* BB-A11Y-05 — every token below is an INDIRECTION into a design token that a
    `body.theme-*` / `body.mode-clean` / `body.accent-*` block redefines, so this
    block MUST stay `inline`. It is not a style preference; it is the difference
    between the theme picker working and doing nothing at all.
@@ -32,6 +32,11 @@ layer(base);
    whatever `body` declares. Nothing reads `var(--color-*)` by hand (only
    `--color-gray-200`, stock Tailwind, in the border-compat rule below), so
    inlining costs nothing.
+
+   Same substitution rule BB-A11Y-04b hit from the other side: `--accent-focus`
+   is declared on `body` rather than `:root` so it can follow `body.accent-*`.
+   That one is a token reaching a token; this one is Tailwind's theme layer
+   reaching the same tokens from a block it emits at `:root`.
 
    The rule for anything added here: if the value is a `var()` into a token any
    theme block redefines, it belongs in THIS block, not the static one below.

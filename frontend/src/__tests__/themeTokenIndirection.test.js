@@ -1,5 +1,5 @@
 /**
- * BB-A11Y-04 — a `@theme` entry that points at a themed token must be `inline`.
+ * BB-A11Y-05 — a `@theme` entry that points at a themed token must be `inline`.
  *
  * Tailwind v4 emits a plain `@theme` block as `:root, :host { … }`. Per the CSS
  * custom-property spec a `var()` inside such a declaration is substituted at
@@ -88,7 +88,7 @@ for (const b of blocksMatching(/(?:^|[},;]|\*\/)\s*body\.[\w.-]+\s*(?:,\s*\n?\s*
   for (const [name] of declarations(b.body)) themedTokens.add(name)
 }
 
-describe('BB-A11Y-04 — themed @theme entries must be inline', () => {
+describe('BB-A11Y-05 — themed @theme entries must be inline', () => {
   it('parsed the file at all', () => {
     // Guard against a vacuous pass if the syntax or the regexes drift.
     expect(themeBlocks.length, 'no @theme block found').toBeGreaterThan(0)
