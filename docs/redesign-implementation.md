@@ -163,15 +163,27 @@ longer visits its page:
   guard something undoable; the real defect was that it reported nothing at
   all, and that a FAILED archive dropped the row too (the error went only to
   the console). It raises a toast with Undo now, restoring the exact prior
-  status. The Invoicing one is still open, and is a true hard delete, so it
-  does want a confirm.
-- **A field built for a page the page never read.** `invoice_to_dict`'s
-  `public_token` carries a backend comment saying it exists so "InvoiceDetail
-  can show/copy the customer's pay-page link". `InvoiceDetail` never reads it.
+  status. ~~The Invoicing one is still open, and is a true hard delete, so it
+  does want a confirm.~~ **That sentence was already stale when it was
+  written** — it survived the edit that resolved the entry above it. Both
+  invoice delete call sites (`hooks/useInvoicingMutations.js` and
+  `pages/InvoiceDetail.jsx`) go through `confirmAndDeleteInvoice`, and
+  `utils/invoiceDelete.js` holds the only `del` on `/api/invoices/{id}` in the
+  tree.
+- ~~**A field built for a page the page never read.**~~ **Fixed in #1136.**
+  `invoice_to_dict`'s `public_token` carried a comment saying it exists so
+  "InvoiceDetail can show/copy the customer's pay-page link", and InvoiceDetail
+  never read it. `POST /api/invoices/{id}/generate-token` now mints on demand —
+  necessary rather than tidy, because the token was only ever minted by the
+  SEND handler, so a draft nobody had sent had none and a link built from
+  what is on screen would read `/pay/null`. The page copies the link the
+  SERVER builds from `app_base_url()`; `QuoteDetail` assembles its own from
+  `window.location.origin`, which hands the customer a URL only the office can
+  reach whenever the office is on a preview or LAN host.
 - ~~**A 1000-row fetch for a field already in the payload.**~~ **Fixed in
-  `Quoting`** — no `?limit=1000` remains there. Eight such fetches survive
-  elsewhere; see "No cached hook for the client book" below, which is the same
-  problem and still open.
+  `Quoting`** — no bare `?limit=1000` remains there. The "eight such fetches
+  survive elsewhere" this used to point at are now four, and all four are
+  cached; see "No cached hook for the client book" below.
 - ~~**A raw `fetch()` outside `api.js`.**~~ **Half of this was never a defect,
   and the other half is fixed.** The raw `fetch` and the localStorage read are
   deliberate and carry their reason in the file: `PropertyPhoto` renders inside
@@ -207,15 +219,44 @@ longer visits its page:
   "All frozen after a create" bug the hook's own comment records. Note
   "per keystroke" overstated it: the list fetch is debounced at 250ms, so a
   search burst cost one, not one per character.
-- **No cached hook for the client book.** Four pages each fetch
-  `?limit=1000` raw. `getCached` exists; nothing wraps this.
-- **A hand-written mirror of backend logic.** `computeUpcoming` still
-  reimplements `generate_dates` in the browser, so the risk is unchanged — but
-  it is no longer in `Recurring` and no longer untestable. The mega-page split
-  moved it to `components/recurring/helpers.js`, and
-  `components/recurring/__tests__/helpers.test.js` now covers the drift cases,
-  including the one the code's comments single out twice: **phase counted from
-  the anchor, not from today**.
+- ~~**No cached hook for the client book.** Four pages each fetch `?limit=1000`
+  raw. `getCached` exists; nothing wraps this.~~ **Stale — the "raw" half was
+  fixed by #1132.** All four client-book reads go through `getCached`
+  (`useQuotingData`, `useProperties`, `useInvoicing`, `pages/Recurring`), so the
+  in-flight dedupe and 5s memo apply. What is literally still true is the
+  narrow part: there is no shared `useClientBook` hook, so the endpoint string
+  is written out four times. That is a DRY nit, not the request-storm defect
+  this entry was logged as, and it is not worth a PR on its own.
+- **A hand-written mirror of backend logic — and it has drifted, measured.**
+  `computeUpcoming` reimplements `generate_dates` in the browser. The mega-page
+  split moved it to `components/recurring/helpers.js` and
+  `components/recurring/__tests__/helpers.test.js` covers the cases the code's
+  comments single out (notably **phase counted from the anchor, not from
+  today**) — but those tests pin the mirror against ITSELF, not against the
+  backend, so the drift they cannot see was still there. Running both sides on
+  the same rules found three real divergences, all in the direction of the
+  browser promising or hiding visits the backend disagrees about:
+
+  | rule | backend `generate_dates` | browser `computeUpcoming` |
+  |---|---|---|
+  | `day_of_month` > the month's length | clamps to the last day (`_occurs_on`'s monthly branch, whose comment records fixing exactly this) | **skips the month entirely** — a monthly-on-the-31st series shows nothing in Feb/Apr/Jun/Sep/Nov while the backend generates a visit |
+  | `series_end_date` | an EXCLUSIVE boundary; `end` is clamped to the day before | **never read** — an "ends after N visits" or ended-by-split series projects visits forever |
+  | `series_start_date` in the future | an INCLUSIVE floor; `today` is raised to it | used only as a phase-anchor fallback, so occurrences **before the split point** are shown |
+
+  Worth knowing before fixing: `SeriesRow` is accidentally shielded from the
+  second one because it gates "Next" on `isLiveSeries` (which DOES read
+  `series_end_date`); `SeriesDetail`'s upcoming list and
+  `DuplicateReviewPanel`'s next-date are not. And a fourth candidate is NOT a
+  divergence — the browser's `interval_weeks || (frequency === 'biweekly' ? 2 : 1)`
+  fallback has no backend counterpart (`max(1, interval_weeks or 1)`), but the
+  column is `nullable=False, default=1`, so the fallback can only fire on a
+  series that has not been saved yet.
+
+  The structural fix is to stop mirroring: have the backend return the
+  projection, which is zero new requests on the detail page but a payload
+  change on both `GET /api/recurring` and `GET /api/recurring/{id}`. Fixing the
+  three divergences in place is the smaller slice and needs no payload change —
+  every field involved is already on the wire.
 - **The same fact counted four ways.** "Quoted" is computed on Requests, Deals,
   Quoting and QuoteFunnel from four different sources. `Quoting` already deleted
   its own hero pods so a count isn't shown twice; the other three still do it.
