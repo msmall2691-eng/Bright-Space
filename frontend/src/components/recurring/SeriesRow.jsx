@@ -27,7 +27,7 @@ export default function SeriesRow({ s, clientName, onOpen, isDuplicate }) {
             <div className="flex items-center gap-2 mb-1 flex-wrap">
               <h3 className="text-base font-semibold text-ink">{s.title || 'Untitled'}</h3>
               <span className="inline-flex items-center gap-1.5 text-[11px] font-medium text-ink-2">
-                <span className={`h-1.5 w-1.5 rounded-full ${live ? '${SEV_DOT.good}' : 'bg-ink-3'}`} />
+                <span className={`h-1.5 w-1.5 rounded-full ${live ? SEV_DOT.good : 'bg-ink-3'}`} />
                 {SERIES_STATE_LABEL[seriesState(s)]}
               </span>
               {isDuplicate && (

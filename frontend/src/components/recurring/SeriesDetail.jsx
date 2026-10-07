@@ -171,7 +171,7 @@ export default function SeriesDetail({ id, onBack, onChanged, toast }) {
           <div className="flex items-center gap-2 mb-1">
             <h1 className="text-xl sm:text-2xl font-bold text-ink">{schedule.title || 'Untitled'}</h1>
             <span className="inline-flex items-center gap-1.5 text-[11px] font-medium text-ink-2">
-              <span className={`h-1.5 w-1.5 rounded-full ${isLiveSeries(schedule) ? '${SEV_DOT.good}' : 'bg-ink-3'}`} />
+              <span className={`h-1.5 w-1.5 rounded-full ${isLiveSeries(schedule) ? SEV_DOT.good : 'bg-ink-3'}`} />
               {SERIES_STATE_LABEL[seriesState(schedule)]}
             </span>
           </div>
