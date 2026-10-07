@@ -55,25 +55,74 @@ const SOURCES = [
 const tokens = SOURCES.join('\n')
 const css = readFileSync(join(here, '..', 'index.css'), 'utf8')
 
-/** Tailwind's stock palette for the hues the board uses. Only `indigo` is
- *  remapped onto --accent-* in this repo, so these are the literal values the
- *  build emits; indigo/ink/link entries resolve through CSS vars instead and
- *  are covered by accentLinkContrast and inkContrast. */
-const PALETTE = {
-  'rose-300': '#fda4af', 'rose-400': '#fb7185', 'rose-500': '#f43f5e', 'rose-600': '#e11d48', 'rose-700': '#be123c',
-  'amber-300': '#fcd34d', 'amber-400': '#fbbf24', 'amber-500': '#f59e0b', 'amber-600': '#d97706', 'amber-700': '#b45309', 'amber-800': '#92400e',
-  'emerald-300': '#6ee7b7', 'emerald-400': '#34d399', 'emerald-500': '#10b981', 'emerald-600': '#059669', 'emerald-700': '#047857', 'emerald-800': '#065f46',
-  'blue-300': '#93c5fd', 'blue-400': '#60a5fa', 'blue-500': '#3b82f6', 'blue-600': '#2563eb', 'blue-700': '#1d4ed8', 'blue-800': '#1e40af',
-  'violet-300': '#c4b5fd', 'violet-400': '#a78bfa', 'violet-500': '#8b5cf6', 'violet-600': '#7c3aed', 'violet-700': '#6d28d9',
-  // The schedule's two scales (theme/scheduleScales.js) reach for hues the
-  // board never needed. Missing entries do NOT fail — hexOf returns null and
-  // the step is skipped — so anything added to a measured map has to be added
-  // here too, or it goes unmeasured. The "resolves every step it measures"
-  // test below is what makes that omission loud instead of silent.
-  'slate-300': '#cbd5e1', 'slate-400': '#94a3b8', 'slate-500': '#64748b', 'slate-600': '#475569', 'slate-700': '#334155',
-  'sky-300': '#7dd3fc', 'sky-400': '#38bdf8', 'sky-500': '#0ea5e9', 'sky-600': '#0284c7', 'sky-700': '#0369a1',
-  'purple-300': '#d8b4fe', 'purple-400': '#c084fc', 'purple-500': '#a855f7', 'purple-600': '#9333ea', 'purple-700': '#7e22ce', 'purple-800': '#6b21a8',
+/**
+ * Tailwind's palette, READ FROM TAILWIND rather than copied out of it.
+ *
+ * This was 44 hardcoded hexes, and every one of them was wrong. They were
+ * Tailwind v3 values; the app is on v4, which re-specified the whole palette
+ * in oklch — so for as long as this file has existed it has been measuring a
+ * palette the build does not ship.
+ *
+ * It happened not to matter, which is the uncomfortable part. Converting the
+ * emitted oklch back to sRGB and re-measuring, contrast moved by at most 0.21
+ * and **no step used by a live map crossed its floor**, so every verdict this
+ * file ever gave was still right. The one step that does cross is
+ * `emerald-600` — 3.05 under v3, 2.96 under v4, i.e. passing the 3:1 non-text
+ * floor on paper and failing it in the browser — and it survives only in doc
+ * comments and in two exempted icons that sit on `--panel` specifically,
+ * where it measures 3.65.
+ *
+ * So the fix is not "update the hexes", which would rot again on the next
+ * Tailwind release. It is to resolve them from `tailwindcss/theme.css` — the
+ * file the build itself reads — so the numbers follow the package version in
+ * `package.json` and cannot silently diverge again.
+ *
+ * `theme.css` rather than `dist/`: it needs no build to have run, it carries
+ * every step including ones nothing currently uses (`sky-500` is absent from
+ * the built CSS for exactly that reason, and was therefore unmeasurable), and
+ * it is what the build derives from.
+ *
+ * `indigo` is deliberately absent: this repo remaps it onto `--accent-*`, so
+ * its real values come from index.css and are covered by accentLinkContrast
+ * and inkContrast instead.
+ */
+const THEME_CSS = readFileSync(
+  join(here, '..', '..', 'node_modules', 'tailwindcss', 'theme.css'), 'utf8')
+
+/** oklch(L% C H) -> sRGB, per CSS Color 4. Values outside the sRGB gamut are
+ *  clipped per channel, which is what a browser paints. */
+function oklchToRgb(L, C, H) {
+  const h = (H * Math.PI) / 180
+  const a = C * Math.cos(h)
+  const b = C * Math.sin(h)
+  const l = (L + 0.3963377774 * a + 0.2158037573 * b) ** 3
+  const m = (L - 0.1055613458 * a - 0.0638541728 * b) ** 3
+  const s = (L - 0.0894841775 * a - 1.2914855480 * b) ** 3
+  return [
+    +4.0767416621 * l - 3.3077115913 * m + 0.2309699292 * s,
+    -1.2684380046 * l + 2.6097574011 * m - 0.3413193965 * s,
+    -0.0041960863 * l - 0.7034186147 * m + 1.7076147010 * s,
+  ].map((v) => {
+    const c = v <= 0.0031308 ? 12.92 * v : 1.055 * Math.pow(Math.max(v, 0), 1 / 2.4) - 0.055
+    return Math.min(255, Math.max(0, Math.round(c * 255)))
+  })
 }
+
+const HEX = (rgb) => '#' + rgb.map((v) => v.toString(16).padStart(2, '0')).join('')
+
+/** Every `--color-<hue>-<step>` Tailwind defines, as a hex this file can measure. */
+const PALETTE = (() => {
+  const out = {}
+  for (const [, name, L, C, H] of THEME_CSS.matchAll(
+    /--color-([a-z]+-\d{2,3}):\s*oklch\(\s*([\d.]+)%\s+([\d.]+)\s+([\d.]+|none)\s*\)/g)) {
+    // `none` is a MISSING hue, which Tailwind uses for the achromatic ramps
+    // (`--color-neutral-100: oklch(97% 0 none)`). Chroma is 0 there so the hue
+    // cannot affect the result, but the regex has to accept it or 13 greys go
+    // unresolved — and an unresolved step is one the floors never check.
+    out[name] = HEX(oklchToRgb(Number(L) / 100, Number(C), H === 'none' ? 0 : Number(H)))
+  }
+  return out
+})()
 
 /** Classes that resolve through a CSS var, so another test owns them. */
 const TOKEN_BASED = /-(ink|ink-2|ink-3|link|panel|hairline)(-|$)/
@@ -177,6 +226,57 @@ describe('BB-A11Y-02 — the board tone maps clear their floors', () => {
     for (const { name } of MAPS) {
       expect(mapEntries(name).length, `${name} did not parse — tokens.js shape changed`).toBeGreaterThanOrEqual(2)
     }
+  })
+
+  /* ── The palette resolution itself ────────────────────────────────────
+   *
+   * Everything below measures against PALETTE, so a converter that is wrong
+   * in a smooth way — a transposed matrix row, a missing gamma step — moves
+   * every ratio together and can still clear every floor. The suite would be
+   * green and meaningless, which is precisely the state this file was already
+   * in for as long as it held v3 hexes.
+   *
+   * These three check the resolution rather than the colours.
+   */
+
+  it('resolves Tailwind\'s palette at all', () => {
+    // A regex that stops matching (a theme.css reformat, a package layout
+    // change) would empty PALETTE, and then `hexOf` returns null for
+    // everything and every assertion below quietly skips.
+    expect(Object.keys(PALETTE).length,
+      'PALETTE is empty or tiny — did theme.css move or change shape?').toBeGreaterThan(200)
+    for (const step of ['emerald-600', 'amber-700', 'rose-600', 'blue-700', 'violet-600']) {
+      expect(PALETTE[step], `${step} did not resolve`).toMatch(/^#[0-9a-f]{6}$/)
+    }
+  })
+
+  it('converts oklch correctly at the two ends where the answer is known', () => {
+    expect(HEX(oklchToRgb(1, 0, 0)), 'oklch(100% 0 0) is white').toBe('#ffffff')
+    expect(HEX(oklchToRgb(0, 0, 0)), 'oklch(0% 0 0) is black').toBe('#000000')
+  })
+
+  it('produces a ramp that actually gets darker as the step number rises', () => {
+    // The cheap, decisive check on the conversion. Tailwind's ramps are
+    // monotonic in lightness by construction, so if 700 comes out lighter
+    // than 600 the maths is wrong — and a wrong-but-smooth converter cannot
+    // survive this even though it survives every contrast floor.
+    const hues = [...new Set(Object.keys(PALETTE).map(k => k.replace(/-\d+$/, '')))]
+    const inversions = []
+    for (const hue of hues) {
+      const steps = Object.keys(PALETTE)
+        .filter(k => k.startsWith(`${hue}-`))
+        .map(k => Number(k.split('-').pop()))
+        .sort((a, b) => a - b)
+      for (let i = 1; i < steps.length; i++) {
+        const prev = lum(rgb(PALETTE[`${hue}-${steps[i - 1]}`]))
+        const curr = lum(rgb(PALETTE[`${hue}-${steps[i]}`]))
+        if (curr > prev) inversions.push(`${hue} ${steps[i - 1]} -> ${steps[i]}`)
+      }
+    }
+    expect(hues.length, 'no hues parsed').toBeGreaterThan(15)
+    expect(inversions,
+      'these ramps get LIGHTER as the step rises, so the oklch conversion is '
+      + 'wrong:\n  ' + inversions.join('\n  ')).toEqual([])
   })
 
   it('resolves every step it measures, so a hue missing from PALETTE is loud', () => {

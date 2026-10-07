@@ -18,26 +18,38 @@
  * `#ffffff #f7f7f8 #f0f0f2 #e7e7ea`, taking the worst of the four:
  *
  *     step           ratio   text 4.5:1   icon 3:1
- *     amber-600      2.58    fail         fail
- *     amber-700      4.07    fail         PASS
- *     amber-800      5.75    PASS         PASS
- *     emerald-600    3.05    fail         PASS (barely)
- *     emerald-700    4.44    fail         PASS
- *     emerald-800    6.23    PASS         PASS
- *     rose-600       3.81    fail         PASS
- *     rose-700       5.09    PASS         PASS
- *     blue-600       4.19    fail         PASS
- *     blue-700       5.43    PASS         PASS
- *     violet-600     4.62    PASS         PASS
+ *     amber-600      2.59    fail         fail
+ *     amber-700      4.08    fail         PASS
+ *     amber-800      5.74    PASS         PASS
+ *     emerald-600    2.96    fail         fail
+ *     emerald-700    4.35    fail         PASS
+ *     emerald-800    6.17    PASS         PASS
+ *     rose-600       3.67    fail         PASS
+ *     rose-700       4.89    PASS         PASS
+ *     blue-600       4.25    fail         PASS
+ *     blue-700       5.54    PASS         PASS
+ *     violet-600     4.78    PASS         PASS
  *
  * Two things that are easy to assume and wrong. **`amber-600` fails even the
- * ICON floor** at 2.58, so an amber warning icon was below the bar for a
+ * ICON floor** at 2.59, so an amber warning icon was below the bar for a
  * graphical object, never mind text. And **the 700 step is not enough for
- * text** on amber (4.07) or emerald (4.44) — both need the 800. A flat "move
+ * text** on amber (4.08) or emerald (4.35) — both need the 800. A flat "move
  * everything one step" rule would have left those two short while looking
  * like it had fixed them.
  *
  * `violet-600` already passes both and is unchanged.
+ *
+ * ## One of these flipped, and it flipped the right way
+ *
+ * This table used to read `emerald-600  3.05  fail  PASS (barely)` — the
+ * icon floor cleared by 0.05. It does not clear it: the real figure is 2.96.
+ * The old number came from a hardcoded Tailwind **v3** palette in
+ * `__tests__/boardToneContrast.test.js`, which now reads the v4 palette the
+ * build actually ships.
+ *
+ * Nothing here moves because of it. `STATUS_ICON.ok` was already emerald-700,
+ * because "barely" was not a margin worth taking — which is the one time
+ * being conservative about a borderline number paid for itself.
  *
  * ## Why ICON mirrors the dot steps exactly
  *
