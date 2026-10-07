@@ -586,14 +586,33 @@ describe('BB-A11Y-02 — migrated surfaces go through the measured map', () => {
     // surfaces whose COLOUR choices are being ratcheted. It also reaches
     // hooks/ and utils/, which MIGRATED's dirs do not.
     const offenders = []
+    const unparsed = []
     let literalsSeen = 0
     for (const path of walk(SRC)) {
+      // ScriptKind by EXTENSION, because the two grammars disagree about
+      // angle brackets. Forcing TSX onto a .ts file turns TS-only syntax —
+      // a generic arrow `const id = <T>(x: T) => x`, an angle-bracket
+      // assertion — into an unterminated JSX element, and the parser then
+      // drops the rest of the file: measured, a string literal two lines
+      // later disappears from the AST entirely. That is a FAIL-OPEN, the one
+      // kind of bug a guard must not have, and the aggregate literal count
+      // below would not notice because other files supply thousands.
+      // Only `src/api/types.ts` is affected today and it parses either way,
+      // so this is closing the hole rather than fixing a live miss.
+      const kind = path.endsWith('.ts') ? ts.ScriptKind.TS : ts.ScriptKind.TSX
       const source = ts.createSourceFile(
-        path, readFileSync(path, 'utf8'), ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX)
+        path, readFileSync(path, 'utf8'), ts.ScriptTarget.Latest, true, kind)
+      // And the general form of the same worry: ANY file that fails to parse
+      // contributes no literals and is silently skipped. Better to say so.
+      const errors = source.parseDiagnostics || []
+      if (errors.length) unparsed.push(`${rel(path)}  ${errors.length} parse error(s)`)
       const found = deadInterpolations(source)
       literalsSeen += found.literalsSeen
       for (const f of found.offenders) offenders.push(`${rel(path)}:${f}`)
     }
+    expect(unparsed,
+      'These files did not parse, so the guard saw nothing in them:\n  '
+      + unparsed.join('\n  ')).toEqual([])
     // A parse that silently yielded nothing would make this pass on an empty
     // walk, which is the failure mode a ratchet must not have.
     expect(literalsSeen, 'parsed no string literals at all — the walk or the parse broke')
