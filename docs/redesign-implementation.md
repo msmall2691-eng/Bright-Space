@@ -227,36 +227,51 @@ longer visits its page:
   narrow part: there is no shared `useClientBook` hook, so the endpoint string
   is written out four times. That is a DRY nit, not the request-storm defect
   this entry was logged as, and it is not worth a PR on its own.
-- **A hand-written mirror of backend logic — and it has drifted, measured.**
-  `computeUpcoming` reimplements `generate_dates` in the browser. The mega-page
-  split moved it to `components/recurring/helpers.js` and
-  `components/recurring/__tests__/helpers.test.js` covers the cases the code's
-  comments single out (notably **phase counted from the anchor, not from
-  today**) — but those tests pin the mirror against ITSELF, not against the
-  backend, so the drift they cannot see was still there. Running both sides on
-  the same rules found three real divergences, all in the direction of the
-  browser promising or hiding visits the backend disagrees about:
+- ~~**A hand-written mirror of backend logic — and it has drifted, measured.**~~
+  **The four divergences are fixed and the mirror is now checked against the
+  backend.** `computeUpcoming` still reimplements `generate_dates` in the
+  browser, so the entry stays open in principle — but the reason it was a
+  standing risk is closed.
 
-  | rule | backend `generate_dates` | browser `computeUpcoming` |
+  What made it a risk was not the duplication; it was that
+  `__tests__/helpers.test.js` pinned the mirror against ITSELF. Every
+  expectation there is a date a human decided was right, so where the two
+  implementations differed, the human's reading got pinned. Two of its cases
+  turned out to be asserting divergences AS the rule — the monthly one
+  reasoned its way there in a comment — and they stood until both sides were
+  run over the same rules:
+
+  | rule | backend `generate_dates` | browser, before |
   |---|---|---|
-  | `day_of_month` > the month's length | clamps to the last day (`_occurs_on`'s monthly branch, whose comment records fixing exactly this) | **skips the month entirely** — a monthly-on-the-31st series shows nothing in Feb/Apr/Jun/Sep/Nov while the backend generates a visit |
-  | `series_end_date` | an EXCLUSIVE boundary; `end` is clamped to the day before | **never read** — an "ends after N visits" or ended-by-split series projects visits forever |
-  | `series_start_date` in the future | an INCLUSIVE floor; `today` is raised to it | used only as a phase-anchor fallback, so occurrences **before the split point** are shown |
+  | `day_of_month` > the month's length | clamps to the last day (`_occurs_on`, whose comment records fixing exactly this) | **skipped the month entirely** — a monthly-on-the-31st series showed nothing in Feb/Apr/Jun/Sep/Nov while the backend generated a visit |
+  | `series_end_date` | an EXCLUSIVE boundary; `end` clamped to the day before | **never read** — an "ends after N visits" or ended-by-split series projected visits forever |
+  | `series_start_date` in the future | an INCLUSIVE floor; `today` raised to it | a phase-anchor fallback only, so occurrences **before the split point** were shown |
+  | the lookahead window | taken raw: `generate_dates(sched, sched.generate_weeks_ahead)` | **floored at 4 weeks**, so every series with a shorter window was inflated — and `EditSeriesModal`'s input allows `min="1"` with no server validation |
 
-  Worth knowing before fixing: `SeriesRow` is accidentally shielded from the
-  second one because it gates "Next" on `isLiveSeries` (which DOES read
-  `series_end_date`); `SeriesDetail`'s upcoming list and
-  `DuplicateReviewPanel`'s next-date are not. And a fourth candidate is NOT a
-  divergence — the browser's `interval_weeks || (frequency === 'biweekly' ? 2 : 1)`
-  fallback has no backend counterpart (`max(1, interval_weeks or 1)`), but the
-  column is `nullable=False, default=1`, so the fallback can only fire on a
-  series that has not been saved yet.
+  A fifth candidate is NOT a divergence, recorded so nobody "fixes" it: the
+  browser's `interval_weeks || (frequency === 'biweekly' ? 2 : 1)` has no
+  backend counterpart (`max(1, interval_weeks or 1)`), but the column is
+  `nullable=False, default=1`, so the fallback can only fire on an unsaved
+  series.
 
-  The structural fix is to stop mirroring: have the backend return the
-  projection, which is zero new requests on the detail page but a payload
-  change on both `GET /api/recurring` and `GET /api/recurring/{id}`. Fixing the
-  three divergences in place is the smaller slice and needs no payload change —
-  every field involved is already on the wire.
+  **The guard, which is the durable part.**
+  `backend/scripts/recurring_projection_cases.py` holds 19 shared rule cases;
+  `scripts/gen_recurring_projection_fixture.py` writes the BACKEND's answers to
+  `__tests__/projection.fixture.json`;
+  `__tests__/projectionParity.test.js` asserts the mirror reproduces them; and
+  `backend/tests/test_recurring_projection_fixture.py` fails if the fixture
+  stops matching `generate_dates`. So a cadence change on either side now fails
+  loudly on the other. Neither half works alone — a fixture with no backend
+  check is a snapshot that rots, and a backend check with no comparison proves
+  nothing about the mirror.
+
+  **One divergence is left and cannot be closed from the browser:**
+  `generate_dates` reads `business_today()` (America/New_York) and the mirror
+  reads the viewer's local midnight. They agree for an office in Maine and can
+  differ by a day elsewhere. That is the remaining argument for the structural
+  fix — have the backend return the projection and delete the mirror — which is
+  zero new requests on the detail page but a payload change on both
+  `GET /api/recurring` and `GET /api/recurring/{id}`, and so its own slice.
 - **The same fact counted four ways.** "Quoted" is computed on Requests, Deals,
   Quoting and QuoteFunnel from four different sources. `Quoting` already deleted
   its own hero pods so a count isn't shown twice; the other three still do it.
