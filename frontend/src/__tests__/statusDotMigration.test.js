@@ -148,63 +148,55 @@ const TOKEN_MAPS = [
  * each reported CORRECT code as dead, one tripping over a quoted expression
  * earlier on the line, the other over an apostrophe in JSX text.
  *
- * ## Shape 2: a stray `$` before a JSX expression
+ * ## The shape this deliberately does NOT catch, and why
+ *
+ * There is a second way to write the same slip, in JSX text rather than a
+ * className:
  *
  *     <span>${SEV_LABEL.good}</span>            renders "$Good"
  *
- * JSX splits that into a JsxText of `$` and a separate expression, so no
- * string literal contains it and shape 1 cannot see it. It matters most for
- * the maps that are COPY rather than classes — `SEV_LABEL` and `FIELD_LABELS`
- * are in the list for exactly that reason.
+ * It is a real mistake, it has never happened in this repo, and two attempts
+ * to guard it both produced a WORSE failure than the one they prevented:
  *
- * This is the one that most needs the AST, because "a `$` immediately before a
- * JSX expression" is overwhelmingly CORRECT here: it is how money is written,
- * and `<div>${inv.total?.toFixed(2)}</div>` renders "$240.00". What makes it a
- * bug is the expression REFERENCING A TOKEN MAP, which is a class name or a
- * label and never a price.
+ *  1. Asking whether the expression's source text STARTS with a token map
+ *     missed every form where it does not — `${(SEV_LABEL.good)}` behind
+ *     parentheses, `${FIELD_LABELS[key] ?? key}` behind a fallback.
+ *  2. Walking the expression for the identifier anywhere inside it fixed that
+ *     and broke the other way: it rejects correct currency rendering whose
+ *     expression happens to style nested JSX, e.g.
+ *     `<span>${n < 0 ? <em className={STATUS_TEXT.problem}>{-n}</em> : n}</span>`.
  *
- * And that reference is looked for in the expression's own syntax tree rather
- * than in its source text. A prefix match on the text missed every expression
- * that does not START with the map — `${(SEV_LABEL.good)}` behind redundant
- * parentheses, `${FIELD_LABELS[key] ?? key}` behind a fallback — while still
- * rendering the stray dollar. Walking for the identifier has no such corners.
+ * Both were found in review, which is the useful part: the question "does this
+ * expression DISPLAY a token map, or merely mention one while styling
+ * something nested?" needs the expression's value semantics, not its syntax.
+ * That is a lot of machinery, and it guards the one shape here where a `$`
+ * before a JSX expression is overwhelmingly CORRECT to begin with — it is how
+ * money is written, and `<div>${inv.total?.toFixed(2)}</div>` renders
+ * "$240.00", of which there are dozens in the tree.
+ *
+ * So the balance is the wrong way round. A false positive in a CI-gating guard
+ * blocks correct work, which is the exact defect this file was opened to fix;
+ * a missed `$Good` is visible on the screen to whoever rendered it. Shape 1
+ * stays because it catches a bug that has shipped twice and renders NOTHING
+ * (no colour at all, nothing to notice), and because its definition in the
+ * grammar is exact and has no corners.
+ *
+ * This does lose coverage the character scan had — it flagged the JSX-text
+ * form too — but that coverage came bundled with flagging correct code, which
+ * is why the scan is being replaced. Worth reopening only with a way to tell a
+ * displayed value from a nested style, and a reason to think the typo happens.
  */
 function deadInterpolations(source) {
   const dead = new RegExp(String.raw`\$\{\s*(?:${TOKEN_MAPS.join('|')})\b`)
-  const names = new Set(TOKEN_MAPS)
   const offenders = []
   let literalsSeen = 0
 
   const at = (node) => source.getLineAndCharacterOfPosition(node.getStart(source)).line + 1
-  /** Does this expression mention a token map anywhere inside it? */
-  const mentionsTokenMap = (node) => {
-    let hit = false
-    const scan = (n) => {
-      if (hit) return
-      if (ts.isIdentifier(n) && names.has(n.text)) { hit = true; return }
-      ts.forEachChild(n, scan)
-    }
-    scan(node)
-    return hit
-  }
-
   const visit = (node) => {
     if (ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node)) {
       literalsSeen++
       if (dead.test(node.text)) {
         offenders.push(`${at(node)}  ${JSON.stringify(node.text).slice(0, 80)}`)
-      }
-    }
-    if (ts.isJsxElement(node) || ts.isJsxFragment(node)) {
-      const kids = node.children
-      for (let k = 0; k < kids.length - 1; k++) {
-        const text = kids[k]
-        const next = kids[k + 1]
-        if (ts.isJsxText(text) && text.text.endsWith('$')
-            && ts.isJsxExpression(next) && next.expression
-            && mentionsTokenMap(next.expression)) {
-          offenders.push(`${at(next)}  a stray $ before {${next.expression.getText(source)}}`)
-        }
       }
     }
     ts.forEachChild(node, visit)
@@ -607,8 +599,8 @@ describe('BB-A11Y-02 — migrated surfaces go through the measured map', () => {
     expect(literalsSeen, 'parsed no string literals at all — the walk or the parse broke')
       .toBeGreaterThan(1000)
     expect(offenders,
-      'These render the literal text "${TOKEN_MAP...}", or a stray $ before the ' +
-      'value, instead of what was meant:\n  ' + offenders.join('\n  ')).toEqual([])
+      'These render the literal text "${TOKEN_MAP...}" as a class name, so the ' +
+      'element gets no colour at all:\n  ' + offenders.join('\n  ')).toEqual([])
   })
 
   it('tells a dead interpolation from the correct code that looks like one', () => {
@@ -622,36 +614,23 @@ describe('BB-A11Y-02 — migrated surfaces go through the measured map', () => {
       // The hand lexer reported this as dead: the apostrophe in JSX text
       // looked to it like the start of a string.
       "const b = <>Couldn't send: <i className={`${STATUS_TEXT.problem} break-words`}>x</i></>",
-      // Money. A `$` immediately before a JSX expression is the normal way to
-      // write a price, and there are dozens in the tree — so the JSX check
-      // below must key on the expression being a TOKEN MAP, not on the `$`.
+      // Money. `$` before a JSX expression is how a price is written and there
+      // are dozens in the tree. These two are here because a JSX-text check
+      // added and then REMOVED from this guard flagged them (see
+      // deadInterpolations' comment on the shape it does not catch): the second
+      // mentions a token map while only styling nested JSX, which is exactly
+      // the distinction that made that check cost more than it bought.
       'const c = <div>${inv.total?.toFixed(2)}</div>',
-      'const d = <span>Total ${parseFloat(q.total || 0).toFixed(2)}</span>',
-      // Money behind the same shapes the `bad` list uses below, so the
-      // expression walk is pinned as keying on the token map rather than on
-      // parentheses or a fallback.
-      'const e = <div>${(inv.total ?? 0).toFixed(2)}</div>',
+      'const d = <span>${n < 0 ? <em className={STATUS_TEXT.problem}>{-n}</em> : n}</span>',
     ]
     const bad = [
       // The SeriesRow bug.
-      "const f = <span className={`rounded-full ${live ? '${SEV_DOT.good}' : 'bg-ink-3'}`} />",
+      "const e = <span className={`rounded-full ${live ? '${SEV_DOT.good}' : 'bg-ink-3'}`} />",
       // The form this test was ORIGINALLY written for: the token is not the
       // first thing in the quoted string.
-      "const g = `x ${cond ? 'font-semibold ${STATUS_TEXT.attention}' : 'opacity-90'}`",
+      "const f = `x ${cond ? 'font-semibold ${STATUS_TEXT.attention}' : 'opacity-90'}`",
       // Dead inside a double-quoted JSX attribute.
-      'const h = <span className="dot ${STATUS_DOT.ok}" />',
-      // Typed straight into JSX text: renders "$Good", not "Good". The
-      // character scan caught this one and the string-literal check alone
-      // does not, because JSX splits it into a text node and an expression.
-      'const i = <span>${SEV_LABEL.good}</span>',
-      'const j = <td>${FIELD_LABELS.address}</td>',
-      // The same slip where the map is not the first thing in the expression.
-      // A prefix match on the expression's SOURCE TEXT passed both of these
-      // while React still rendered the stray dollar; walking the expression's
-      // syntax tree for the identifier does not care where it sits.
-      'const k = <span>${(SEV_LABEL.good)}</span>',
-      'const l = <span>${FIELD_LABELS[key] ?? key}</span>',
-      'const m = <span>${bad ? SEV_LABEL.urgent : SEV_LABEL.good}</span>',
+      'const g = <span className="dot ${STATUS_DOT.ok}" />',
     ]
     // The REAL check, not a copy of it — see deadInterpolations' comment.
     const flags = (src) => deadInterpolations(
