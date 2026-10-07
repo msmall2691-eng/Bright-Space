@@ -14,6 +14,7 @@ import { get, post } from '../../api'
 import MarkdownContent from '../workspace/MarkdownContent'
 import { askBoard } from './askBoard'
 import { SEV_DOT } from './tokens'
+import { STATUS_TEXT } from '../../theme/statusText'
 
 const SUGGESTIONS = [
   'What’s most urgent right now?',
@@ -172,7 +173,7 @@ export default function BoardAssistant({ open, onClose, sections, navigate, onAc
                   <button onClick={clearNoise}
                     className={`inline-flex items-center gap-1 rounded-md border px-2.5 py-1.5 text-[12px] font-medium ${
                       confirmClear
-                        ? 'border-rose-400 text-rose-600 dark:text-rose-300'
+                        ? `border-rose-400 ${STATUS_TEXT.problem}`
                         : 'border-hairline-2 bg-panel text-ink-2 hover:bg-bg-2'}`}>
                     <Trash2 className="h-3 w-3" />
                     {confirmClear

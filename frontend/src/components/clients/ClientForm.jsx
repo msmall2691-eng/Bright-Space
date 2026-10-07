@@ -3,6 +3,7 @@ import { Trash2, X } from 'lucide-react'
 import AddressAutocomplete from '../AddressAutocomplete'
 import { CustomFieldsForm } from '../CustomFields'
 import { STATUS_DOT } from '../../theme/statusDots'
+import { STATUS_TEXT } from '../../theme/statusText'
 
 const ADDRESS_FIELDS = [
   { label: 'Street', key: 'address' },
@@ -311,7 +312,7 @@ export function ClientForm({
       <div className="p-6 pb-bottomnav sm:pb-6 border-t border-hairline flex gap-3">
         {selected && (
           <button onClick={() => deleteClient(selected.id)}
-            className="px-4 py-2 text-[13px] text-red-500 hover:text-red-600 border border-hairline hover:border-red-300 rounded-lg transition-colors font-medium">
+            className={`px-4 py-2 text-[13px] ${STATUS_TEXT.problem} hover:text-rose-800 border border-hairline hover:border-red-300 rounded-lg transition-colors font-medium`}>
             Delete
           </button>
         )}

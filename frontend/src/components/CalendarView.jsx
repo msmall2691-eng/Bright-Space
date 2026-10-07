@@ -10,6 +10,7 @@ import MonthDayCell from './schedule/MonthDayCell'
 import RecurrenceScopeDialog from './schedule/RecurrenceScopeDialog'
 import { rescheduleRecurringVisit } from '../utils/recurringReschedule'
 import { STATUS_DOT } from '../theme/statusDots'
+import { STATUS_TEXT } from '../theme/statusText'
 
 
 // Job-type styling comes from the shared PROPERTY_TYPE_CONFIG so a job is
@@ -835,7 +836,7 @@ export default function CalendarView({
                             </span>
                           )}
                           {!j.is_immediate_turnover && j.turnover_lead_warning && (
-                            <span className="inline-flex items-center gap-1 text-[9px] font-bold uppercase tracking-wide text-amber-700 dark:text-amber-300 shrink-0"
+                            <span className={`inline-flex items-center gap-1 text-[9px] font-bold uppercase tracking-wide ${STATUS_TEXT.attention} shrink-0`}
                                   title={`Only ~${Math.max(0, Math.round(j.turnover_lead_hours))}h before the next guest checks in`}>
                               <span className={`w-1.5 h-1.5 rounded-full ${STATUS_DOT.attention} shrink-0`} aria-hidden="true" />
                               tight
@@ -883,7 +884,7 @@ export default function CalendarView({
                               )}
                             </div>
                             {j.next_arrival && (
-                              <div className="flex items-center gap-1 text-[10px] text-emerald-700 mt-1">
+                              <div className={`flex items-center gap-1 text-[10px] ${STATUS_TEXT.ok} mt-1`}>
                                 <span>→ next: {j.next_arrival.checkin_date}</span>
                                 {j.next_arrival.guest_count && (
                                   <span className="text-ink-3">· {j.next_arrival.guest_count} guest{j.next_arrival.guest_count !== 1 ? 's' : ''}</span>
@@ -905,7 +906,7 @@ export default function CalendarView({
                           </span>
                         )}
                         <div className="flex gap-1">
-                          {j.calendar_invite_sent && <span title="Client invited" className="text-[10px] text-blue-500">Invited</span>}
+                          {j.calendar_invite_sent && <span title="Client invited" className={`text-[10px] ${STATUS_TEXT.info}`}>Invited</span>}
                         </div>
                       </div>
                     </div>
@@ -1086,7 +1087,7 @@ export default function CalendarView({
           style={{
             left: touchDrag.x + 12,
             top: touchDrag.y + 12,
-            borderLeft: `3px solid ${(TYPE_CONFIG[draggingJob.job_type] || TYPE_CONFIG.residential).hex}`,
+            borderLeft: `3px solid ${(TYPE_CONFIG[draggingJob.job_type] || TYPE_CONFIG.residential).edge}`,
           }}
         >
           {draggingJob.title}

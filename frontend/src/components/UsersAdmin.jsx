@@ -6,6 +6,7 @@ import SubFileReview from './SubFileReview'
 import { pushToast } from '../utils/toastBus'
 import { reportInvite } from '../utils/inviteFallback'
 import { STATUS_DOT } from '../theme/statusDots'
+import { STATUS_TEXT, STATUS_ICON } from '../theme/statusText'
 
 const ROLES = ['admin', 'manager', 'member', 'viewer', 'cleaner']
 
@@ -111,7 +112,7 @@ export default function UsersAdmin() {
     <div className="bg-panel border border-hairline rounded-xl p-5 sm:p-6">
       <div className="flex items-center justify-between mb-1">
         <h2 className="text-lg font-bold text-ink flex items-center gap-2">
-          <Users className="w-5 h-5 text-blue-500" /> Users
+          <Users className={`w-5 h-5 ${STATUS_ICON.info}`} /> Users
         </h2>
         <button onClick={load} className="p-2 rounded-lg text-ink-3 hover:text-ink-2 hover:bg-bg-2" title="Refresh">
           <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
@@ -142,7 +143,7 @@ export default function UsersAdmin() {
               placeholder="Full name" disabled={inviting} className={inputCls} />
           </label>
           <label className="block">
-            <span className={labelCls}>Email <span className="text-red-500">*</span></span>
+            <span className={labelCls}>Email <span className={STATUS_TEXT.problem}>*</span></span>
             <input type="email" value={invEmail} onChange={e => setInvEmail(e.target.value)}
               placeholder="person@email.com" disabled={inviting} className={inputCls} />
           </label>
@@ -203,7 +204,7 @@ export default function UsersAdmin() {
                   <div className="min-w-0">
                     <div className="text-sm font-semibold text-ink truncate flex items-center gap-1.5">
                       {u.full_name || u.email}
-                      {u.role === 'admin' && <ShieldCheck className="w-4 h-4 text-blue-500 shrink-0" title="Admin" />}
+                      {u.role === 'admin' && <ShieldCheck className={`w-4 h-4 ${STATUS_ICON.info} shrink-0`} title="Admin" />}
                     </div>
                     <div className="text-xs text-ink-3 truncate">
                       {u.email}

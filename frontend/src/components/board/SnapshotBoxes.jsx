@@ -19,6 +19,7 @@
  */
 import { Link } from 'react-router-dom'
 import { STATUS_DOT } from '../../theme/statusDots'
+import { STATUS_TEXT } from '../../theme/statusText'
 
 /* ── shared chrome ────────────────────────────────────────────────────────── */
 
@@ -105,7 +106,7 @@ export function MoneyToday({ snap }) {
       <div className="grid grid-cols-2">
         <Stat className="border-b border-r border-hairline"
           label="Collected" value={collected_label}
-          tone={collected > 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-ink'} />
+          tone={collected > 0 ? STATUS_TEXT.ok : 'text-ink'} />
         <Stat className="border-b border-hairline"
           label="Billed today" value={invoiced_label} />
         {/* An open punch has no duration yet, so it is reported, never added. */}

@@ -3,6 +3,7 @@ import {
   ArrowLeft, Edit2, Mail, Phone, MapPin, Home,
 } from 'lucide-react'
 import PropertyPhoto from '../PropertyPhoto'
+import { STATUS_TEXT } from '../../theme/statusText'
 
 /** Twenty-style click-to-edit field for the record rail. Click the value to
  *  edit in place; Enter or blur saves via onSave, Escape cancels. */
@@ -111,8 +112,8 @@ export default function ClientLeftRail({
       <div className="p-4 border-b border-hairline space-y-2">
         <div className="text-[10px] font-semibold uppercase tracking-widest text-ink-3 mb-1">Pipeline</div>
         <div className="flex justify-between text-xs"><span className="text-ink-3">Upcoming</span><span className="font-semibold text-ink">{visitStats?.upcoming ?? upcomingJobs.length}</span></div>
-        <div className="flex justify-between text-xs"><span className="text-ink-3">Revenue</span><span className="font-semibold text-emerald-600">${totalRevenue.toFixed(0)}</span></div>
-        <div className="flex justify-between text-xs"><span className="text-ink-3">Outstanding</span><span className={`font-semibold ${outstanding > 0 ? 'text-amber-600' : 'text-ink'}`}>${outstanding.toFixed(0)}</span></div>
+        <div className="flex justify-between text-xs"><span className="text-ink-3">Revenue</span><span className={`font-semibold ${STATUS_TEXT.ok}`}>${totalRevenue.toFixed(0)}</span></div>
+        <div className="flex justify-between text-xs"><span className="text-ink-3">Outstanding</span><span className={`font-semibold ${outstanding > 0 ? STATUS_TEXT.attention : 'text-ink'}`}>${outstanding.toFixed(0)}</span></div>
       </div>
 
       {/* Crew access — opt this customer's uncovered recurring visits onto the

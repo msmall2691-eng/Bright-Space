@@ -56,19 +56,31 @@ export function useClients(statusFilter, search) {
     return `/api/clients?${params.toString()}`
   }
 
-  const load = (q = search) => Promise.all([
+  const loadList = (q = search) =>
     get(_buildUrl(q))
       .then(setClients)
-      .catch(err => console.error('[Clients]', err)),
-    loadCounts(),
-  ])
+      .catch(err => console.error('[Clients]', err))
+
+  /** Everything. The mutation path: creating, archiving or changing a client's
+   *  status moves the whole-DB counts, and NOT refreshing them here is the
+   *  audit bug the comment above records — "All" frozen after a create. */
+  const load = (q = search) => Promise.all([loadList(q), loadCounts()])
+
+  // The counts are whole-DB and per status: they do not depend on which tab is
+  // selected or what is typed in the box. Fetching them alongside the list
+  // meant every tab click and every settled search bought an identical
+  // aggregate — four COUNTs on the single container to redraw numbers that had
+  // not changed. `brightbase-economy` rule 3, one fetch per screen per need.
+  // Once on mount here; after that only `load()` moves them, which is exactly
+  // when they can have changed.
+  useEffect(() => { loadCounts() }, [])   // eslint-disable-line react-hooks/exhaustive-deps
 
   // Debounce search-driven refetches so every keystroke doesn't hit the
   // server; status changes fire immediately (deps still include search
   // but the timer collapses bursts). The 250ms window matches
   // JobCreateModal's typeahead.
   useEffect(() => {
-    const t = setTimeout(() => { load(search) }, search ? 250 : 0)
+    const t = setTimeout(() => { loadList(search) }, search ? 250 : 0)
     return () => clearTimeout(t)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [statusFilter, search])

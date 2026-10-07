@@ -35,6 +35,7 @@ import { WeekCapacityTile } from '../components/dashboard/WeekCapacityTile'
 import { OperatingHealthTile } from '../components/dashboard/OperatingHealthTile'
 import { ErrorState, PageHeader, SubNav } from '../components/ui'
 import { STATUS_DOT } from '../theme/statusDots'
+import { STATUS_TEXT } from '../theme/statusText'
 
 // Human-facing labels for the API's job_type values. The backend returns
 // whatever's on Job.job_type, so unknowns fall through to a Start-Cased
@@ -50,9 +51,9 @@ const SERVICE_LABELS = {
 // same mapping the classic dashboard's ArAgingTile uses (past-due buckets →
 // overdue, current → sent).
 const AGING_ORDER = [
-  { key: '0_30',    label: '0–30 days',  tone: 'text-amber-600 dark:text-amber-300', status: 'overdue' },
+  { key: '0_30',    label: '0–30 days',  tone: STATUS_TEXT.attention, status: 'overdue' },
   { key: '31_60',   label: '31–60 days', tone: 'text-orange-600 dark:text-orange-300', status: 'overdue' },
-  { key: '61_90',   label: '61–90 days', tone: 'text-red-600 dark:text-red-300', status: 'overdue' },
+  { key: '61_90',   label: '61–90 days', tone: STATUS_TEXT.problem, status: 'overdue' },
   { key: '90_plus', label: '90+ days',   tone: 'text-red-700 dark:text-red-300 font-bold', status: 'overdue' },
 ]
 
@@ -135,7 +136,7 @@ function AiHealthTile() {
           <div className="text-sm text-ink-2">{name}</div>
           {r.ok
             ? <div className="text-[12px] text-ink-3 break-words">OK — {typeof r.result === 'string' ? r.result : JSON.stringify(r.result)}</div>
-            : <div className="text-[12px] text-red-600 dark:text-red-300 break-words"><span className="font-semibold">{r.error_type}</span>: {r.error}</div>}
+            : <div className={`text-[12px] ${STATUS_TEXT.problem} break-words`}><span className="font-semibold">{r.error_type}</span>: {r.error}</div>}
         </div>
       </div>
     )
@@ -165,7 +166,7 @@ function AiHealthTile() {
                 <ProbeResult name="Tool loop with reasoning (assistant path)" r={probe.tool_loop_reasoning} />
               </div>
             )}
-            {probe?._fatal && <div className="mb-2 text-[12px] text-red-600 dark:text-red-300">Self-test request failed.</div>}
+            {probe?._fatal && <div className={`mb-2 text-[12px] ${STATUS_TEXT.problem}`}>Self-test request failed.</div>}
             <button onClick={runProbe} disabled={probing}
               className="inline-flex items-center gap-1.5 rounded-md border border-hairline-2 bg-panel px-3 py-1.5 text-xs font-medium text-ink-2 hover:bg-bg-2 disabled:opacity-50 transition-colors">
               {probing ? 'Testing…' : 'Run self-test'}
@@ -267,7 +268,7 @@ export default function OwnerDashboard() {
             label="Past due"
             loading={loading}
             value={fmtMoney(arTotal)}
-            accent={arTotal > 0 ? 'text-rose-600 dark:text-rose-300' : 'text-ink'}
+            accent={arTotal > 0 ? STATUS_TEXT.problem : 'text-ink'}
             sub={`${arCount} ${arCount === 1 ? 'invoice' : 'invoices'} owed`}
           />
         </button>

@@ -21,6 +21,7 @@ import SendQuotePanel from '../components/quoting/SendQuotePanel'
 import OriginalRequestCard from '../components/quoting/OriginalRequestCard'
 import { isPlaceholderName } from '../components/quoting/constants'
 import { STATUS_DOT } from '../theme/statusDots'
+import { STATUS_TEXT, STATUS_ICON } from '../theme/statusText'
 
 const STATUS_OPTIONS = [
   { value: 'draft',     label: 'draft',     dot: 'bg-ink-3' },
@@ -352,7 +353,7 @@ export default function QuoteDetail() {
               {quote.status !== 'archived' && (
                 <button onClick={archiveQuote}
                   title="Hide this quote from lists — nothing is deleted"
-                  className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-[12px] font-medium bg-bg-2 border border-hairline text-red-600 hover:text-red-700 hover:border-red-300 transition-colors">
+                  className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-[12px] font-medium bg-bg-2 border border-hairline ${STATUS_TEXT.problem} hover:text-rose-800 hover:border-red-300 transition-colors`}>
                   <Archive className="w-3.5 h-3.5" /> Archive
                 </button>
               )}
@@ -507,8 +508,8 @@ export default function QuoteDetail() {
                   {deliveryHistory.map((d, i) => (
                     <div key={i} className="flex items-start gap-2 text-[12px]">
                       {d.channel === 'email'
-                        ? <Mail className="w-3.5 h-3.5 text-blue-500 shrink-0 mt-0.5" />
-                        : <MessageSquare className="w-3.5 h-3.5 text-emerald-500 shrink-0 mt-0.5" />}
+                        ? <Mail className={`w-3.5 h-3.5 ${STATUS_ICON.info} shrink-0 mt-0.5`} />
+                        : <MessageSquare className={`w-3.5 h-3.5 ${STATUS_ICON.ok} shrink-0 mt-0.5`} />}
                       <div className="min-w-0 flex-1">
                         <div className="flex items-center gap-1.5">
                           <span className="text-ink-2 truncate">{d.recipient}</span>
@@ -520,7 +521,7 @@ export default function QuoteDetail() {
                             }`} aria-hidden="true" />{d.status}</span>
                         </div>
                         <div className="text-[11px] text-ink-3">{d.sent_at ? new Date(d.sent_at).toLocaleString() : ''}</div>
-                        {d.error && <div className="text-[11px] text-red-500 mt-0.5">{d.error}</div>}
+                        {d.error && <div className={`text-[11px] ${STATUS_TEXT.problem} mt-0.5`}>{d.error}</div>}
                       </div>
                     </div>
                   ))}

@@ -63,6 +63,7 @@
 import { useState } from 'react'
 import { Check, ChevronDown, Loader2 } from 'lucide-react'
 import { STATUS_DOT } from '../theme/statusDots'
+import { STATUS_ICON } from '../theme/statusText'
 
 const API = '/api/apply'
 
@@ -198,7 +199,7 @@ export default function Apply() {
     return (
       <div className="mx-auto max-w-lg px-5 py-16">
         <div className="flex items-center gap-2 text-[13px] text-ink-2">
-          <Check className="h-4 w-4 text-emerald-500" /> Sent
+          <Check className={`h-4 w-4 ${STATUS_ICON.ok}`} /> Sent
         </div>
         <h1 className="mt-2 text-2xl font-semibold tracking-tight text-ink">
           Thanks — we’ve got it.

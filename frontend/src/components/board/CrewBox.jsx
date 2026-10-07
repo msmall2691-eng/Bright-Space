@@ -6,6 +6,7 @@ import { relTime } from '../comms/utils'
 import { CrewThreadPane } from '../comms/CrewThreadPane'
 import { BroadcastModal } from '../comms/CrewInbox'
 import { STATUS_DOT } from '../../theme/statusDots'
+import { STATUS_TEXT } from '../../theme/statusText'
 
 /**
  * Crew comms rail on Home — the one NEW fetch on this page.
@@ -105,7 +106,7 @@ export default function CrewBox({ navigate }) {
                   </span>
                 </span>
                 {unread && (
-                  <span className="inline-flex shrink-0 items-center gap-1 text-[11px] font-semibold text-amber-700 dark:text-amber-300">
+                  <span className={`inline-flex shrink-0 items-center gap-1 text-[11px] font-semibold ${STATUS_TEXT.attention}`}>
                     <span className={`h-1.5 w-1.5 rounded-full ${STATUS_DOT.attention}`} aria-hidden="true" />
                     {t.unread > 9 ? '9+' : t.unread} new
                   </span>

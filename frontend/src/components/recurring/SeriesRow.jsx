@@ -4,6 +4,7 @@ import { SERIES_STATE_LABEL, groupDuplicateSeries, isLiveSeries, seriesState } f
 import { computeUpcoming, fmtDate, fmtTime, ruleSummary } from './helpers'
 import { Pause } from 'lucide-react'
 import { SEV_DOT } from '../board/tokens'
+import { STATUS_TEXT } from '../../theme/statusText'
 
 export default function SeriesRow({ s, clientName, onOpen, isDuplicate }) {
   const next = useMemo(() => {
@@ -50,7 +51,7 @@ export default function SeriesRow({ s, clientName, onOpen, isDuplicate }) {
               {ruleSummary(s)}
               {hasTime
                 ? <> · {fmtTime(s.start_time)}–{fmtTime(s.end_time)}</>
-                : <> · <span className="text-amber-600 font-medium">no time set</span></>}
+                : <> · <span className={`${STATUS_TEXT.attention} font-medium`}>no time set</span></>}
               {next && live && <> · Next {fmtDate(next)}</>}
               <> · {s.upcoming_job_count || 0} upcoming</>
             </p>

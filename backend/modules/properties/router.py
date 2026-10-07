@@ -590,11 +590,9 @@ def update_property(property_id: int, data: PropertyUpdate, db: Session = Depend
 
 
 @router.post("/{property_id}/sync", dependencies=[Depends(require_role("admin", "manager"))])
-def sync_ical(property_id: int, db: Session = Depends(get_db)):
+def sync_ical(property_id: int, db: Session = Depends(get_db), org_id: int = Depends(current_org_id)):
     """Fetch the iCal feed and auto-create turnover jobs."""
-    prop = db.query(Property).filter(Property.id == property_id).first()
-    if not prop:
-        raise HTTPException(status_code=404, detail="Property not found")
+    prop = _property_or_404(db, property_id, org_id)
     result = sync_property(db, prop)
     if "error" in result:
         log.warning(f"iCal sync failed for property {property_id}: {result.get('error')}")
@@ -622,7 +620,7 @@ def _active_turnover_dates(db: Session, property_id: int) -> set:
 
 
 @router.post("/{property_id}/rebuild-turnovers", dependencies=[Depends(require_role("admin", "manager"))])
-def rebuild_turnovers(property_id: int, db: Session = Depends(get_db)):
+def rebuild_turnovers(property_id: int, db: Session = Depends(get_db), org_id: int = Depends(current_org_id)):
     """Rebuild this property's turnovers from its calendar feeds — the safety net.
 
     Force-reconciles against the feeds (Google/iCal are the source of truth):
@@ -632,9 +630,7 @@ def rebuild_turnovers(property_id: int, db: Session = Depends(get_db)):
     it lists the exact checkouts that couldn't be rebuilt (e.g. a failing feed).
     """
     from database.models import Job  # local import: keep module import surface small
-    prop = db.query(Property).filter(Property.id == property_id).first()
-    if not prop:
-        raise HTTPException(status_code=404, detail="Property not found")
+    prop = _property_or_404(db, property_id, org_id)
 
     before = _active_turnover_dates(db, property_id)
     result = sync_property(db, prop)
@@ -659,12 +655,10 @@ def rebuild_turnovers(property_id: int, db: Session = Depends(get_db)):
 
 
 @router.post("/{property_id}/icals/{ical_id}/sync", dependencies=[Depends(require_role("admin", "manager"))])
-def sync_single_ical(property_id: int, ical_id: int, db: Session = Depends(get_db)):
+def sync_single_ical(property_id: int, ical_id: int, db: Session = Depends(get_db), org_id: int = Depends(current_org_id)):
     """Re-sync a single iCal feed — lets staff retry one failing feed without
     re-running every feed on the property."""
-    prop = db.query(Property).filter(Property.id == property_id).first()
-    if not prop:
-        raise HTTPException(status_code=404, detail="Property not found")
+    prop = _property_or_404(db, property_id, org_id)
     ical = db.query(PropertyIcal).filter(
         PropertyIcal.id == ical_id,
         PropertyIcal.property_id == property_id,
@@ -1000,11 +994,9 @@ def unarchive_property_endpoint(property_id: int, db: Session = Depends(get_db),
 # Multiple iCal management endpoints
 
 @router.post("/{property_id}/icals", status_code=201, dependencies=[Depends(require_role("admin", "manager"))])
-def add_ical_url(property_id: int, data: PropertyIcalSchema, db: Session = Depends(get_db)):
+def add_ical_url(property_id: int, data: PropertyIcalSchema, db: Session = Depends(get_db), org_id: int = Depends(current_org_id)):
     """Add another iCal URL to a property (Airbnb, VRBO, etc)"""
-    prop = db.query(Property).filter(Property.id == property_id).first()
-    if not prop:
-        raise HTTPException(status_code=404, detail="Property not found")
+    prop = _property_or_404(db, property_id, org_id)
 
     url = _normalize_ical_url(data.url)
     # Reject a feed already linked to this property (case-insensitive) so we
@@ -1051,11 +1043,14 @@ def add_ical_url(property_id: int, data: PropertyIcalSchema, db: Session = Depen
 
 
 @router.patch("/{property_id}/icals/{ical_id}", dependencies=[Depends(require_role("admin", "manager"))])
-def update_ical_url(property_id: int, ical_id: int, data: PropertyIcalSchema, db: Session = Depends(get_db)):
+def update_ical_url(property_id: int, ical_id: int, data: PropertyIcalSchema, db: Session = Depends(get_db), org_id: int = Depends(current_org_id)):
     """Update an iCal URL"""
+    # Prove the caller owns the property before touching its feed: an ical
+    # cannot belong to another workspace if its property does not.
+    _property_or_404(db, property_id, org_id)
     ical = db.query(PropertyIcal).filter(
         PropertyIcal.id == ical_id,
-        PropertyIcal.property_id == property_id
+        PropertyIcal.property_id == property_id,
     ).first()
 
     if not ical:
@@ -1095,11 +1090,14 @@ def update_ical_url(property_id: int, ical_id: int, data: PropertyIcalSchema, db
 
 
 @router.delete("/{property_id}/icals/{ical_id}", status_code=204, dependencies=[Depends(require_role("admin", "manager"))])
-def remove_ical_url(property_id: int, ical_id: int, db: Session = Depends(get_db)):
+def remove_ical_url(property_id: int, ical_id: int, db: Session = Depends(get_db), org_id: int = Depends(current_org_id)):
     """Remove an iCal URL from a property"""
+    # Prove the caller owns the property before touching its feed: an ical
+    # cannot belong to another workspace if its property does not.
+    _property_or_404(db, property_id, org_id)
     ical = db.query(PropertyIcal).filter(
         PropertyIcal.id == ical_id,
-        PropertyIcal.property_id == property_id
+        PropertyIcal.property_id == property_id,
     ).first()
 
     if not ical:
@@ -1107,6 +1105,63 @@ def remove_ical_url(property_id: int, ical_id: int, db: Session = Depends(get_db
 
     db.delete(ical)
     db.commit()
+
+
+@router.get("/{property_id}/icals", dependencies=[Depends(require_role("admin", "manager"))])
+def list_property_icals(
+    property_id: int,
+    db: Session = Depends(get_db),
+    org_id: int = Depends(current_org_id),
+):
+    """The feed-management screen's own payload — BB-SEC-13.
+
+    `PropertyIcalsBulk` needs a property's feeds plus enough of the property to
+    label the page, and got them by reading `GET /{property_id}`, which that
+    endpoint's own BB-SEC-11 comment describes as "the full property dict —
+    house_code, access_notes, wifi_password included". The page displays none
+    of it, and the per-feed dicts there carry `house_code` / `access_links` /
+    `instructions` as well, so every load of a feed screen put a property's
+    door codes and wifi password on the wire to render seven fields.
+
+    Both endpoints are office-only, so this was never a BB-SEC-08..12
+    violation — a manager may read access details. It is the same
+    least-privilege reasoning BB-SEC-11 applied to the role, applied here to a
+    caller that never wanted them: the fewer screens a code reaches, the fewer
+    places it can be logged, screenshotted or left open on a laptop.
+
+    The field list is exactly what the page reads, plus `active` (a feed's
+    state, not a secret, and the sync logic keys off it). Adding a field here
+    is a deliberate act — `tests/test_property_icals_payload.py` fails if an
+    access detail appears.
+    """
+    prop = db.query(Property).options(joinedload(Property.property_icals)).filter(
+        Property.id == property_id,
+        or_(Property.org_id == org_id, Property.org_id.is_(None)),  # MT-2 tenant scope
+    ).first()
+    if not prop:
+        raise HTTPException(status_code=404, detail="Property not found")
+
+    return {
+        "id": prop.id,
+        "name": prop.name,
+        "address": prop.address,
+        "city": prop.city,
+        "state": prop.state,
+        "property_type": prop.property_type,
+        "default_duration_hours": prop.default_duration_hours,
+        "icals": [
+            {
+                "id": pi.id,
+                "url": pi.url,
+                "source": pi.source,
+                "active": pi.active,
+                "last_synced_at": pi.last_synced_at.isoformat() if pi.last_synced_at else None,
+                "last_sync_status": pi.last_sync_status,
+                "last_sync_error": pi.last_sync_error,
+            }
+            for pi in (prop.property_icals or [])
+        ],
+    }
 
 
 # Admin utilities

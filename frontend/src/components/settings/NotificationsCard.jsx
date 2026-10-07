@@ -7,6 +7,7 @@ import {
 } from '../../utils/push'
 import { useNotificationPrefs } from '../../hooks/useNotificationPrefs'
 import { STATUS_DOT } from '../../theme/statusDots'
+import { STATUS_TEXT } from '../../theme/statusText'
 
 const OFFICE_CATEGORY_LABELS = {
   requests: 'New requests',
@@ -215,7 +216,7 @@ export default function NotificationsCard({ toast }) {
 
         {/* Status / help line */}
         {!serverReady ? (
-          <p className="text-xs text-amber-700 dark:text-amber-300 mt-3 flex items-center gap-1.5">
+          <p className={`text-xs ${STATUS_TEXT.attention} mt-3 flex items-center gap-1.5`}>
             <Smartphone className="w-3.5 h-3.5 shrink-0" />
             Not set up on the server yet — add VAPID keys (see docs/PUSH_NOTIFICATIONS.md).
           </p>

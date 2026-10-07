@@ -4,6 +4,7 @@ import Button from '../ui/Button'
 import GlassCard from '../ui/GlassCard'
 import StatusBadge from '../ui/StatusBadge'
 import { VISIT_STATUS_CONFIG, shortDate, cleanerInitials, computeDisplayStatus } from './constants'
+import { STATUS_TEXT } from '../../theme/statusText'
 
 /** Right-side (bottom-sheet on mobile) drawer for a single visit. Pure
  *  props-in: the parent owns the selection + all mutation callbacks so
@@ -277,7 +278,7 @@ export default function VisitDetailsDrawer({
                   )
                 })()}
                 {jobEvents[0]?.status === 'failed' && jobEvents[0]?.error_message && (
-                  <p className="text-[11px] text-red-600 mt-1 wrap-break-word">{String(jobEvents[0].error_message).slice(0, 200)}</p>
+                  <p className={`text-[11px] ${STATUS_TEXT.problem} mt-1 wrap-break-word`}>{String(jobEvents[0].error_message).slice(0, 200)}</p>
                 )}
               </div>
             )}
@@ -318,7 +319,7 @@ export default function VisitDetailsDrawer({
                   <ul className="text-sm text-ink space-y-0.5">
                     {Object.entries(visit.checklist_results).map(([task, done]) => (
                       <li key={task} className="flex items-center gap-1.5">
-                        <span className={done ? 'text-green-600' : 'text-ink-3'}>{done ? '✓' : '○'}</span>
+                        <span className={done ? STATUS_TEXT.ok : 'text-ink-3'}>{done ? '✓' : '○'}</span>
                         {task}
                       </li>
                     ))}

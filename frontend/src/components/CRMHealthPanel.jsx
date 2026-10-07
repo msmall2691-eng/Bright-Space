@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { Activity, ChevronDown, ChevronRight, RefreshCw } from 'lucide-react'
 import { get } from '../api'
 import { SEV_DOT } from './board/tokens'
+import { STATUS_TEXT } from '../theme/statusText'
 
 // Read-only CRM health snapshot, backed by GET /api/clients/health. Answers
 // "how many of these leads are actually real?" before any cleanup runs — it never
@@ -92,7 +93,7 @@ export default function CRMHealthPanel({ onSelectBucket, inline = false }) {
           {loading && <div className="text-[12px] text-ink-3 py-2">Scanning clients…</div>}
 
           {error && !loading && (
-            <div className="text-[12px] text-rose-500 py-2 flex items-center gap-2">
+            <div className={`text-[12px] ${STATUS_TEXT.problem} py-2 flex items-center gap-2`}>
               {error}
               <button onClick={load} className="inline-flex items-center gap-1 text-ink-3 hover:text-ink-2">
                 <RefreshCw className="w-3 h-3" /> Retry

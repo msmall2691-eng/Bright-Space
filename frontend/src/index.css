@@ -591,12 +591,57 @@ layer(base);
      A NEGATIVE offset draws the ring INSIDE the border box, which is the one
      place clipping cannot reach. `border-radius: inherit` makes it follow
      whatever corner its host has, so one utility serves a 10px button and an
-     18px card. accent-500 is the ramp's focus step and follows the
-     body.accent-* choice. */
+     18px card. `--accent-focus` is the ramp's measured focus step, picked per
+     theme further down this file — it was `--accent-500` until BB-A11Y-04b
+     measured that step at 1.69:1 on light grounds. */
   .bb-focus:focus-visible {
-    outline: 2px solid rgb(var(--accent-500));
+    outline: 2px solid rgb(var(--accent-focus));
     outline-offset: -2px;
     border-radius: inherit;
+  }
+
+  /* BB-A11Y-04b — the same ring, for everything that takes keyboard focus
+     rather than the 14 elements that remembered to ask for it.
+
+     `.bb-focus` above is opt-in, and a year of pages shipped without opting
+     in: counted across the app, 1140 of ~1360 focusable elements carry no
+     focus styling at all. They are not INVISIBLE — they fall back to the
+     browser's own ring — but that ring is the one BB-A11Y-04 was written
+     about. It is drawn outside the border box, so the app's 94
+     `overflow-hidden` ancestors crop it; it is whatever the UA decides, so it
+     ignores the accent the user picked; and on the dark themes it is close to
+     unreadable. One default beats 1140 opt-ins.
+
+     `:where()` keeps this at zero specificity, and `@layer base` puts it under
+     every utility, so the two existing treatments still win on the elements
+     that use them:
+
+       - `focus:outline-hidden` (146 elements, nearly all inputs pairing it
+         with `focus:border-*`) emits `outline: 2px solid transparent` from the
+         utilities layer and suppresses this. Their border IS their indicator,
+         it is inside the box, and it is not this change's business.
+       - `.bb-focus` is identical plus `border-radius: inherit`, which it needs
+         because it is applied to WRAPPERS that must follow a card's corner. A
+         native control already has its own radius and an outline follows it,
+         so inheriting the parent's here would square off a rounded button.
+
+     What this cannot share is a ring drawn with `focus:ring-*`: that is a
+     box-shadow, so it does not override an outline and both would show. The
+     21 elements in that position are converted to this ring in the same
+     commit, which is also how the app stops having two focus vocabularies. */
+  :where(
+    a[href],
+    area[href],
+    button,
+    input,
+    select,
+    textarea,
+    summary,
+    [tabindex]:not([tabindex^="-"]),
+    [contenteditable="true"]
+  ):focus-visible {
+    outline: 2px solid rgb(var(--accent-focus));
+    outline-offset: -2px;
   }
 
   .bb-nav-active {
@@ -796,6 +841,69 @@ layer(base);
   body.theme-neon {
     --accent-link: var(--accent-300);
   }
+
+  /* BB-A11Y-04b — the focus RING's step, which is a third one again.
+     Same shape as --accent-link above and picked the same way: by measuring.
+
+     The ring was `rgb(var(--accent-500))`, and 500 is the step that works on
+     the DARK themes (worst 3.46:1) and fails everywhere else. Measured across
+     all seven selectable accents against all three light themes' grounds it
+     bottoms out at 1.69:1 — amber on Paper's `--bg-3` — so on five of the
+     seven accents the focus ring was a graphical object at well under half the
+     3:1 floor. It looked fine in review because indigo and violet, the two
+     that pass, are the default and the first alternative.
+
+     No single step serves both ends: 700 clears light at 3.95 and fails dark
+     at 1.95; 600 fails BOTH at 2.50 and 2.46. So the step is picked per theme,
+     exactly as --accent-link and --job-edge-* already are.
+
+     ## Why this is on `body` and --accent-link is on `:root`
+
+     Not a style choice. A `var()` inside a custom property is substituted at
+     computed-value time on THE ELEMENT THE DECLARATION APPLIES TO, and the
+     accent ramp is redefined by `body.accent-*` — one level below `:root`. A
+     declaration on `:root` therefore resolves against the DEFAULT ramp and
+     inherits that resolved value down, so it cannot follow the accent the user
+     picked. Declaring it on `body` puts it on the same element as the
+     `body.accent-*` block, where the substitution sees the live ramp.
+     (`body.theme-*` beats a bare `body` on specificity, so the dark override
+     below still wins.) Held by __tests__/focusRing.test.js, which measures
+     every accent against every theme rather than trusting this comment. */
+  body {
+    --accent-focus: var(--accent-700);
+  }
+  body.theme-console,
+  body.theme-neon {
+    --accent-focus: var(--accent-500);
+  }
+
+  /* BB-A11Y-02 — job type as an EDGE, the one place a schedule colour has to
+     be a real value rather than a Tailwind class: the 3px rule on a week
+     block, the dispatch timeline block and the drag ghost are inline-styled on
+     absolutely-positioned elements.
+
+     Same shape as --accent-link directly above, for the same reason. A single
+     fixed hex cannot serve both themes — it has to clear the 3:1 non-text
+     floor against near-white grounds AND against Console's near-black ones,
+     and of the whole Tailwind palette only amber-700, rose-600 and slate-500
+     manage both. There is no distinct categorical trio in that window, so the
+     step is picked per theme here instead.
+
+     These track theme/scheduleScales.js JOB_TYPE_DOT step for step, so the
+     edge and the dot on one block are one colour. Held by
+     __tests__/jobTypeEdgeContrast.test.js, which measures each value against
+     its own theme's grounds and fails if the two drift apart. */
+  :root {
+    --job-edge-str: #b45309;          /* amber-700  4.07:1 on light grounds */
+    --job-edge-residential: #2563eb;  /* blue-600   4.19:1 */
+    --job-edge-commercial: #6b21a8;   /* purple-800 7.07:1 */
+  }
+  body.theme-console,
+  body.theme-neon {
+    --job-edge-str: #fbbf24;          /* amber-400  9.25:1 on dark grounds */
+    --job-edge-residential: #60a5fa;  /* blue-400   6.08:1 */
+    --job-edge-commercial: #d8b4fe;   /* purple-300 8.74:1 */
+  }
 }
 
 /* Dark theme — toggled with body.theme-console */
@@ -927,6 +1035,19 @@ layer(base);
        read a link at about 1.6:1. Public pages are always light, so the link
        step here is always the deep one. */
     --accent-link: var(--accent-800);
+    /* And the focus ring, for exactly the same reason one line up: the dark
+       themes point --accent-focus at the 500 step, which measures 1.69-2.43:1
+       on these light grounds. A customer tabbing through a quote's accept form
+       would be aiming at a ring they cannot see. */
+    --accent-focus: var(--accent-700);
+    /* Same reset, same reason: the dark themes point these at their light
+       steps, and a public page is always light. No public route renders a
+       schedule block today, but the contract test above holds every themed
+       token to this, so the next one that does is covered without anyone
+       remembering to opt it in. */
+    --job-edge-str: #b45309;
+    --job-edge-residential: #2563eb;
+    --job-edge-commercial: #6b21a8;
     --c-residential: oklch(0.58 0.12 245);
     --c-residential-bg: oklch(0.92 0.03 245);
     --c-commercial: oklch(0.60 0.14 60);

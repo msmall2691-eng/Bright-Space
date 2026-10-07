@@ -6,6 +6,7 @@ import { toast } from '../utils/toastBus'
 import { confirmDialog } from '../utils/confirmBus'
 import { isStaleSync, relTimeAgo } from '../components/properties/utils'
 import { STATUS_DOT } from '../theme/statusDots'
+import { STATUS_TEXT } from '../theme/statusText'
 
 const SOURCES = [
   { value: 'airbnb',     label: 'Airbnb',      pattern: /airbnb\.com/i },
@@ -61,7 +62,13 @@ export default function PropertyIcalsBulk() {
   const load = async () => {
     setLoading(true)
     try {
-      const p = await get(`/api/properties/${propertyId}`)
+      // BB-SEC-13: the narrow feed payload, not `GET /api/properties/{id}`.
+      // That route returns the full property dict — house_code, access_notes,
+      // wifi_password — and its own BB-SEC-11 comment says so; this screen
+      // renders seven fields and none of them. Office-only either way, so it
+      // was never a BB-SEC-08..12 violation; it just put a door code on the
+      // wire every time anyone opened a feed screen.
+      const p = await get(`/api/properties/${propertyId}/icals`)
       setProperty(p)
     } catch (e) {
       console.error('[PropertyIcalsBulk load]', e)
@@ -279,11 +286,11 @@ export default function PropertyIcalsBulk() {
               <span className="font-semibold text-ink">Feed diagnosis {diag.today ? `(today ${diag.today})` : ''}</span>
               <button onClick={() => setDiag(null)} className="opacity-60 hover:opacity-100"><X className="w-3 h-3" /></button>
             </div>
-            {diag.error && <div className="text-red-600">{diag.error}</div>}
+            {diag.error && <div className={STATUS_TEXT.problem}>{diag.error}</div>}
             {(diag.feeds || []).map((f, i) => (
               <div key={i} className="mb-3 last:mb-0">
                 <div className="text-[11px] font-medium text-ink-2 mb-1">{f.source} feed</div>
-                {f.error && <div className="text-red-600">{f.error}</div>}
+                {f.error && <div className={STATUS_TEXT.problem}>{f.error}</div>}
                 {!f.error && (f.events || []).length === 0 && <div className="text-ink-3">No bookings in feed.</div>}
                 {(f.events || []).map((e, j) => {
                   const d = e.decision || ''
@@ -291,7 +298,7 @@ export default function PropertyIcalsBulk() {
                   // fix the sync will apply; grey = intentionally not cleaned.
                   const willHave = d.includes('exists') || d.includes('completed') || d.includes('✓')
                   const willFix = d.includes('will recreate') || d.includes('will fix') || d.includes('would create')
-                  const cls = willHave ? 'text-emerald-600' : willFix ? 'text-amber-600' : 'text-ink-3'
+                  const cls = willHave ? STATUS_TEXT.ok : willFix ? STATUS_TEXT.attention : 'text-ink-3'
                   return (
                     <div key={j} className="flex items-center justify-between gap-2 py-1 border-b border-hairline/60 last:border-0">
                       <span className="text-ink-2 truncate">{e.checkout || '—'} · {e.summary || '(no title)'}</span>
@@ -326,12 +333,12 @@ export default function PropertyIcalsBulk() {
                             Failed / Stale (no clean sync in 24h+) / Synced Xh
                             ago / Never synced — words, never color alone. */}
                         {(ical.last_sync_status === 'failed' || ical.last_sync_status === 'retrying') ? (
-                          <span className="inline-flex items-center gap-1.5 text-[11px] font-medium text-red-600" title={ical.last_sync_error || ''}>
+                          <span className={`inline-flex items-center gap-1.5 text-[11px] font-medium ${STATUS_TEXT.problem}`} title={ical.last_sync_error || ''}>
                             <span className={`w-1.5 h-1.5 rounded-full ${STATUS_DOT.problem} shrink-0`} aria-hidden="true" /> Failed {relTimeAgo(ical.last_synced_at) || ''}
                           </span>
                         ) : ical.last_synced_at ? (
                           isStaleSync(ical.last_synced_at) ? (
-                            <span className="inline-flex items-center gap-1.5 text-[11px] font-medium text-amber-700"
+                            <span className={`inline-flex items-center gap-1.5 text-[11px] font-medium ${STATUS_TEXT.attention}`}
                               title="No clean sync in 24h+ — check this feed">
                               <span className={`w-1.5 h-1.5 rounded-full ${STATUS_DOT.attention} shrink-0`} aria-hidden="true" /> Stale · synced {relTimeAgo(ical.last_synced_at)}
                             </span>
@@ -431,7 +438,7 @@ export default function PropertyIcalsBulk() {
                       <span className="text-[10px] font-semibold text-ink-3 bg-bg-2 px-1.5 py-0.5 rounded">Already on this property</span>
                     )}
                     {!row.valid && (
-                      <span className="inline-flex items-center gap-1.5 text-[10px] font-semibold text-red-600">
+                      <span className={`inline-flex items-center gap-1.5 text-[10px] font-semibold ${STATUS_TEXT.problem}`}>
                         <span className={`w-1.5 h-1.5 rounded-full ${STATUS_DOT.problem} shrink-0`} aria-hidden="true" /> Not a valid URL
                       </span>
                     )}

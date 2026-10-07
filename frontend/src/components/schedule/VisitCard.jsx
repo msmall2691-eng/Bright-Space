@@ -4,6 +4,7 @@ import StatusBadge from '../ui/StatusBadge'
 import { PROPERTY_TYPE_CONFIG, VISIT_STATUS_CONFIG, computeDisplayStatus } from './constants'
 import { TurnoverInfo, SyncStatusChips } from './SyncBadge'
 import { mapsSearchUrl } from '../../utils/maps'
+import { STATUS_TEXT } from '../../theme/statusText'
 
 /** One schedule visit rendered as a full-width tappable card. Extracted from
  *  AgendaDay so the single-day agenda AND the multi-day "All upcoming" view
@@ -55,12 +56,12 @@ export default function VisitCard({ v, jobs, properties, clients, onSelect, empN
           : 'border-hairline hover:border-hairline hover:shadow-xs'
       }`}
     >
-      {/* Color bar — job type signal */}
-      <span className={`w-1.5 shrink-0 ${
-        propertyType === 'str' ? 'bg-amber-400'
-        : propertyType === 'commercial' ? 'bg-purple-400'
-        : 'bg-blue-400'
-      }`} />
+      {/* Color bar — job type signal. Takes the measured `edge` value off the
+          shared config rather than re-deciding the hue here: this bar, the
+          WeekGrid block's left rule and the dispatch timeline block are the
+          same signal on the same job, and the hand-written ternary this
+          replaces is how they drift apart (BB-A11Y-02). */}
+      <span className="w-1.5 shrink-0" style={{ background: typeCfg.edge }} />
       <div className="flex-1 min-w-0 p-3">
         {/* Time row */}
         <div className="flex items-center justify-between mb-1.5">
@@ -152,7 +153,7 @@ export default function VisitCard({ v, jobs, properties, clients, onSelect, empN
           {needsCleaner && (
             // Same calm amber-dot cue as the month chips — a word plus a dot,
             // never color alone.
-            <span className="inline-flex items-center gap-1.5 text-amber-700 dark:text-amber-300 font-medium">
+            <span className={`inline-flex items-center gap-1.5 ${STATUS_TEXT.attention} font-medium`}>
               <span className="w-[7px] h-[7px] rounded-full bg-amber-400 ring-2 ring-amber-200/70 dark:ring-amber-500/25" aria-hidden="true" />
               Needs a cleaner
             </span>

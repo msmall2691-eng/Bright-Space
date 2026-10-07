@@ -48,6 +48,7 @@ import { flushPhotoQueue, subscribeQueue } from '../components/crew/photoQueue'
 import {
   enqueueAction, flushActionQueue, subscribeActions, looksOffline,
 } from '../components/crew/actionQueue'
+import { STATUS_TEXT } from '../theme/statusText'
 
 function fmtDuration(ms) {
   const totalMin = Math.max(0, Math.floor(ms / 60000))
@@ -96,7 +97,7 @@ function WeekPayBreakdown({ week, onOpenJob }) {
               </div>
               <span className="font-semibold tabular-nums text-ink shrink-0">
                 {j.unpriced ? '—' : fmtMoney(j.predicted_pay)}
-                <span className="text-blue-500 ml-1">›</span>
+                <span className={`${STATUS_TEXT.info} ml-1`}>›</span>
               </span>
             </button>
           ))}
@@ -126,12 +127,12 @@ function DayGlance({ week, openCount, unread, onTab }) {
   // A small coloured line icon per tile — a touch of friendly colour without a
   // filled chip. Violet for open work matches the "open to crew" convention.
   const cells = [
-    { key: 'week', to: 'me', label: 'this week', Icon: DollarSign, tint: 'text-emerald-500',
+    { key: 'week', to: 'me', label: 'this week', Icon: DollarSign, tint: STATUS_TEXT.ok,
       value: week?.week_total != null ? fmtMoney(week.week_total) : '—' },
     { key: 'open', to: 'jobs', label: 'up for grabs', Icon: Sparkles, tint: 'text-violet-500',
       value: openCount },
     { key: 'chat', to: 'chat', label: unread === 1 ? 'message' : 'messages', Icon: MessageSquare,
-      tint: 'text-amber-500', value: unread },
+      tint: STATUS_TEXT.attention, value: unread },
   ]
   return (
     <div className="grid grid-cols-3 divide-x divide-hairline rounded-xl border border-hairline bg-panel">
@@ -191,7 +192,7 @@ function CrewTabBar({ tab, setTab, chatUnread = 0 }) {
         {TABS.map(({ key, label, icon: Icon }) => (
           <button key={key} onClick={() => setTab(key)}
             className={`py-2.5 flex flex-col items-center gap-0.5 text-[11px] font-semibold transition-colors ${
-              tab === key ? 'text-blue-600 dark:text-blue-400' : 'text-ink-3 hover:text-ink-2'}`}>
+              tab === key ? STATUS_TEXT.info : 'text-ink-3 hover:text-ink-2'}`}>
             <Icon className="w-5 h-5" strokeWidth={tab === key ? 2.4 : 2} />
             <span className="inline-flex items-center gap-1">
               {label}
@@ -1137,7 +1138,7 @@ export default function MyDay({ previewUserId = null }) {
             </section>
 
             <button onClick={logout}
-              className="w-full text-[13px] font-semibold bg-panel border border-hairline text-red-600 dark:text-red-400 py-2.5 rounded-lg hover:bg-bg-2 transition-colors inline-flex items-center justify-center gap-1.5">
+              className={`w-full text-[13px] font-semibold bg-panel border border-hairline ${STATUS_TEXT.problem} py-2.5 rounded-lg hover:bg-bg-2 transition-colors inline-flex items-center justify-center gap-1.5`}>
               <LogOut className="w-4 h-4" /> Log out
             </button>
           </>

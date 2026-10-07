@@ -4,6 +4,7 @@
  * or pure functions with no captured state.
  */
 import { toLocalYMD } from '../../utils/format'
+import { STATUS_TEXT } from '../../theme/statusText'
 
 // Status hue lives in a small dot over a quiet chip body (owner's veto of
 // the tinted pill bubbles) — these dot classes feed InlineSelect and the
@@ -59,13 +60,13 @@ export const LEAD_STATUS_OPTIONS = ['new', 'reviewed', 'quoted', 'converted']
 // Guided "next step" per quote status — turns the quotes list into a worklist so
 // it's always obvious what moves a lead toward becoming a (recurring) client.
 export const QUOTE_NEXT_STEP = {
-  draft:             { text: 'Next: send it to the customer', cls: 'text-blue-600' },
+  draft:             { text: 'Next: send it to the customer', cls: STATUS_TEXT.info },
   sent:              { text: 'Next: waiting on the customer — nudge if it goes quiet', cls: 'text-ink-3' },
-  viewed:            { text: 'Next: they opened it — follow up to close', cls: 'text-blue-600' },
-  changes_requested: { text: 'Next: revise and resend', cls: 'text-amber-600' },
-  accepted:          { text: 'Next: schedule the job', cls: 'text-emerald-600' },
+  viewed:            { text: 'Next: they opened it — follow up to close', cls: STATUS_TEXT.info },
+  changes_requested: { text: 'Next: revise and resend', cls: STATUS_TEXT.attention },
+  accepted:          { text: 'Next: schedule the job', cls: STATUS_TEXT.ok },
   declined:          { text: 'Next: follow up or archive', cls: 'text-ink-3' },
-  converted:         { text: 'Won ✓ — set up a recurring plan to keep them', cls: 'text-emerald-600' },
+  converted:         { text: 'Won ✓ — set up a recurring plan to keep them', cls: STATUS_TEXT.ok },
 }
 
 export const SERVICE_TYPES = ['residential', 'commercial', 'str']

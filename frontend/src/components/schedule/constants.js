@@ -4,6 +4,7 @@
  * functions with no captured state.
  */
 import { Wind, Home, Building2 } from 'lucide-react'
+import { JOB_TYPE_DOT, JOB_TYPE_EDGE, JOB_STAGE_DOT } from '../../theme/scheduleScales'
 
 // Property/job type palette — the single source of truth for how a job
 // is colored ANYWHERE in the schedule UI (agenda cards, VisitCards,
@@ -16,39 +17,47 @@ import { Wind, Home, Building2 } from 'lucide-react'
 // view — audit called this out. All fields on one config; call sites pick
 // the ones they need.
 //
+// BB-A11Y-02: the colour itself now comes from theme/scheduleScales.js — a
+// measured CATEGORICAL scale, because job type is identity rather than
+// good-or-bad. The steps that used to be written out here (amber-500 1.77:1,
+// blue-500 2.98:1, purple-500 2.74:1) all missed the 3:1 non-text floor. The
+// hues are unchanged; only the steps moved. Read that file before touching
+// them — commercial sits deep on the ramp on purpose.
+//
 // Keyed by the raw Job.job_type OR Property.property_type strings we ship
 // from the API. The `str_turnover` alias is just so CalendarView (which
 // keys by Job.job_type) resolves to the same visual as `str`.
 export const PROPERTY_TYPE_CONFIG = {
   // NOTE (owner veto of "big bubbles", Aug 2026): the tinted `pill` /
   // `pillHover` / `badge` chip classes were removed — type color is carried
-  // by the `dot` class or the `hex` edge-bar only, over quiet panel
+  // by the `dot` class or the `edge` bar only, over quiet panel
   // surfaces. Don't reintroduce filled colored capsules here.
   str: {
     label: 'STR',
     icon: Wind,
     color: 'bg-amber-50 dark:bg-amber-950 border-l-4 border-l-amber-400',
-    dot:   'bg-amber-500',
-    // Tailwind's amber-500 as a literal hex — for callers that need a real
-    // color value (inline-styled/absolutely-positioned blocks: the dispatch
-    // timeline, route ribbon, week blocks) rather than a class, so those
-    // views can't drift from this single source of truth the way
-    // CalendarView once did.
-    hex: '#F59E0B',
+    dot: JOB_TYPE_DOT.str,
+    // A real colour value, not a class — for callers that are inline-styled
+    // and absolutely-positioned (the dispatch timeline, route ribbon, week
+    // blocks) so those views can't drift from this single source of truth the
+    // way CalendarView once did. It is a `var()` rather than a literal hex
+    // because no one fixed value clears the floor in BOTH themes; index.css
+    // picks the step per theme, exactly as --accent-link does.
+    edge: JOB_TYPE_EDGE.str,
   },
   residential: {
     label: 'Residential',
     icon: Home,
     color: 'bg-blue-50 dark:bg-blue-950 border-l-4 border-l-blue-400',
-    dot:   'bg-blue-500',
-    hex: '#3B82F6', // Tailwind blue-500
+    dot: JOB_TYPE_DOT.residential,
+    edge: JOB_TYPE_EDGE.residential,
   },
   commercial: {
     label: 'Commercial',
     icon: Building2,
     color: 'bg-purple-50 dark:bg-purple-950 border-l-4 border-l-purple-400',
-    dot:   'bg-purple-500',
-    hex: '#A855F7', // Tailwind purple-500
+    dot: JOB_TYPE_DOT.commercial,
+    edge: JOB_TYPE_EDGE.commercial,
   },
 }
 // Job.job_type = 'str_turnover' resolves to the same palette entry as 'str'.
@@ -72,15 +81,22 @@ export const VISIT_STATUS_CONFIG = {
   // `badge` is the StatusBadge tone; `dot` is for inline dot+word renders.
   // (The tinted `pillMobile` capsule classes were removed with the owner's
   // bubble veto — status renders as dot + word everywhere now.)
-  needs_setup: { label: 'Needs setup',  dot: 'bg-amber-500',  badge: 'warning' },
-  unassigned:  { label: 'Unassigned',   dot: 'bg-ink-3',      badge: 'neutral' },
-  scheduled:   { label: 'Scheduled',   dot: 'bg-blue-500',   badge: 'info' },
-  dispatched:  { label: 'Dispatched',  dot: 'bg-green-500',  badge: 'success' },
-  en_route:    { label: 'En Route',    dot: 'bg-cyan-500',   badge: 'info' },
-  in_progress: { label: 'In Progress', dot: 'bg-amber-500',  badge: 'warning' },
-  completed:   { label: 'Completed',   dot: 'bg-green-600',  badge: 'success' },
-  no_show:     { label: 'No Show',     dot: 'bg-red-500',    badge: 'danger' },
-  cancelled:   { label: 'Cancelled',   dot: 'bg-ink-3',      badge: 'danger' },
+  //
+  // BB-A11Y-02: `dot` now comes from theme/scheduleScales.js — a measured
+  // ORDINAL ramp ("warms up as it goes", the owner's pick). Two things the old
+  // values got wrong beyond contrast, both fixed there: `dispatched` and
+  // `completed` were both green and rendered identically, so a dispatched job
+  // looked finished; and `scheduled` — most of the calendar — was the loudest
+  // blue on the page. Read that file before changing a step.
+  needs_setup: { label: 'Needs setup', dot: JOB_STAGE_DOT.needs_setup, badge: 'warning' },
+  unassigned:  { label: 'Unassigned',  dot: JOB_STAGE_DOT.unassigned,  badge: 'neutral' },
+  scheduled:   { label: 'Scheduled',   dot: JOB_STAGE_DOT.scheduled,   badge: 'info' },
+  dispatched:  { label: 'Dispatched',  dot: JOB_STAGE_DOT.dispatched,  badge: 'success' },
+  en_route:    { label: 'En Route',    dot: JOB_STAGE_DOT.en_route,    badge: 'info' },
+  in_progress: { label: 'In Progress', dot: JOB_STAGE_DOT.in_progress, badge: 'warning' },
+  completed:   { label: 'Completed',   dot: JOB_STAGE_DOT.completed,   badge: 'success' },
+  no_show:     { label: 'No Show',     dot: JOB_STAGE_DOT.no_show,     badge: 'danger' },
+  cancelled:   { label: 'Cancelled',   dot: JOB_STAGE_DOT.cancelled,   badge: 'danger' },
 }
 
 /** Turn a job/visit's DB status into the status the UI should show.

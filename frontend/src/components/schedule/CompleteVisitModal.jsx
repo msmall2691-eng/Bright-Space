@@ -3,6 +3,7 @@ import { X, CheckCircle, Camera, Trash2 } from 'lucide-react'
 import Button from '../ui/Button'
 import { DEFAULT_CHECKLIST } from './constants'
 import { readFileAsUpload, mergePhotosForSubmit, MAX_FILE_BYTES, MAX_TOTAL_PHOTOS } from './completePhotos'
+import { STATUS_TEXT } from '../../theme/statusText'
 
 /** Bottom-sheet modal for marking a visit complete. Renders the default
  *  checklist, preserves any prior partial completion state (so re-opening
@@ -181,7 +182,7 @@ export default function CompleteVisitModal({ visit, onClose, onComplete }) {
             )}
 
             {uploadError && (
-              <p className="mt-2 text-[11px] text-red-600">{uploadError}</p>
+              <p className={`mt-2 text-[11px] ${STATUS_TEXT.problem}`}>{uploadError}</p>
             )}
 
             <div className="mt-3">

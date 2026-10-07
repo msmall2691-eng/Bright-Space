@@ -4,6 +4,7 @@ import { get } from '../../api'
 import { CustomFieldsForm } from '../CustomFields'
 import { PROPERTY_TYPE_CONFIG } from './constants'
 import DuplicateClientPrompt from '../clients/DuplicateClientPrompt'
+import { STATUS_TEXT } from '../../theme/statusText'
 
 const BASIC_FIELDS = [
   { label: 'Property Name *', key: 'name', placeholder: 'e.g. 4 Red Barn Circle' },
@@ -147,7 +148,7 @@ export function PropertyForm({
                   placeholder="Email"
                   className="w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-hidden focus:border-indigo-400" />
               </div>
-              {clientErr && <div className="text-xs text-red-600">{clientErr}</div>}
+              {clientErr && <div className={`text-xs ${STATUS_TEXT.problem}`}>{clientErr}</div>}
               {clientDupes?.length > 0 ? (
                 <DuplicateClientPrompt
                   duplicates={clientDupes}
@@ -278,7 +279,7 @@ export function PropertyForm({
           </div>
 
           {lookupMsg && (
-            <div className={`mt-2 text-xs ${lookupMsg.tone === 'ok' ? 'text-emerald-600' : lookupMsg.tone === 'err' ? 'text-red-600' : 'text-ink-3'}`}>
+            <div className={`mt-2 text-xs ${lookupMsg.tone === 'ok' ? STATUS_TEXT.ok : lookupMsg.tone === 'err' ? STATUS_TEXT.problem : 'text-ink-3'}`}>
               {lookupMsg.text}
             </div>
           )}

@@ -9,6 +9,7 @@
  */
 
 import { STATUS_DOT } from '../../theme/statusDots'
+import { STATUS_TEXT } from '../../theme/statusText'
 export default function OpsSummary({ stats, isToday, compact = false }) {
   if (!stats || stats.jobs === 0) return null
   // `compact` (the phone/agenda hero) shows only the one plain fact — how many
@@ -42,7 +43,7 @@ export default function OpsSummary({ stats, isToday, compact = false }) {
               {c.warn && (
                 <span className={`w-1.5 h-1.5 rounded-full ${STATUS_DOT.attention} shrink-0`} aria-hidden="true" />
               )}
-              <span className={`font-semibold tabular-nums ${c.warn ? 'text-amber-600 dark:text-amber-300' : 'text-ink'}`}>
+              <span className={`font-semibold tabular-nums ${c.warn ? STATUS_TEXT.attention : 'text-ink'}`}>
                 {c.value}
               </span>
               <span className="text-ink-3">{c.label}</span>
