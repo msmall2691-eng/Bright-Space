@@ -206,7 +206,14 @@ Runs on every PR and push to `main`. Three jobs — all must pass:
 2. **RLS (Postgres)** — spins up Postgres 16, validates multi-tenant RLS
    (`tests/test_tenancy_rls_postgres.py`) and that migrations replay cleanly
    from an empty DB (`tests/test_migrations_from_scratch.py`).
-3. **Frontend build** — `npm ci && npm run build`.
+3. **Frontend build** — `npm ci`, then **`npm run test`**, then `npm run build`.
+   The name is a leftover: the vitest suite gates this job, and runs *before*
+   the build so a broken test is reported as a broken test rather than hiding
+   behind a bundling error. It did not always — the workflow's own comment
+   records that 600+ vitest tests existed and CI ran none of them, long enough
+   for a red assertion on `main` to be repeatedly called "pre-existing" rather
+   than fixed. Worth knowing in the direction that bites: a frontend test you
+   add gates CI automatically, so run `npm run test` before pushing.
 
 ## Key conventions & guardrails
 
