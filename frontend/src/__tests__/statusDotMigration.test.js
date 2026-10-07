@@ -57,6 +57,12 @@
  *   about quietness, not a contrast fix.
  */
 import { describe, it, expect } from 'vitest'
+// The dead-interpolation guard parses rather than scans; see its own comment
+// for why a character scan cannot do this job. TypeScript is the parser the
+// repo already has — `npm run gen:types` pulls it in via openapi-typescript —
+// and it is declared in devDependencies so this test does not lean on another
+// package's transitive dep.
+import ts from 'typescript'
 import { readFileSync, readdirSync, statSync } from 'node:fs'
 import { dirname, join, relative } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -120,6 +126,84 @@ const TOKEN_MAPS = [
   'PROPERTY_TYPE_CONFIG', 'SEV_DOT', 'SEV_LABEL', 'STAT_TONE', 'STATUS_DOT', 'STATUS_ICON',
   'STATUS_TEXT', 'TAG_TONE', 'VISIT_ACCENT', 'VISIT_STATUS_CONFIG',
 ]
+
+/**
+ * Every way a token map can be written so that it does NOT do what was meant,
+ * found in one parsed file. Returns the offenders and how many string literals
+ * were inspected, so a caller can tell "clean" from "parsed nothing".
+ *
+ * ONE implementation, used by both the tree-wide scan and the case test below.
+ * They were briefly two copies, which is the arrangement where the cases go on
+ * passing while the real check drifts away from them — the same shape of
+ * mistake this whole guard exists to catch.
+ *
+ * ## Shape 1: dead inside a quoted string
+ *
+ *     `... ${live ? '${SEV_DOT.good}' : 'bg-ink-3'}`
+ *
+ * The inner string is single-quoted, so `${…}` is literal text and Tailwind
+ * emits nothing for a class by that name. Its exact definition in the grammar
+ * is "a STRING LITERAL whose text contains `${TOKEN.`", which is why this
+ * parses rather than scanning characters: two earlier character-based versions
+ * each reported CORRECT code as dead, one tripping over a quoted expression
+ * earlier on the line, the other over an apostrophe in JSX text.
+ *
+ * ## The shape this deliberately does NOT catch, and why
+ *
+ * There is a second way to write the same slip, in JSX text rather than a
+ * className:
+ *
+ *     <span>${SEV_LABEL.good}</span>            renders "$Good"
+ *
+ * It is a real mistake, it has never happened in this repo, and two attempts
+ * to guard it both produced a WORSE failure than the one they prevented:
+ *
+ *  1. Asking whether the expression's source text STARTS with a token map
+ *     missed every form where it does not — `${(SEV_LABEL.good)}` behind
+ *     parentheses, `${FIELD_LABELS[key] ?? key}` behind a fallback.
+ *  2. Walking the expression for the identifier anywhere inside it fixed that
+ *     and broke the other way: it rejects correct currency rendering whose
+ *     expression happens to style nested JSX, e.g.
+ *     `<span>${n < 0 ? <em className={STATUS_TEXT.problem}>{-n}</em> : n}</span>`.
+ *
+ * Both were found in review, which is the useful part: the question "does this
+ * expression DISPLAY a token map, or merely mention one while styling
+ * something nested?" needs the expression's value semantics, not its syntax.
+ * That is a lot of machinery, and it guards the one shape here where a `$`
+ * before a JSX expression is overwhelmingly CORRECT to begin with — it is how
+ * money is written, and `<div>${inv.total?.toFixed(2)}</div>` renders
+ * "$240.00", of which there are dozens in the tree.
+ *
+ * So the balance is the wrong way round. A false positive in a CI-gating guard
+ * blocks correct work, which is the exact defect this file was opened to fix;
+ * a missed `$Good` is visible on the screen to whoever rendered it. Shape 1
+ * stays because it catches a bug that has shipped twice and renders NOTHING
+ * (no colour at all, nothing to notice), and because its definition in the
+ * grammar is exact and has no corners.
+ *
+ * This does lose coverage the character scan had — it flagged the JSX-text
+ * form too — but that coverage came bundled with flagging correct code, which
+ * is why the scan is being replaced. Worth reopening only with a way to tell a
+ * displayed value from a nested style, and a reason to think the typo happens.
+ */
+function deadInterpolations(source) {
+  const dead = new RegExp(String.raw`\$\{\s*(?:${TOKEN_MAPS.join('|')})\b`)
+  const offenders = []
+  let literalsSeen = 0
+
+  const at = (node) => source.getLineAndCharacterOfPosition(node.getStart(source)).line + 1
+  const visit = (node) => {
+    if (ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node)) {
+      literalsSeen++
+      if (dead.test(node.text)) {
+        offenders.push(`${at(node)}  ${JSON.stringify(node.text).slice(0, 80)}`)
+      }
+    }
+    ts.forEachChild(node, visit)
+  }
+  visit(source)
+  return { offenders, literalsSeen }
+}
 
 /** Surfaces where the TEXT half has been done. Separate from MIGRATED because
  *  it is a separate slice running behind it, and conflating the two would
@@ -469,31 +553,110 @@ describe('BB-A11Y-02 — migrated surfaces go through the measured map', () => {
     // The fix is to name the maps rather than a prefix. Anything exported as a
     // token map belongs here; the list is asserted non-trivial below so a
     // rename cannot quietly empty it.
-    const offenders = []
-    const pattern = new RegExp(String.raw`\$\{(?:${TOKEN_MAPS.join('|')})\b`, 'g')
+    //
+    // ## Why this parses instead of scanning characters
+    //
+    // The first version of this widened check asked "walking back from the
+    // `${`, is the nearest quote a backtick?". That is wrong in both
+    // directions and the wrong one bit immediately: a CORRECT line with a
+    // quoted expression earlier on it,
+    //
+    //     `h-1.5 rounded-full ${compact ? 'scale-75' : ''} ${SEV_DOT.good}`
+    //
+    // stops the backward walk at the `'` closing `'scale-75'` and reports a
+    // live interpolation as dead. That shape is ordinary — the codebase is
+    // full of it — so the guard would have failed CI on correct code and
+    // taught the next person to distrust it. Hand-lexing instead of scanning
+    // backwards does not rescue it either: a lexer that does not know JSX
+    // treats the apostrophe in `<>Couldn't send</>` as opening a string and
+    // mis-reads the rest of the line, which it duly did on
+    // `settings/IntegrationsTab.jsx`.
+    //
+    // So this parses. A dead interpolation has an exact definition in the
+    // grammar — a STRING LITERAL whose text contains `${TOKEN.` — and the
+    // parser settles quotes, comments, regexes, JSX text and nesting for
+    // free. `ts.ScriptKind.TSX` reads this codebase's .js/.jsx as well as the
+    // generated .ts. A template literal's substitutions are separate nodes
+    // and never part of a StringLiteral's text, so a live interpolation
+    // cannot be flagged however the line is written; a template with NO
+    // substitutions emits its text verbatim, so it is checked too.
     // Deliberately the whole of src/, not MIGRATED. This bug class is purely
     // syntactic — a dead interpolation is never intentional anywhere — so it
     // needs no exemption list and gains nothing from being scoped to the
     // surfaces whose COLOUR choices are being ratcheted. It also reaches
     // hooks/ and utils/, which MIGRATED's dirs do not.
+    const offenders = []
+    const unparsed = []
+    let literalsSeen = 0
     for (const path of walk(SRC)) {
-      const src = readFileSync(path, 'utf8')
-      src.split('\n').forEach((line, i) => {
-        for (const m of line.matchAll(pattern)) {
-          let quote = null
-          for (let k = m.index - 1; k >= 0; k--) {
-            const c = line[k]
-            if (c === '`' || c === "'" || c === '"') { quote = c; break }
-          }
-          if (quote !== '`') {
-            offenders.push(`${rel(path)}:${i + 1}  enclosed by ${quote ?? 'nothing'}, not a template`)
-          }
-        }
-      })
+      // ScriptKind by EXTENSION, because the two grammars disagree about
+      // angle brackets. Forcing TSX onto a .ts file turns TS-only syntax —
+      // a generic arrow `const id = <T>(x: T) => x`, an angle-bracket
+      // assertion — into an unterminated JSX element, and the parser then
+      // drops the rest of the file: measured, a string literal two lines
+      // later disappears from the AST entirely. That is a FAIL-OPEN, the one
+      // kind of bug a guard must not have, and the aggregate literal count
+      // below would not notice because other files supply thousands.
+      // Only `src/api/types.ts` is affected today and it parses either way,
+      // so this is closing the hole rather than fixing a live miss.
+      const kind = path.endsWith('.ts') ? ts.ScriptKind.TS : ts.ScriptKind.TSX
+      const source = ts.createSourceFile(
+        path, readFileSync(path, 'utf8'), ts.ScriptTarget.Latest, true, kind)
+      // And the general form of the same worry: ANY file that fails to parse
+      // contributes no literals and is silently skipped. Better to say so.
+      const errors = source.parseDiagnostics || []
+      if (errors.length) unparsed.push(`${rel(path)}  ${errors.length} parse error(s)`)
+      const found = deadInterpolations(source)
+      literalsSeen += found.literalsSeen
+      for (const f of found.offenders) offenders.push(`${rel(path)}:${f}`)
     }
+    expect(unparsed,
+      'These files did not parse, so the guard saw nothing in them:\n  '
+      + unparsed.join('\n  ')).toEqual([])
+    // A parse that silently yielded nothing would make this pass on an empty
+    // walk, which is the failure mode a ratchet must not have.
+    expect(literalsSeen, 'parsed no string literals at all — the walk or the parse broke')
+      .toBeGreaterThan(1000)
     expect(offenders,
       'These render the literal text "${TOKEN_MAP...}" as a class name, so the ' +
       'element gets no colour at all:\n  ' + offenders.join('\n  ')).toEqual([])
+  })
+
+  it('tells a dead interpolation from the correct code that looks like one', () => {
+    // The inputs that separate this guard from the two it replaced, pinned as
+    // cases rather than only described above. Every `good` line is real code
+    // someone would write; every `bad` one is a slip that reaches the screen.
+    const good = [
+      // The character scan reported this as dead: its backward walk stops at
+      // the `'` closing `'scale-75'`.
+      "const a = <span className={`h-1.5 rounded-full ${compact ? 'scale-75' : ''} ${SEV_DOT.good}`} />",
+      // The hand lexer reported this as dead: the apostrophe in JSX text
+      // looked to it like the start of a string.
+      "const b = <>Couldn't send: <i className={`${STATUS_TEXT.problem} break-words`}>x</i></>",
+      // Money. `$` before a JSX expression is how a price is written and there
+      // are dozens in the tree. These two are here because a JSX-text check
+      // added and then REMOVED from this guard flagged them (see
+      // deadInterpolations' comment on the shape it does not catch): the second
+      // mentions a token map while only styling nested JSX, which is exactly
+      // the distinction that made that check cost more than it bought.
+      'const c = <div>${inv.total?.toFixed(2)}</div>',
+      'const d = <span>${n < 0 ? <em className={STATUS_TEXT.problem}>{-n}</em> : n}</span>',
+    ]
+    const bad = [
+      // The SeriesRow bug.
+      "const e = <span className={`rounded-full ${live ? '${SEV_DOT.good}' : 'bg-ink-3'}`} />",
+      // The form this test was ORIGINALLY written for: the token is not the
+      // first thing in the quoted string.
+      "const f = `x ${cond ? 'font-semibold ${STATUS_TEXT.attention}' : 'opacity-90'}`",
+      // Dead inside a double-quoted JSX attribute.
+      'const g = <span className="dot ${STATUS_DOT.ok}" />',
+    ]
+    // The REAL check, not a copy of it — see deadInterpolations' comment.
+    const flags = (src) => deadInterpolations(
+      ts.createSourceFile('probe.tsx', src, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX),
+    ).offenders.length > 0
+    for (const src of good) expect(flags(src), `false positive on: ${src}`).toBe(false)
+    for (const src of bad) expect(flags(src), `missed a dead interpolation in: ${src}`).toBe(true)
   })
 
   it('the token-map list this scans is the real export list, not a stale copy', () => {
