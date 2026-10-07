@@ -57,6 +57,12 @@
  *   about quietness, not a contrast fix.
  */
 import { describe, it, expect } from 'vitest'
+// The dead-interpolation guard parses rather than scans; see its own comment
+// for why a character scan cannot do this job. TypeScript is the parser the
+// repo already has — `npm run gen:types` pulls it in via openapi-typescript —
+// and it is declared in devDependencies so this test does not lean on another
+// package's transitive dep.
+import ts from 'typescript'
 import { readFileSync, readdirSync, statSync } from 'node:fs'
 import { dirname, join, relative } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -469,31 +475,94 @@ describe('BB-A11Y-02 — migrated surfaces go through the measured map', () => {
     // The fix is to name the maps rather than a prefix. Anything exported as a
     // token map belongs here; the list is asserted non-trivial below so a
     // rename cannot quietly empty it.
+    //
+    // ## Why this parses instead of scanning characters
+    //
+    // The first version of this widened check asked "walking back from the
+    // `${`, is the nearest quote a backtick?". That is wrong in both
+    // directions and the wrong one bit immediately: a CORRECT line with a
+    // quoted expression earlier on it,
+    //
+    //     `h-1.5 rounded-full ${compact ? 'scale-75' : ''} ${SEV_DOT.good}`
+    //
+    // stops the backward walk at the `'` closing `'scale-75'` and reports a
+    // live interpolation as dead. That shape is ordinary — the codebase is
+    // full of it — so the guard would have failed CI on correct code and
+    // taught the next person to distrust it. Hand-lexing instead of scanning
+    // backwards does not rescue it either: a lexer that does not know JSX
+    // treats the apostrophe in `<>Couldn't send</>` as opening a string and
+    // mis-reads the rest of the line, which it duly did on
+    // `settings/IntegrationsTab.jsx`.
+    //
+    // So this parses. A dead interpolation has an exact definition in the
+    // grammar — a STRING LITERAL whose text contains `${TOKEN.` — and the
+    // parser settles quotes, comments, regexes, JSX text and nesting for
+    // free. `ts.ScriptKind.TSX` reads this codebase's .js/.jsx as well as the
+    // generated .ts. A template literal's substitutions are separate nodes
+    // and never part of a StringLiteral's text, so a live interpolation
+    // cannot be flagged however the line is written; a template with NO
+    // substitutions emits its text verbatim, so it is checked too.
     const offenders = []
-    const pattern = new RegExp(String.raw`\$\{(?:${TOKEN_MAPS.join('|')})\b`, 'g')
+    const dead = new RegExp(String.raw`\$\{\s*(?:${TOKEN_MAPS.join('|')})\b`)
     // Deliberately the whole of src/, not MIGRATED. This bug class is purely
     // syntactic — a dead interpolation is never intentional anywhere — so it
     // needs no exemption list and gains nothing from being scoped to the
     // surfaces whose COLOUR choices are being ratcheted. It also reaches
     // hooks/ and utils/, which MIGRATED's dirs do not.
+    let literalsSeen = 0
     for (const path of walk(SRC)) {
-      const src = readFileSync(path, 'utf8')
-      src.split('\n').forEach((line, i) => {
-        for (const m of line.matchAll(pattern)) {
-          let quote = null
-          for (let k = m.index - 1; k >= 0; k--) {
-            const c = line[k]
-            if (c === '`' || c === "'" || c === '"') { quote = c; break }
-          }
-          if (quote !== '`') {
-            offenders.push(`${rel(path)}:${i + 1}  enclosed by ${quote ?? 'nothing'}, not a template`)
+      const source = ts.createSourceFile(
+        path, readFileSync(path, 'utf8'), ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX)
+      const visit = (node) => {
+        if (ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node)) {
+          literalsSeen++
+          if (dead.test(node.text)) {
+            const { line } = source.getLineAndCharacterOfPosition(node.getStart(source))
+            offenders.push(`${rel(path)}:${line + 1}  ${JSON.stringify(node.text).slice(0, 80)}`)
           }
         }
-      })
+        ts.forEachChild(node, visit)
+      }
+      visit(source)
     }
+    // A parse that silently yielded nothing would make this pass on an empty
+    // walk, which is the failure mode a ratchet must not have.
+    expect(literalsSeen, 'parsed no string literals at all — the walk or the parse broke')
+      .toBeGreaterThan(1000)
     expect(offenders,
       'These render the literal text "${TOKEN_MAP...}" as a class name, so the ' +
       'element gets no colour at all:\n  ' + offenders.join('\n  ')).toEqual([])
+  })
+
+  it('does not flag a correct interpolation that follows a quoted expression', () => {
+    // The false positive the character scan had, pinned as a case rather than
+    // only described above: both of these are correct and must stay clean,
+    // and the first is the exact shape that broke the old check.
+    const good = [
+      "const a = <span className={`h-1.5 rounded-full ${compact ? 'scale-75' : ''} ${SEV_DOT.good}`} />",
+      "const b = <>Couldn't send: <i className={`${STATUS_TEXT.problem} break-words`}>x</i></>",
+    ]
+    // And these are dead and must be caught — including the form this test
+    // was originally written for, where the token is not the first thing in
+    // the quoted string.
+    const bad = [
+      "const c = <span className={`rounded-full ${live ? '${SEV_DOT.good}' : 'bg-ink-3'}`} />",
+      "const d = `x ${cond ? 'font-semibold ${STATUS_TEXT.attention}' : 'opacity-90'}`",
+      'const e = <span className="dot ${STATUS_DOT.ok}" />',
+    ]
+    const dead = new RegExp(String.raw`\$\{\s*(?:${TOKEN_MAPS.join('|')})\b`)
+    const flags = (src) => {
+      const sf = ts.createSourceFile('probe.tsx', src, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX)
+      let hit = false
+      const visit = (n) => {
+        if ((ts.isStringLiteral(n) || ts.isNoSubstitutionTemplateLiteral(n)) && dead.test(n.text)) hit = true
+        ts.forEachChild(n, visit)
+      }
+      visit(sf)
+      return hit
+    }
+    for (const src of good) expect(flags(src), `false positive on: ${src}`).toBe(false)
+    for (const src of bad) expect(flags(src), `missed a dead interpolation in: ${src}`).toBe(true)
   })
 
   it('the token-map list this scans is the real export list, not a stale copy', () => {
