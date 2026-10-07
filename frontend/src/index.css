@@ -837,9 +837,31 @@ layer(base);
      in dark. 800 is the first step every selectable accent clears (5.75-8.05);
      700 gets four of five and cyan still fails at 4.34 on bg-3. 300 in dark
      clears 7.75-10.71 for all of them. Both are `var()`s into the live ramp,
-     so this follows the body.accent-* choice for free.
-     Held by __tests__/inkContrast.test.js — re-run the ratios before moving it. */
-  :root {
+     so this follows the body.accent-* choice.
+
+     ## Why the light step is on `body` and not `:root`
+
+     It said "for free" here and sat on `:root`, and that did not work: this is
+     the same substitution rule as BB-A11Y-05 one level down. A `var()` inside a
+     custom property is substituted at computed-value time ON THE ELEMENT THE
+     DECLARATION APPLIES TO, and the accent ramp is redefined by `body.accent-*`.
+     Declared on `:root`, `var(--accent-800)` therefore resolved against the
+     DEFAULT ramp and inherited that one value down, so a light-theme link was
+     indigo-800 whatever accent the user picked. Measured in the running app
+     after BB-A11Y-05 landed: `body.mode-clean.accent-rose` painted `text-link`
+     rgb(55, 48, 163) — indigo-800 — next to a rose `bg-indigo-600` button.
+
+     Only the LIGHT step was wrong. The dark override below was always on `body`,
+     so it followed the accent correctly, which is why this hid behind a
+     half-working feature. `--accent-focus` directly below has been on `body`
+     since BB-A11Y-04b for exactly this reason.
+
+     `body` is enough: `body.theme-console` and `body.theme-neon` outrank a bare
+     `body` on specificity, so the dark override below still wins.
+     Held by __tests__/inkContrast.test.js for the RATIOS and by
+     __tests__/themeTokenIndirection.test.js for the ELEMENT — re-run the ratios
+     before moving a step. */
+  body {
     --accent-link: var(--accent-800);
   }
   body.theme-console,
@@ -862,7 +884,7 @@ layer(base);
      at 1.95; 600 fails BOTH at 2.50 and 2.46. So the step is picked per theme,
      exactly as --accent-link and --job-edge-* already are.
 
-     ## Why this is on `body` and --accent-link is on `:root`
+     ## Why this is on `body` rather than `:root`
 
      Not a style choice. A `var()` inside a custom property is substituted at
      computed-value time on THE ELEMENT THE DECLARATION APPLIES TO, and the
@@ -871,6 +893,12 @@ layer(base);
      inherits that resolved value down, so it cannot follow the accent the user
      picked. Declaring it on `body` puts it on the same element as the
      `body.accent-*` block, where the substitution sees the live ramp.
+
+     This paragraph used to end "…and --accent-link is on `:root`", stating the
+     difference without drawing the conclusion: --accent-link had the same bug
+     and the same fix was owed to it. It is on `body` now, and
+     themeTokenIndirection.test.js checks the whole file for the pattern rather
+     than leaving it to a comment.
      (`body.theme-*` beats a bare `body` on specificity, so the dark override
      below still wins.) Held by __tests__/focusRing.test.js, which measures
      every accent against every theme rather than trusting this comment. */
