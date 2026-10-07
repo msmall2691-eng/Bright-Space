@@ -12,11 +12,24 @@
  * non-text floor rather than 4.5:1. Measured against this app's four light
  * grounds (`--panel --bg --bg-2 --bg-3`), the 500 steps come in at:
  *
- *     amber-500   1.77      emerald-500  2.09
- *     red-500     2.55      blue-500     2.98      gray-400  1.69
+ *     amber-500   1.73      emerald-500  2.00
+ *     red-500     3.09      blue-500     3.05      gray-400  2.11
  *
- * Not one of them clears 3:1, and amber — the step that means "this needs
- * you" — is the worst of the set at well under half the floor.
+ * Amber — the step that means "this needs you" — is the worst of the set at
+ * well under half the floor, and emerald and gray fail outright.
+ *
+ * These numbers were restated when `__tests__/boardToneContrast.test.js`
+ * stopped measuring a hardcoded Tailwind v3 palette and started reading the
+ * v4 one the build actually ships. Two of them changed verdict: red-500
+ * (2.55 -> 3.09) and blue-500 (2.98 -> 3.05) now clear 3:1, so the sentence
+ * that used to sit here — "not one of them clears 3:1" — was wrong under the
+ * real palette.
+ *
+ * It does not change the decision, and that is worth saying rather than
+ * quietly editing a number. A 3.04 is a PASS by 0.04, measured against
+ * grounds a theme can retune; an indicator a cleaner reads on a phone in
+ * direct sun does not want to live one rounding error above its floor. The
+ * steps below clear it with room.
  *
  * That matters most on the crew surface. A cleaner reads these on a phone,
  * outdoors, often in direct sun, which is the exact condition a 1.77:1 ratio
@@ -70,7 +83,7 @@ export const STATUS_DOT = {
    * Off, inactive, not applicable. Token-based rather than a palette step: it
    * follows the theme's own ink ramp, which is already measured, instead of
    * pinning a gray that would need re-measuring per theme. `gray-400` — what
-   * this replaces — was the worst value in the whole set at 1.69:1.
+   * this replaces — measures 2.11:1, under the floor.
    */
   neutral: 'bg-ink-3',
 }

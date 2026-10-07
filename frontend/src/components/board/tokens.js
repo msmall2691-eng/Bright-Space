@@ -16,10 +16,10 @@
 // under the 4.5:1 text floor against this page's own grounds — measured as the
 // worst of panel / bg / bg-2 / bg-3, not just panel:
 //
-//   amber-600 2.58  emerald-600 3.05  rose-600 3.81  blue-600 4.19  (violet 4.62)
+//   amber-600 2.59  emerald-600 2.96  rose-600 3.67  blue-600 4.25  (violet 4.78)
 //
 // Only violet passed. Amber and emerald need the 800 step; 700 still fails
-// both (4.07 / 4.44). The dark partners were already fine (300s, 8.17-10.71)
+// both (4.08 / 4.35). The dark partners were already fine (300s, 8.06-10.68)
 // and are left alone — this is a light-theme fix.
 //
 // The steps differ per hue on purpose. Equal ramp positions are not equal
@@ -38,10 +38,15 @@ export const TAG_TONE = {
 
 // Severity → the little leading dot + the filter-chip accent.
 //
-// A dot is non-text, so the floor is 3:1 rather than 4.5:1 — but the 500s
-// missed even that in light: amber-500 1.74, emerald-500 2.06, rose-500 and
-// blue-500 both 2.98. These had no dark variant at all, so the same value had
-// to serve both themes; now each theme gets the step that clears it.
+// A dot is non-text, so the floor is 3:1 rather than 4.5:1. In light:
+// amber-500 1.73, emerald-500 2.00, rose-500 3.04, blue-500 3.05. The first
+// two miss it outright; the other two clear it by a hundredth, which is not a
+// margin to put a dot on. These had no dark variant at all, so the same value
+// had to serve both themes; now each theme gets the step that clears it.
+// (Numbers restated when boardToneContrast stopped measuring a hardcoded
+// Tailwind v3 palette and started reading the v4 one the build ships — rose
+// and blue read 2.98 under v3, so the old "missed even that" was wrong for
+// them. The steps are unchanged; 3.04 was never the plan.)
 export const SEV_DOT = {
   urgent: 'bg-rose-600 dark:bg-rose-400',
   watch: 'bg-amber-700 dark:bg-amber-400',

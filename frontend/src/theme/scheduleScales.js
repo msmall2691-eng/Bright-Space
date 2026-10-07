@@ -25,9 +25,17 @@
  * A dot carries meaning but is not text, so WCAG puts it under the 3:1
  * non-text floor. Measured as the worst of this app's four grounds (`--panel
  * --bg --bg-2 --bg-3`) in each theme, not panel alone. The steps these replace
- * all missed it: amber-500 1.77, blue-500 2.98, red-500 2.55, green-500 2.09,
- * purple-500 2.74. Held by `__tests__/boardToneContrast.test.js`, which reads
+ * measure: amber-500 1.73, green-500 1.80, blue-500 3.05, red-500 3.09,
+ * purple-500 3.34. Held by `__tests__/boardToneContrast.test.js`, which reads
  * this file.
+ *
+ * This list used to say all five missed the floor. Three of them do not —
+ * restated when the harness stopped measuring a hardcoded Tailwind v3 palette
+ * and started reading the v4 one the build ships. Amber and green fail badly
+ * and were never arguable; blue, red and purple clear 3:1 by 0.05 to 0.34,
+ * against grounds a theme can retune. A schedule block is read at a glance on
+ * a phone, so these keep the steps that clear with room rather than the ones
+ * that clear on a rounding.
  *
  * ## Why every value is spelled out
  *
