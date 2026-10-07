@@ -18,9 +18,28 @@
  * ## The floor
  *
  * A status dot carries meaning but is not text, so WCAG puts it under 3:1
- * rather than 4.5:1. Measured against this app's four light grounds, the steps
- * being banned here are: amber-500 1.77, emerald-500 2.09, red-500 2.55,
- * blue-500 2.98, gray-400 1.69. Not one clears it.
+ * rather than 4.5:1. Measured against this app's four light grounds, worst
+ * ground taken, on the palette the build actually ships:
+ *
+ *     yellow-500 1.55   amber-500  1.73   green-500 1.80   emerald-500 2.00
+ *     gray-400   2.11   zinc-400   2.13   slate-400 2.13   orange-500  2.34
+ *     rose-500   3.04   blue-500   3.05   red-500   3.09
+ *
+ * These figures replace an earlier set (amber-500 1.77, emerald-500 2.09,
+ * red-500 2.55, blue-500 2.98, gray-400 1.69) read off a hardcoded Tailwind
+ * **v3** palette; v4 ships oklch and `boardToneContrast.test.js` now resolves
+ * the real thing. One conclusion changed with them, so it is worth stating
+ * plainly rather than leaving the old sentence ("Not one clears it") standing:
+ * **rose-500, blue-500 and red-500 do clear 3:1** — by 1 to 3 percent.
+ *
+ * They stay banned anyway, for a reason that is not "they fail". A 3.04
+ * against a 3.00 floor is inside the width of the measurement: it is the worst
+ * of four grounds chosen by this app's current themes, and a theme adding one
+ * slightly darker ground sinks all three without touching a component. #1134
+ * had the same call to make on `STATUS_ICON.ok` and kept emerald-700 because
+ * "barely" was not a margin worth taking. The other half is the point of the
+ * map at all — one measured answer per meaning, rather than each call site
+ * re-deciding whether its own dot is the one that may sit at 3.04.
  *
  * ## What this never flags, on any surface
  *
@@ -68,16 +87,39 @@ const RAW_DOT = new RegExp(String.raw`(?<![\w:-])bg-(?:${STATUS_HUES})-(?:400|50
 /**
  * A resting semantic TEXT colour on a step that misses the 4.5:1 text floor.
  *
- * Measured against this app's own light grounds: amber-600 2.58, emerald-600
- * 3.05, rose-600 3.81, blue-600 4.19 — and the 700 step is still short for
- * amber (4.07) and emerald (4.44), which is why `STATUS_TEXT` puts those two
- * on the 800. `violet-600` clears at 4.62 and is deliberately absent.
+ * Measured against this app's own light grounds, on the shipped v4 palette:
+ * amber-600 2.59, emerald-600 2.96, rose-600 3.67, blue-600 4.25 — and the 700
+ * step is still short for amber (4.08) and emerald (4.35), which is why
+ * `STATUS_TEXT` puts those two on the 800. `violet-600` clears at 4.78 and is
+ * deliberately absent. (The previous figures here — 2.58 / 3.05 / 3.81 / 4.19,
+ * 4.07, 4.44, 4.62 — came off the v3 palette; every conclusion survives the
+ * correction, which is why nothing below moves.)
  *
  * Narrower than RAW_DOT on purpose: it lists the steps that actually fail
  * rather than a blanket 500/600, because `text-blue-800` and friends are fine
  * and flagging them would make this noise.
  */
 const RAW_TEXT = new RegExp(String.raw`(?<![\w:-])text-(?:emerald|green)-(?:500|600|700)\b(?!/)|(?<![\w:-])text-(?:amber|yellow)-(?:500|600|700)\b(?!/)|(?<![\w:-])text-(?:red|rose)-(?:400|500|600)\b(?!/)|(?<![\w:-])text-blue-(?:400|500|600)\b(?!/)`, 'g')
+
+/**
+ * Every token map the app interpolates into a className, by name.
+ *
+ * This is the vocabulary of the dead-interpolation guard below, and it is a
+ * LIST OF NAMES rather than a prefix because the bug it catches is indifferent
+ * to which family a map belongs to: `'${SEV_DOT.good}'` inside single quotes
+ * is as dead as `'${STATUS_TEXT.attention}'`, and the guard used to know only
+ * the second. The companion test asserts this equals what those files actually
+ * export, so adding a map covers it and renaming one fails loudly.
+ *
+ * `FIELD_LABELS` and `SEV_LABEL` are copy, not classes — a dead interpolation
+ * there renders the literal token name as visible TEXT, which is worse, so
+ * they stay in.
+ */
+const TOKEN_MAPS = [
+  'FIELD_LABELS', 'FOCUS_DOT', 'INT_DOT', 'JOB_STAGE_DOT', 'JOB_TYPE_DOT', 'JOB_TYPE_EDGE',
+  'PROPERTY_TYPE_CONFIG', 'SEV_DOT', 'SEV_LABEL', 'STAT_TONE', 'STATUS_DOT', 'STATUS_ICON',
+  'STATUS_TEXT', 'TAG_TONE', 'VISIT_ACCENT', 'VISIT_STATUS_CONFIG',
+]
 
 /** Surfaces where the TEXT half has been done. Separate from MIGRATED because
  *  it is a separate slice running behind it, and conflating the two would
@@ -394,7 +436,7 @@ describe('BB-A11Y-02 — migrated surfaces go through the measured map', () => {
     })
   }
 
-  it('every ${STATUS_*} is actually interpolated, not sitting dead in a quoted string', () => {
+  it('every ${TOKEN_MAP} is actually interpolated, not sitting dead in a quoted string', () => {
     // The failure this exists for shipped silently and I only caught it in a
     // merge conflict. A migration pass rewrote
     //     `... ${x ? 'font-semibold text-amber-700' : 'opacity-90'}`
@@ -405,26 +447,71 @@ describe('BB-A11Y-02 — migrated surfaces go through the measured map', () => {
     // the element renders with NO colour — and nothing else notices: it is not
     // a raw step, so the guards above skip it; it is valid JS, so the build
     // passes; and no test asserts on that class.
+    //
+    // ## Why this now names every map instead of matching `${STATUS_`
+    //
+    // It used to match `/\$\{STATUS_/`, which is one family out of a dozen,
+    // and the Recurring surface shipped the same bug on a different one:
+    //
+    //     `h-1.5 w-1.5 rounded-full ${live ? '${SEV_DOT.good}' : 'bg-ink-3'}`
+    //
+    // on SeriesRow AND SeriesDetail, so the "Active" dot on both the list and
+    // the record header rendered with no colour at all. THREE guards read
+    // those exact lines and all three passed, for one reason worth keeping in
+    // mind when adding another: this bug produces the ABSENCE of a class, and
+    // every colour guard looks for a WRONG class. RAW_DOT found no bad step
+    // because there was no step; `recurring/__tests__/surfaceGuards.test.js`
+    // checks `rounded-full` spans for a 500-ramp hue and found none, again
+    // because there was none; and this test only knew `STATUS_`. The build is
+    // quiet too — both files import SEV_DOT and use it correctly elsewhere, so
+    // the import is live and lint has nothing to say.
+    //
+    // The fix is to name the maps rather than a prefix. Anything exported as a
+    // token map belongs here; the list is asserted non-trivial below so a
+    // rename cannot quietly empty it.
     const offenders = []
-    for (const surface of MIGRATED) {
-      for (const { path, src } of filesFor(surface)) {
-        src.split('\n').forEach((line, i) => {
-          for (const m of line.matchAll(/\$\{STATUS_/g)) {
-            let quote = null
-            for (let k = m.index - 1; k >= 0; k--) {
-              const c = line[k]
-              if (c === '`' || c === "'" || c === '"') { quote = c; break }
-            }
-            if (quote !== '`') {
-              offenders.push(`${rel(path)}:${i + 1}  enclosed by ${quote ?? 'nothing'}, not a template`)
-            }
+    const pattern = new RegExp(String.raw`\$\{(?:${TOKEN_MAPS.join('|')})\b`, 'g')
+    // Deliberately the whole of src/, not MIGRATED. This bug class is purely
+    // syntactic — a dead interpolation is never intentional anywhere — so it
+    // needs no exemption list and gains nothing from being scoped to the
+    // surfaces whose COLOUR choices are being ratcheted. It also reaches
+    // hooks/ and utils/, which MIGRATED's dirs do not.
+    for (const path of walk(SRC)) {
+      const src = readFileSync(path, 'utf8')
+      src.split('\n').forEach((line, i) => {
+        for (const m of line.matchAll(pattern)) {
+          let quote = null
+          for (let k = m.index - 1; k >= 0; k--) {
+            const c = line[k]
+            if (c === '`' || c === "'" || c === '"') { quote = c; break }
           }
-        })
-      }
+          if (quote !== '`') {
+            offenders.push(`${rel(path)}:${i + 1}  enclosed by ${quote ?? 'nothing'}, not a template`)
+          }
+        }
+      })
     }
     expect(offenders,
-      'These render the literal text "${STATUS_...}" as a class name, so the ' +
+      'These render the literal text "${TOKEN_MAP...}" as a class name, so the ' +
       'element gets no colour at all:\n  ' + offenders.join('\n  ')).toEqual([])
+  })
+
+  it('the token-map list this scans is the real export list, not a stale copy', () => {
+    // The ratchet on the ratchet. The test above is only as wide as
+    // TOKEN_MAPS, so a map added to theme/ or board/tokens.js and forgotten
+    // here reopens exactly the hole that let the SeriesRow dot through — and
+    // it would reopen it SILENTLY, the test still passing on the names it does
+    // know. Reading the exports means a new map is covered on the day it
+    // lands, and a renamed one fails loudly here instead.
+    const exported = []
+    for (const path of [...walk(join(SRC, 'theme')),
+                        join(SRC, 'components/board/tokens.js'),
+                        join(SRC, 'components/schedule/constants.js')]) {
+      const src = readFileSync(path, 'utf8')
+      for (const m of src.matchAll(/^export const ([A-Z][A-Z0-9_]*)\s*=\s*\{/gm)) exported.push(m[1])
+    }
+    expect(exported.length, 'read no exported maps — the paths above moved').toBeGreaterThan(8)
+    expect(TOKEN_MAPS.slice().sort()).toEqual([...new Set(exported)].sort())
   })
 
   it('no JSX attribute takes a bare template where it needs braces', () => {
