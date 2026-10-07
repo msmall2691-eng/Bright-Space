@@ -509,16 +509,49 @@ describe('BB-A11Y-02 — migrated surfaces go through the measured map', () => {
     // needs no exemption list and gains nothing from being scoped to the
     // surfaces whose COLOUR choices are being ratcheted. It also reaches
     // hooks/ and utils/, which MIGRATED's dirs do not.
+    //
+    // ## The second shape, which only the AST can tell from money
+    //
+    // `${TOKEN}` typed straight into JSX TEXT rather than a className is the
+    // same slip with a different symptom:
+    //
+    //     <span>${SEV_LABEL.good}</span>        renders "$Good"
+    //
+    // JSX splits that into a JsxText of `$` and a separate expression, so no
+    // string literal contains it and the check above cannot see it. It
+    // matters most for the maps that are COPY rather than classes —
+    // `SEV_LABEL` and `FIELD_LABELS` are in the list for exactly that reason.
+    //
+    // What makes this need the AST rather than a grep: "a `$` immediately
+    // before a JSX expression" is overwhelmingly CORRECT in this codebase,
+    // because it is how money is written — `<div>${inv.total?.toFixed(2)}</div>`
+    // renders "$240.00" and there are dozens of them. The only thing that
+    // makes it a bug is the expression being a token map, which is a class
+    // name or a label and never a price.
+    const tokenRef = new RegExp(String.raw`^\s*(?:${TOKEN_MAPS.join('|')})\b`)
     let literalsSeen = 0
     for (const path of walk(SRC)) {
       const source = ts.createSourceFile(
         path, readFileSync(path, 'utf8'), ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX)
+      const at = (node) => source.getLineAndCharacterOfPosition(node.getStart(source)).line + 1
       const visit = (node) => {
         if (ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node)) {
           literalsSeen++
           if (dead.test(node.text)) {
-            const { line } = source.getLineAndCharacterOfPosition(node.getStart(source))
-            offenders.push(`${rel(path)}:${line + 1}  ${JSON.stringify(node.text).slice(0, 80)}`)
+            offenders.push(`${rel(path)}:${at(node)}  ${JSON.stringify(node.text).slice(0, 80)}`)
+          }
+        }
+        if (ts.isJsxElement(node) || ts.isJsxFragment(node)) {
+          const kids = node.children
+          for (let k = 0; k < kids.length - 1; k++) {
+            const text = kids[k]
+            const next = kids[k + 1]
+            if (ts.isJsxText(text) && text.text.endsWith('$')
+                && ts.isJsxExpression(next) && next.expression
+                && tokenRef.test(next.expression.getText(source))) {
+              offenders.push(
+                `${rel(path)}:${at(next)}  a stray $ before {${next.expression.getText(source)}}`)
+            }
           }
         }
         ts.forEachChild(node, visit)
@@ -530,32 +563,57 @@ describe('BB-A11Y-02 — migrated surfaces go through the measured map', () => {
     expect(literalsSeen, 'parsed no string literals at all — the walk or the parse broke')
       .toBeGreaterThan(1000)
     expect(offenders,
-      'These render the literal text "${TOKEN_MAP...}" as a class name, so the ' +
-      'element gets no colour at all:\n  ' + offenders.join('\n  ')).toEqual([])
+      'These render the literal text "${TOKEN_MAP...}", or a stray $ before the ' +
+      'value, instead of what was meant:\n  ' + offenders.join('\n  ')).toEqual([])
   })
 
-  it('does not flag a correct interpolation that follows a quoted expression', () => {
-    // The false positive the character scan had, pinned as a case rather than
-    // only described above: both of these are correct and must stay clean,
-    // and the first is the exact shape that broke the old check.
+  it('tells a dead interpolation from the correct code that looks like one', () => {
+    // The inputs that separate this guard from the two it replaced, pinned as
+    // cases rather than only described above. Every `good` line is real code
+    // someone would write; every `bad` one is a slip that reaches the screen.
     const good = [
+      // The character scan reported this as dead: its backward walk stops at
+      // the `'` closing `'scale-75'`.
       "const a = <span className={`h-1.5 rounded-full ${compact ? 'scale-75' : ''} ${SEV_DOT.good}`} />",
+      // The hand lexer reported this as dead: the apostrophe in JSX text
+      // looked to it like the start of a string.
       "const b = <>Couldn't send: <i className={`${STATUS_TEXT.problem} break-words`}>x</i></>",
+      // Money. A `$` immediately before a JSX expression is the normal way to
+      // write a price, and there are dozens in the tree — so the JSX check
+      // below must key on the expression being a TOKEN MAP, not on the `$`.
+      'const c = <div>${inv.total?.toFixed(2)}</div>',
+      'const d = <span>Total ${parseFloat(q.total || 0).toFixed(2)}</span>',
     ]
-    // And these are dead and must be caught — including the form this test
-    // was originally written for, where the token is not the first thing in
-    // the quoted string.
     const bad = [
-      "const c = <span className={`rounded-full ${live ? '${SEV_DOT.good}' : 'bg-ink-3'}`} />",
-      "const d = `x ${cond ? 'font-semibold ${STATUS_TEXT.attention}' : 'opacity-90'}`",
-      'const e = <span className="dot ${STATUS_DOT.ok}" />',
+      // The SeriesRow bug.
+      "const e = <span className={`rounded-full ${live ? '${SEV_DOT.good}' : 'bg-ink-3'}`} />",
+      // The form this test was ORIGINALLY written for: the token is not the
+      // first thing in the quoted string.
+      "const f = `x ${cond ? 'font-semibold ${STATUS_TEXT.attention}' : 'opacity-90'}`",
+      // Dead inside a double-quoted JSX attribute.
+      'const g = <span className="dot ${STATUS_DOT.ok}" />',
+      // Typed straight into JSX text: renders "$Good", not "Good". The
+      // character scan caught this one and the string-literal check alone
+      // does not, because JSX splits it into a text node and an expression.
+      'const h = <span>${SEV_LABEL.good}</span>',
+      'const i = <td>${FIELD_LABELS.address}</td>',
     ]
     const dead = new RegExp(String.raw`\$\{\s*(?:${TOKEN_MAPS.join('|')})\b`)
+    const tokenRef = new RegExp(String.raw`^\s*(?:${TOKEN_MAPS.join('|')})\b`)
     const flags = (src) => {
       const sf = ts.createSourceFile('probe.tsx', src, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX)
       let hit = false
       const visit = (n) => {
         if ((ts.isStringLiteral(n) || ts.isNoSubstitutionTemplateLiteral(n)) && dead.test(n.text)) hit = true
+        if (ts.isJsxElement(n) || ts.isJsxFragment(n)) {
+          const kids = n.children
+          for (let k = 0; k < kids.length - 1; k++) {
+            const t = kids[k]; const next = kids[k + 1]
+            if (ts.isJsxText(t) && t.text.endsWith('$')
+                && ts.isJsxExpression(next) && next.expression
+                && tokenRef.test(next.expression.getText(sf))) hit = true
+          }
+        }
         ts.forEachChild(n, visit)
       }
       visit(sf)
