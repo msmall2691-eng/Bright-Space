@@ -172,6 +172,13 @@ it('shows what came back, not what it sent', async () => {
   })
   fireEvent.change(field, { target: { value: '48' } })
   fireEvent.blur(field)
+  // Wait for the save itself before asserting what replaced it. If the draft
+  // ever stops surviving to blur again, commit() skips the save silently and
+  // this fails here, naming the missing request — rather than timing out a
+  // second later on "expected '24' to be '12'", which is what the lost-edit
+  // race in NumberField actually looked like.
+  await waitFor(() => expect(post).toHaveBeenCalledWith(
+    '/api/settings/rules', { settings: { job_sms_reminder_lead_hours: 48 } }))
   await waitFor(() => expect(
     screen.getByLabelText('How far ahead').value).toBe('12'))
 })
