@@ -121,6 +121,51 @@ describe('BB-A11Y-05 — themed @theme entries must be inline', () => {
     ).toEqual([])
   })
 
+  it('no :root declaration reaches a themed token either', () => {
+    // The same substitution rule one level down, and the half that `@theme
+    // inline` does NOT fix. `:root { --accent-link: var(--accent-800) }` was
+    // live after BB-A11Y-05: `--accent-800` is redefined per accent on
+    // `body.accent-*`, so it resolved once against the default ramp and every
+    // light-theme link stayed indigo-800 whatever accent was picked — measured
+    // in the running app as rgb(55, 48, 163) under `body.mode-clean.accent-rose`,
+    // beside a correctly rose `bg-indigo-600`.
+    //
+    // Only the light step was affected: the dark override was already on `body`
+    // and did follow the accent, which is how a half-working feature hid it.
+    //
+    // The fix is the same one BB-A11Y-04b made for `--accent-focus`: declare it
+    // on `body`, the element the accent classes land on. `body.theme-*` outranks
+    // a bare `body`, so per-theme overrides still win.
+    const offenders = []
+    for (const b of blocksMatching(/(?:^|[},;])\s*:root\s*(?=\{)/gm)) {
+      for (const [name, value] of declarations(b.body)) {
+        const themed = varsReferenced(value).filter(v => themedTokens.has(v))
+        if (themed.length) offenders.push(`${name}: ${value}   (themed: ${themed.join(', ')})`)
+      }
+    }
+    expect(
+      offenders,
+      'A `var()` into a themed token resolves on the element it is DECLARED on.\n' +
+        'On :root that is the default ramp, so these can never follow the\n' +
+        'body.theme-* / body.accent-* class. Declare them on `body` instead:\n  ' +
+        offenders.join('\n  '),
+    ).toEqual([])
+  })
+
+  it('still finds the body-scoped declarations that make that check meaningful', () => {
+    // Non-vacuity for the check above: if the `:root` regex or `themedTokens`
+    // drifted to matching nothing, it would pass forever. The two tokens that
+    // legitimately use this pattern ON BODY must be visible to the same parser.
+    const onBody = []
+    for (const b of blocksMatching(/(?:^|[},;])\s*body\s*(?=\{)/gm)) {
+      for (const [name, value] of declarations(b.body)) {
+        if (varsReferenced(value).some(v => themedTokens.has(v))) onBody.push(name)
+      }
+    }
+    expect(onBody, 'body-scoped themed indirections vanished — is the parser still working?')
+      .toEqual(expect.arrayContaining(['--accent-link', '--accent-focus']))
+  })
+
   it('keeps the themed entries together in one inline block', () => {
     // Not style policing: the inline block carries the explanation of WHY, and a
     // second home for these makes the next person re-derive it from scratch.
