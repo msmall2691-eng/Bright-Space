@@ -67,10 +67,25 @@ const CLEARED_KEY = 'brightbase_board_cleared'
 // Column templates by how many of the grid's three columns have children.
 // Spelled out as complete literals because Tailwind's JIT only emits classes it
 // can see as whole strings — an interpolated track list gets purged.
+//
+// THREE TRACKS NEED A WINDOW THAT HOLDS THREE TRACKS, so the third one waits
+// for xl:, not shell:. `shell:` is 900px and the sidebar plus the page gutters
+// take ~290 of it, which leaves ~640px of content — about 184px a track once
+// it is cut three ways. At that width a job title renders as "Cle…", a client
+// as "+1207…", and every box header wraps; the board stops being glanceable,
+// which is the entire point of it. (This never showed up before because
+// BB-CSS-01 meant the template was overruled by `sm:grid-cols-2` and the grid
+// quietly ran at two tracks everywhere. Fixing the breakpoint order is what
+// made it visible — the three-track layout had simply never rendered.)
+//
+// At shell: the same three columns run two-up with the comms rail spanning
+// underneath (it lays its own boxes out side by side there, so it is a row of
+// the grid rather than a stubby full-width band). xl: is 1280px — ~970px of
+// content, ~300px a track — which is where a third track starts to read.
 const GRID_COLS = {
   1: 'shell:grid-cols-1',
   2: 'shell:grid-cols-[minmax(0,1.5fr)_minmax(0,1.15fr)]',
-  3: 'shell:grid-cols-[minmax(0,1.5fr)_minmax(0,1.15fr)_minmax(0,1.15fr)]',
+  3: 'shell:grid-cols-[minmax(0,1.5fr)_minmax(0,1.15fr)] xl:grid-cols-[minmax(0,1.5fr)_minmax(0,1.15fr)_minmax(0,1.15fr)]',
 }
 
 // Endpoints that cost money per call. Every one of these gets a confirm step
@@ -184,6 +199,14 @@ function TopBand({ stats, unreadConversations, crewUnreadThreads, showComms, nav
   ] : []
   const tiles = (stats || []).filter(s => STAT_KEEP.has(s.key))
   if (!commsEntries.length && !tiles.length) return null
+  // The phone grid is two across, so an ODD number of tiles leaves the last
+  // cell empty — a tile-sized hole in the strip, on the smallest screen, in
+  // the one element that is supposed to be a solid block of numbers. The usual
+  // count is odd: four stats plus the unread-messages entry, with crew chats
+  // only appearing when a crew thread is unread. The last tile takes the whole
+  // row instead. No effect at shell:, where the strip is a flex row.
+  const oddCount = (commsEntries.length + tiles.length) % 2 === 1
+  const lastFills = oddCount ? 'col-span-2 shell:col-span-1' : ''
   return (
     /* Wraps 2-up on a phone instead of scrolling sideways. It used to be one
        `overflow-x-auto` row of `min-w-[8.5rem]` tiles, which at 390px left two
@@ -205,11 +228,12 @@ function TopBand({ stats, unreadConversations, crewUnreadThreads, showComms, nav
           <span className="whitespace-nowrap text-[10.5px] text-ink-3">{e.label}</span>
         </button>
       ))}
-      {tiles.map(stat => (
+      {tiles.map((stat, i) => (
         <button key={stat.key}
           onClick={() => stat.href && navigate(stat.href)}
           title={stat.sub || undefined}
-          className="bb-focus flex flex-col items-start gap-0.5 bg-panel px-3.5 py-2.5 text-left transition-colors hover:bg-bg-2 shell:min-w-0 shell:flex-1">
+          className={`bb-focus flex flex-col items-start gap-0.5 bg-panel px-3.5 py-2.5 text-left transition-colors hover:bg-bg-2 shell:min-w-0 shell:flex-1 ${
+            i === tiles.length - 1 ? lastFills : ''}`}>
           <span className={`text-[15px] font-bold leading-none tabular-nums ${STAT_TONE[stat.tone] || STAT_TONE.neutral}`}>
             {stat.value}
           </span>
@@ -613,8 +637,16 @@ export default function OpsBoard() {
             <SubNav />
           </div>
           <div className="order-2 ml-auto flex shrink-0 items-center gap-2 shell:order-3">
+            {/* lg:, not sm:. This line is ~145px of the least urgent text on
+                the page, and from sm: it was taking that out of the row the
+                tabs share: at the owner's ~940px the nav was left 117px for
+                184px of tabs, so "Assistant" was cut mid-word and "Owner" was
+                off-screen entirely — inside an `overflow-x:auto` with no
+                scrollbar and no fade, which is invisible rather than hidden.
+                Navigation outranks a timestamp; it comes back at 1024px where
+                there is room for both. */}
             {data?.refreshed_at && (
-              <span className="hidden text-[11px] text-ink-3 sm:inline">refreshed {fmtRefreshed(data.refreshed_at)}</span>
+              <span className="hidden text-[11px] text-ink-3 lg:inline">refreshed {fmtRefreshed(data.refreshed_at)}</span>
             )}
             <button
               onClick={() => setAssistantOpen(true)}
@@ -696,7 +728,21 @@ export default function OpsBoard() {
                   self-hides) so the grid narrows rather than showing a blank
                   middle track. */}
               {showMiddle && (
-                <div className="flex flex-col gap-4">
+                /* `row-span-2` at the two-track size is what lets the comms
+                   rail sit UNDER column A instead of in a band below both.
+                   Column A runs short (Today + three needs-a-cleaner rows) and
+                   this one runs long (requests + money), so row 1 was as tall
+                   as this column and column A ended with ~370px of nothing
+                   beneath it — the single largest piece of dead space left on
+                   the board. Spanning both rows lets this column keep flowing
+                   down the right track while the rail continues the left one.
+                   Back to one row at xl:, where there are three tracks and
+                   every column is its own. */
+                <div className={`flex flex-col gap-4 ${
+                  /* Only when there IS a rail to tuck under column A. Without
+                     one this column would span an implicit second row that
+                     nothing fills, buying a 16px gap for nothing. */
+                  canComms ? 'sm:row-span-2 xl:row-span-1' : ''}`}>
                   {byKey.requests && (
                     <Section section={byKey.requests} items={requestItems}
                       clearedSet={cleared} onToggle={toggleCleared}
@@ -725,7 +771,17 @@ export default function OpsBoard() {
                   for roles that would 403. Spans both tracks at the mid (2-col)
                   width, its own track at shell:. */}
               {canComms && (
-                <div data-testid="home-comms-rail" className="flex flex-col gap-4 sm:col-span-2 shell:col-span-1">
+                /* Its own track only once there IS a third track (xl:, see
+                   GRID_COLS). Below that it CONTINUES COLUMN A: no span, so it
+                   auto-places into the left track's second row, directly under
+                   the needs-a-cleaner box, while the middle column flows past
+                   it on the right (that column carries the `row-span-2`). The
+                   two short comms boxes are what fills the space column A used
+                   to run out of. When there is no middle column it is the only
+                   sibling and spans the pair, as before. */
+                <div data-testid="home-comms-rail"
+                  className={`flex flex-col gap-4 ${
+                    showMiddle ? '' : 'sm:col-span-2 shell:col-span-1'}`}>
                   <CrewBox navigate={navigate} />
                   <ClientsBox items={messageItems} cleared={cleared} onAction={runAction}
                     actioningKey={actioningKey} confirmingKey={confirmingKey} navigate={navigate} />
@@ -757,8 +813,12 @@ export default function OpsBoard() {
                   canComms && tailNotices.length > 0 ? 'shell:grid-cols-2' : 'shell:grid-cols-1'
                 }`}
                 style={{ animationDelay: '60ms' }}>
-                {/* Office-only: every create flow is a write. */}
-                {canComms && <QuickActions navigate={navigate} />}
+                {/* Office-only: every create flow is a write. `wide` is the
+                    same condition the track count above is built from — it
+                    tells the panel whether it got the whole row or half of it,
+                    which decides how many tiles fit across. CSS can't infer
+                    it: shell: means ~640px here and ~296px there. */}
+                {canComms && <QuickActions navigate={navigate} wide={tailNotices.length === 0} />}
                 {tailNotices.length > 0 && (
                   <div className="flex flex-col gap-4">
                     {tailNotices.map(section => (
