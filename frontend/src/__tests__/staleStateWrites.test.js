@@ -137,6 +137,61 @@ function enclosingLoops(node, fn) {
   return out
 }
 
+/** `b` sits entirely within `a`. */
+const contains = (a, b) => b.getStart() >= a.getStart() && b.end <= a.end
+
+/** The statement containing `node` whose own parent is a block. */
+function statementIn(node, fn) {
+  let p = node
+  while (p && p !== fn) {
+    if (ts.isStatement(p) && p.parent && ts.isBlock(p.parent)) return p
+    p = p.parent
+  }
+  return null
+}
+
+/**
+ * Does `aw` DEFINITELY run before `call`?
+ *
+ * Deliberately conservative, and this is the heart of the rule. "Positioned
+ * earlier in the source" is a different question, and answering that one
+ * rejects correct code:
+ *
+ *     if (skip) { await save(); return }
+ *     setItems(items.concat(x))
+ *
+ * Every execution reaching the setter took the other branch and never
+ * suspended, so `items` is current. A check that gates all of src/ must not
+ * fail that — found in review, as was the opposite error of ignoring an await
+ * inside the call's own arguments.
+ *
+ * Answering it EXACTLY needs control-flow reachability, which is more
+ * machinery than this is worth, so only straight-line forms count:
+ *
+ *  - the await's statement is a sibling of the call's statement in the same
+ *    block, before it, and is not itself a branching statement; or
+ *  - it is the CONDITION of a preceding sibling `if` — the guard-clause
+ *    idiom, `if (!(await confirmDialog())) return`, whose condition always
+ *    evaluates. Two of the four bugs fixed here have that shape, so it counts.
+ *
+ * An await inside a branch BODY never counts. The bias is deliberate, and it
+ * does cost real coverage: `try { await save() } catch {}` followed by the
+ * call is genuine staleness this lets through. That is the right way round for
+ * a check that can block a push — a miss costs one bug, a false positive
+ * costs everyone who writes the pattern.
+ */
+function definitelyBefore(aw, call, fn, source) {
+  const callStmt = statementIn(call, fn)
+  const awStmt = statementIn(aw, fn)
+  if (!callStmt || !awStmt) return false
+  if (callStmt.parent !== awStmt.parent) return false
+  if (awStmt.getStart(source) >= callStmt.getStart(source)) return false
+  if (!ts.isIfStatement(awStmt) && !ts.isSwitchStatement(awStmt)
+      && !ts.isTryStatement(awStmt) && !isLoop(awStmt)) return true
+  if (ts.isIfStatement(awStmt) && contains(awStmt.expression, aw)) return true
+  return false
+}
+
 /** Offenders in one parsed file, plus how many setter calls were inspected. */
 function staleWrites(source, label) {
   const offenders = []
@@ -176,19 +231,27 @@ function staleWrites(source, label) {
       //     for (const x of xs) { setItems(items.concat(x)); await save(x) }
       //
       // the await sits AFTER the call in the source and still precedes it on
-      // every iteration but the first, which is the stale case. Hence the two
-      // clauses: an await before the call, or an await sharing a loop with it.
+      // every iteration but the first, which is the stale case.
+      //
+      // So there are three ways to suspend first, and `definitelyBefore` holds
+      // the subtle one. They are ORed, cheapest first.
       const fn = fnStack[fnStack.length - 1]
       let suspendsFirst = false
       if (fn) {
         const awaits = ownAwaits(fn)
-        const start = node.getStart(source)
-        if (awaits.some(a => a.end <= start)) {
-          suspendsFirst = true
-        } else {
-          suspendsFirst = enclosingLoops(node, fn).some(loop => awaits.some(a =>
-            a.getStart(source) >= loop.getStart(source) && a.end <= loop.end))
-        }
+        suspendsFirst =
+          // (a) the suspension happens while evaluating this call's own
+          //     arguments: `setItems(items.concat(await loadMore()))`. `items`
+          //     is read before the await resolves, so it can be stale by the
+          //     time React is handed the value. Positional comparison against
+          //     the call's start misses this, since the await ends after it.
+          awaits.some(a => contains(node, a))
+          // (b) an await that definitely runs before this call — see there for
+          //     why "positioned earlier" is not the same thing.
+          || awaits.some(a => definitelyBefore(a, node, fn, source))
+          // (c) an await sharing any enclosing loop, so a later iteration
+          //     reaches the call after a suspension.
+          || enclosingLoops(node, fn).some(loop => awaits.some(a => contains(loop, a)))
       }
 
       if (!functional && reads && suspendsFirst) {
@@ -264,6 +327,12 @@ describe('no setState writes back state captured before an await', () => {
       // Nested loops with no await anywhere: walking every enclosing loop must
       // not start flagging on the nesting alone.
       'function f() { for (const a of as) { for (const x of xs) { setItems(items.concat(x)) } } }',
+      // An awaited EARLY EXIT. Every execution that reaches the setter took
+      // the other branch and never suspended — found in review, and the
+      // reason the rule asks about definite execution rather than position.
+      'async function f() { if (skip) { await save(); return } setItems(items.concat(x)) }',
+      // The same point one level out: an await confined to a branch body.
+      'async function f() { if (a) { await save() } else { setItems(items.concat(x)) } }',
     ]
     const bad = [
       // #1111, the one found by hand.
@@ -283,6 +352,13 @@ describe('no setState writes back state captured before an await', () => {
       // The suspension belongs to an OUTER loop: stale from the second outer
       // iteration, and missed while only the innermost loop was inspected.
       'async function f() { for (const a of as) { for (const x of xs) { setItems(items.concat(x)) } await save() } }',
+      // The suspension happens while evaluating the call's OWN arguments, so
+      // `items` is read before it resolves — also found in review, and missed
+      // by comparing positions against the call's start.
+      'async function f() { setItems(items.concat(await loadMore())) }',
+      // The guard-clause idiom, which is two of the four real bugs: the `if`
+      // condition always evaluates, so the await always precedes the call.
+      'async function f() { if (!(await confirmDialog())) return; setVisits(visits.filter(v => v.id !== id)) }',
     ]
     const flags = (src) => staleWrites(parse('probe.tsx', src), 'probe').offenders.length > 0
     for (const src of good) expect(flags(src), `false positive on: ${src}`).toBe(false)
