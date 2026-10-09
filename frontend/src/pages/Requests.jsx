@@ -708,7 +708,14 @@ export default function Requests() {
       )
       const failed = results.filter(r => r.status === 'rejected').length
       const archived = new Set(ids.filter((_, i) => results[i].status === 'fulfilled'))
-      setRequests(requests.filter(r => !archived.has(r.id)))
+      // Functional, not `requests.filter(...)`: the confirm above and this
+      // batch of PATCHes put a long, user-paced gap between the click and
+      // this write, so the `requests` captured at render time is stale by the
+      // time we get here. Writing it back resurrected whatever the per-row
+      // actions had removed in the meantime — a lead already archived on the
+      // server reappearing on screen, with nothing to say it wasn't real. The
+      // same staleness `selectedIntakes` is guarded against above.
+      setRequests(prev => prev.filter(r => !archived.has(r.id)))
       clearIntakeSelection()
       if (failed > 0) toast.error(`Archived ${ids.length - failed} of ${ids.length}. ${failed} failed.`)
     } finally {
