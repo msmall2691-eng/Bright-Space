@@ -15,19 +15,23 @@ import { getCached } from '../api'
  * one at a time, the seven are:
  *   - useScheduleData, CalendarView, JobEditModal, JobCreateModal — converted,
  *     still here, still on this hook.
+ *   - ScheduleTabs' AvailabilityPanel — claimed for a long time, actually
+ *     converted only in #1147, once a test counting `fetch` calls showed the
+ *     roster going out TWICE on `?tab=availability`: Schedule's
+ *     useScheduleData calls this hook unconditionally (hooks can't be
+ *     conditional; its `enabled` option gates only the week fetch), and the
+ *     panel's raw `get()` could not share the in-flight promise.
  *   - useDashboardData — was dead code and is now deleted. Nothing had
  *     imported it since the Dashboard page itself was removed, so its raw
  *     fetch had not cost a request in a long time.
  *   - ConvertToJobModal — no such file exists anywhere in the tree.
- *   - ScheduleTabs' AvailabilityPanel — never converted. It still calls
- *     `get()` directly, and on `?tab=availability` that IS a second roster
- *     request on one screen, because Schedule's useScheduleData calls this
- *     hook unconditionally (hooks can't be conditional; its `enabled` option
- *     gates only the week fetch). Its own slice.
  *
- * So the live count is four callers sharing one cached fetch, not seven.
- * Worth the words: a comment claiming a de-duplication that did not happen is
- * how the duplicate survived an economy audit.
+ * So the live count is five callers sharing one cached fetch, not seven.
+ * Worth the words: a comment claiming a de-duplication that had not happened
+ * is how the one real duplicate survived an economy audit for months. The
+ * count is pinned by a test now
+ * (components/schedule/__tests__/availabilityRoster.test.jsx) rather than by
+ * this paragraph.
  *
  * Returns:
  *   employees          — raw array from the API (empty until loaded)
