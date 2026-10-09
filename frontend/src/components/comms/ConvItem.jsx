@@ -3,6 +3,7 @@ import { CHANNEL_CONFIG } from './constants'
 import { contactDisplay, relTime } from './utils'
 import { Avatar } from './primitives'
 import { htmlToText } from '../../utils/format'
+import { STATUS_DOT } from '../../theme/statusDots'
 
 /** Left-list conversation row (Twenty CRM style): avatar + channel chip,
  *  name + relative time, preview, and Overdue/Unassigned chips when
@@ -100,13 +101,13 @@ export function ConvItem({ conv, active, onClick }) {
           {overdue ? (
             <div className="mt-1.5">
               <span className="inline-flex h-5 items-center gap-1.5 rounded-sm border border-hairline-2 bg-panel px-2 text-[11px] font-medium text-ink-2">
-                <span className="h-1.5 w-1.5 rounded-full bg-red-500" /> Overdue
+                <span className={`h-1.5 w-1.5 rounded-full ${STATUS_DOT.problem}`} /> Overdue
               </span>
             </div>
           ) : awaitingReply ? (
             <div className="mt-1.5">
               <span className="inline-flex h-5 items-center gap-1.5 rounded-sm border border-hairline-2 bg-panel px-2 text-[11px] font-medium text-ink-2">
-                <span className="h-1.5 w-1.5 rounded-full bg-amber-500" /> Needs reply
+                <span className={`h-1.5 w-1.5 rounded-full ${STATUS_DOT.attention}`} /> Needs reply
               </span>
             </div>
           ) : unassigned ? (

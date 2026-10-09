@@ -15,14 +15,16 @@ import RecordSkeleton from '../components/record/RecordSkeleton'
 import { EmptyState } from '../components/ui'
 import StatusBadge from '../components/ui/StatusBadge'
 import { statusTone, statusLabel } from '../utils/statusTone'
+import { STATUS_DOT } from '../theme/statusDots'
+import { STATUS_TEXT } from '../theme/statusText'
 
 // Pipeline stages (mirrors the kanban + backend enum).
 const STAGE_OPTIONS = [
   { value: 'new',       label: 'new',       dot: 'bg-ink-3' },
-  { value: 'qualified', label: 'qualified', dot: 'bg-blue-500' },
-  { value: 'quoted',    label: 'quoted',    dot: 'bg-amber-500' },
-  { value: 'won',       label: 'won',       dot: 'bg-emerald-500' },
-  { value: 'lost',      label: 'lost',      dot: 'bg-red-500' },
+  { value: 'qualified', label: 'qualified', dot: STATUS_DOT.info },
+  { value: 'quoted',    label: 'quoted',    dot: STATUS_DOT.attention },
+  { value: 'won',       label: 'won',       dot: STATUS_DOT.ok },
+  { value: 'lost',      label: 'lost',      dot: STATUS_DOT.problem },
 ]
 const SERVICE_OPTIONS = [
   { value: 'residential', label: 'residential' },
@@ -221,7 +223,7 @@ export default function OpportunityDetail() {
               render={(q) => (
                 <Link key={q.id} to={`/quotes/${q.id}`}
                   className="flex items-center justify-between gap-2 text-[12px] hover:bg-bg-2 rounded px-1 -mx-1 py-0.5 transition-colors">
-                  <span className="text-blue-500 truncate hover:underline">{q.quote_number || `#${q.id}`}</span>
+                  <span className={`${STATUS_TEXT.info} truncate hover:underline`}>{q.quote_number || `#${q.id}`}</span>
                   <span className="flex items-center gap-2 shrink-0">
                     <span className="text-ink-3">{money(q.total)}</span>
                     <StatusBadge status={statusTone(q.status)} className="capitalize">{statusLabel(q.status)}</StatusBadge>
@@ -232,7 +234,7 @@ export default function OpportunityDetail() {
               render={(inv) => (
                 <Link key={inv.id} to={`/invoices/${inv.id}`}
                   className="flex items-center justify-between gap-2 text-[12px] hover:bg-bg-2 rounded px-1 -mx-1 py-0.5 transition-colors">
-                  <span className="text-blue-500 truncate hover:underline">{inv.invoice_number || `#${inv.id}`}</span>
+                  <span className={`${STATUS_TEXT.info} truncate hover:underline`}>{inv.invoice_number || `#${inv.id}`}</span>
                   <span className="flex items-center gap-2 shrink-0">
                     <span className="text-ink-3">{money(inv.total)}</span>
                     <StatusBadge status={statusTone(inv.status)} className="capitalize">{statusLabel(inv.status)}</StatusBadge>
@@ -243,7 +245,7 @@ export default function OpportunityDetail() {
               render={(j) => (
                 <Link key={j.id} to={`/jobs/${j.id}`}
                   className="flex items-center justify-between gap-2 text-[12px] hover:bg-bg-2 rounded px-1 -mx-1 py-0.5 transition-colors">
-                  <span className="text-blue-500 truncate hover:underline">{j.title || `Job #${j.id}`}</span>
+                  <span className={`${STATUS_TEXT.info} truncate hover:underline`}>{j.title || `Job #${j.id}`}</span>
                   <span className="flex items-center gap-2 shrink-0">
                     <span className="text-ink-3">{fmtDate(j.scheduled_date)}</span>
                     <StatusBadge status={statusTone(j.status)} className="capitalize">{statusLabel(j.status)}</StatusBadge>

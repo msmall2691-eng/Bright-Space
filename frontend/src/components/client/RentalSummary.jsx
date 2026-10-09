@@ -1,4 +1,5 @@
 import { ExternalLink } from 'lucide-react'
+import { STATUS_DOT } from '../../theme/statusDots'
 
 /**
  * RentalSummary — the read-only, at-a-glance rental facts for an STR property,
@@ -27,7 +28,7 @@ function fmtTime(hhmm) {
 function FeedRow({ feed }) {
   const failed = feed.last_sync_status === 'failed'
   const synced = !failed && feed.last_synced_at
-  const dot = failed ? 'bg-red-500' : synced ? 'bg-emerald-500' : 'bg-ink-3/40'
+  const dot = failed ? STATUS_DOT.problem : synced ? STATUS_DOT.ok : 'bg-ink-3/40'
   return (
     <div className="flex items-center gap-1.5 text-[11px]" data-testid="rental-feed-row">
       <span className={`inline-block w-1.5 h-1.5 rounded-full shrink-0 ${dot}`} aria-hidden="true" />

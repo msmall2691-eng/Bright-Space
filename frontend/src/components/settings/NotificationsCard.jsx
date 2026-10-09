@@ -6,6 +6,8 @@ import {
   isAppInstalled, mobilePlatform, onAppForeground,
 } from '../../utils/push'
 import { useNotificationPrefs } from '../../hooks/useNotificationPrefs'
+import { STATUS_DOT } from '../../theme/statusDots'
+import { STATUS_TEXT } from '../../theme/statusText'
 
 const OFFICE_CATEGORY_LABELS = {
   requests: 'New requests',
@@ -30,7 +32,7 @@ function NotificationCategoryList() {
         return (
           <div key={key} className="flex items-center justify-between gap-3">
             <span className="flex items-center gap-2 text-xs text-ink-2">
-              <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${on ? 'bg-emerald-500' : 'bg-gray-400'}`} />
+              <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${on ? STATUS_DOT.ok : STATUS_DOT.neutral}`} />
               {label}
             </span>
             <button type="button" onClick={() => toggle(key)} aria-pressed={on}
@@ -119,11 +121,11 @@ export default function NotificationsCard({ toast }) {
           {diag && (
             <ul className="mt-3 space-y-1 text-xs text-ink-2">
               <li className="flex items-center gap-2">
-                <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${diag.server_configured ? 'bg-emerald-500' : 'bg-amber-500'}`} />
+                <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${diag.server_configured ? STATUS_DOT.ok : STATUS_DOT.attention}`} />
                 Server {diag.server_configured ? 'configured' : 'not configured — add VAPID_PUBLIC_KEY / VAPID_PRIVATE_KEY in Railway'}
               </li>
               <li className="flex items-center gap-2">
-                <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${diag.org_devices > 0 ? 'bg-emerald-500' : 'bg-gray-400'}`} />
+                <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${diag.org_devices > 0 ? STATUS_DOT.ok : STATUS_DOT.neutral}`} />
                 {diag.org_devices} device{diag.org_devices === 1 ? '' : 's'} enrolled across the team
               </li>
             </ul>
@@ -196,16 +198,16 @@ export default function NotificationsCard({ toast }) {
             dot+word line, so "not getting notifications" self-diagnoses. */}
         <ul className="mt-3 space-y-1 text-xs text-ink-2">
           <li className="flex items-center gap-2">
-            <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${serverReady ? 'bg-emerald-500' : 'bg-amber-500'}`} />
+            <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${serverReady ? STATUS_DOT.ok : STATUS_DOT.attention}`} />
             Server {serverReady ? 'configured' : 'not configured — add VAPID_PUBLIC_KEY / VAPID_PRIVATE_KEY in Railway'}
           </li>
           <li className="flex items-center gap-2">
-            <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${blocked ? 'bg-red-500' : on ? 'bg-emerald-500' : 'bg-gray-400'}`} />
+            <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${blocked ? STATUS_DOT.problem : on ? STATUS_DOT.ok : STATUS_DOT.neutral}`} />
             This device: {blocked ? 'blocked in browser settings' : on ? 'receiving' : 'not enrolled yet'}
           </li>
           {diag && (
             <li className="flex items-center gap-2">
-              <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${diag.org_devices > 0 ? 'bg-emerald-500' : 'bg-gray-400'}`} />
+              <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${diag.org_devices > 0 ? STATUS_DOT.ok : STATUS_DOT.neutral}`} />
               {diag.org_devices} device{diag.org_devices === 1 ? '' : 's'} enrolled across the team
               {diag.my_devices > 0 ? ` · ${diag.my_devices} yours` : ''}
             </li>
@@ -214,7 +216,7 @@ export default function NotificationsCard({ toast }) {
 
         {/* Status / help line */}
         {!serverReady ? (
-          <p className="text-xs text-amber-700 dark:text-amber-300 mt-3 flex items-center gap-1.5">
+          <p className={`text-xs ${STATUS_TEXT.attention} mt-3 flex items-center gap-1.5`}>
             <Smartphone className="w-3.5 h-3.5 shrink-0" />
             Not set up on the server yet — add VAPID keys (see docs/PUSH_NOTIFICATIONS.md).
           </p>

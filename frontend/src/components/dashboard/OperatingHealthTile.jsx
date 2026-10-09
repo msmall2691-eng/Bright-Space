@@ -31,13 +31,14 @@
  */
 import { Activity } from 'lucide-react'
 import { Tile, TileLoading } from './primitives'
+import { STATUS_DOT } from '../../theme/statusDots'
 
 /** Dot colour against the published band. Amber is a nudge, rose is trouble. */
 function toneFor(pct, bench) {
   if (pct == null || !bench) return 'bg-ink-3/40'
-  if (pct <= bench.good_max) return 'bg-emerald-500'
-  if (pct <= bench.warn_max) return 'bg-amber-500'
-  return 'bg-rose-500'
+  if (pct <= bench.good_max) return STATUS_DOT.ok
+  if (pct <= bench.warn_max) return STATUS_DOT.attention
+  return STATUS_DOT.problem
 }
 
 const pct = (v) => v == null ? '—' : `${v}%`
@@ -88,7 +89,7 @@ export function OperatingHealthTile({ loading, data, error }) {
 
             {coverage != null && coverage < 100 && (
               <p className="mt-1.5 flex items-start gap-1.5 text-[11px] text-ink-2">
-                <span className="mt-1 w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0" aria-hidden="true" />
+                <span className={`mt-1 w-1.5 h-1.5 rounded-full ${STATUS_DOT.attention} shrink-0`} aria-hidden="true" />
                 <span>
                   Only {coverage}% of finished jobs have an invoice
                   ({labour.jobs_invoiced} of {labour.jobs_completed}), so the

@@ -1,5 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Mail, MessageSquare, Send, Voicemail } from 'lucide-react'
+import { STATUS_DOT } from '../../theme/statusDots'
+import { STATUS_ICON } from '../../theme/statusText'
 
 /** A single linked email (from the unified comms tables), styled as a chat
  *  bubble — same shape/radius/alignment as an SMS bubble, with the subject
@@ -84,7 +86,7 @@ function ComposeBar({
   if (!hasPhone && !hasEmail) {
     return (
       <div id="message-compose" className="flex items-center gap-2 px-3 py-2 rounded-lg border border-hairline bg-panel text-[12.5px]">
-        <span className="w-1.5 h-1.5 rounded-full shrink-0 bg-amber-500" aria-hidden="true" />
+        <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${STATUS_DOT.attention}`} aria-hidden="true" />
         <span className="text-ink-2">Add a phone number or email to this client to send a message.</span>
       </div>
     )
@@ -98,7 +100,7 @@ function ComposeBar({
         <div className="flex items-center gap-2">
           {channel === 'sms'
             ? <MessageSquare className="w-4 h-4 text-purple-400" />
-            : <Mail className="w-4 h-4 text-blue-400" />}
+            : <Mail className={`w-4 h-4 ${STATUS_ICON.info}`} />}
           <span className="text-sm font-medium text-ink">
             {channel === 'sms' ? `Text ${client.phone}` : `Email ${client.email}`}
           </span>

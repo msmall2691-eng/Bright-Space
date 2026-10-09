@@ -5,6 +5,7 @@ import { get, post } from '../api'
 import { recordFromPath } from '../nav/routes'
 import AgentAvatar from './workspace/AgentAvatar'
 import MarkdownContent from './workspace/MarkdownContent'
+import { STATUS_DOT } from '../theme/statusDots'
 
 /**
  * PageAssistant — a per-page AI "corner box" (desktop). Each section of the app
@@ -204,7 +205,7 @@ export default function PageAssistant() {
                 <button key={i} onClick={() => { if (f.href) navigate(f.href) }}
                   className="w-full text-left flex items-start gap-2 rounded-lg px-2 py-1.5 hover:bg-bg-2 transition-colors group">
                   <span className={`mt-1 w-1.5 h-1.5 rounded-full shrink-0 ${
-                    f.severity === 'high' ? 'bg-red-500' : f.severity === 'medium' ? 'bg-amber-500' : 'bg-blue-500'}`} />
+                    f.severity === 'high' ? STATUS_DOT.problem : f.severity === 'medium' ? STATUS_DOT.attention : STATUS_DOT.info}`} />
                   <span className="min-w-0 flex-1">
                     <span className="block text-[12px] font-medium text-ink truncate">{f.title}</span>
                     {f.detail && <span className="block text-[11px] text-ink-3 truncate">{f.detail}</span>}

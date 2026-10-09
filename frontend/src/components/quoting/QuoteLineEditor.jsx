@@ -23,6 +23,7 @@ import { useState } from 'react'
 import { Plus, Trash2 } from 'lucide-react'
 import { patch } from '../../api'
 import { toast } from '../../utils/toastBus'
+import { STATUS_DOT } from '../../theme/statusDots'
 
 const money = (n) => `$${Number(n || 0).toLocaleString(undefined, {
   minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
@@ -220,7 +221,7 @@ export default function QuoteLineEditor({ quote, editable = false, onSaved }) {
         /* Dot + sentence, not a tinted banner (brightbase-design-language). */
         <div className="border-t border-hairline px-3 py-2">
           <p className="flex items-start gap-1.5 text-[12px] text-ink-2">
-            <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-amber-500" aria-hidden="true" />
+            <span className={`mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full ${STATUS_DOT.attention}`} aria-hidden="true" />
             <span>
               Changed since you sent it — the customer still sees the old version
               until you resend.

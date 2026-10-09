@@ -5,6 +5,7 @@ import { CHANNEL_CONFIG } from './constants'
 import { contactDisplay, relTime } from './utils'
 import { Avatar, SlaBadge } from './primitives'
 import { AssigneePicker } from './AssigneePicker'
+import { STATUS_DOT } from '../../theme/statusDots'
 
 /** Top of the center pane when a conversation is open:
  *   • Optional red Overdue banner (SLA breached).
@@ -26,7 +27,7 @@ export function ThreadHeader({
       {/* Phase 8: Overdue banner (renamed from "SLA breached"). */}
       {detail.sla_state === 'breached' && (
         <div className="bg-panel border-b border-hairline px-5 py-2 flex items-center gap-2 text-[12px] font-medium text-ink-2">
-          <span className="w-1.5 h-1.5 rounded-full bg-red-500 shrink-0" aria-hidden="true" />
+          <span className={`w-1.5 h-1.5 rounded-full ${STATUS_DOT.problem} shrink-0`} aria-hidden="true" />
           <Clock className="w-4 h-4 text-ink-3" />
           Overdue — last reply {relTime(detail.last_inbound_at)} ago
         </div>
@@ -86,7 +87,7 @@ export function ThreadHeader({
           <button onClick={onToggleStatus}
             className="text-[12px] font-medium px-3 py-2 rounded-md border border-hairline-2 bg-panel text-ink-2 hover:bg-bg-2 transition-colors flex items-center gap-1.5">
             {detail.status === 'resolved'
-              ? <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" aria-hidden="true" />
+              ? <span className={`w-1.5 h-1.5 rounded-full ${STATUS_DOT.ok} shrink-0`} aria-hidden="true" />
               : <CheckCircle2 className="w-3.5 h-3.5" />}
             {detail.status === 'resolved' ? 'Done' : 'Mark done'}
           </button>

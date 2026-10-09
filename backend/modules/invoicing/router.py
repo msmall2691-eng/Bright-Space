@@ -673,6 +673,54 @@ def public_view_invoice(token: str, db: Session = Depends(get_db)):
     return _public_invoice_dict(inv, db)
 
 
+@router.post("/{invoice_id}/generate-token", dependencies=[Depends(require_role("admin", "manager"))])
+def generate_invoice_token(invoice_id: int, db: Session = Depends(get_db),
+                           org_id: int = Depends(current_org_id)):
+    """Ensure a pay-page token exists and return it plus the shareable link.
+
+    `_ensure_invoice_public_token` has existed since the pay page shipped, and
+    `invoice_to_dict` has carried a `public_token` commented "lets
+    InvoiceDetail show/copy the customer's pay-page link" — but the helper was
+    only ever called from the SEND handler, and InvoiceDetail never read the
+    field. So the one surface the comment names could not offer the link, and
+    on an invoice nobody had sent yet there was no link to offer: exactly the
+    moment someone wants to read it down the phone.
+
+    Mirrors `POST /api/quotes/{id}/generate-token` deliberately, including
+    mint-on-demand. `_ensure_invoice_public_token` is idempotent (it returns
+    the existing token untouched), so a caller does not have to know whether
+    the invoice has been sent, and copying twice cannot rotate a link a
+    customer already has.
+
+    ## The link is built here, not in the browser
+
+    `QuoteDetail` copies `window.location.origin` even though its endpoint
+    returns a canonical link, which is a latent trap rather than a bug today:
+    an office user on a preview or LAN host would hand the customer a URL only
+    the office can reach. `app_base_url()` is the single source of truth for
+    the customer-facing host and warns when `APP_BASE_URL` is unset, so the
+    link is correct wherever the office happens to be browsing from.
+    """
+    oid = resolve_org_id(org_id, db)
+    inv = db.query(Invoice).filter(
+        Invoice.id == invoice_id,
+        or_(Invoice.org_id == oid, Invoice.org_id.is_(None)),  # MT-2 tenant scope
+    ).first()
+    if not inv:
+        raise HTTPException(status_code=404, detail="Invoice not found")
+
+    from config import app_base_url  # local, as the Stripe return-url helper does
+
+    token = _ensure_invoice_public_token(inv)
+    db.commit()
+    # rstrip for the same reason that helper does it: app_base_url documents
+    # "no trailing slash" and a stray one would produce //pay/<token>.
+    return {
+        "public_token": token,
+        "invoice_link": f"{app_base_url().rstrip('/')}/pay/{token}",
+    }
+
+
 @router.post("/{invoice_id}/pay", dependencies=[Depends(require_role("admin", "manager"))])
 def process_payment(invoice_id: int, data: dict, db: Session = Depends(get_db)):
     """Record a payment the office has ALREADY RECEIVED. Admin/manager only.

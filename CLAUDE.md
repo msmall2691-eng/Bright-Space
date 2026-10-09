@@ -181,8 +181,18 @@ cd frontend && npm run test
   `tests/conftest.py`: schema-per-session + auto API-key injection). The few
   root-level `test_*.py` files intentionally sit outside `tests/` to bypass the
   auth autouse fixture — don't add there without reason.
-- `pytest.ini` `testpaths` is a **curated, vetted-green list**. Add new
-  shareable test files under `tests/` and, if they should gate CI, list them.
+- `pytest.ini` `testpaths` is **the whole `tests/` directory**, plus four
+  root-level files named individually. So a new file under `tests/` gates CI
+  automatically — nothing to register — while a new root-level one does not
+  and must be added by hand.
+  It *was* a list of 194 entries, and why it stopped being one is worth
+  knowing before anyone changes it back: pytest silently drops an entry that
+  matches nothing (it only warns when *every* entry misses), so renaming or
+  moving a file quietly stopped it running, forever, with no feedback. Fifty
+  of 235 files turned out to be listed nowhere and had never run — among them
+  the sweep asserting every external call has a timeout, and the intake
+  idempotency guardrail this file names below. The comment block in
+  `pytest.ini` has the full account.
 
 ### Type checking (optional, not gated)
 
@@ -196,7 +206,14 @@ Runs on every PR and push to `main`. Three jobs — all must pass:
 2. **RLS (Postgres)** — spins up Postgres 16, validates multi-tenant RLS
    (`tests/test_tenancy_rls_postgres.py`) and that migrations replay cleanly
    from an empty DB (`tests/test_migrations_from_scratch.py`).
-3. **Frontend build** — `npm ci && npm run build`.
+3. **Frontend build** — `npm ci`, then **`npm run test`**, then `npm run build`.
+   The name is a leftover: the vitest suite gates this job, and runs *before*
+   the build so a broken test is reported as a broken test rather than hiding
+   behind a bundling error. It did not always — the workflow's own comment
+   records that 600+ vitest tests existed and CI ran none of them, long enough
+   for a red assertion on `main` to be repeatedly called "pre-existing" rather
+   than fixed. Worth knowing in the direction that bites: a frontend test you
+   add gates CI automatically, so run `npm run test` before pushing.
 
 ## Key conventions & guardrails
 

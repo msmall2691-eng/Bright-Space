@@ -397,8 +397,9 @@ def test_dating_the_auto_converted_job_sends_the_dated_notice(ctx):
     public_accept_quote(q.public_token, PublicAcceptRequest(name="Gap"), db=db)
     job = db.query(Job).filter(Job.quote_id == q.id).one()
     assert job.scheduled_date is None
+    d = business_today() + timedelta(days=2)
     with patch("services.scheduled_notice.notify_customer_scheduled") as notice:
-        update_job(job.id, JobUpdate(scheduled_date="2026-10-06", start_time="09:00",
+        update_job(job.id, JobUpdate(scheduled_date=d.isoformat(), start_time="09:00",
                                      end_time="12:00", allow_conflicts=True), db=db, org_id=1)
     assert notice.call_count == 1
 

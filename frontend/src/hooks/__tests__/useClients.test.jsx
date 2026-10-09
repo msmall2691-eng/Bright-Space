@@ -160,4 +160,54 @@ describe('useClients', () => {
     rerender({ q: 'ana@' })
     expect(result.current.filtered.map(c => c.name)).toEqual(['Ana Client'])
   })
+
+  /**
+   * The counts are a WHOLE-DB aggregate, per status, and the comment in the
+   * hook says so: they are kept apart from `clients` precisely because that
+   * array is scoped to the selected tab. So nothing about which tab is open or
+   * what is typed in the box can change them — and fetching them alongside the
+   * list bought an identical aggregate on every tab click and every settled
+   * search, four COUNTs on the single container to redraw numbers that had not
+   * moved. `brightbase-economy` rule 3.
+   *
+   * The reason this is three cases and not one: splitting them is also how the
+   * counts stop refreshing after a CREATE, which is a bug the hook's own
+   * comment records having already shipped once ("All" frozen). The last case
+   * is the one that matters.
+   */
+  const _countsCalls = () => _urls().filter(u => u.startsWith('/api/clients/counts')).length
+
+  it('reads the whole-DB counts once on mount', async () => {
+    renderHook(() => useClients('', ''))
+    await act(async () => { await vi.runAllTimersAsync() })
+    expect(_countsCalls()).toBe(1)
+  })
+
+  it('does not re-read them when the tab or the query changes', async () => {
+    const { rerender } = renderHook(({ s, q }) => useClients(s, q), {
+      initialProps: { s: '', q: '' },
+    })
+    await act(async () => { await vi.runAllTimersAsync() })
+    const listAfterMount = _clientsUrls().length
+
+    rerender({ s: 'lead', q: '' })
+    await act(async () => { await vi.runAllTimersAsync() })
+    rerender({ s: 'lead', q: 'smith' })
+    await act(async () => { await vi.runAllTimersAsync() })
+
+    expect(_clientsUrls().length, 'the list should still refetch').toBeGreaterThan(listAfterMount)
+    expect(_countsCalls(), 'a tab click or a search re-read the whole-DB counts').toBe(1)
+  })
+
+  it('still re-reads them on an explicit load(), which is the mutation path', async () => {
+    // Creating, archiving or restoring a client DOES move the counts, and
+    // Clients.jsx calls load() after each. If this stops working, "All" freezes
+    // at its mount value — the exact audit bug the hook's comment records.
+    const { result } = renderHook(() => useClients('', ''))
+    await act(async () => { await vi.runAllTimersAsync() })
+    expect(_countsCalls()).toBe(1)
+
+    await act(async () => { await result.current.load() })
+    expect(_countsCalls(), 'load() no longer refreshes the counts').toBe(2)
+  })
 })

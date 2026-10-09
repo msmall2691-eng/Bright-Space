@@ -18,6 +18,7 @@
 import { DollarSign, ArrowRight } from 'lucide-react'
 import { SOFT_CARD } from './constants'
 import { fmtMoney } from './utils'
+import { STATUS_TEXT } from '../../theme/statusText'
 
 /** Bucket presentation, oldest-money-first is deliberately NOT the order —
  *  we read youngest → oldest so the eye lands on "90+" (the real problem)
@@ -26,11 +27,11 @@ import { fmtMoney } from './utils'
 const BUCKETS = [
   { key: 'current', label: 'Current', hint: 'not yet 30 days', sumTone: 'text-ink',
     status: 'sent' },
-  { key: '30', label: '30–60 days', hint: 'past due', sumTone: 'text-amber-600 dark:text-amber-300',
+  { key: '30', label: '30–60 days', hint: 'past due', sumTone: STATUS_TEXT.attention,
     status: 'overdue' },
-  { key: '60', label: '60–90 days', hint: 'past due', sumTone: 'text-amber-700 dark:text-amber-400',
+  { key: '60', label: '60–90 days', hint: 'past due', sumTone: STATUS_TEXT.attention,
     status: 'overdue' },
-  { key: '90', label: '90+ days', hint: 'at risk', sumTone: 'text-red-600 dark:text-red-300',
+  { key: '90', label: '90+ days', hint: 'at risk', sumTone: STATUS_TEXT.problem,
     status: 'overdue' },
 ]
 

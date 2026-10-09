@@ -19,12 +19,14 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { Check, FileText, FileUp, ShieldCheck } from 'lucide-react'
 import { get, post, upload as uploadFile } from '../../api'
 import { toast } from '../../utils/toastBus'
+import { STATUS_DOT } from '../../theme/statusDots'
+import { STATUS_ICON } from '../../theme/statusText'
 
 /** Dot + word, per the design language — never a filled pill. */
 const STATE = {
-  accepted: { dot: 'bg-emerald-500', word: 'On file' },
-  pending: { dot: 'bg-amber-500', word: 'Waiting on the office' },
-  expired: { dot: 'bg-red-500', word: 'Expired' },
+  accepted: { dot: STATUS_DOT.ok, word: 'On file' },
+  pending: { dot: STATUS_DOT.attention, word: 'Waiting on the office' },
+  expired: { dot: STATUS_DOT.problem, word: 'Expired' },
   missing: { dot: 'bg-ink-3/40', word: 'Not uploaded' },
 }
 
@@ -96,7 +98,7 @@ function DocRow({ doc, busy, onUpload, onSetExpiry }) {
           </div>
           {needsDate && !dateChanged && (
             <p className="mt-1 flex items-start gap-1.5 text-[11.5px] text-ink-3">
-              <span className="mt-[5px] w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0" aria-hidden="true" />
+              <span className={`mt-[5px] w-1.5 h-1.5 rounded-full ${STATUS_DOT.attention} shrink-0`} aria-hidden="true" />
               <span>Add the date from the certificate so we know when to ask for the next one — it doesn’t hold anything else up.</span>
             </p>
           )}
@@ -242,7 +244,7 @@ export default function CrewMyFile({ bare = false, previewUserId = null }) {
     <>
       {file.can_take_jobs ? (
         <div className="flex items-start gap-2">
-          <ShieldCheck className="w-5 h-5 text-emerald-500 shrink-0" />
+          <ShieldCheck className={`w-5 h-5 ${STATUS_ICON.ok} shrink-0`} />
           <div>
             <p className="text-[14px] font-semibold text-ink">You’re all set{firstName ? `, ${firstName}` : ''} 🎉</p>
             <p className="text-[12.5px] text-ink-2">
@@ -255,7 +257,7 @@ export default function CrewMyFile({ bare = false, previewUserId = null }) {
         // warmly, and keep the remaining items below as a gentle to-do, not a
         // "you can't work yet" wall.
         <div className="flex items-start gap-2">
-          <ShieldCheck className="w-5 h-5 text-emerald-500 shrink-0" />
+          <ShieldCheck className={`w-5 h-5 ${STATUS_ICON.ok} shrink-0`} />
           <div>
             <p className="text-[14px] font-semibold text-ink">You’re cleared to take jobs{firstName ? `, ${firstName}` : ''} 🎉</p>
             <p className="text-[12.5px] text-ink-2">
@@ -265,7 +267,7 @@ export default function CrewMyFile({ bare = false, previewUserId = null }) {
               <ul className="mt-1.5 space-y-1">
                 {file.missing.map(m => (
                   <li key={m} className="flex items-start gap-1.5 text-[12.5px] text-ink-3">
-                    <span className="mt-1.5 w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0" aria-hidden="true" />
+                    <span className={`mt-1.5 w-1.5 h-1.5 rounded-full ${STATUS_DOT.attention} shrink-0`} aria-hidden="true" />
                     <span>{m}</span>
                   </li>
                 ))}
@@ -290,7 +292,7 @@ export default function CrewMyFile({ bare = false, previewUserId = null }) {
                 <span className="tabular-nums">{stepsDone} of {stepsTotal} done</span>
               </div>
               <div className="mt-1 h-1.5 w-full overflow-hidden rounded-full bg-bg-2">
-                <div className="h-full rounded-full bg-emerald-500 transition-all duration-500" style={{ width: `${pct}%` }} />
+                <div className={`h-full rounded-full ${STATUS_DOT.ok} transition-all duration-500`} style={{ width: `${pct}%` }} />
               </div>
             </div>
           )}
@@ -298,7 +300,7 @@ export default function CrewMyFile({ bare = false, previewUserId = null }) {
           <ul className="mt-1.5 space-y-1">
             {file.missing.map((m, i) => (
               <li key={m} className="flex items-start gap-1.5 text-[13px] text-ink-2">
-                <span className="mt-1.5 w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0" aria-hidden="true" />
+                <span className={`mt-1.5 w-1.5 h-1.5 rounded-full ${STATUS_DOT.attention} shrink-0`} aria-hidden="true" />
                 <span>{i === 0 ? <><span className="font-medium text-ink">Next:</span> {m}</> : m}</span>
               </li>
             ))}
@@ -322,7 +324,7 @@ export default function CrewMyFile({ bare = false, previewUserId = null }) {
             {agreement.text}
           </div>
           <p className="mt-2 flex items-center gap-1.5 text-[12px] text-ink-3">
-            <span className={`h-1.5 w-1.5 rounded-full shrink-0 ${readToEnd ? 'bg-emerald-500' : 'bg-amber-500'}`}
+            <span className={`h-1.5 w-1.5 rounded-full shrink-0 ${readToEnd ? STATUS_DOT.ok : STATUS_DOT.attention}`}
               aria-hidden="true" />
             {readToEnd
               ? `Version ${agreement.version} — you've read to the end`

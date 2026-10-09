@@ -16,6 +16,7 @@ const ACCENT_SWATCH = {
 }
 import ServiceScopesEditor from './ServiceScopesEditor'
 import DataHealthCard from './DataHealthCard'
+import { STATUS_TEXT } from '../../theme/statusText'
 
 /** General settings tab — Appearance + Company Info + Logo + Service
  *  Descriptions + Property Photos & Data + Auto-Sync & Automation +
@@ -384,7 +385,7 @@ export default function GeneralTab({ toast, active, automation, dangerZone }) {
                   className="w-4 h-4 shrink-0 cursor-pointer" />
               </label>
               <div className="mt-3">
-                <label className={lbl}>Google Maps API key {propertyMedia.google_maps_key_set && <span className="text-emerald-600 normal-case font-medium">· saved</span>}</label>
+                <label className={lbl}>Google Maps API key {propertyMedia.google_maps_key_set && <span className={`${STATUS_TEXT.ok} normal-case font-medium`}>· saved</span>}</label>
                 <input type="password" autoComplete="off" value={propertyMedia.google_maps_api_key}
                   onChange={e => setPropertyMedia(m => ({ ...m, google_maps_api_key: e.target.value }))}
                   placeholder={propertyMedia.google_maps_key_set ? '•••••••••• (leave blank to keep)' : 'Paste your Google Maps API key'}
@@ -405,7 +406,7 @@ export default function GeneralTab({ toast, active, automation, dangerZone }) {
                   className="w-4 h-4 shrink-0 cursor-pointer" />
               </label>
               <div className="mt-3">
-                <label className={lbl}>RentCast API key {propertyMedia.rentcast_key_set && <span className="text-emerald-600 normal-case font-medium">· saved</span>}</label>
+                <label className={lbl}>RentCast API key {propertyMedia.rentcast_key_set && <span className={`${STATUS_TEXT.ok} normal-case font-medium`}>· saved</span>}</label>
                 <input type="password" autoComplete="off" value={propertyMedia.rentcast_api_key}
                   onChange={e => setPropertyMedia(m => ({ ...m, rentcast_api_key: e.target.value }))}
                   placeholder={propertyMedia.rentcast_key_set ? '•••••••••• (leave blank to keep)' : 'Paste your RentCast API key'}

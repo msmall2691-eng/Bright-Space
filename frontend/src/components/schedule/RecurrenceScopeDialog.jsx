@@ -20,6 +20,7 @@
  */
 import { Repeat, Calendar, CalendarRange, CalendarDays, BellOff } from 'lucide-react'
 import Button from '../ui/Button'
+import { STATUS_ICON } from '../../theme/statusText'
 
 const SCOPES = [
   {
@@ -73,7 +74,7 @@ export default function RecurrenceScopeDialog({
         <div className="sm:hidden mx-auto mb-3 h-1 w-10 rounded-full bg-hairline" />
 
         <div className="flex items-center gap-2 mb-1">
-          <Repeat className="w-4 h-4 text-blue-500" />
+          <Repeat className={`w-4 h-4 ${STATUS_ICON.info}`} />
           <h3 className="text-base font-bold text-ink">{title}</h3>
         </div>
         <p className="text-sm text-ink-2 mb-3">{intro}</p>

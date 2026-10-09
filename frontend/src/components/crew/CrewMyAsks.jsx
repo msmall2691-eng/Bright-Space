@@ -17,11 +17,12 @@ import { Sparkles } from 'lucide-react'
 import { get, post } from '../../api'
 import { toast } from '../../utils/toastBus'
 import { EmptyState, ErrorState, Skeleton } from '../ui'
+import { STATUS_DOT } from '../../theme/statusDots'
 
 /** Dot + word, per the design language — never a filled pill. */
 const STATE = {
-  pending:   { dot: 'bg-amber-500',   word: 'Waiting to hear' },
-  approved:  { dot: 'bg-emerald-500', word: 'You got it' },
+  pending:   { dot: STATUS_DOT.attention,   word: 'Waiting to hear' },
+  approved:  { dot: STATUS_DOT.ok, word: 'You got it' },
   declined:  { dot: 'bg-ink-3/40',    word: 'Someone else got it' },
   withdrawn: { dot: 'bg-ink-3/40',    word: 'You pulled it back' },
 }

@@ -2,6 +2,7 @@ import { Plus, Phone, Mail, MapPin, Calendar, Clock } from 'lucide-react'
 import InlineSelect from '../InlineSelect'
 import { formatDate } from '../../utils/format'
 import { LEAD_STATUS_OPTIONS } from './constants'
+import { STATUS_TEXT } from '../../theme/statusText'
 
 /** A single row in the Leads tab (rendered from the /api/intake list).
  *  Pure props-in — parent owns the mutation callbacks. */
@@ -37,13 +38,13 @@ export default function LeadRow({
               {intake.bathrooms ? <span className="text-xs px-2 py-0.5 rounded-full border border-hairline bg-bg-2 text-ink-2">{intake.bathrooms} ba</span> : null}
               {intake.frequency ? <span className="text-xs px-2 py-0.5 rounded-full border border-hairline bg-bg-2 text-ink-2 capitalize">{intake.frequency}</span> : null}
               {(intake.estimate_min != null && intake.estimate_max != null) ? (
-                <span className="text-xs px-2 py-0.5 rounded-full border border-hairline bg-bg-2 font-medium text-emerald-700 dark:text-emerald-300 tabular-nums">
+                <span className={`text-xs px-2 py-0.5 rounded-full border border-hairline bg-bg-2 font-medium ${STATUS_TEXT.ok} tabular-nums`}>
                   ${Math.round(intake.estimate_min)}–${Math.round(intake.estimate_max)}
                 </span>
               ) : (intake.estimate_min != null || intake.estimate_max != null) ? (
                 // One bound only (partial/legacy data) — show that bound
                 // approximately rather than the broken "$?–$220" shape.
-                <span className="text-xs px-2 py-0.5 rounded-full border border-hairline bg-bg-2 font-medium text-emerald-700 dark:text-emerald-300 tabular-nums">
+                <span className={`text-xs px-2 py-0.5 rounded-full border border-hairline bg-bg-2 font-medium ${STATUS_TEXT.ok} tabular-nums`}>
                   ~${Math.round(intake.estimate_max ?? intake.estimate_min)}
                 </span>
               ) : null}

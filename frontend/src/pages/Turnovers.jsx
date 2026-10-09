@@ -27,12 +27,13 @@ import { get, post, patch, del } from '../api'
 import { PageHeader, SubNav } from '../components/ui'
 import { toast } from '../utils/toastBus'
 import { confirmDialog } from '../utils/confirmBus'
+import { STATUS_DOT } from '../theme/statusDots'
 
 const money = (n) => (n == null ? '—' : `$${Number(n).toFixed(2)}`)
 
 const STATE = {
   pending: { dot: 'bg-ink-3/40', word: 'Not posted yet' },
-  open: { dot: 'bg-amber-500', word: 'On the board' },
+  open: { dot: STATUS_DOT.attention, word: 'On the board' },
   closed: { dot: 'bg-ink-3/40', word: 'Closed' },
 }
 
@@ -51,7 +52,7 @@ function Coverage({ w }) {
   return (
     <span className="inline-flex items-center gap-1.5 text-[13px] text-ink-2">
       <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${
-        done ? 'bg-emerald-500' : 'bg-amber-500'}`} aria-hidden="true" />
+        done ? STATUS_DOT.ok : STATUS_DOT.attention}`} aria-hidden="true" />
       {done
         ? `All ${w.total} covered`
         : `${w.uncovered} of ${w.total} still open`}
@@ -165,7 +166,7 @@ export default function Turnovers() {
 
         {error && (
           <p className="flex items-start gap-1.5 text-[13px] text-ink-2">
-            <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-red-500" aria-hidden="true" />
+            <span className={`mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full ${STATUS_DOT.problem}`} aria-hidden="true" />
             {error}
           </p>
         )}
@@ -273,12 +274,12 @@ function WindowCard({ w, open, onToggle, onRun, busy }) {
                       <td className="px-3 py-1.5">
                         {j.taken ? (
                           <span className="inline-flex items-center gap-1.5 text-ink-2">
-                            <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" aria-hidden="true" />
+                            <span className={`h-1.5 w-1.5 rounded-full ${STATUS_DOT.ok}`} aria-hidden="true" />
                             {j.cleaner_ids.join(', ')}
                           </span>
                         ) : (
                           <span className="inline-flex items-center gap-1.5 text-ink-3">
-                            <span className="h-1.5 w-1.5 rounded-full bg-amber-500" aria-hidden="true" />
+                            <span className={`h-1.5 w-1.5 rounded-full ${STATUS_DOT.attention}`} aria-hidden="true" />
                             Nobody yet
                           </span>
                         )}
@@ -434,7 +435,7 @@ function CeilingLine({ margin }) {
   return (
     <p className="flex items-start gap-1.5 text-[12px] text-ink-2">
       <span className={`mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full ${
-        bad ? 'bg-red-500' : 'bg-emerald-500'}`} aria-hidden="true" />
+        bad ? STATUS_DOT.problem : STATUS_DOT.ok}`} aria-hidden="true" />
       <span>
         The {margin.open_jobs} still open bill {money(margin.billed)} and pay{' '}
         {money(margin.pay_now)} — {money(margin.margin_now)} left. At the top of the

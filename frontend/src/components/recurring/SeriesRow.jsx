@@ -4,6 +4,7 @@ import { SERIES_STATE_LABEL, groupDuplicateSeries, isLiveSeries, seriesState } f
 import { computeUpcoming, fmtDate, fmtTime, ruleSummary } from './helpers'
 import { Pause } from 'lucide-react'
 import { SEV_DOT } from '../board/tokens'
+import { STATUS_TEXT } from '../../theme/statusText'
 
 export default function SeriesRow({ s, clientName, onOpen, isDuplicate }) {
   const next = useMemo(() => {
@@ -26,7 +27,7 @@ export default function SeriesRow({ s, clientName, onOpen, isDuplicate }) {
             <div className="flex items-center gap-2 mb-1 flex-wrap">
               <h3 className="text-base font-semibold text-ink">{s.title || 'Untitled'}</h3>
               <span className="inline-flex items-center gap-1.5 text-[11px] font-medium text-ink-2">
-                <span className={`h-1.5 w-1.5 rounded-full ${live ? '${SEV_DOT.good}' : 'bg-ink-3'}`} />
+                <span className={`h-1.5 w-1.5 rounded-full ${live ? SEV_DOT.good : 'bg-ink-3'}`} />
                 {SERIES_STATE_LABEL[seriesState(s)]}
               </span>
               {isDuplicate && (
@@ -50,7 +51,7 @@ export default function SeriesRow({ s, clientName, onOpen, isDuplicate }) {
               {ruleSummary(s)}
               {hasTime
                 ? <> · {fmtTime(s.start_time)}–{fmtTime(s.end_time)}</>
-                : <> · <span className="text-amber-600 font-medium">no time set</span></>}
+                : <> · <span className={`${STATUS_TEXT.attention} font-medium`}>no time set</span></>}
               {next && live && <> · Next {fmtDate(next)}</>}
               <> · {s.upcoming_job_count || 0} upcoming</>
             </p>

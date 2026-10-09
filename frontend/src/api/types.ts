@@ -383,6 +383,35 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/auth/users/{user_id}/vetting-override": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Set Vetting Override
+         * @description Admin grants (or clears) a "work now, collect the docs later" override on
+         *     one cleaner — the owner's call to get someone working before their file is
+         *     complete.
+         *
+         *     ADMIN ONLY on purpose: this is the uninsured-person-in-a-customer's-house
+         *     risk the whole vetting gate exists to prevent, so it is not a manager power.
+         *     It clears the OFFICE-APPROVED path only (sub_vetting.blocking_requirements);
+         *     the file's honest answer (can_take_jobs) is untouched, so instant auto-award
+         *     stays fail-closed and the bench keeps showing exactly what's owed. Holds
+         *     until an admin clears it or the real documents land.
+         */
+        post: operations["set_vetting_override_api_auth_users__user_id__vetting_override_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/auth/users/invite": {
         parameters: {
             query?: never;
@@ -421,6 +450,11 @@ export interface paths {
          * @description Re-email the set-password link to anyone who hasn't activated yet — the
          *     link expires after 7 days, or the first email got lost. 409 once a password
          *     exists: resend must never become a password-reset backdoor.
+         *
+         *     Admin OR manager: re-sending a link to someone already approved is low
+         *     stakes (unlike approval, which is admin-only) and is the onboarding recovery
+         *     the bench screen's "Resend invite" button calls — the bench is a
+         *     manager-reachable screen.
          */
         post: operations["resend_user_invite_api_auth_users__user_id__resend_invite_post"];
         delete?: never;
@@ -2720,6 +2754,49 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/invoices/{invoice_id}/generate-token": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Generate Invoice Token
+         * @description Ensure a pay-page token exists and return it plus the shareable link.
+         *
+         *     `_ensure_invoice_public_token` has existed since the pay page shipped, and
+         *     `invoice_to_dict` has carried a `public_token` commented "lets
+         *     InvoiceDetail show/copy the customer's pay-page link" — but the helper was
+         *     only ever called from the SEND handler, and InvoiceDetail never read the
+         *     field. So the one surface the comment names could not offer the link, and
+         *     on an invoice nobody had sent yet there was no link to offer: exactly the
+         *     moment someone wants to read it down the phone.
+         *
+         *     Mirrors `POST /api/quotes/{id}/generate-token` deliberately, including
+         *     mint-on-demand. `_ensure_invoice_public_token` is idempotent (it returns
+         *     the existing token untouched), so a caller does not have to know whether
+         *     the invoice has been sent, and copying twice cannot rotate a link a
+         *     customer already has.
+         *
+         *     ## The link is built here, not in the browser
+         *
+         *     `QuoteDetail` copies `window.location.origin` even though its endpoint
+         *     returns a canonical link, which is a latent trap rather than a bug today:
+         *     an office user on a preview or LAN host would hand the customer a URL only
+         *     the office can reach. `app_base_url()` is the single source of truth for
+         *     the customer-facing host and warns when `APP_BASE_URL` is unset, so the
+         *     link is correct wherever the office happens to be browsing from.
+         */
+        post: operations["generate_invoice_token_api_invoices__invoice_id__generate_token_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/invoices/{invoice_id}/pay": {
         parameters: {
             query?: never;
@@ -3742,7 +3819,30 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        get?: never;
+        /**
+         * List Property Icals
+         * @description The feed-management screen's own payload — BB-SEC-13.
+         *
+         *     `PropertyIcalsBulk` needs a property's feeds plus enough of the property to
+         *     label the page, and got them by reading `GET /{property_id}`, which that
+         *     endpoint's own BB-SEC-11 comment describes as "the full property dict —
+         *     house_code, access_notes, wifi_password included". The page displays none
+         *     of it, and the per-feed dicts there carry `house_code` / `access_links` /
+         *     `instructions` as well, so every load of a feed screen put a property's
+         *     door codes and wifi password on the wire to render seven fields.
+         *
+         *     Both endpoints are office-only, so this was never a BB-SEC-08..12
+         *     violation — a manager may read access details. It is the same
+         *     least-privilege reasoning BB-SEC-11 applied to the role, applied here to a
+         *     caller that never wanted them: the fewer screens a code reaches, the fewer
+         *     places it can be logged, screenshotted or left open on a laptop.
+         *
+         *     The field list is exactly what the page reads, plus `active` (a feed's
+         *     state, not a secret, and the sync logic keys off it). Adding a field here
+         *     is a deliberate act — `tests/test_property_icals_payload.py` fails if an
+         *     access detail appears.
+         */
+        get: operations["list_property_icals_api_properties__property_id__icals_get"];
         put?: never;
         /**
          * Add Ical Url
@@ -7518,6 +7618,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/crew/my-file/{kind}/expiry": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Set My Document Expiry
+         * @description Set the expiry date on my OWN already-uploaded document — the "add it
+         *     after" half of upload-first, so the date never blocks getting the file on
+         *     file. Touches only the date: not the file, not the review status (the office
+         *     still reads the real date off the certificate when it reviews). Only
+         *     expiring kinds carry a date.
+         */
+        post: operations["set_my_document_expiry_api_crew_my_file__kind__expiry_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/crew/jobs/{job_id}/respond": {
         parameters: {
             query?: never;
@@ -7820,13 +7944,18 @@ export interface paths {
          *     picture the office and the customer see, so a cleaner can recognise the
          *     house from the road before they pull in.
          *
-         *     ASSIGNED-ONLY (404 otherwise), exactly like crew_job_detail: the photo
-         *     reveals which house this is, so it's need-to-know alongside the address and
-         *     never rides an open-offer card. Lazy-loaded by the card and cached a day in
-         *     the browser (Cache-Control), so a cleaner on bad rural cell pays for it
-         *     once. 404 when photos are off, no key is set, or Google has no imagery for
-         *     the address — the client simply hides the tile, same as everywhere else the
-         *     Street View photo appears.
+         *     VISIBLE TO THE ASSIGNED CLEANER, AND — since the owner's Oct 2026 decision —
+         *     to a cleared sub looking at an OPEN offer, so they can judge the house before
+         *     deciding to go for it (brightbase-marketplace: this relaxes "no photo on an
+         *     open offer"; the street ADDRESS and customer NAME still wait until won — only
+         *     the picture rides the offer). Gated to the SAME visibility as the open board
+         *     itself: cleared, open_for_claims, scheduled, inside the offer audience — so
+         *     it never reveals a house to a sub who couldn't already see the offer.
+         *
+         *     Loaded once when the detail sheet opens and cached a day in the browser
+         *     (Cache-Control), so a cleaner on bad rural cell pays for it once. 404 when
+         *     photos are off, no key is set, or Google has no imagery for the address —
+         *     the client simply hides the tile.
          */
         get: operations["crew_job_property_photo_api_crew_jobs__job_id__property_photo_get"];
         put?: never;
@@ -11394,6 +11523,13 @@ export interface components {
             /** Token */
             token: string;
         };
+        /** VettingOverride */
+        VettingOverride: {
+            /** Enabled */
+            enabled: boolean;
+            /** Reason */
+            reason?: string | null;
+        };
         /** WebhookPayload */
         WebhookPayload: {
             /** Name */
@@ -11469,6 +11605,11 @@ export interface components {
             first_step_days_before?: number | null;
             /** Notes */
             notes?: string | null;
+        };
+        /** _ExpiryUpdate */
+        _ExpiryUpdate: {
+            /** Expires At */
+            expires_at?: string | null;
         };
     };
     responses: never;
@@ -11960,6 +12101,41 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["SubDocumentReview"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    set_vetting_override_api_auth_users__user_id__vetting_override_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                user_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["VettingOverride"];
             };
         };
         responses: {
@@ -15569,6 +15745,37 @@ export interface operations {
             };
         };
     };
+    generate_invoice_token_api_invoices__invoice_id__generate_token_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                invoice_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     process_payment_api_invoices__invoice_id__pay_post: {
         parameters: {
             query?: never;
@@ -16938,6 +17145,37 @@ export interface operations {
         };
     };
     unarchive_property_endpoint_api_properties__property_id__unarchive_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                property_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_property_icals_api_properties__property_id__icals_get: {
         parameters: {
             query?: never;
             header?: never;
@@ -22395,6 +22633,41 @@ export interface operations {
         requestBody: {
             content: {
                 "multipart/form-data": components["schemas"]["Body_upload_my_document_api_crew_my_file__kind__post"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    set_my_document_expiry_api_crew_my_file__kind__expiry_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                kind: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["_ExpiryUpdate"];
             };
         };
         responses: {

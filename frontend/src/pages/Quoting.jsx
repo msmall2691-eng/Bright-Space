@@ -26,6 +26,7 @@ import {
   serviceLabel, freqLabel, titleFromIntake, roundTo5, defaultValidUntil,
   isPlaceholderName, scopeForService, labelForService,
 } from '../components/quoting/constants'
+import { STATUS_DOT } from '../theme/statusDots'
 
 // Quote templates (and their prices) live ONLY in the backend
 // (/api/settings/quote-templates), which seeds a default set when the admin
@@ -753,7 +754,7 @@ export default function Quoting() {
               Follow-ups
               {followUps.length > 0 && (
                 <span className="flex items-center gap-1 text-ink-3">
-                  <span className="w-1.5 h-1.5 rounded-full bg-amber-500" aria-hidden="true" />
+                  <span className={`w-1.5 h-1.5 rounded-full ${STATUS_DOT.attention}`} aria-hidden="true" />
                   <span className="font-semibold">{followUps.length}</span>
                 </span>
               )}
@@ -808,7 +809,7 @@ export default function Quoting() {
             {quotesError && (
               <div className="flex items-center justify-between gap-3 bg-panel border border-hairline rounded-xl px-4 py-3">
                 <div className="flex items-center gap-2.5 text-sm text-ink-2">
-                  <span className="w-1.5 h-1.5 rounded-full bg-red-500 shrink-0" aria-hidden="true" />
+                  <span className={`w-1.5 h-1.5 rounded-full ${STATUS_DOT.problem} shrink-0`} aria-hidden="true" />
                   <span><span className="font-medium text-ink">Couldn't load quotes.</span> Check your connection and try again.</span>
                 </div>
                 <button onClick={loadQuotes}
@@ -884,7 +885,7 @@ export default function Quoting() {
             {isAdmin && selectedIds.size > 0 && (
               <div className="sticky top-0 z-10 flex items-center justify-between gap-3 bg-panel border border-hairline rounded-xl px-4 py-2.5">
                 <span className="flex items-center gap-2.5 text-sm text-ink font-medium">
-                  <span className="w-1.5 h-1.5 rounded-full bg-red-500 shrink-0" aria-hidden="true" />
+                  <span className={`w-1.5 h-1.5 rounded-full ${STATUS_DOT.problem} shrink-0`} aria-hidden="true" />
                   {selectedIds.size} selected
                 </span>
                 <div className="flex items-center gap-2">

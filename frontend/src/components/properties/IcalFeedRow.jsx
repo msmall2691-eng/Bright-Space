@@ -1,6 +1,8 @@
 import { AlertTriangle, CheckCircle, Clock, Trash2 } from 'lucide-react'
 import { ICAL_SOURCES } from './constants'
 import { isStaleSync, relTimeAgo } from './utils'
+import { STATUS_DOT } from '../../theme/statusDots'
+import { STATUS_TEXT } from '../../theme/statusText'
 
 /** One row per iCal feed on a STR property. Shows the URL (truncated),
  *  source label, and a sync-status pill so the operator can see at a
@@ -25,8 +27,8 @@ export function IcalFeedRow({ ical, onRemove }) {
   let statusPill
   if (status === 'failed' || status === 'retrying') {
     statusPill = (
-      <span className="inline-flex items-center gap-1.5 text-[11px] font-medium text-red-600 dark:text-red-300" title={ical.last_sync_error || ''}>
-        <span className="w-1.5 h-1.5 rounded-full bg-red-500 shrink-0" aria-hidden="true" /> Failed {lastAt || ''}
+      <span className={`inline-flex items-center gap-1.5 text-[11px] font-medium ${STATUS_TEXT.problem}`} title={ical.last_sync_error || ''}>
+        <span className={`w-1.5 h-1.5 rounded-full ${STATUS_DOT.problem} shrink-0`} aria-hidden="true" /> Failed {lastAt || ''}
       </span>
     )
   } else if (status === 'ok' || ical.last_synced_at) {
@@ -35,9 +37,9 @@ export function IcalFeedRow({ ical, onRemove }) {
     // means the feed is stale (same cutoff as the property-level rollup).
     const stale = isStaleSync(ical.last_synced_at)
     statusPill = stale ? (
-      <span className="inline-flex items-center gap-1.5 text-[11px] font-medium text-amber-700 dark:text-amber-300"
+      <span className={`inline-flex items-center gap-1.5 text-[11px] font-medium ${STATUS_TEXT.attention}`}
         title="No clean sync in 24h+ — check this feed">
-        <span className="w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0" aria-hidden="true" /> Stale · synced {lastAt || '—'}
+        <span className={`w-1.5 h-1.5 rounded-full ${STATUS_DOT.attention} shrink-0`} aria-hidden="true" /> Stale · synced {lastAt || '—'}
       </span>
     ) : (
       <span className="inline-flex items-center gap-1.5 text-[11px] font-medium text-ink-3">
@@ -73,7 +75,7 @@ export function IcalFeedRow({ ical, onRemove }) {
         <div className="flex items-center gap-1 shrink-0">
           <button
             onClick={onRemove}
-            className="text-red-400 hover:text-red-600 p-2 -m-1 rounded-lg"
+            className={`${STATUS_TEXT.problem} hover:text-rose-800 p-2 -m-1 rounded-lg`}
             title="Remove feed"
           >
             <Trash2 className="w-3.5 h-3.5" />
@@ -82,7 +84,7 @@ export function IcalFeedRow({ ical, onRemove }) {
       </div>
       {status === 'failed' && ical.last_sync_error && (
         <div className="flex items-start gap-1.5 text-[11px] text-ink-2 bg-panel border border-hairline rounded p-1.5 mb-1.5 font-mono break-all">
-          <span className="w-1.5 h-1.5 mt-0.5 rounded-full bg-red-500 shrink-0" aria-hidden="true" />
+          <span className={`w-1.5 h-1.5 mt-0.5 rounded-full ${STATUS_DOT.problem} shrink-0`} aria-hidden="true" />
           {ical.last_sync_error.slice(0, 200)}
         </div>
       )}

@@ -10,6 +10,7 @@ import { confirmDialog } from '../utils/confirmBus'
 import { Card, StatusBadge, Button, EmptyState } from '../components/ui'
 import RecordShell from '../components/ui/RecordShell'
 import CustomerActions from '../components/comms/CustomerActions'
+import { STATUS_TEXT } from '../theme/statusText'
 
 // Map a lead status to a StatusBadge variant (matches the Requests list vocab).
 const STATUS_VARIANT = {
@@ -186,7 +187,7 @@ export default function RequestDetail() {
           {/* Delete is hard on the backend — red text on a secondary surface,
               kept left of (and visually apart from) the safe actions. */}
           <button onClick={deleteRequest} disabled={busy || !!converting}
-            className="inline-flex items-center justify-center gap-2 rounded-lg font-medium px-3.5 py-2 text-sm text-red-600 hover:text-red-700 bg-panel border border-hairline hover:border-red-300 disabled:opacity-50 transition-colors">
+            className={`inline-flex items-center justify-center gap-2 rounded-lg font-medium px-3.5 py-2 text-sm ${STATUS_TEXT.problem} hover:text-rose-800 bg-panel border border-hairline hover:border-red-300 disabled:opacity-50 transition-colors`}>
             <Trash2 className="w-4 h-4" /> Delete
           </button>
           <Button variant="secondary" onClick={toggleArchived} disabled={busy || !!converting}

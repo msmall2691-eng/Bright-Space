@@ -3,10 +3,11 @@ import { get, patch } from '../api'
 import { Link2, Loader } from 'lucide-react'
 import { toast } from '../utils/toastBus'
 import Modal from './ui/Modal'
+import { STATUS_DOT } from '../theme/statusDots'
 
 // Stage hue as a small dot over a quiet chip (no tinted pill bubbles).
 const STAGE_DOTS = {
-  new:       'bg-amber-500',
+  new:       STATUS_DOT.attention,
   qualified: 'bg-blue-500',
   quoted:    'bg-purple-500',
   won:       'bg-emerald-500',
@@ -158,7 +159,7 @@ export default function OpportunityLinker({ clientId, itemType, itemId, itemName
           {/* Current link status — hairline card + dot, not a filled banner. */}
           {currentOpp && (
             <div className="flex items-center gap-2.5 rounded-lg border border-hairline bg-panel p-3">
-              <span className="w-1.5 h-1.5 rounded-full shrink-0 bg-emerald-500" aria-hidden="true" />
+              <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${STATUS_DOT.ok}`} aria-hidden="true" />
               <div className="min-w-0">
                 <div className="text-sm font-medium text-ink">Currently linked</div>
                 <div className="text-xs text-ink-2 truncate">{currentOpp.title}</div>
