@@ -89,6 +89,41 @@ const isFunctionish = (n) =>
   ts.isFunctionDeclaration(n) || ts.isFunctionExpression(n)
   || ts.isArrowFunction(n) || ts.isMethodDeclaration(n)
 
+const isLoop = (n) =>
+  ts.isForStatement(n) || ts.isForOfStatement(n) || ts.isForInStatement(n)
+  || ts.isWhileStatement(n) || ts.isDoStatement(n)
+
+/**
+ * The `await`s that belong to this function's OWN scope.
+ *
+ * It stops at every nested function form, not just arrows and function
+ * expressions: an `async function` DECLARATION or an object method defined
+ * inside the body is its own scope, and its suspension is not ours. Skipping
+ * only two of the four forms flagged
+ * `function f() { async function nested() { await save() } setItems([...items, x]) }`,
+ * where the outer function never suspends at all.
+ */
+function ownAwaits(fn) {
+  const out = []
+  const look = (x) => {
+    if (ts.isAwaitExpression(x)) out.push(x)
+    if (x !== fn && isFunctionish(x)) return
+    ts.forEachChild(x, look)
+  }
+  if (fn && fn.body) look(fn.body)
+  return out
+}
+
+/** The nearest loop around `node` that is still inside `fn`, if any. */
+function enclosingLoop(node, fn) {
+  let p = node.parent
+  while (p && p !== fn) {
+    if (isLoop(p)) return p
+    p = p.parent
+  }
+  return null
+}
+
 /** Offenders in one parsed file, plus how many setter calls were inspected. */
 function staleWrites(source, label) {
   const offenders = []
@@ -113,20 +148,40 @@ function staleWrites(source, label) {
       }
       scan(arg)
 
-      // Does the ENCLOSING function await anywhere? Nested functions are their
-      // own scope and their awaits do not create a gap for this call.
+      // Can the enclosing function have SUSPENDED BEFORE REACHING this call?
+      // "Awaits anywhere in the body" is not the same question, and getting
+      // them confused rejects correct code: an optimistic update followed by a
+      // save —
+      //
+      //     setItems([...items, made]); await persist()
+      //
+      // reads `items` with nothing having suspended yet, so the value is
+      // current and the write is right. So position matters.
+      //
+      // Position alone is not enough either, because of loops. In
+      //
+      //     for (const x of xs) { setItems(items.concat(x)); await save(x) }
+      //
+      // the await sits AFTER the call in the source and still precedes it on
+      // every iteration but the first, which is the stale case. Hence the two
+      // clauses: an await before the call, or an await sharing a loop with it.
       const fn = fnStack[fnStack.length - 1]
-      let hasAwait = false
-      if (fn && fn.body) {
-        const look = (x) => {
-          if (ts.isAwaitExpression(x)) hasAwait = true
-          if (ts.isArrowFunction(x) || ts.isFunctionExpression(x)) return
-          ts.forEachChild(x, look)
+      let suspendsFirst = false
+      if (fn) {
+        const awaits = ownAwaits(fn)
+        const start = node.getStart(source)
+        if (awaits.some(a => a.end <= start)) {
+          suspendsFirst = true
+        } else {
+          const loop = enclosingLoop(node, fn)
+          if (loop && awaits.some(a =>
+            a.getStart(source) >= loop.getStart(source) && a.end <= loop.end)) {
+            suspendsFirst = true
+          }
         }
-        look(fn.body)
       }
 
-      if (!functional && reads && hasAwait) {
+      if (!functional && reads && suspendsFirst) {
         const { line } = source.getLineAndCharacterOfPosition(node.getStart(source))
         offenders.push(
           `${label}:${line + 1}  ${node.getText(source).replace(/\s+/g, ' ').slice(0, 90)}`)
@@ -186,7 +241,16 @@ describe('no setState writes back state captured before an await', () => {
       'const f = () => setShow(!show)',
       'const f = () => setOpenId(openId === a.id ? null : a.id)',
       // The await is inside a NESTED function, so it is not this call's gap.
+      // All four nested forms, because skipping only arrows and function
+      // expressions flagged the other two — found in review.
       'const f = () => { g().then(async () => { await h() }); setItems(items.concat(x)) }',
+      'function f() { async function nested() { await save() } setItems([...items, made]) }',
+      'function f() { const o = { async m() { await save() } }; setItems([...items, made]) }',
+      // An optimistic update followed by a save. Nothing has suspended when
+      // `items` is read, so the value is current — also found in review, and
+      // the reason this asks "suspended BEFORE this call" rather than
+      // "awaits anywhere".
+      'async function f() { setItems([...items, made]); await persist() }',
     ]
     const bad = [
       // #1111, the one found by hand.
@@ -198,6 +262,11 @@ describe('no setState writes back state captured before an await', () => {
       'const f = async () => { const up = await patch(u); setEntries(entries.map(e => e.id === id ? up : e)) }',
       // Spread rather than a method call — same mistake, different spelling.
       'const f = async () => { await post(u); setItems([...items, made]) }',
+      // The await is AFTER the call in the source and still precedes it on
+      // every iteration but the first. Positional order alone would miss
+      // this, which is why the loop clause exists.
+      'async function f() { for (const x of xs) { setItems(items.concat(x)); await save(x) } }',
+      'async function f() { while (n--) { setItems(items.concat(n)); await save() } }',
     ]
     const flags = (src) => staleWrites(parse('probe.tsx', src), 'probe').offenders.length > 0
     for (const src of good) expect(flags(src), `false positive on: ${src}`).toBe(false)
