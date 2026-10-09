@@ -18,12 +18,14 @@
  * ## What this checks, and how
  *
  * It resolves import specifiers rather than grepping for names: every non-test
- * source file under `src/` is read, its `import`/`export … from` specifiers are
- * resolved against its own directory, and a dashboard file counts as reachable
- * if any of them lands on it. So `from '../components/dashboard/utils'` and
- * `from './utils'` both count, and a mention inside a comment does not — which
- * matters, because three of the six orphans were mentioned in comments and
- * nowhere else.
+ * source file under `src/` is parsed, its `import`/`export … from` specifiers
+ * are resolved against its own directory, and a dashboard file counts as
+ * reachable if any of them lands on it. So `from '../components/dashboard/
+ * utils'` and `from './utils'` both count, while a path named in a comment or
+ * a commented-out import does not. That last part matters twice over: three of
+ * the six orphans were named in comments and nowhere else, and the first
+ * version of this test read the raw text, where a commented-out import of an
+ * unwired file was enough to make it pass. See `specifiers` below.
  *
  * Tests do not count as importers, deliberately. A tested orphan is the exact
  * case that got through.
@@ -37,6 +39,7 @@
  * in the tree.
  */
 import { describe, it, expect } from 'vitest'
+import ts from 'typescript'
 import { readFileSync, readdirSync, statSync } from 'node:fs'
 import { dirname, join, relative, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -57,16 +60,48 @@ function walk(dir) {
   return out
 }
 
-/** Specifiers in `import … from 'x'`, `export … from 'x'` and `import('x')`. */
-function specifiers(src) {
+/**
+ * Specifiers in `import … from 'x'`, `export … from 'x'` and `import('x')`,
+ * read off the syntax tree.
+ *
+ * This was two regexes over the raw text, and that was a fail-open — found in
+ * review, and reproduced before fixing. A COMMENTED-OUT import still matched:
+ *
+ *     // import { Dead } from '../components/dashboard/ZDead'
+ *
+ * so an unwired file plus a line of history about it counted as reachable and
+ * the guard passed. Prose naming a path in backticks did the same. That is the
+ * worst direction for a check like this: it reports clean on exactly the thing
+ * it exists to catch, and nobody re-reads a green test.
+ *
+ * Parsing makes comments and string literals structurally invisible instead of
+ * something a pattern has to anticipate.
+ */
+function specifiers(source) {
   const out = []
-  const patterns = [
-    /\bfrom\s+['"]([^'"]+)['"]/g,
-    /\bimport\s*\(\s*['"]([^'"]+)['"]\s*\)/g,
-  ]
-  for (const re of patterns) for (const m of src.matchAll(re)) out.push(m[1])
+  const visit = (node) => {
+    if ((ts.isImportDeclaration(node) || ts.isExportDeclaration(node))
+        && node.moduleSpecifier && ts.isStringLiteral(node.moduleSpecifier)) {
+      out.push(node.moduleSpecifier.text)
+    }
+    if (ts.isImportEqualsDeclaration(node) && ts.isExternalModuleReference(node.moduleReference)
+        && ts.isStringLiteral(node.moduleReference.expression)) {
+      out.push(node.moduleReference.expression.text)
+    }
+    // `import('x')` parses as a CallExpression whose callee is the keyword.
+    if (ts.isCallExpression(node) && node.expression.kind === ts.SyntaxKind.ImportKeyword
+        && node.arguments.length && ts.isStringLiteral(node.arguments[0])) {
+      out.push(node.arguments[0].text)
+    }
+    ts.forEachChild(node, visit)
+  }
+  visit(source)
   return out
 }
+
+const parse = (path, text) => ts.createSourceFile(
+  path, text, ts.ScriptTarget.Latest, true,
+  /\.tsx?$/.test(path) && !path.endsWith('.tsx') ? ts.ScriptKind.TS : ts.ScriptKind.TSX)
 
 /** The file a relative specifier points at, ignoring the extension. */
 function resolveLocal(fromFile, spec) {
@@ -80,9 +115,16 @@ describe('components/dashboard has no orphans', () => {
     .map(f => join(DASH, f))
 
   const importers = new Map(tiles.map(t => [t.replace(/\.jsx?$/, ''), []]))
+  const unparsed = []
   for (const file of walk(SRC)) {
-    const src = readFileSync(file, 'utf8')
-    for (const spec of specifiers(src)) {
+    const source = parse(file, readFileSync(file, 'utf8'))
+    // A file that fails to parse yields no specifiers, which would silently
+    // un-import whatever it imports — the same fail-open the regex had, one
+    // level up. So it is an error, not a skip.
+    if ((source.parseDiagnostics || []).length) {
+      unparsed.push(`${rel(file)}  ${source.parseDiagnostics.length} parse error(s)`)
+    }
+    for (const spec of specifiers(source)) {
       const target = resolveLocal(file, spec)
       if (target && importers.has(target) && target !== file.replace(/\.jsx?$/, '')) {
         importers.get(target).push(rel(file))
@@ -115,11 +157,30 @@ describe('components/dashboard has no orphans', () => {
     // specifier against the importing file's directory is the whole reason
     // this test does it that way, and the inflated numbers are why the figures
     // below are deliberately loose.
+    expect(unparsed, 'these files did not parse, so their imports were not seen:\n  '
+      + unparsed.join('\n  ')).toEqual([])
     expect(tiles.length).toBeGreaterThanOrEqual(4)
     const prim = [...importers.entries()].find(([t]) => t.endsWith('/primitives'))
     expect(prim, 'components/dashboard/primitives.jsx is gone — update this test').toBeTruthy()
     expect(prim[1].length).toBeGreaterThan(2)
     expect(prim[1].some(f => f.startsWith('pages/'))).toBe(true)
     expect(prim[1].some(f => f.startsWith('components/dashboard/'))).toBe(true)
+  })
+
+  it('counts real imports and not text that looks like one', () => {
+    // The scan above runs over the real tree, so a regression in `specifiers`
+    // only shows up there if an orphan happens to exist at the same time.
+    // These feed it directly, so the fail-open it had is pinned on its own.
+    const specs = (src) => specifiers(parse('probe.jsx', src))
+
+    expect(specs("import { Tile } from './Tile'")).toEqual(['./Tile'])
+    expect(specs("export { Tile } from './Tile'")).toEqual(['./Tile'])
+    expect(specs("const T = lazy(() => import('./Tile'))")).toEqual(['./Tile'])
+
+    // The reviewed fail-open: both of these used to count as imports.
+    expect(specs("// import { Tile } from './Tile'")).toEqual([])
+    expect(specs("/** Was rendered via `import … from './Tile'` once. */")).toEqual([])
+    // A path in ordinary prose or in a runtime string is not an import either.
+    expect(specs("const doc = 'see from \"./Tile\" for the old layout'")).toEqual([])
   })
 })
