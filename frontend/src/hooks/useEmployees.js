@@ -6,11 +6,20 @@ import { getCached } from '../api'
  *
  * Before this hook the roster was fetched independently in useScheduleData,
  * CalendarView, JobEditModal, JobCreateModal, ConvertToJobModal, ScheduleTabs
- * (AvailabilityPanel), and useDashboardData — seven parallel requests to
- * `/api/dispatch/employees` when the operator opens Schedule. Audit §18
- * called that out. This hook routes every caller through the existing
- * getCached() dedup + result cache in api.js, with a two-minute TTL that
- * matches how rarely the roster changes.
+ * (AvailabilityPanel), and the old Dashboard's useDashboardData — seven
+ * parallel requests to `/api/dispatch/employees` when the operator opens
+ * Schedule. Audit §18 called that out. This hook routes its callers through
+ * the existing getCached() dedup + result cache in api.js, with a two-minute
+ * TTL that matches how rarely the roster changes.
+ *
+ * Two of those seven were never actually converted, and this comment claimed
+ * otherwise until the orphaned-dashboard cleanup went looking:
+ *   - useDashboardData was dead code and is gone (nothing imported it after
+ *     the Dashboard page itself was removed), so its raw fetch is moot.
+ *   - ScheduleTabs' AvailabilityPanel still calls `get()` directly. On
+ *     `?tab=availability` that is a genuine second roster request on one
+ *     screen, because Schedule's useScheduleData calls this hook
+ *     unconditionally. Its own slice.
  *
  * Returns:
  *   employees          — raw array from the API (empty until loaded)
