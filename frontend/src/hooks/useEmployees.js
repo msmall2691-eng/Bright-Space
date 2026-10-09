@@ -16,7 +16,7 @@ import { getCached } from '../api'
  *   - useScheduleData, CalendarView, JobEditModal, JobCreateModal — converted,
  *     still here, still on this hook.
  *   - ScheduleTabs' AvailabilityPanel — claimed for a long time, actually
- *     converted only in #1145, once a test counting `fetch` calls showed the
+ *     converted only in #1147, once a test counting `fetch` calls showed the
  *     roster going out TWICE on `?tab=availability`: Schedule's
  *     useScheduleData calls this hook unconditionally (hooks can't be
  *     conditional; its `enabled` option gates only the week fetch), and the
