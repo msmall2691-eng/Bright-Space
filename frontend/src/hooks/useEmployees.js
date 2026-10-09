@@ -4,13 +4,30 @@ import { getCached } from '../api'
 /**
  * Shared employees roster.
  *
- * Before this hook the roster was fetched independently in useScheduleData,
- * CalendarView, JobEditModal, JobCreateModal, ConvertToJobModal, ScheduleTabs
- * (AvailabilityPanel), and useDashboardData — seven parallel requests to
- * `/api/dispatch/employees` when the operator opens Schedule. Audit §18
- * called that out. This hook routes every caller through the existing
- * getCached() dedup + result cache in api.js, with a two-minute TTL that
- * matches how rarely the roster changes.
+ * Before this hook the roster was fetched independently in seven places —
+ * seven parallel requests to `/api/dispatch/employees` when the operator
+ * opened Schedule, which audit §18 called out. This hook routes its callers
+ * through the existing getCached() dedup + result cache in api.js, with a
+ * two-minute TTL that matches how rarely the roster changes.
+ *
+ * It listed all seven by name and was wrong about three of them, which the
+ * orphaned-dashboard cleanup found while tracing the import graph. Checked
+ * one at a time, the seven are:
+ *   - useScheduleData, CalendarView, JobEditModal, JobCreateModal — converted,
+ *     still here, still on this hook.
+ *   - useDashboardData — was dead code and is now deleted. Nothing had
+ *     imported it since the Dashboard page itself was removed, so its raw
+ *     fetch had not cost a request in a long time.
+ *   - ConvertToJobModal — no such file exists anywhere in the tree.
+ *   - ScheduleTabs' AvailabilityPanel — never converted. It still calls
+ *     `get()` directly, and on `?tab=availability` that IS a second roster
+ *     request on one screen, because Schedule's useScheduleData calls this
+ *     hook unconditionally (hooks can't be conditional; its `enabled` option
+ *     gates only the week fetch). Its own slice.
+ *
+ * So the live count is four callers sharing one cached fetch, not seven.
+ * Worth the words: a comment claiming a de-duplication that did not happen is
+ * how the duplicate survived an economy audit.
  *
  * Returns:
  *   employees          — raw array from the API (empty until loaded)
