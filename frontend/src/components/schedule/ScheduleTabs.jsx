@@ -70,7 +70,9 @@ export function AvailabilityPanel() {
     if (!(await confirmDialog('Remove this time-off entry?'))) return
     try {
       await del(`/api/jobs/time-off/${id}`)
-      setEntries(entries.filter(e => e.id !== id))
+      // Functional: the confirm and the DELETE above are a user-paced gap, so
+      // `entries` from render is stale by now (cf. #1111 on Requests).
+      setEntries(prev => prev.filter(e => e.id !== id))
     } catch (e) {
       toast.error(e.message || 'Could not remove')
     }
@@ -79,7 +81,8 @@ export function AvailabilityPanel() {
   const setStatus = async (id, status) => {
     try {
       const updated = await patch(`/api/jobs/time-off/${id}/status`, { status })
-      setEntries(entries.map(e => (e.id === id ? updated : e)))
+      // Functional: the PATCH above is the gap.
+      setEntries(prev => prev.map(e => (e.id === id ? updated : e)))
       toast.success(status === 'approved' ? 'Approved — they got a ping' : 'Denied — they got a ping')
     } catch (e) {
       toast.error(e.message || 'Could not update')
