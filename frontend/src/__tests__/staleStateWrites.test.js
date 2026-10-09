@@ -114,14 +114,27 @@ function ownAwaits(fn) {
   return out
 }
 
-/** The nearest loop around `node` that is still inside `fn`, if any. */
-function enclosingLoop(node, fn) {
+/**
+ * EVERY loop around `node` that is still inside `fn`, innermost first.
+ *
+ * All of them, not just the nearest, because the suspension can belong to an
+ * outer one:
+ *
+ *     for (const a of as) { for (const x of xs) { setItems(items.concat(x)) } await save() }
+ *
+ * The call is in the inner loop and the await is in the outer body, after it.
+ * Checking only the innermost loop found no await inside it and reported this
+ * clean, while it is stale from the second outer iteration on — found in
+ * review.
+ */
+function enclosingLoops(node, fn) {
+  const out = []
   let p = node.parent
   while (p && p !== fn) {
-    if (isLoop(p)) return p
+    if (isLoop(p)) out.push(p)
     p = p.parent
   }
-  return null
+  return out
 }
 
 /** Offenders in one parsed file, plus how many setter calls were inspected. */
@@ -173,11 +186,8 @@ function staleWrites(source, label) {
         if (awaits.some(a => a.end <= start)) {
           suspendsFirst = true
         } else {
-          const loop = enclosingLoop(node, fn)
-          if (loop && awaits.some(a =>
-            a.getStart(source) >= loop.getStart(source) && a.end <= loop.end)) {
-            suspendsFirst = true
-          }
+          suspendsFirst = enclosingLoops(node, fn).some(loop => awaits.some(a =>
+            a.getStart(source) >= loop.getStart(source) && a.end <= loop.end))
         }
       }
 
@@ -251,6 +261,9 @@ describe('no setState writes back state captured before an await', () => {
       // the reason this asks "suspended BEFORE this call" rather than
       // "awaits anywhere".
       'async function f() { setItems([...items, made]); await persist() }',
+      // Nested loops with no await anywhere: walking every enclosing loop must
+      // not start flagging on the nesting alone.
+      'function f() { for (const a of as) { for (const x of xs) { setItems(items.concat(x)) } } }',
     ]
     const bad = [
       // #1111, the one found by hand.
@@ -267,6 +280,9 @@ describe('no setState writes back state captured before an await', () => {
       // this, which is why the loop clause exists.
       'async function f() { for (const x of xs) { setItems(items.concat(x)); await save(x) } }',
       'async function f() { while (n--) { setItems(items.concat(n)); await save() } }',
+      // The suspension belongs to an OUTER loop: stale from the second outer
+      // iteration, and missed while only the innermost loop was inspected.
+      'async function f() { for (const a of as) { for (const x of xs) { setItems(items.concat(x)) } await save() } }',
     ]
     const flags = (src) => staleWrites(parse('probe.tsx', src), 'probe').offenders.length > 0
     for (const src of good) expect(flags(src), `false positive on: ${src}`).toBe(false)
