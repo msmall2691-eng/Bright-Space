@@ -2754,6 +2754,49 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/invoices/{invoice_id}/generate-token": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Generate Invoice Token
+         * @description Ensure a pay-page token exists and return it plus the shareable link.
+         *
+         *     `_ensure_invoice_public_token` has existed since the pay page shipped, and
+         *     `invoice_to_dict` has carried a `public_token` commented "lets
+         *     InvoiceDetail show/copy the customer's pay-page link" — but the helper was
+         *     only ever called from the SEND handler, and InvoiceDetail never read the
+         *     field. So the one surface the comment names could not offer the link, and
+         *     on an invoice nobody had sent yet there was no link to offer: exactly the
+         *     moment someone wants to read it down the phone.
+         *
+         *     Mirrors `POST /api/quotes/{id}/generate-token` deliberately, including
+         *     mint-on-demand. `_ensure_invoice_public_token` is idempotent (it returns
+         *     the existing token untouched), so a caller does not have to know whether
+         *     the invoice has been sent, and copying twice cannot rotate a link a
+         *     customer already has.
+         *
+         *     ## The link is built here, not in the browser
+         *
+         *     `QuoteDetail` copies `window.location.origin` even though its endpoint
+         *     returns a canonical link, which is a latent trap rather than a bug today:
+         *     an office user on a preview or LAN host would hand the customer a URL only
+         *     the office can reach. `app_base_url()` is the single source of truth for
+         *     the customer-facing host and warns when `APP_BASE_URL` is unset, so the
+         *     link is correct wherever the office happens to be browsing from.
+         */
+        post: operations["generate_invoice_token_api_invoices__invoice_id__generate_token_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/invoices/{invoice_id}/pay": {
         parameters: {
             query?: never;
@@ -15677,6 +15720,37 @@ export interface operations {
             header?: never;
             path: {
                 token: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    generate_invoice_token_api_invoices__invoice_id__generate_token_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                invoice_id: number;
             };
             cookie?: never;
         };
