@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { useParams, useNavigate, Link } from 'react-router-dom'
 import {
   ArrowLeft, Building2, TrendingUp, Calendar, FileText, Receipt, CheckCircle, Send, Trash2, Repeat,
+  Link2, Check,
 } from 'lucide-react'
 import { get, patch, post } from '../api'
 import { toast } from '../utils/toastBus'
@@ -13,7 +14,7 @@ import InlineEditField from '../components/InlineEditField'
 import RecordSkeleton from '../components/record/RecordSkeleton'
 import { EmptyState } from '../components/ui'
 import { STATUS_DOT } from '../theme/statusDots'
-import { STATUS_TEXT } from '../theme/statusText'
+import { STATUS_TEXT, STATUS_ICON } from '../theme/statusText'
 
 const STATUS_OPTIONS = [
   { value: 'draft',   label: 'draft',   dot: 'bg-ink-3' },
@@ -46,6 +47,7 @@ export default function InvoiceDetail() {
   const [loading, setLoading] = useState(true)
   const [notFound, setNotFound] = useState(false)
   const [acting, setActing] = useState(false)
+  const [copied, setCopied] = useState(false)
 
   const load = useCallback(() => {
     setLoading(true)
@@ -71,6 +73,33 @@ export default function InvoiceDetail() {
       setInv(v => ({ ...v, status: 'paid', paid_at: new Date().toISOString() }))
       toast.success('Invoice marked paid')
     } catch { toast.error('Could not mark paid') } finally { setActing(false) }
+  }
+
+  // The customer's pay-page link, for reading down the phone or pasting into a
+  // message the office is writing by hand.
+  //
+  // `inv.public_token` is NULL until the invoice has been sent at least once,
+  // so this cannot just build the URL from what is already on screen — it asks
+  // the server to mint on demand (idempotent, so copying twice cannot rotate a
+  // link the customer already holds).
+  //
+  // The server returns the LINK, not just the token, and that is deliberate:
+  // building it here from `window.location.origin` — which QuoteDetail does —
+  // means an office user on a preview or LAN host hands the customer a URL
+  // only the office can reach.
+  const copyPayLink = async () => {
+    setActing(true)
+    try {
+      const { invoice_link, public_token } = await post(`/api/invoices/${id}/generate-token`, {})
+      await navigator.clipboard.writeText(invoice_link)
+      // Keep the token on the record so a later copy in the same session does
+      // not have to ask again.
+      setInv(v => ({ ...v, public_token: public_token ?? v?.public_token }))
+      setCopied(true); setTimeout(() => setCopied(false), 2000)
+      toast.success('Pay link copied')
+    } catch (e) {
+      toast.error(e?.message || 'Could not copy the pay link')
+    } finally { setActing(false) }
   }
 
   // Sends to the client's email on file; surface a failed delivery rather than
@@ -173,6 +202,16 @@ export default function InvoiceDetail() {
                 <button onClick={markPaid} disabled={acting}
                   className="w-full flex items-center justify-center gap-1.5 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white px-3 py-2 rounded-lg text-[12px] font-medium transition-colors">
                   <CheckCircle className="w-3.5 h-3.5" /> Mark paid
+                </button>
+                {/* Tertiary, per the design language: the block already has its
+                    one primary (Mark paid) and a secondary (Send), and a third
+                    button of either weight would read as a third decision
+                    rather than the supporting action it is. */}
+                <button onClick={copyPayLink} disabled={acting}
+                  className="w-full flex items-center justify-center gap-1.5 text-[11px] text-ink-3 hover:text-ink-2 underline underline-offset-2 disabled:opacity-50 bb-focus rounded transition-colors">
+                  {copied
+                    ? <><Check className={`w-3 h-3 ${STATUS_ICON.ok}`} /> Pay link copied</>
+                    : <><Link2 className="w-3 h-3" /> Copy pay link</>}
                 </button>
               </div>
             )}

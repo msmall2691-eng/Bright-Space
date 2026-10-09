@@ -144,6 +144,64 @@ describe('InvoiceDetail', () => {
     expect(post.mock.calls[0][0]).toBe('/api/invoices/7/pay')
   })
 
+  /* The pay link. `invoice_to_dict` carried a `public_token` commented "lets
+   * InvoiceDetail show/copy the customer's pay-page link" and this page never
+   * read it — so the link the comment promised did not exist on the one screen
+   * it named. */
+
+  it('copies a pay link for a draft the customer has never been sent', async () => {
+    // The case that makes the server round-trip necessary rather than tidy:
+    // `public_token` is NULL until the invoice has been sent at least once, so
+    // a link built from what is already on screen would be `/pay/null`.
+    const link = 'https://maineclean.co/pay/tok_abc123'
+    post.mockResolvedValue({ public_token: 'tok_abc123', invoice_link: link })
+    const writeText = vi.fn().mockResolvedValue()
+    vi.stubGlobal('navigator', { clipboard: { writeText } })
+
+    mountAt({ ...INVOICE, public_token: null })
+    fireEvent.click(await screen.findByRole('button', { name: /copy pay link/i }))
+
+    await waitFor(() => expect(writeText).toHaveBeenCalledWith(link))
+    expect(post.mock.calls[0][0]).toBe('/api/invoices/7/generate-token')
+    expect(await screen.findByText(/pay link copied/i)).toBeTruthy()
+  })
+
+  it('copies the link the server built, not one assembled from the browser origin', async () => {
+    // An office user on a preview or LAN host would otherwise hand the
+    // customer a URL only the office can reach. QuoteDetail builds its link
+    // from window.location.origin; this one must not.
+    post.mockResolvedValue({
+      public_token: 'tok_abc123',
+      invoice_link: 'https://maineclean.co/pay/tok_abc123',
+    })
+    const writeText = vi.fn().mockResolvedValue()
+    vi.stubGlobal('navigator', { clipboard: { writeText } })
+
+    mountAt()
+    fireEvent.click(await screen.findByRole('button', { name: /copy pay link/i }))
+
+    await waitFor(() => expect(writeText).toHaveBeenCalled())
+    expect(writeText.mock.calls[0][0]).toBe('https://maineclean.co/pay/tok_abc123')
+    expect(writeText.mock.calls[0][0]).not.toContain('localhost')
+  })
+
+  it('reports a failed copy instead of claiming it worked', async () => {
+    post.mockRejectedValue(new Error('clipboard blocked'))
+    mountAt()
+    fireEvent.click(await screen.findByRole('button', { name: /copy pay link/i }))
+
+    await waitFor(() => expect(toast.error).toHaveBeenCalled())
+    expect(toast.success).not.toHaveBeenCalled()
+    expect(screen.queryByText(/pay link copied/i)).toBeNull()
+  })
+
+  it('does not offer a pay link once the invoice is paid', async () => {
+    // Nothing left to pay, so the link is noise next to the record of payment.
+    mountAt({ ...INVOICE, status: 'paid', paid_at: '2026-10-01T12:00:00' })
+    await screen.findByText('INV-1042')
+    expect(screen.queryByRole('button', { name: /copy pay link/i })).toBeNull()
+  })
+
   it('hides the money actions from a viewer rather than letting them click into a 403', async () => {
     // perms.js states the reason: mutations are admin/manager-only on the
     // backend, so a viewer who can see the invoice must not be offered the

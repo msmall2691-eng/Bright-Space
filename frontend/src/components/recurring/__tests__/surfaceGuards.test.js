@@ -36,8 +36,12 @@ const label = (f) => f.slice(f.indexOf('/src/') + 1)
 
 describe('the recurring surface keeps its status dots off the 500 ramp', () => {
   it('finds no bg-<hue>-500 (or gray-400) on a rounded-full span', () => {
-    // BB-A11Y-02: amber-500 1.77, emerald-500 2.09, red-500 2.55,
-    // gray-400 1.69 — all under the 3:1 non-text floor on this page's grounds.
+    // BB-A11Y-02, on the palette the build ships (the earlier figures here —
+    // 1.77 / 2.09 / 2.55 / 1.69 — were read off Tailwind v3): amber-500 1.73,
+    // emerald-500 2.00, gray-400 2.11 are under the 3:1 non-text floor;
+    // red-500 lands at 3.09, clearing it by three percent. The ban covers it
+    // anyway — see the floor note in __tests__/statusDotMigration.test.js for
+    // why a margin that thin is not treated as a pass.
     const offenders = []
     for (const f of files) {
       const src = read(f)
