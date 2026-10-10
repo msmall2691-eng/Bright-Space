@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { del, get, patch, post, put } from '../../api'
 import { confirmDialog } from '../../utils/confirmBus'
@@ -15,7 +15,7 @@ import { ArrowLeft, Calendar, Clock, Pause, Pencil, Play, RefreshCw, SkipForward
 import { SEV_DOT } from '../board/tokens'
 import { STATUS_TEXT } from '../../theme/statusText'
 
-export default function SeriesDetail({ id, onBack, onChanged, toast, refreshToken }) {
+export default function SeriesDetail({ id, onBack, onChanged, toast }) {
   const [schedule, setSchedule] = useState(null)
   const [exceptions, setExceptions] = useState([])
   const [client, setClient] = useState(null)
@@ -25,33 +25,8 @@ export default function SeriesDetail({ id, onBack, onChanged, toast, refreshToke
   const [busy, setBusy] = useState('') // 'pause' | 'generate' | 'delete'
   const [modal, setModal] = useState(null) // { kind: 'skip'|'reschedule'|'edit', date, start, end }
 
-  /** Re-read this series.
-   *
-   *  `silent` skips the loading flag, and that is not cosmetic: the component
-   *  returns a skeleton while `loading` is true, which unmounts whatever modal
-   *  is open along with everything typed into it. A background refresh —
-   *  someone else's change arriving, or the Undo toast firing while you are in
-   *  here — must not throw away in-progress input (codex P2 on #1161).
-   */
-  const loadSeq = useRef(0)      // last STARTED
-  const appliedSeq = useRef(0)   // last whose data actually landed
-
-  const load = useCallback(async ({ silent = false } = {}) => {
-    // Two loads can be in flight at once — the mount fetch and a silent
-    // refresh arriving on top of it — and nothing made them resolve in order,
-    // so a slow pre-Undo response could land last and put the stale snapshot
-    // back (codex P2 on #1161).
-    //
-    // The guard compares against the last APPLIED sequence, not the last
-    // started one, and that difference is a whole bug. Starting a load does
-    // not make it the winner: if the refresh starts, FAILS, and the mount
-    // fetch it superseded then succeeds, a "newest started wins" guard throws
-    // away the only answer anyone got. `schedule` stays null, the silent
-    // catch sets no error, and the mount's `finally` clears `loading` — so
-    // the component falls through to `if (!schedule) return null` and the
-    // detail renders completely blank. A failed load supersedes nothing.
-    const seq = ++loadSeq.current
-    if (!silent) { setLoading(true); setError('') }
+  const load = useCallback(async () => {
+    setLoading(true); setError('')
     try {
       const [sch, exs, jobs] = await Promise.all([
         get(`/api/recurring/${id}`),
@@ -63,8 +38,6 @@ export default function SeriesDetail({ id, onBack, onChanged, toast, refreshToke
         // the series list's "N upcoming" (a real Job count) correctly said 0.
         get(`/api/jobs?recurring_schedule_id=${id}&status=scheduled&limit=200`).catch(() => []),
       ])
-      if (seq <= appliedSeq.current) return      // newer data already landed
-      appliedSeq.current = seq
       setSchedule(sch)
       setExceptions(Array.isArray(exs) ? exs : [])
       setGeneratedDates(new Set(
@@ -72,49 +45,18 @@ export default function SeriesDetail({ id, onBack, onChanged, toast, refreshToke
           .map(j => (j.scheduled_date || '').slice(0, 10))
           .filter(Boolean)
       ))
-      setError('')                               // a good read clears a bad one
       if (sch?.client_id) {
         const c = await get(`/api/clients/${sch.client_id}`).catch(() => null)
-        if (seq < appliedSeq.current) return
         setClient(c)
       }
     } catch (e) {
-      // Newer data is already on screen, so this failure is moot.
-      if (seq <= appliedSeq.current) return
-      // A SILENT refresh that fails must not take the screen down with it.
-      // `error` drives a full-page error branch, so setting it here would
-      // unmount an open Edit/Skip/Reschedule modal and everything typed into
-      // it — the very loss the silent path was added to prevent, reached
-      // through the other door (codex P2 on #1161). The view keeps what it
-      // has; the toast says the refresh failed, because silence is how this
-      // class of bug hides.
-      if (silent) {
-        toast?.error?.('Could not refresh this series — showing the last loaded copy.')
-        return
-      }
       setError(e.message || 'Failed to load recurring series')
     } finally {
-      // Deliberately NOT sequence-guarded. A superseded non-silent load that
-      // skipped this would leave `loading` stuck true — a permanent skeleton —
-      // because the newer silent load never touches the flag.
-      if (!silent) setLoading(false)
+      setLoading(false)
     }
-  }, [id, toast])
+  }, [id])
 
   useEffect(() => { load() }, [load])
-
-  // A bump from the list means the series changed underneath us — today, the
-  // Undo on a pause that happened before you navigated in here. Refreshed in
-  // place rather than by remounting: a `key` change would reset `modal` and
-  // destroy an open Edit/Skip/Reschedule form, which is a worse bug than the
-  // stale row it was fixing. Skips the first run, since the effect above
-  // already did the initial fetch.
-  const firstRefresh = useRef(true)
-  useEffect(() => {
-    if (firstRefresh.current) { firstRefresh.current = false; return }
-    load({ silent: true })
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [refreshToken])
 
   const upcoming = useMemo(
     () => (schedule ? computeUpcoming(schedule, exceptions, 8) : []),

@@ -140,15 +140,6 @@ export default function Recurring() {
   // on a list a mis-click lands on the wrong series. It stays in the detail
   // page's danger zone behind its booked-visit dialog.
   const [pausing, setPausing] = useState(null)   // series id mid-PATCH
-  const [detailReload, setDetailReload] = useState(0)  // nudges an open SeriesDetail to re-read
-
-  // Which series the detail view is showing, read at CLICK time rather than
-  // captured. The Undo callback is built when the pause happens — before you
-  // navigate — so a closure over the search params always reports "no detail
-  // open". My own test caught that, which is the point of testing the path
-  // rather than the intent.
-  const seriesIdRef = useRef(seriesId)
-  useEffect(() => { seriesIdRef.current = seriesId }, [seriesId])
   const [editing, setEditing] = useState(null)   // the series whose rule is open
 
   // Applies a local `active` flip so the row answers immediately. The row then
@@ -171,18 +162,8 @@ export default function Recurring() {
             try {
               await patch(`/api/recurring/${s.id}`, { active: !next })
               setActiveLocal(s.id, !next)
-              // The toast outlives the list: pause a row, open that series,
-              // then hit Undo, and the PATCH lands while `SeriesDetail` is
-              // still showing the copy it fetched on mount — Paused, with a
-              // Resume button, for a series the server has active again
-              // (codex P2 on #1161). Remounting it refetches.
-              //
-              // Only when the open detail IS this series. Bumping
-              // unconditionally would buy a second fetch of whatever else
-              // happened to be open, which brightbase-economy exists to stop.
-              if (String(s.id) === String(seriesIdRef.current)) {
-                setDetailReload(n => n + 1)
-              }
+              // Deliberately does NOT reach into an open SeriesDetail. See the
+              // note above the detail view below for why that was cut.
             } catch (err) {
               console.error('[Recurring] Undo pause failed:', err)
               toast.error('Could not put that series back.')
@@ -272,12 +253,36 @@ export default function Recurring() {
   )
 
   // Detail view
+  //
+  // ## It deliberately does not hear about the list's Undo
+  //
+  // There is a real gap here: pause a row, walk into that series, and hit the
+  // still-visible Undo, and this view keeps showing the copy it fetched on
+  // mount — Paused, with a Resume button, for a series the server has active
+  // again. It self-corrects on the next action or revisit, because every one
+  // of them reloads.
+  //
+  // This PR built the fix and then removed it, which is worth writing down so
+  // nobody rebuilds it by accident. Closing that gap meant a `refreshToken`
+  // prop, a ref read at click time, a `silent` load that skips the loading
+  // flag so the skeleton doesn't eat an open modal, and a sequence guard on
+  // every write. Five review rounds found a real bug in each of those in turn
+  // — a reload that never fired, a remount that discarded unsaved rule edits,
+  // a failed refresh that blanked the page, and finally a refresh whose
+  // `.catch(() => [])` subrequests silently emptied the overrides list behind
+  // an intact screen.
+  //
+  // Every fix was correct and every one opened the next hole, because the
+  // thing being fixed is two components owning one piece of server state with
+  // a toast outliving the navigation between them. That wants a shared cache
+  // with invalidation, not a prop. What it does NOT want is more of what was
+  // here: the machinery had grown past the cost of the transient wrong label
+  // it was preventing.
   if (seriesId) {
     return (
       <>
         <SeriesDetail
           id={seriesId}
-          refreshToken={detailReload}
           onBack={backToList}
           onChanged={loadList}
           toast={toast}

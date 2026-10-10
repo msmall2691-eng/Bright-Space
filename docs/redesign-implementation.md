@@ -179,6 +179,35 @@ three stacked ones. Its rows are NOT read-only — every upcoming visit has
 Skip/Reschedule and every override has Undo — so it is a layout pass, not an
 actionability one, which is why it ranks below the list.
 
+**And one thing it was given and then had taken away, recorded so nobody
+rebuilds it by accident.** Pause a row, walk into that series, hit the
+still-visible Undo, and the detail keeps the copy it fetched on mount: Paused,
+with a Resume button, for a series the server has active again. It
+self-corrects on the next action or revisit.
+
+#1161 built the fix and removed it in the same PR. Closing the gap meant a
+`refreshToken` prop, a ref read at click time, a `silent` load that skips the
+loading flag so the skeleton doesn't unmount an open modal, and a sequence
+guard on every write. **Five consecutive review rounds found a real bug in
+each of those in turn** — a reload that never fired (a closure captured before
+the navigation), a remount that discarded unsaved rule edits, a failed refresh
+that blanked the page, and finally a refresh whose `.catch(() => [])`
+subrequests silently emptied the overrides list behind an intact screen.
+
+Every fix was correct and every one opened the next hole, because the thing
+being fixed is **two components owning one piece of server state with a toast
+outliving the navigation between them**. That wants a shared cache with
+invalidation, not a prop; the machinery had grown past the cost of the
+transient wrong label it prevented. A stopping rule was written on the PR
+before the last round and honoured when that round found more.
+
+Two findings from the attempt are worth keeping even though the code went:
+`SeriesDetail`'s auxiliary requests both `.catch(() => [])`, so a transient
+failure of the exceptions or jobs endpoint replaces real data with empty data
+rather than reporting anything — latent on `main`, not introduced here. And
+`load()` has no concurrency guard at all, which the `onDone` handlers can
+already race.
+
 Then stop: the remaining eight are not revamp candidates, and
 Payouts / Owner / Sync Center / Settings / Marketplace / Roster / Thresholds /
 detail pages were not surveyed and get their own pass before anyone assumes.

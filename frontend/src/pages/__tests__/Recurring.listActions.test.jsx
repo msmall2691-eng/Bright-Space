@@ -58,9 +58,7 @@ vi.mock('../../components/ui/SubNav', () => ({ default: () => null }))
 // a remounted, empty one, and losing what you typed is the actual bug.
 vi.mock('../../components/recurring/EditSeriesModal', () => ({
   default: ({ schedule }) => (
-    <div data-testid="edit-modal" data-series-id={schedule?.id} data-start={schedule?.start_time}>
-      <input aria-label="Title" defaultValue={schedule?.title} />
-    </div>
+    <div data-testid="edit-modal" data-series-id={schedule?.id} data-start={schedule?.start_time} />
   ),
 }))
 
@@ -243,95 +241,6 @@ describe('the row can pause a series without leaving the list', () => {
     for (const card of [ended, cancelled]) {
       expect(within(card).queryByRole('button', { name: /^(Pause|Resume)$/ })).toBeNull()
     }
-  })
-})
-
-describe('Undo reaches an open detail view', () => {
-  it('refetches the series when Undo lands while its detail is on screen', async () => {
-    // The toast outlives the list. Pause a row, open that series, then hit
-    // Undo: the PATCH restores it on the server while SeriesDetail is still
-    // showing the copy it fetched on mount — Paused, with a Resume button,
-    // for a series that is active again (codex P2 on #1161).
-    draw([ACTIVE])
-    const card = await row('Sweet — Weekly')
-    fireEvent.click(within(card).getByRole('button', { name: /^Pause$/ }))
-    await waitFor(() => expect(toasts.some(t => t.message === 'Series paused')).toBe(true))
-
-    // Into the detail view for that same series. The row left the Active
-    // filter when it was paused (that is this page's own behaviour), so the
-    // way back to it is the Paused/All chip — which is also how an operator
-    // would reach it.
-    await showAll()
-    fireEvent.click(await screen.findByRole('button', { name: 'Sweet — Weekly' }))
-    await waitFor(() => expect(screen.queryByRole('tablist')).toBeNull())
-    const readsBefore = get.mock.calls.filter(c => /^\/api\/recurring\/1$/.test(String(c[0]))).length
-    expect(readsBefore, 'the detail should have fetched the series once').toBe(1)
-
-    await toasts.find(t => t.message === 'Series paused').action.onClick()
-
-    await waitFor(() => {
-      const after = get.mock.calls.filter(c => /^\/api\/recurring\/1$/.test(String(c[0]))).length
-      expect(after, 'the open detail still shows its stale pre-Undo copy').toBe(readsBefore + 1)
-    })
-  })
-
-  it('keeps an open detail modal, and what was typed into it, alive', async () => {
-    // The refresh used to be a `key` bump, which remounts SeriesDetail and
-    // takes its `modal` state — and any half-written rule edit — with it
-    // (codex P2 on #1161). A plain `load()` is no better: the component
-    // returns a skeleton while `loading` is true, which unmounts the modal
-    // just as thoroughly. Hence the silent refresh.
-    //
-    // Asserted on a real typed value rather than on the modal merely being
-    // present: "the dialog is still open" would pass even if it had been
-    // remounted empty, which is exactly the loss being guarded against.
-    draw([ACTIVE])
-    const card = await row('Sweet — Weekly')
-    fireEvent.click(within(card).getByRole('button', { name: /^Pause$/ }))
-    await waitFor(() => expect(toasts.some(t => t.message === 'Series paused')).toBe(true))
-
-    await showAll()
-    fireEvent.click(await screen.findByRole('button', { name: 'Sweet — Weekly' }))
-    await waitFor(() => expect(screen.queryByRole('tablist')).toBeNull())
-
-    // Open the rule editor from the DETAIL page and type into it.
-    fireEvent.click(await screen.findByRole('button', { name: /Edit rule/ }))
-    const title = await screen.findByDisplayValue('Sweet — Weekly')
-    fireEvent.change(title, { target: { value: 'Sweet — Fortnightly (unsaved)' } })
-
-    await toasts.find(t => t.message === 'Series paused').action.onClick()
-    await act(async () => { await new Promise(r => setTimeout(r, 50)) })
-
-    expect(
-      screen.getByDisplayValue('Sweet — Fortnightly (unsaved)'),
-      'the Undo threw away an in-progress rule edit',
-    ).toBeTruthy()
-  })
-
-  it('does not refetch a detail view showing a different series', async () => {
-    // brightbase-economy: bumping unconditionally would buy a second fetch of
-    // whatever else happened to be open.
-    draw([ACTIVE, OTHER_CLIENT])
-    const card = await row('Sweet — Weekly')
-    fireEvent.click(within(card).getByRole('button', { name: /^Pause$/ }))
-    await waitFor(() => expect(toasts.some(t => t.message === 'Series paused')).toBe(true))
-
-    fireEvent.click(await screen.findByRole('button', { name: 'Diaz — Weekly' }))
-    await waitFor(() => expect(screen.queryByRole('tablist')).toBeNull())
-    const before = get.mock.calls.filter(c => /^\/api\/recurring\/5$/.test(String(c[0]))).length
-
-    await toasts.find(t => t.message === 'Series paused').action.onClick()
-    await waitFor(() => expect(patch).toHaveBeenCalledTimes(2))
-
-    // Settle before asserting a NEGATIVE. The first version of this read the
-    // count the instant the PATCH resolved — before a remount could have
-    // flushed — so it passed whether or not the extra fetch happened. A
-    // mutation that bumped the counter unconditionally survived it, which is
-    // how I found out. Let anything that would remount actually remount.
-    await act(async () => { await new Promise(r => setTimeout(r, 50)) })
-
-    const after = get.mock.calls.filter(c => /^\/api\/recurring\/5$/.test(String(c[0]))).length
-    expect(after, 'an unrelated open detail was refetched for nothing').toBe(before)
   })
 })
 
