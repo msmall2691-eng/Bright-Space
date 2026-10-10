@@ -33,9 +33,15 @@ export default function SeriesDetail({ id, onBack, onChanged, toast, refreshToke
    *  someone else's change arriving, or the Undo toast firing while you are in
    *  here — must not throw away in-progress input (codex P2 on #1161).
    */
+  const loadSeq = useRef(0)
+
   const load = useCallback(async ({ silent = false } = {}) => {
-    if (!silent) setLoading(true)
-    setError('')
+    // Two loads can now be in flight at once — the mount fetch and a silent
+    // refresh arriving on top of it — and nothing made them resolve in order,
+    // so a slow pre-Undo response could land last and put the stale snapshot
+    // back (codex P2 on #1161). Only the newest sequence may write.
+    const seq = ++loadSeq.current
+    if (!silent) { setLoading(true); setError('') }
     try {
       const [sch, exs, jobs] = await Promise.all([
         get(`/api/recurring/${id}`),
@@ -47,6 +53,7 @@ export default function SeriesDetail({ id, onBack, onChanged, toast, refreshToke
         // the series list's "N upcoming" (a real Job count) correctly said 0.
         get(`/api/jobs?recurring_schedule_id=${id}&status=scheduled&limit=200`).catch(() => []),
       ])
+      if (seq !== loadSeq.current) return        // a newer load already won
       setSchedule(sch)
       setExceptions(Array.isArray(exs) ? exs : [])
       setGeneratedDates(new Set(
@@ -54,16 +61,33 @@ export default function SeriesDetail({ id, onBack, onChanged, toast, refreshToke
           .map(j => (j.scheduled_date || '').slice(0, 10))
           .filter(Boolean)
       ))
+      setError('')                               // a good read clears a bad one
       if (sch?.client_id) {
         const c = await get(`/api/clients/${sch.client_id}`).catch(() => null)
+        if (seq !== loadSeq.current) return
         setClient(c)
       }
     } catch (e) {
+      if (seq !== loadSeq.current) return
+      // A SILENT refresh that fails must not take the screen down with it.
+      // `error` drives a full-page error branch, so setting it here would
+      // unmount an open Edit/Skip/Reschedule modal and everything typed into
+      // it — the very loss the silent path was added to prevent, reached
+      // through the other door (codex P2 on #1161). The view keeps what it
+      // has; the toast says the refresh failed, because silence is how this
+      // class of bug hides.
+      if (silent) {
+        toast?.error?.('Could not refresh this series — showing the last loaded copy.')
+        return
+      }
       setError(e.message || 'Failed to load recurring series')
     } finally {
-      setLoading(false)
+      // Deliberately NOT sequence-guarded. A superseded non-silent load that
+      // skipped this would leave `loading` stuck true — a permanent skeleton —
+      // because the newer silent load never touches the flag.
+      if (!silent) setLoading(false)
     }
-  }, [id])
+  }, [id, toast])
 
   useEffect(() => { load() }, [load])
 
