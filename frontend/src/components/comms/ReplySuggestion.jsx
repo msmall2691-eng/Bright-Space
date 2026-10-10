@@ -42,7 +42,7 @@ export function ReplySuggestion({ conversationId, lastMessageId, onUse }) {
   if (loading) {
     return (
       <div className="rounded-md bg-bg-2 px-3 py-2">
-        <div className="h-3.5 w-2/3 animate-pulse rounded bg-hairline" />
+        <div className="h-3.5 w-2/3 animate-pulse rounded-full bg-hairline" />
       </div>
     )
   }

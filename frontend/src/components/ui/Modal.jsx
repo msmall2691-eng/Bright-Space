@@ -111,7 +111,7 @@ export default function Modal({
         aria-label={ariaLabel || labelledByTitle || 'Dialog'}
         tabIndex={-1}
         onClick={(e) => e.stopPropagation()}
-        className={`bb-modal-in relative flex max-h-[90dvh] w-full ${MAX_W[maxWidth] || MAX_W.md} flex-col overflow-hidden rounded-2xl border border-hairline bg-panel shadow-2xl outline-hidden ${className}`}
+        className={`bb-modal-in relative flex max-h-[90dvh] w-full ${MAX_W[maxWidth] || MAX_W.md} flex-col overflow-hidden rounded-lg border border-hairline bg-panel shadow-2xl outline-hidden ${className}`}
       >
         {title != null && (
           <header className="flex shrink-0 items-start justify-between gap-3 border-b border-hairline px-5 py-3.5">
