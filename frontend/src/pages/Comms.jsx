@@ -1,22 +1,37 @@
 /**
- * Comms — Phase 3: Modern unified inbox.
+ * Messages — the unified inbox. (File still named Comms.jsx; the route is
+ * still /comms. Both are internal names — every label the operator reads says
+ * "Messages".)
  *
  * Design references: Twenty CRM (clean panels, record detail, timeline),
  * Fieldcamp.io (unified profile, single-screen visibility, command center).
  *
- * Three-pane layout:
+ * ## The three panes, and which one yields
+ *
  *   Left   — filter tabs + conversation list (searchable, channel-filtered)
  *   Center — thread view with day separators + compose bar
- *   Right  — contact detail + activity timeline + quick actions
+ *   Right  — customer detail + activity timeline + quick actions
  *
- * New in Phase 3:
- *   • New conversation compose (SMS + Email)
- *   • Day separators in thread view
- *   • Activity timeline in contact panel (all channels in one feed)
- *   • Refined visual design (Twenty/Fieldcamp-inspired)
- *   • Keyboard shortcuts panel
- *   • Empty states with illustrations
- *   • Mobile-responsive layout
+ * Only xl: (1280) fits all three. Below that there is room for two, and the
+ * THREAD is never one of the two that goes: it is what the operator is doing.
+ * So in the 900–1280 band — which includes the owner's ~940px window — opening
+ * the customer column collapses the LIST (InboxLeftPanel's `hiddenForContact`),
+ * and closing it brings the list back. Phones show exactly one pane at a time,
+ * driven by `mobileView`.
+ *
+ * `showContactPanel` is the open/closed flag for that column, defaulted from a
+ * one-shot xl: media query so first paint at 940px lands on list + thread.
+ * Resizing is handled in CSS, not by re-reading that flag.
+ *
+ * ## Not here, despite what this header used to claim
+ *
+ * There is no keyboard-shortcuts panel and no j/k list navigation — the header
+ * advertised one for a long time and nothing in the page ever bound a key
+ * beyond Cmd/Ctrl+Enter to send (ComposeBar) and Enter/Space to select a row
+ * (ConvItem). Likewise there are no illustrated empty states; they are an icon
+ * in a bordered square. Said plainly because a docstring that describes
+ * features the page lacks is how a reader ends up looking for the bug in the
+ * wrong file.
  */
 import { useState, useEffect, useMemo, useCallback } from 'react'
 import { useSearchParams, useNavigate } from 'react-router-dom'
@@ -129,8 +144,26 @@ export default function Comms() {
       setUrlParams(next, { replace: true })
     }
   }, [urlParams, setUrlParams])
-  const [showContactPanel, setShowContactPanel] = useState(true)
-  const [mobileView, setMobileView] = useState('list') // list | thread
+  // Open by default only where all three columns fit at once (xl:). The
+  // customer panel is now a real column from shell: up, and between shell:
+  // and xl: it takes the conversation list's slot — so defaulting it open
+  // would hide the list, the primary triage surface, on first paint at the
+  // owner's ~940px window. Read once; this is a first-paint default, not a
+  // live layout subscription (resizing is handled by CSS, not by this flag).
+  const [showContactPanel, setShowContactPanel] = useState(
+    () => typeof window !== 'undefined' && !!window.matchMedia?.('(min-width: 1280px)')?.matches,
+  )
+  const [mobileView, setMobileView] = useState('list') // list | thread | contact
+
+  // Below shell: the customer panel is a full-screen pane, so the mobile view
+  // has to travel with it; at shell:+ it's a column and mobileView is inert.
+  // Keeping the two in step in ONE place is what stops the panel being "open"
+  // (list collapsed) while nothing is on screen to show for it.
+  const toggleContactPanel = useCallback(() => {
+    const opening = !showContactPanel
+    setShowContactPanel(opening)
+    setMobileView(opening ? 'contact' : 'thread')
+  }, [showContactPanel])
 
   // Deep-link entry: /comms?conversation=123 (from the Home board's "Reply"
   // action, or any other page) opens that specific thread directly instead
@@ -405,6 +438,7 @@ export default function Comms() {
         onResolve={resolveConv}
         onReopen={reopenConv}
         onAssignMine={assignMine}
+        hiddenForContact={!!detail && showContactPanel}
       />
 
 
@@ -435,9 +469,9 @@ export default function Comms() {
           <>
             <ThreadHeader
               detail={detail}
-              showContactPanel={showContactPanel}
-              setShowContactPanel={setShowContactPanel}
               setMobileView={setMobileView}
+              onToggleContact={toggleContactPanel}
+              contactOpen={showContactPanel}
               onToggleStatus={() => setStatus(detail.status === 'resolved' ? 'open' : 'resolved')}
               onAssign={assignUser}
             />
@@ -506,10 +540,12 @@ export default function Comms() {
       </div>
 
 
-      {/* ═══ RIGHT PANEL: Contact Detail ═══ */}
-      {/* Shown inline on desktop (showContactPanel) or as a full-screen pane on
-          mobile (mobileView==='contact'). Previously xl-only, so the "Draft a
-          quote", profile, and open-items links were unreachable on a phone. */}
+      {/* ═══ RIGHT PANEL: Customer ═══ */}
+      {/* An inline column from shell: up, a full-screen pane only on phones.
+          Both exits (the mobile back arrow, the panel's own ✕) go through
+          toggleContactPanel so the flag and mobileView can't drift apart —
+          leaving the flag true after a back-out would keep the conversation
+          list collapsed in the 900–1280 band with nothing in its place. */}
       {detail && (showContactPanel || mobileView === 'contact') && (
         <ContactPanel
           detail={detail}
@@ -517,11 +553,11 @@ export default function Comms() {
           onRemind={remindAppt}
           mobileActive={mobileView === 'contact'}
           desktopOpen={showContactPanel}
-          onBack={() => setMobileView('thread')}
+          onBack={toggleContactPanel}
           onAssign={setAssignee}
           onPriority={setPriority}
           onStatus={setStatus}
-          onClose={() => setShowContactPanel(false)}
+          onClose={toggleContactPanel}
           onDraftQuote={draftQuote}
           draftingQuote={draftingQuote}
           onLinkClient={linkClient}

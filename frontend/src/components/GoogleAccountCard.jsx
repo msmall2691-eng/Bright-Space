@@ -83,7 +83,7 @@ export default function GoogleAccountCard() {
         <div>
           <h2 className="text-lg font-bold text-ink">Your Google account</h2>
           <p className="text-xs text-ink-3 mt-0.5">
-            Connect your own Google account so your Gmail threads into Comms and
+            Connect your own Google account so your Gmail threads into Messages and
             your Calendar drives scheduling — separate from the shared business connection.
           </p>
         </div>
@@ -139,7 +139,7 @@ export default function GoogleAccountCard() {
           <div className="space-y-2">
             <label className="flex items-center justify-between gap-3 border border-hairline rounded-lg px-3 py-2.5">
               <span className="flex items-center gap-2 text-sm text-ink-2">
-                <Mail className="w-4 h-4 text-ink-3" /> Sync Gmail into Comms
+                <Mail className="w-4 h-4 text-ink-3" /> Sync Gmail into Messages
               </span>
               <input type="checkbox" checked={!!acct.gmail_sync_enabled} disabled={busy}
                 onChange={e => toggle('gmail_sync_enabled', e.target.checked)} className="w-4 h-4" />

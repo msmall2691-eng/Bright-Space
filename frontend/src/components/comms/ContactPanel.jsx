@@ -103,14 +103,31 @@ export function ContactPanel({ detail, context, onRemind, onClose, onDraftQuote,
   const hasMoney = openQuotes.length > 0 || unpaidInvoices.length > 0
 
   return (
-    <div className={`${mobileActive ? 'flex' : 'hidden'} ${desktopOpen ? 'xl:flex' : 'xl:hidden'}
-      fixed inset-0 z-40 xl:static xl:inset-auto xl:z-auto
-      w-full xl:w-[340px] border-l border-hairline bg-panel flex-col overflow-hidden shrink-0`}>
-      {/* Back bar — the panel is a full-screen overlay below xl: (phone AND the
-          owner's ~940px window, where the inbox is two-pane and contact info
-          slides over). It becomes an inline third column only at xl:, where
-          there's room for three panes. */}
-      <div className="xl:hidden flex items-center gap-2 px-3 h-12 border-b border-hairline shrink-0">
+    <div className={`${mobileActive ? 'flex' : 'hidden'} ${desktopOpen ? 'shell:flex' : 'shell:hidden'}
+      fixed inset-0 z-40 shell:static shell:inset-auto shell:z-auto
+      w-full shell:w-[300px] xl:w-[340px] border-l border-hairline bg-panel flex-col overflow-hidden shrink-0`}>
+      {/* A real column from shell: (900px) up; a full-screen pane only on
+          phones.
+
+          It used to become a column at xl: (1280) only, reasoning that three
+          340px panes don't fit below that. The arithmetic was right and the
+          conclusion was wrong. The owner's window is ~940px, so for her this
+          panel was ALWAYS the full-screen overlay: every look at the next
+          appointment, the money owed or "Draft a quote" closed the thread she
+          was reading, and she had to back out to read it again. The thread is
+          the one pane that must never be covered.
+          What steps aside instead is the conversation LIST (InboxLeftPanel's
+          `hiddenForContact`), so 900–1280 is always two real panes — list +
+          thread, or thread + customer — and only xl: shows all three.
+
+          The widths, measured rather than assumed, because the app shell takes
+          its cut first: Sidebar is `shell:w-60` (240px), so the owner's ~940px
+          window leaves the page 700px, not 940. Closed, that's list 320 +
+          thread 380. Open, it's thread 400 + this column at 300 — which is why
+          300 here and 340 only at xl:, where there is room for all three. The
+          thread never drops below ~380px (iPhone width, and a message thread's
+          natural measure); today, opening this panel left it zero. */}
+      <div className="shell:hidden flex items-center gap-2 px-3 h-12 border-b border-hairline shrink-0">
         <button onClick={onBack} className="w-9 h-9 rounded-lg hover:bg-bg-2 flex items-center justify-center text-ink-2">
           <ArrowLeft className="w-5 h-5" />
         </button>
@@ -136,7 +153,7 @@ export function ContactPanel({ detail, context, onRemind, onClose, onDraftQuote,
               )}
             </div>
           </div>
-          <button onClick={onClose} className="w-9 h-9 rounded-lg hover:bg-bg-2 flex items-center justify-center text-ink-3 hover:text-ink-2 transition-colors xl:hidden">
+          <button onClick={onClose} className="w-9 h-9 rounded-lg hover:bg-bg-2 flex items-center justify-center text-ink-3 hover:text-ink-2 transition-colors shell:hidden">
             <X className="w-4 h-4" />
           </button>
         </div>

@@ -88,7 +88,7 @@ export default function EmailTab({ toast, active }) {
         <div className="mb-5">
           <h2 className="text-lg font-bold text-ink">Gmail Connection</h2>
           <p className="text-sm text-ink-2 mt-1">
-            Connect your Gmail to sync emails in Comms, auto-match senders to clients, and create leads from unknown contacts.
+            Connect your Gmail to sync emails in Messages, auto-match senders to clients, and create leads from unknown contacts.
           </p>
         </div>
 
