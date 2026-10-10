@@ -57,6 +57,7 @@ import QuickActions from '../components/board/QuickActions'
 import NovaChat from '../components/board/NovaChat'
 import BenchDigest from '../components/BenchDigest'
 import MarketplaceBoard from '../components/board/MarketplaceBoard'
+import CustomerConfirmations from '../components/board/CustomerConfirmations'
 import SubNav from '../components/ui/SubNav'
 import { useUnreadCount } from '../hooks/useUnreadCount'
 import { currentRole } from '../nav/routes'
@@ -854,6 +855,13 @@ export default function OpsBoard() {
                 </WhenVisible>
                 <WhenVisible minHeight="12rem">
                   <BenchDigest />
+                </WhenVisible>
+                {/* Read-only, and last in the column on purpose: customers
+                    confirming a time she already set needs no answer, so it
+                    sits below the two boxes that do. Fetches itself like its
+                    siblings, so it waits to be scrolled to. */}
+                <WhenVisible minHeight="8rem">
+                  <CustomerConfirmations />
                 </WhenVisible>
               </div>
             </div>
