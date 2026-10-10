@@ -177,6 +177,48 @@ describe('the row can pause a series without leaving the list', () => {
     expect(within(card).queryByRole('button', { name: /^Pause$/ })).toBeNull()
   })
 
+  it('refuses to revive a series that was cancelled after the pause', async () => {
+    // The worst one on this PR, because it is state rather than display. The
+    // toast lives 8 seconds — long enough to pause a row, open the series,
+    // cancel it, and come back — and the still-visible "Undo" then reads as
+    // though it would undo the CANCEL. It would not: it PATCHes active:true,
+    // and `update_schedule` clears `cancelled_at` whenever active becomes
+    // true, so a cancelled series goes live and generates visits again for a
+    // customer who cancelled (codex P2 on #1161).
+    draw([ACTIVE])
+    const card = await row('Sweet — Weekly')
+    fireEvent.click(within(card).getByRole('button', { name: /^Pause$/ }))
+    await waitFor(() => expect(toasts.some(t => t.message === 'Series paused')).toBe(true))
+    const patchesBefore = patch.mock.calls.length
+
+    // Meanwhile the series is cancelled on the detail page.
+    get.mockImplementation((url) =>
+      /^\/api\/recurring\/1$/.test(String(url))
+        ? Promise.resolve({ ...ACTIVE, active: false, cancelled_at: '2026-10-10T20:00:00Z' })
+        : Promise.resolve([]))
+
+    await toasts.find(t => t.message === 'Series paused').action.onClick()
+
+    expect(patch.mock.calls.length, 'the stale Undo revived a cancelled series')
+      .toBe(patchesBefore)
+    expect(
+      toasts.some(t => t.variant === 'error' && /cancelled/i.test(t.message)),
+      'it refused silently instead of saying why',
+    ).toBe(true)
+  })
+
+  it('still applies the Undo when nothing changed underneath it', async () => {
+    // The other half: a re-read that refused everything would pass the case
+    // above and make Undo useless.
+    draw([ACTIVE])
+    const card = await row('Sweet — Weekly')
+    fireEvent.click(within(card).getByRole('button', { name: /^Pause$/ }))
+    await waitFor(() => expect(toasts.some(t => t.message === 'Series paused')).toBe(true))
+
+    await toasts.find(t => t.message === 'Series paused').action.onClick()
+    expect(patch).toHaveBeenLastCalledWith('/api/recurring/1', { active: true })
+  })
+
   it('keeps the row honest when the PATCH fails', async () => {
     // The optimistic flip is deliberately AFTER the await. A row reading
     // "Paused" over a series the server still has active is worse than a

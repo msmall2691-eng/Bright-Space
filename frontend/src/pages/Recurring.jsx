@@ -174,11 +174,34 @@ export default function Recurring() {
           label: 'Undo',
           onClick: async () => {
             try {
+              // Re-read before applying. The toast lives 8 seconds, which is
+              // long enough to pause a row, open the series, cancel it, and
+              // come back — and the still-visible "Undo" then reads as though
+              // it would undo the CANCEL. It would not: it PATCHes
+              // `active: true`, and `update_schedule` clears `cancelled_at`
+              // whenever active becomes true, so a cancelled series silently
+              // goes live and starts generating visits again for a customer
+              // who cancelled (codex P2 on #1161).
+              //
+              // Only `cancelled_at` is checked, because it is the only change
+              // with consequences. If someone resumed the series in the
+              // meantime, this PATCH sets a value it already has.
+              //
+              // One GET on an explicit, rare click to avoid reviving a
+              // cancelled series — the economy rules are about per-render and
+              // polling waste, not about reading the state you are overwriting.
+              const current = await get(`/api/recurring/${s.id}`)
+              if (current?.cancelled_at) {
+                toast.error('That series was cancelled since — leaving it cancelled.')
+                return
+              }
               await patch(`/api/recurring/${s.id}`, { active: !next })
               setActiveLocal(s.id, !next)
               // Deliberately does NOT reach into an open SeriesDetail. See the
               // note above the detail view below for why that was cut.
             } catch (err) {
+              // Includes the re-read failing: an Undo that cannot confirm what
+              // it is overwriting does not overwrite it.
               console.error('[Recurring] Undo pause failed:', err)
               toast.error('Could not put that series back.')
             }
