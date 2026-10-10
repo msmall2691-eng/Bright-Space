@@ -7,14 +7,28 @@ import { STATUS_TEXT } from '../../theme/statusText'
 
 const roleLabel = (r) => (r === 'cleaner' ? 'cleaner' : 'office')
 
-const CANNED_REPLIES = [
-  'On our way!',
-  'Running 10 min late',
-  'All done!',
-  'Can we reschedule?',
-  'Thanks for your business!',
-  'Your access code is ',
-]
+/* The generic canned replies are gone, and they are not coming back in this
+   shape. There were six — "On our way!", "Running 10 min late", "All done!",
+   "Can we reschedule?", "Thanks for your business!", "Your access code is " —
+   permanently occupying a row above the textarea on every thread, which on a
+   short window is a meaningful slice of the thread pane. The owner, asked
+   directly: "the canned replies i dont use ever lol". A control nobody uses
+   is not neutral; it costs the vertical space the conversation wanted.
+
+   Two of them were wrong on their own terms, worth recording so a future
+   "let's add quick replies" starts from a better place than this did:
+
+     - "On our way!" and "All done!" are the CREW's words, not the office's.
+       This composer is the office side of a customer thread.
+     - "Your access code is " invited an operator to type a door code into an
+       SMS. Not a BB-SEC-08 violation — the operator types it and it is never
+       served from the API — but the app should not be the thing suggesting it.
+
+   The appointment-aware chips below (Remind / Confirm) STAY. They are a
+   different feature that happens to look similar: they read the customer's
+   real next visit and drop in a complete message with the actual date, time
+   and first name. That is worth a row because it saves typing nobody wants to
+   do twice; a static "Thanks for your business!" is not. */
 
 /** Reply / internal-note composer at the bottom of the thread view.
  *  Owns nothing — every input is a controlled prop from the parent so the
@@ -41,8 +55,8 @@ export function ComposeBar({
   draftingAI = false,
   // Appointment-aware quick-replies: the customer's soonest upcoming job (or
   // undefined), their first name, and the company name feed pre-composed
-  // reminder/confirmation SMS. onFillReply(text) REPLACES the draft (vs. the
-  // canned chips below, which append) so a one-tap reminder lands ready to send.
+  // reminder/confirmation SMS. onFillReply(text) REPLACES the draft rather
+  // than appending to it, so a one-tap reminder lands ready to send.
   nextAppt,
   firstName,
   companyName,
@@ -153,9 +167,11 @@ export function ComposeBar({
       )}
 
       {/* Appointment-aware quick-replies — pull the customer's real next visit
-          into a ready-to-send reminder / confirmation. Same hairline
-          secondary-button style as the canned chips below (owner's veto of
-          filled pill bubbles) — these drop in a whole message, not append. */}
+          into a ready-to-send reminder / confirmation. Hairline secondary
+          buttons, not filled pills (owner veto). These REPLACE the draft with
+          a whole message rather than appending a fragment, which is why they
+          survived the cut of the generic canned replies above: each one is a
+          complete, correct message the operator would otherwise retype. */}
       {showApptChips && (
         <div className="flex items-center gap-1.5 mb-2 overflow-x-auto pb-1 scrollbar-thin">
           <span className="shrink-0 text-[10px] font-semibold text-ink-3 uppercase tracking-wide pr-0.5">
@@ -171,18 +187,6 @@ export function ComposeBar({
             className="shrink-0 inline-flex items-center gap-1 text-[11px] font-medium px-2.5 py-1.5 rounded-md border border-hairline-2 bg-panel text-ink-2 hover:bg-bg-2 transition-colors whitespace-nowrap">
             <CalendarCheck className="w-3 h-3" /> Confirm
           </button>
-        </div>
-      )}
-
-      {/* Canned responses — one-tap fills the reply box */}
-      {!noteMode && (
-        <div className="flex gap-1.5 mb-2 overflow-x-auto pb-1 scrollbar-thin">
-          {CANNED_REPLIES.map(t => (
-            <button key={t} onClick={() => setReply(prev => prev ? prev + ' ' + t : t)}
-              className="shrink-0 text-[11px] font-medium px-2.5 py-1.5 rounded-md border border-hairline-2 bg-panel text-ink-2 hover:bg-bg-2 transition-colors whitespace-nowrap">
-              {t}
-            </button>
-          ))}
         </div>
       )}
 
