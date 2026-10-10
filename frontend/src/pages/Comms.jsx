@@ -33,7 +33,7 @@
  * features the page lacks is how a reader ends up looking for the bug in the
  * wrong file.
  */
-import { useState, useEffect, useMemo, useCallback } from 'react'
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import { useSearchParams, useNavigate } from 'react-router-dom'
 import {
   MessageSquare,
@@ -52,10 +52,12 @@ import { ReplySuggestion } from '../components/comms/ReplySuggestion'
 import { ThreadHeader } from '../components/comms/ThreadHeader'
 import { InboxLeftPanel } from '../components/comms/InboxLeftPanel'
 import { InboxViewToggle } from '../components/comms/InboxViewToggle'
+import { ShortcutsSheet } from '../components/comms/ShortcutsSheet'
 import { CrewInbox } from '../components/comms/CrewInbox'
 import { useCommsData } from '../hooks/useCommsData'
 import { useCommsMutations } from '../hooks/useCommsMutations'
 import { useCommsFilters } from '../hooks/useCommsFilters'
+import { useInboxShortcuts } from '../hooks/useInboxShortcuts'
 import { useCustomerContext } from '../hooks/useCustomerContext'
 import { useCompanyName } from '../hooks/useCompanyName'
 import { STATUS_DOT } from '../theme/statusDots'
@@ -250,10 +252,14 @@ export default function Comms() {
     setTimeout(() => setFlash(null), 3000)
   }
 
-  const selectConversation = (id) => {
+  // Memoized because useInboxShortcuts takes it as a dep: `reply` is state on
+  // this page, so Comms re-renders on every character typed into the composer,
+  // and an unmemoized callback would tear down and re-add the document
+  // keydown listener once per keystroke.
+  const selectConversation = useCallback((id) => {
     setSelectedId(id)
     setMobileView('thread')
-  }
+  }, [setSelectedId])
 
   // Load a ready-to-send message into the composer (replacing any draft) and
   // make sure it's visible: reply mode on, thread pane up on mobile. Powers
@@ -342,6 +348,38 @@ export default function Comms() {
     const me = JSON.parse(localStorage.getItem('brightbase_user') || '{}')?.email?.split('@')[0] || 'Me'
     return rowAction(id, 'assign', { assignee: me }, `Assigned to ${me}`)
   }, [rowAction])
+
+  // ──────── Keyboard ────────
+  // j/k to move, e to close, / to search, ? for the list. The page's docstring
+  // advertised a shortcuts panel for a long time and nothing in it ever bound a
+  // key beyond Cmd/Ctrl+Enter; #1152 deleted that claim, this makes it true.
+  // `useInboxShortcuts` owns the guards (typing targets, modifier chords) and
+  // documents what it refuses to bind and why.
+  const [showShortcuts, setShowShortcuts] = useState(false)
+  const searchRef = useRef(null)
+  const focusSearch = useCallback(() => {
+    const el = searchRef.current
+    if (!el) return
+    el.focus()
+    // Select what's there so `/` then typing replaces the old query rather
+    // than appending to it — the thing you almost always want from a search
+    // box you just jumped back into.
+    el.select?.()
+  }, [])
+  const toggleShortcuts = useCallback(() => setShowShortcuts(v => !v), [])
+  const closeShortcuts = useCallback(() => setShowShortcuts(false), [])
+  useInboxShortcuts({
+    // Not in the crew inbox (its own list, its own selection), and not behind
+    // the compose modal — j/k would move the inbox selection out of sight
+    // underneath it, and the sheet is a dialog that owns the keyboard while up.
+    enabled: view !== 'crew' && !showCompose && !showShortcuts,
+    convs,
+    selectedId,
+    onSelect: selectConversation,
+    onResolve: resolveConv,
+    onFocusSearch: focusSearch,
+    onToggleHelp: toggleShortcuts,
+  })
 
   // ──────── Reply co-pilot ────────
   // The last real (non-note) message decides whether the thread is "waiting
@@ -460,6 +498,7 @@ export default function Comms() {
         onReopen={reopenConv}
         onAssignMine={assignMine}
         hiddenForContact={!!detail && showContactPanel}
+        searchRef={searchRef}
       />
 
 
@@ -614,6 +653,8 @@ export default function Comms() {
         />
       )}
 
+
+      <ShortcutsSheet open={showShortcuts} onClose={closeShortcuts} />
 
       {/* ═══ Agent Widget ═══ */}
 

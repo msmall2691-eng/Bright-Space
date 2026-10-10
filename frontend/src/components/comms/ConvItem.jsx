@@ -1,3 +1,4 @@
+import { useEffect, useRef } from 'react'
 import { Link } from 'react-router-dom'
 import { CHANNEL_CONFIG } from './constants'
 import { contactDisplay, relTime } from './utils'
@@ -36,8 +37,21 @@ export function ConvItem({ conv, active, onClick }) {
 
   const nameCls = `text-[14px] truncate ${unread ? 'font-semibold text-ink' : 'font-medium text-ink-2'}`
 
+  // Keep the selected row on screen. Without this, `j` past the fold moves a
+  // selection you cannot see: the thread pane changes and the list looks
+  // untouched. `block: 'nearest'` is doing the work — it is a no-op when the
+  // row is already fully visible, so a mouse click (which selects a row the
+  // user is by definition looking at) never yanks the list, and neither does
+  // the initial render of a deep-linked conversation. Not smooth: this fires
+  // on every keystroke of a held-down j, and smooth scrolling queues them into
+  // a slide that lands long after the keys stopped.
+  const rowRef = useRef(null)
+  useEffect(() => {
+    if (active) rowRef.current?.scrollIntoView?.({ block: 'nearest' })
+  }, [active])
+
   return (
-    <div role="button" tabIndex={0} onClick={onClick}
+    <div ref={rowRef} role="button" tabIndex={0} onClick={onClick}
       onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onClick?.(e) } }}
       className={`group w-full text-left px-4 py-3 transition-colors border-b border-hairline cursor-pointer ${
         active ? 'bg-bg-2' : 'bg-panel hover:bg-bg-2/60'
