@@ -262,15 +262,25 @@ export default function Comms() {
     if (!detail?.id || !client?.id) return
     setLinkingClient(true)
     try {
-      await post(`/api/comms/conversations/${detail.id}/link-client`, { client_id: client.id })
-      await Promise.all([loadDetail(detail.id), loadList(), loadSummary()])
+      // The response is the KEEPER, and its id is not always the one we posted
+      // about: when the client already had a thread, the server folds the two
+      // and deletes the emptied shell (#1105 left this as a known gap — a
+      // client could hold two threads while the person-keyed lookup showed
+      // one). Reloading `detail.id` here would land on a conversation that no
+      // longer exists, straight after a successful link.
+      const keeper = await post(`/api/comms/conversations/${detail.id}/link-client`,
+        { client_id: client.id })
+      const keeperId = keeper?.id ?? detail.id
+      // Move the list selection too, or the highlighted row is the dead one.
+      if (keeperId !== detail.id) setSelectedId(keeperId)
+      await Promise.all([loadDetail(keeperId), loadList(), loadSummary()])
       showToast(`Linked to ${client.name}`)
     } catch (e) {
       showToast(String(e?.message || 'Could not link client'), false)
     } finally {
       setLinkingClient(false)
     }
-  }, [detail?.id, loadDetail, loadList, loadSummary, showToast])
+  }, [detail?.id, loadDetail, loadList, loadSummary, setSelectedId, showToast])
 
   const resolveConv = useCallback((id) => rowAction(id, 'status', { status: 'resolved' }, 'Marked done'), [rowAction])
   const reopenConv = useCallback((id) => rowAction(id, 'status', { status: 'open' }, 'Reopened'), [rowAction])
