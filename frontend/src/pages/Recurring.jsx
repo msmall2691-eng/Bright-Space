@@ -140,7 +140,7 @@ export default function Recurring() {
   // on a list a mis-click lands on the wrong series. It stays in the detail
   // page's danger zone behind its booked-visit dialog.
   const [pausing, setPausing] = useState(null)   // series id mid-PATCH
-  const [detailReload, setDetailReload] = useState(0)  // remounts an open SeriesDetail
+  const [detailReload, setDetailReload] = useState(0)  // nudges an open SeriesDetail to re-read
 
   // Which series the detail view is showing, read at CLICK time rather than
   // captured. The Undo callback is built when the pause happens — before you
@@ -276,8 +276,8 @@ export default function Recurring() {
     return (
       <>
         <SeriesDetail
-          key={`${seriesId}:${detailReload}`}
           id={seriesId}
+          refreshToken={detailReload}
           onBack={backToList}
           onChanged={loadList}
           toast={toast}

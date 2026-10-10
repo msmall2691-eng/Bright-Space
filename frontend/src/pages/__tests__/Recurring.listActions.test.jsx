@@ -48,9 +48,19 @@ vi.mock('../../components/recurring/DuplicateReviewPanel', () => ({ default: () 
 vi.mock('../../components/ui/SubNav', () => ({ default: () => null }))
 // A probe rather than the real form: it records the schedule object the page
 // handed it, which is the thing worth checking from here.
+// A probe rather than the real form: it records the schedule object the page
+// handed it, which is the thing worth checking from here.
+//
+// The `defaultValue` input is load-bearing. It is UNCONTROLLED, so its DOM
+// value survives re-renders but is rebuilt from the schedule on a remount —
+// which makes it a precise detector for "did this component get torn down?".
+// A test that only asserted the dialog was still on screen would pass against
+// a remounted, empty one, and losing what you typed is the actual bug.
 vi.mock('../../components/recurring/EditSeriesModal', () => ({
   default: ({ schedule }) => (
-    <div data-testid="edit-modal" data-series-id={schedule?.id} data-start={schedule?.start_time} />
+    <div data-testid="edit-modal" data-series-id={schedule?.id} data-start={schedule?.start_time}>
+      <input aria-label="Title" defaultValue={schedule?.title} />
+    </div>
   ),
 }))
 
@@ -81,7 +91,15 @@ let unsub
 function draw(rows = [ACTIVE]) {
   get.mockImplementation((url) => {
     const u = String(url)
-    if (u.startsWith('/api/recurring')) return Promise.resolve(rows)
+    // Matched exactly rather than by prefix: `/api/recurring/1` is the DETAIL
+    // endpoint and must answer with one series, not the list. A prefix match
+    // handed SeriesDetail the whole array, which is truthy, so it rendered
+    // with every field undefined and nothing failed — it just quietly stopped
+    // testing the thing.
+    const detail = u.match(/^\/api\/recurring\/(\d+)$/)
+    if (detail) return Promise.resolve(rows.find(r => String(r.id) === detail[1]) || null)
+    if (/^\/api\/recurring\/\d+\/exceptions$/.test(u)) return Promise.resolve([])
+    if (/^\/api\/recurring(\?|$)/.test(u)) return Promise.resolve(rows)
     if (u.startsWith('/api/settings/automation')) return Promise.resolve({ recurring_auto_generate_enabled: true })
     return Promise.resolve([])
   })
@@ -255,6 +273,39 @@ describe('Undo reaches an open detail view', () => {
       const after = get.mock.calls.filter(c => /^\/api\/recurring\/1$/.test(String(c[0]))).length
       expect(after, 'the open detail still shows its stale pre-Undo copy').toBe(readsBefore + 1)
     })
+  })
+
+  it('keeps an open detail modal, and what was typed into it, alive', async () => {
+    // The refresh used to be a `key` bump, which remounts SeriesDetail and
+    // takes its `modal` state — and any half-written rule edit — with it
+    // (codex P2 on #1161). A plain `load()` is no better: the component
+    // returns a skeleton while `loading` is true, which unmounts the modal
+    // just as thoroughly. Hence the silent refresh.
+    //
+    // Asserted on a real typed value rather than on the modal merely being
+    // present: "the dialog is still open" would pass even if it had been
+    // remounted empty, which is exactly the loss being guarded against.
+    draw([ACTIVE])
+    const card = await row('Sweet — Weekly')
+    fireEvent.click(within(card).getByRole('button', { name: /^Pause$/ }))
+    await waitFor(() => expect(toasts.some(t => t.message === 'Series paused')).toBe(true))
+
+    await showAll()
+    fireEvent.click(await screen.findByRole('button', { name: 'Sweet — Weekly' }))
+    await waitFor(() => expect(screen.queryByRole('tablist')).toBeNull())
+
+    // Open the rule editor from the DETAIL page and type into it.
+    fireEvent.click(await screen.findByRole('button', { name: /Edit rule/ }))
+    const title = await screen.findByDisplayValue('Sweet — Weekly')
+    fireEvent.change(title, { target: { value: 'Sweet — Fortnightly (unsaved)' } })
+
+    await toasts.find(t => t.message === 'Series paused').action.onClick()
+    await act(async () => { await new Promise(r => setTimeout(r, 50)) })
+
+    expect(
+      screen.getByDisplayValue('Sweet — Fortnightly (unsaved)'),
+      'the Undo threw away an in-progress rule edit',
+    ).toBeTruthy()
   })
 
   it('does not refetch a detail view showing a different series', async () => {

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { del, get, patch, post, put } from '../../api'
 import { confirmDialog } from '../../utils/confirmBus'
@@ -15,7 +15,7 @@ import { ArrowLeft, Calendar, Clock, Pause, Pencil, Play, RefreshCw, SkipForward
 import { SEV_DOT } from '../board/tokens'
 import { STATUS_TEXT } from '../../theme/statusText'
 
-export default function SeriesDetail({ id, onBack, onChanged, toast }) {
+export default function SeriesDetail({ id, onBack, onChanged, toast, refreshToken }) {
   const [schedule, setSchedule] = useState(null)
   const [exceptions, setExceptions] = useState([])
   const [client, setClient] = useState(null)
@@ -25,8 +25,17 @@ export default function SeriesDetail({ id, onBack, onChanged, toast }) {
   const [busy, setBusy] = useState('') // 'pause' | 'generate' | 'delete'
   const [modal, setModal] = useState(null) // { kind: 'skip'|'reschedule'|'edit', date, start, end }
 
-  const load = useCallback(async () => {
-    setLoading(true); setError('')
+  /** Re-read this series.
+   *
+   *  `silent` skips the loading flag, and that is not cosmetic: the component
+   *  returns a skeleton while `loading` is true, which unmounts whatever modal
+   *  is open along with everything typed into it. A background refresh —
+   *  someone else's change arriving, or the Undo toast firing while you are in
+   *  here — must not throw away in-progress input (codex P2 on #1161).
+   */
+  const load = useCallback(async ({ silent = false } = {}) => {
+    if (!silent) setLoading(true)
+    setError('')
     try {
       const [sch, exs, jobs] = await Promise.all([
         get(`/api/recurring/${id}`),
@@ -57,6 +66,19 @@ export default function SeriesDetail({ id, onBack, onChanged, toast }) {
   }, [id])
 
   useEffect(() => { load() }, [load])
+
+  // A bump from the list means the series changed underneath us — today, the
+  // Undo on a pause that happened before you navigated in here. Refreshed in
+  // place rather than by remounting: a `key` change would reset `modal` and
+  // destroy an open Edit/Skip/Reschedule form, which is a worse bug than the
+  // stale row it was fixing. Skips the first run, since the effect above
+  // already did the initial fetch.
+  const firstRefresh = useRef(true)
+  useEffect(() => {
+    if (firstRefresh.current) { firstRefresh.current = false; return }
+    load({ silent: true })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [refreshToken])
 
   const upcoming = useMemo(
     () => (schedule ? computeUpcoming(schedule, exceptions, 8) : []),
