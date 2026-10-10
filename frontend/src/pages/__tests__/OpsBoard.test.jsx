@@ -764,25 +764,73 @@ describe('OpsBoard — layout', () => {
       sections: PAYLOAD.sections.map(sec => ['requests', 'money', 'needs_cleaner'].includes(sec.key)
         ? { ...sec, items: [] } : sec),
     }
-    const T3 = 'shell:grid-cols-[minmax(0,1.5fr)_minmax(0,1.15fr)_minmax(0,1.15fr)]'
+    // The THREE-track template is gated on xl:, not shell: — 900px leaves about
+    // 640px of content once the sidebar and gutters are out, and three tracks
+    // of ~184px render a job title as "Cle…". Three children therefore carry
+    // BOTH: two tracks from shell:, the third from xl:. Asserted as the `xl:`
+    // string so this fails if the third track ever drifts back down to shell:.
+    const T3 = 'xl:grid-cols-[minmax(0,1.5fr)_minmax(0,1.15fr)_minmax(0,1.15fr)]'
     const T2 = 'shell:grid-cols-[minmax(0,1.5fr)_minmax(0,1.15fr)]'
 
     const cases = [
-      { role: 'admin', payload: PAYLOAD, cols: T3, why: 'work + comms = 3' },
-      { role: 'admin', payload: quiet, cols: T2, why: 'comms only = 2' },
-      { role: 'viewer', payload: PAYLOAD, cols: T2, why: 'work, no comms = 2' },
-      { role: 'viewer', payload: quiet, cols: 'shell:grid-cols-1', why: 'Today alone = 1' },
+      { role: 'admin', payload: PAYLOAD, cols: T2, wide: T3, why: 'work + comms = 3' },
+      { role: 'admin', payload: quiet, cols: T2, wide: null, why: 'comms only = 2' },
+      { role: 'viewer', payload: PAYLOAD, cols: T2, wide: null, why: 'work, no comms = 2' },
+      { role: 'viewer', payload: quiet, cols: 'shell:grid-cols-1', wide: null, why: 'Today alone = 1' },
     ]
-    for (const { role, payload, cols, why } of cases) {
+    for (const { role, payload, cols, wide, why } of cases) {
       cleanup()
       localStorage.setItem('brightbase_user', JSON.stringify({ role, full_name: 'Mariah Small' }))
       mockGet(payload)
       renderBoard()
       const grid = await screen.findByTestId('home-grid')
       expect(grid.className, `${role}, ${why}`).toContain(cols)
-      // Never a wider template than there are children to fill it.
-      if (cols !== T3) expect(grid.className, `${role}: ${why}`).not.toContain(T3)
+      // Never a wider template than there are children to fill it — at ANY
+      // breakpoint. Two children must not reach three tracks on a wide screen
+      // either; that is the blank track this test was written for.
+      if (wide) expect(grid.className, `${role}, ${why}`).toContain(wide)
+      else expect(grid.className, `${role}: ${why}`).not.toContain(T3)
     }
+  })
+
+  it('packs the comms rail under column A, not as a band below both', async () => {
+    // Column A (Today + needs-a-cleaner) runs short and the middle column
+    // (requests + money) runs long, so when the rail spanned the full width
+    // underneath, row 1 was as tall as the middle column and column A ended
+    // with ~370px of nothing below it — the biggest piece of dead space left
+    // on the board, and the "stack of full-width bands" shape the bento
+    // exists to replace. The rail takes no span instead, so it auto-places
+    // into the left track's second row; the middle column spans both rows and
+    // keeps flowing past it on the right. At xl: there is a third track and
+    // every column is its own again.
+    localStorage.setItem('brightbase_user', JSON.stringify({ role: 'admin', full_name: 'Mariah Small' }))
+    mockGet(PAYLOAD)
+    renderBoard()
+    const rail = await screen.findByTestId('home-comms-rail')
+    expect(rail.className).not.toContain('sm:col-span-2')
+
+    // The row-span is the other half of it: without it the rail would land
+    // beside the middle column rather than under column A.
+    const middle = rail.previousElementSibling
+    expect(middle.className).toContain('sm:row-span-2')
+    expect(middle.className).toContain('xl:row-span-1')
+  })
+
+  it('still spans the pair when there is no middle column to flow past', async () => {
+    // Two children (Today + comms) and no `row-span` anywhere: the rail is the
+    // only sibling, so at the two-track size it spans both rather than leaving
+    // the second track of its row empty — the blank cell, from the other side.
+    cleanup()
+    localStorage.setItem('brightbase_user', JSON.stringify({ role: 'admin', full_name: 'Mariah Small' }))
+    mockGet({
+      ...PAYLOAD,
+      sections: PAYLOAD.sections.map(sec => ['requests', 'money', 'needs_cleaner'].includes(sec.key)
+        ? { ...sec, items: [] } : sec),
+    })
+    renderBoard()
+    const rail = await screen.findByTestId('home-comms-rail')
+    expect(rail.className).toContain('sm:col-span-2')
+    expect(rail.className).toContain('shell:col-span-1')
   })
 
   it('costs exactly one board fetch (plus the schedule + crew reads)', async () => {

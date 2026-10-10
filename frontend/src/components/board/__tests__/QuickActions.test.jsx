@@ -78,6 +78,69 @@ describe('QuickActions', () => {
     window.removeEventListener('bb:add-note', spy)
   })
 
+  // ── the grid closes its own row ────────────────────────────────────────
+  //
+  // Seven tiles in a four-across grid leave one empty cell, which on Home's
+  // full-width tail row was a 148px gap after "Quick note" — a tile-shaped
+  // hole in the one panel that is nothing but tiles. The last tile stretches
+  // over whatever is left instead, at every track count.
+  //
+  // Read off the classes rather than a layout: jsdom does not do grid, so the
+  // only honest check is that the spans the component emits add up.
+  const COLS = { base: 3, sm: 7, shell: 4 }
+  const spanOf = (el, prefix) => {
+    const re = new RegExp(`^${prefix}col-span-(\\d+)$`)
+    const hit = [...el.classList].map(c => c.match(re)).find(Boolean)
+    return hit ? Number(hit[1]) : 1
+  }
+
+  it('never ends on an empty cell — the last tile fills the row', () => {
+    for (const wide of [true, false]) {
+      cleanup()
+      render(<QuickActions navigate={navigate} wide={wide} />)
+      const all = tiles()
+      const last = all[all.length - 1]
+      const n = all.length
+
+      // base (phone, 3 across) and sm (7 across) always apply; shell only
+      // narrows the grid when Home did NOT give this panel the whole row.
+      const steps = [['', COLS.base], ['sm:', COLS.sm]]
+      if (!wide) steps.push(['shell:', COLS.shell])
+
+      for (const [prefix, cols] of steps) {
+        const span = spanOf(last, prefix)
+        // cells used by the full-width run of tiles, with the last one spanning
+        const cells = (n - 1) + span
+        expect(cells % cols, `wide=${wide} ${prefix || 'base'}:${cols} across — ` +
+          `${n} tiles, last spans ${span}, ${cells} cells`).toBe(0)
+        expect(span).toBeLessThanOrEqual(cols)
+      }
+    }
+  })
+
+  it('gives every breakpoint an explicit span, so none leaks into the next', () => {
+    // An unprefixed `col-span-3`, correct for three tracks on a phone, carries
+    // straight into the seven-track row and pushes the last tile onto a line of
+    // its own. Each step must restate its own span, `col-span-1` included.
+    render(<QuickActions navigate={navigate} wide />)
+    const all = tiles()
+    const cls = [...all[all.length - 1].classList]
+    expect(cls.some(c => /^col-span-\d+$/.test(c))).toBe(true)
+    expect(cls.some(c => /^sm:col-span-\d+$/.test(c))).toBe(true)
+  })
+
+  it('goes seven across on a full row and four when it only has half of one', () => {
+    render(<QuickActions navigate={navigate} wide />)
+    let grid = screen.getByTestId('home-quick-actions').querySelector('[class*=grid-cols]')
+    expect(grid.className).toContain('sm:grid-cols-7')
+    expect(grid.className).not.toContain('shell:grid-cols-4')
+
+    cleanup()
+    render(<QuickActions navigate={navigate} wide={false} />)
+    grid = screen.getByTestId('home-quick-actions').querySelector('[class*=grid-cols]')
+    expect(grid.className).toContain('shell:grid-cols-4')
+  })
+
   it('renders nothing for a cleaner', () => {
     setRole('cleaner')
     render(<QuickActions navigate={navigate} />)

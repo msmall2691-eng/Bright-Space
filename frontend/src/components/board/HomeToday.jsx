@@ -194,7 +194,13 @@ export default function HomeToday({ navigate }) {
                 <span className="w-11 shrink-0 text-[12px] font-semibold tabular-nums text-ink-2">{start || '—'}</span>
                 <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${dot.cls}`} title={dot.label} aria-hidden="true" />
                 <span className="min-w-0 flex-1">
-                  <span className="block truncate text-[13px] font-semibold leading-snug text-ink">
+                  {/* The title column is ~145px once the time and the crew
+                      name have had theirs, so a real job title ("Recurring
+                      clean — Harbor St") truncates. `title` gives the rest of
+                      it back on hover; the client name on the line below
+                      already identifies the row without it. */}
+                  <span title={job?.title || undefined}
+                    className="block truncate text-[13px] font-semibold leading-snug text-ink">
                     {job?.title || `Visit ${v.id}`}
                   </span>
                   {client?.name && (

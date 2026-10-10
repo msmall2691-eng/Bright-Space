@@ -75,7 +75,41 @@ layer(base);
 }
 
 @theme {
+  /* BB-CSS-01 — THE WHOLE BREAKPOINT SCALE, IN PIXELS, IN ORDER.
+     `shell` (900px) used to be declared on its own here, and Tailwind emitted
+     its `@media` block BEFORE the built-in sm/md/lg/xl/2xl ones. Tailwind
+     orders min-width variants by comparing their values; it cannot compare
+     `900px` against the defaults' `40rem`, so a mixed-unit scale falls back to
+     declaration order and the custom key lands ahead of every default.
+
+     Same specificity + earlier in the file = `sm:` beat `shell:` at every
+     width >= 900px, for every property both of them set. The three-column
+     board bento, the two detail-page rails and the comms column never
+     rendered at all: `shell:grid-cols-[1.5fr_1.15fr_1.15fr]` was in the DOM,
+     overruled by `sm:grid-cols-2` further down the stylesheet. The owner's
+     window is ~940px, so she saw the phone-ish two-column fallback and the
+     rail dumped underneath as a full-width band — the exact long-scroll shape
+     the revamp set out to remove.
+
+     Restating all six in px makes them numerically comparable, so they sort
+     640 < 768 < 900 < 1024 < 1280 < 1536 and `shell:` wins over `sm:`/`md:`
+     as every call site assumes. The values ARE Tailwind's defaults (40/48/64/
+     80/96rem at a 16px root), so nothing moves at the default font size.
+
+     Px, not rem, deliberately — and this is the reason the whole scale is
+     restated rather than just converting shell to 56.25rem, which would also
+     sort correctly. `shell` is pinned to a physical window: the owner's is
+     ~940px, 40px of headroom. On a rem scale, one notch of browser zoom puts
+     the breakpoint at 990px and drops her back to the narrow layout — which is
+     how `lg:`/1024 hid an entire redesign from her once already. A layout
+     breakpoint chosen from a real window has to stay at that many CSS pixels.
+     Keep every value here in px; adding one in rem re-opens this bug. */
+  --breakpoint-sm: 640px;
+  --breakpoint-md: 768px;
   --breakpoint-shell: 900px;
+  --breakpoint-lg: 1024px;
+  --breakpoint-xl: 1280px;
+  --breakpoint-2xl: 1536px;
 
   --color-brand-50: #f0f9ff;
   --color-brand-100: #e0f2fe;
