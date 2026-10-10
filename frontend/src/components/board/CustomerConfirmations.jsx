@@ -37,10 +37,26 @@ import { Link } from 'react-router-dom'
 import { get } from '../../api'
 import { STATUS_DOT } from '../../theme/statusDots'
 
-/** "3h ago" / "2d ago" — same shape the rest of the board uses for recency. */
+/** "3h ago" / "2d ago" — same shape the rest of the board uses for recency.
+ *
+ *  The `Z` normalisation is load-bearing, not defensive. `customer_confirmed_at`
+ *  is a timezone-NAIVE column (`Column(DateTime)`) written with
+ *  `datetime.now(timezone.utc)`, so the wire value carries no offset —
+ *  `2026-11-02T09:30:00` — and `new Date()` reads an offset-free ISO string as
+ *  BROWSER-LOCAL. West of Greenwich that puts a just-now confirmation in the
+ *  future, `mins` goes negative, and the clamp below renders it "1m ago". Every
+ *  row would have read "1m ago", plausibly enough that nobody would question it.
+ *
+ *  Same expression as ProposalsQueue, properties/utils and SyncCenter — this is
+ *  the house idiom for a naive backend timestamp, not a new invention.
+ */
 function ago(iso) {
   if (!iso) return ''
-  const mins = Math.round((Date.now() - new Date(iso).getTime()) / 60000)
+  const norm = /[zZ]|[+-]\d\d:?\d\d$/.test(iso) ? iso : `${iso}Z`
+  const mins = Math.round((Date.now() - new Date(norm).getTime()) / 60000)
+  // Clamped because small clock skew between server and browser can still go a
+  // few seconds negative; it is NOT a licence to render a far-future timestamp
+  // as "1m ago", which is exactly what hid the bug above.
   if (mins < 60) return `${Math.max(1, mins)}m ago`
   if (mins < 1440) return `${Math.round(mins / 60)}h ago`
   return `${Math.round(mins / 1440)}d ago`

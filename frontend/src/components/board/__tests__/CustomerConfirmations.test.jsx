@@ -95,6 +95,30 @@ describe('CustomerConfirmations', () => {
     await waitFor(() => expect(container.textContent).toBe(''))
   })
 
+  it('reads a naive UTC timestamp as UTC, not as browser-local', async () => {
+    // The API serializes customer_confirmed_at from a timezone-NAIVE column
+    // (database/models.py: Column(DateTime)), written with
+    // datetime.now(timezone.utc). So the wire value has no offset —
+    // "2026-11-02T09:30:00" — and `new Date()` reads an offset-free ISO string
+    // as BROWSER-LOCAL. West of Greenwich that puts a just-now confirmation in
+    // the future, and every row reads "1m ago" forever.
+    //
+    // Found in review. The first version of this test fed the component
+    // `new Date().toISOString()`, which ends in Z — a shape the server never
+    // sends — so it passed while the bug was live.
+    const threeHoursAgoUtc = new Date(Date.now() - 3 * 3600 * 1000)
+      .toISOString().replace(/\.\d+Z$/, '')          // strip the Z: naive, as the API sends
+    payload = { confirmations: [{
+      job_id: 5, client_name: 'Sam', scheduled_date: null, start_time: null,
+      confirmed_at: threeHoursAgoUtc,
+    }] }
+    const { container } = await mount()
+    const row = await firstRow(container)
+    expect(row.textContent,
+      'a naive UTC timestamp was read as local time, so the age is wrong')
+      .toMatch(/3h ago/)
+  })
+
   it('fetches once, and does not poll', async () => {
     payload = { confirmations: [{ job_id: 1, client_name: 'Sam', confirmed_at: new Date().toISOString() }] }
     const { container } = await mount()
