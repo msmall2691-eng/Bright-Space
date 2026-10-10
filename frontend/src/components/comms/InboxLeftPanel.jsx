@@ -169,7 +169,7 @@ export function InboxLeftPanel({
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-ink-3" />
           <input ref={searchRef} value={search} onChange={e => setSearch(e.target.value)}
             placeholder="Search conversations…"
-            className="w-full bg-bg border border-hairline rounded-xl pl-9 pr-3 py-2.5 text-base sm:text-[13px] placeholder-ink-3 focus:outline-hidden focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-400 focus:bg-panel transition-all" />
+            className="w-full bg-bg border border-hairline rounded-md pl-9 pr-3 py-2.5 text-base sm:text-[13px] placeholder-ink-3 focus:outline-hidden focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-400 focus:bg-panel transition-all" />
         </div>
       </div>
 
@@ -213,15 +213,15 @@ export function InboxLeftPanel({
               <div key={i} className="flex items-center gap-3 px-4 py-3">
                 <div className="w-10 h-10 rounded-full bg-bg-2 animate-pulse shrink-0" />
                 <div className="flex-1 space-y-2">
-                  <div className="h-3 rounded bg-bg-2 animate-pulse w-1/3" />
-                  <div className="h-2.5 rounded bg-bg-2 animate-pulse w-3/4" />
+                  <div className="h-3 rounded-full bg-bg-2 animate-pulse w-1/3" />
+                  <div className="h-2.5 rounded-full bg-bg-2 animate-pulse w-3/4" />
                 </div>
               </div>
             ))}
           </div>
         ) : convs.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-16 px-6">
-            <div className="w-14 h-14 rounded-2xl bg-bg-2 flex items-center justify-center mb-4">
+            <div className="w-14 h-14 rounded-lg bg-bg-2 flex items-center justify-center mb-4">
               <Inbox className="w-7 h-7 text-ink-3" />
             </div>
             <div className="text-sm font-semibold text-ink-3 mb-1">
@@ -259,7 +259,7 @@ export function InboxLeftPanel({
       {filtersOpen && (
         <div className="shell:hidden fixed inset-0 z-40 flex flex-col justify-end" onClick={() => setFiltersOpen(false)}>
           <div className="absolute inset-0 bg-black/30 backdrop-blur-sm" />
-          <div className="relative bg-panel rounded-t-2xl border-t border-hairline p-4 pb-8 space-y-4" onClick={e => e.stopPropagation()}>
+          <div className="relative bg-panel rounded-t-lg border-t border-hairline p-4 pb-8 space-y-4" onClick={e => e.stopPropagation()}>
             <div className="flex items-center justify-between">
               <h2 className="text-sm font-bold text-ink">Filters</h2>
               <button onClick={() => setFiltersOpen(false)} className="w-9 h-9 rounded-lg hover:bg-bg-2 flex items-center justify-center text-ink-3">

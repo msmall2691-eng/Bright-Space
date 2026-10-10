@@ -48,7 +48,7 @@ export function AssigneePicker({ currentName, currentId, onAssign }) {
         <ChevronDown className="w-3 h-3" />
       </button>
       {open && (
-        <div className="absolute right-0 mt-1 w-52 max-h-64 overflow-y-auto rounded-xl border border-hairline bg-panel shadow-lg z-30 py-1">
+        <div className="absolute right-0 mt-1 w-52 max-h-64 overflow-y-auto rounded-lg border border-hairline bg-panel shadow-lg z-30 py-1">
           <button onClick={() => pick(null)}
             className="w-full text-left px-3 py-2 text-[12px] text-ink-2 hover:bg-bg-2 flex items-center gap-2">
             <span className="w-3.5 h-3.5 shrink-0" />

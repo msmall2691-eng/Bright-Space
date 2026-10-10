@@ -145,19 +145,19 @@ export function ContactPanel({ detail, context, onRemind, onClose, onDraftQuote,
             operator can reach the customer any channel without hunting. */}
         <div className="mt-3 grid grid-cols-3 gap-1.5">
           <a href={phone ? `tel:${phone}` : undefined} aria-disabled={!phone}
-            className={`flex flex-col items-center gap-1 py-2 rounded-xl text-[11px] font-semibold transition-colors ${
+            className={`flex flex-col items-center gap-1 py-2 rounded-md text-[11px] font-semibold transition-colors ${
               phone ? 'bg-panel border border-hairline text-ink-2 hover:bg-indigo-500/10 hover:text-link dark:hover:text-link' : 'bg-bg-2 text-ink-3 opacity-50 pointer-events-none'
             }`}>
             <Phone className="w-3.5 h-3.5" /> Call
           </a>
           <a href={phone ? `sms:${phone}` : undefined} aria-disabled={!phone}
-            className={`flex flex-col items-center gap-1 py-2 rounded-xl text-[11px] font-semibold transition-colors ${
+            className={`flex flex-col items-center gap-1 py-2 rounded-md text-[11px] font-semibold transition-colors ${
               phone ? 'bg-panel border border-hairline text-ink-2 hover:bg-indigo-500/10 hover:text-link dark:hover:text-link' : 'bg-bg-2 text-ink-3 opacity-50 pointer-events-none'
             }`}>
             <MessageSquare className="w-3.5 h-3.5" /> Text
           </a>
           <a href={client?.email ? `mailto:${client.email}` : undefined} aria-disabled={!client?.email}
-            className={`flex flex-col items-center gap-1 py-2 rounded-xl text-[11px] font-semibold transition-colors ${
+            className={`flex flex-col items-center gap-1 py-2 rounded-md text-[11px] font-semibold transition-colors ${
               client?.email ? 'bg-panel border border-hairline text-ink-2 hover:bg-indigo-500/10 hover:text-link dark:hover:text-link' : 'bg-bg-2 text-ink-3 opacity-50 pointer-events-none'
             }`}>
             <Mail className="w-3.5 h-3.5" /> Email
@@ -178,7 +178,7 @@ export function ContactPanel({ detail, context, onRemind, onClose, onDraftQuote,
         {/* Draft a quote from the thread — leads with no client record too. */}
         {onDraftQuote && (
           <button onClick={onDraftQuote} disabled={draftingQuote}
-            className="mt-3 w-full flex items-center justify-center gap-1.5 text-[12px] font-semibold text-white bg-violet-600 hover:bg-violet-700 disabled:opacity-60 py-2 rounded-xl transition-all">
+            className="mt-3 w-full flex items-center justify-center gap-1.5 text-[12px] font-semibold text-white bg-violet-600 hover:bg-violet-700 disabled:opacity-60 py-2 rounded-md transition-all">
             {draftingQuote
               ? <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Reading conversation…</>
               : <><FileText className="w-3.5 h-3.5" /> Draft a quote from this</>}
@@ -272,7 +272,7 @@ export function ContactPanel({ detail, context, onRemind, onClose, onDraftQuote,
               <SectionLabel>Tags</SectionLabel>
               <div className="flex flex-wrap gap-1">
                 {detail.tags.map(t => (
-                  <span key={t} className="inline-flex items-center gap-1 text-[11px] rounded-sm border border-hairline-2 bg-panel text-ink-2 px-1.5 py-0.5 font-medium">
+                  <span key={t} className="inline-flex items-center gap-1 text-[11px] rounded-md border border-hairline-2 bg-panel text-ink-2 px-1.5 py-0.5 font-medium">
                     <Hash className="w-2.5 h-2.5 text-ink-3" /> {t}
                   </span>
                 ))}

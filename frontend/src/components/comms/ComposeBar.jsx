@@ -163,7 +163,7 @@ export function ComposeBar({
       {detail.channel === 'email' && !noteMode && (
         <input value={replySubject} onChange={e => setReplySubject(e.target.value)}
           placeholder={detail.subject ? `Re: ${detail.subject}` : 'Subject'}
-          className="w-full bg-bg border border-hairline rounded-xl px-3.5 py-2 text-base sm:text-[13px] mb-2 focus:outline-hidden focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-400 transition-all" />
+          className="w-full bg-bg border border-hairline rounded-md px-3.5 py-2 text-base sm:text-[13px] mb-2 focus:outline-hidden focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-400 transition-all" />
       )}
 
       {/* Appointment-aware quick-replies — pull the customer's real next visit
@@ -192,7 +192,7 @@ export function ComposeBar({
 
       {/* @mention picker — Note mode only, opens as you type @ */}
       {noteMode && query !== null && suggestions.length > 0 && (
-        <div className="mb-1.5 overflow-hidden rounded-xl border border-hairline bg-panel shadow-lg">
+        <div className="mb-1.5 overflow-hidden rounded-lg border border-hairline bg-panel shadow-lg">
           {suggestions.map(u => (
             <button key={u.id} type="button"
               onMouseDown={e => { e.preventDefault(); pickMention(u) }}
@@ -212,12 +212,12 @@ export function ComposeBar({
             ? 'Write an internal note (not sent to customer) — type @ to tag a teammate'
             : `Reply via ${(detail.channel || 'sms').toUpperCase()}...`
           }
-          className={`flex-1 border border-hairline bg-bg rounded-xl px-4 py-2.5 text-base sm:text-[13px] resize-none placeholder-ink-3 focus:outline-hidden focus:ring-2 focus:bg-panel transition-all leading-relaxed ${
+          className={`flex-1 border border-hairline bg-bg rounded-md px-4 py-2.5 text-base sm:text-[13px] resize-none placeholder-ink-3 focus:outline-hidden focus:ring-2 focus:bg-panel transition-all leading-relaxed ${
             noteMode ? 'focus:ring-amber-500/20' : 'focus:ring-indigo-500/20'
           }`}
           onKeyDown={e => { if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') handleSend() }} />
         <button onClick={handleSend} disabled={sending || !reply.trim()}
-          className={`px-5 min-h-[44px] min-w-[64px] rounded-xl text-[13px] font-semibold self-stretch disabled:opacity-40 transition-all active:scale-95 shadow-xs ${
+          className={`px-5 min-h-[44px] min-w-[64px] rounded-md text-[13px] font-semibold self-stretch disabled:opacity-40 transition-all active:scale-95 shadow-xs ${
             noteMode
               ? 'bg-amber-500 hover:bg-amber-600 text-white'
               : 'bg-indigo-600 hover:bg-indigo-700 text-white'

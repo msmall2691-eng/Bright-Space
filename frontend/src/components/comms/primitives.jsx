@@ -111,7 +111,7 @@ export function PriorityDot({ priority }) {
 
 export function Kbd({ children }) {
   return (
-    <kbd className="inline-flex items-center justify-center h-5 px-1.5 text-[10px] font-medium text-ink-3 bg-bg-2 border border-hairline rounded">
+    <kbd className="inline-flex items-center justify-center h-5 px-1.5 text-[10px] font-medium text-ink-3 bg-bg-2 border border-hairline rounded-md">
       {children}
     </kbd>
   )
