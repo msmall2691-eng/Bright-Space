@@ -40,8 +40,15 @@ import { getCached } from '../api'
  *   loading, error     — small state a caller can use for skeleton/toast
  */
 
-const CACHE_URL = '/api/dispatch/employees'
-const CACHE_TTL_MS = 2 * 60 * 1000  // 2 minutes — roster changes rarely
+/** The one definition of the roster URL. Exported so the Crew page can drop
+ *  this cache after a write without re-typing the string — a second copy is
+ *  how a URL and the thing that caches it drift apart. */
+export const ROSTER_CACHE_URL = '/api/dispatch/employees'
+const CACHE_URL = ROSTER_CACHE_URL
+// 2 minutes — the roster changes rarely, and when it DOES change the Crew page
+// calls invalidateCached(ROSTER_CACHE_URL) rather than leaving every assign
+// drop-down two minutes behind.
+const CACHE_TTL_MS = 2 * 60 * 1000
 
 export function useEmployees() {
   const [employees, setEmployees] = useState([])

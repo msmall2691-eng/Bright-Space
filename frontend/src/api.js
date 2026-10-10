@@ -172,20 +172,57 @@ export const get = (url, options) => api(url, options);
  */
 const _getCachedInFlight = new Map() // url -> Promise
 const _getCachedResults = new Map()  // url -> { value, expiresAt }
+// url -> how many times it has been invalidated. A response only populates the
+// store if the epoch it STARTED under is still current — see invalidateCached.
+const _getCachedEpoch = new Map()
 export function getCached(url, ttlMs = 5000) {
   const now = Date.now()
   const cached = _getCachedResults.get(url)
   if (cached && cached.expiresAt > now) return Promise.resolve(cached.value)
   const inFlight = _getCachedInFlight.get(url)
   if (inFlight) return inFlight
+  const epoch = _getCachedEpoch.get(url) || 0
   const p = api(url)
     .then((value) => {
-      _getCachedResults.set(url, { value, expiresAt: Date.now() + ttlMs })
+      // Stale-response guard: if the URL was invalidated while this was open,
+      // this value predates the write that invalidated it. Hand it to the
+      // caller that asked, but do not cache it — caching it would restore the
+      // stale copy for another full TTL.
+      if ((_getCachedEpoch.get(url) || 0) === epoch) {
+        _getCachedResults.set(url, { value, expiresAt: Date.now() + ttlMs })
+      }
       return value
     })
-    .finally(() => { _getCachedInFlight.delete(url) })
+    .finally(() => {
+      // Only clear the in-flight slot if it is still ours; invalidateCached
+      // may already have dropped it and a newer request taken the place.
+      if (_getCachedInFlight.get(url) === p) _getCachedInFlight.delete(url)
+    })
   _getCachedInFlight.set(url, p)
   return p
+}
+
+/**
+ * Drop the cached copy of `url` so the next getCached() goes to the server.
+ *
+ * Call it right after a write that changes what that URL returns. The case it
+ * exists for: `useEmployees` caches `/api/dispatch/employees` for two minutes
+ * on the reasoning that the roster changes rarely — true until someone adds a
+ * cleaner, after which every assign drop-down in the app is missing them for
+ * up to two minutes while the Crew page (a different endpoint) shows them
+ * fine.
+ *
+ * Bumping an epoch rather than only deleting the entry is what makes this
+ * correct under concurrency. A read that started BEFORE the write is still
+ * open; without the epoch its `.then` would write pre-write data back into the
+ * store afterwards, re-caching precisely the value just invalidated. Dropping
+ * the in-flight entry as well means the next caller starts a fresh request
+ * instead of joining that doomed one.
+ */
+export function invalidateCached(url) {
+  _getCachedEpoch.set(url, (_getCachedEpoch.get(url) || 0) + 1)
+  _getCachedResults.delete(url)
+  _getCachedInFlight.delete(url)
 }
 
 /** POST helper. `opts` is merged into the fetch options — e.g. { timeout } to
