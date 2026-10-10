@@ -950,7 +950,8 @@ def _draft_lead(intake, channel: str, instruction, client_ai, db: Session) -> di
     name = (intake.name or "").split()[0] if intake.name else "there"
     company = _company_name(db)
     if client_ai is None:
-        return _fallback_lead_reply(name, intake, channel, company)
+        logger.warning("ai lead draft: no API key configured")
+        return _fallback_lead_reply(name, intake, channel, company, "unconfigured")
 
     facts = _lead_facts(intake)
     if instruction:
@@ -978,12 +979,13 @@ def _draft_lead(intake, channel: str, instruction, client_ai, db: Session) -> di
         data = json.loads(_strip_json(text))
         msg = (data.get("message") or "").strip()
         if not msg:
-            return _fallback_lead_reply(name, intake, channel, company)
+            logger.warning("ai lead draft: model returned an empty message")
+            return _fallback_lead_reply(name, intake, channel, company, "error")
         subject = "" if channel == "sms" else (data.get("subject") or subj_default).strip()
         return {"subject": subject, "message": msg}
     except Exception:
         logger.exception("ai lead draft failed; using fallback")
-        return _fallback_lead_reply(name, intake, channel, company)
+        return _fallback_lead_reply(name, intake, channel, company, "error")
 
 
 @router.post("/draft-conversation-reply/{conversation_id}")
@@ -1000,14 +1002,20 @@ def draft_conversation_reply(conversation_id: int, body: DraftLeadRequest = Draf
             .order_by(Message.created_at.desc()).limit(8).all())
     msgs = list(reversed(msgs))
     client = db.query(Client).filter(Client.id == conv.client_id).first() if conv.client_id else None
-    name = _client_first_name(client) if client else (conv.external_contact or "there")
+    # NEVER `conv.external_contact` as a fallback name. That column holds the
+    # normalized phone or email the thread is keyed on, so an unlinked
+    # conversation produced greetings like "Hi +12075765825," — which the
+    # owner saw go out as a suggested reply. A contact handle is not a name;
+    # with no client linked, the draft addresses nobody.
+    name = _client_first_name(client) if client else "there"
     company = _company_name(db)
     channel = (conv.channel or "email").lower()
     if channel not in ("email", "sms"):
         channel = "email"
     client_ai = _anthropic_client()
     if client_ai is None:
-        return _fallback_conversation_reply(name, channel, company)
+        logger.warning("ai conversation draft: no API key configured")
+        return _fallback_conversation_reply(name, channel, company, "unconfigured")
 
     transcript = [{"from": ("customer" if m.direction == "inbound" else "us"),
                    "text": (m.body or "").strip()} for m in msgs if (m.body or "").strip()]
@@ -1035,19 +1043,45 @@ def draft_conversation_reply(conversation_id: int, body: DraftLeadRequest = Draf
         data = json.loads(_strip_json(text))
         msg = (data.get("message") or "").strip()
         if not msg:
-            return _fallback_conversation_reply(name, channel, company)
+            logger.warning("ai conversation draft: model returned an empty message")
+            return _fallback_conversation_reply(name, channel, company, "error")
         subject = "" if channel == "sms" else (data.get("subject") or f"Re: {conv.subject or 'your message'}").strip()
         return {"subject": subject, "message": msg}
     except Exception:
         logger.exception("ai conversation draft failed; using fallback")
-        return _fallback_conversation_reply(name, channel, company)
+        return _fallback_conversation_reply(name, channel, company, "error")
 
 
-def _fallback_conversation_reply(name, channel: str, company: str) -> dict:
+def _fallback_conversation_reply(name, channel: str, company: str,
+                                 reason: str = "error") -> dict:
+    """The canned reply used when the model can't be reached.
+
+    ## It carries `fallback` because it was being passed off as a draft
+
+    This is returned with a 200 and no marker of any kind, and the two places
+    that render it both checked only for a `message` — so a failed or
+    unconfigured AI call appeared in the composer as a genuine suggestion.
+    `ReplySuggestion.jsx` even documents the opposite intent ("any error
+    renders nothing — the composer must never look broken because a suggestion
+    failed"), and that branch was unreachable: the only `error` this endpoint
+    ever returned was "Conversation not found".
+
+    The owner hit it head-on. A customer wrote asking for one more deep clean
+    before pausing, and mentioned nobody had come the day before; the thread
+    offered "thanks for your message! We'll take care of this and follow up
+    shortly." The model's own prompt tells it to answer specifically — it
+    never ran.
+
+    `reason` separates the two cases, because they need different answers from
+    whoever is looking: `unconfigured` means no API key (nothing will ever
+    work until one is set), `error` means the call was made and failed (likely
+    transient).
+    """
     if channel == "sms":
-        return {"subject": "", "message": f"Hi {name}, thanks for your message! "
+        return {"subject": "", "fallback": reason,
+                "message": f"Hi {name}, thanks for your message! "
                 f"We'll take care of this and follow up shortly. – {company}"}
-    return {"subject": "Re: your message",
+    return {"subject": "Re: your message", "fallback": reason,
             "message": f"Hi {name},\n\nThanks for your message — we're on it and will "
                        f"follow up shortly. Let us know if there's anything else in the "
                        f"meantime.\n\nWarmly,\n{company}"}
@@ -1426,18 +1460,25 @@ def quote_from_lead(intake_id: int, db: Session = Depends(get_db),
     quote = db.query(Quote).filter(Quote.id == out["id"]).first()
     return _lead_quote_result(quote, created=True, used_ai=used_ai)
 
-def _fallback_lead_reply(name, intake, channel: str, company: str) -> dict:
+def _fallback_lead_reply(name, intake, channel: str, company: str,
+                         reason: str = "error") -> dict:
+    """Canned first reply for when the model can't be reached.
+
+    Carries `fallback` for the same reason _fallback_conversation_reply does:
+    the Requests drawer rendered this as though the AI had written it. See
+    that function's docstring for the full account.
+    """
     svc = (intake.service_type or "cleaning").replace("_", " ")
     if channel == "sms":
         body = (f"Hi {name}! Thanks for reaching out to {company} about {svc}. "
                 f"We'd love to help — reply here and we'll get you a quote and a time. – {company}")
-        return {"subject": "", "message": body}
+        return {"subject": "", "message": body, "fallback": reason}
     body = (f"Hi {name},\n\nThanks so much for reaching out to {company} about your "
             f"{svc} request — we'd love to help. We'll put together a quote for you; "
             f"is there anything specific you'd like us to focus on, or a day that "
             f"works best?\n\nJust reply here and we'll take care of the rest.\n\n"
             f"Warmly,\n{company}")
-    return {"subject": f"Re: your {svc} request", "message": body}
+    return {"subject": f"Re: your {svc} request", "message": body, "fallback": reason}
 
 
 def _draft_one(inv: Invoice, client, client_ai) -> dict:

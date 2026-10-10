@@ -221,7 +221,20 @@ export default function Comms() {
     setDraftingAI(true)
     try {
       const res = await post(`/api/ai/draft-conversation-reply/${detail.id}`, {})
-      if (res?.message) {
+      if (res?.fallback) {
+        // The endpoint answers 200 with canned filler when the model can't be
+        // reached. Dropping that into the composer under "Drafted — edit &
+        // send" is how generic boilerplate ends up one tap from a customer
+        // who asked a specific question. Say which failure it was: a missing
+        // key needs someone to go set one, a failed call usually just needs
+        // another try.
+        setFlash({
+          ok: false,
+          msg: res.fallback === 'unconfigured'
+            ? 'AI drafting isn’t set up yet'
+            : 'Couldn’t draft a reply — try again',
+        })
+      } else if (res?.message) {
         setReply(res.message)
         if (detail.channel === 'email' && res.subject) setReplySubject(res.subject)
         setFlash({ ok: true, msg: 'Drafted — edit & send' })
