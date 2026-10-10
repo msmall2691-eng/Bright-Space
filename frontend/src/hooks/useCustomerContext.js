@@ -27,6 +27,23 @@ const DONE_JOB_STATUSES = new Set(['completed'])
  *  visit the calendar still believes in, on a day that has already passed. */
 const UNRESOLVED_JOB_STATUSES = new Set(['scheduled', 'in_progress'])
 
+/** Is this job a visit the calendar still believes in, on a day that's gone?
+ *
+ *  Exported, and used by `ContactPanel`'s "Recent visits" row as well as the
+ *  note in the thread, because the two spelled the rule out separately and
+ *  disagreed. `pastJobs` lumps in anything whose date sorts before today —
+ *  and `(null || '') < today` is TRUE, so an `unscheduled` job from an
+ *  accepted quote whose date nobody has picked yet landed there with no date
+ *  at all. The panel then called it "not closed out" while the note correctly
+ *  said nothing, which is the worst of both: a nag about work that was never
+ *  promised for any particular day.
+ *
+ *  One predicate, one answer, in both places. */
+export function isUnresolvedVisit(job, today) {
+  const date = job?.scheduled_date || ''
+  return Boolean(date) && date < today && UNRESOLVED_JOB_STATUSES.has(job?.status)
+}
+
 const EMPTY = {
   upcomingJobs: [],
   pastJobs: [],
@@ -44,7 +61,15 @@ export function useCustomerContext(clientId) {
   const [loading, setLoading] = useState(false)
 
   useEffect(() => {
-    if (!clientId) { setData(EMPTY); return }
+    // Clear FIRST, on every change of client — not just on no client.
+    //
+    // Three requests take a moment, and until they landed this hook kept
+    // serving the PREVIOUS customer's jobs, quotes and money. On a panel that
+    // is merely stale data; under the unresolved-visit note it is a false
+    // statement about the person whose thread is open, with a link to someone
+    // else's job. An empty panel for 200ms is the better wrong answer.
+    setData(EMPTY)
+    if (!clientId) return
     let cancelled = false
     const load = async () => {
       setLoading(true)
@@ -78,8 +103,7 @@ export function useCustomerContext(clientId) {
         // Rule 0), and the place to resolve one of these is the Schedule,
         // which owns that state. This derives a question, not an answer.
         const unresolvedVisits = jobList
-          .filter(j => (j.scheduled_date || '') < today
-            && UNRESOLVED_JOB_STATUSES.has(j.status))
+          .filter(j => isUnresolvedVisit(j, today))
           .sort(byDateDesc)
 
         const paidInvoices = (invoices || []).filter(i => i.status === 'paid')

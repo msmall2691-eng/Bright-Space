@@ -76,6 +76,15 @@ describe('what counts as a visit nobody closed out', () => {
     expect(await unresolvedIds([job({ id: 4, status: 'cancelled' })])).toEqual([])
   })
 
+  it('does not count a dated-nowhere job, whatever its status says', async () => {
+    // `scheduled_date` is nullable (models.py), so a row can read `scheduled`
+    // with no date — the kind of drift data-doctor exists to find. It must
+    // not become a missed visit: the note's whole job is to NAME the day, and
+    // there isn't one. Without the explicit date check, `('' < today)` is
+    // true and this falls through on the status alone.
+    expect(await unresolvedIds([job({ id: 6, status: 'scheduled', scheduled_date: null })])).toEqual([])
+  })
+
   it('does not count an unscheduled job', async () => {
     // A converted quote with no date yet. It cannot be late.
     expect(await unresolvedIds([job({ id: 5, status: 'unscheduled', scheduled_date: null })])).toEqual([])
@@ -114,5 +123,35 @@ describe('it costs no extra request', () => {
     const jobCalls = get.mock.calls.filter(c => String(c[0]).startsWith('/api/jobs'))
     expect(jobCalls, 'one client-scoped jobs read, as before').toHaveLength(1)
     expect(get, 'quotes + jobs + invoices, unchanged').toHaveBeenCalledTimes(3)
+  })
+})
+
+describe('it never describes the previous customer', () => {
+  it('clears everything the moment the client changes', async () => {
+    // Switching threads re-runs the effect, but three requests take a moment.
+    // Until they landed, this hook kept serving client A's jobs — so the
+    // thread for client B showed A's unresolved-visit note, linking to A's
+    // job. A blank panel for 200ms is the better wrong answer.
+    let resolveB
+    get.mockImplementation((url) => {
+      if (!String(url).startsWith('/api/jobs')) return Promise.resolve([])
+      return String(url).includes('client_id=42')
+        ? Promise.resolve([job({ id: 1 })])
+        : new Promise(res => { resolveB = res })  // B's jobs hang
+    })
+
+    const { result, rerender } = renderHook(({ id }) => useCustomerContext(id),
+      { initialProps: { id: 42 } })
+    await waitFor(() => expect(result.current.unresolvedVisits).toHaveLength(1))
+
+    rerender({ id: 99 })
+    expect(
+      result.current.unresolvedVisits,
+      "client B's thread is showing client A's missed visit",
+    ).toEqual([])
+    expect(result.current.upcomingJobs).toEqual([])
+    expect(result.current.stats.visitCount).toBe(0)
+
+    resolveB?.([])
   })
 })

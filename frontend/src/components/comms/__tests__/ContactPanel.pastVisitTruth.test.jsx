@@ -77,4 +77,15 @@ describe('a past visit shows its real state', () => {
     const block = (draw([job({ status: 'cancelled' })]), recentVisits())
     expect(within(block).queryByText(/not closed out/)).toBeNull()
   })
+
+  it('does not nag about a job that was never given a date', () => {
+    // An accepted quote with no date yet produces status `unscheduled` and
+    // scheduled_date null (quoting/router.py). `(null || '') < today` is
+    // true, so it lands in pastJobs — and the first version of this row
+    // called it "not closed out", nagging about work nobody had promised for
+    // any particular day. The thread's note never counted it; the row and the
+    // note now read the same predicate, so they cannot disagree again.
+    const block = (draw([job({ status: 'unscheduled', scheduled_date: null })]), recentVisits())
+    expect(within(block).queryByText(/not closed out/)).toBeNull()
+  })
 })
