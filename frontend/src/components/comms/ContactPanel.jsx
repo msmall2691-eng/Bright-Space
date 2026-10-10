@@ -284,9 +284,19 @@ export function ContactPanel({ detail, context, onRemind, onClose, onDraftQuote,
         {/* The "Conversation activity" timeline that used to close this panel
             is gone. It listed the last 15 messages of THIS thread, author +
             channel + relative time + the body truncated to 100 characters —
-            which is a strictly smaller version of the thread pane rendered
-            immediately to its left, now that #1152 makes this a real column at
-            shell: instead of an overlay. MessageBubble already shows the
+            a strictly smaller version of the thread pane.
+
+            #1156 justified that by saying the thread is rendered immediately
+            to the left. At shell: and up, true. BELOW shell: it is NOT: this
+            panel is still `fixed inset-0` and Comms hides the thread whenever
+            mobileView === 'contact', so on a phone the feed was the only
+            message context on screen (codex P2, correctly). The deletion still
+            stands there — the thread is one tap back up the pane, and a
+            100-character recap of what you just read is not worth a third of
+            a phone screen you came to for appointments and money — but it is
+            a judgement call, not the tautology the first comment implied.
+
+            MessageBubble already shows the
             author, the channel, the full timestamp, the whole body with quoted
             email collapsed, AND the delivery status, which the feed never had.
             So it cost roughly a third of this panel's height to show less of

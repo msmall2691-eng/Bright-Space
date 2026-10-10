@@ -91,6 +91,38 @@ describe('the page holds its shortcut callbacks still', () => {
   })
 })
 
+describe('the shortcuts reach state the list-row path does not', () => {
+  // Two codex P2s on #1155, both found after it merged, both from reusing
+  // list-row machinery for a keyboard acting on the OPEN thread.
+  const comms = readFileSync(join(DIR, '..', '..', '..', 'pages', 'Comms.jsx'), 'utf8')
+
+  it('e refreshes the open pane instead of leaving it stale', () => {
+    // `resolveConv` -> `rowAction` reloads the list and the folder counts but
+    // never the detail — right for a swipe on a row you are not reading,
+    // wrong from the keyboard: the thread pane kept offering "Mark done" and
+    // the reply suggestion for up to sixty seconds while the toast said the
+    // thread was done. `setStatus` does the right refresh.
+    const fn = comms.slice(comms.indexOf('const resolveSelected')).slice(0, 300)
+    expect(fn).toMatch(/id === detail\?\.id \? setStatus\('resolved'\) : resolveConv\(id\)/)
+    expect(comms, 'the shortcut is back on the list-row path')
+      .toMatch(/onResolve: resolveSelected/)
+  })
+
+  it('/ reveals the list before focusing it', () => {
+    // focus() inside a display:none subtree does nothing, and `/` has already
+    // swallowed the keystroke — so the shortcut looked broken on a phone with
+    // a thread open, and in the 900–1280 band while the customer column holds
+    // the list's slot (which #1152 introduced, so that half is self-inflicted).
+    const fn = comms.slice(comms.indexOf('const focusSearch = useCallback')).slice(0, 2000)
+    expect(fn, 'no hidden-element check, so the direct path can focus nothing')
+      .toMatch(/offsetParent !== null/)
+    expect(fn).toMatch(/setMobileView\('list'\)/)
+    expect(fn).toMatch(/setShowContactPanel\(false\)/)
+    expect(fn, 'focusing in the same tick lands on the element still hidden')
+      .toMatch(/requestAnimationFrame\(/)
+  })
+})
+
 describe('the selected row stays on screen', () => {
   let spy
   beforeEach(() => {
