@@ -49,6 +49,10 @@ export function InboxLeftPanel({
   // thread (see ContactPanel's header comment). At xl: all three fit and the
   // list comes back on its own.
   hiddenForContact = false,
+  // Focused by the `/` shortcut (useInboxShortcuts). A ref rather than a
+  // querySelector so the wiring is visible in the props and a rename of the
+  // input cannot quietly break it.
+  searchRef,
 }) {
   // Swipe-left actions per row. In the Done folder the primary action flips to
   // "Reopen"; elsewhere it's "Done" (resolve) plus a quick "Mine" assign.
@@ -163,7 +167,7 @@ export function InboxLeftPanel({
         {/* Search */}
         <div className="relative">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-ink-3" />
-          <input value={search} onChange={e => setSearch(e.target.value)}
+          <input ref={searchRef} value={search} onChange={e => setSearch(e.target.value)}
             placeholder="Search conversations…"
             className="w-full bg-bg border border-hairline rounded-xl pl-9 pr-3 py-2.5 text-base sm:text-[13px] placeholder-ink-3 focus:outline-hidden focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-400 focus:bg-panel transition-all" />
         </div>
