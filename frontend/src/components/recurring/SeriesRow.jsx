@@ -85,12 +85,24 @@ export default function SeriesRow({ s, clientName, onOpen, isDuplicate, onToggle
               {/* The row's keyboard target. Styled as the heading it is, so
                   nothing moves visually, but it is a real control: Tab lands
                   here and Enter opens the series. */}
-              <button
-                onClick={(e) => { e.stopPropagation(); onOpen(s.id) }}
-                className="text-base font-semibold text-ink text-left rounded-md hover:text-link"
-              >
-                {s.title || 'Untitled'}
-              </button>
+              {/* The button is wrapped in the heading rather than replacing
+                  it. Swapping the `<h3>` out took every series title out of
+                  the document's heading structure, which is how a screen
+                  reader user scans a list like this — and CSS does not carry
+                  that semantic back (codex P2 on #1161). Both are needed: the
+                  heading to find the row, the button to open it.
+
+                  Tailwind's preflight zeroes heading margin and font-size, so
+                  the h3 contributes no styling of its own and the row looks
+                  exactly as it did. */}
+              <h3>
+                <button
+                  onClick={(e) => { e.stopPropagation(); onOpen(s.id) }}
+                  className="text-base font-semibold text-ink text-left rounded-md hover:text-link"
+                >
+                  {s.title || 'Untitled'}
+                </button>
+              </h3>
               <span className="inline-flex items-center gap-1.5 text-[11px] font-medium text-ink-2">
                 <span className={`h-1.5 w-1.5 rounded-full ${live ? SEV_DOT.good : 'bg-ink-3'}`} />
                 {SERIES_STATE_LABEL[state]}

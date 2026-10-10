@@ -359,6 +359,24 @@ describe('the actions hide on a pointer condition, not a width one', () => {
 })
 
 describe('the row is still reachable by keyboard', () => {
+  it('keeps the title a heading as well as a control', async () => {
+    // The card stopped being one big <button> so it could hold actions, and
+    // the title became the focusable thing. Done naively that REPLACES the
+    // <h3>, which takes every series out of the heading structure a screen
+    // reader user scans by — CSS does not carry that semantic (codex P2 on
+    // #1161). Both roles are asserted because satisfying either one alone is
+    // the bug: a bare heading loses the keyboard route, a bare button loses
+    // the outline.
+    draw([ACTIVE])
+    await row('Sweet — Weekly')
+    const heading = screen.getByRole('heading', { name: 'Sweet — Weekly' })
+    expect(heading, 'the series title is no longer a heading').toBeTruthy()
+    expect(
+      within(heading).getByRole('button', { name: 'Sweet — Weekly' }),
+      'the heading no longer contains the control that opens the series',
+    ).toBeTruthy()
+  })
+
   it('opens the series from the title control', async () => {
     // The card stopped being one big <button> so it could hold actions. If the
     // title had not become the focusable control in the same move, this page
