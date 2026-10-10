@@ -1,11 +1,10 @@
-import { useMemo } from 'react'
 import { Link } from 'react-router-dom'
 import {
-  X, Phone, Mail, MapPin, User, Hash, StickyNote, ArrowLeft, Send, FileText, Loader2,
+  X, Phone, Mail, MapPin, User, Hash, ArrowLeft, FileText, Loader2,
   MessageSquare, Calendar, CheckCircle2, RefreshCw, DollarSign, BellRing,
 } from 'lucide-react'
 import { formatDate, combineAddress, formatAddress } from '../../utils/format'
-import { contactDisplay, relTime } from './utils'
+import { contactDisplay } from './utils'
 import { Avatar, ChannelBadge } from './primitives'
 import RecordLink from '../RecordLink'
 import AiInsight from '../AiInsight'
@@ -83,22 +82,6 @@ export function ContactPanel({ detail, context, onRemind, onClose, onDraftQuote,
   const phone = client?.phone || detail.external_contact
   const address = client && formatAddress(combineAddress(client.address, client.city, client.state, client.zip_code))
   const mapHref = address ? `https://maps.google.com/?q=${encodeURIComponent(address)}` : null
-
-  // Activity feed from the thread's own messages (cross-channel timeline).
-  const timeline = useMemo(() => {
-    if (!detail.messages) return []
-    return [...detail.messages]
-      .sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
-      .slice(0, 15)
-      .map(m => ({
-        id: m.id,
-        type: m.is_internal_note ? 'note' : m.direction,
-        channel: m.channel,
-        body: (m.body || '').slice(0, 100),
-        time: m.created_at,
-        author: m.author || (m.direction === 'outbound' ? 'You' : name),
-      }))
-  }, [detail.messages, name])
 
   const hasMoney = openQuotes.length > 0 || unpaidInvoices.length > 0
 
@@ -298,47 +281,25 @@ export function ContactPanel({ detail, context, onRemind, onClose, onDraftQuote,
           )}
         </div>
 
-        {/* ═══ Activity Timeline — cross-channel message feed ═══ */}
-        <div className="p-4">
-          <label className="text-[10px] font-bold text-ink-3 uppercase tracking-wider block mb-3">
-            Conversation activity
-          </label>
-          {timeline.length === 0 ? (
-            <div className="text-[12px] text-ink-3 text-center py-4">No activity yet</div>
-          ) : (
-            <div className="relative">
-              <div className="absolute left-[11px] top-2 bottom-2 w-px bg-bg-2" />
-              <div className="space-y-3">
-                {timeline.map(item => {
-                  // Neutral bg-2 circles; the icon shape + a subtle icon tone
-                  // carry note/in/out, not a tinted fill (owner veto).
-                  const iconConfig = {
-                    note:     { icon: StickyNote, bg: 'bg-bg-2', text: STATUS_TEXT.attention },
-                    inbound:  { icon: ArrowLeft,  bg: 'bg-bg-2', text: 'text-ink-3' },
-                    outbound: { icon: Send,       bg: 'bg-bg-2', text: 'text-link' },
-                  }
-                  const cfg = iconConfig[item.type] || iconConfig.inbound
-                  const Icon = cfg.icon
-                  return (
-                    <div key={item.id} className="flex items-start gap-2.5 relative">
-                      <div className={`w-[22px] h-[22px] rounded-full ${cfg.bg} flex items-center justify-center shrink-0 z-10`}>
-                        <Icon className={`w-3 h-3 ${cfg.text}`} />
-                      </div>
-                      <div className="flex-1 min-w-0 pt-0.5">
-                        <div className="flex items-center gap-1.5">
-                          <span className="text-[11px] font-semibold text-ink-2">{item.author}</span>
-                          {item.channel && <ChannelBadge channel={item.channel} compact />}
-                          <span className="text-[10px] text-ink-3 ml-auto shrink-0">{relTime(item.time)}</span>
-                        </div>
-                        <p className="text-[11px] text-ink-3 mt-0.5 truncate leading-relaxed">{item.body}</p>
-                      </div>
-                    </div>
-                  )
-                })}
-              </div>
-            </div>
-          )}
-        </div>
+        {/* The "Conversation activity" timeline that used to close this panel
+            is gone. It listed the last 15 messages of THIS thread, author +
+            channel + relative time + the body truncated to 100 characters —
+            which is a strictly smaller version of the thread pane rendered
+            immediately to its left, now that #1152 makes this a real column at
+            shell: instead of an overlay. MessageBubble already shows the
+            author, the channel, the full timestamp, the whole body with quoted
+            email collapsed, AND the delivery status, which the feed never had.
+            So it cost roughly a third of this panel's height to show less of
+            what was already on screen; the owner has named that kind of
+            duplication herself ("it's almost a little redundant").
+
+            Deleting it lifts appointments and open money — the things you
+            actually want in view while talking to someone — above the fold
+            instead of below a feed of what you are already reading. The one
+            thing it marked that the bubbles do not is the channel of each SMS:
+            bubbles badge email and voice and leave SMS unmarked, which is the
+            right encoding (mark the exceptions, not the default) and not worth
+            an icon on every bubble in a thread that is usually all texts. */}
       </div>
     </div>
   )
