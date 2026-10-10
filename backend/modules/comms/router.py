@@ -1179,6 +1179,24 @@ def link_conversation_client(conv_id: int, data: LinkClientRequest,
                   .first())
         if not client:
             raise HTTPException(404, "Client not found")
+        # Serialize against thread creation for this person, BEFORE the
+        # reassignment below and the sibling query that follows it.
+        #
+        # `find_or_create_conversation` takes this same lock (on the same
+        # `conv:client:{id}` key) for exactly this reason: alembic 131 dropped
+        # uq_conversations_client_channel, so a read-then-write on one person's
+        # threads is no longer protected by anything else. Folding (#1151)
+        # added a SECOND such read-then-write and did not take the lock, which
+        # re-opened the race it was written to close — an inbound SMS webhook
+        # or the Gmail tick landing between the flush and the commit cannot see
+        # the uncommitted reassignment, finds no thread for this client, and
+        # inserts one. Nothing violates a constraint; both commit; the client
+        # holds two threads again, which is the whole condition #1151 removed.
+        # Four uvicorn workers make that a real interleaving, not a thought
+        # experiment (codex P1, and the same shape as the P1 on #533).
+        _lock_conversation_identity(
+            db, client_id=data.client_id, external_contact=None, channel="",
+        )
     prev_client_id = conv.client_id
     conv.client_id = data.client_id
     # Cascade to messages so the whole thread moves with the header. Only touch

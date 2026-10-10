@@ -132,6 +132,43 @@ def _fold_conv_into(db: Session, source: "Conversation", keeper: "Conversation",
         keeper.last_message_at = source.last_message_at
     if source.last_inbound_at and (not keeper.last_inbound_at or source.last_inbound_at > keeper.last_inbound_at):
         keeper.last_inbound_at = source.last_inbound_at
+        # Moving `last_inbound_at` forward is not a timestamp bump: two pieces
+        # of conversation state are DERIVED from which inbound is newest, and
+        # `comms._apply_inbound` re-establishes both every time a real inbound
+        # moves it. A fold moves it too, so it owes the same invariants — both
+        # were missed when folding landed (#1151), and both broke in production.
+        #
+        # 1. THE REPLY CHANNEL. `comms.send_reply` branches on
+        #    `conv.channel` for the transport AND the destination address, so a
+        #    stale channel is a reply sent to the wrong place. Fold a new email
+        #    thread into an older SMS keeper (oldest wins) and the keeper still
+        #    said "sms": the operator read the email on screen, hit Send, and
+        #    texted client.phone while the email went unanswered.
+        #    Only ever a SENDABLE channel — the mirror of _apply_inbound's rule
+        #    1. A voice-only source must not park the keeper on a channel
+        #    send_reply 400s on. `source.channel` is already the source's own
+        #    newest-sendable-inbound channel (that is the invariant
+        #    _apply_inbound maintains), so reading it beats re-deriving from
+        #    the message rows and cannot disagree with it.
+        #
+        # 2. RESPONSE TRACKING, which travels WITH the inbound it describes.
+        #    `_sla_state` recomputes the deadline from `last_inbound_at` and
+        #    then calls the thread "met" if `first_response_at` predates it.
+        #    Keeping the keeper's old response against the source's new inbound
+        #    reported every folded thread as answered — and permanently, since
+        #    `_apply_outbound` only records a first response when the field is
+        #    empty, so no later reply could correct it. An unanswered customer
+        #    silently left the Overdue filter and the "past SLA" count.
+        #    Taking the source's value (often None, meaning "nobody has
+        #    answered this yet" — the honest state) is what _apply_inbound's
+        #    `first_response_at = None` reset means here.
+        from modules.comms.router import SENDABLE_CHANNELS  # local: avoid a cycle
+
+        if source.channel in SENDABLE_CHANNELS:
+            keeper.channel = source.channel
+        keeper.first_response_at = source.first_response_at
+        keeper.sla_response_minutes = source.sla_response_minutes
+        keeper.sla_deadline = source.sla_deadline
     if source.last_outbound_at and (not keeper.last_outbound_at or source.last_outbound_at > keeper.last_outbound_at):
         keeper.last_outbound_at = source.last_outbound_at
     if source.status == "open" and keeper.status == "resolved":
