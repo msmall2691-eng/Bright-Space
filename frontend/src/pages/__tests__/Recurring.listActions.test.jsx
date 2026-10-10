@@ -253,6 +253,29 @@ describe('only the buttons swallow the row click', () => {
     await waitFor(() => expect(screen.queryByRole('tablist')).toBeNull())
   })
 
+  it('does not open the series when a BUSY action is clicked', async () => {
+    // A `disabled` button runs no React onClick, so its stopPropagation never
+    // fires and whether the click then reaches the card is a per-engine
+    // question (codex P2 on #1161 — measured as "no" in Chromium, but not
+    // measurable here for WebKit). The busy check lives inside the handler
+    // instead, so the stop always runs. Pinned, because swapping back to
+    // `disabled={busy}` looks like a tidy-up and reinstates the uncertainty.
+    let release
+    patch.mockImplementation(() => new Promise(r => { release = r }))
+    draw([ACTIVE])
+    const card = await row('Sweet — Weekly')
+    const pause = within(card).getByRole('button', { name: /^Pause$/ })
+
+    fireEvent.click(pause)                       // goes busy, PATCH in flight
+    await waitFor(() => expect(pause.getAttribute('aria-disabled')).toBe('true'))
+
+    fireEvent.click(pause)                       // the second, blocked click
+    expect(patch, 'a busy button must not fire a second PATCH').toHaveBeenCalledTimes(1)
+    expect(screen.getByRole('tablist'), 'the blocked click opened the series').toBeTruthy()
+
+    release({})
+  })
+
   it('does not open the series when an action is clicked', async () => {
     // The other half, and the reason the stop exists at all: pausing from the
     // row must not also navigate into it.
@@ -262,6 +285,32 @@ describe('only the buttons swallow the row click', () => {
 
     await waitFor(() => expect(patch).toHaveBeenCalled())
     expect(screen.getByRole('tablist'), 'pausing navigated into the series').toBeTruthy()
+  })
+})
+
+describe('the actions hide on a pointer condition, not a width one', () => {
+  it('gates the hover-reveal on pointer-fine rather than sm:', async () => {
+    // Measured in Chromium at 768px with touch emulation (codex P2 on #1161):
+    // under `sm:opacity-0` a touch tablet reported pointer:coarse, hover:none
+    // and the cluster sat at opacity 0 with NOTHING able to reveal it —
+    // Tailwind v4 gates `hover:` behind `@media (hover: hover)`, so
+    // `sm:group-hover:opacity-100` never fires there. Permanently invisible
+    // controls on a row whose tap opens the detail page instead.
+    //
+    // A class assertion rather than a computed style because jsdom has no
+    // media-query engine; the behaviour itself was verified in a browser, and
+    // this stops the "tidy it back to sm:" edit from undoing it silently.
+    draw([ACTIVE])
+    const card = await row('Sweet — Weekly')
+    const cluster = card.querySelector('div.transition-opacity')
+    expect(cluster, 'no action cluster found — update this test').toBeTruthy()
+
+    expect(cluster.className, 'visibility must key off pointer capability')
+      .toMatch(/pointer-fine:opacity-0/)
+    expect(cluster.className, 'sm:opacity-0 leaves touch tablets with no way to reveal these')
+      .not.toMatch(/\bsm:opacity-0\b/)
+    // Where it SITS is still a width question, and must stay one.
+    expect(cluster.className).toMatch(/\bsm:w-auto\b/)
   })
 })
 

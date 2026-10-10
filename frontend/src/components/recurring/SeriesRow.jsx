@@ -128,14 +128,35 @@ export default function SeriesRow({ s, clientName, onOpen, isDuplicate, onToggle
               blocked and the chevron has none of its own, so the one spot
               that used to say "Manage →" became the one spot that did nothing
               (codex P2 on #1161). Everything in here that is not a button now
-              falls through to the row. */}
-          <div className="flex items-center gap-1 w-full sm:w-auto justify-end self-center shrink-0 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 sm:group-focus-within:opacity-100 transition-opacity">
+              falls through to the row.
+
+              `pointer-fine:`, not `sm:`, and that distinction is load-bearing
+              under Tailwind v4 (the repo is on v4 — CLAUDE.md still says 3).
+              v4 gates the `hover:` variant behind `@media (hover: hover)` by
+              default, so on a touch tablet at 768px `sm:opacity-0` hid these
+              and `group-hover` could never bring them back: permanently
+              invisible controls on a row whose tap opens the detail page
+              instead. Visibility is a POINTER question, not a width one.
+              The `w-full sm:w-auto` above stays on `sm:`, because where the
+              cluster sits IS a width question. */}
+          <div className="flex items-center gap-1 w-full sm:w-auto justify-end self-center shrink-0 opacity-100 pointer-fine:opacity-0 pointer-fine:group-hover:opacity-100 pointer-fine:group-focus-within:opacity-100 transition-opacity">
             {canTogglePause && (
+              // `aria-disabled` rather than `disabled`, and the busy check is
+              // inside the handler. A DISABLED button runs no React onClick,
+              // so its stopPropagation never fires, and whether a click on its
+              // child icon then reaches the card is a per-engine question.
+              // Measured in Chromium: it does not — the click is swallowed.
+              // But WebKit could not be measured from here, and "depends on
+              // the browser" is a poor thing to leave under a control whose
+              // misfire opens a different screen mid-action. This way the
+              // handler always runs, so the stop always happens, and the
+              // button keeps focus instead of having it dropped the moment it
+              // goes busy.
               <button
-                onClick={(e) => { e.stopPropagation(); onTogglePause?.(s) }}
-                disabled={busy}
+                onClick={(e) => { e.stopPropagation(); if (busy) return; onTogglePause?.(s) }}
+                aria-disabled={busy || undefined}
                 title={s.active ? 'Pause this series — no new visits are generated' : 'Resume generating visits'}
-                className="flex items-center gap-1 text-[11px] px-2.5 py-2 sm:px-2 sm:py-1 rounded-md bg-bg text-ink-3 hover:bg-bg-2 hover:text-ink transition-colors disabled:opacity-50"
+                className={`flex items-center gap-1 text-[11px] px-2.5 py-2 sm:px-2 sm:py-1 rounded-md bg-bg text-ink-3 hover:bg-bg-2 hover:text-ink transition-colors ${busy ? 'opacity-50' : ''}`}
               >
                 {s.active
                   ? <><Pause className="w-3 h-3" /> Pause</>
