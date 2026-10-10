@@ -143,6 +143,49 @@ describe('an older response cannot overwrite a newer one', () => {
     expect(screen.getByText('Fresh, after Undo')).toBeTruthy()
   })
 
+  it('keeps the mount fetch when the refresh that superseded it FAILS', async () => {
+    // The blank-screen case (codex P2 on #1161). Undo fires while the mount
+    // fetch is still open, so the refresh takes the newer sequence — and then
+    // fails. Under a "newest STARTED wins" guard the mount fetch's successful
+    // response is discarded by a load that produced nothing: `schedule` stays
+    // null, the silent catch sets no error, the mount's `finally` clears
+    // `loading`, and the component falls through to `if (!schedule) return
+    // null`. An empty screen, from the one request that worked.
+    const { mount, refresh } = openBoth()
+
+    refresh.reject(new Error('network down'))
+    await settle()
+
+    mount.resolve(series({ title: 'The only answer anyone got' }))
+    await settle()
+
+    expect(
+      screen.queryByText('The only answer anyone got'),
+      'a failed refresh threw away the successful load it superseded',
+    ).toBeTruthy()
+    // And the failure was still reported — it just did not take the screen.
+    expect(toast.error).toHaveBeenCalled()
+  })
+
+  it('still shows an error when BOTH loads fail', async () => {
+    // The error guard has to key off the applied sequence for the same reason
+    // the data guard does. Keyed off the STARTED one, a mount fetch that
+    // fails after being superseded by a refresh that ALSO failed is treated
+    // as moot — so nothing sets `error`, nothing sets `schedule`, and the
+    // screen goes blank again rather than saying what went wrong.
+    const { mount, refresh } = openBoth()
+
+    refresh.reject(new Error('refresh failed'))
+    await settle()
+    mount.reject(new Error('could not load this series'))
+    await settle()
+
+    expect(
+      screen.queryByText(/could not load this series/i),
+      'both loads failed and the screen said nothing',
+    ).toBeTruthy()
+  })
+
   it('does not leave the skeleton up forever when a load is superseded', async () => {
     // The sequence guard must NOT be applied to the `loading` flag: a
     // superseded non-silent load that skipped its own cleanup would leave the

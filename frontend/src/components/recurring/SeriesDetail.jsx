@@ -33,13 +33,23 @@ export default function SeriesDetail({ id, onBack, onChanged, toast, refreshToke
    *  someone else's change arriving, or the Undo toast firing while you are in
    *  here — must not throw away in-progress input (codex P2 on #1161).
    */
-  const loadSeq = useRef(0)
+  const loadSeq = useRef(0)      // last STARTED
+  const appliedSeq = useRef(0)   // last whose data actually landed
 
   const load = useCallback(async ({ silent = false } = {}) => {
-    // Two loads can now be in flight at once — the mount fetch and a silent
+    // Two loads can be in flight at once — the mount fetch and a silent
     // refresh arriving on top of it — and nothing made them resolve in order,
     // so a slow pre-Undo response could land last and put the stale snapshot
-    // back (codex P2 on #1161). Only the newest sequence may write.
+    // back (codex P2 on #1161).
+    //
+    // The guard compares against the last APPLIED sequence, not the last
+    // started one, and that difference is a whole bug. Starting a load does
+    // not make it the winner: if the refresh starts, FAILS, and the mount
+    // fetch it superseded then succeeds, a "newest started wins" guard throws
+    // away the only answer anyone got. `schedule` stays null, the silent
+    // catch sets no error, and the mount's `finally` clears `loading` — so
+    // the component falls through to `if (!schedule) return null` and the
+    // detail renders completely blank. A failed load supersedes nothing.
     const seq = ++loadSeq.current
     if (!silent) { setLoading(true); setError('') }
     try {
@@ -53,7 +63,8 @@ export default function SeriesDetail({ id, onBack, onChanged, toast, refreshToke
         // the series list's "N upcoming" (a real Job count) correctly said 0.
         get(`/api/jobs?recurring_schedule_id=${id}&status=scheduled&limit=200`).catch(() => []),
       ])
-      if (seq !== loadSeq.current) return        // a newer load already won
+      if (seq <= appliedSeq.current) return      // newer data already landed
+      appliedSeq.current = seq
       setSchedule(sch)
       setExceptions(Array.isArray(exs) ? exs : [])
       setGeneratedDates(new Set(
@@ -64,11 +75,12 @@ export default function SeriesDetail({ id, onBack, onChanged, toast, refreshToke
       setError('')                               // a good read clears a bad one
       if (sch?.client_id) {
         const c = await get(`/api/clients/${sch.client_id}`).catch(() => null)
-        if (seq !== loadSeq.current) return
+        if (seq < appliedSeq.current) return
         setClient(c)
       }
     } catch (e) {
-      if (seq !== loadSeq.current) return
+      // Newer data is already on screen, so this failure is moot.
+      if (seq <= appliedSeq.current) return
       // A SILENT refresh that fails must not take the screen down with it.
       // `error` drives a full-page error branch, so setting it here would
       // unmount an open Edit/Skip/Reschedule modal and everything typed into
