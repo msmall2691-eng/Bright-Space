@@ -360,12 +360,56 @@ export default function Comms() {
   const focusSearch = useCallback(() => {
     const el = searchRef.current
     if (!el) return
-    el.focus()
-    // Select what's there so `/` then typing replaces the old query rather
-    // than appending to it — the thing you almost always want from a search
-    // box you just jumped back into.
-    el.select?.()
+    // `focus()` on an element inside a `display:none` subtree does nothing,
+    // and `/` has already swallowed the keystroke — so the shortcut looked
+    // broken in the two states where the list is hidden: on a phone with a
+    // thread open (mobileView === 'thread'), and in the 900–1280 band while
+    // the customer column holds the list's slot (#1152's hiddenForContact,
+    // so this one is my own doing). Reveal the list, then focus on the next
+    // frame once it has painted.
+    //
+    // offsetParent is null for a hidden element, which is the cheap layout
+    // question to ask here — and it means at xl:, where the list is always
+    // up, `/` focuses directly and changes no other state. (jsdom does no
+    // layout, so offsetParent is null there always: a render test only ever
+    // exercises the reveal path, which is the path worth testing anyway.)
+    const select = () => {
+      const node = searchRef.current
+      node?.focus()
+      // Select what's there so `/` then typing replaces the old query rather
+      // than appending to it — what you almost always want from a search box
+      // you just jumped back into.
+      node?.select?.()
+    }
+    if (el.offsetParent !== null) { select(); return }
+    setMobileView('list')
+    setShowContactPanel(false)
+    requestAnimationFrame(select)
   }, [])
+
+  // `e` acts on the OPEN thread, so it owes the open pane a refresh.
+  // `rowAction` reloads the list and the folder counts but never the detail,
+  // which is right for a swipe on a row you are not reading. Used from the
+  // keyboard it left the thread pane showing the conversation as active —
+  // "Mark done" still offered, reply suggestion still up — for as long as
+  // sixty seconds while the toast said it was done (codex P2 on #1155).
+  //
+  // It ADDS the detail reload rather than switching to `setStatus`, which was
+  // the first fix and was worse: `setStatus` has no try/catch and no toast, so
+  // routing the shortcut through it silently dropped the "Marked done"
+  // confirmation and turned any network or server failure into an unhandled
+  // rejection with nothing on screen (codex again, on the fix). Trading a
+  // stale pane for a swallowed error is not a fix, and the giveaway was right
+  // there in my own comment: it cited the toast while removing it.
+  //
+  // The reload runs even when the POST failed — rowAction catches and toasts,
+  // so control returns here either way. That is the behaviour worth having:
+  // on failure the pane re-syncs to the truth instead of keeping whatever it
+  // was showing.
+  const resolveSelected = useCallback(async (id) => {
+    await rowAction(id, 'status', { status: 'resolved' }, 'Marked done')
+    if (id === detail?.id) await loadDetail(id)
+  }, [rowAction, detail?.id, loadDetail])
   const toggleShortcuts = useCallback(() => setShowShortcuts(v => !v), [])
   const closeShortcuts = useCallback(() => setShowShortcuts(false), [])
   useInboxShortcuts({
@@ -376,7 +420,7 @@ export default function Comms() {
     convs,
     selectedId,
     onSelect: selectConversation,
-    onResolve: resolveConv,
+    onResolve: resolveSelected,
     onFocusSearch: focusSearch,
     onToggleHelp: toggleShortcuts,
   })
@@ -414,7 +458,17 @@ export default function Comms() {
         lastDay = day
       }
       const prev = detail.messages[i - 1]
+      // A change of AUTHOR starts a new group too. MessageBubble renders
+      // `m.author` only on the first message of a group, so without this two
+      // consecutive outbound messages sent by different teammates showed one
+      // name and the second sender was unidentifiable — the thread quietly
+      // carried less authorship than the activity feed #1156 deleted, which
+      // labelled every message. Found by codex on #1156, after that PR had
+      // merged: six of its cases were written to prove the thread is a strict
+      // superset of the feed, and the author case among them only ever
+      // rendered ONE message, so the boundary this fixes was never exercised.
       const isFirst = !prev || prev.direction !== m.direction || prev.is_internal_note !== m.is_internal_note ||
+        (prev.author || '') !== (m.author || '') ||
         new Date(m.created_at).toDateString() !== new Date(prev.created_at).toDateString()
       items.push({ type: 'message', data: m, isFirst, key: `msg-${m.id}` })
     })

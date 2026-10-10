@@ -91,6 +91,49 @@ describe('the page holds its shortcut callbacks still', () => {
   })
 })
 
+describe('the shortcuts reach state the list-row path does not', () => {
+  // Two codex P2s on #1155, both found after it merged, both from reusing
+  // list-row machinery for a keyboard acting on the OPEN thread.
+  const comms = readFileSync(join(DIR, '..', '..', '..', 'pages', 'Comms.jsx'), 'utf8')
+
+  it('e refreshes the open pane AND keeps the toast and error handling', () => {
+    // Two findings in one assertion, because the first fix caused the second.
+    //
+    // `rowAction` reloads the list and the folder counts but never the detail
+    // — right for a swipe on a row you are not reading, wrong from the
+    // keyboard: the pane kept offering "Mark done" for up to sixty seconds
+    // while the toast said it was done.
+    //
+    // Fixing that by routing to `setStatus` was worse. `setStatus` has no
+    // try/catch and no toast, so the shortcut silently lost its "Marked done"
+    // confirmation and any failure became an unhandled rejection with nothing
+    // on screen. The reload has to be ADDED to rowAction, not swapped for it.
+    const fn = comms.slice(comms.indexOf('const resolveSelected')).slice(0, 1400)
+    expect(fn, 'the toast and the try/catch live in rowAction — do not bypass it')
+      .toMatch(/await rowAction\(id, 'status', \{ status: 'resolved' \}, 'Marked done'\)/)
+    expect(fn, 'no detail reload, so the open pane goes stale again')
+      .toMatch(/if \(id === detail\?\.id\) await loadDetail\(id\)/)
+    expect(fn, 'setStatus bypasses rowAction and loses the toast + error handling')
+      .not.toMatch(/setStatus\(/)
+    expect(comms, 'the shortcut is back on the bare list-row path')
+      .toMatch(/onResolve: resolveSelected/)
+  })
+
+  it('/ reveals the list before focusing it', () => {
+    // focus() inside a display:none subtree does nothing, and `/` has already
+    // swallowed the keystroke — so the shortcut looked broken on a phone with
+    // a thread open, and in the 900–1280 band while the customer column holds
+    // the list's slot (which #1152 introduced, so that half is self-inflicted).
+    const fn = comms.slice(comms.indexOf('const focusSearch = useCallback')).slice(0, 2000)
+    expect(fn, 'no hidden-element check, so the direct path can focus nothing')
+      .toMatch(/offsetParent !== null/)
+    expect(fn).toMatch(/setMobileView\('list'\)/)
+    expect(fn).toMatch(/setShowContactPanel\(false\)/)
+    expect(fn, 'focusing in the same tick lands on the element still hidden')
+      .toMatch(/requestAnimationFrame\(/)
+  })
+})
+
 describe('the selected row stays on screen', () => {
   let spy
   beforeEach(() => {
