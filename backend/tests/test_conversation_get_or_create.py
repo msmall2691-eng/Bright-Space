@@ -1,15 +1,21 @@
-"""find_or_create_conversation must never INSERT a doomed duplicate.
+"""find_or_create_conversation must reuse a person's thread, never duplicate it.
 
-uq_conversations_client_channel (alembic 003) allows exactly ONE conversations
-row per (client_id, channel). June 10 incident: client 91's only email
-conversation was resolved, the lookup skipped resolved rows, and the INSERT hit
-the constraint — which poisoned the whole Gmail sync transaction, so the
-"Quote accepted" notification email was retried (and re-failed) every 10
-minutes and never reached the inbox.
+June 10 incident: client 91's only email conversation was resolved, the lookup
+skipped resolved rows, and the INSERT hit uq_conversations_client_channel —
+which poisoned the whole Gmail sync transaction, so the "Quote accepted"
+notification email was retried (and re-failed) every 10 minutes and never
+reached the inbox.
+
+ALEMBIC 131 DROPPED THAT INDEX (threads are keyed to a person now, not a
+person-and-channel), so the database no longer forces this behaviour. These
+tests stay, and the fixture no longer creates the index, because the behaviour
+was never really about the constraint: a customer replying to a closed thread
+should re-open it rather than open a parallel one, and the Gmail sync must
+still land the message somewhere real. What changed is that a violation is now
+a silent duplicate instead of a loud IntegrityError — which is a weaker signal,
+not a reason to stop checking.
 """
 import pytest
-from sqlalchemy import text
-from sqlalchemy.exc import IntegrityError
 
 from database.db import SessionLocal
 from database.models import Client, Conversation, Message
@@ -20,12 +26,6 @@ from modules.gmail.router import _thread_inbound_email
 @pytest.fixture
 def ctx():
     db = SessionLocal()
-    # Mirror the prod constraint; SQLite supports partial unique indexes.
-    db.execute(text(
-        "CREATE UNIQUE INDEX IF NOT EXISTS uq_conversations_client_channel "
-        "ON conversations (client_id, channel) WHERE client_id IS NOT NULL"
-    ))
-    db.commit()
     c = Client(name="Conv GetOrCreate Test", email="client91@example.com", status="active")
     db.add(c); db.commit(); db.refresh(c)
     yield db, c
@@ -46,14 +46,20 @@ def _conv(db, c, status="open"):
     return conv
 
 
-def test_constraint_is_enforced_in_test_db(ctx):
-    """Sanity: the partial unique index actually rejects duplicates here,
-    otherwise the tests below prove nothing."""
+def test_a_duplicate_is_now_possible_which_is_why_the_lookup_matters(ctx):
+    """The inverse of the old sanity check, and the reason to keep the rest.
+
+    This used to assert that the database REJECTED a second (client_id,
+    channel) row. After alembic 131 it accepts one — so nothing stops a
+    careless caller from stranding half a customer's history in a second
+    thread except find_or_create_conversation getting it right. The tests
+    below are now the only thing holding that.
+    """
     db, c = ctx
     _conv(db, c, status="resolved")
-    with pytest.raises(IntegrityError):
-        with db.begin_nested():
-            db.add(Conversation(client_id=c.id, channel="email", status="open"))
+    with db.begin_nested():
+        db.add(Conversation(client_id=c.id, channel="email", status="open"))
+    assert db.query(Conversation).filter(Conversation.client_id == c.id).count() == 2
     db.rollback()
 
 
