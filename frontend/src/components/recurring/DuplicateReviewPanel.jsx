@@ -197,7 +197,17 @@ export default function DuplicateReviewPanel({ schedules, clientsById, reviewedK
                     {state === 'active' ? (
                       isKeeper ? (
                         <div className="mt-3 flex items-center gap-2 flex-wrap">
-                          <span className={`inline-flex h-5 items-center gap-1.5 rounded-sm border border-emerald-300 dark:border-emerald-800 bg-panel px-2 text-[11px] font-medium ${STATUS_TEXT.ok}`}>
+                          {/* Bare dot + word, like the state marker above.
+                              This one wore an h-5 capsule with a COLOURED
+                              border (border-emerald-300) rather than
+                              border-hairline-2 — which is why the sweep that
+                              de-boxed its sibling twenty-five lines up, "in
+                              those exact classes", walked straight past it.
+                              Same file, same pass, missed because the grep was
+                              for a literal class string. A coloured border is
+                              if anything closer to the filled pill the owner
+                              vetoed first. */}
+                          <span className={`inline-flex items-center gap-1.5 text-[11px] font-medium ${STATUS_TEXT.ok}`}>
                             <span className={`h-1.5 w-1.5 rounded-full ${SEV_DOT.good}`} />
                             Keeper
                           </span>

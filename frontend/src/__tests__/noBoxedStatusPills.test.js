@@ -64,8 +64,28 @@ function classOf(open) {
   return ''
 }
 
-const isBoxed = (cls) =>
-  /border-hairline-2 bg-panel/.test(cls) && /\bpx-|\bpx\[/.test(cls)
+/** The class list as individual utilities, with `${…}` interpolations dropped.
+ *
+ *  Tokenised rather than substring-matched because Tailwind class ORDER carries
+ *  no meaning. The first version of this guard looked for the adjacent string
+ *  `border-hairline-2 bg-panel`, so `bg-panel border border-hairline-2 px-2`
+ *  rebuilt the rejected box and the test still passed — one utility moved and
+ *  the guard went blind. Found by codex on #1157, which is the third time in
+ *  this one change that matching text instead of structure gave a confident
+ *  wrong answer. */
+const tokensOf = (cls) => new Set(
+  cls.replace(/\$\{[^}]*\}/g, ' ').split(/[\s'"`{}]+/).filter(Boolean),
+)
+
+/** The vetoed shape, as three independent properties: a panel fill, a visible
+ *  border, and horizontal padding to hold the capsule open. */
+const isBoxed = (cls) => {
+  const t = tokensOf(cls)
+  const fill = t.has('bg-panel')
+  const border = [...t].some(x => x === 'border' || /^border-hairline(-2)?$/.test(x))
+  const pad = [...t].some(x => /^p?x?-/.test(x) && /^(px|p)-/.test(x))
+  return fill && border && pad
+}
 
 /** True when some element INSIDE this one carries a `rounded-full` class —
  *  i.e. the 6px status dot. An icon or a Hash tag in a neutral chip is a
@@ -182,5 +202,37 @@ describe('what the guard deliberately allows', () => {
     expect(parse(`<span className="inline-flex h-5 items-center gap-1.5 rounded-sm border border-hairline-2 bg-panel px-2 text-[11px] font-medium text-ink-2">
       <span className="h-1.5 w-1.5 rounded-full bg-red-400" /> Overdue
     </span>`)).toBe(1)
+  })
+
+  it('catches the same box with its classes in any order', () => {
+    // The regression codex found: order carries no meaning in Tailwind, so a
+    // substring match for `border-hairline-2 bg-panel` went blind the moment
+    // one utility moved or another slipped between them.
+    const orders = [
+      'bg-panel border border-hairline-2 px-2 inline-flex items-center',
+      'px-2 bg-panel inline-flex border-hairline-2 border items-center',
+      'border border-hairline-2 shadow-xs bg-panel px-1.5',
+      'inline-flex bg-panel px-2 border items-center',
+    ]
+    for (const cls of orders) {
+      expect(parse(`<span className="${cls}">
+        <span className="h-1.5 w-1.5 rounded-full bg-red-400" /> Overdue
+      </span>`), `missed: ${cls}`).toBe(1)
+    }
+  })
+
+  it('does not fire on a bordered span with no fill, or a filled one with no pad', () => {
+    // All three properties are required together; any one alone is ordinary
+    // layout, and a guard that fired on them would be deleted within a week.
+    expect(parse(`<span className="border border-hairline-2 px-2">
+      <span className="h-1.5 w-1.5 rounded-full bg-red-400" /> Overdue
+    </span>`)).toBe(0)
+    expect(parse(`<span className="bg-panel border border-hairline-2">
+      <span className="h-1.5 w-1.5 rounded-full bg-red-400" /> Overdue
+    </span>`)).toBe(0)
+    // Vertical padding is not what holds a capsule open.
+    expect(parse(`<span className="bg-panel border border-hairline-2 py-1">
+      <span className="h-1.5 w-1.5 rounded-full bg-red-400" /> Overdue
+    </span>`)).toBe(0)
   })
 })
