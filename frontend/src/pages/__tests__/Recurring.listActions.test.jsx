@@ -35,7 +35,7 @@
  *    own roster read is pre-existing and shared through `getCached`.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { render, screen, cleanup, fireEvent, waitFor, within } from '@testing-library/react'
+import { render, screen, cleanup, fireEvent, waitFor, within, act } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 
 vi.mock('../../api', () => ({
@@ -185,6 +185,34 @@ describe('the row can pause a series without leaving the list', () => {
     await waitFor(() => expect(patch).toHaveBeenCalledWith('/api/recurring/2', { active: true }))
   })
 
+  it('offers no Resume on a paused series whose end date has passed', async () => {
+    // The subtle one (codex P2 on #1161). `seriesState` only knows `active`
+    // is false, so it reads this as "Paused" and Resume was offered — but
+    // resuming sets active:true on an EXPIRED series, which comes straight
+    // back as "Ended", generates nothing, and raised a toast saying "Series
+    // resumed". A button that reports success and does nothing.
+    const PAUSED_EXPIRED = { ...PAUSED, id: 6, title: 'Nash — Paused and expired', series_end_date: '2020-01-01' }
+    draw([PAUSED_EXPIRED])
+    await showAll()
+    const card = await row('Nash — Paused and expired')
+
+    expect(within(card).getByText('Paused'), 'still reads Paused — that part is right').toBeTruthy()
+    expect(within(card).queryByRole('button', { name: /^Resume$/ })).toBeNull()
+    // Edit stays: fixing the end date is exactly what this series needs, and
+    // that is the rule editor's job.
+    expect(within(card).getByRole('button', { name: /^Edit$/ })).toBeTruthy()
+  })
+
+  it('still offers Resume when the end date is in the future', async () => {
+    // The other side of the same gate — without this, "never offer Resume on
+    // anything with an end date" would pass the case above.
+    const FUTURE = { ...PAUSED, id: 7, title: 'Okafor — Paused', series_end_date: '2099-01-01' }
+    draw([FUTURE])
+    await showAll()
+    const card = await row('Okafor — Paused')
+    expect(within(card).getByRole('button', { name: /^Resume$/ })).toBeTruthy()
+  })
+
   it('offers no pause on a cancelled or ended series', async () => {
     // Flipping `active` on a cancelled series does not uncancel it
     // (cancelled_at stays set, so it still reads Cancelled), and an ended one
@@ -197,6 +225,62 @@ describe('the row can pause a series without leaving the list', () => {
     for (const card of [ended, cancelled]) {
       expect(within(card).queryByRole('button', { name: /^(Pause|Resume)$/ })).toBeNull()
     }
+  })
+})
+
+describe('Undo reaches an open detail view', () => {
+  it('refetches the series when Undo lands while its detail is on screen', async () => {
+    // The toast outlives the list. Pause a row, open that series, then hit
+    // Undo: the PATCH restores it on the server while SeriesDetail is still
+    // showing the copy it fetched on mount — Paused, with a Resume button,
+    // for a series that is active again (codex P2 on #1161).
+    draw([ACTIVE])
+    const card = await row('Sweet — Weekly')
+    fireEvent.click(within(card).getByRole('button', { name: /^Pause$/ }))
+    await waitFor(() => expect(toasts.some(t => t.message === 'Series paused')).toBe(true))
+
+    // Into the detail view for that same series. The row left the Active
+    // filter when it was paused (that is this page's own behaviour), so the
+    // way back to it is the Paused/All chip — which is also how an operator
+    // would reach it.
+    await showAll()
+    fireEvent.click(await screen.findByRole('button', { name: 'Sweet — Weekly' }))
+    await waitFor(() => expect(screen.queryByRole('tablist')).toBeNull())
+    const readsBefore = get.mock.calls.filter(c => /^\/api\/recurring\/1$/.test(String(c[0]))).length
+    expect(readsBefore, 'the detail should have fetched the series once').toBe(1)
+
+    await toasts.find(t => t.message === 'Series paused').action.onClick()
+
+    await waitFor(() => {
+      const after = get.mock.calls.filter(c => /^\/api\/recurring\/1$/.test(String(c[0]))).length
+      expect(after, 'the open detail still shows its stale pre-Undo copy').toBe(readsBefore + 1)
+    })
+  })
+
+  it('does not refetch a detail view showing a different series', async () => {
+    // brightbase-economy: bumping unconditionally would buy a second fetch of
+    // whatever else happened to be open.
+    draw([ACTIVE, OTHER_CLIENT])
+    const card = await row('Sweet — Weekly')
+    fireEvent.click(within(card).getByRole('button', { name: /^Pause$/ }))
+    await waitFor(() => expect(toasts.some(t => t.message === 'Series paused')).toBe(true))
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Diaz — Weekly' }))
+    await waitFor(() => expect(screen.queryByRole('tablist')).toBeNull())
+    const before = get.mock.calls.filter(c => /^\/api\/recurring\/5$/.test(String(c[0]))).length
+
+    await toasts.find(t => t.message === 'Series paused').action.onClick()
+    await waitFor(() => expect(patch).toHaveBeenCalledTimes(2))
+
+    // Settle before asserting a NEGATIVE. The first version of this read the
+    // count the instant the PATCH resolved — before a remount could have
+    // flushed — so it passed whether or not the extra fetch happened. A
+    // mutation that bumped the counter unconditionally survived it, which is
+    // how I found out. Let anything that would remount actually remount.
+    await act(async () => { await new Promise(r => setTimeout(r, 50)) })
+
+    const after = get.mock.calls.filter(c => /^\/api\/recurring\/5$/.test(String(c[0]))).length
+    expect(after, 'an unrelated open detail was refetched for nothing').toBe(before)
   })
 })
 

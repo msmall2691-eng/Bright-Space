@@ -8,7 +8,7 @@
  * props-only, so they now live beside this in `components/recurring/`,
  * moved verbatim.
  */
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { get, patch, post, getCached } from '../api'
 import JobCreateModal from '../components/JobCreateModal'
@@ -140,6 +140,15 @@ export default function Recurring() {
   // on a list a mis-click lands on the wrong series. It stays in the detail
   // page's danger zone behind its booked-visit dialog.
   const [pausing, setPausing] = useState(null)   // series id mid-PATCH
+  const [detailReload, setDetailReload] = useState(0)  // remounts an open SeriesDetail
+
+  // Which series the detail view is showing, read at CLICK time rather than
+  // captured. The Undo callback is built when the pause happens — before you
+  // navigate — so a closure over the search params always reports "no detail
+  // open". My own test caught that, which is the point of testing the path
+  // rather than the intent.
+  const seriesIdRef = useRef(seriesId)
+  useEffect(() => { seriesIdRef.current = seriesId }, [seriesId])
   const [editing, setEditing] = useState(null)   // the series whose rule is open
 
   // Applies a local `active` flip so the row answers immediately. The row then
@@ -162,6 +171,18 @@ export default function Recurring() {
             try {
               await patch(`/api/recurring/${s.id}`, { active: !next })
               setActiveLocal(s.id, !next)
+              // The toast outlives the list: pause a row, open that series,
+              // then hit Undo, and the PATCH lands while `SeriesDetail` is
+              // still showing the copy it fetched on mount — Paused, with a
+              // Resume button, for a series the server has active again
+              // (codex P2 on #1161). Remounting it refetches.
+              //
+              // Only when the open detail IS this series. Bumping
+              // unconditionally would buy a second fetch of whatever else
+              // happened to be open, which brightbase-economy exists to stop.
+              if (String(s.id) === String(seriesIdRef.current)) {
+                setDetailReload(n => n + 1)
+              }
             } catch (err) {
               console.error('[Recurring] Undo pause failed:', err)
               toast.error('Could not put that series back.')
@@ -255,6 +276,7 @@ export default function Recurring() {
     return (
       <>
         <SeriesDetail
+          key={`${seriesId}:${detailReload}`}
           id={seriesId}
           onBack={backToList}
           onChanged={loadList}

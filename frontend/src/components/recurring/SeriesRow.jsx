@@ -55,11 +55,23 @@ export default function SeriesRow({ s, clientName, onOpen, isDuplicate, onToggle
   // not as a live series.
   const live = isLiveSeries(s)
   const state = seriesState(s)
-  // Pause/Resume is offered on the two states it can actually move between.
-  // A cancelled series is not resumed by flipping `active` (cancelled_at stays
-  // set, so it would still read as cancelled) and an ended one is past its end
-  // date, so the button would promise a visit nothing generates.
-  const canTogglePause = state === 'active' || state === 'paused'
+  // Pause/Resume is offered only where flipping `active` actually changes the
+  // series' state. A cancelled one is not resumed by it (cancelled_at stays
+  // set, so it still reads Cancelled), and an ended one is past its end date.
+  //
+  // The subtle case, and the one that shipped broken: a series PAUSED before
+  // its end date, where the date has since passed. `seriesState` reads it as
+  // "Paused" (it only knows `active` is false), so Resume was offered — and
+  // resuming set active:true on an expired series, which comes back as
+  // "Ended", generates nothing, and raised a toast saying "Series resumed"
+  // (codex P2 on #1161).
+  //
+  // Asked as "would resuming make it live?" through `isLiveSeries` rather than
+  // by comparing the end date here: this surface has a documented history of
+  // hand-rolled predicates drifting from the shared one, which is why
+  // seriesState exists at all.
+  const canTogglePause = state === 'active'
+    || (state === 'paused' && isLiveSeries({ ...s, active: true }))
 
   return (
     <li>
