@@ -13,7 +13,8 @@
  */
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { HardHat, RefreshCw, UserPlus, Mail } from 'lucide-react'
-import { get, post, patch } from '../api'
+import { get, post, patch, invalidateCached } from '../api'
+import { ROSTER_CACHE_URL } from '../hooks/useEmployees'
 import { PageHeader, EmptyState, ErrorState, Skeleton, SubNav } from '../components/ui'
 import BenchRoster from '../components/crew/BenchRoster'
 import SubApplications from '../components/SubApplications'
@@ -131,6 +132,12 @@ export default function Crew() {
       setRows(rs => [row, ...rs])
       setFullName(''); setEmail(''); setCrewId('')
       reloadUnclaimed()  // if this named a scheduled crew ID, it's no longer unclaimed
+      // This page reads /api/crew/roster, but every ASSIGN drop-down reads the
+      // shared /api/dispatch/employees, memoised for two minutes by
+      // useEmployees. Without this the new cleaner is on screen here and
+      // missing from JobCreateModal, JobEditModal, CalendarView and the
+      // schedule for up to two minutes, with nothing saying why.
+      invalidateCached(ROSTER_CACHE_URL)
       pushToast(`Invite sent to ${row.email}`, 'success')
     } catch (err) {
       pushToast(err?.message || 'Could not add that cleaner.', 'error')
@@ -146,6 +153,14 @@ export default function Crew() {
       await patch(`/api/auth/users/${id}`, patchObj)
       setRows(rs => rs.map(r => (r.id === id ? { ...r, ...patchObj } : r)))
       if ('cleaner_id' in patchObj) reloadUnclaimed()
+      // Unconditional rather than a field whitelist. A rename changes the name
+      // every drop-down shows, and a crew-ID edit changes MEMBERSHIP outright:
+      // /api/dispatch/employees is keyed on cleaner_id and omits rows without
+      // one, so clearing it removes that person from every assignment UI. A
+      // whitelist here would be one more thing to keep in step with the
+      // backend's shape; an occasional extra roster fetch after a pay-rate
+      // edit costs one small request on an admin-only screen.
+      invalidateCached(ROSTER_CACHE_URL)
     } catch (err) {
       pushToast(err?.message || 'Could not save that change.', 'error')
       load()  // resync from the server so the input doesn't show a value that didn't stick
