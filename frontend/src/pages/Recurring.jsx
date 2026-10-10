@@ -139,7 +139,21 @@ export default function Recurring() {
   // Cancel is deliberately NOT offered here — it is the irreversible one, and
   // on a list a mis-click lands on the wrong series. It stays in the detail
   // page's danger zone behind its booked-visit dialog.
-  const [pausing, setPausing] = useState(null)   // series id mid-PATCH
+  // The set of series ids with a PATCH in flight, NOT a single id. It was one
+  // id, which meant pausing a second row replaced the first row's pending
+  // state: whichever request settled next cleared the guard for every row
+  // still waiting, so those rows went actionable again mid-flight and could
+  // be fired a second time, landing two toasts and two Undos for one action
+  // (codex P2 on #1161). One request must not clear another row's guard.
+  //
+  // Updated functionally rather than through a ref. A ref plus a re-entry
+  // check was the first version, to catch two clicks landing in one tick —
+  // but React flushes discrete events like clicks synchronously, so the row
+  // has already re-rendered disabled by the time a second click arrives and
+  // the guard could not be reached. A mutation removing it survived every
+  // test, including one written specifically to hit that window. Unreachable
+  // defensive code that nothing can exercise is worse than none.
+  const [pausing, setPausing] = useState(() => new Set())
   const [editing, setEditing] = useState(null)   // the series whose rule is open
 
   // Applies a local `active` flip so the row answers immediately. The row then
@@ -151,7 +165,7 @@ export default function Recurring() {
 
   const togglePause = useCallback(async (s) => {
     const next = !s.active
-    setPausing(s.id)
+    setPausing(prev => new Set(prev).add(s.id))
     try {
       await patch(`/api/recurring/${s.id}`, { active: next })
       setActiveLocal(s.id, next)
@@ -176,7 +190,7 @@ export default function Recurring() {
       // rather than leaving a silent no-op that reads as a dead button.
       toast.error(e.message || (next ? 'Could not resume that series.' : 'Could not pause that series.'))
     } finally {
-      setPausing(null)
+      setPausing(prev => { const next = new Set(prev); next.delete(s.id); return next })
     }
   }, [setActiveLocal])
 
@@ -364,8 +378,21 @@ export default function Recurring() {
               <option key={c.id} value={c.id}>{c.name}</option>
             ))}
           </select>
+          {/* `role="group"` with `aria-pressed` buttons, NOT a tablist.
+              These are filter toggles: there is no tabpanel, no
+              `aria-controls`, and nothing is revealed by "selecting" one.
+              Declaring `role="tab"` promises a keyboard contract — arrow-key
+              navigation with a single tab stop via roving tabindex — that
+              none of these implement, so a screen reader announces "tab, 1 of
+              5" and the arrows do nothing (codex P2 on #1161).
+
+              This page had it right before: `aria-pressed` on plain buttons.
+              The tablist came in with the Properties/Clients visual idiom,
+              and the same unfulfilled promise is in InvoicingHeader,
+              PropertiesToolbar, ClientsToolbar and QuotesToolbar. Those are a
+              sweep of their own, not this PR's. */}
           <div
-            role="tablist"
+            role="group"
             aria-label="Filter by series state"
             className="flex items-center gap-0.5 bg-bg-2 rounded-lg p-0.5 overflow-x-auto scrollbar-thin max-w-full"
           >
@@ -378,7 +405,7 @@ export default function Recurring() {
             ].map(o => {
               const active = filterStatus === o.v
               return (
-                <button key={o.v} role="tab" aria-selected={active}
+                <button key={o.v} aria-pressed={active}
                   onClick={() => setFilterStatus(o.v)}
                   className={`shrink-0 whitespace-nowrap px-2.5 py-1.5 rounded-md text-[12px] font-medium transition-colors ${
                     active ? 'bg-panel text-ink shadow-xs' : 'text-ink-3 hover:text-ink-2'
@@ -455,7 +482,7 @@ export default function Recurring() {
                 isDuplicate={dupKeyBySeriesId.has(s.id) && !reviewedKeys.has(dupKeyBySeriesId.get(s.id))}
                 onTogglePause={togglePause}
                 onEdit={setEditing}
-                busy={pausing === s.id}
+                busy={pausing.has(s.id)}
               />
             ))}
           </ul>

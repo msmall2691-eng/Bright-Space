@@ -115,7 +115,7 @@ async function row(title) {
  *  still sitting on the screen you landed on). Anything paused, ended or
  *  cancelled has to be asked for. */
 async function showAll() {
-  const all = await screen.findByRole('tab', { name: /^All/ })
+  const all = await screen.findByRole('button', { name: /^All/ })
   fireEvent.click(all)
 }
 
@@ -294,7 +294,7 @@ describe('only the buttons swallow the row click', () => {
     expect(chevron, 'no chevron in the row any more — update this test').toBeTruthy()
 
     fireEvent.click(chevron)
-    await waitFor(() => expect(screen.queryByRole('tablist')).toBeNull())
+    await waitFor(() => expect(screen.queryByRole('group', { name: /series state/i })).toBeNull())
   })
 
   it('does not open the series when a BUSY action is clicked', async () => {
@@ -315,7 +315,7 @@ describe('only the buttons swallow the row click', () => {
 
     fireEvent.click(pause)                       // the second, blocked click
     expect(patch, 'a busy button must not fire a second PATCH').toHaveBeenCalledTimes(1)
-    expect(screen.getByRole('tablist'), 'the blocked click opened the series').toBeTruthy()
+    expect(screen.getByRole('group', { name: /series state/i }), 'the blocked click opened the series').toBeTruthy()
 
     release({})
   })
@@ -328,7 +328,7 @@ describe('only the buttons swallow the row click', () => {
     fireEvent.click(within(card).getByRole('button', { name: /^Pause$/ }))
 
     await waitFor(() => expect(patch).toHaveBeenCalled())
-    expect(screen.getByRole('tablist'), 'pausing navigated into the series').toBeTruthy()
+    expect(screen.getByRole('group', { name: /series state/i }), 'pausing navigated into the series').toBeTruthy()
   })
 })
 
@@ -386,12 +386,91 @@ describe('the row is still reachable by keyboard', () => {
     const title = await screen.findByRole('button', { name: 'Sweet — Weekly' })
     fireEvent.click(title)
     // ?series=1 swaps the list for the detail view, so the list toolbar goes.
-    await waitFor(() => expect(screen.queryByRole('tablist')).toBeNull())
+    await waitFor(() => expect(screen.queryByRole('group', { name: /series state/i })).toBeNull())
+  })
+})
+
+describe('a pause on one row cannot clear another row s guard', () => {
+  it('keeps the second row busy when the first PATCH settles', async () => {
+    // `pausing` was a single id, so pausing row B replaced row A's pending
+    // state — and whichever request settled next cleared the guard for EVERY
+    // row still waiting (codex P2 on #1161). Those rows went actionable again
+    // mid-flight, so a second click fired a duplicate PATCH and landed two
+    // toasts and two Undos for one action.
+    const settle = []
+    patch.mockImplementation(() => new Promise(r => settle.push(r)))
+    draw([ACTIVE, OTHER_CLIENT])
+    const a = await row('Sweet — Weekly')
+    const b = await row('Diaz — Weekly')
+
+    fireEvent.click(within(a).getByRole('button', { name: /^Pause$/ }))
+    fireEvent.click(within(b).getByRole('button', { name: /^Pause$/ }))
+    await waitFor(() => expect(patch).toHaveBeenCalledTimes(2))
+
+    // BOTH are busy at once. This is the assertion that distinguishes adding
+    // to the pending set from replacing it — without it, a mutation that
+    // dropped row A on row B's click passed, because the later check only
+    // looked at B.
+    for (const [card, who] of [[await row('Sweet — Weekly'), 'A'], [await row('Diaz — Weekly'), 'B']]) {
+      expect(
+        within(card).getByRole('button', { name: /^Pause$/ }).getAttribute('aria-disabled'),
+        `row ${who} is not showing as busy while its PATCH is in flight`,
+      ).toBe('true')
+    }
+
+    settle[0]({})                                  // only ROW A's request
+    await act(async () => { await new Promise(r => setTimeout(r, 50)) })
+
+    const bAfter = await row('Diaz — Weekly')
+    expect(
+      within(bAfter).getByRole('button', { name: /^Pause$/ }).getAttribute('aria-disabled'),
+      "row A's response released row B's guard",
+    ).toBe('true')
+
+    settle[1]({})
+  })
+
+  it('disables the row while its own PATCH is in flight', async () => {
+    // Not a re-entry guard: React flushes a click synchronously, so by the
+    // time a second click arrives the row has already re-rendered disabled.
+    // A page-level guard for that window was written, found unreachable by a
+    // mutation that survived every attempt to test it, and removed. What is
+    // left is the thing that actually does the work.
+    patch.mockImplementation(() => new Promise(() => {}))
+    draw([ACTIVE])
+    const card = await row('Sweet — Weekly')
+    fireEvent.click(within(card).getByRole('button', { name: /^Pause$/ }))
+    await waitFor(() => expect(patch).toHaveBeenCalledTimes(1))
+
+    const after = await row('Sweet — Weekly')
+    const pause = within(after).getByRole('button', { name: /^Pause$/ })
+    expect(pause.getAttribute('aria-disabled')).toBe('true')
+    fireEvent.click(pause)
+    expect(patch, 'a disabled row fired a second PATCH').toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('the state filters are toggle buttons, not tabs', () => {
+  it('exposes pressed state rather than an unimplemented tab contract', async () => {
+    // `role="tab"` promises arrow-key navigation with a single tab stop via
+    // roving tabindex. These implement none of that, so a screen reader
+    // announced "tab, 1 of 5" and the arrows did nothing (codex P2 on #1161).
+    // They are filter toggles — no tabpanel, no aria-controls — and this page
+    // used aria-pressed before the Properties visual idiom was adopted.
+    draw([ACTIVE, PAUSED])
+    await row('Sweet — Weekly')
+
+    expect(screen.queryAllByRole('tab'), 'still declaring a tab interface').toEqual([])
+    expect(screen.getByRole('group', { name: /series state/i })).toBeTruthy()
+
+    const active = screen.getByRole('button', { name: /^Active/ })
+    expect(active.getAttribute('aria-pressed')).toBe('true')
+    expect(screen.getByRole('button', { name: /^Paused/ }).getAttribute('aria-pressed')).toBe('false')
   })
 })
 
 describe('the filter chips carry the counts, and they match the rows', () => {
-  const chip = (name) => screen.getByRole('tab', { name: new RegExp(`^${name}`) })
+  const chip = (name) => screen.getByRole('button', { name: new RegExp(`^${name}`), pressed: undefined })
 
   it('counts each state once, on the chip', async () => {
     draw([ACTIVE, PAUSED, ENDED, CANCELLED])
