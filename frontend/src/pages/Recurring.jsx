@@ -267,14 +267,30 @@ export default function Recurring() {
   // List view
   //
   // The page used to BE the stack: header, an auto-generate warning block, a
-  // filter row, a duplicate banner, then the list, all in one document flow
-  // with no scroll region — five full-width bands before the first row. It is
-  // now a bounded column (`flex h-full` → `flex-1 min-h-0`, the Properties
-  // shape) where the toolbar holds still and only the list scrolls, and the
-  // two conditional notices are one line each instead of a paragraph block.
+  // filter row, a duplicate banner, then the list — five full-width bands
+  // before the first row, and the filters scrolling away the moment you went
+  // looking through them. It is three now, and the toolbar is sticky.
+  //
+  // ## Why sticky rather than an internal scroll region
+  //
+  // The first version of this gave the list `overflow-y-auto flex-1 min-h-0`
+  // under a `flex h-full` root, copied from `pages/Properties.jsx`. It does
+  // not work, and Properties' does not either: `App.jsx` wraps every route in
+  // `.bb-page-in`, which is an ANIMATION class with no height, so a
+  // percentage `h-full` under it resolves against `height: auto` and the
+  // chain never binds. Measured at 940px with 40 series — `<main>` scrolled
+  // 641px and the toolbar left the screen at -408px (codex P2 on #1161).
+  //
+  // Six series could never have shown that, which is the lesson: the only
+  // condition under which an internal scroll region differs from a page that
+  // simply grows is overflow, and I had not rendered overflow.
+  //
+  // A definite height on `.bb-page-in` would fix both pages, but it changes
+  // the layout of every route in the app and belongs nowhere near a PR about
+  // one list. `position: sticky` needs no height chain at all: it pins to
+  // `<main>`, which is the scrollport that was doing the scrolling anyway.
   return (
-    <div className="flex h-full">
-     <div className="flex-1 flex flex-col min-w-0">
+    <>
       <PageHeader
         title="Recurring bookings"
         subtitle="Weekly and biweekly cleans. Change one visit without disturbing future ones."
@@ -299,13 +315,17 @@ export default function Recurring() {
 
       {/* `max-w-5xl mx-auto` is kept from the old layout: without it the rows
           stretch the full width of a large monitor and the actions end up a
-          long way from the title they belong to. The flex chain around it is
-          what gives the list below its own scroll region. */}
-      <div className="flex-1 flex flex-col min-h-0 w-full max-w-5xl mx-auto px-4 sm:px-8 pb-4 sm:pb-6">
+          long way from the title they belong to. */}
+      <div className="w-full max-w-5xl mx-auto px-4 sm:px-8 pb-4 sm:pb-6">
         {/* One command row: client, state filter carrying its own counts, and
             the duplicate flag folded in on the right. Wraps at phone width;
-            the chip track scrolls sideways rather than squeezing. */}
-        <div className="flex flex-wrap items-center gap-2 mt-4 mb-3">
+            the chip track scrolls sideways rather than squeezing.
+
+            Sticky, with an opaque `bg-bg` so the rows pass underneath rather
+            than through it. `top-0` pins it to <main>, the element that
+            actually scrolls — see the note on the return above for why this
+            is not an internal scroll region. */}
+        <div className="sticky top-0 z-10 bg-bg flex flex-wrap items-center gap-2 pt-4 pb-3">
           <select
             value={filterClient}
             onChange={e => setFilterClient(e.target.value)}
@@ -398,9 +418,7 @@ export default function Recurring() {
               : null}
           />
         ) : (
-          // The one scroll region on the page: the toolbar above holds still
-          // while this moves, so the filters are reachable from row 40.
-          <ul className="space-y-2.5 overflow-y-auto flex-1 min-h-0 scrollbar-thin">
+          <ul className="space-y-2.5">
             {filtered.map(s => (
               <SeriesRow
                 key={s.id}
@@ -458,7 +476,6 @@ export default function Recurring() {
           onDone={() => { setEditing(null); loadList(); toast.success('Rule updated for future visits') }}
         />
       )}
-     </div>
-    </div>
+    </>
   )
 }

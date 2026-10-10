@@ -238,6 +238,33 @@ describe('what the row deliberately does NOT offer', () => {
   })
 })
 
+describe('only the buttons swallow the row click', () => {
+  it('opens the series when the chevron is clicked', async () => {
+    // The propagation stop used to sit on the action WRAPPER, which made the
+    // chevron and the whitespace around it a dead click — the one spot that
+    // used to read "Manage →" became the one spot that did nothing, while
+    // still showing a pointer cursor (codex P2 on #1161).
+    draw([ACTIVE])
+    const card = await row('Sweet — Weekly')
+    const chevron = card.querySelector('svg.lucide-chevron-right')
+    expect(chevron, 'no chevron in the row any more — update this test').toBeTruthy()
+
+    fireEvent.click(chevron)
+    await waitFor(() => expect(screen.queryByRole('tablist')).toBeNull())
+  })
+
+  it('does not open the series when an action is clicked', async () => {
+    // The other half, and the reason the stop exists at all: pausing from the
+    // row must not also navigate into it.
+    draw([ACTIVE])
+    const card = await row('Sweet — Weekly')
+    fireEvent.click(within(card).getByRole('button', { name: /^Pause$/ }))
+
+    await waitFor(() => expect(patch).toHaveBeenCalled())
+    expect(screen.getByRole('tablist'), 'pausing navigated into the series').toBeTruthy()
+  })
+})
+
 describe('the row is still reachable by keyboard', () => {
   it('opens the series from the title control', async () => {
     // The card stopped being one big <button> so it could hold actions. If the

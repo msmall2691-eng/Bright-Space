@@ -122,13 +122,17 @@ export default function SeriesRow({ s, clientName, onOpen, isDuplicate, onToggle
               ~210px from a ~360px row, squeezing the text column to about a
               hundred — the title broke across three lines and the rule summary
               became a vertical ribbon. On a phone it gets its own line. */}
-          <div
-            className="flex items-center gap-1 w-full sm:w-auto justify-end self-center shrink-0 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 sm:group-focus-within:opacity-100 transition-opacity"
-            onClick={e => e.stopPropagation()}
-          >
+          {/* The propagation stop is on the two BUTTONS, not on this wrapper.
+              It was on the wrapper, and that made the chevron — and the
+              whitespace around it — a dead click: the card's own handler was
+              blocked and the chevron has none of its own, so the one spot
+              that used to say "Manage →" became the one spot that did nothing
+              (codex P2 on #1161). Everything in here that is not a button now
+              falls through to the row. */}
+          <div className="flex items-center gap-1 w-full sm:w-auto justify-end self-center shrink-0 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 sm:group-focus-within:opacity-100 transition-opacity">
             {canTogglePause && (
               <button
-                onClick={() => onTogglePause?.(s)}
+                onClick={(e) => { e.stopPropagation(); onTogglePause?.(s) }}
                 disabled={busy}
                 title={s.active ? 'Pause this series — no new visits are generated' : 'Resume generating visits'}
                 className="flex items-center gap-1 text-[11px] px-2.5 py-2 sm:px-2 sm:py-1 rounded-md bg-bg text-ink-3 hover:bg-bg-2 hover:text-ink transition-colors disabled:opacity-50"
@@ -139,7 +143,7 @@ export default function SeriesRow({ s, clientName, onOpen, isDuplicate, onToggle
               </button>
             )}
             <button
-              onClick={() => onEdit?.(s)}
+              onClick={(e) => { e.stopPropagation(); onEdit?.(s) }}
               title="Edit the rule for future visits"
               className="flex items-center gap-1 text-[11px] px-2.5 py-2 sm:px-2 sm:py-1 rounded-md bg-bg text-ink-3 hover:bg-bg-2 hover:text-ink transition-colors"
             >

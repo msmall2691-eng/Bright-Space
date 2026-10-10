@@ -152,7 +152,21 @@ The five bands are three: the state counts moved ONTO the filter chips
 (Properties/Clients idiom, so the "N of M" span went away rather than being a
 second copy of the same number), the duplicate banner went from a three-line
 block to a dot + word + Review, the auto-generate notice from four lines to
-one, and the list got its own scroll region so the toolbar holds still.
+one, and **the toolbar is sticky** so the filters don't scroll away the moment
+you go looking through them.
+
+**That toolbar started as an internal scroll region, copied from
+`pages/Properties.jsx`, and it did not work — nor does Properties'.** `App.jsx`
+wraps every route in `.bb-page-in`, which is an animation class with no
+height, so a percentage `h-full` beneath it resolves against `height: auto`
+and the `flex-1 min-h-0` chain never binds. Measured at 940px with 40 series:
+`<main>` scrolled 641px and the toolbar left the screen at -408px. Six series
+could not have shown it, and six series is what the first screenshots had —
+the only condition under which an internal scroll region differs from a page
+that simply grows is overflow. `position: sticky` needs no height chain, so
+that is what shipped. **A definite height on `.bb-page-in` would fix both
+pages and is worth doing**, but it changes the layout of every route and wants
+its own slice.
 
 Not bento, and that is the point: on a list of N series a bento would be the
 wrong shape. This is the Properties/Clients list treatment, which is what the
