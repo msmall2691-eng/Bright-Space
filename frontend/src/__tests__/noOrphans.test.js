@@ -45,8 +45,8 @@ import { dirname, join, relative, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
-const DASH = join(HERE, '..')                     // …/components/dashboard
-const SRC = join(DASH, '..', '..')                // …/src
+const SRC = join(HERE, '..')                      // …/src
+const DASH = join(SRC, 'components', 'dashboard')
 const rel = (f) => relative(SRC, f).split('\\').join('/')
 
 function walk(dir) {
@@ -109,10 +109,24 @@ function resolveLocal(fromFile, spec) {
   return resolve(dirname(fromFile), spec).replace(/\.(jsx?|tsx?)$/, '')
 }
 
-describe('components/dashboard has no orphans', () => {
-  const tiles = readdirSync(DASH)
+// Both widget directories, for the same reason. A tree-wide audit after the
+// dashboard cleanup found five more orphans, two of them here in board/ —
+// Charts.jsx and HomeScheduleCalendar.jsx, dropped by the #1012 and #1033 Home
+// rewrites and left behind with their tests still passing. Covering only
+// dashboard/ would have missed both.
+//
+// Not extended past these two directories: tree-wide, the check needs an
+// allowlist for entry points and for api/types.ts (generated, deliberately
+// imported by nothing), and that list is exactly the kind of thing that drifts
+// out of date and starts lying. These are small closed directories of widgets,
+// where "not rendered anywhere" is always a mistake.
+const BOARD = join(SRC, 'components', 'board')
+const WIDGET_DIRS = [DASH, BOARD]
+
+describe('the widget directories have no orphans', () => {
+  const tiles = WIDGET_DIRS.flatMap(dir => readdirSync(dir)
     .filter(f => /\.jsx?$/.test(f))
-    .map(f => join(DASH, f))
+    .map(f => join(dir, f)))
 
   const importers = new Map(tiles.map(t => [t.replace(/\.jsx?$/, ''), []]))
   const unparsed = []
