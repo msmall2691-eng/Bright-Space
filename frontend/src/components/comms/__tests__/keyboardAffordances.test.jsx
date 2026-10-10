@@ -96,15 +96,26 @@ describe('the shortcuts reach state the list-row path does not', () => {
   // list-row machinery for a keyboard acting on the OPEN thread.
   const comms = readFileSync(join(DIR, '..', '..', '..', 'pages', 'Comms.jsx'), 'utf8')
 
-  it('e refreshes the open pane instead of leaving it stale', () => {
-    // `resolveConv` -> `rowAction` reloads the list and the folder counts but
-    // never the detail — right for a swipe on a row you are not reading,
-    // wrong from the keyboard: the thread pane kept offering "Mark done" and
-    // the reply suggestion for up to sixty seconds while the toast said the
-    // thread was done. `setStatus` does the right refresh.
-    const fn = comms.slice(comms.indexOf('const resolveSelected')).slice(0, 300)
-    expect(fn).toMatch(/id === detail\?\.id \? setStatus\('resolved'\) : resolveConv\(id\)/)
-    expect(comms, 'the shortcut is back on the list-row path')
+  it('e refreshes the open pane AND keeps the toast and error handling', () => {
+    // Two findings in one assertion, because the first fix caused the second.
+    //
+    // `rowAction` reloads the list and the folder counts but never the detail
+    // — right for a swipe on a row you are not reading, wrong from the
+    // keyboard: the pane kept offering "Mark done" for up to sixty seconds
+    // while the toast said it was done.
+    //
+    // Fixing that by routing to `setStatus` was worse. `setStatus` has no
+    // try/catch and no toast, so the shortcut silently lost its "Marked done"
+    // confirmation and any failure became an unhandled rejection with nothing
+    // on screen. The reload has to be ADDED to rowAction, not swapped for it.
+    const fn = comms.slice(comms.indexOf('const resolveSelected')).slice(0, 1400)
+    expect(fn, 'the toast and the try/catch live in rowAction — do not bypass it')
+      .toMatch(/await rowAction\(id, 'status', \{ status: 'resolved' \}, 'Marked done'\)/)
+    expect(fn, 'no detail reload, so the open pane goes stale again')
+      .toMatch(/if \(id === detail\?\.id\) await loadDetail\(id\)/)
+    expect(fn, 'setStatus bypasses rowAction and loses the toast + error handling')
+      .not.toMatch(/setStatus\(/)
+    expect(comms, 'the shortcut is back on the bare list-row path')
       .toMatch(/onResolve: resolveSelected/)
   })
 

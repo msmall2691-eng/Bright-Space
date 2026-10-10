@@ -388,16 +388,28 @@ export default function Comms() {
   }, [])
 
   // `e` acts on the OPEN thread, so it owes the open pane a refresh.
-  // `resolveConv` is the list-row path: its `rowAction` reloads the list and
-  // the folder counts but never the detail, which is right for a swipe on a
-  // row you are not reading. Used from the keyboard it left the thread pane
-  // showing the conversation as active — "Mark done" still offered, reply
-  // suggestion still up — for as long as sixty seconds, while the toast said
-  // it was done (codex P2 on #1155). `setStatus` already does the right
-  // refresh; it just only knows about `detail`, hence the split.
-  const resolveSelected = useCallback((id) => (
-    id === detail?.id ? setStatus('resolved') : resolveConv(id)
-  ), [detail?.id, setStatus, resolveConv])
+  // `rowAction` reloads the list and the folder counts but never the detail,
+  // which is right for a swipe on a row you are not reading. Used from the
+  // keyboard it left the thread pane showing the conversation as active —
+  // "Mark done" still offered, reply suggestion still up — for as long as
+  // sixty seconds while the toast said it was done (codex P2 on #1155).
+  //
+  // It ADDS the detail reload rather than switching to `setStatus`, which was
+  // the first fix and was worse: `setStatus` has no try/catch and no toast, so
+  // routing the shortcut through it silently dropped the "Marked done"
+  // confirmation and turned any network or server failure into an unhandled
+  // rejection with nothing on screen (codex again, on the fix). Trading a
+  // stale pane for a swallowed error is not a fix, and the giveaway was right
+  // there in my own comment: it cited the toast while removing it.
+  //
+  // The reload runs even when the POST failed — rowAction catches and toasts,
+  // so control returns here either way. That is the behaviour worth having:
+  // on failure the pane re-syncs to the truth instead of keeping whatever it
+  // was showing.
+  const resolveSelected = useCallback(async (id) => {
+    await rowAction(id, 'status', { status: 'resolved' }, 'Marked done')
+    if (id === detail?.id) await loadDetail(id)
+  }, [rowAction, detail?.id, loadDetail])
   const toggleShortcuts = useCallback(() => setShowShortcuts(v => !v), [])
   const closeShortcuts = useCallback(() => setShowShortcuts(false), [])
   useInboxShortcuts({
