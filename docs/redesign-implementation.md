@@ -135,6 +135,79 @@ real second pass on this page, and they are now much cheaper than they were:
 the screens are separate files, so `SeriesRow` and `SeriesDetail` can each be
 reworked without reading 1795 lines. Worth doing; not done.
 
+**The LIST half of that second pass is now done (#1161). The DETAIL half is
+not**, and the split is deliberate rather than a half-revamp: list and detail
+are two screens, and the list is the one the survey measured as read-only.
+
+What the list got: the rows carry **Pause/Resume and Edit rule**, both driving
+endpoints the detail page already drives (`PATCH /api/recurring/{id}` and
+`EditSeriesModal` on the row's own payload — list and detail return the same
+`sched_to_dict`, so there is no extra fetch, and
+`__tests__/editPayloadParity.test.js` pins that against the backend
+serializer). Pause takes a toast with Undo rather than a confirm, the Requests
+Archive reasoning. **Cancel is deliberately not on the row** — irreversible,
+and a mis-click on a list lands on the wrong series.
+
+The five bands are three: the state counts moved ONTO the filter chips
+(Properties/Clients idiom, so the "N of M" span went away rather than being a
+second copy of the same number), the duplicate banner went from a three-line
+block to a dot + word + Review, the auto-generate notice from four lines to
+one, and **the toolbar is sticky** so the filters don't scroll away the moment
+you go looking through them.
+
+**That toolbar started as an internal scroll region, copied from
+`pages/Properties.jsx`, and it did not work — nor does Properties'.** `App.jsx`
+wraps every route in `.bb-page-in`, which is an animation class with no
+height, so a percentage `h-full` beneath it resolves against `height: auto`
+and the `flex-1 min-h-0` chain never binds. Measured at 940px with 40 series:
+`<main>` scrolled 641px and the toolbar left the screen at -408px. Six series
+could not have shown it, and six series is what the first screenshots had —
+the only condition under which an internal scroll region differs from a page
+that simply grows is overflow. `position: sticky` needs no height chain, so
+that is what shipped. **A definite height on `.bb-page-in` would fix both
+pages and is worth doing**, but it changes the layout of every route and wants
+its own slice.
+
+Not bento, and that is the point: on a list of N series a bento would be the
+wrong shape. This is the Properties/Clients list treatment, which is what the
+survey's own verdict on Clients ("the stack is in the chrome, not the list")
+already pointed at.
+
+**What the detail screen still wants**: six bands, and a header where the
+status, the client and the rule summary could be one dense block instead of
+three stacked ones. Its rows are NOT read-only — every upcoming visit has
+Skip/Reschedule and every override has Undo — so it is a layout pass, not an
+actionability one, which is why it ranks below the list.
+
+**And one thing it was given and then had taken away, recorded so nobody
+rebuilds it by accident.** Pause a row, walk into that series, hit the
+still-visible Undo, and the detail keeps the copy it fetched on mount: Paused,
+with a Resume button, for a series the server has active again. It
+self-corrects on the next action or revisit.
+
+#1161 built the fix and removed it in the same PR. Closing the gap meant a
+`refreshToken` prop, a ref read at click time, a `silent` load that skips the
+loading flag so the skeleton doesn't unmount an open modal, and a sequence
+guard on every write. **Five consecutive review rounds found a real bug in
+each of those in turn** — a reload that never fired (a closure captured before
+the navigation), a remount that discarded unsaved rule edits, a failed refresh
+that blanked the page, and finally a refresh whose `.catch(() => [])`
+subrequests silently emptied the overrides list behind an intact screen.
+
+Every fix was correct and every one opened the next hole, because the thing
+being fixed is **two components owning one piece of server state with a toast
+outliving the navigation between them**. That wants a shared cache with
+invalidation, not a prop; the machinery had grown past the cost of the
+transient wrong label it prevented. A stopping rule was written on the PR
+before the last round and honoured when that round found more.
+
+Two findings from the attempt are worth keeping even though the code went:
+`SeriesDetail`'s auxiliary requests both `.catch(() => [])`, so a transient
+failure of the exceptions or jobs endpoint replaces real data with empty data
+rather than reporting anything — latent on `main`, not introduced here. And
+`load()` has no concurrency guard at all, which the `onDone` handlers can
+already race.
+
 Then stop: the remaining eight are not revamp candidates, and
 Payouts / Owner / Sync Center / Settings / Marketplace / Roster / Thresholds /
 detail pages were not surveyed and get their own pass before anyone assumes.

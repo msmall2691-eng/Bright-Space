@@ -8,11 +8,12 @@
  * props-only, so they now live beside this in `components/recurring/`,
  * moved verbatim.
  */
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
-import { get, post, getCached } from '../api'
+import { get, patch, post, getCached } from '../api'
 import JobCreateModal from '../components/JobCreateModal'
 import DuplicateReviewPanel from '../components/recurring/DuplicateReviewPanel'
+import EditSeriesModal from '../components/recurring/EditSeriesModal'
 import HealthPanel from '../components/recurring/HealthPanel'
 import SeriesDetail from '../components/recurring/SeriesDetail'
 import SeriesRow from '../components/recurring/SeriesRow'
@@ -133,6 +134,89 @@ export default function Recurring() {
   const openSeries = (id) => setParams({ series: String(id) })
   const backToList = () => setParams({})
 
+  // ── Inline row actions ───────────────────────────────────────────────────
+  // Both drive endpoints the detail page already drives; no new backend.
+  // Cancel is deliberately NOT offered here — it is the irreversible one, and
+  // on a list a mis-click lands on the wrong series. It stays in the detail
+  // page's danger zone behind its booked-visit dialog.
+  // The set of series ids with a PATCH in flight, NOT a single id. It was one
+  // id, which meant pausing a second row replaced the first row's pending
+  // state: whichever request settled next cleared the guard for every row
+  // still waiting, so those rows went actionable again mid-flight and could
+  // be fired a second time, landing two toasts and two Undos for one action
+  // (codex P2 on #1161). One request must not clear another row's guard.
+  //
+  // Updated functionally rather than through a ref. A ref plus a re-entry
+  // check was the first version, to catch two clicks landing in one tick —
+  // but React flushes discrete events like clicks synchronously, so the row
+  // has already re-rendered disabled by the time a second click arrives and
+  // the guard could not be reached. A mutation removing it survived every
+  // test, including one written specifically to hit that window. Unreachable
+  // defensive code that nothing can exercise is worse than none.
+  const [pausing, setPausing] = useState(() => new Set())
+  const [editing, setEditing] = useState(null)   // the series whose rule is open
+
+  // Applies a local `active` flip so the row answers immediately. The row then
+  // leaves the "Active" filter, which is the honest outcome — and the Undo in
+  // the toast is what brings it back, the Requests-archive pattern.
+  const setActiveLocal = useCallback((id, active) => {
+    setSchedules(prev => prev.map(s => (s.id === id ? { ...s, active } : s)))
+  }, [])
+
+  const togglePause = useCallback(async (s) => {
+    const next = !s.active
+    setPausing(prev => new Set(prev).add(s.id))
+    try {
+      await patch(`/api/recurring/${s.id}`, { active: next })
+      setActiveLocal(s.id, next)
+      toast.success(next ? 'Series resumed' : 'Series paused', {
+        action: {
+          label: 'Undo',
+          onClick: async () => {
+            try {
+              // Re-read before applying. The toast lives 8 seconds, which is
+              // long enough to pause a row, open the series, cancel it, and
+              // come back — and the still-visible "Undo" then reads as though
+              // it would undo the CANCEL. It would not: it PATCHes
+              // `active: true`, and `update_schedule` clears `cancelled_at`
+              // whenever active becomes true, so a cancelled series silently
+              // goes live and starts generating visits again for a customer
+              // who cancelled (codex P2 on #1161).
+              //
+              // Only `cancelled_at` is checked, because it is the only change
+              // with consequences. If someone resumed the series in the
+              // meantime, this PATCH sets a value it already has.
+              //
+              // One GET on an explicit, rare click to avoid reviving a
+              // cancelled series — the economy rules are about per-render and
+              // polling waste, not about reading the state you are overwriting.
+              const current = await get(`/api/recurring/${s.id}`)
+              if (current?.cancelled_at) {
+                toast.error('That series was cancelled since — leaving it cancelled.')
+                return
+              }
+              await patch(`/api/recurring/${s.id}`, { active: !next })
+              setActiveLocal(s.id, !next)
+              // Deliberately does NOT reach into an open SeriesDetail. See the
+              // note above the detail view below for why that was cut.
+            } catch (err) {
+              // Includes the re-read failing: an Undo that cannot confirm what
+              // it is overwriting does not overwrite it.
+              console.error('[Recurring] Undo pause failed:', err)
+              toast.error('Could not put that series back.')
+            }
+          },
+        },
+      })
+    } catch (e) {
+      // No local flip happened, so the row still shows the truth. Say so,
+      // rather than leaving a silent no-op that reads as a dead button.
+      toast.error(e.message || (next ? 'Could not resume that series.' : 'Could not pause that series.'))
+    } finally {
+      setPausing(prev => { const next = new Set(prev); next.delete(s.id); return next })
+    }
+  }, [setActiveLocal])
+
   const filtered = useMemo(() => {
     return schedules.filter(s => {
       // "Active" means LIVE (active and not past its end date); an active row
@@ -151,6 +235,27 @@ export default function Recurring() {
     () => Object.values(clientsById).sort((a, b) => (a.name || '').localeCompare(b.name || '')),
     [clientsById],
   )
+
+  // Counts live ON the filter chips — the Properties/Clients idiom (#1041), so
+  // the number appears in exactly one place and the active state is never
+  // ambiguous. This replaced a separate "N of M" span, which was the same
+  // fact in a second spot.
+  //
+  // Counted over the CLIENT-filtered set rather than every series: with a
+  // client picked, whole-book counts would have the chip saying "Active 12"
+  // above a list of 2. A chip that disagrees with the rows under it is worse
+  // than no chip.
+  const stateCounts = useMemo(() => {
+    const scope = filterClient
+      ? schedules.filter(s => String(s.client_id) === String(filterClient))
+      : schedules
+    const out = { all: scope.length, active: 0, paused: 0, cancelled: 0, ended: 0 }
+    for (const s of scope) {
+      const st = seriesState(s)
+      if (out[st] != null) out[st] += 1
+    }
+    return out
+  }, [schedules, filterClient])
 
   // Duplicate groups among LIVE series (shared definition with the backend
   // pre-create guard: same client + property + cadence + time, overlapping
@@ -185,6 +290,31 @@ export default function Recurring() {
   )
 
   // Detail view
+  //
+  // ## It deliberately does not hear about the list's Undo
+  //
+  // There is a real gap here: pause a row, walk into that series, and hit the
+  // still-visible Undo, and this view keeps showing the copy it fetched on
+  // mount — Paused, with a Resume button, for a series the server has active
+  // again. It self-corrects on the next action or revisit, because every one
+  // of them reloads.
+  //
+  // This PR built the fix and then removed it, which is worth writing down so
+  // nobody rebuilds it by accident. Closing that gap meant a `refreshToken`
+  // prop, a ref read at click time, a `silent` load that skips the loading
+  // flag so the skeleton doesn't eat an open modal, and a sequence guard on
+  // every write. Five review rounds found a real bug in each of those in turn
+  // — a reload that never fired, a remount that discarded unsaved rule edits,
+  // a failed refresh that blanked the page, and finally a refresh whose
+  // `.catch(() => [])` subrequests silently emptied the overrides list behind
+  // an intact screen.
+  //
+  // Every fix was correct and every one opened the next hole, because the
+  // thing being fixed is two components owning one piece of server state with
+  // a toast outliving the navigation between them. That wants a shared cache
+  // with invalidation, not a prop. What it does NOT want is more of what was
+  // here: the machinery had grown past the cost of the transient wrong label
+  // it was preventing.
   if (seriesId) {
     return (
       <>
@@ -199,6 +329,30 @@ export default function Recurring() {
   }
 
   // List view
+  //
+  // The page used to BE the stack: header, an auto-generate warning block, a
+  // filter row, a duplicate banner, then the list — five full-width bands
+  // before the first row, and the filters scrolling away the moment you went
+  // looking through them. It is three now, and the toolbar is sticky.
+  //
+  // ## Why sticky rather than an internal scroll region
+  //
+  // The first version of this gave the list `overflow-y-auto flex-1 min-h-0`
+  // under a `flex h-full` root, copied from `pages/Properties.jsx`. It does
+  // not work, and Properties' does not either: `App.jsx` wraps every route in
+  // `.bb-page-in`, which is an ANIMATION class with no height, so a
+  // percentage `h-full` under it resolves against `height: auto` and the
+  // chain never binds. Measured at 940px with 40 series — `<main>` scrolled
+  // 641px and the toolbar left the screen at -408px (codex P2 on #1161).
+  //
+  // Six series could never have shown that, which is the lesson: the only
+  // condition under which an internal scroll region differs from a page that
+  // simply grows is overflow, and I had not rendered overflow.
+  //
+  // A definite height on `.bb-page-in` would fix both pages, but it changes
+  // the layout of every route in the app and belongs nowhere near a PR about
+  // one list. `position: sticky` needs no height chain at all: it pins to
+  // `<main>`, which is the scrollport that was doing the scrolling anyway.
   return (
     <>
       <PageHeader
@@ -223,29 +377,23 @@ export default function Recurring() {
         <SubNav />
       </PageHeader>
 
-      <div className="max-w-5xl mx-auto px-4 sm:px-8 pb-8">
-        {autoGenOff && (
-          <div className="mt-4 mb-4 flex items-start gap-2.5 rounded-lg bg-panel border border-hairline px-3.5 py-3 text-sm text-ink-2">
-            <span className={`w-1.5 h-1.5 rounded-full ${SEV_DOT.watch} shrink-0 mt-1.5`} aria-hidden="true" />
-            <div>
-              <p className="font-semibold text-ink">Recurring auto-generate is off</p>
-              <p className="text-[13px] mt-0.5 text-ink-3">
-                Schedules were filled once and won’t roll forward, so upcoming visits will stop
-                appearing over time. Turn on <b>Recurring auto-generate</b> in Settings → General
-                to keep the window topped up automatically.
-              </p>
-              <a href="/settings#general"
-                className="inline-block mt-1.5 text-[13px] font-semibold underline underline-offset-2 hover:opacity-80">
-                Open Settings → General
-              </a>
-            </div>
-          </div>
-        )}
-        {/* Filters */}
-        <div className="flex flex-wrap items-center gap-2 mb-4">
+      {/* `max-w-5xl mx-auto` is kept from the old layout: without it the rows
+          stretch the full width of a large monitor and the actions end up a
+          long way from the title they belong to. */}
+      <div className="w-full max-w-5xl mx-auto px-4 sm:px-8 pb-4 sm:pb-6">
+        {/* One command row: client, state filter carrying its own counts, and
+            the duplicate flag folded in on the right. Wraps at phone width;
+            the chip track scrolls sideways rather than squeezing.
+
+            Sticky, with an opaque `bg-bg` so the rows pass underneath rather
+            than through it. `top-0` pins it to <main>, the element that
+            actually scrolls — see the note on the return above for why this
+            is not an internal scroll region. */}
+        <div className="sticky top-0 z-10 bg-bg flex flex-wrap items-center gap-2 pt-4 pb-3">
           <select
             value={filterClient}
             onChange={e => setFilterClient(e.target.value)}
+            aria-label="Filter by client"
             className="px-3 py-2 border border-hairline rounded-lg text-sm bg-panel"
           >
             <option value="">All clients</option>
@@ -253,40 +401,79 @@ export default function Recurring() {
               <option key={c.id} value={c.id}>{c.name}</option>
             ))}
           </select>
-          <div className="flex items-center gap-1 bg-panel border border-hairline rounded-lg p-0.5">
+          {/* `role="group"` with `aria-pressed` buttons, NOT a tablist.
+              These are filter toggles: there is no tabpanel, no
+              `aria-controls`, and nothing is revealed by "selecting" one.
+              Declaring `role="tab"` promises a keyboard contract — arrow-key
+              navigation with a single tab stop via roving tabindex — that
+              none of these implement, so a screen reader announces "tab, 1 of
+              5" and the arrows do nothing (codex P2 on #1161).
+
+              This page had it right before: `aria-pressed` on plain buttons.
+              The tablist came in with the Properties/Clients visual idiom,
+              and the same unfulfilled promise is in InvoicingHeader,
+              PropertiesToolbar, ClientsToolbar and QuotesToolbar. Those are a
+              sweep of their own, not this PR's. */}
+          <div
+            role="group"
+            aria-label="Filter by series state"
+            className="flex items-center gap-0.5 bg-bg-2 rounded-lg p-0.5 overflow-x-auto scrollbar-thin max-w-full"
+          >
             {[
               { v: 'active', label: 'Active' },
               { v: 'paused', label: 'Paused' },
               { v: 'cancelled', label: 'Cancelled' },
               { v: 'ended', label: 'Ended' },
               { v: 'all', label: 'All' },
-            ].map(o => (
-              <button key={o.v}
-                onClick={() => setFilterStatus(o.v)}
-                aria-pressed={filterStatus === o.v}
-                className={`px-3 py-1.5 text-xs font-medium rounded-md transition ${
-                  filterStatus === o.v ? 'bg-bg-2 text-ink shadow-xs' : 'text-ink-3 hover:text-ink'
-                }`}>
-                {o.label}
-              </button>
-            ))}
+            ].map(o => {
+              const active = filterStatus === o.v
+              return (
+                <button key={o.v} aria-pressed={active}
+                  onClick={() => setFilterStatus(o.v)}
+                  className={`shrink-0 whitespace-nowrap px-2.5 py-1.5 rounded-md text-[12px] font-medium transition-colors ${
+                    active ? 'bg-panel text-ink shadow-xs' : 'text-ink-3 hover:text-ink-2'
+                  }`}>
+                  {o.label}
+                  <span className="ml-1.5 text-[10px] text-ink-3 tabular-nums">{stateCounts[o.v]}</span>
+                </button>
+              )
+            })}
           </div>
-          <span className="text-xs text-ink-3 ml-auto">
-            {filtered.length} of {schedules.length}
-          </span>
+
+          {dupGroupCount > 0 && (
+            // Was a full-width band carrying three lines of explanation. The
+            // explanation belongs in the panel that does the work, so this is
+            // a bare dot + word and the way in.
+            // No `ml-auto` on this: at ~940px the select plus the chips already
+            // fill the row, so pushing it right put it alone on a second line,
+            // right-aligned under nothing. Flowing straight after the chips
+            // keeps it attached to the control it belongs with at every width.
+            <button
+              onClick={() => setReviewOpen(true)}
+              title="Same client, property, cadence, and time on overlapping days. Review them side by side and pick which to keep — nothing changes automatically."
+              className="inline-flex items-center gap-1.5 text-[12px] font-medium text-ink-2 hover:text-ink rounded-md"
+            >
+              <span className={`w-1.5 h-1.5 rounded-full ${SEV_DOT.watch} shrink-0`} aria-hidden="true" />
+              {dupGroupCount} possible duplicate{dupGroupCount === 1 ? '' : 's'}
+              <span className="text-ink-3">· Review</span>
+            </button>
+          )}
         </div>
 
-        {dupGroupCount > 0 && (
-          <div className="flex items-center gap-2.5 mb-4 px-3 py-2.5 rounded-lg bg-panel border border-hairline text-ink-2 text-sm">
+        {autoGenOff && (
+          // One line, action inline. The old version spent four lines and a
+          // paragraph of body copy on a setting the operator either knows
+          // about or needs to toggle — the link is the useful part.
+          <div className="flex items-center gap-2 mb-3 rounded-lg bg-panel border border-hairline px-3 py-2 text-[13px] text-ink-2">
             <span className={`w-1.5 h-1.5 rounded-full ${SEV_DOT.watch} shrink-0`} aria-hidden="true" />
-            <span className="flex-1 min-w-0">
-              {dupGroupCount} possible duplicate group{dupGroupCount === 1 ? '' : 's'} — same client,
-              property, cadence, and time on overlapping days. Review them side by side and pick
-              which series to keep; nothing is changed automatically.
+            <span className="min-w-0">
+              <b className="font-semibold text-ink">Auto-generate is off</b> — visits were filled
+              once and won’t roll forward.
             </span>
-            <Button variant="secondary" size="sm" className="shrink-0" onClick={() => setReviewOpen(true)}>
-              Review
-            </Button>
+            <a href="/settings#general"
+              className="ml-auto shrink-0 text-[12px] font-semibold underline underline-offset-2 hover:opacity-80">
+              Turn it on
+            </a>
           </div>
         )}
 
@@ -316,6 +503,9 @@ export default function Recurring() {
                 clientName={clientsById[s.client_id]?.name || 'Unknown client'}
                 onOpen={openSeries}
                 isDuplicate={dupKeyBySeriesId.has(s.id) && !reviewedKeys.has(dupKeyBySeriesId.get(s.id))}
+                onTogglePause={togglePause}
+                onEdit={setEditing}
+                busy={pausing.has(s.id)}
               />
             ))}
           </ul>
@@ -350,6 +540,17 @@ export default function Recurring() {
           initialPropertyId={createPrefill?.initialPropertyId ?? null}
           onClose={() => { setShowCreate(false); setCreatePrefill(null) }}
           onCreated={() => { setShowCreate(false); setCreatePrefill(null); loadList() }}
+        />
+      )}
+      {editing && (
+        // The same modal the detail page opens, on the same payload: the list
+        // and detail endpoints both return sched_to_dict, so every field this
+        // form pre-fills from is already in the row. Reloads the list on save
+        // because the rule it edits is what the row renders.
+        <EditSeriesModal
+          schedule={editing}
+          onClose={() => setEditing(null)}
+          onDone={() => { setEditing(null); loadList(); toast.success('Rule updated for future visits') }}
         />
       )}
     </>

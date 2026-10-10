@@ -1,12 +1,50 @@
 import { useMemo } from 'react'
 import { Link } from 'react-router-dom'
-import { SERIES_STATE_LABEL, groupDuplicateSeries, isLiveSeries, seriesState } from '../../utils/recurringDuplicates'
+import { SERIES_STATE_LABEL, isLiveSeries, seriesState } from '../../utils/recurringDuplicates'
 import { computeUpcoming, fmtDate, fmtTime, ruleSummary } from './helpers'
-import { Pause } from 'lucide-react'
+import { ChevronRight, Pause, Pencil, Play } from 'lucide-react'
 import { SEV_DOT } from '../board/tokens'
 import { STATUS_TEXT } from '../../theme/statusText'
 
-export default function SeriesRow({ s, clientName, onOpen, isDuplicate }) {
+/**
+ * One row in the Recurring series list.
+ *
+ * ## It used to be one big <button>, and that is why it had no actions
+ *
+ * The survey counted **zero inline actions on these rows** against 21
+ * elsewhere on the surface — read-only rows on the one screen that lists every
+ * series. The reason was structural rather than an oversight: the entire row
+ * was a single `<button onClick={onOpen}>`, so there was nowhere to put a
+ * second control. A `<button>` inside a `<button>` is invalid HTML and does
+ * not reliably receive its own click, and the client-name `<Link>` was already
+ * nested in there (interactive inside interactive) with a `stopPropagation` to
+ * stop the row firing underneath it.
+ *
+ * So the card is now a plain element with the house row idiom
+ * (`components/invoicing/InvoiceRow.jsx`): `cursor-pointer` + `onClick` for the
+ * mouse, and the **title is the focusable control** that opens the series, so
+ * a keyboard still reaches it with Tab and Enter. Actions sit beside it as
+ * siblings, each stopping propagation.
+ *
+ * ## Pause / Resume takes no confirm, deliberately
+ *
+ * It is one PATCH, instantly reversible by the button that replaces it, and
+ * the toast carries an Undo. A confirm on every pause would tax the loop to
+ * guard something undoable — the same reasoning already recorded for Requests'
+ * Archive in `docs/redesign-implementation.md`. Cancel (the irreversible one)
+ * stays on the detail page behind its danger-zone dialog; it is not offered
+ * from a list where a mis-click lands on the wrong row.
+ *
+ * ## Edit rule needs no extra fetch
+ *
+ * `GET /api/recurring` and `GET /api/recurring/{id}` return the SAME
+ * `sched_to_dict`, so the row already holds every field `EditSeriesModal`
+ * pre-fills from. Worth stating, because a partial payload here would not
+ * error — it would pre-fill the form with fallback defaults and silently
+ * narrow the rule on save. `__tests__/SeriesRow.editPayload.test.jsx` pins the
+ * field list against the modal.
+ */
+export default function SeriesRow({ s, clientName, onOpen, isDuplicate, onTogglePause, onEdit, busy }) {
   const next = useMemo(() => {
     const up = computeUpcoming(s, [], 1)
     return up[0]?.date
@@ -16,19 +54,58 @@ export default function SeriesRow({ s, clientName, onOpen, isDuplicate }) {
   // series_end_date is set, `active` stays true) reads as a quiet "Ended",
   // not as a live series.
   const live = isLiveSeries(s)
+  const state = seriesState(s)
+  // Pause/Resume is offered only where flipping `active` actually changes the
+  // series' state. A cancelled one is not resumed by it (cancelled_at stays
+  // set, so it still reads Cancelled), and an ended one is past its end date.
+  //
+  // The subtle case, and the one that shipped broken: a series PAUSED before
+  // its end date, where the date has since passed. `seriesState` reads it as
+  // "Paused" (it only knows `active` is false), so Resume was offered — and
+  // resuming set active:true on an expired series, which comes back as
+  // "Ended", generates nothing, and raised a toast saying "Series resumed"
+  // (codex P2 on #1161).
+  //
+  // Asked as "would resuming make it live?" through `isLiveSeries` rather than
+  // by comparing the end date here: this surface has a documented history of
+  // hand-rolled predicates drifting from the shared one, which is why
+  // seriesState exists at all.
+  const canTogglePause = state === 'active'
+    || (state === 'paused' && isLiveSeries({ ...s, active: true }))
+
   return (
     <li>
-      <button
+      <div
         onClick={() => onOpen(s.id)}
-        className="w-full text-left bg-panel border border-hairline rounded-lg px-4 py-2.5 hover:bg-bg-2/60 transition"
+        className="group bg-panel border border-hairline rounded-lg px-4 py-2.5 cursor-pointer hover:bg-bg-2/60 transition"
       >
         <div className="flex items-start justify-between gap-3 flex-wrap">
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-2 mb-1 flex-wrap">
-              <h3 className="text-base font-semibold text-ink">{s.title || 'Untitled'}</h3>
+              {/* The row's keyboard target. Styled as the heading it is, so
+                  nothing moves visually, but it is a real control: Tab lands
+                  here and Enter opens the series. */}
+              {/* The button is wrapped in the heading rather than replacing
+                  it. Swapping the `<h3>` out took every series title out of
+                  the document's heading structure, which is how a screen
+                  reader user scans a list like this — and CSS does not carry
+                  that semantic back (codex P2 on #1161). Both are needed: the
+                  heading to find the row, the button to open it.
+
+                  Tailwind's preflight zeroes heading margin and font-size, so
+                  the h3 contributes no styling of its own and the row looks
+                  exactly as it did. */}
+              <h3>
+                <button
+                  onClick={(e) => { e.stopPropagation(); onOpen(s.id) }}
+                  className="text-base font-semibold text-ink text-left rounded-md hover:text-link"
+                >
+                  {s.title || 'Untitled'}
+                </button>
+              </h3>
               <span className="inline-flex items-center gap-1.5 text-[11px] font-medium text-ink-2">
                 <span className={`h-1.5 w-1.5 rounded-full ${live ? SEV_DOT.good : 'bg-ink-3'}`} />
-                {SERIES_STATE_LABEL[seriesState(s)]}
+                {SERIES_STATE_LABEL[state]}
               </span>
               {isDuplicate && (
                 <span className="inline-flex items-center gap-1.5 text-[11px] font-medium text-ink-2"
@@ -56,9 +133,81 @@ export default function SeriesRow({ s, clientName, onOpen, isDuplicate }) {
               <> · {s.upcoming_job_count || 0} upcoming</>
             </p>
           </div>
-          <span className="text-xs text-ink-3 self-center">Manage →</span>
+
+          {/* Row actions — hover-reveal on desktop, always visible on touch so
+              they are reachable on a phone (the InvoiceRow pattern). Kept
+              opacity-only rather than conditional rendering: a cluster that
+              mounts on hover shifts the row's layout under the cursor.
+              `group-focus-within` is the keyboard equivalent of the hover, so
+              tabbing to an action reveals the cluster it is in.
+
+              `w-full sm:w-auto` is load-bearing, and rendering the page at
+              380px is what showed it: as an inline sibling the cluster took
+              ~210px from a ~360px row, squeezing the text column to about a
+              hundred — the title broke across three lines and the rule summary
+              became a vertical ribbon. On a phone it gets its own line. */}
+          {/* The propagation stop is on the two BUTTONS, not on this wrapper.
+              It was on the wrapper, and that made the chevron — and the
+              whitespace around it — a dead click: the card's own handler was
+              blocked and the chevron has none of its own, so the one spot
+              that used to say "Manage →" became the one spot that did nothing
+              (codex P2 on #1161). Everything in here that is not a button now
+              falls through to the row.
+
+              `pointer-fine:`, not `sm:`, and that distinction is load-bearing
+              under Tailwind v4 (the repo is on v4 — CLAUDE.md still says 3).
+              v4 gates the `hover:` variant behind `@media (hover: hover)` by
+              default, so on a touch tablet at 768px `sm:opacity-0` hid these
+              and `group-hover` could never bring them back: permanently
+              invisible controls on a row whose tap opens the detail page
+              instead. Visibility is a POINTER question, not a width one.
+              The `w-full sm:w-auto` above stays on `sm:`, because where the
+              cluster sits IS a width question. */}
+          <div className="flex items-center gap-1 w-full sm:w-auto justify-end self-center shrink-0 opacity-100 pointer-fine:opacity-0 pointer-fine:group-hover:opacity-100 pointer-fine:group-focus-within:opacity-100 transition-opacity">
+            {canTogglePause && (
+              // `aria-disabled` rather than `disabled`, and the busy check is
+              // inside the handler. A DISABLED button runs no React onClick,
+              // so its stopPropagation never fires, and whether a click on its
+              // child icon then reaches the card is a per-engine question.
+              // Measured in Chromium: it does not — the click is swallowed.
+              // But WebKit could not be measured from here, and "depends on
+              // the browser" is a poor thing to leave under a control whose
+              // misfire opens a different screen mid-action. This way the
+              // handler always runs, so the stop always happens, and the
+              // button keeps focus instead of having it dropped the moment it
+              // goes busy.
+              <button
+                onClick={(e) => { e.stopPropagation(); if (busy) return; onTogglePause?.(s) }}
+                aria-disabled={busy || undefined}
+                title={s.active ? 'Pause this series — no new visits are generated' : 'Resume generating visits'}
+                className={`flex items-center gap-1 text-[11px] px-2.5 py-2 sm:px-2 sm:py-1 rounded-md bg-bg text-ink-3 hover:bg-bg-2 hover:text-ink transition-colors ${busy ? 'opacity-50' : ''}`}
+              >
+                {s.active
+                  ? <><Pause className="w-3 h-3" /> Pause</>
+                  : <><Play className="w-3 h-3" /> Resume</>}
+              </button>
+            )}
+            <button
+              onClick={(e) => { e.stopPropagation(); onEdit?.(s) }}
+              title="Edit the rule for future visits"
+              className="flex items-center gap-1 text-[11px] px-2.5 py-2 sm:px-2 sm:py-1 rounded-md bg-bg text-ink-3 hover:bg-bg-2 hover:text-ink transition-colors"
+            >
+              {/* "Edit", not "Edit rule". Rendering the before/after at 940px
+                  showed the cluster taking enough width to wrap the rule
+                  summary onto a second line on every row — a density cost paid
+                  by the whole list to label one button more fully. The pencil
+                  and the tooltip carry the rest. */}
+              <Pencil className="w-3 h-3" /> Edit
+            </button>
+            {/* Was the words "Manage →", which were the row's only affordance
+                back when the whole card was one button. With two real actions
+                beside it the label was ~70px of a cramped row spent saying
+                what the card already does, so it is the chevron InvoiceRow
+                uses. */}
+            <ChevronRight className="w-3.5 h-3.5 text-ink-3 ml-1 shrink-0" aria-hidden="true" />
+          </div>
         </div>
-      </button>
+      </div>
     </li>
   )
 }
