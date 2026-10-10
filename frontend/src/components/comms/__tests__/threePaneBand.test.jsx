@@ -166,6 +166,34 @@ describe('the open flag and the mobile pane move together', () => {
       .not.toMatch(/setShowContactPanel=\{setShowContactPanel\}/)
   })
 
+  it('closes the panel when a reminder sends the operator back to the thread', () => {
+    // The per-appointment bell lives INSIDE ContactPanel, so on a phone
+    // fillReply fires while the customer pane is the pane on screen. Leaving
+    // the flag set hid the pane but left the header reading "Hide customer
+    // details" — the next tap spent itself clearing a stale flag, so reopening
+    // took two taps. Coupling the flag to mobileView is what created this, so
+    // the pin belongs with the coupling.
+    const fill = commsSrc.slice(commsSrc.indexOf('const fillReply = useCallback'))
+      .slice(0, 300)
+    expect(fill).toMatch(/setShowContactPanel\(false\)/)
+    expect(fill).toMatch(/setMobileView\('thread'\)/)
+  })
+
+  it('leaves the other thread transitions alone', () => {
+    // Reachability, not taste: selectConversation needs a list row,
+    // ComposeModal needs the composer, and the ?conversation= effect needs a
+    // fresh navigation — none is reachable while the customer pane covers a
+    // phone screen. Clearing the flag in selectConversation would close the
+    // customer COLUMN at shell:+ on every conversation pick, which is a
+    // regression dressed as a fix. Pinned so the next reader doesn't "finish
+    // the job".
+    const sel = commsSrc.slice(commsSrc.indexOf('const selectConversation'))
+      .slice(0, 200)
+    expect(sel).toMatch(/setMobileView\('thread'\)/)
+    expect(sel, 'picking a conversation now closes the customer column at shell:+')
+      .not.toMatch(/setShowContactPanel/)
+  })
+
   it('tells assistive tech whether the column is already showing', () => {
     const onToggle = vi.fn()
     const detail = { id: 1, channel: 'sms', status: 'open', external_contact: '+12075551212' }

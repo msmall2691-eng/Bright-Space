@@ -258,10 +258,31 @@ export default function Comms() {
   // Load a ready-to-send message into the composer (replacing any draft) and
   // make sure it's visible: reply mode on, thread pane up on mobile. Powers
   // the appointment-aware quick-replies and the per-appointment "remind" bell.
+  //
+  // Closing the customer panel is part of "make it visible", and it is the one
+  // setMobileView('thread') site that needs to be: the per-appointment bell
+  // lives INSIDE ContactPanel, so on a phone this fires while the customer
+  // pane is the pane on screen. Leaving the flag set hid the pane but left the
+  // header reading "Hide customer details", so the next tap spent itself
+  // clearing a stale flag and the operator had to tap twice to reopen (codex
+  // P2 on #1152 — my own change created it by coupling the flag to mobileView).
+  //
+  // The other three sites do NOT need it, and the reasoning is reachability
+  // rather than taste: selectConversation needs a list row, ComposeModal needs
+  // the composer, and the ?conversation= effect needs a fresh navigation —
+  // none of those is reachable while the customer pane covers a phone screen.
+  // Clearing the flag there would instead close the customer COLUMN at shell:+
+  // every time a conversation is picked, which is a regression, not a fix.
+  //
+  // At shell:+ this closes the column too, which is a deliberate trade: the
+  // alternative is reading the viewport width in an event handler, and one
+  // honest source of truth for "is the panel open" is worth more than keeping
+  // the column up after you've taken what you needed from it.
   const fillReply = useCallback((text) => {
     if (!text) return
     setNoteMode(false)
     setReply(text)
+    setShowContactPanel(false)
     setMobileView('thread')
   }, [])
 
