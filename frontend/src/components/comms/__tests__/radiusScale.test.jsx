@@ -61,12 +61,49 @@ const prose = (file) => readFileSync(file, 'utf8')
   .replace(/\/\*[\s\S]*?\*\//g, ' ')
   .replace(/^\s*\/\/.*$/gm, ' ')
 
-const SURFACE = [
+const OWNED = [
   ['Comms.jsx', PAGE],
   ...readdirSync(COMMS)
     .filter(n => /\.jsx$/.test(n))
     .map(n => [n, join(COMMS, n)]),
 ]
+
+/** Components from OUTSIDE comms/ that the Messages surface renders.
+ *
+ *  The first version of this guard scanned only the files above and claimed to
+ *  check "the Messages surface". It did not: `ComposeModal` renders the shared
+ *  `ui/Modal`, whose dialog panel was `rounded-2xl`, so opening New Message put
+ *  a non-bubble container with the bubble radius on screen and the guard passed
+ *  (codex P2 on #1159). A guard that measures the files you happened to list
+ *  rather than the surface the operator sees is the same overclaim as the
+ *  ContactPanel comment on #1156 — right about its own file, wrong about the
+ *  thing it named.
+ *
+ *  Resolved from the import statements rather than hard-coded, so a NEW shared
+ *  dependency with an off-scale radius is caught instead of quietly skipped.
+ *  One level deep: these three are what Messages actually mounts, and chasing
+ *  the full transitive graph would pull in half the app for no added truth. */
+function sharedDeps() {
+  const out = new Map()
+  for (const [, file] of OWNED) {
+    const dir = dirname(file)
+    for (const m of prose(file).matchAll(/^import\s+[^'"]*from\s+'(\.[^']+)'/gm)) {
+      const spec = m[1]
+      if (/\/comms\/|^\.\/|\/api$|\/utils\/|\/theme\/|\/hooks\//.test(spec)) continue
+      for (const ext of ['.jsx', '/index.jsx']) {
+        const resolved = join(dir, spec + ext)
+        try {
+          readFileSync(resolved)
+          out.set(spec.split('/').pop() + '.jsx', resolved)
+          break
+        } catch { /* not a jsx module — a .js helper or a package */ }
+      }
+    }
+  }
+  return [...out.entries()]
+}
+
+const SURFACE = [...OWNED, ...sharedDeps()]
 
 /** Every `rounded*` class token in a file, with comments removed. */
 const radiiOf = (file) => prose(file).match(/\brounded(?:-[a-z0-9]+)*\b/g) || []
@@ -148,5 +185,17 @@ describe('the Messages surface holds one radius scale', () => {
     expect(SURFACE.length).toBeGreaterThan(15)
     const total = SURFACE.reduce((n, [, f]) => n + radiiOf(f).length, 0)
     expect(total).toBeGreaterThan(80)
+  })
+
+  it('reaches past comms/ into the components Messages mounts', () => {
+    // The specific gap codex found. If the import resolution silently stops
+    // working — a renamed path, a changed import style — the scale assertions
+    // above go back to covering only comms-owned files while still claiming
+    // the surface, which is the failure this whole block exists to prevent.
+    const names = sharedDeps().map(([n]) => n)
+    expect(names, 'shared dependency resolution found nothing').not.toEqual([])
+    expect(names, 'ui/Modal is the one that was actually violating; it must stay covered')
+      .toContain('Modal.jsx')
+    expect(names).toContain('AiInsight.jsx')
   })
 })

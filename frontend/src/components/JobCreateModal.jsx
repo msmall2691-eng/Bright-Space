@@ -741,7 +741,7 @@ export default function JobCreateModal({
       onClick={handleCancel}
     >
       <div
-        className="w-full sm:w-[420px] bg-panel rounded-t-2xl sm:rounded-2xl shadow-2xl flex flex-col max-h-[90dvh] sm:max-h-[95dvh]"
+        className="w-full sm:w-[420px] bg-panel rounded-t-lg sm:rounded-lg shadow-2xl flex flex-col max-h-[90dvh] sm:max-h-[95dvh]"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Mobile-only drag handle — signals dismissible bottom sheet. */}

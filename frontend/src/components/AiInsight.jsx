@@ -36,7 +36,7 @@ export default function AiInsight({ type, id, className = '' }) {
   if (failed && !loading) return null
 
   return (
-    <div className={`rounded-xl border border-hairline bg-panel px-3.5 py-3 ${className}`}>
+    <div className={`rounded-lg border border-hairline bg-panel px-3.5 py-3 ${className}`}>
       <div className="flex items-center gap-1.5 mb-1.5">
         <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-violet-500 dark:bg-violet-400" aria-hidden />
         <Sparkles className="w-3.5 h-3.5 text-ink-3" />
@@ -56,8 +56,8 @@ export default function AiInsight({ type, id, className = '' }) {
 
       {loading ? (
         <div className="space-y-1.5">
-          <div className="h-3 rounded bg-bg-2 animate-pulse w-11/12" />
-          <div className="h-3 rounded bg-bg-2 animate-pulse w-2/3" />
+          <div className="h-3 rounded-full bg-bg-2 animate-pulse w-11/12" />
+          <div className="h-3 rounded-full bg-bg-2 animate-pulse w-2/3" />
         </div>
       ) : data ? (
         <>
