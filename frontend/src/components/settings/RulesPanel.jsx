@@ -28,8 +28,9 @@
  * STR dial already used. A rule the deployment has switched off gets a plain
  * amber dot and a sentence — not a tinted banner.
  */
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { get, post } from '../../api'
+import { STATUS_DOT } from '../../theme/statusDots'
 
 const inputCls = 'w-24 rounded-md border border-hairline bg-bg px-2 py-1 text-sm text-ink outline-hidden focus:border-hairline-2'
 
@@ -56,7 +57,22 @@ function NumberField({ field, disabled, onCommit }) {
   // The catalogue is the source of truth: when a save comes back (or another
   // field's save refreshes the list), follow it rather than keeping a stale
   // local edit on screen.
-  useEffect(() => { setDraft(String(field.value)) }, [field.value])
+  //
+  // Only when it actually MOVES, though. This effect also runs on mount, where
+  // it re-writes the value useState just initialised the draft with — normally
+  // a no-op React bails out of, but not if the operator has typed in the
+  // meantime. A passive effect can flush after the first keystrokes land, and
+  // then it silently reverts them: the field shows the old number again and
+  // commit() reads draft === field.value and skips the save, so the edit
+  // vanishes with no request and no error. That is a real lost edit on a
+  // freshly-rendered panel, and it was also an intermittent failure in two of
+  // this component's tests (a typed value not surviving to blur).
+  const synced = useRef(field.value)
+  useEffect(() => {
+    if (synced.current === field.value) return
+    synced.current = field.value
+    setDraft(String(field.value))
+  }, [field.value])
 
   const commit = async () => {
     const n = parseInt(draft, 10)
@@ -175,7 +191,7 @@ export default function RulesPanel({ active = true, toast }) {
                 /* Dot + sentence, not a tinted warning bar. Her setting is
                    still hers; it just isn't running right now. */
                 <p className="mt-1.5 flex items-start gap-1.5 text-xs text-ink-2">
-                  <span className="mt-1 h-1.5 w-1.5 shrink-0 rounded-full bg-amber-500" aria-hidden="true" />
+                  <span className={`mt-1 h-1.5 w-1.5 shrink-0 rounded-full ${STATUS_DOT.attention}`} aria-hidden="true" />
                   <span>{rule.blocked_reason}</span>
                 </p>
               )}

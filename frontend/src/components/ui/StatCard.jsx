@@ -1,3 +1,4 @@
+import { STATUS_TEXT } from '../../theme/statusText'
 /**
  * StatCard — a single metric cell (label / value / sub).
  *
@@ -5,7 +6,7 @@
  * aware, optionally clickable. Group several in a grid for a metrics strip.
  *
  *   <StatCard label="Outstanding" value="$1,240" sub="3 invoices"
- *     accent="text-amber-600" onClick={…} />
+ *     accent={STATUS_TEXT.attention} onClick={…} />
  */
 export default function StatCard({
   label,

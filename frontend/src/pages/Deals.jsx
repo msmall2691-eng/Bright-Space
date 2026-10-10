@@ -37,17 +37,19 @@ import SavedViewsBar from '../components/SavedViewsBar'
 import { useDeals } from '../hooks/useDeals'
 import LaunchStepper from '../components/launch/LaunchStepper'
 import { QUOTE_STATUS_VARIANT } from '../components/quoting/constants'
+import { STATUS_DOT } from '../theme/statusDots'
+import { STATUS_TEXT } from '../theme/statusText'
 
 // The continuum, inbox-first. `inbox` is the derived lead phase; the rest are
 // real Opportunity stages a deal can be moved between. `accent` is the
 // board column's top border (kanban only); `dot` is used everywhere.
 const STAGES = [
   { key: 'inbox',     label: 'Inbox',     dot: 'bg-ink-3',                                       },
-  { key: 'new',       label: 'New',       dot: 'bg-amber-400',   accent: 'border-amber-400'      },
-  { key: 'qualified', label: 'Qualified', dot: 'bg-blue-400',    accent: 'border-blue-400'       },
+  { key: 'new',       label: 'New',       dot: STATUS_DOT.attention,   accent: 'border-amber-400'      },
+  { key: 'qualified', label: 'Qualified', dot: STATUS_DOT.info,    accent: 'border-blue-400'       },
   { key: 'quoted',    label: 'Quoted',    dot: 'bg-purple-400',  accent: 'border-purple-400'     },
-  { key: 'won',       label: 'Won',       dot: 'bg-emerald-400', accent: 'border-emerald-400'    },
-  { key: 'lost',      label: 'Lost',      dot: 'bg-red-400',     accent: 'border-red-400'        },
+  { key: 'won',       label: 'Won',       dot: STATUS_DOT.ok, accent: 'border-emerald-400'    },
+  { key: 'lost',      label: 'Lost',      dot: STATUS_DOT.problem,     accent: 'border-red-400'        },
 ]
 const STAGE_MAP = Object.fromEntries(STAGES.map((s, i) => [s.key, { ...s, order: i }]))
 const MOVE_STAGES = STAGES.filter(s => s.key !== 'inbox')  // an inbox lead is triaged, not "moved"
@@ -65,9 +67,9 @@ const ageLabel = (d) => {
 }
 
 const JOB_STATE_TONE = {
-  scheduled: 'text-blue-600 dark:text-blue-300',
+  scheduled: STATUS_TEXT.info,
   dispatched: 'text-violet-600 dark:text-violet-300',
-  done: 'text-emerald-600 dark:text-emerald-300',
+  done: STATUS_TEXT.ok,
 }
 
 function StageDot({ stage }) {

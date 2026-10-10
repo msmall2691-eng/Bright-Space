@@ -595,32 +595,37 @@ def my_day(
     }
 
 
-# A small library of professional cleaning tips shown on the crew home. Two
-# rotate in per day (deterministic by date, so it's stable within a day and
-# changes daily) — the owner's "little training pro tips that train quietly".
-# Plain text, phone-readable, no links; the Learn tab holds the office's own
-# longer-form docs.
+# The starter training deck shown on the crew home — the owner's "little
+# training pro tips that train quietly," written in HER voice so the home
+# sounds like Meg talking to the team, not a manual. Two rotate in per day
+# (deterministic by date — stable within a day, changes daily). Plain text,
+# phone-readable, no links; the Learn tab holds longer-form docs.
+#
+# BB-CREW-TIPS: this is the fallback deck. The moment the office publishes its
+# own "tip" CrewDocs (`_tip_deck`), those replace these entirely — so Meg can
+# edit, add to, or swap all of this from the Crew docs screen in her own words
+# without a code change. Keep ≥8 entries with unique titles (test_crew_tips.py).
 _PRO_TIPS = [
-    {"title": "Top to bottom, dry to wet",
-     "body": "Dust and cobwebs first, floors last — debris that falls lands on a surface you haven't cleaned yet. Dry-wipe (dust, crumbs) before you wet-clean."},
-    {"title": "Let the cleaner do the work",
-     "body": "Spray the toilet, tub, and any degreaser and give it 3–5 minutes while you do something else. Dwell time does the scrubbing for you."},
-    {"title": "Two cloths in every bathroom",
-     "body": "One cloth (or color) for the toilet, a different one for sinks and counters — never the same cloth. It's the #1 way germs travel."},
-    {"title": "Get 8 sides out of a microfiber",
-     "body": "Fold a microfiber into quarters — that's 8 clean faces. Flip to a fresh one when a side gets dirty instead of smearing what you picked up."},
-    {"title": "Glass without streaks",
-     "body": "Buff glass and mirrors dry in an S-pattern, and not in direct sun — sunlight dries the cleaner before you can wipe it, and that's what streaks."},
-    {"title": "Start the longest job first",
-     "body": "Walk into a room and start what takes longest (oven, shower, a soaking pan), then clean around it while it works. You finish as it finishes."},
-    {"title": "Once around, one direction",
-     "body": "Work one way around a room and don't backtrack — you'll never miss a wall or double-clean a counter, and you always know what's done."},
-    {"title": "High-touch points last",
-     "body": "Right before you leave, sanitize switches, handles, knobs, remotes, and faucets — the spots that actually spread germs and that customers notice."},
-    {"title": "Vacuum before you mop",
-     "body": "Always sweep or vacuum first — mopping over grit grinds it into the floor and just pushes dirt around in dirty water."},
-    {"title": "Make the bed like a listing photo",
-     "body": "Pull the sheets tight, corner the base, stand the pillows up front. It's the first thing a guest photographs and the first thing they judge."},
+    {"title": "Top to bottom, dry before wet",
+     "body": "Always start up high — dust, cobwebs, shelves — and finish on the floor. Whatever you knock loose lands on something you haven't cleaned yet. And dry first (dust, crumbs), wet after, so you're not chasing mud around the room."},
+    {"title": "Let the product do the scrubbing",
+     "body": "Spray the toilet, the tub, anything greasy, then walk away and start something else for a few minutes. The cleaner's working while you are — come back and it wipes right off. You'll scrub half as hard, I promise."},
+    {"title": "Never the same cloth in a bathroom",
+     "body": "One cloth for the toilet, a totally different one for the sink and counters. Never the same — this is the one I care about most. It's exactly how germs end up where they shouldn't, and nobody can see it happen."},
+    {"title": "Fold your microfiber in quarters",
+     "body": "Fold it twice and one cloth gives you 8 clean sides. When a face gets dirty, flip to a fresh one instead of smearing around what you just picked up. You'll use way fewer cloths and leave it cleaner."},
+    {"title": "Buff glass dry, out of the sun",
+     "body": "Wipe mirrors and glass dry in an S, and keep them out of direct sunlight — the sun dries your spray before you can buff it, and that's what leaves streaks. A quick dry pass at the end is what makes them disappear."},
+    {"title": "Start the long job first",
+     "body": "Walk in and kick off whatever takes longest — the oven, the shower, a pan that needs to soak — then clean around it while it does its thing. Nine times out of ten you'll walk out of the room right as it finishes."},
+    {"title": "One lap, one direction",
+     "body": "Pick a direction and work your way around the room without doubling back. You'll never miss a wall or wipe the same counter twice, and you can always see at a glance exactly what's done and what's left."},
+    {"title": "Touch points last, every single time",
+     "body": "Right before you leave, hit the light switches, handles, knobs, remotes and faucets. Those are the spots that actually spread germs — and the first thing a customer touches when they walk back in, so leave them perfect."},
+    {"title": "Vacuum before you mop — always",
+     "body": "Sweep or vacuum first, every time. Mopping over grit just grinds it into the floor and pushes dirty water around. Thirty seconds up front is the difference between a clean floor and a smeared one."},
+    {"title": "Make the bed like it's the photo",
+     "body": "Sheets pulled tight, corners tucked, pillows standing up front. It's the first thing a guest photographs and the first thing they judge — a sharp bed makes the whole room read clean before they've looked at anything else."},
 ]
 
 

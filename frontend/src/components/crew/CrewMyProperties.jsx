@@ -17,6 +17,7 @@
  */
 import { useCallback, useEffect, useState } from 'react'
 import { get } from '../../api'
+import { STATUS_DOT } from '../../theme/statusDots'
 
 const hhmm = (t) => (t ? String(t).slice(0, 5) : null)
 const money = (n) => (n == null ? null : `$${Number(n).toFixed(2)}`)
@@ -30,7 +31,7 @@ function dayLabel(iso) {
 function TurnoverRow({ t, prop, onOpenJob, onClaim }) {
   const mine = t.mine
   const asked = t.my_claim_request?.status === 'pending'
-  const dot = mine ? 'bg-emerald-500' : 'bg-amber-500'
+  const dot = mine ? STATUS_DOT.ok : STATUS_DOT.attention
   const word = mine ? 'Yours' : (t.claimable ? 'Offered to you' : 'Pending')
   const time = hhmm(t.start_time) && hhmm(t.end_time) ? `${hhmm(t.start_time)}–${hhmm(t.end_time)}` : ''
   const rate = money(mine ? t.agreed_rate ?? t.posted_rate : t.posted_rate)

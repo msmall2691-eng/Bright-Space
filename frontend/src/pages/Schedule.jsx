@@ -334,7 +334,13 @@ export default function Schedule() {
       const v = visits.find(x => x.id === visitId)
       const targetId = v?.job_id ?? visitId
       await patch(`/api/jobs/${targetId}`, { status: 'cancelled' })
-      await setVisits(visits.filter(x => x.id !== visitId))
+      // Functional, and not awaited: `visits` was captured at render, and the
+      // confirm above plus this PATCH put a user-paced gap before the write.
+      // Writing the snapshot back resurrected anything that changed meanwhile —
+      // the same staleness as the bulk-archive bug on Requests (#1111). The
+      // `await` was on a setter that returns undefined, which is what made the
+      // line look deliberate.
+      setVisits(prev => prev.filter(x => x.id !== visitId))
       setShowDetails(false)
     } catch (err) {
       toast.error('Error deleting visit: ' + err.message)
@@ -365,7 +371,8 @@ export default function Schedule() {
         checklist_results,
         photos,
       })
-      setVisits(visits.map(x => x.id === visitId
+      // Functional: the POST above is the gap. See handleDelete.
+      setVisits(prev => prev.map(x => x.id === visitId
         ? { ...x, status: 'completed', checklist_results, photos } : x))
       setCompletingVisit(null)
       setShowDetails(false)

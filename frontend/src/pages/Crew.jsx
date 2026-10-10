@@ -13,7 +13,8 @@
  */
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { HardHat, RefreshCw, UserPlus, Mail } from 'lucide-react'
-import { get, post, patch } from '../api'
+import { get, post, patch, invalidateCached } from '../api'
+import { ROSTER_CACHE_URL } from '../hooks/useEmployees'
 import { PageHeader, EmptyState, ErrorState, Skeleton, SubNav } from '../components/ui'
 import BenchRoster from '../components/crew/BenchRoster'
 import SubApplications from '../components/SubApplications'
@@ -24,6 +25,8 @@ import CrewDocsAdmin from '../components/crew/CrewDocsAdmin'
 import { CrewThreadPane } from '../components/comms/CrewThreadPane'
 import { MessageSquare, Sparkles, X } from 'lucide-react'
 import { Link } from 'react-router-dom'
+import { STATUS_DOT } from '../theme/statusDots'
+import { STATUS_TEXT } from '../theme/statusText'
 
 /** Office side of the cleaner↔office thread (crew app "message the office").
  *  One drawer per cleaner; replies push to their phone. The thread body is
@@ -69,9 +72,9 @@ const isEmail = (s) => /.+@.+\..+/.test(String(s || '').trim())
 // truth: a cleaner is "Active" once they've set a password (accepted the
 // invite), "Invited" until then, and "Disabled" if the account was shut off.
 function pill(row) {
-  if ((row.status || '') === 'disabled') return { label: 'Disabled', dot: 'bg-red-500' }
-  if (row.activated) return { label: 'Active', dot: 'bg-emerald-500' }
-  return { label: 'Invited', dot: 'bg-amber-500' }
+  if ((row.status || '') === 'disabled') return { label: 'Disabled', dot: STATUS_DOT.problem }
+  if (row.activated) return { label: 'Active', dot: STATUS_DOT.ok }
+  return { label: 'Invited', dot: STATUS_DOT.attention }
 }
 
 // "Add & send invite" (POST /api/crew), "Resend" (POST /crew/{id}/resend-invite),
@@ -129,6 +132,12 @@ export default function Crew() {
       setRows(rs => [row, ...rs])
       setFullName(''); setEmail(''); setCrewId('')
       reloadUnclaimed()  // if this named a scheduled crew ID, it's no longer unclaimed
+      // This page reads /api/crew/roster, but every ASSIGN drop-down reads the
+      // shared /api/dispatch/employees, memoised for two minutes by
+      // useEmployees. Without this the new cleaner is on screen here and
+      // missing from JobCreateModal, JobEditModal, CalendarView and the
+      // schedule for up to two minutes, with nothing saying why.
+      invalidateCached(ROSTER_CACHE_URL)
       pushToast(`Invite sent to ${row.email}`, 'success')
     } catch (err) {
       pushToast(err?.message || 'Could not add that cleaner.', 'error')
@@ -144,6 +153,14 @@ export default function Crew() {
       await patch(`/api/auth/users/${id}`, patchObj)
       setRows(rs => rs.map(r => (r.id === id ? { ...r, ...patchObj } : r)))
       if ('cleaner_id' in patchObj) reloadUnclaimed()
+      // Unconditional rather than a field whitelist. A rename changes the name
+      // every drop-down shows, and a crew-ID edit changes MEMBERSHIP outright:
+      // /api/dispatch/employees is keyed on cleaner_id and omits rows without
+      // one, so clearing it removes that person from every assignment UI. A
+      // whitelist here would be one more thing to keep in step with the
+      // backend's shape; an occasional extra roster fetch after a pay-rate
+      // edit costs one small request on an admin-only screen.
+      invalidateCached(ROSTER_CACHE_URL)
     } catch (err) {
       pushToast(err?.message || 'Could not save that change.', 'error')
       load()  // resync from the server so the input doesn't show a value that didn't stick
@@ -212,7 +229,7 @@ export default function Crew() {
         {!loading && unclaimed.length > 0 && (
           <div className="bg-panel border border-hairline rounded-lg p-4">
             <div className="flex items-center gap-2 font-semibold text-sm text-ink mb-1">
-              <span className="h-1.5 w-1.5 rounded-full bg-amber-500 shrink-0" aria-hidden="true" />
+              <span className={`h-1.5 w-1.5 rounded-full ${STATUS_DOT.attention} shrink-0`} aria-hidden="true" />
               Crew IDs on the schedule with no login yet
             </div>
             <p className="text-[13px] text-ink-2 mb-3">
@@ -411,7 +428,7 @@ export default function Crew() {
                 className="mt-0.5 w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-hidden focus:ring-2 focus:ring-indigo-500" />
             </label>
             <label className="block">
-              <span className="text-[11px] text-ink-3">Email <span className="text-red-500">*</span></span>
+              <span className="text-[11px] text-ink-3">Email <span className={STATUS_TEXT.problem}>*</span></span>
               <input type="email" value={email} onChange={e => setEmail(e.target.value)}
                 placeholder="cleaner@email.com" disabled={adding}
                 className="mt-0.5 w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-hidden focus:ring-2 focus:ring-indigo-500" />

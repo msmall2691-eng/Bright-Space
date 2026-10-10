@@ -11,6 +11,7 @@
  */
 import { useEffect, useState } from 'react'
 import { get } from '../../api'
+import { STATUS_DOT } from '../../theme/statusDots'
 
 const money = (n) => `$${Number(n || 0).toFixed(2)}`
 
@@ -19,7 +20,7 @@ const money = (n) => `$${Number(n || 0).toFixed(2)}`
 const STATUS = {
   due:  { dot: 'bg-ink-3',        word: 'Recorded' },
   sent: { dot: 'bg-indigo-500',   word: 'Sent' },
-  paid: { dot: 'bg-emerald-500',  word: 'Paid' },
+  paid: { dot: STATUS_DOT.ok,  word: 'Paid' },
 }
 
 export default function CrewEarnings({ previewUserId = null }) {

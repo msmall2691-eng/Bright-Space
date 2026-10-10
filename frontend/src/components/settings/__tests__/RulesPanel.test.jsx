@@ -19,6 +19,9 @@
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { render, screen, cleanup, fireEvent, waitFor, within } from '@testing-library/react'
+import { readFileSync } from 'node:fs'
+import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 
 vi.mock('../../../api', () => ({ get: vi.fn(), post: vi.fn() }))
 
@@ -172,6 +175,13 @@ it('shows what came back, not what it sent', async () => {
   })
   fireEvent.change(field, { target: { value: '48' } })
   fireEvent.blur(field)
+  // Wait for the save itself before asserting what replaced it. If the draft
+  // ever stops surviving to blur again, commit() skips the save silently and
+  // this fails here, naming the missing request — rather than timing out a
+  // second later on "expected '24' to be '12'", which is what the lost-edit
+  // race in NumberField actually looked like.
+  await waitFor(() => expect(post).toHaveBeenCalledWith(
+    '/api/settings/rules', { settings: { job_sms_reminder_lead_hours: 48 } }))
   await waitFor(() => expect(
     screen.getByLabelText('How far ahead').value).toBe('12'))
 })
@@ -213,4 +223,47 @@ it('says nothing changed when the rules cannot be loaded', async () => {
 it('does not fetch until the panel is actually shown', () => {
   render(<RulesPanel active={false} toast={vi.fn()} />)
   expect(get).not.toHaveBeenCalled()
+})
+
+// ── the lost-edit guard ─────────────────────────────────────────────────────
+
+/**
+ * `NumberField`'s catalogue-sync effect must not fire on mount.
+ *
+ * This one is asserted over the SOURCE, and the reason is worth stating
+ * because the obvious objection is right: a behaviour test would be better.
+ * There isn't one available. The bug is an ordering race — the effect flushes
+ * after paint and re-writes the draft that `useState` had already initialised
+ * to the same value, which is a no-op React bails out of UNLESS the operator
+ * typed in the gap. Reproducing it needs keystrokes to land between the render
+ * commit and the effect flush, and `render()` in testing-library flushes
+ * effects inside `act()`, so by the time a test can type, the mount effect has
+ * already run. It showed up only as an intermittent failure in the two tests
+ * above ("a typed value not surviving to blur"), which is exactly the kind of
+ * flake that gets re-run rather than diagnosed.
+ *
+ * So the fix — comparing against a ref before calling `setDraft` — had no test
+ * that failed without it. Verified: reverting it leaves all twelve behaviour
+ * tests green. An unpinned fix is a fix someone deletes while tidying, and
+ * what it prevents is a silent one: the field reverts, `commit()` sees
+ * `draft === field.value`, and the save is skipped with no request and no
+ * error, so the operator's number is simply gone.
+ *
+ * Reading the source is the weaker check but it is the one that fails loudly.
+ * It deliberately does not pin HOW the guard is written, only that the effect
+ * does not call `setDraft` unconditionally.
+ */
+it('guards the catalogue-sync effect so a mount flush cannot revert typing', () => {
+  const src = readFileSync(
+    join(dirname(fileURLToPath(import.meta.url)), '..', 'RulesPanel.jsx'), 'utf8')
+
+  // The exact unguarded form this replaced, which is the thing to keep out.
+  expect(src, 'the sync effect is unconditional again — a mount flush can revert a typed draft')
+    .not.toMatch(/useEffect\(\(\)\s*=>\s*\{\s*setDraft\(String\(field\.value\)\)\s*\}\s*,\s*\[field\.value\]\)/)
+
+  // And positively: the effect body compares before it writes.
+  const effect = src.match(/useEffect\(\(\)\s*=>\s*\{[\s\S]*?\}\s*,\s*\[field\.value\]\)/)
+  expect(effect, 'no field.value effect found at all — this guard has lost its target').toBeTruthy()
+  expect(effect[0], 'the field.value effect writes setDraft without comparing first')
+    .toMatch(/if\s*\([^)]*field\.value\)\s*return/)
 })

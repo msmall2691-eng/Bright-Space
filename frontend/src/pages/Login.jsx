@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Mail, Lock, AlertCircle, Zap, Loader, Eye, EyeOff } from 'lucide-react'
 import { post, get, setJWT } from '../api'
+import { STATUS_TEXT, STATUS_ICON } from '../theme/statusText'
 
 export default function Login({ onLoginSuccess }) {
   const navigate = useNavigate()
@@ -155,8 +156,8 @@ export default function Login({ onLoginSuccess }) {
           {/* Session-timeout notice — friendlier than the gateway error it replaces */}
           {sessionExpired && !error && (
             <div className="mb-6 p-4 rounded-lg bg-amber-50 border border-amber-200 flex items-start gap-3">
-              <AlertCircle className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
-              <p className="text-sm text-amber-700 font-medium">Your session timed out. Sign back in and we’ll restore anything you were working on.</p>
+              <AlertCircle className={`w-5 h-5 ${STATUS_ICON.attention} shrink-0 mt-0.5`} />
+              <p className={`text-sm ${STATUS_TEXT.attention} font-medium`}>Your session timed out. Sign back in and we’ll restore anything you were working on.</p>
             </div>
           )}
 

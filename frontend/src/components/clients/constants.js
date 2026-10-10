@@ -1,8 +1,9 @@
 /** Status dot color shared by the row chip + the inline select — status
  *  hue lives in the small dot over a quiet chip body (no tinted pills). */
+import { STATUS_DOT } from '../../theme/statusDots'
 export const STATUS_COLORS = {
-  lead:     'bg-amber-500',
-  active:   'bg-emerald-500',
+  lead:     STATUS_DOT.attention,
+  active:   STATUS_DOT.ok,
   inactive: 'bg-ink-3',
 }
 

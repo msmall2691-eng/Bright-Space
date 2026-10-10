@@ -1,6 +1,8 @@
 import { useState, useRef, useEffect } from 'react'
 import { Plus, MoreHorizontal, Star, Trash2 } from 'lucide-react'
 import { useSavedViews } from '../hooks/useSavedViews'
+import { STATUS_DOT } from '../theme/statusDots'
+import { STATUS_TEXT } from '../theme/statusText'
 
 /**
  * Deep, key-order-insensitive equality for saved-view config blobs.
@@ -113,7 +115,7 @@ export default function SavedViewsBar({ entityType, currentConfig, onApply, defa
                 className={`${tabBase} ${isActive ? tabActive : tabIdle} ${isActive ? 'mr-0.5' : ''}`}>
                 <span className="max-w-[180px] truncate inline-block align-middle">{v.name}</span>
                 {isActive && dirty && (
-                  <span className="ml-1.5 inline-block w-1.5 h-1.5 rounded-full bg-blue-500 align-middle" title="Unsaved changes" />
+                  <span className={`ml-1.5 inline-block w-1.5 h-1.5 rounded-full ${STATUS_DOT.info} align-middle`} title="Unsaved changes" />
                 )}
               </button>
               {/* Per-view management, only on the active tab */}
@@ -131,7 +133,7 @@ export default function SavedViewsBar({ entityType, currentConfig, onApply, defa
         {/* Push the drifted filters into the active view */}
         {active && dirty && (
           <button type="button" onClick={() => updateView(active.id, { config: currentConfig })}
-            className="h-8 min-h-0 px-1 mx-2 text-[12px] font-medium text-blue-600 hover:text-blue-700 whitespace-nowrap shrink-0">
+            className={`h-8 min-h-0 px-1 mx-2 text-[12px] font-medium ${STATUS_TEXT.info} hover:text-blue-800 whitespace-nowrap shrink-0`}>
             Update “{active.name}”
           </button>
         )}
@@ -167,7 +169,7 @@ export default function SavedViewsBar({ entityType, currentConfig, onApply, defa
           </button>
           <button type="button" role="menuitem"
             onClick={() => { deleteView(active.id); setActiveId(null); setMenuOpen(false) }}
-            className="w-full text-left px-3 py-1.5 text-[12px] text-red-600 hover:bg-bg-2 flex items-center gap-2">
+            className={`w-full text-left px-3 py-1.5 text-[12px] ${STATUS_TEXT.problem} hover:bg-bg-2 flex items-center gap-2`}>
             <Trash2 className="w-3.5 h-3.5" /> Delete view
           </button>
         </div>

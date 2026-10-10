@@ -10,6 +10,9 @@ import { renderHook, cleanup, act } from '@testing-library/react'
 vi.mock('../../api', () => ({
   get: vi.fn(),
   getCached: vi.fn(async () => []),
+  // useEmployees subscribes to roster invalidations; the real one returns an
+  // unsubscribe, so the mock must too or the effect cleanup throws.
+  onCacheInvalidated: vi.fn(() => () => {}),
 }))
 
 import { get } from '../../api'

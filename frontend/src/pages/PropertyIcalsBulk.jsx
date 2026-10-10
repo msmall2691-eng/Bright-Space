@@ -5,6 +5,8 @@ import { get, post, del } from '../api'
 import { toast } from '../utils/toastBus'
 import { confirmDialog } from '../utils/confirmBus'
 import { isStaleSync, relTimeAgo } from '../components/properties/utils'
+import { STATUS_DOT } from '../theme/statusDots'
+import { STATUS_TEXT } from '../theme/statusText'
 
 const SOURCES = [
   { value: 'airbnb',     label: 'Airbnb',      pattern: /airbnb\.com/i },
@@ -60,7 +62,13 @@ export default function PropertyIcalsBulk() {
   const load = async () => {
     setLoading(true)
     try {
-      const p = await get(`/api/properties/${propertyId}`)
+      // BB-SEC-13: the narrow feed payload, not `GET /api/properties/{id}`.
+      // That route returns the full property dict — house_code, access_notes,
+      // wifi_password — and its own BB-SEC-11 comment says so; this screen
+      // renders seven fields and none of them. Office-only either way, so it
+      // was never a BB-SEC-08..12 violation; it just put a door code on the
+      // wire every time anyone opened a feed screen.
+      const p = await get(`/api/properties/${propertyId}/icals`)
       setProperty(p)
     } catch (e) {
       console.error('[PropertyIcalsBulk load]', e)
@@ -238,7 +246,7 @@ export default function PropertyIcalsBulk() {
             </p>
             {!isStr && (
               <p className="flex items-center gap-1.5 text-xs text-ink-2 bg-panel border border-hairline rounded-md px-2 py-1 mt-2">
-                <span className="w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0" aria-hidden="true" />
+                <span className={`w-1.5 h-1.5 rounded-full ${STATUS_DOT.attention} shrink-0`} aria-hidden="true" />
                 Note: this property's type is <strong>{property.property_type}</strong> — iCal feeds only auto-create turnovers on STR properties.
               </p>
             )}
@@ -267,7 +275,7 @@ export default function PropertyIcalsBulk() {
         </div>
         {syncResult && (
           <div className="mt-3 flex items-start gap-2 rounded-lg p-2.5 text-xs bg-panel border border-hairline text-ink-2">
-            <span className={`w-1.5 h-1.5 mt-1 rounded-full shrink-0 ${syncResult.ok ? 'bg-emerald-500' : 'bg-red-500'}`} aria-hidden="true" />
+            <span className={`w-1.5 h-1.5 mt-1 rounded-full shrink-0 ${syncResult.ok ? STATUS_DOT.ok : STATUS_DOT.problem}`} aria-hidden="true" />
             <span className="flex-1">{syncResult.message}</span>
             <button onClick={() => setSyncResult(null)} className="opacity-60 hover:opacity-100"><X className="w-3 h-3" /></button>
           </div>
@@ -278,11 +286,11 @@ export default function PropertyIcalsBulk() {
               <span className="font-semibold text-ink">Feed diagnosis {diag.today ? `(today ${diag.today})` : ''}</span>
               <button onClick={() => setDiag(null)} className="opacity-60 hover:opacity-100"><X className="w-3 h-3" /></button>
             </div>
-            {diag.error && <div className="text-red-600">{diag.error}</div>}
+            {diag.error && <div className={STATUS_TEXT.problem}>{diag.error}</div>}
             {(diag.feeds || []).map((f, i) => (
               <div key={i} className="mb-3 last:mb-0">
                 <div className="text-[11px] font-medium text-ink-2 mb-1">{f.source} feed</div>
-                {f.error && <div className="text-red-600">{f.error}</div>}
+                {f.error && <div className={STATUS_TEXT.problem}>{f.error}</div>}
                 {!f.error && (f.events || []).length === 0 && <div className="text-ink-3">No bookings in feed.</div>}
                 {(f.events || []).map((e, j) => {
                   const d = e.decision || ''
@@ -290,7 +298,7 @@ export default function PropertyIcalsBulk() {
                   // fix the sync will apply; grey = intentionally not cleaned.
                   const willHave = d.includes('exists') || d.includes('completed') || d.includes('✓')
                   const willFix = d.includes('will recreate') || d.includes('will fix') || d.includes('would create')
-                  const cls = willHave ? 'text-emerald-600' : willFix ? 'text-amber-600' : 'text-ink-3'
+                  const cls = willHave ? STATUS_TEXT.ok : willFix ? STATUS_TEXT.attention : 'text-ink-3'
                   return (
                     <div key={j} className="flex items-center justify-between gap-2 py-1 border-b border-hairline/60 last:border-0">
                       <span className="text-ink-2 truncate">{e.checkout || '—'} · {e.summary || '(no title)'}</span>
@@ -325,14 +333,14 @@ export default function PropertyIcalsBulk() {
                             Failed / Stale (no clean sync in 24h+) / Synced Xh
                             ago / Never synced — words, never color alone. */}
                         {(ical.last_sync_status === 'failed' || ical.last_sync_status === 'retrying') ? (
-                          <span className="inline-flex items-center gap-1.5 text-[11px] font-medium text-red-600" title={ical.last_sync_error || ''}>
-                            <span className="w-1.5 h-1.5 rounded-full bg-red-500 shrink-0" aria-hidden="true" /> Failed {relTimeAgo(ical.last_synced_at) || ''}
+                          <span className={`inline-flex items-center gap-1.5 text-[11px] font-medium ${STATUS_TEXT.problem}`} title={ical.last_sync_error || ''}>
+                            <span className={`w-1.5 h-1.5 rounded-full ${STATUS_DOT.problem} shrink-0`} aria-hidden="true" /> Failed {relTimeAgo(ical.last_synced_at) || ''}
                           </span>
                         ) : ical.last_synced_at ? (
                           isStaleSync(ical.last_synced_at) ? (
-                            <span className="inline-flex items-center gap-1.5 text-[11px] font-medium text-amber-700"
+                            <span className={`inline-flex items-center gap-1.5 text-[11px] font-medium ${STATUS_TEXT.attention}`}
                               title="No clean sync in 24h+ — check this feed">
-                              <span className="w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0" aria-hidden="true" /> Stale · synced {relTimeAgo(ical.last_synced_at)}
+                              <span className={`w-1.5 h-1.5 rounded-full ${STATUS_DOT.attention} shrink-0`} aria-hidden="true" /> Stale · synced {relTimeAgo(ical.last_synced_at)}
                             </span>
                           ) : (
                             <span className="inline-flex items-center gap-1.5 text-[11px] font-medium text-ink-3">
@@ -348,7 +356,7 @@ export default function PropertyIcalsBulk() {
                       <div className="text-[11px] font-mono text-ink-3 break-all">{ical.url}</div>
                       {ical.last_sync_error && (
                         <div className="flex items-start gap-1.5 mt-1 text-[11px] text-ink-2 bg-panel border border-hairline rounded p-1.5 font-mono break-all">
-                          <span className="w-1.5 h-1.5 mt-0.5 rounded-full bg-red-500 shrink-0" aria-hidden="true" />
+                          <span className={`w-1.5 h-1.5 mt-0.5 rounded-full ${STATUS_DOT.problem} shrink-0`} aria-hidden="true" />
                           {String(ical.last_sync_error).slice(0, 200)}
                         </div>
                       )}
@@ -430,8 +438,8 @@ export default function PropertyIcalsBulk() {
                       <span className="text-[10px] font-semibold text-ink-3 bg-bg-2 px-1.5 py-0.5 rounded">Already on this property</span>
                     )}
                     {!row.valid && (
-                      <span className="inline-flex items-center gap-1.5 text-[10px] font-semibold text-red-600">
-                        <span className="w-1.5 h-1.5 rounded-full bg-red-500 shrink-0" aria-hidden="true" /> Not a valid URL
+                      <span className={`inline-flex items-center gap-1.5 text-[10px] font-semibold ${STATUS_TEXT.problem}`}>
+                        <span className={`w-1.5 h-1.5 rounded-full ${STATUS_DOT.problem} shrink-0`} aria-hidden="true" /> Not a valid URL
                       </span>
                     )}
                   </div>
@@ -460,7 +468,7 @@ export default function PropertyIcalsBulk() {
             <ul className="mt-3 space-y-1.5">
               {addResults.map((r, i) => (
                 <li key={i} className="flex items-start gap-2 text-xs rounded-md px-2.5 py-1.5 border border-hairline bg-panel text-ink-2">
-                  <span className={`w-1.5 h-1.5 mt-1 rounded-full shrink-0 ${r.ok ? 'bg-emerald-500' : 'bg-red-500'}`} aria-hidden="true" />
+                  <span className={`w-1.5 h-1.5 mt-1 rounded-full shrink-0 ${r.ok ? STATUS_DOT.ok : STATUS_DOT.problem}`} aria-hidden="true" />
                   <span className="font-mono break-all flex-1">{r.url}</span>
                   {!r.ok && <span className="shrink-0">{r.error}</span>}
                 </li>

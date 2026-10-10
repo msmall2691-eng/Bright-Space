@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { X, Send, Mail, MessageSquare, Eye, ChevronDown, AlertCircle } from 'lucide-react'
+import { STATUS_TEXT } from '../../theme/statusText'
 
 // US-phone helpers. Twilio silently rejects anything that isn't a valid
 // E.164 number; catching that upfront (instead of after "Sending…") keeps
@@ -162,7 +163,7 @@ export default function SendQuotePanel({
                     : 'border-hairline focus:border-blue-400'
                 }`} />
               {hasDigits && !phoneOk && (
-                <p className="mt-1 flex items-center gap-1 text-[11px] text-red-500">
+                <p className={`mt-1 flex items-center gap-1 text-[11px] ${STATUS_TEXT.problem}`}>
                   <AlertCircle className="w-3 h-3 shrink-0" />
                   Enter a valid 10-digit US number
                 </p>
@@ -190,7 +191,7 @@ export default function SendQuotePanel({
         {(sendForm.channel === 'email' || sendForm.channel === 'both') && (
           <div className="bg-blue-900/20 border border-blue-800/40 rounded-lg p-3">
             <div className="text-xs text-blue-300 font-medium mb-1">Email includes:</div>
-            <ul className="text-xs text-blue-400 space-y-0.5">
+            <ul className={`text-xs ${STATUS_TEXT.info} space-y-0.5`}>
               <li>• Quote title, your message, and all line items with totals</li>
               <li>• Accept / request-changes link to the online quote</li>
               <li>• Valid-until date (only when the quote has one)</li>

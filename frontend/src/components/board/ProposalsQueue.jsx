@@ -35,6 +35,7 @@ import { Loader2 } from 'lucide-react'
 import { get, patch, post } from '../../api'
 import { pushToast } from '../../utils/toastBus'
 import { todayYMD } from '../../utils/format'
+import { STATUS_TEXT } from '../../theme/statusText'
 
 const DRAFT_RUN_KEY = 'brightbase_autopilot_drafts_run'
 const DRAFT_URL = '/api/ai/autopilot/draft-followups'
@@ -93,14 +94,14 @@ function ProposalRow({ p, busy, error, onApprove, onDismiss }) {
           <p className="mt-0.5 text-[13px] font-semibold leading-snug text-ink">{p.title}</p>
           {p.detail && <p className="mt-0.5 text-[13px] leading-snug text-ink-2">{p.detail}</p>}
           {error && (
-            <p className="mt-1 text-[12px] font-medium text-rose-600 dark:text-rose-400">Failed: {error}</p>
+            <p className={`mt-1 text-[12px] font-medium ${STATUS_TEXT.problem}`}>Failed: {error}</p>
           )}
         </div>
         <div className="ml-auto flex shrink-0 items-center gap-1.5 pt-0.5">
           {error ? (
             /* Execution failed — the human should read the error, not retry
                blindly. The row stays; the primary is replaced by a dead label. */
-            <span className="inline-flex h-8 items-center rounded-md px-2.5 text-xs font-medium text-rose-600 opacity-60 dark:text-rose-400">
+            <span className={`inline-flex h-8 items-center rounded-md px-2.5 text-xs font-medium ${STATUS_TEXT.problem} opacity-60`}>
               Failed
             </span>
           ) : (

@@ -5,6 +5,8 @@ import { Avatar } from '../comms/primitives'
 import { relTime } from '../comms/utils'
 import { CrewThreadPane } from '../comms/CrewThreadPane'
 import { BroadcastModal } from '../comms/CrewInbox'
+import { STATUS_DOT } from '../../theme/statusDots'
+import { STATUS_TEXT } from '../../theme/statusText'
 
 /**
  * Crew comms rail on Home — the one NEW fetch on this page.
@@ -76,7 +78,7 @@ export default function CrewBox({ navigate }) {
         </div>
       ) : !anyActivity ? (
         <div className="flex items-center gap-2.5 px-3.5 py-3.5">
-          <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-emerald-500" aria-hidden="true" />
+          <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${STATUS_DOT.ok}`} aria-hidden="true" />
           <span className="text-[12.5px] text-ink-2">No crew messages yet.</span>
         </div>
       ) : (
@@ -104,8 +106,8 @@ export default function CrewBox({ navigate }) {
                   </span>
                 </span>
                 {unread && (
-                  <span className="inline-flex shrink-0 items-center gap-1 text-[11px] font-semibold text-amber-700 dark:text-amber-300">
-                    <span className="h-1.5 w-1.5 rounded-full bg-amber-500" aria-hidden="true" />
+                  <span className={`inline-flex shrink-0 items-center gap-1 text-[11px] font-semibold ${STATUS_TEXT.attention}`}>
+                    <span className={`h-1.5 w-1.5 rounded-full ${STATUS_DOT.attention}`} aria-hidden="true" />
                     {t.unread > 9 ? '9+' : t.unread} new
                   </span>
                 )}

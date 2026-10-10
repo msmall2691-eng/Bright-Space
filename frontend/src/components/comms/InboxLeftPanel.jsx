@@ -3,6 +3,7 @@ import { Plus, Search, Phone, Mail, Voicemail, Inbox, SlidersHorizontal, X, Chec
 import { NotifPermissionButton } from './primitives'
 import { ConvItem } from './ConvItem'
 import { SwipeRow } from './SwipeRow'
+import { STATUS_DOT } from '../../theme/statusDots'
 
 const CHANNEL_TABS = [
   { key: '', label: 'All' },
@@ -100,7 +101,7 @@ export function InboxLeftPanel({
                 ? 'border-ink/30 text-ink font-semibold'
                 : 'text-ink-3 border-hairline hover:bg-bg-2'
             }`}>
-            {isOverdue && <span className="w-1.5 h-1.5 rounded-full bg-red-500 shrink-0" aria-hidden="true" />}
+            {isOverdue && <span className={`w-1.5 h-1.5 rounded-full ${STATUS_DOT.problem} shrink-0`} aria-hidden="true" />}
             <Ic className="w-3 h-3" />
             {label}
             {count != null && count > 0 && <span className="tabular-nums text-ink-3">{count}</span>}

@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react'
 import GoogleAccountCard from '../GoogleAccountCard'
 import { get, post } from '../../api'
+import { STATUS_DOT } from '../../theme/statusDots'
+import { STATUS_TEXT } from '../../theme/statusText'
 
 /** Integrations tab — the "connect BrightBase to Google / your phone /
  *  external tools" hub, reorganized into two sections:
@@ -110,7 +112,7 @@ export default function IntegrationsTab({ toast, active }) {
               <div className="flex items-center gap-2">
                 <span className="inline-flex h-6 items-center gap-1.5 rounded-sm border border-hairline-2 bg-panel px-2 text-[11px] font-medium text-ink-2">
                   <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${
-                    gcalConn.loading ? 'bg-ink-3' : gcalConn.connected ? 'bg-emerald-500' : 'bg-red-500'
+                    gcalConn.loading ? 'bg-ink-3' : gcalConn.connected ? STATUS_DOT.ok : STATUS_DOT.problem
                   }`} aria-hidden="true" />
                   {gcalConn.loading ? 'Checking…' : gcalConn.connected ? 'Connected' : 'Not connected'}
                 </span>
@@ -125,7 +127,7 @@ export default function IntegrationsTab({ toast, active }) {
             {!gcalConn.loading && !gcalConn.connected && (
               <div className="mt-3 text-xs bg-panel border border-hairline rounded-lg p-3 leading-relaxed">
                 <div className="flex items-center gap-1.5 font-semibold text-ink mb-1">
-                  <span className="h-1.5 w-1.5 rounded-full bg-red-500 shrink-0" aria-hidden="true" />
+                  <span className={`h-1.5 w-1.5 rounded-full ${STATUS_DOT.problem} shrink-0`} aria-hidden="true" />
                   Appointments aren't reaching Google.
                 </div>
                 <span className="text-ink-2">{gcalConn.detail || 'Google Calendar credentials are missing or invalid on the server.'}</span>
@@ -142,7 +144,7 @@ export default function IntegrationsTab({ toast, active }) {
                 {gcalConn.account_email && (
                   <div>Connected as <code className="bg-bg-2 px-1 rounded text-ink-2">{gcalConn.account_email}</code>
                     {!/mainecleaningco/i.test(gcalConn.account_email) && (
-                      <span className="ml-1 text-amber-600 font-medium">— is this your work account?</span>
+                      <span className={`ml-1 ${STATUS_TEXT.attention} font-medium`}>— is this your work account?</span>
                     )}
                   </div>
                 )}
@@ -159,7 +161,7 @@ export default function IntegrationsTab({ toast, active }) {
                       <div key={jt} className="flex items-center gap-1.5">
                         <span className="text-ink-3 w-28 shrink-0">{label}</span>
                         <code className="bg-bg-2 px-1 rounded text-ink-2">{cal}</code>
-                        {!ok && <span className="text-red-600 font-medium">— not on this account! Events will fail.</span>}
+                        {!ok && <span className={`${STATUS_TEXT.problem} font-medium`}>— not on this account! Events will fail.</span>}
                       </div>
                     )
                   })}
@@ -204,7 +206,7 @@ export default function IntegrationsTab({ toast, active }) {
               </div>
               <span className="inline-flex h-6 items-center gap-1.5 rounded-sm border border-hairline-2 bg-panel px-2 text-[11px] font-medium text-ink-2 shrink-0">
                 <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${
-                  gmailConn.loading ? 'bg-ink-3' : gmailConn.connected ? 'bg-emerald-500' : 'bg-red-500'
+                  gmailConn.loading ? 'bg-ink-3' : gmailConn.connected ? STATUS_DOT.ok : STATUS_DOT.problem
                 }`} aria-hidden="true" />
                 {gmailConn.loading ? 'Checking…' : gmailConn.connected ? 'Connected' : 'Not connected'}
               </span>
@@ -215,8 +217,8 @@ export default function IntegrationsTab({ toast, active }) {
                   <div key={a.email} className="flex items-center gap-1.5">
                     <code className="bg-bg-2 px-1 rounded text-ink-2">{a.email}</code>
                     {a.needs_reconnect
-                      ? <span className="text-red-600 font-medium">— reconnect needed{a.last_sync_error ? ` (${a.last_sync_error})` : ''}</span>
-                      : <span className="text-emerald-600">✓ syncing</span>}
+                      ? <span className={`${STATUS_TEXT.problem} font-medium`}>— reconnect needed{a.last_sync_error ? ` (${a.last_sync_error})` : ''}</span>
+                      : <span className={STATUS_TEXT.ok}>✓ syncing</span>}
                   </div>
                 ))}
               </div>
@@ -372,7 +374,7 @@ function SmsCard({ toast, active }) {
           </div>
         </div>
         <span className="inline-flex h-6 items-center gap-1.5 rounded-sm border border-hairline-2 bg-panel px-2 text-[11px] font-medium text-ink-2 shrink-0">
-          <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${st.loading ? 'bg-ink-3' : twilioOk ? 'bg-emerald-500' : 'bg-red-500'}`} aria-hidden="true" />
+          <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${st.loading ? 'bg-ink-3' : twilioOk ? STATUS_DOT.ok : STATUS_DOT.problem}`} aria-hidden="true" />
           {st.loading ? 'Checking…' : twilioOk ? 'Configured' : 'Not configured'}
         </span>
       </div>
@@ -418,11 +420,11 @@ function SmsCard({ toast, active }) {
         </div>
         {testResult && (
           <div className="mt-2 flex items-start gap-1.5 text-[12px]">
-            <span className={`mt-[5px] h-1.5 w-1.5 shrink-0 rounded-full ${testResult.ok ? 'bg-emerald-500' : 'bg-red-500'}`} aria-hidden="true" />
+            <span className={`mt-[5px] h-1.5 w-1.5 shrink-0 rounded-full ${testResult.ok ? STATUS_DOT.ok : STATUS_DOT.problem}`} aria-hidden="true" />
             <span className={testResult.ok ? 'text-ink-2' : 'text-ink'}>
               {testResult.ok
                 ? `Test text sent to ${testResult.to}${testResult.status ? ` (${testResult.status})` : ''} — check that phone.`
-                : <>Couldn't send{testResult.to ? ` to ${testResult.to}` : ''}: <span className="text-red-600 break-words">{testResult.error}</span></>}
+                : <>Couldn't send{testResult.to ? ` to ${testResult.to}` : ''}: <span className={`${STATUS_TEXT.problem} break-words`}>{testResult.error}</span></>}
             </span>
           </div>
         )}
@@ -443,7 +445,7 @@ function SmsCard({ toast, active }) {
           <div className="space-y-1.5">
             {events.map(e => (
               <div key={e.id} className="flex items-start gap-2 text-[11.5px]">
-                <span className={`mt-[5px] h-1.5 w-1.5 shrink-0 rounded-full ${e.status === 'ok' ? 'bg-emerald-500' : e.status === 'failed' ? 'bg-red-500' : 'bg-ink-3'}`} aria-hidden="true" />
+                <span className={`mt-[5px] h-1.5 w-1.5 shrink-0 rounded-full ${e.status === 'ok' ? STATUS_DOT.ok : e.status === 'failed' ? STATUS_DOT.problem : 'bg-ink-3'}`} aria-hidden="true" />
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-2">
                     <span className="text-ink-2 font-medium">{ACTIONS[e.action] || e.action}</span>
@@ -452,7 +454,7 @@ function SmsCard({ toast, active }) {
                   </div>
                   {e.status === 'failed' && e.error_message && (
                     <div className="mt-0.5">
-                      <div className="text-red-600 break-words">{e.error_message}</div>
+                      <div className={`${STATUS_TEXT.problem} break-words`}>{e.error_message}</div>
                       {errorHint(e.error_message) && (
                         <div className="text-ink-2 mt-0.5">{errorHint(e.error_message)}</div>
                       )}
@@ -505,9 +507,9 @@ function StripeCard({ active }) {
   // in an amber dot that would make a working payment rail look broken.
   const tone = st.loading ? 'bg-ink-3'
     : !st.configured ? 'bg-ink-3'
-    : !st.webhook_configured ? 'bg-amber-500'
-    : st.charges_enabled === false ? 'bg-amber-500'
-    : 'bg-emerald-500'
+    : !st.webhook_configured ? STATUS_DOT.attention
+    : st.charges_enabled === false ? STATUS_DOT.attention
+    : STATUS_DOT.ok
   const word = st.loading ? 'Checking…'
     : !st.configured ? 'Not connected'
     : !st.webhook_configured ? 'Needs webhook'

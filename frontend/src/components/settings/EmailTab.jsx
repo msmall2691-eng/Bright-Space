@@ -2,6 +2,8 @@ import { useCallback, useEffect, useState } from 'react'
 import { Mail, Plug, Shield, ChevronDown, CheckCircle, AlertTriangle, Loader2 } from 'lucide-react'
 import { get, post } from '../../api'
 import { inp, lbl } from './constants'
+import { STATUS_DOT } from '../../theme/statusDots'
+import { STATUS_TEXT, STATUS_ICON } from '../../theme/statusText'
 
 /** "3m ago" / "2h ago" / "yesterday" from an ISO timestamp. */
 function relAgo(iso) {
@@ -92,7 +94,7 @@ export default function EmailTab({ toast, active }) {
 
         {/* Status indicator — hairline card + dot (design law: no filled/tinted banners). */}
         <div className="flex items-start gap-3 p-4 rounded-xl border border-hairline bg-panel mb-5">
-          <span className={`mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full ${hasCredentials ? 'bg-emerald-500' : 'bg-amber-500'}`} aria-hidden="true" />
+          <span className={`mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full ${hasCredentials ? STATUS_DOT.ok : STATUS_DOT.attention}`} aria-hidden="true" />
           {hasCredentials
             ? <div><div className="text-sm font-medium text-ink">Credentials Found</div><div className="text-xs text-ink-3">{credentialsSource === 'env' ? 'Using Railway environment variables (SMTP_USER / SMTP_PASS)' : 'Using saved database settings'}</div></div>
             : <div><div className="text-sm font-medium text-ink">Not Connected</div><div className="text-xs text-ink-3">Enter your Gmail address and App Password, or set SMTP_USER and SMTP_PASS env vars on Railway</div></div>
@@ -107,7 +109,7 @@ export default function EmailTab({ toast, active }) {
           const ok = lastSync.status === 'ok'
           const authFail = lastSync.status === 'auth_failed'
           const noCreds = lastSync.status === 'no_credentials'
-          const dot = ok ? 'bg-emerald-500' : authFail ? 'bg-red-500' : 'bg-amber-500'
+          const dot = ok ? STATUS_DOT.ok : authFail ? STATUS_DOT.problem : STATUS_DOT.attention
           const when = relAgo(lastSync.at)
           const title = ok ? 'Auto-sync is working'
             : authFail ? 'Authentication failed — check your App Password'
@@ -131,7 +133,7 @@ export default function EmailTab({ toast, active }) {
         {/* Credentials form */}
         <div className="bg-panel border border-hairline rounded-xl p-5 space-y-4 mb-5">
           <div className="flex items-center gap-2 text-sm font-semibold text-ink">
-            <Shield className="w-4 h-4 text-blue-500" /> Credentials
+            <Shield className={`w-4 h-4 ${STATUS_ICON.info}`} /> Credentials
           </div>
 
           <div>
@@ -213,7 +215,7 @@ export default function EmailTab({ toast, active }) {
           <label className="flex items-center gap-3 cursor-pointer">
             <input type="checkbox" checked={emailConfig.email_auto_enrich === 'true'}
               onChange={e => setEmailConfig(c => ({ ...c, email_auto_enrich: e.target.checked ? 'true' : 'false' }))}
-              className="w-4 h-4 rounded border-hairline text-link focus:ring-0" />
+              className="w-4 h-4 rounded border-hairline text-link" />
             <div>
               <div className="text-sm font-medium text-ink">Auto-create contacts from emails</div>
               <div className="text-xs text-ink-3">When enabled, unknown email senders are automatically added as leads</div>
@@ -240,21 +242,21 @@ export default function EmailTab({ toast, active }) {
           <div className="mt-4 bg-panel border border-hairline rounded-xl p-4 space-y-2">
             <div className="text-sm font-semibold text-ink">Connection Test Results</div>
             {testResult.error ? (
-              <div className="flex items-center gap-2 text-sm text-red-600">
+              <div className={`flex items-center gap-2 text-sm ${STATUS_TEXT.problem}`}>
                 <AlertTriangle className="w-4 h-4" /> {testResult.error}
               </div>
             ) : (
               <>
                 <div className="flex items-center gap-2 text-sm">
                   {testResult.imap === 'connected'
-                    ? <><CheckCircle className="w-4 h-4 text-emerald-500" /><span className="text-emerald-700 dark:text-emerald-300">IMAP: Connected ({testResult.email_count} emails)</span></>
-                    : <><AlertTriangle className="w-4 h-4 text-red-500" /><span className="text-red-600">IMAP: {testResult.imap}</span></>
+                    ? <><CheckCircle className={`w-4 h-4 ${STATUS_ICON.ok}`} /><span className={STATUS_TEXT.ok}>IMAP: Connected ({testResult.email_count} emails)</span></>
+                    : <><AlertTriangle className={`w-4 h-4 ${STATUS_ICON.problem}`} /><span className={STATUS_TEXT.problem}>IMAP: {testResult.imap}</span></>
                   }
                 </div>
                 <div className="flex items-center gap-2 text-sm">
                   {testResult.smtp === 'connected'
-                    ? <><CheckCircle className="w-4 h-4 text-emerald-500" /><span className="text-emerald-700 dark:text-emerald-300">SMTP: Connected (outbound email ready)</span></>
-                    : <><AlertTriangle className="w-4 h-4 text-red-500" /><span className="text-red-600">SMTP: {testResult.smtp}</span></>
+                    ? <><CheckCircle className={`w-4 h-4 ${STATUS_ICON.ok}`} /><span className={STATUS_TEXT.ok}>SMTP: Connected (outbound email ready)</span></>
+                    : <><AlertTriangle className={`w-4 h-4 ${STATUS_ICON.problem}`} /><span className={STATUS_TEXT.problem}>SMTP: {testResult.smtp}</span></>
                   }
                 </div>
               </>

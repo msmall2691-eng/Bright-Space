@@ -9,16 +9,18 @@ import { isoDateToBackendDow, shiftSeriesWeekday } from '../utils/recurringResch
 import { FIELD_LABELS } from './schedule/constants'
 import { confirmDialog } from '../utils/confirmBus'
 import { normalizeEmployee } from '../utils/employees'
+import { STATUS_DOT } from '../theme/statusDots'
+import { STATUS_TEXT } from '../theme/statusText'
 
 // Same dot+word vocabulary as JobDetail's STATUS_OPTIONS — this modal used to
 // render status as solid-filled pill buttons (a different idiom from every
 // other status control in the app). Kept local rather than importing from
 // JobDetail so the two pages don't couple on each other's module.
 const STATUS_OPTIONS = [
-  { value: 'unscheduled', label: 'unscheduled', dot: 'bg-amber-500' },
-  { value: 'scheduled',   label: 'scheduled',   dot: 'bg-blue-500' },
-  { value: 'in_progress', label: 'in progress', dot: 'bg-amber-500' },
-  { value: 'completed',   label: 'completed',   dot: 'bg-emerald-500' },
+  { value: 'unscheduled', label: 'unscheduled', dot: STATUS_DOT.attention },
+  { value: 'scheduled',   label: 'scheduled',   dot: STATUS_DOT.info },
+  { value: 'in_progress', label: 'in progress', dot: STATUS_DOT.attention },
+  { value: 'completed',   label: 'completed',   dot: STATUS_DOT.ok },
   { value: 'cancelled',   label: 'cancelled',   dot: 'bg-ink-3' },
 ]
 
@@ -688,7 +690,7 @@ export default function JobEditModal({ job, properties = [], clients = [], onClo
                 if (isFieldChanged('title', value)) commitField({ title: value })
               }}
               placeholder="Job title (auto-fills from property if blank)"
-              className="w-full px-3 py-3 border border-hairline rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent text-base font-medium"
+              className="w-full px-3 py-3 border border-hairline rounded-lg text-base font-medium"
             />
           </div>
 
@@ -706,7 +708,7 @@ export default function JobEditModal({ job, properties = [], clients = [], onClo
                   setFormData(f => ({ ...f, scheduled_date: v }))
                   if (isFieldChanged('scheduled_date', v)) commitField({ scheduled_date: v || null })
                 }}
-                className="w-full px-3 py-3 border border-hairline rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent text-base"
+                className="w-full px-3 py-3 border border-hairline rounded-lg text-base"
               />
             </div>
             <div>
@@ -719,7 +721,7 @@ export default function JobEditModal({ job, properties = [], clients = [], onClo
                   setFormData(f => ({ ...f, start_time: v }))
                   if (isFieldChanged('start_time', v)) commitField({ start_time: v || null })
                 }}
-                className="w-full px-3 py-3 border border-hairline rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent text-base"
+                className="w-full px-3 py-3 border border-hairline rounded-lg text-base"
               />
             </div>
             <div>
@@ -732,7 +734,7 @@ export default function JobEditModal({ job, properties = [], clients = [], onClo
                   setFormData(f => ({ ...f, end_time: v }))
                   if (isFieldChanged('end_time', v)) commitField({ end_time: v || null })
                 }}
-                className="w-full px-3 py-3 border border-hairline rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent text-base"
+                className="w-full px-3 py-3 border border-hairline rounded-lg text-base"
               />
             </div>
           </div>
@@ -748,7 +750,7 @@ export default function JobEditModal({ job, properties = [], clients = [], onClo
                 type="checkbox"
                 checked={notifyCustomer}
                 onChange={e => setNotifyCustomer(e.target.checked)}
-                className="mt-0.5 w-4 h-4 rounded border-hairline text-link focus:ring-indigo-500"
+                className="mt-0.5 w-4 h-4 rounded border-hairline text-link"
               />
               <span className="text-xs text-ink-2">
                 Notify customer of this change
@@ -760,12 +762,12 @@ export default function JobEditModal({ job, properties = [], clients = [], onClo
           {/* Property Picker */}
           <div>
             <label className="block text-sm font-semibold text-ink-2 mb-3">
-              Property <span className="text-red-500">*</span>
+              Property <span className={STATUS_TEXT.problem}>*</span>
             </label>
             <select
               value={formData.property_id}
               onChange={handlePropertyChange}
-              className="w-full px-4 py-3 sm:py-3 border border-hairline rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent text-base"
+              className="w-full px-4 py-3 sm:py-3 border border-hairline rounded-lg text-base"
             >
               <option value="">Select a property...</option>
               {selectableProperties.map(p => (
@@ -787,7 +789,7 @@ export default function JobEditModal({ job, properties = [], clients = [], onClo
               informational and dismissible, not a validation error. */}
           {!dismissedPropertyWarning && propertyConflicts.length > 0 && (
             <div className="flex items-start gap-2.5 rounded-lg border border-hairline bg-panel px-3 py-2.5 text-sm">
-              <span className="w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0 mt-1.5" aria-hidden="true" />
+              <span className={`w-1.5 h-1.5 rounded-full ${STATUS_DOT.attention} shrink-0 mt-1.5`} aria-hidden="true" />
               <div className="flex-1 min-w-0">
                 <p className="font-medium text-ink">
                   {propertyConflicts.some(c => c.overlaps) ? 'Overlapping job at this property' : 'Another job at this property that day'}
@@ -824,7 +826,7 @@ export default function JobEditModal({ job, properties = [], clients = [], onClo
               <div className="flex flex-wrap gap-1.5 mb-3">
                 {assignedCleaners.map(cleaner => (
                   <div key={cleaner.id} className="flex items-center gap-1.5 bg-bg-2 border border-hairline-2 text-ink-2 px-2.5 py-1.5 rounded-md text-xs sm:text-sm">
-                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" aria-hidden="true" />
+                    <span className={`w-1.5 h-1.5 rounded-full ${STATUS_DOT.ok} shrink-0`} aria-hidden="true" />
                     <span className="truncate">{cleaner.name}</span>
                     <button
                       onClick={() => handleRemoveCleaner(cleaner.id)}
@@ -849,7 +851,7 @@ export default function JobEditModal({ job, properties = [], clients = [], onClo
                     onChange={(e) => setCleanerSearch(e.target.value)}
                     onFocus={() => setShowCleanerDropdown(true)}
                     disabled={loadingCleaners || cleaners.length === 0}
-                    className="w-full pl-10 pr-4 py-3 border border-hairline rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent text-base disabled:bg-bg disabled:text-ink-3"
+                    className="w-full pl-10 pr-4 py-3 border border-hairline rounded-lg text-base disabled:bg-bg disabled:text-ink-3"
                   />
                 </div>
               </div>
@@ -869,13 +871,13 @@ export default function JobEditModal({ job, properties = [], clients = [], onClo
                         ? 'hover:bg-amber-50 dark:hover:bg-amber-500/10'
                         : 'hover:bg-bg-2'
                     const hintCls = status === 'conflict' || status === 'off' || status === 'unavailable'
-                      ? 'text-red-600' : status === 'same_day'
-                        ? 'text-amber-700'
-                        : status === 'usually_off' ? 'text-ink-3' : 'text-emerald-600'
+                      ? STATUS_TEXT.problem : status === 'same_day'
+                        ? STATUS_TEXT.attention
+                        : status === 'usually_off' ? 'text-ink-3' : STATUS_TEXT.ok
                     const dotCls = status === 'conflict' || status === 'off' || status === 'unavailable'
-                      ? 'bg-red-500' : status === 'same_day'
-                        ? 'bg-amber-500'
-                        : status === 'usually_off' ? 'bg-ink-3' : 'bg-emerald-500'
+                      ? STATUS_DOT.problem : status === 'same_day'
+                        ? STATUS_DOT.attention
+                        : status === 'usually_off' ? 'bg-ink-3' : STATUS_DOT.ok
                     /* Known statuses render their detail; anything the server
                        adds later degrades to NO hint, never to green "Free" —
                        an unrecognized "can't work" must not read as available. */
@@ -909,7 +911,7 @@ export default function JobEditModal({ job, properties = [], clients = [], onClo
 
             {assignedCleaners.length === 0 && (
               <p className="text-xs text-ink-3 mt-2 flex items-center gap-1.5">
-                <span className="w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0" aria-hidden="true" />
+                <span className={`w-1.5 h-1.5 rounded-full ${STATUS_DOT.attention} shrink-0`} aria-hidden="true" />
                 No cleaners assigned
               </p>
             )}
@@ -926,7 +928,7 @@ export default function JobEditModal({ job, properties = [], clients = [], onClo
               <ChevronDown className={`w-4 h-4 transition-transform ${showAdvanced ? 'rotate-180' : ''}`} />
               Advanced options
               {!showAdvanced && formData.notes && (
-                <span className="w-1.5 h-1.5 rounded-full bg-blue-500" />
+                <span className={`w-1.5 h-1.5 rounded-full ${STATUS_DOT.info}`} />
               )}
             </button>
           </div>
@@ -943,7 +945,7 @@ export default function JobEditModal({ job, properties = [], clients = [], onClo
                   setFormData(f => ({ ...f, job_type: v }))
                   if (isFieldChanged('job_type', v)) commitField({ job_type: v })
                 }}
-                className="w-full px-3 py-3 border border-hairline rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent text-base bg-panel"
+                className="w-full px-3 py-3 border border-hairline rounded-lg text-base bg-panel"
               >
                 {!['residential', 'deep_clean', 'commercial', 'str_turnover', 'one_time'].includes(formData.job_type) && (
                   <option value={formData.job_type}>{formData.job_type || '(unset)'}</option>
@@ -966,7 +968,7 @@ export default function JobEditModal({ job, properties = [], clients = [], onClo
                 onChange={e => setFormData(f => ({ ...f, address: e.target.value }))}
                 onBlur={() => { if (isFieldChanged('address', formData.address)) commitField({ address: formData.address }) }}
                 placeholder="Service address (auto-fills from the property)"
-                className="w-full px-3 py-3 border border-hairline rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent text-base"
+                className="w-full px-3 py-3 border border-hairline rounded-lg text-base"
               />
             </div>
 
@@ -979,14 +981,14 @@ export default function JobEditModal({ job, properties = [], clients = [], onClo
                 onBlur={() => { if (isFieldChanged('notes', formData.notes)) commitField({ notes: formData.notes }) }}
                 placeholder="Add any notes about this job..."
                 rows={3}
-                className="w-full px-4 py-3 border border-hairline rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent resize-none text-base"
+                className="w-full px-4 py-3 border border-hairline rounded-lg resize-none text-base"
               />
             </div>
 
             {/* Dispatch status */}
             {!isNew && (
               <div className="flex items-center gap-2.5 rounded-lg border border-hairline bg-panel px-3 py-2.5">
-                <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${job?.dispatched ? 'bg-emerald-500' : 'bg-ink-3'}`} aria-hidden="true" />
+                <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${job?.dispatched ? STATUS_DOT.ok : 'bg-ink-3'}`} aria-hidden="true" />
                 <div className="min-w-0 text-sm">
                   <p className="font-medium text-ink">
                     {job?.dispatched ? 'Dispatched' : 'Not dispatched'}
@@ -1001,14 +1003,14 @@ export default function JobEditModal({ job, properties = [], clients = [], onClo
 
           {error && (
             <div className="flex items-start gap-2.5 bg-panel border border-hairline text-ink-2 px-4 py-3 rounded-lg text-sm">
-              <span className="w-1.5 h-1.5 rounded-full bg-red-500 shrink-0 mt-1.5" aria-hidden="true" />
+              <span className={`w-1.5 h-1.5 rounded-full ${STATUS_DOT.problem} shrink-0 mt-1.5`} aria-hidden="true" />
               <span className="min-w-0">{error}</span>
             </div>
           )}
 
           {conflict && (
             <div className="flex items-start gap-2.5 rounded-lg border border-hairline bg-panel px-3 py-2.5 text-sm">
-              <span className="w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0 mt-1.5" aria-hidden="true" />
+              <span className={`w-1.5 h-1.5 rounded-full ${STATUS_DOT.attention} shrink-0 mt-1.5`} aria-hidden="true" />
               <div className="flex-1 min-w-0">
                 <p className="font-medium text-ink mb-1">Scheduling conflict</p>
                 <p className="text-ink-2 mb-2">{conflict}</p>
@@ -1042,7 +1044,7 @@ export default function JobEditModal({ job, properties = [], clients = [], onClo
               <button
                 onClick={handleDelete}
                 disabled={removing || saving}
-                className="inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium text-red-600 hover:bg-red-50 disabled:opacity-60 transition-colors"
+                className={`inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium ${STATUS_TEXT.problem} hover:bg-red-50 disabled:opacity-60 transition-colors`}
               >
                 <Trash2 className="w-4 h-4" /> Delete
               </button>

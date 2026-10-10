@@ -18,6 +18,7 @@
  */
 import { useEffect, useState } from 'react'
 import { get } from '../../api'
+import { STATUS_DOT } from '../../theme/statusDots'
 
 const money = (n) => (n == null ? '—' : `$${Number(n).toFixed(2)}`)
 
@@ -80,7 +81,7 @@ export default function JobMargin({ jobId, pay }) {
   return (
     <p className="mt-1 flex items-start gap-1.5 text-[11px] text-ink-2">
       <span className={`mt-1 h-1.5 w-1.5 shrink-0 rounded-full ${
-        under ? 'bg-red-500' : thin ? 'bg-amber-500' : 'bg-emerald-500'}`}
+        under ? STATUS_DOT.problem : thin ? STATUS_DOT.attention : STATUS_DOT.ok}`}
         aria-hidden="true" />
       <span>
         Bills {money(data.billed)} ({SOURCE[data.billed_source]}

@@ -10,7 +10,7 @@
  */
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
-import { get, post } from '../api'
+import { get, post, getCached } from '../api'
 import JobCreateModal from '../components/JobCreateModal'
 import DuplicateReviewPanel from '../components/recurring/DuplicateReviewPanel'
 import HealthPanel from '../components/recurring/HealthPanel'
@@ -60,7 +60,7 @@ export default function Recurring() {
         get('/api/recurring'),
         // T-06: preload up to 1000 so schedule → client-name resolution and
         // the filter dropdown cover the whole book, not just the first 50.
-        get('/api/clients?limit=1000').catch(() => []),
+        getCached('/api/clients?limit=1000').catch(() => []),
       ])
       const cliArr = Array.isArray(cli) ? cli : (cli.items || [])
       const map = {}; cliArr.forEach(c => { map[c.id] = c })

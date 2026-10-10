@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { ArrowRight } from 'lucide-react'
 import { Skeleton } from '../ui'
 import { SOFT_CARD } from './constants'
+import { STATUS_DOT } from '../../theme/statusDots'
 
 /** Shared hover/focus tooltip for chart marks (dataviz skill's interaction
  *  spec: a real positioned tooltip, not a native `title` attribute — every
@@ -52,9 +53,9 @@ export function BarTip({ value, label, align = 'center', wrap = false, focusable
  *  middle, right-aligned action label. Tap the whole row to jump. */
 export function AttentionRow({ tone, title, sub, action, onClick }) {
   const dotClass = {
-    red: 'bg-red-500',
-    amber: 'bg-amber-500',
-    rose: 'bg-rose-500',
+    red: STATUS_DOT.problem,
+    amber: STATUS_DOT.attention,
+    rose: STATUS_DOT.problem,
   }[tone] || 'bg-ink-3'
   return (
     <button

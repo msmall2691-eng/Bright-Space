@@ -4,6 +4,7 @@ import {
   Mail, MessageSquare, Phone, Calendar, FileText, Receipt, TrendingUp,
   CheckCircle, AlertCircle, Loader, Filter, Users, RefreshCw, XCircle,
 } from 'lucide-react'
+import { STATUS_TEXT } from '../theme/statusText'
 
 /**
  * Timeline — one component for both the CRM activity feed and the per-job
@@ -39,18 +40,18 @@ const ACTIVITY_ICONS = {
 // Icon glyph color only — the chip itself stays a neutral bg-bg-2 circle
 // (owner's veto of tinted icon chips); color lives on the glyph, not a fill.
 const ACTIVITY_COLORS = {
-  email_sent: 'text-blue-600', email_received: 'text-blue-600',
+  email_sent: STATUS_TEXT.info, email_received: STATUS_TEXT.info,
   sms_sent: 'text-purple-600', sms_received: 'text-purple-600',
-  call_logged: 'text-green-600',
-  job_created: 'text-yellow-600',
-  job_completed: 'text-emerald-600', quote_accepted: 'text-emerald-600',
-  job_customer_confirmed: 'text-emerald-600',
-  job_customer_rescheduled: 'text-blue-600',
-  job_reschedule_requested: 'text-amber-600',
-  invoice_paid: 'text-emerald-600', job_cancelled: 'text-red-600',
+  call_logged: STATUS_TEXT.ok,
+  job_created: STATUS_TEXT.attention,
+  job_completed: STATUS_TEXT.ok, quote_accepted: STATUS_TEXT.ok,
+  job_customer_confirmed: STATUS_TEXT.ok,
+  job_customer_rescheduled: STATUS_TEXT.info,
+  job_reschedule_requested: STATUS_TEXT.attention,
+  invoice_paid: STATUS_TEXT.ok, job_cancelled: STATUS_TEXT.problem,
   quote_sent: 'text-orange-600', invoice_sent: 'text-cyan-600',
   opportunity_created: 'text-pink-600',
-  opportunity_won: 'text-emerald-600', opportunity_lost: 'text-red-600',
+  opportunity_won: STATUS_TEXT.ok, opportunity_lost: STATUS_TEXT.problem,
   note_added: 'text-ink-2',
 }
 // `connecteam` stays only to render HISTORICAL integration-log rows from the
@@ -62,11 +63,11 @@ function visualFor(item) {
   if (item.kind === 'integration') {
     const Icon = PROVIDER_ICONS[item.icon_key] || RefreshCw
     const ok = (item.status || '').toLowerCase() === 'ok'
-    return { Icon, bg: 'bg-bg-2', fg: ok ? 'text-emerald-600' : 'text-red-600' }
+    return { Icon, bg: 'bg-bg-2', fg: ok ? STATUS_TEXT.ok : STATUS_TEXT.problem }
   }
   if (item.kind === 'message') {
     const Icon = CHANNEL_ICONS[item.icon_key] || MessageSquare
-    return { Icon, bg: 'bg-bg-2', fg: 'text-blue-600' }
+    return { Icon, bg: 'bg-bg-2', fg: STATUS_TEXT.info }
   }
   const Icon = ACTIVITY_ICONS[item.icon_key] || FileText
   const fg = ACTIVITY_COLORS[item.icon_key] || 'text-ink-2'

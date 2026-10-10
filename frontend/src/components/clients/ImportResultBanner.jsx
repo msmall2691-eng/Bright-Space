@@ -1,4 +1,5 @@
 import { X } from 'lucide-react'
+import { STATUS_DOT } from '../../theme/statusDots'
 
 /** Result banner shown after an XLSX/CSV client import — hairline card with
  *  a colored dot: emerald with added/skipped counts on success, red with
@@ -7,7 +8,7 @@ export function ImportResultBanner({ importResult, onDismiss }) {
   return (
     <div className="mb-3 px-3 py-2 rounded-lg text-[12px] border border-hairline bg-panel text-ink flex items-center justify-between">
       <span className="flex items-center gap-1.5">
-        <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${importResult.error ? 'bg-red-500' : 'bg-emerald-500'}`} aria-hidden="true" />
+        <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${importResult.error ? STATUS_DOT.problem : STATUS_DOT.ok}`} aria-hidden="true" />
         {importResult.error
           ? `Import failed: ${importResult.error}`
           : `Imported ${importResult.added} clients${importResult.skipped ? `, skipped ${importResult.skipped} duplicates` : ''}`}

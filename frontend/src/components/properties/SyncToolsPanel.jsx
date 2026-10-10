@@ -1,4 +1,5 @@
 import { CheckCircle, RefreshCw, X } from 'lucide-react'
+import { STATUS_TEXT } from '../../theme/statusText'
 
 /** Advanced sync + repair tooling, hidden behind the "Sync tools" toggle
  *  so the everyday "add a link, see turnovers" path stays uncluttered.
@@ -42,30 +43,30 @@ export function SweepResultsPanel({ sweep, onDismiss, rebuildOne, rebuildingId }
         <h3 className="text-sm font-semibold text-ink">Turnover health</h3>
         <button onClick={onDismiss} className="opacity-60 hover:opacity-100"><X className="w-3.5 h-3.5" /></button>
       </div>
-      {sweep.error && <div className="text-sm text-red-600">{sweep.error}</div>}
+      {sweep.error && <div className={`text-sm ${STATUS_TEXT.problem}`}>{sweep.error}</div>}
       {sweep.totals && (
         <div className="text-xs text-ink-3 mb-3">
           {sweep.totals.properties} propert{sweep.totals.properties === 1 ? 'y' : 'ies'} ·
           &nbsp;{sweep.totals.scheduled} turnovers scheduled ·
           &nbsp;{sweep.totals.on_google} on Google
           {(sweep.totals.missing > 0 || sweep.totals.not_on_google > 0)
-            ? <span className="text-amber-600 font-medium">&nbsp;· {sweep.totals.missing} missing, {sweep.totals.not_on_google} not on Google</span>
-            : <span className="text-emerald-600 font-medium">&nbsp;· all good ✓</span>}
+            ? <span className={`${STATUS_TEXT.attention} font-medium`}>&nbsp;· {sweep.totals.missing} missing, {sweep.totals.not_on_google} not on Google</span>
+            : <span className={`${STATUS_TEXT.ok} font-medium`}>&nbsp;· all good ✓</span>}
         </div>
       )}
       <div className="space-y-1.5">
         {(sweep.properties || []).map(p => (
           <div key={p.property_id} className="flex items-start justify-between gap-3 text-xs border-b border-hairline/60 last:border-0 py-1.5">
             <div className="min-w-0">
-              <span className={`mr-1.5 ${p.ok ? 'text-emerald-600' : 'text-amber-600'}`}>{p.ok ? '✓' : '⚠'}</span>
+              <span className={`mr-1.5 ${p.ok ? STATUS_TEXT.ok : STATUS_TEXT.attention}`}>{p.ok ? '✓' : '⚠'}</span>
               <span className="text-ink font-medium">{p.property}</span>
               <span className="text-ink-3"> — {p.scheduled} scheduled, {p.on_google} on Google</span>
-              {p.sync_error && <span className="text-red-600"> · {p.sync_error}</span>}
+              {p.sync_error && <span className={STATUS_TEXT.problem}> · {p.sync_error}</span>}
               {p.missing_dates?.length > 0 && (
-                <div className="text-amber-600 mt-0.5">Missing turnover: {p.missing_dates.join(', ')}</div>
+                <div className={`${STATUS_TEXT.attention} mt-0.5`}>Missing turnover: {p.missing_dates.join(', ')}</div>
               )}
               {p.not_on_google > 0 && (
-                <div className="text-amber-600 mt-0.5">{p.not_on_google} turnover(s) not on Google — check the connection/calendar.</div>
+                <div className={`${STATUS_TEXT.attention} mt-0.5`}>{p.not_on_google} turnover(s) not on Google — check the connection/calendar.</div>
               )}
             </div>
             {!p.ok && (

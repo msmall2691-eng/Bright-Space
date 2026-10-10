@@ -1,10 +1,13 @@
 import { useState, useEffect } from 'react'
 import { Trash2 } from 'lucide-react'
 import { get, post, patch, del } from '../../api'
+import { useEmployees } from '../../hooks/useEmployees'
 import Button from '../ui/Button'
 import GlassCard from '../ui/GlassCard'
 import { toast } from '../../utils/toastBus'
 import { confirmDialog } from '../../utils/confirmBus'
+import { STATUS_DOT } from '../../theme/statusDots'
+import { STATUS_TEXT } from '../../theme/statusText'
 
 /** AvailabilityPanel: cleaner time-off entries (CRUD against /api/jobs/time-off).
  *  Mounts as a top-level view (no props) when ?tab=availability routes the
@@ -17,20 +20,31 @@ import { confirmDialog } from '../../utils/confirmBus'
 
 export function AvailabilityPanel() {
   const [entries, setEntries] = useState([])
-  const [employees, setEmployees] = useState([])
   const [loading, setLoading] = useState(true)
   const [form, setForm] = useState({ cleaner_id: '', start_date: '', end_date: '', reason: 'vacation' })
   const [saving, setSaving] = useState(false)
 
+  // The roster used to be a second, raw `get('/api/dispatch/employees')` in
+  // the Promise.all below. A raw get can't share getCached's in-flight
+  // promise, and on this tab there is one to share: Schedule calls
+  // useScheduleData, which calls useEmployees() unconditionally (its
+  // `enabled` option gates only the week fetch). So the roster went out
+  // twice on one screen. `empName` came with the hook — it was duplicated
+  // here, with the same `Cleaner ${id}` fallback.
+  //
+  // `rosterLoading` is folded into the skeleton below to keep the old
+  // behaviour exactly: the Promise.all meant the list did not render until
+  // the roster had landed too. Without it the rows appear first and a name
+  // flips from `Cleaner 7` to `Dana` a moment later — worse on the rural
+  // cell connections this app is used on, and a UX change nobody asked for.
+  // The hook clears its own loading flag on failure, so this cannot hang.
+  const { employees, empName, loading: rosterLoading } = useEmployees()
+
   const load = async () => {
     setLoading(true)
     try {
-      const [rows, emps] = await Promise.all([
-        get('/api/jobs/time-off'),
-        get('/api/dispatch/employees').catch(() => []),
-      ])
+      const rows = await get('/api/jobs/time-off')
       setEntries(Array.isArray(rows) ? rows : [])
-      setEmployees(Array.isArray(emps) ? emps : [])
     } catch (e) {
       toast.error(e.message || 'Failed to load time off')
     } finally {
@@ -38,8 +52,6 @@ export function AvailabilityPanel() {
     }
   }
   useEffect(() => { load() }, [])
-
-  const empName = (id) => employees.find(e => String(e.id) === String(id))?.name || `Cleaner ${id}`
 
   const add = async () => {
     if (!form.cleaner_id || !form.start_date || !form.end_date) {
@@ -68,7 +80,9 @@ export function AvailabilityPanel() {
     if (!(await confirmDialog('Remove this time-off entry?'))) return
     try {
       await del(`/api/jobs/time-off/${id}`)
-      setEntries(entries.filter(e => e.id !== id))
+      // Functional: the confirm and the DELETE above are a user-paced gap, so
+      // `entries` from render is stale by now (cf. #1111 on Requests).
+      setEntries(prev => prev.filter(e => e.id !== id))
     } catch (e) {
       toast.error(e.message || 'Could not remove')
     }
@@ -77,7 +91,8 @@ export function AvailabilityPanel() {
   const setStatus = async (id, status) => {
     try {
       const updated = await patch(`/api/jobs/time-off/${id}/status`, { status })
-      setEntries(entries.map(e => (e.id === id ? updated : e)))
+      // Functional: the PATCH above is the gap.
+      setEntries(prev => prev.map(e => (e.id === id ? updated : e)))
       toast.success(status === 'approved' ? 'Approved — they got a ping' : 'Denied — they got a ping')
     } catch (e) {
       toast.error(e.message || 'Could not update')
@@ -130,7 +145,7 @@ export function AvailabilityPanel() {
         </div>
       </GlassCard>
 
-      {loading ? (
+      {loading || rosterLoading ? (
         <p className="text-sm text-ink-3">Loading…</p>
       ) : entries.length === 0 ? (
         <p className="text-sm text-ink-3 italic">No upcoming time off scheduled.</p>
@@ -143,8 +158,8 @@ export function AvailabilityPanel() {
                 <span className="text-xs text-ink-3 ml-2">{e.start_date} → {e.end_date}</span>
                 {e.reason && <span className="text-[11px] text-ink-3 ml-2 capitalize">· {e.reason}</span>}
                 {e.status === 'requested' && (
-                  <span className="inline-flex items-center gap-1 text-[10px] font-medium text-amber-700 dark:text-amber-300 ml-2">
-                    <span className="w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0" aria-hidden="true" /> Requested
+                  <span className={`inline-flex items-center gap-1 text-[10px] font-medium ${STATUS_TEXT.attention} ml-2`}>
+                    <span className={`w-1.5 h-1.5 rounded-full ${STATUS_DOT.attention} shrink-0`} aria-hidden="true" /> Requested
                   </span>
                 )}
                 {e.status === 'denied' && (

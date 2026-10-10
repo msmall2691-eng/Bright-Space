@@ -2,6 +2,8 @@ import { useState, useEffect, useCallback } from 'react'
 import { Mail, Calendar, Link2, Unlink, CheckCircle } from 'lucide-react'
 import { get, patch, del } from '../api'
 import { confirmDialog } from '../utils/confirmBus'
+import { STATUS_DOT } from '../theme/statusDots'
+import { STATUS_ICON } from '../theme/statusText'
 
 /**
  * "Your Google account" — the per-user Gmail + Calendar grant (Twenty-style
@@ -85,12 +87,12 @@ export default function GoogleAccountCard() {
             your Calendar drives scheduling — separate from the shared business connection.
           </p>
         </div>
-        {acct?.connected && acct.status === 'connected' && <CheckCircle className="w-5 h-5 text-emerald-500 shrink-0" />}
+        {acct?.connected && acct.status === 'connected' && <CheckCircle className={`w-5 h-5 ${STATUS_ICON.ok} shrink-0`} />}
       </div>
 
       {notice && (
         <div className="flex items-center gap-2 text-xs rounded-lg px-3 py-2 my-2 border border-hairline bg-panel text-ink-2">
-          <span className={`h-1.5 w-1.5 rounded-full shrink-0 ${notice.tone === 'ok' ? 'bg-emerald-500' : 'bg-amber-500'}`} aria-hidden="true" />
+          <span className={`h-1.5 w-1.5 rounded-full shrink-0 ${notice.tone === 'ok' ? STATUS_DOT.ok : STATUS_DOT.attention}`} aria-hidden="true" />
           {notice.msg}
         </div>
       )}
@@ -102,7 +104,7 @@ export default function GoogleAccountCard() {
           )}
           {acct && acct.encryption_available === false && (
             <p className="flex items-center gap-2 text-xs text-ink-2 bg-panel border border-hairline rounded-lg px-3 py-2 mb-2">
-              <span className="h-1.5 w-1.5 rounded-full bg-amber-500 shrink-0" aria-hidden="true" />
+              <span className={`h-1.5 w-1.5 rounded-full ${STATUS_DOT.attention} shrink-0`} aria-hidden="true" />
               Connecting Google needs a stable server secret. Set <code>JWT_SECRET</code> in your
               server environment (Railway → Variables), then redeploy and try again.
             </p>
@@ -119,17 +121,17 @@ export default function GoogleAccountCard() {
             <span className="font-medium text-ink">{acct.email}</span>
             {acct.status === 'expired' ? (
               <span className="inline-flex items-center gap-1.5 text-[11px] px-2 h-5 rounded-sm border border-hairline-2 bg-panel text-ink-2 font-medium">
-                <span className="h-1.5 w-1.5 rounded-full bg-amber-500 shrink-0" aria-hidden="true" /> reconnect needed
+                <span className={`h-1.5 w-1.5 rounded-full ${STATUS_DOT.attention} shrink-0`} aria-hidden="true" /> reconnect needed
               </span>
             ) : (
               <span className="inline-flex items-center gap-1.5 text-[11px] px-2 h-5 rounded-sm border border-hairline-2 bg-panel text-ink-2 font-medium">
-                <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 shrink-0" aria-hidden="true" /> connected
+                <span className={`h-1.5 w-1.5 rounded-full ${STATUS_DOT.ok} shrink-0`} aria-hidden="true" /> connected
               </span>
             )}
           </div>
           {acct.last_sync_error && (
             <p className="flex items-center gap-2 text-xs text-ink-2 bg-panel border border-hairline rounded-lg px-3 py-2">
-              <span className="h-1.5 w-1.5 rounded-full bg-amber-500 shrink-0" aria-hidden="true" />
+              <span className={`h-1.5 w-1.5 rounded-full ${STATUS_DOT.attention} shrink-0`} aria-hidden="true" />
               {acct.last_sync_error}
             </p>
           )}

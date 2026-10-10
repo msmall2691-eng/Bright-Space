@@ -39,14 +39,15 @@ import { useCallback, useEffect, useState } from 'react'
 import { Check, ExternalLink, FileCheck, Send, Smartphone, Users, X } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { download, get, post } from '../../api'
+import { STATUS_DOT } from '../../theme/statusDots'
 import { toast } from '../../utils/toastBus'
 import { reportInvite } from '../../utils/inviteFallback'
 import { EmptyState } from '../ui'
 
 const DOC = {
-  accepted: { dot: 'bg-emerald-500', word: 'accepted' },
-  pending: { dot: 'bg-amber-500', word: 'waiting for you' },
-  expired: { dot: 'bg-red-500', word: 'expired' },
+  accepted: { dot: STATUS_DOT.ok, word: 'accepted' },
+  pending: { dot: STATUS_DOT.attention, word: 'waiting for you' },
+  expired: { dot: STATUS_DOT.problem, word: 'expired' },
   missing: { dot: 'bg-ink-3/40', word: 'not uploaded' },
 }
 
@@ -179,7 +180,7 @@ export default function CrewFiles() {
       <div className="flex flex-wrap items-center gap-x-5 gap-y-1 text-[13px]">
         <span className="inline-flex items-center gap-1.5 text-ink-2">
           <span className={`h-1.5 w-1.5 rounded-full ${
-            t.awaiting_review ? 'bg-amber-500' : 'bg-emerald-500'}`} aria-hidden="true" />
+            t.awaiting_review ? STATUS_DOT.attention : STATUS_DOT.ok}`} aria-hidden="true" />
           {t.awaiting_review
             ? `${t.awaiting_review} document${t.awaiting_review === 1 ? '' : 's'} waiting for you`
             : 'Nothing waiting for you'}
@@ -267,9 +268,9 @@ function Person({ person, busy, admin, onOverride, onAccept, onSendBack, onView 
         <span className="text-[14px] font-medium text-ink">{person.name}</span>
         <span className="inline-flex items-center gap-1.5 text-[12px] text-ink-2">
           <span className={`h-1.5 w-1.5 rounded-full ${
-            person.complete ? 'bg-emerald-500'
+            person.complete ? STATUS_DOT.ok
               : person.override ? 'bg-violet-500'
-                : person.can_work ? 'bg-blue-500' : 'bg-amber-500'}`} aria-hidden="true" />
+                : person.can_work ? STATUS_DOT.info : STATUS_DOT.attention}`} aria-hidden="true" />
           {person.complete ? 'File complete'
             : person.override ? 'Working on an override'
               : person.can_work ? 'Working while you collect their file'
@@ -410,7 +411,7 @@ function WorkLine({ person }) {
       {person.form_1099_due && (
         <span className="inline-flex items-center gap-1.5 text-ink-2">
           <span className="mr-1 text-ink-3/50">·</span>
-          <span className="h-1.5 w-1.5 rounded-full bg-amber-500" aria-hidden="true" />
+          <span className={`h-1.5 w-1.5 rounded-full ${STATUS_DOT.attention}`} aria-hidden="true" />
           1099 due
         </span>
       )}

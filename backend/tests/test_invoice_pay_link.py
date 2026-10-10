@@ -12,6 +12,14 @@ Stripe is configured AND a balance is owed, "View invoice" otherwise. That
 matters because the page itself falls back to "call/text us" when payment is
 off — a button promising payment that lands on "call us" is worse than a
 neutral link.
+
+This file is the CUSTOMER side of `Invoice.public_token`: that what we send out
+carries the link. `test_invoice_generate_token.py` is the OFFICE side — minting
+a token on demand so there is one to carry even on an invoice nobody has sent
+yet, which is when someone wants to read the link down the phone. The two meet
+at `test_no_token_means_no_link_rather_than_a_broken_one` below: a half-built
+URL is worse than none, which is why the office button asks the server for the
+link instead of formatting whatever is on screen.
 """
 import pytest
 

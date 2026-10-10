@@ -5,9 +5,43 @@ layer(base);
 
 @custom-variant dark (&:where(.theme-console, .theme-console *));
 
-@theme {
-  --breakpoint-shell: 900px;
+/* BB-A11Y-05 — every token below is an INDIRECTION into a design token that a
+   `body.theme-*` / `body.mode-clean` / `body.accent-*` block redefines, so this
+   block MUST stay `inline`. It is not a style preference; it is the difference
+   between the theme picker working and doing nothing at all.
 
+   A plain `@theme` is emitted as `:root, :host { --color-panel: var(--panel); … }`.
+   Per the custom-property spec a `var()` reference is substituted at
+   computed-value time ON THE ELEMENT THE DECLARATION APPLIES TO — here `:root` —
+   and children inherit the already-resolved result. Every theme in this app is
+   declared on `body` (see theme.js: applyTheme toggles classes on document.body,
+   and the selectors are `body.mode-clean` / `body.mode-clean.theme-console` /
+   `body.theme-neon`), one level BELOW `:root`. So `--color-panel` resolved once,
+   against the Paper defaults on `:root`, and every `bg-panel` / `bg-bg` /
+   `text-ink` / `text-ink-3` / `border-hairline` / `text-link` / `bg-indigo-*`
+   utility in the app was pinned to Paper in all four themes — including the
+   DEFAULT one, whose `--panel` is `#ffffff` while cards painted `#fbf9f3`.
+   Picking Console in Settings changed `--panel` to `#1a1a1e` and repainted
+   nothing: the shell went dark through the raw-var rules (`.public-surface`,
+   `body.theme-console .bb-surface`) and the `dark:` variant, which key off the
+   class rather than a token, while every panel, card and line of body text
+   stayed on the cream palette.
+
+   `@theme inline` substitutes the value INTO the utility — `.bg-panel` becomes
+   `background-color: var(--panel)` — so it resolves at the element and picks up
+   whatever `body` declares. Nothing reads `var(--color-*)` by hand (only
+   `--color-gray-200`, stock Tailwind, in the border-compat rule below), so
+   inlining costs nothing.
+
+   Same substitution rule BB-A11Y-04b hit from the other side: `--accent-focus`
+   is declared on `body` rather than `:root` so it can follow `body.accent-*`.
+   That one is a token reaching a token; this one is Tailwind's theme layer
+   reaching the same tokens from a block it emits at `:root`.
+
+   The rule for anything added here: if the value is a `var()` into a token any
+   theme block redefines, it belongs in THIS block, not the static one below.
+   Held by __tests__/themeTokenIndirection.test.js. */
+@theme inline {
   --color-frame: var(--frame, var(--bg-2));
   --color-bg: var(--bg);
   --color-bg-2: var(--bg-2);
@@ -38,6 +72,44 @@ layer(base);
      active nav label or an accent-coloured word; `bg-indigo-600` stays the
      fill, because it carries white ink on top. */
   --color-link: rgb(var(--accent-link));
+}
+
+@theme {
+  /* BB-CSS-01 — THE WHOLE BREAKPOINT SCALE, IN PIXELS, IN ORDER.
+     `shell` (900px) used to be declared on its own here, and Tailwind emitted
+     its `@media` block BEFORE the built-in sm/md/lg/xl/2xl ones. Tailwind
+     orders min-width variants by comparing their values; it cannot compare
+     `900px` against the defaults' `40rem`, so a mixed-unit scale falls back to
+     declaration order and the custom key lands ahead of every default.
+
+     Same specificity + earlier in the file = `sm:` beat `shell:` at every
+     width >= 900px, for every property both of them set. The three-column
+     board bento, the two detail-page rails and the comms column never
+     rendered at all: `shell:grid-cols-[1.5fr_1.15fr_1.15fr]` was in the DOM,
+     overruled by `sm:grid-cols-2` further down the stylesheet. The owner's
+     window is ~940px, so she saw the phone-ish two-column fallback and the
+     rail dumped underneath as a full-width band — the exact long-scroll shape
+     the revamp set out to remove.
+
+     Restating all six in px makes them numerically comparable, so they sort
+     640 < 768 < 900 < 1024 < 1280 < 1536 and `shell:` wins over `sm:`/`md:`
+     as every call site assumes. The values ARE Tailwind's defaults (40/48/64/
+     80/96rem at a 16px root), so nothing moves at the default font size.
+
+     Px, not rem, deliberately — and this is the reason the whole scale is
+     restated rather than just converting shell to 56.25rem, which would also
+     sort correctly. `shell` is pinned to a physical window: the owner's is
+     ~940px, 40px of headroom. On a rem scale, one notch of browser zoom puts
+     the breakpoint at 990px and drops her back to the narrow layout — which is
+     how `lg:`/1024 hid an entire redesign from her once already. A layout
+     breakpoint chosen from a real window has to stay at that many CSS pixels.
+     Keep every value here in px; adding one in rem re-opens this bug. */
+  --breakpoint-sm: 640px;
+  --breakpoint-md: 768px;
+  --breakpoint-shell: 900px;
+  --breakpoint-lg: 1024px;
+  --breakpoint-xl: 1280px;
+  --breakpoint-2xl: 1536px;
 
   --color-brand-50: #f0f9ff;
   --color-brand-100: #e0f2fe;
@@ -558,12 +630,57 @@ layer(base);
      A NEGATIVE offset draws the ring INSIDE the border box, which is the one
      place clipping cannot reach. `border-radius: inherit` makes it follow
      whatever corner its host has, so one utility serves a 10px button and an
-     18px card. accent-500 is the ramp's focus step and follows the
-     body.accent-* choice. */
+     18px card. `--accent-focus` is the ramp's measured focus step, picked per
+     theme further down this file — it was `--accent-500` until BB-A11Y-04b
+     measured that step at 1.69:1 on light grounds. */
   .bb-focus:focus-visible {
-    outline: 2px solid rgb(var(--accent-500));
+    outline: 2px solid rgb(var(--accent-focus));
     outline-offset: -2px;
     border-radius: inherit;
+  }
+
+  /* BB-A11Y-04b — the same ring, for everything that takes keyboard focus
+     rather than the 14 elements that remembered to ask for it.
+
+     `.bb-focus` above is opt-in, and a year of pages shipped without opting
+     in: counted across the app, 1140 of ~1360 focusable elements carry no
+     focus styling at all. They are not INVISIBLE — they fall back to the
+     browser's own ring — but that ring is the one BB-A11Y-04 was written
+     about. It is drawn outside the border box, so the app's 94
+     `overflow-hidden` ancestors crop it; it is whatever the UA decides, so it
+     ignores the accent the user picked; and on the dark themes it is close to
+     unreadable. One default beats 1140 opt-ins.
+
+     `:where()` keeps this at zero specificity, and `@layer base` puts it under
+     every utility, so the two existing treatments still win on the elements
+     that use them:
+
+       - `focus:outline-hidden` (146 elements, nearly all inputs pairing it
+         with `focus:border-*`) emits `outline: 2px solid transparent` from the
+         utilities layer and suppresses this. Their border IS their indicator,
+         it is inside the box, and it is not this change's business.
+       - `.bb-focus` is identical plus `border-radius: inherit`, which it needs
+         because it is applied to WRAPPERS that must follow a card's corner. A
+         native control already has its own radius and an outline follows it,
+         so inheriting the parent's here would square off a rounded button.
+
+     What this cannot share is a ring drawn with `focus:ring-*`: that is a
+     box-shadow, so it does not override an outline and both would show. The
+     21 elements in that position are converted to this ring in the same
+     commit, which is also how the app stops having two focus vocabularies. */
+  :where(
+    a[href],
+    area[href],
+    button,
+    input,
+    select,
+    textarea,
+    summary,
+    [tabindex]:not([tabindex^="-"]),
+    [contenteditable="true"]
+  ):focus-visible {
+    outline: 2px solid rgb(var(--accent-focus));
+    outline-offset: -2px;
   }
 
   .bb-nav-active {
@@ -754,14 +871,105 @@ layer(base);
      in dark. 800 is the first step every selectable accent clears (5.75-8.05);
      700 gets four of five and cyan still fails at 4.34 on bg-3. 300 in dark
      clears 7.75-10.71 for all of them. Both are `var()`s into the live ramp,
-     so this follows the body.accent-* choice for free.
-     Held by __tests__/inkContrast.test.js — re-run the ratios before moving it. */
-  :root {
+     so this follows the body.accent-* choice.
+
+     ## Why the light step is on `body` and not `:root`
+
+     It said "for free" here and sat on `:root`, and that did not work: this is
+     the same substitution rule as BB-A11Y-05 one level down. A `var()` inside a
+     custom property is substituted at computed-value time ON THE ELEMENT THE
+     DECLARATION APPLIES TO, and the accent ramp is redefined by `body.accent-*`.
+     Declared on `:root`, `var(--accent-800)` therefore resolved against the
+     DEFAULT ramp and inherited that one value down, so a light-theme link was
+     indigo-800 whatever accent the user picked. Measured in the running app
+     after BB-A11Y-05 landed: `body.mode-clean.accent-rose` painted `text-link`
+     rgb(55, 48, 163) — indigo-800 — next to a rose `bg-indigo-600` button.
+
+     Only the LIGHT step was wrong. The dark override below was always on `body`,
+     so it followed the accent correctly, which is why this hid behind a
+     half-working feature. `--accent-focus` directly below has been on `body`
+     since BB-A11Y-04b for exactly this reason.
+
+     `body` is enough: `body.theme-console` and `body.theme-neon` outrank a bare
+     `body` on specificity, so the dark override below still wins.
+     Held by __tests__/inkContrast.test.js for the RATIOS and by
+     __tests__/themeTokenIndirection.test.js for the ELEMENT — re-run the ratios
+     before moving a step. */
+  body {
     --accent-link: var(--accent-800);
   }
   body.theme-console,
   body.theme-neon {
     --accent-link: var(--accent-300);
+  }
+
+  /* BB-A11Y-04b — the focus RING's step, which is a third one again.
+     Same shape as --accent-link above and picked the same way: by measuring.
+
+     The ring was `rgb(var(--accent-500))`, and 500 is the step that works on
+     the DARK themes (worst 3.46:1) and fails everywhere else. Measured across
+     all seven selectable accents against all three light themes' grounds it
+     bottoms out at 1.69:1 — amber on Paper's `--bg-3` — so on five of the
+     seven accents the focus ring was a graphical object at well under half the
+     3:1 floor. It looked fine in review because indigo and violet, the two
+     that pass, are the default and the first alternative.
+
+     No single step serves both ends: 700 clears light at 3.95 and fails dark
+     at 1.95; 600 fails BOTH at 2.50 and 2.46. So the step is picked per theme,
+     exactly as --accent-link and --job-edge-* already are.
+
+     ## Why this is on `body` rather than `:root`
+
+     Not a style choice. A `var()` inside a custom property is substituted at
+     computed-value time on THE ELEMENT THE DECLARATION APPLIES TO, and the
+     accent ramp is redefined by `body.accent-*` — one level below `:root`. A
+     declaration on `:root` therefore resolves against the DEFAULT ramp and
+     inherits that resolved value down, so it cannot follow the accent the user
+     picked. Declaring it on `body` puts it on the same element as the
+     `body.accent-*` block, where the substitution sees the live ramp.
+
+     This paragraph used to end "…and --accent-link is on `:root`", stating the
+     difference without drawing the conclusion: --accent-link had the same bug
+     and the same fix was owed to it. It is on `body` now, and
+     themeTokenIndirection.test.js checks the whole file for the pattern rather
+     than leaving it to a comment.
+     (`body.theme-*` beats a bare `body` on specificity, so the dark override
+     below still wins.) Held by __tests__/focusRing.test.js, which measures
+     every accent against every theme rather than trusting this comment. */
+  body {
+    --accent-focus: var(--accent-700);
+  }
+  body.theme-console,
+  body.theme-neon {
+    --accent-focus: var(--accent-500);
+  }
+
+  /* BB-A11Y-02 — job type as an EDGE, the one place a schedule colour has to
+     be a real value rather than a Tailwind class: the 3px rule on a week
+     block, the dispatch timeline block and the drag ghost are inline-styled on
+     absolutely-positioned elements.
+
+     Same shape as --accent-link directly above, for the same reason. A single
+     fixed hex cannot serve both themes — it has to clear the 3:1 non-text
+     floor against near-white grounds AND against Console's near-black ones,
+     and of the whole Tailwind palette only amber-700, rose-600 and slate-500
+     manage both. There is no distinct categorical trio in that window, so the
+     step is picked per theme here instead.
+
+     These track theme/scheduleScales.js JOB_TYPE_DOT step for step, so the
+     edge and the dot on one block are one colour. Held by
+     __tests__/jobTypeEdgeContrast.test.js, which measures each value against
+     its own theme's grounds and fails if the two drift apart. */
+  :root {
+    --job-edge-str: #b45309;          /* amber-700  4.07:1 on light grounds */
+    --job-edge-residential: #2563eb;  /* blue-600   4.19:1 */
+    --job-edge-commercial: #6b21a8;   /* purple-800 7.07:1 */
+  }
+  body.theme-console,
+  body.theme-neon {
+    --job-edge-str: #fbbf24;          /* amber-400  9.25:1 on dark grounds */
+    --job-edge-residential: #60a5fa;  /* blue-400   6.08:1 */
+    --job-edge-commercial: #d8b4fe;   /* purple-300 8.74:1 */
   }
 }
 
@@ -894,6 +1102,19 @@ layer(base);
        read a link at about 1.6:1. Public pages are always light, so the link
        step here is always the deep one. */
     --accent-link: var(--accent-800);
+    /* And the focus ring, for exactly the same reason one line up: the dark
+       themes point --accent-focus at the 500 step, which measures 1.69-2.43:1
+       on these light grounds. A customer tabbing through a quote's accept form
+       would be aiming at a ring they cannot see. */
+    --accent-focus: var(--accent-700);
+    /* Same reset, same reason: the dark themes point these at their light
+       steps, and a public page is always light. No public route renders a
+       schedule block today, but the contract test above holds every themed
+       token to this, so the next one that does is covered without anyone
+       remembering to opt it in. */
+    --job-edge-str: #b45309;
+    --job-edge-residential: #2563eb;
+    --job-edge-commercial: #6b21a8;
     --c-residential: oklch(0.58 0.12 245);
     --c-residential-bg: oklch(0.92 0.03 245);
     --c-commercial: oklch(0.60 0.14 60);

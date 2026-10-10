@@ -34,6 +34,13 @@ describe('AcceptInvite', () => {
     expect(screen.getByText(/missing its code/i)).toBeTruthy()
     // The vetoed pattern is a resting red fill; the sanctioned one is a dot.
     expect(container.innerHTML).not.toMatch(/\bbg-red-(50|100|200)\b/)
-    expect(container.querySelector('.bg-red-500')).toBeTruthy()   // ErrorNote's dot
+    // Assert the SHAPE, not a specific hue. This pinned `.bg-red-500`, which
+    // was standing in for "a dot is present" — but it also froze the dot's
+    // colour step, so BB-A11Y-02 moving red-500 (2.55:1, under the 3:1
+    // non-text floor) to a step that clears broke a test about banners vs
+    // dots. The rule this guards is the shape; the colour is measured by
+    // __tests__/boardToneContrast.test.js, which is the right place for it.
+    const dot = container.querySelector('.rounded-full.w-1\\.5')
+    expect(dot, "ErrorNote's dot is missing — status must not be text-only").toBeTruthy()
   })
 })

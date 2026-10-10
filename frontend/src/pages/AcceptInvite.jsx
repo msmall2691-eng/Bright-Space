@@ -3,6 +3,7 @@ import { useSearchParams } from 'react-router-dom'
 import { Lock, Zap, Loader, Eye, EyeOff, CheckCircle2 } from 'lucide-react'
 import { post, setJWT } from '../api'
 import { ErrorNote } from '../components/ui'
+import { STATUS_ICON } from '../theme/statusText'
 
 /**
  * AcceptInvite — the set-your-password landing at /accept-invite?token=…
@@ -66,7 +67,7 @@ export default function AcceptInvite() {
 
           {done ? (
             <div className="text-center">
-              <CheckCircle2 className="w-12 h-12 text-emerald-500 mx-auto mb-3" />
+              <CheckCircle2 className={`w-12 h-12 ${STATUS_ICON.ok} mx-auto mb-3`} />
               <h1 className="text-2xl font-bold text-ink mb-1">You’re all set</h1>
               <p className="text-ink-3">Taking you to your schedule…</p>
             </div>

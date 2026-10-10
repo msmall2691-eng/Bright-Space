@@ -1,16 +1,37 @@
 import { useEffect, useState, useMemo } from 'react'
-import { getCached } from '../api'
+import { getCached, onCacheInvalidated } from '../api'
 
 /**
  * Shared employees roster.
  *
- * Before this hook the roster was fetched independently in useScheduleData,
- * CalendarView, JobEditModal, JobCreateModal, ConvertToJobModal, ScheduleTabs
- * (AvailabilityPanel), and useDashboardData — seven parallel requests to
- * `/api/dispatch/employees` when the operator opens Schedule. Audit §18
- * called that out. This hook routes every caller through the existing
- * getCached() dedup + result cache in api.js, with a two-minute TTL that
- * matches how rarely the roster changes.
+ * Before this hook the roster was fetched independently in seven places —
+ * seven parallel requests to `/api/dispatch/employees` when the operator
+ * opened Schedule, which audit §18 called out. This hook routes its callers
+ * through the existing getCached() dedup + result cache in api.js, with a
+ * two-minute TTL that matches how rarely the roster changes.
+ *
+ * It listed all seven by name and was wrong about three of them, which the
+ * orphaned-dashboard cleanup found while tracing the import graph. Checked
+ * one at a time, the seven are:
+ *   - useScheduleData, CalendarView, JobEditModal, JobCreateModal — converted,
+ *     still here, still on this hook.
+ *   - ScheduleTabs' AvailabilityPanel — claimed for a long time, actually
+ *     converted only in #1147, once a test counting `fetch` calls showed the
+ *     roster going out TWICE on `?tab=availability`: Schedule's
+ *     useScheduleData calls this hook unconditionally (hooks can't be
+ *     conditional; its `enabled` option gates only the week fetch), and the
+ *     panel's raw `get()` could not share the in-flight promise.
+ *   - useDashboardData — was dead code and is now deleted. Nothing had
+ *     imported it since the Dashboard page itself was removed, so its raw
+ *     fetch had not cost a request in a long time.
+ *   - ConvertToJobModal — no such file exists anywhere in the tree.
+ *
+ * So the live count is five callers sharing one cached fetch, not seven.
+ * Worth the words: a comment claiming a de-duplication that had not happened
+ * is how the one real duplicate survived an economy audit for months. The
+ * count is pinned by a test now
+ * (components/schedule/__tests__/availabilityRoster.test.jsx) rather than by
+ * this paragraph.
  *
  * Returns:
  *   employees          — raw array from the API (empty until loaded)
@@ -19,13 +40,29 @@ import { getCached } from '../api'
  *   loading, error     — small state a caller can use for skeleton/toast
  */
 
-const CACHE_URL = '/api/dispatch/employees'
-const CACHE_TTL_MS = 2 * 60 * 1000  // 2 minutes — roster changes rarely
+/** The one definition of the roster URL. Exported so the Crew page can drop
+ *  this cache after a write without re-typing the string — a second copy is
+ *  how a URL and the thing that caches it drift apart. */
+export const ROSTER_CACHE_URL = '/api/dispatch/employees'
+const CACHE_URL = ROSTER_CACHE_URL
+// 2 minutes — the roster changes rarely, and when it DOES change the Crew page
+// calls invalidateCached(ROSTER_CACHE_URL) rather than leaving every assign
+// drop-down two minutes behind.
+const CACHE_TTL_MS = 2 * 60 * 1000
 
 export function useEmployees() {
   const [employees, setEmployees] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
+  // Bumped when the roster is invalidated, which re-runs the fetch effect
+  // below. Without it this hook holds whatever it resolved at mount for its
+  // whole life (the effect has no other dependency), so a Schedule that
+  // mounted while a crew edit was still in flight would show the old name —
+  // or omit someone whose crew ID just changed — until it unmounted. Found in
+  // review on #1148.
+  const [refreshKey, setRefreshKey] = useState(0)
+
+  useEffect(() => onCacheInvalidated(CACHE_URL, () => setRefreshKey(k => k + 1)), [])
 
   useEffect(() => {
     let cancelled = false
@@ -43,7 +80,7 @@ export function useEmployees() {
         setLoading(false)
       })
     return () => { cancelled = true }
-  }, [])
+  }, [refreshKey])
 
   const employeeById = useMemo(() => {
     // Index both by id and by userId — legacy rosters keyed cleaners by

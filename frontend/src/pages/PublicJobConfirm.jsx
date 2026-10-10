@@ -3,6 +3,8 @@ import { useParams } from 'react-router-dom'
 import { CheckCircle, AlertCircle, Clock, Calendar, MapPin } from 'lucide-react'
 import WhosComing from '../components/customer/WhosComing'
 import { publicFetch } from '../utils/publicFetch'
+import { STATUS_DOT } from '../theme/statusDots'
+import { STATUS_TEXT, STATUS_ICON } from '../theme/statusText'
 
 function formatTime(t) {
   if (!t) return ''
@@ -179,7 +181,7 @@ export default function PublicJobConfirm() {
     return (
       <div className="min-h-screen bg-bg flex items-center justify-center p-4">
         <div className="text-center max-w-sm">
-          <AlertCircle className="w-16 h-16 text-red-400 mx-auto mb-4" />
+          <AlertCircle className={`w-16 h-16 ${STATUS_ICON.problem} mx-auto mb-4`} />
           <h1 className="text-xl font-bold text-ink mb-2">Unable to Load Visit</h1>
           <p className="text-ink-2">{error}</p>
         </div>
@@ -202,7 +204,7 @@ export default function PublicJobConfirm() {
       <div className="max-w-lg mx-auto px-4 py-6 sm:px-6 sm:py-10">
         {error && (
           <div className="flex items-center gap-2 bg-panel border border-hairline rounded-lg px-4 py-3 mb-4">
-            <span className="w-1.5 h-1.5 rounded-full bg-red-500 shrink-0" aria-hidden="true" />
+            <span className={`w-1.5 h-1.5 rounded-full ${STATUS_DOT.problem} shrink-0`} aria-hidden="true" />
             <p className="text-sm text-ink-2">{error}</p>
           </div>
         )}
@@ -299,7 +301,7 @@ export default function PublicJobConfirm() {
                             const keys = (day?.windows || []).map(w => w.key)
                             if (day && !keys.includes(reschedWindow)) setReschedWindow(keys[0])
                           }}
-                          className="w-full px-3 py-3 border border-hairline rounded-xl text-base bg-panel focus:ring-2 focus:ring-indigo-500"
+                          className="w-full px-3 py-3 border border-hairline rounded-xl text-base bg-panel"
                         >
                           {(availability?.dates || []).map(d => (
                             <option key={d.date} value={d.date}>
@@ -315,7 +317,7 @@ export default function PublicJobConfirm() {
                               className={`py-3 rounded-xl text-sm font-medium border transition-colors ${reschedWindow === w.key ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-panel text-ink-2 border-hairline hover:bg-bg-2'}`}
                             >
                               {w.label}
-                              {w.busy && <span className={`block text-[11px] font-normal ${reschedWindow === w.key ? 'text-blue-100' : 'text-amber-600'}`}>needs approval</span>}
+                              {w.busy && <span className={`block text-[11px] font-normal ${reschedWindow === w.key ? 'text-blue-100' : STATUS_TEXT.attention}`}>needs approval</span>}
                             </button>
                           ))}
                         </div>
@@ -339,7 +341,7 @@ export default function PublicJobConfirm() {
 
                         {selectedBusy() && (
                           <p className="flex items-center gap-1.5 text-[12px] text-ink-2 bg-panel border border-hairline rounded-lg px-3 py-2">
-                            <span className="w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0" aria-hidden="true" />
+                            <span className={`w-1.5 h-1.5 rounded-full ${STATUS_DOT.attention} shrink-0`} aria-hidden="true" />
                             That time is popular — we'll confirm it with you before it's locked in.
                           </p>
                         )}
@@ -364,7 +366,7 @@ export default function PublicJobConfirm() {
                       onChange={(e) => setRequestMsg(e.target.value)}
                       placeholder="Let us know what you need (optional)"
                       rows={4}
-                      className="w-full px-3 py-2 border border-hairline rounded-lg text-base focus:ring-2 focus:ring-indigo-500 focus:border-transparent resize-none"
+                      className="w-full px-3 py-2 border border-hairline rounded-lg text-base resize-none"
                       autoFocus
                     />
                     <div className="flex gap-2">

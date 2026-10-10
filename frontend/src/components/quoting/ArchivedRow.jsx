@@ -1,4 +1,5 @@
 import { Trash2, MapPin, Calendar } from 'lucide-react'
+import { STATUS_TEXT } from '../../theme/statusText'
 
 /** A row on the Archived tab (soft-deleted quotes). Renders with a
  *  permanent-delete button when the viewer is an admin. */
@@ -38,7 +39,7 @@ export default function ArchivedRow({
         {isAdmin && (
           <button onClick={() => onDeletePermanent(q)}
             title="Delete permanently"
-            className="flex items-center gap-1 text-xs px-2.5 py-1.5 text-red-500 hover:bg-red-50 rounded-lg transition-colors shrink-0">
+            className={`flex items-center gap-1 text-xs px-2.5 py-1.5 ${STATUS_TEXT.problem} hover:bg-red-50 rounded-lg transition-colors shrink-0`}>
             <Trash2 className="w-3.5 h-3.5" /> Delete
           </button>
         )}

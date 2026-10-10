@@ -2,6 +2,7 @@ import { Receipt, Plus, Search } from 'lucide-react'
 import { PageTitle } from '../ui'
 import { STATUS_FILTERS } from './constants'
 import { MoneyKpis } from './MoneyKpis'
+import { STATUS_DOT } from '../../theme/statusDots'
 
 /** Page-level header for the Money page: a compact PageTitle (icon + title +
  *  invoice count + a "Chase overdue" secondary when anything is overdue + the
@@ -43,7 +44,7 @@ export function InvoicingHeader({
               <button onClick={openChaser}
                 className="flex items-center gap-1.5 rounded-md border border-hairline-2 bg-panel px-3 py-1.5 text-xs font-medium text-ink-2 transition-colors hover:bg-bg-2"
                 title="AI-draft payment reminders for all overdue invoices">
-                <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-amber-500" aria-hidden="true" />
+                <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${STATUS_DOT.attention}`} aria-hidden="true" />
                 Chase overdue
               </button>
             )}
