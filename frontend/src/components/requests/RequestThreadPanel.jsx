@@ -11,10 +11,10 @@ import { STATUS_TEXT } from '../../theme/statusText'
 
 /** Inline two-way conversation embedded in the Requests drawer — so an
  *  operator can ask a lead a question and see the reply without leaving
- *  the page. A trimmed-down sibling of the full Comms inbox: single
- *  contact, no folders/assign/priority, but the same message bubbles and
- *  compose bar so a thread started here looks identical once it shows up
- *  in Comms.
+ *  the page. A trimmed-down sibling of the full Messages inbox (pages/
+ *  Comms.jsx, route /comms — both internal names): single contact, no
+ *  folders/assign/priority, but the same message bubbles and compose bar so a
+ *  thread started here looks identical once it shows up in the inbox.
  *
  *  Before the first message, there's no conversation row yet (leads
  *  predate any Client/Conversation), so `detail` is null and the operator
@@ -148,7 +148,7 @@ export function RequestThreadPanel({ intake }) {
               <MessageCircle className="w-5 h-5 text-ink-3" />
             </div>
             <p className="text-[12px] text-ink-3 max-w-[220px]">
-              No messages yet. Send the first one below — it'll show up in Comms too.
+              No messages yet. Send the first one below — it'll show up in Messages too.
             </p>
           </div>
         )}

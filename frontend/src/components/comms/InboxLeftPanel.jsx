@@ -43,6 +43,12 @@ export function InboxLeftPanel({
   onResolve,
   onReopen,
   onAssignMine,
+  // True while the customer column is open. Between shell: and xl: there is
+  // only room for two 320–340px panes beside the thread, so the LIST yields
+  // its slot to the customer column rather than letting that column cover the
+  // thread (see ContactPanel's header comment). At xl: all three fit and the
+  // list comes back on its own.
+  hiddenForContact = false,
 }) {
   // Swipe-left actions per row. In the Done folder the primary action flips to
   // "Reopen"; elsewhere it's "Done" (resolve) plus a quick "Mine" assign.
@@ -111,9 +117,18 @@ export function InboxLeftPanel({
     </div>
   )
 
+  // Built in JS rather than as conditional Tailwind classes on purpose: a
+  // `shell:flex shell:hidden` pair lands in the SAME media query, where the
+  // winner is whichever Tailwind emitted later in the stylesheet — not the
+  // order written here. Composing one display string per case keeps every
+  // conflict between different breakpoints, which sort by width (BB-CSS-01).
+  const display = hiddenForContact
+    ? (mobileView === 'list' ? 'flex shell:hidden xl:flex' : 'hidden xl:flex')
+    : (mobileView === 'list' ? 'flex' : 'hidden shell:flex')
+
   return (
-    <div className={`w-full shell:w-[340px] border-r border-hairline bg-panel flex flex-col shrink-0
-      ${mobileView === 'list' ? 'flex' : 'hidden shell:flex'}`}>
+    <div className={`w-full shell:w-[320px] xl:w-[340px] border-r border-hairline bg-panel flex flex-col shrink-0
+      ${display}`}>
 
       {/* Header */}
       <div className="px-4 pt-3 pb-2.5">

@@ -14,8 +14,9 @@ import { STATUS_DOT } from '../../theme/statusDots'
  *     back button (mobile). */
 export function ThreadHeader({
   detail,
-  showContactPanel, setShowContactPanel,
   setMobileView,
+  onToggleContact,
+  contactOpen = false,
   onToggleStatus,
   onAssign,
 }) {
@@ -91,10 +92,18 @@ export function ThreadHeader({
               : <CheckCircle2 className="w-3.5 h-3.5" />}
             {detail.status === 'resolved' ? 'Done' : 'Mark done'}
           </button>
-          {/* Contact/details: on mobile this switches to the contact pane
-              (mobileView='contact'); on desktop it toggles the side panel. */}
-          <button onClick={() => { setShowContactPanel(v => !v); setMobileView('contact') }}
-            className="w-9 h-9 rounded-lg bg-bg-2 hover:bg-hairline flex items-center justify-center text-ink-3 transition-colors">
+          {/* Customer details. One handler for both sizes (Comms'
+              toggleContactPanel): on a phone it switches to the contact pane,
+              at shell:+ it opens the customer column. It used to flip the
+              panel flag and set mobileView='contact' unconditionally, so
+              CLOSING the panel left the page claiming the contact pane was
+              the active mobile view. aria-pressed because the glyph alone
+              doesn't say whether the column is already showing. */}
+          <button onClick={onToggleContact} aria-pressed={contactOpen}
+            aria-label={contactOpen ? 'Hide customer details' : 'Show customer details'}
+            className={`w-9 h-9 rounded-lg flex items-center justify-center transition-colors ${
+              contactOpen ? 'bg-bg-2 text-ink border border-ink/20' : 'bg-bg-2 hover:bg-hairline text-ink-3'
+            }`}>
             <User className="w-4 h-4" />
           </button>
         </div>
