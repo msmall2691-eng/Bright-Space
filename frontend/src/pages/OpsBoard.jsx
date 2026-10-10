@@ -262,7 +262,7 @@ function IntChip({ chip }) {
   return (
     <span
       title={`${chip.label} — ${chip.detail}`}
-      className="inline-flex h-5 shrink-0 items-center gap-1.5 rounded-sm border border-hairline-2 bg-panel px-2 text-[11px] font-medium text-ink-2">
+      className="inline-flex shrink-0 items-center gap-1.5 text-[11px] font-medium text-ink-2">
       <span className={`h-1.5 w-1.5 rounded-full ${INT_DOT[chip.tone] || INT_DOT.gray}`} />
       {chip.label}
       {chip.detail && <span className="text-ink-3">· {chip.detail}</span>}

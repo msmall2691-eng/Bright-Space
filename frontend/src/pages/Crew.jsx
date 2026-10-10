@@ -299,7 +299,7 @@ export default function Crew() {
                         <div className="text-xs text-ink-3 truncate">{row.email}</div>
                       </div>
                       <div className="flex items-center gap-2 shrink-0">
-                        <span className="inline-flex h-5 items-center gap-1.5 rounded-sm border border-hairline-2 bg-panel px-2 text-[11px] font-medium text-ink-2">
+                        <span className="inline-flex items-center gap-1.5 text-[11px] font-medium text-ink-2">
                           <span className={`h-1.5 w-1.5 rounded-full ${p.dot}`} /> {p.label}
                         </span>
                         {!row.activated && (row.status || '') !== 'disabled' && (

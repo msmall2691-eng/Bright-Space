@@ -310,7 +310,7 @@ function ScheduleLogPanel({ log }) {
         <div className="flex items-center gap-2 min-w-0">
           <ScrollText className="w-4 h-4 text-ink-3 shrink-0" />
           <span className="font-semibold text-ink text-sm">Schedule log</span>
-          <span className="inline-flex h-5 items-center gap-1.5 rounded-sm border border-hairline-2 bg-panel px-2 text-[11px] font-medium text-ink-2">
+          <span className="inline-flex items-center gap-1.5 text-[11px] font-medium text-ink-2">
             <span className={`w-1.5 h-1.5 rounded-full ${live ? STATUS_DOT.ok: STATUS_DOT.neutral}`} />
             {live ? 'Capturing' : 'Dark'}
           </span>

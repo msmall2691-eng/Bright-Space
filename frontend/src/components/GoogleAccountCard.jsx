@@ -120,11 +120,11 @@ export default function GoogleAccountCard() {
           <div className="flex items-center gap-2 text-sm">
             <span className="font-medium text-ink">{acct.email}</span>
             {acct.status === 'expired' ? (
-              <span className="inline-flex items-center gap-1.5 text-[11px] px-2 h-5 rounded-sm border border-hairline-2 bg-panel text-ink-2 font-medium">
+              <span className="inline-flex items-center gap-1.5 text-[11px] text-ink-2 font-medium">
                 <span className={`h-1.5 w-1.5 rounded-full ${STATUS_DOT.attention} shrink-0`} aria-hidden="true" /> reconnect needed
               </span>
             ) : (
-              <span className="inline-flex items-center gap-1.5 text-[11px] px-2 h-5 rounded-sm border border-hairline-2 bg-panel text-ink-2 font-medium">
+              <span className="inline-flex items-center gap-1.5 text-[11px] text-ink-2 font-medium">
                 <span className={`h-1.5 w-1.5 rounded-full ${STATUS_DOT.ok} shrink-0`} aria-hidden="true" /> connected
               </span>
             )}

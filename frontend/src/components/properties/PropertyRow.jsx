@@ -103,7 +103,7 @@ export function PropertyRow({
                         per-feed pill you had to expand the card to see. */}
                     {p.ical_health && p.ical_health !== 'no_feed' && (
                       <span
-                        className="inline-flex h-5 items-center gap-1.5 rounded-sm border border-hairline-2 bg-panel px-2 text-[11px] font-medium text-ink-2"
+                        className="inline-flex items-center gap-1.5 text-[11px] font-medium text-ink-2"
                         title={p.ical_health === 'healthy'
                           ? 'A feed synced cleanly within the last 24h'
                           : "No feed has synced cleanly in 24h+ — check it"}
@@ -113,7 +113,7 @@ export function PropertyRow({
                       </span>
                     )}
                     {p.ical_health === 'no_feed' && (
-                      <span className="inline-flex h-5 items-center gap-1.5 rounded-sm border border-hairline-2 bg-panel px-2 text-[11px] font-medium text-ink-2"
+                      <span className="inline-flex items-center gap-1.5 text-[11px] font-medium text-ink-2"
                         title="STR property with no active calendar feed configured">
                         <span className={`h-1.5 w-1.5 rounded-full ${STATUS_DOT.problem}`} />No feed
                       </span>
