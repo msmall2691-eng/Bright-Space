@@ -153,6 +153,12 @@ _SOURCE_SYNONYMS = {
     "phone call": "phone", "call": "phone",
     "text": "sms", "text message": "sms",
     "e-mail": "email", "gmail": "email",
+    # Meta Lead Ads. A lead form shown on Instagram is delivered through the
+    # same Facebook Page webhook, so both land under one source rather than
+    # splitting the funnel's "by lead source" row in two over a placement.
+    "fb": "facebook", "meta": "facebook", "facebook ads": "facebook",
+    "facebook lead ads": "facebook", "lead ad": "facebook",
+    "ig": "facebook", "insta": "facebook", "instagram": "facebook",
 }
 
 

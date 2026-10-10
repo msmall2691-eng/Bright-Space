@@ -4,6 +4,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import func, or_
 from pydantic import BaseModel, ConfigDict
 from typing import Optional
+import json
 import logging
 
 from database.db import get_db
@@ -298,12 +299,16 @@ def submit_intake(request: Request, data: IntakeSubmit, db: Session = Depends(ge
     return result
 
 
-def _alert_owner_new_request(db: Session, data: IntakeSubmit, result: dict) -> None:
-    """Text + email the owner about a website request, the same way
+def _alert_owner_new_request(db: Session, data, result: dict) -> None:
+    """Text + email the owner about a new request, the same way
     /api/booking/submit does (services.owner_alerts). upsert_lead already
     web-pushes staff on a brand-new lead, but push is the one channel the owner
     may never have enabled on her phone; SMS + email were only wired for the
     /book form, so a contact-form lead could sit unseen.
+
+    `data` is duck-typed, not an `IntakeSubmit`: the Facebook Lead Ads path has
+    no wire schema of its own and passes the canonical `IntakeData` instead.
+    Everything read below exists on both.
 
     Same silence rule as booking: a deduped post that added nothing is a
     replay, not a new lead (the row is the record; the alerts follow the row).
@@ -314,7 +319,13 @@ def _alert_owner_new_request(db: Session, data: IntakeSubmit, result: dict) -> N
         from services import owner_alerts
         from services.booking_email_service import format_requested_date, service_label
         intake_id = result.get("intake_id")
-        svc = service_label(data.service_type)
+        # The RAW service the customer picked ("deep-clean"), not the canonical
+        # bucket it maps to ("residential") — the owner's text should say what
+        # was asked for. IntakeSubmit.service_type already is the raw key and
+        # has no `requested_service`, so the website path is unchanged;
+        # IntakeData carries the canonical value in service_type and the raw
+        # one beside it.
+        svc = service_label(getattr(data, "requested_service", None) or data.service_type)
         # Owner-facing: say plainly when no date was asked for (contact-form
         # leads usually carry none) instead of the customer-copy fallback.
         requested = data.requested_date or data.preferred_date
@@ -361,6 +372,128 @@ def _alert_owner_new_request(db: Session, data: IntakeSubmit, result: dict) -> N
             logger.info("[intake] owner SMS/email not sent for intake=%s (unconfigured or failed)", intake_id)
     except Exception as e:  # pragma: no cover - alerts never break the submit
         logger.warning("[intake] owner alert failed: %s", e)
+
+
+# ── Facebook / Instagram Lead Ads ───────────────────────────────────────────
+#
+# Declared HERE, above `GET /{intake_id}`, because route order decides which
+# one claims `GET /api/intake/facebook`. Everything about the Meta flow lives
+# in integrations/facebook_leads.py; this is the thin wiring onto the same
+# canonical intake path the website form uses.
+
+
+@router.get("/facebook")  # PUBLIC: Meta's one-time subscribe handshake
+@limiter.limit("30/hour")
+def facebook_verify(request: Request):
+    """Echo ``hub.challenge`` when ``hub.verify_token`` matches ours.
+
+    Meta calls this once, when the webhook URL is saved in the app dashboard,
+    and will not deliver anything until it succeeds. Plain text, not JSON —
+    Meta compares the body to the challenge byte for byte.
+    """
+    from integrations import facebook_leads as fb
+    from fastapi.responses import PlainTextResponse
+
+    params = request.query_params
+    if not fb.verify_token():
+        logger.error("[facebook] subscribe handshake rejected — FACEBOOK_VERIFY_TOKEN unset")
+        raise HTTPException(status_code=503, detail="Webhook not configured.")
+    if not fb.verify_subscription(params.get("hub.mode"), params.get("hub.verify_token")):
+        logger.warning("[facebook] subscribe handshake rejected — token mismatch")
+        raise HTTPException(status_code=403, detail="Verification failed.")
+    return PlainTextResponse(params.get("hub.challenge") or "")
+
+
+@router.post("/facebook")  # PUBLIC: Meta posts here; the signature is verified inside
+@limiter.limit("300/hour")
+async def facebook_leadgen(request: Request, db: Session = Depends(get_db)):
+    """A lead form submitted on Facebook or Instagram becomes a Request.
+
+    SIGNATURE FIRST, and refuse rather than trust when we cannot check — this
+    endpoint is public (Meta cannot send our API key), so the HMAC is the only
+    thing between a stranger and an unlimited supply of fake leads in the
+    owner's inbox. No secret configured means reject (BB-SEC-06 posture).
+
+    The delivery carries identifiers only, so each lead is a Graph fetch. That
+    fetch is inline and bounded (10s) rather than queued: a new background tick
+    is exactly what `scheduling-invariants` R1 forbids, and the webhook is
+    already the event.
+
+    **A delivery we cannot turn into a lead gets a 503, not a 200.** Meta
+    retries a non-2xx for hours, and that retry window is the whole difference
+    between a missing Page token being recoverable and being a lost customer.
+    A 200 here would throw the lead away politely.
+    """
+    from integrations import facebook_leads as fb
+
+    if not fb.app_secret():
+        logger.error("[facebook] rejecting delivery — FACEBOOK_APP_SECRET unset, "
+                     "cannot verify the signature")
+        raise HTTPException(status_code=503, detail="Webhook not configured.")
+
+    raw = await request.body()
+    if not fb.verify_signature(raw, request.headers.get("x-hub-signature-256")):
+        logger.warning("[facebook] rejecting delivery — bad or missing signature")
+        raise HTTPException(status_code=403, detail="Invalid signature.")
+
+    try:
+        payload = json.loads(raw or b"{}")
+    except ValueError:
+        logger.warning("[facebook] rejecting delivery — body is not JSON")
+        raise HTTPException(status_code=400, detail="Malformed payload.")
+    if not isinstance(payload, dict):
+        raise HTTPException(status_code=400, detail="Malformed payload.")
+
+    pending = fb.iter_leadgen_ids(payload)
+    if not pending:
+        # A subscription we don't act on (page edits, messages). Nothing is
+        # wrong, and retrying it would be noise for both sides.
+        return {"success": True, "leads": 0, "ignored": True}
+
+    created, failed = [], []
+    for leadgen_id, form_id in pending:
+        lead = fb.fetch_lead(leadgen_id)
+        if not lead:
+            failed.append(leadgen_id)
+            continue
+        fields = fb.map_lead_fields(lead.get("field_data"))
+        if not any(fields.get(k) for k in ("email", "phone", "name")):
+            # Meta guarantees a form has *something*; a lead with no way to
+            # reach anybody is not worth a row, and retrying won't add one.
+            logger.warning("[facebook] lead %s had no contact fields — skipped", leadgen_id)
+            continue
+        custom = dict(fields.pop("custom_fields", None) or {})
+        if form_id:
+            custom["facebook_form_id"] = form_id
+        payload_in = build_intake(
+            # `name` is keyword-only and has no default; a form that asked for
+            # an email and nothing else is legal, so pass it explicitly as None
+            # rather than letting the ** expansion raise.
+            name=fields.pop("name", None),
+            source="facebook",
+            # The leadgen id is Meta's own unique id for this submission, so a
+            # retried delivery (and Meta does retry) dedups exactly instead of
+            # relying on the 5-minute contact window.
+            idempotency_key=f"fb:{leadgen_id}",
+            custom_fields=custom or None,
+            **fields,
+        )
+        result = upsert_lead(db, payload_in)
+        # Same alert the website form sends. A Facebook lead that only
+        # web-pushes is a lead the owner may never see: push is the one
+        # channel she may not have enabled, and the whole point of this
+        # endpoint is that a Meta lead stops sitting somewhere unread.
+        _alert_owner_new_request(db, payload_in, result)
+        created.append(result.get("intake_id"))
+
+    if failed:
+        # Some lead we were told about could not be fetched. 503 so Meta
+        # redelivers the whole batch; `fb:<leadgen_id>` makes the ones that
+        # already landed idempotent, so a retry cannot duplicate them.
+        logger.error("[facebook] %s lead(s) could not be fetched; asking Meta to retry", len(failed))
+        raise HTTPException(status_code=503, detail="Lead fetch failed; retry.")
+    logger.info("[facebook] %s lead(s) ingested", len(created))
+    return {"success": True, "leads": len(created), "intake_ids": created}
 
 
 def _batch_quotes(db: Session, rows) -> dict:

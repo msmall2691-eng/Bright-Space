@@ -134,6 +134,13 @@ _PUBLIC_EXACT = frozenset({
     # reveals whether an email is already known — approval is an admin
     # clicking a button (modules/apply/router.py).
     "/api/apply",
+    # Facebook / Instagram Lead Ads. Meta cannot send our API key, so the GET
+    # (its subscribe handshake) checks hub.verify_token and the POST verifies
+    # X-Hub-Signature-256 over the raw body — each REFUSING when its secret is
+    # unset, the same fail-closed posture as Twilio and Stripe above. EXACT,
+    # because this is two methods on one path and nothing else belongs under
+    # the stem (modules/intake/router.py, integrations/facebook_leads.py).
+    "/api/intake/facebook",
 })
 
 

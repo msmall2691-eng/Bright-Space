@@ -3216,7 +3216,24 @@ export interface paths {
          *     Cascades to the conversation's messages so the client's unified comms view
          *     (`GET /client/{id}`, which unions by client_id) picks the whole thread up —
          *     otherwise linking the header alone would leave the messages orphaned.
-         *     Passing client_id=null unlinks. Returns the updated conversation.
+         *     Passing client_id=null unlinks.
+         *
+         *     FOLDS into the client's existing thread rather than leaving two. Until
+         *     #1105 the (client_id, channel) unique index made a second thread on the
+         *     same channel impossible; dropping it to key threads on the PERSON removed
+         *     that accident of enforcement, and this action was re-parenting without
+         *     merging. The result was a client holding two conversations while the
+         *     person-keyed lookup in find_or_create_conversation picked one — so half the
+         *     history quietly stopped appearing. #1105's own docstring flagged it and
+         *     deferred it; this is that fix.
+         *
+         *     Keeper is the OLDEST of the threads involved, matching
+         *     _link_and_merge_conversations' step 4, and every message moves onto it, so
+         *     nothing is lost — only the emptied shell is deleted.
+         *
+         *     RETURNS THE KEEPER, whose id may differ from conv_id when a fold happened.
+         *     Callers must follow the returned id: the conversation they posted about can
+         *     no longer exist.
          */
         post: operations["link_conversation_client_api_comms_conversations__conv_id__link_client_post"];
         delete?: never;
@@ -4709,6 +4726,49 @@ export interface paths {
          *     lead instead of creating duplicates.
          */
         post: operations["submit_intake_api_intake_submit_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/intake/facebook": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Facebook Verify
+         * @description Echo ``hub.challenge`` when ``hub.verify_token`` matches ours.
+         *
+         *     Meta calls this once, when the webhook URL is saved in the app dashboard,
+         *     and will not deliver anything until it succeeds. Plain text, not JSON —
+         *     Meta compares the body to the challenge byte for byte.
+         */
+        get: operations["facebook_verify_api_intake_facebook_get"];
+        put?: never;
+        /**
+         * Facebook Leadgen
+         * @description A lead form submitted on Facebook or Instagram becomes a Request.
+         *
+         *     SIGNATURE FIRST, and refuse rather than trust when we cannot check — this
+         *     endpoint is public (Meta cannot send our API key), so the HMAC is the only
+         *     thing between a stranger and an unlimited supply of fake leads in the
+         *     owner's inbox. No secret configured means reject (BB-SEC-06 posture).
+         *
+         *     The delivery carries identifiers only, so each lead is a Graph fetch. That
+         *     fetch is inline and bounded (10s) rather than queued: a new background tick
+         *     is exactly what `scheduling-invariants` R1 forbids, and the webhook is
+         *     already the event.
+         *
+         *     **A delivery we cannot turn into a lead gets a 503, not a 200.** Meta
+         *     retries a non-2xx for hours, and that retry window is the whole difference
+         *     between a missing Page token being recoverable and being a lost customer.
+         *     A 200 here would throw the lead away politely.
+         */
+        post: operations["facebook_leadgen_api_intake_facebook_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -18598,6 +18658,46 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    facebook_verify_api_intake_facebook_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    facebook_leadgen_api_intake_facebook_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
                 };
             };
         };
