@@ -14,7 +14,11 @@ import { MemoryRouter, useLocation } from 'react-router-dom'
 
 // `getCached` drives useUnreadCount (summary) and useEmployees (the roster the
 // Today list pulls in for cleaner-name lookup) — without it the page throws.
-vi.mock('../../api', () => ({ get: vi.fn(), post: vi.fn(), getCached: vi.fn() }))
+vi.mock('../../api', () => ({
+  get: vi.fn(), post: vi.fn(), getCached: vi.fn(),
+  // Returns an unsubscribe in the real module — see useEmployees.
+  onCacheInvalidated: vi.fn(() => () => {}),
+}))
 
 import { get, post, getCached } from '../../api'
 import { claimDailyDraftRun } from '../../components/board/ProposalsQueue'

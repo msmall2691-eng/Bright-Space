@@ -15,6 +15,12 @@ vi.mock('../../api', () => ({
     // Simulate a normal /api/dispatch/employees response shape.
     return apiState.makePayload ? apiState.makePayload(url) : []
   }),
+  // The hook subscribes to roster invalidations so a mounted consumer follows
+  // a crew edit instead of holding its mount-time copy. The real export
+  // returns an unsubscribe, and the effect uses it as its cleanup, so the mock
+  // has to return one too. Behaviour through the subscription is covered in
+  // useEmployees.invalidation.test.jsx against the real api module.
+  onCacheInvalidated: vi.fn(() => () => {}),
 }))
 
 import { useEmployees } from '../useEmployees'

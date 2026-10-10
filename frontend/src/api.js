@@ -223,6 +223,39 @@ export function invalidateCached(url) {
   _getCachedEpoch.set(url, (_getCachedEpoch.get(url) || 0) + 1)
   _getCachedResults.delete(url)
   _getCachedInFlight.delete(url)
+  // Clearing the store only fixes the NEXT getCached call. A hook that already
+  // resolved holds its own copy in state, so it has to be told — see
+  // onCacheInvalidated. Iterate a snapshot: a listener may unsubscribe itself.
+  for (const fn of [...(_getCachedSubs.get(url) || [])]) {
+    try { fn() } catch { /* one bad listener must not stop the rest */ }
+  }
+}
+
+const _getCachedSubs = new Map() // url -> Set<fn>
+
+/**
+ * Run `fn` whenever `url` is invalidated. Returns an unsubscribe.
+ *
+ * Clearing the cache is not enough on its own. A consumer that already
+ * resolved — `useEmployees` copies the roster into state behind a `[]`-deps
+ * effect — keeps showing its copy for as long as it is mounted, because
+ * nothing ever asks it to look again. The ordinary way to hit that: crew edits
+ * commit on BLUR, and the click that blurs the field is usually the click that
+ * navigates to Schedule, so Schedule mounts and reads the still-warm memo
+ * while the PATCH is in flight. The invalidation then lands with nobody
+ * listening.
+ *
+ * Same shape as the in-flight case the epoch guard covers: both are "something
+ * else is already holding this value."
+ */
+export function onCacheInvalidated(url, fn) {
+  let set = _getCachedSubs.get(url)
+  if (!set) { set = new Set(); _getCachedSubs.set(url, set) }
+  set.add(fn)
+  return () => {
+    set.delete(fn)
+    if (!set.size) _getCachedSubs.delete(url)
+  }
 }
 
 /** POST helper. `opts` is merged into the fetch options — e.g. { timeout } to

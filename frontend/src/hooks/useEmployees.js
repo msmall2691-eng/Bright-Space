@@ -1,5 +1,5 @@
 import { useEffect, useState, useMemo } from 'react'
-import { getCached } from '../api'
+import { getCached, onCacheInvalidated } from '../api'
 
 /**
  * Shared employees roster.
@@ -54,6 +54,15 @@ export function useEmployees() {
   const [employees, setEmployees] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
+  // Bumped when the roster is invalidated, which re-runs the fetch effect
+  // below. Without it this hook holds whatever it resolved at mount for its
+  // whole life (the effect has no other dependency), so a Schedule that
+  // mounted while a crew edit was still in flight would show the old name —
+  // or omit someone whose crew ID just changed — until it unmounted. Found in
+  // review on #1148.
+  const [refreshKey, setRefreshKey] = useState(0)
+
+  useEffect(() => onCacheInvalidated(CACHE_URL, () => setRefreshKey(k => k + 1)), [])
 
   useEffect(() => {
     let cancelled = false
@@ -71,7 +80,7 @@ export function useEmployees() {
         setLoading(false)
       })
     return () => { cancelled = true }
-  }, [])
+  }, [refreshKey])
 
   const employeeById = useMemo(() => {
     // Index both by id and by userId — legacy rosters keyed cleaners by

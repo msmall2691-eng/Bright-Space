@@ -117,4 +117,43 @@ describe('adding a cleaner invalidates the cached roster', () => {
       'a response that started before the write repopulated the cache after it')
       .toEqual(['Dana', 'Sam'])
   })
+
+  it('tells live listeners, and stops once they unsubscribe', async () => {
+    // Clearing the store only fixes the NEXT getCached. A consumer that already
+    // resolved holds its own copy — useEmployees keeps the roster in state
+    // behind a `[]`-deps effect — so it has to be told. Found in review on
+    // #1148; hooks/__tests__/useEmployees.invalidation.test.jsx has the user
+    // path that reaches it.
+    const { invalidateCached, onCacheInvalidated } = await import('../api')
+
+    const heard = vi.fn()
+    const off = onCacheInvalidated(ROSTER, heard)
+
+    invalidateCached(ROSTER)
+    expect(heard).toHaveBeenCalledTimes(1)
+
+    invalidateCached('/api/clients?limit=1000')
+    expect(heard, 'woke on an unrelated URL').toHaveBeenCalledTimes(1)
+
+    // The hook's cleanup calls this on unmount. Asserted here rather than
+    // through the hook: a leaked listener only ever calls setState on a dead
+    // component, which React drops silently, so from out there the leak and
+    // the fix look identical and the test cannot fail.
+    off()
+    invalidateCached(ROSTER)
+    expect(heard, 'kept calling a listener after it unsubscribed')
+      .toHaveBeenCalledTimes(1)
+  })
+
+  it('survives a listener that throws', async () => {
+    // One bad subscriber must not stop the others from being told, or swallow
+    // the invalidation itself.
+    const { invalidateCached, onCacheInvalidated } = await import('../api')
+    const good = vi.fn()
+    onCacheInvalidated(ROSTER, () => { throw new Error('boom') })
+    onCacheInvalidated(ROSTER, good)
+
+    expect(() => invalidateCached(ROSTER)).not.toThrow()
+    expect(good).toHaveBeenCalledTimes(1)
+  })
 })
