@@ -66,7 +66,18 @@ export function RequestThreadPanel({ intake }) {
     try {
       const ch = detail?.channel || channel
       const res = await post(`/api/ai/draft-lead-reply/${intake.id}`, { channel: ch })
-      if (res?.message) {
+      if (res?.fallback) {
+        // Canned filler, returned 200 when the model can't be reached. It is
+        // service-aware enough to look written, which is exactly why it must
+        // not land in the composer under "Drafted" — see the note on
+        // _fallback_conversation_reply in backend/modules/ai/router.py.
+        setFlash({
+          ok: false,
+          msg: res.fallback === 'unconfigured'
+            ? 'AI drafting isn’t set up yet'
+            : 'Couldn’t draft a reply — try again',
+        })
+      } else if (res?.message) {
         setReply(res.message)
         if (ch === 'email' && res.subject) setReplySubject(res.subject)
         setFlash({ ok: true, msg: 'Drafted — edit & send' })

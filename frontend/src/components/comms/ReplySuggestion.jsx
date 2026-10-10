@@ -30,7 +30,18 @@ export function ReplySuggestion({ conversationId, lastMessageId, onUse }) {
     setLoading(true)
     post(`/api/ai/draft-conversation-reply/${conversationId}`, {})
       .then(res => {
-        cache.set(key, (res?.message && !res?.error)
+        // `fallback` is the canned reply the endpoint returns when the model
+        // can't be reached — with a 200 and, until now, nothing to mark it.
+        // So this check was `res?.message && !res?.error`, the endpoint only
+        // ever set `error` for "Conversation not found", and every failure
+        // was rendered as a genuine suggestion. The owner watched a customer
+        // ask for a deep clean before pausing and get offered "thanks for
+        // your message! We'll take care of this and follow up shortly."
+        //
+        // A suggestion nobody suggested is worse than no suggestion: it is
+        // one tap from being sent. Treating it as a failure is what the
+        // docstring above has always claimed happens.
+        cache.set(key, (res?.message && !res?.error && !res?.fallback)
           ? { text: res.message, subject: res.subject || '', dismissed: false }
           : { text: null })
       })
