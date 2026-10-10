@@ -114,6 +114,110 @@ def _is_placeholder_candidate(client: Client) -> bool:
     return True
 
 
+def _rederive_inbound_state(db: Session, keeper: "Conversation") -> None:
+    """Re-derive every field a conversation hangs off its newest inbound, from
+    the messages the keeper now actually holds.
+
+    Call this AFTER the messages have moved and been flushed. It replaces what
+    #1151 originally did here, which was nothing, and then what the first
+    attempt at this fix did, which was to copy the source's aggregates when the
+    source's inbound was newer. Codex found three ways that still lied, and all
+    three had one shape: `conversations` carries DENORMALIZED copies of facts
+    that live in `messages`, and after a fold neither pre-merge row's copy is
+    correct, because the merged history interleaves. Reconciling two stale
+    aggregates cannot be made right by a better rule — so this derives from the
+    rows instead, which is the only thing that is true after a fold.
+
+    What the aggregate approach got wrong, kept as the reasons these three
+    lines are not one line:
+
+      * REPLY CHANNEL vs. a receive-only newest inbound. `_apply_inbound`
+        advances `last_inbound_at` for a voicemail but refuses to point
+        `channel` at it, so `source.last_inbound_at` can be today's voicemail
+        while `source.channel` still names a three-day-old email. Source wins
+        the "newer inbound" test, the keeper takes `email`, and yesterday's SMS
+        — the newest inbound anyone can actually reply to — is ignored. The
+        reply then leaves on the wrong transport. Only the newest SENDABLE
+        inbound may set the channel, and that is a different message from the
+        newest inbound.
+
+      * THE ADDRESS HAS TO TRAVEL WITH THE CHANNEL. `send_reply` resolves
+        `client.phone` for sms, `client.email` for email, and falls back to
+        `conv.external_contact`. `Client.email` is nullable and an SMS-only
+        client routinely has none, so switching the keeper to `email` while
+        `external_contact` still held the old phone number handed a phone
+        number to `_send_email`. The first fix turned "wrong channel, delivered"
+        into "right channel, undeliverable", which is not progress.
+
+      * FIRST RESPONSE IS NOT AN AGGREGATE EITHER. With interleaved history the
+        answer to "has anyone replied since the newest inbound?" can live on
+        the other thread: the source took an inbound, the keeper sent an
+        outbound after it, and copying the source's NULL marks the merged
+        thread unanswered when its own history contains the reply. It is the
+        earliest outbound strictly after the newest inbound, across everything
+        the keeper now holds.
+
+    `direction` discriminates cleanly: internal notes are written with
+    `direction="note"` (comms' note endpoint) and never reach `_apply_outbound`,
+    so they count as neither an inbound nor a reply here — correct, a note is
+    not an answer to the customer.
+
+    Every comparison goes through comms' `_as_utc`. Rows round-tripped through
+    the DB come back naive while freshly-assigned ones are aware, and sorting a
+    mixed list raises TypeError — the hazard that helper's own docstring exists
+    for, and one a fold is unusually likely to hit because it sorts messages
+    that were just written alongside messages read from storage.
+    """
+    # Local imports: comms reaches into this module for the merge helpers and
+    # this module never reaches back at import time, so keeping these inside
+    # the function is what avoids the cycle.
+    from modules.comms.router import (
+        SENDABLE_CHANNELS, SLA_FRT_MINUTES, _as_utc, _normalize_contact,
+    )
+    from utils.dates import add_business_minutes
+
+    msgs = sorted(
+        (m for m in keeper.messages if _as_utc(m.created_at) is not None),
+        key=lambda m: _as_utc(m.created_at),
+    )
+    inbound = [m for m in msgs if m.direction == "inbound"]
+    if not inbound:
+        # Nothing to anchor to. Leave the keeper's own state alone rather than
+        # inventing one: an outbound-only thread has no first-response question
+        # to answer and no customer channel to infer.
+        return
+
+    newest = inbound[-1]
+    keeper.last_inbound_at = newest.created_at
+
+    sendable = [m for m in inbound if m.channel in SENDABLE_CHANNELS]
+    if sendable:
+        reply_to = sendable[-1]
+        if keeper.channel != reply_to.channel:
+            keeper.channel = reply_to.channel
+            # Only on an actual channel change: a thread whose newest sendable
+            # inbound arrived on the channel it already used keeps the contact
+            # it has. A customer writing in from a NEW address on the SAME
+            # channel is a separate question this fold does not answer.
+            if reply_to.from_addr:
+                keeper.external_contact = _normalize_contact(reply_to.from_addr)
+
+    newest_at = _as_utc(newest.created_at)
+    replies = [m for m in msgs
+               if m.direction == "outbound" and _as_utc(m.created_at) > newest_at]
+    keeper.first_response_at = replies[0].created_at if replies else None
+
+    # Mirrors `_apply_inbound`'s own default of 120 rather than `_sla_state`'s
+    # 480. Those two disagree today and that predates this change; `_sla_state`
+    # recomputes the deadline from `last_inbound_at` whenever it is set — which
+    # it now always is here — so this stored value is the fallback path only.
+    # Picking the inbound path's number keeps a fold consistent with a real
+    # inbound instead of quietly taking a side on the discrepancy.
+    frt = SLA_FRT_MINUTES.get(keeper.priority or "normal", 120)
+    keeper.sla_response_minutes = frt
+    keeper.sla_deadline = add_business_minutes(newest.created_at, frt)
+
+
 def _fold_conv_into(db: Session, source: "Conversation", keeper: "Conversation", report: dict) -> None:
     """Move every message off `source` into `keeper`, merge metadata, delete
     source. Used both for absorbing placeholder-client conversations and for
@@ -130,45 +234,7 @@ def _fold_conv_into(db: Session, source: "Conversation", keeper: "Conversation",
     keeper.unread_count = (keeper.unread_count or 0) + (source.unread_count or 0)
     if source.last_message_at and (not keeper.last_message_at or source.last_message_at > keeper.last_message_at):
         keeper.last_message_at = source.last_message_at
-    if source.last_inbound_at and (not keeper.last_inbound_at or source.last_inbound_at > keeper.last_inbound_at):
-        keeper.last_inbound_at = source.last_inbound_at
-        # Moving `last_inbound_at` forward is not a timestamp bump: two pieces
-        # of conversation state are DERIVED from which inbound is newest, and
-        # `comms._apply_inbound` re-establishes both every time a real inbound
-        # moves it. A fold moves it too, so it owes the same invariants — both
-        # were missed when folding landed (#1151), and both broke in production.
-        #
-        # 1. THE REPLY CHANNEL. `comms.send_reply` branches on
-        #    `conv.channel` for the transport AND the destination address, so a
-        #    stale channel is a reply sent to the wrong place. Fold a new email
-        #    thread into an older SMS keeper (oldest wins) and the keeper still
-        #    said "sms": the operator read the email on screen, hit Send, and
-        #    texted client.phone while the email went unanswered.
-        #    Only ever a SENDABLE channel — the mirror of _apply_inbound's rule
-        #    1. A voice-only source must not park the keeper on a channel
-        #    send_reply 400s on. `source.channel` is already the source's own
-        #    newest-sendable-inbound channel (that is the invariant
-        #    _apply_inbound maintains), so reading it beats re-deriving from
-        #    the message rows and cannot disagree with it.
-        #
-        # 2. RESPONSE TRACKING, which travels WITH the inbound it describes.
-        #    `_sla_state` recomputes the deadline from `last_inbound_at` and
-        #    then calls the thread "met" if `first_response_at` predates it.
-        #    Keeping the keeper's old response against the source's new inbound
-        #    reported every folded thread as answered — and permanently, since
-        #    `_apply_outbound` only records a first response when the field is
-        #    empty, so no later reply could correct it. An unanswered customer
-        #    silently left the Overdue filter and the "past SLA" count.
-        #    Taking the source's value (often None, meaning "nobody has
-        #    answered this yet" — the honest state) is what _apply_inbound's
-        #    `first_response_at = None` reset means here.
-        from modules.comms.router import SENDABLE_CHANNELS  # local: avoid a cycle
-
-        if source.channel in SENDABLE_CHANNELS:
-            keeper.channel = source.channel
-        keeper.first_response_at = source.first_response_at
-        keeper.sla_response_minutes = source.sla_response_minutes
-        keeper.sla_deadline = source.sla_deadline
+    _rederive_inbound_state(db, keeper)
     if source.last_outbound_at and (not keeper.last_outbound_at or source.last_outbound_at > keeper.last_outbound_at):
         keeper.last_outbound_at = source.last_outbound_at
     if source.status == "open" and keeper.status == "resolved":
