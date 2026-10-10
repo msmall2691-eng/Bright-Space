@@ -135,6 +135,36 @@ real second pass on this page, and they are now much cheaper than they were:
 the screens are separate files, so `SeriesRow` and `SeriesDetail` can each be
 reworked without reading 1795 lines. Worth doing; not done.
 
+**The LIST half of that second pass is now done (#1161). The DETAIL half is
+not**, and the split is deliberate rather than a half-revamp: list and detail
+are two screens, and the list is the one the survey measured as read-only.
+
+What the list got: the rows carry **Pause/Resume and Edit rule**, both driving
+endpoints the detail page already drives (`PATCH /api/recurring/{id}` and
+`EditSeriesModal` on the row's own payload — list and detail return the same
+`sched_to_dict`, so there is no extra fetch, and
+`__tests__/editPayloadParity.test.js` pins that against the backend
+serializer). Pause takes a toast with Undo rather than a confirm, the Requests
+Archive reasoning. **Cancel is deliberately not on the row** — irreversible,
+and a mis-click on a list lands on the wrong series.
+
+The five bands are three: the state counts moved ONTO the filter chips
+(Properties/Clients idiom, so the "N of M" span went away rather than being a
+second copy of the same number), the duplicate banner went from a three-line
+block to a dot + word + Review, the auto-generate notice from four lines to
+one, and the list got its own scroll region so the toolbar holds still.
+
+Not bento, and that is the point: on a list of N series a bento would be the
+wrong shape. This is the Properties/Clients list treatment, which is what the
+survey's own verdict on Clients ("the stack is in the chrome, not the list")
+already pointed at.
+
+**What the detail screen still wants**: six bands, and a header where the
+status, the client and the rule summary could be one dense block instead of
+three stacked ones. Its rows are NOT read-only — every upcoming visit has
+Skip/Reschedule and every override has Undo — so it is a layout pass, not an
+actionability one, which is why it ranks below the list.
+
 Then stop: the remaining eight are not revamp candidates, and
 Payouts / Owner / Sync Center / Settings / Marketplace / Roster / Thresholds /
 detail pages were not surveyed and get their own pass before anyone assumes.
