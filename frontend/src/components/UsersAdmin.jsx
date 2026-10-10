@@ -212,7 +212,7 @@ export default function UsersAdmin() {
                       {u.last_login_at ? ` · last login ${new Date(u.last_login_at).toLocaleDateString()}` : ''}
                     </div>
                   </div>
-                  <span className="inline-flex items-center gap-1.5 text-[11px] px-2 py-1 rounded-sm border border-hairline-2 bg-panel text-ink-2 font-medium shrink-0">
+                  <span className="inline-flex items-center gap-1.5 text-[11px] text-ink-2 font-medium shrink-0">
                     <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${st.dot}`} aria-hidden="true" />
                     {st.label}
                   </span>

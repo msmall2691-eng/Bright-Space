@@ -436,7 +436,7 @@ export default function ClientCalendarTab({ jobs, upcomingJobs, pastJobs, naviga
 
                   {/* Status + indicators */}
                   <div className="flex flex-col items-end gap-1.5 shrink-0">
-                    <span className="inline-flex items-center gap-1.5 text-[10px] px-2 py-0.5 rounded-sm border border-hairline-2 bg-panel font-medium text-ink-2 capitalize">
+                    <span className="inline-flex items-center gap-1.5 text-[10px] font-medium text-ink-2 capitalize">
                       <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${statusPill}`} aria-hidden="true" />
                       {j.status?.replace('_', ' ')}
                     </span>

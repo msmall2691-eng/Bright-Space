@@ -30,7 +30,7 @@ export default function ClientMobileHeader({
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-2 flex-wrap">
               <h1 className="text-lg sm:text-xl font-bold text-ink tracking-tight truncate">{client.name}</h1>
-              <span className="inline-flex items-center gap-1.5 text-[10px] sm:text-xs px-2 py-0.5 rounded-sm border border-hairline-2 bg-panel text-ink-2 capitalize">
+              <span className="inline-flex items-center gap-1.5 text-[10px] sm:text-xs text-ink-2 capitalize">
                 <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${STATUS_COLORS[client.status] || 'bg-ink-3'}`} aria-hidden="true" />
                 {client.status}
               </span>

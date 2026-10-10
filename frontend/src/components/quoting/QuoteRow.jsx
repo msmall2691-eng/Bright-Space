@@ -66,7 +66,7 @@ export default function QuoteRow({
                   onSelect={(s) => onUpdateStatus(q.id, s)} />
               </span>
             ) : (
-              <span className="inline-flex h-5 items-center gap-1.5 whitespace-nowrap rounded-sm border border-hairline-2 bg-panel px-2 text-[11px] font-medium capitalize leading-none text-ink-2">
+              <span className="inline-flex items-center gap-1.5 whitespace-nowrap text-[11px] font-medium capitalize leading-none text-ink-2">
                 <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${QUOTE_STATUS_DOTS[q.status] || QUOTE_STATUS_DOTS.draft}`} aria-hidden="true" />
                 {(q.status || '').replace(/_/g, ' ')}
               </span>

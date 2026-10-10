@@ -114,13 +114,13 @@ export function ConvItem({ conv, active, onClick }) {
               a filter) so an all-unassigned inbox doesn't light up every row. */}
           {overdue ? (
             <div className="mt-1.5">
-              <span className="inline-flex h-5 items-center gap-1.5 rounded-sm border border-hairline-2 bg-panel px-2 text-[11px] font-medium text-ink-2">
+              <span className="inline-flex items-center gap-1.5 text-[11px] font-medium text-ink-2">
                 <span className={`h-1.5 w-1.5 rounded-full ${STATUS_DOT.problem}`} /> Overdue
               </span>
             </div>
           ) : awaitingReply ? (
             <div className="mt-1.5">
-              <span className="inline-flex h-5 items-center gap-1.5 rounded-sm border border-hairline-2 bg-panel px-2 text-[11px] font-medium text-ink-2">
+              <span className="inline-flex items-center gap-1.5 text-[11px] font-medium text-ink-2">
                 <span className={`h-1.5 w-1.5 rounded-full ${STATUS_DOT.attention}`} /> Needs reply
               </span>
             </div>

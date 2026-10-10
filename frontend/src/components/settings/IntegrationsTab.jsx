@@ -110,7 +110,7 @@ export default function IntegrationsTab({ toast, active }) {
                 </div>
               </div>
               <div className="flex items-center gap-2">
-                <span className="inline-flex h-6 items-center gap-1.5 rounded-sm border border-hairline-2 bg-panel px-2 text-[11px] font-medium text-ink-2">
+                <span className="inline-flex items-center gap-1.5 text-[11px] font-medium text-ink-2">
                   <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${
                     gcalConn.loading ? 'bg-ink-3' : gcalConn.connected ? STATUS_DOT.ok : STATUS_DOT.problem
                   }`} aria-hidden="true" />
@@ -204,7 +204,7 @@ export default function IntegrationsTab({ toast, active }) {
                   <p className="text-xs text-ink-3">Inbound email is synced from connected Google accounts and linked to clients</p>
                 </div>
               </div>
-              <span className="inline-flex h-6 items-center gap-1.5 rounded-sm border border-hairline-2 bg-panel px-2 text-[11px] font-medium text-ink-2 shrink-0">
+              <span className="inline-flex items-center gap-1.5 text-[11px] font-medium text-ink-2 shrink-0">
                 <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${
                   gmailConn.loading ? 'bg-ink-3' : gmailConn.connected ? STATUS_DOT.ok : STATUS_DOT.problem
                 }`} aria-hidden="true" />
@@ -373,7 +373,7 @@ function SmsCard({ toast, active }) {
             <p className="text-xs text-ink-3">The number every BrightBase text is sent from</p>
           </div>
         </div>
-        <span className="inline-flex h-6 items-center gap-1.5 rounded-sm border border-hairline-2 bg-panel px-2 text-[11px] font-medium text-ink-2 shrink-0">
+        <span className="inline-flex items-center gap-1.5 text-[11px] font-medium text-ink-2 shrink-0">
           <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${st.loading ? 'bg-ink-3' : twilioOk ? STATUS_DOT.ok : STATUS_DOT.problem}`} aria-hidden="true" />
           {st.loading ? 'Checking…' : twilioOk ? 'Configured' : 'Not configured'}
         </span>
