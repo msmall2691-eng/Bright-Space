@@ -377,6 +377,37 @@ def _alert_owner_new_request(db: Session, data, result: dict) -> None:
 
 # ── Facebook / Instagram Lead Ads ───────────────────────────────────────────
 #
+# A Meta leadgen delivery is a few hundred bytes; even a batch of a hundred
+# changes is tens of kilobytes. 1 MiB is far above anything real and far below
+# anything that hurts.
+_MAX_WEBHOOK_BODY_BYTES = 1 << 20
+
+
+async def _read_capped_body(request: Request, limit: int = _MAX_WEBHOOK_BODY_BYTES) -> bytes:
+    """Buffer the request body, refusing anything oversized.
+
+    `await request.body()` reads the WHOLE stream into memory, and on a public
+    endpoint that happens before the signature can reject the caller — so an
+    unauthenticated stranger who doesn't know the app secret could still make
+    the worker hold whatever they chose to send. The rate limiter counts
+    requests, not bytes, and nothing else in the app caps a body (no
+    size middleware, and the uvicorn CMD sets no limit), so this is the cap.
+
+    Content-Length is checked first because it is free, and then the stream is
+    counted anyway: a chunked request sends no length, and a declared one is
+    just the caller's claim.
+    """
+    declared = request.headers.get("content-length")
+    if declared and declared.isdigit() and int(declared) > limit:
+        raise HTTPException(status_code=413, detail="Payload too large.")
+    chunks, total = [], 0
+    async for chunk in request.stream():
+        total += len(chunk)
+        if total > limit:
+            raise HTTPException(status_code=413, detail="Payload too large.")
+        chunks.append(chunk)
+    return b"".join(chunks)
+#
 # Declared HERE, above `GET /{intake_id}`, because route order decides which
 # one claims `GET /api/intake/facebook`. Everything about the Meta flow lives
 # in integrations/facebook_leads.py; this is the thin wiring onto the same
@@ -432,7 +463,10 @@ async def facebook_leadgen(request: Request, db: Session = Depends(get_db)):
                      "cannot verify the signature")
         raise HTTPException(status_code=503, detail="Webhook not configured.")
 
-    raw = await request.body()
+    # Capped, not `request.body()` — the body is buffered before the signature
+    # can reject it, so the cap is what stops an unauthenticated stranger
+    # choosing how much memory this worker holds. See _read_capped_body.
+    raw = await _read_capped_body(request)
     if not fb.verify_signature(raw, request.headers.get("x-hub-signature-256")):
         logger.warning("[facebook] rejecting delivery — bad or missing signature")
         raise HTTPException(status_code=403, detail="Invalid signature.")

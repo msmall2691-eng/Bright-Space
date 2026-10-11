@@ -143,6 +143,50 @@ def test_signature_algorithm_prefix_must_be_sha256(configured):
                        headers={"x-hub-signature-256": digest}).status_code == 403
 
 
+def test_an_oversized_body_is_refused_before_it_is_buffered(configured):
+    """The body is read into memory BEFORE the signature can reject it.
+
+    So on a public endpoint the cap, not the HMAC, is what stops a stranger
+    who doesn't know the app secret from choosing how much memory a worker
+    holds. The rate limiter counts requests, not bytes, and nothing else in
+    the app caps a body.
+    """
+    from modules.intake.router import _MAX_WEBHOOK_BODY_BYTES
+    huge = b'{"padding":"' + b'x' * (_MAX_WEBHOOK_BODY_BYTES + 1024) + b'"}'
+    # Correctly signed, so this is the SIZE being refused and not the HMAC.
+    sig = hmac.new(SECRET.encode(), huge, hashlib.sha256).hexdigest()
+    r = client.post(URL, content=huge, headers={"x-hub-signature-256": f"sha256={sig}"})
+    assert r.status_code == 413, r.status_code
+
+
+def test_a_lying_content_length_does_not_get_past_the_cap(configured):
+    """Content-Length is the caller's claim, so the stream is counted too.
+
+    Checking only the header would let a chunked upload — which sends no
+    length at all — walk straight through the guard.
+    """
+    from modules.intake.router import _MAX_WEBHOOK_BODY_BYTES
+    huge = b"x" * (_MAX_WEBHOOK_BODY_BYTES + 1024)
+
+    def chunked():
+        # An iterator body makes httpx send Transfer-Encoding: chunked, with
+        # no Content-Length for the header check to catch.
+        yield huge
+
+    r = client.post(URL, content=chunked(),
+                    headers={"x-hub-signature-256": "sha256=" + "0" * 64})
+    assert r.status_code == 413, r.status_code
+
+
+def test_an_ordinary_delivery_is_not_caught_by_the_cap(configured):
+    # The other half: a cap set too low would refuse real leads, and every
+    # other test here posts a tiny body that could never prove otherwise.
+    from modules.intake.router import _MAX_WEBHOOK_BODY_BYTES
+    assert len(json.dumps(_delivery()).encode()) < _MAX_WEBHOOK_BODY_BYTES
+    raw, headers = _signed(_delivery(field="feed"))
+    assert client.post(URL, content=raw, headers=headers).status_code == 200
+
+
 def test_verify_signature_is_false_without_a_secret(monkeypatch):
     monkeypatch.delenv("FACEBOOK_APP_SECRET", raising=False)
     raw = b"{}"
