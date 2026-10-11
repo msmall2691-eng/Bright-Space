@@ -49,11 +49,19 @@ def mail(label: str) -> str:
     return f"{label}-{RUN}@example.com"
 
 
-# The PHONE has to be run-unique for the same reason the email does, and it is
-# the one that actually bit: intake dedup matches on EITHER contact, so a fixed
-# number merged this lead onto a row some earlier test in the suite had left
-# behind. Green in isolation, red in the full run.
-PHONE = "+1207555" + f"{int(RUN, 16) % 10000:04d}"
+# The phone has to be unique per run AND per test, for the same reason the
+# email does, and it is the one that actually bit — twice.
+#
+# Intake dedup matches on EITHER contact, so a shared number merges leads
+# together: first across runs (a fixed number found a row an earlier run of
+# the suite had left behind), then within one run (three tests sharing one
+# number chained onto each other — and dedup silences the owner alert, so a
+# test asserting on that alert read an empty dict). One number per label.
+def phone(label: str) -> str:
+    h = int(hashlib.sha256(f"{label}-{RUN}".encode()).hexdigest(), 16)
+    return f"+1207{h % 10_000_000:07d}"
+
+
 
 
 def _delivery(leadgen_id="LEAD1", form_id="FORM1", field="leadgen"):
@@ -266,7 +274,7 @@ def test_mapping_survives_junk():
 
 LEAD = {"id": "LEAD1", "created_time": "2026-10-10T12:00:00+0000", "field_data": _fd(
     full_name="Facebook Tester", email=mail("fbtester"),
-    phone_number=PHONE, city="Portland", how_many_bedrooms="3")}
+    phone_number=phone("lead"), city="Portland", how_many_bedrooms="3")}
 
 
 def _row(intake_id):
@@ -319,6 +327,88 @@ def test_a_redelivery_does_not_create_a_second_lead(configured):
     r2 = client.post(URL, content=raw, headers=headers)
     assert r2.status_code == 200
     assert r2.json()["intake_ids"] == [first.id]
+
+
+def test_a_lead_merged_into_a_recent_request_still_records_its_meta_id(configured):
+    """The key has to land on the row we merged INTO.
+
+    `upsert_lead`'s contact dedup collapses a submission onto any request from
+    the same email or phone in the last five minutes — and it used not to copy
+    the caller's idempotency key across. So a Facebook lead arriving just after
+    a website enquiry from the same person was deduped and its leadgen id
+    recorded nowhere: the key short-circuit had nothing to find, and Meta's
+    redelivery an hour later (it retries for hours on a lost response) opened a
+    SECOND request. The key exists to prevent exactly that.
+    """
+    sent_email = mail("mergetester")
+    # A website enquiry lands first, carrying no key of its own.
+    first = client.post("/api/intake/submit", json={
+        "name": "Merge Tester", "email": sent_email, "phone": phone("merge"),
+    })
+    assert first.status_code == 201, first.text
+
+    configured.setattr(fb, "fetch_lead", lambda _id: dict(
+        LEAD, field_data=_fd(full_name="Merge Tester", email=sent_email)))
+    raw, headers = _signed(_delivery(leadgen_id=uid("LEADMERGE")))
+    r = client.post(URL, content=raw, headers=headers)
+    assert r.status_code == 200, r.text
+
+    merged = _row(r.json()["intake_ids"][0])
+    assert merged.id == first.json()["intake_id"], "expected the contact-dedup path"
+    assert merged.idempotency_key == f"fb:{uid('LEADMERGE')}", \
+        "the merged row has no record of the Meta lead — a redelivery will duplicate it"
+
+
+def test_adopting_a_key_never_overwrites_one_the_row_already_has(configured):
+    """The other half. A row that carries its own key keeps it — overwriting
+    would break the FIRST caller's dedup to fix the second's, and the column
+    is UNIQUE so there can only be one."""
+    sent_email = mail("keeptester")
+    own_key = uid("WEBOWN")
+    first = client.post("/api/intake/submit", json={
+        "name": "Keep Tester", "email": sent_email, "phone": phone("keep"),
+        "idempotency_key": own_key,
+    })
+    assert first.status_code == 201, first.text
+
+    configured.setattr(fb, "fetch_lead", lambda _id: dict(
+        LEAD, field_data=_fd(full_name="Keep Tester", email=sent_email)))
+    raw, headers = _signed(_delivery(leadgen_id=uid("LEADKEEP")))
+    r = client.post(URL, content=raw, headers=headers)
+    assert r.status_code == 200
+
+    merged = _row(r.json()["intake_ids"][0])
+    assert merged.idempotency_key == own_key
+
+
+def test_the_blocking_work_does_not_run_on_the_event_loop(configured):
+    """A Graph fetch can wait out its 10s timeout, and this route must be
+    `async` to read the raw body for the HMAC — so doing the work inline would
+    stall the uvicorn worker and stop it serving unrelated API traffic.
+
+    Asserted by recording the thread the fetch runs on: it must not be the one
+    running the event loop.
+    """
+    import asyncio
+    import threading
+
+    seen = {}
+
+    def slow_fetch(_id):
+        seen["thread"] = threading.get_ident()
+        try:
+            asyncio.get_running_loop()
+            seen["on_loop"] = True
+        except RuntimeError:
+            seen["on_loop"] = False
+        return dict(LEAD, field_data=_fd(full_name="Thread Tester",
+                                         email=mail("threadtester")))
+
+    configured.setattr(fb, "fetch_lead", slow_fetch)
+    raw, headers = _signed(_delivery(leadgen_id=uid("LEADTHREAD")))
+    assert client.post(URL, content=raw, headers=headers).status_code == 200
+    assert seen["on_loop"] is False, \
+        "the Graph fetch ran on the event loop — a slow Meta response wedges the worker"
 
 
 def test_a_fetch_failure_asks_meta_to_retry_rather_than_losing_the_lead(configured):
@@ -400,7 +490,7 @@ def test_the_website_forms_alert_still_names_its_service(configured):
     sent = _capture_owner_alerts(configured)
     r = client.post("/api/intake/submit", json={
         "name": "Website Tester", "email": mail("websitetester"),
-        "phone": PHONE, "service_type": "deep-clean",
+        "phone": phone("websvc"), "service_type": "deep-clean",
         "idempotency_key": uid("WEBSVC"),
     })
     assert r.status_code == 201, r.text

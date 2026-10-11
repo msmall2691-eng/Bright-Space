@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import JSONResponse
+from starlette.concurrency import run_in_threadpool
 from sqlalchemy.orm import Session
 from sqlalchemy import func, or_
 from pydantic import BaseModel, ConfigDict
@@ -417,7 +418,7 @@ async def facebook_leadgen(request: Request, db: Session = Depends(get_db)):
     The delivery carries identifiers only, so each lead is a Graph fetch. That
     fetch is inline and bounded (10s) rather than queued: a new background tick
     is exactly what `scheduling-invariants` R1 forbids, and the webhook is
-    already the event.
+    already the event. Inline, but not on the event loop — see below.
 
     **A delivery we cannot turn into a lead gets a 503, not a 200.** Meta
     retries a non-2xx for hours, and that retry window is the whole difference
@@ -449,6 +450,25 @@ async def facebook_leadgen(request: Request, db: Session = Depends(get_db)):
         # A subscription we don't act on (page edits, messages). Nothing is
         # wrong, and retrying it would be noise for both sides.
         return {"success": True, "leads": 0, "ignored": True}
+
+    # OFF THE EVENT LOOP.
+    #
+    # This route must be `async` to read the raw body for the HMAC, and an
+    # async route's body runs ON the event-loop thread — so the blocking work
+    # below would stall the whole worker: a Graph fetch that waits out its 10s
+    # timeout, repeated serially for a batched delivery, plus the DB writes and
+    # the owner's SMS/email. A few slow deliveries would occupy all four
+    # production workers and the rest of the API would stop answering.
+    #
+    # run_in_threadpool is what FastAPI does for a plain `def` route; the
+    # verification above stays on the loop because it is pure CPU on bytes we
+    # already have.
+    return await run_in_threadpool(_ingest_facebook_leads, db, pending)
+
+
+def _ingest_facebook_leads(db: Session, pending) -> dict:
+    """Fetch each lead and write it. Blocking by nature — see the caller."""
+    from integrations import facebook_leads as fb
 
     created, failed = [], []
     for leadgen_id, form_id in pending:
@@ -488,8 +508,10 @@ async def facebook_leadgen(request: Request, db: Session = Depends(get_db)):
 
     if failed:
         # Some lead we were told about could not be fetched. 503 so Meta
-        # redelivers the whole batch; `fb:<leadgen_id>` makes the ones that
-        # already landed idempotent, so a retry cannot duplicate them.
+        # redelivers the whole batch; `fb:<leadgen_id>` is recorded on every
+        # lead that already landed — including one merged into an existing
+        # request, see upsert_lead's key adoption — so the retry collapses
+        # onto those rows instead of duplicating them.
         logger.error("[facebook] %s lead(s) could not be fetched; asking Meta to retry", len(failed))
         raise HTTPException(status_code=503, detail="Lead fetch failed; retry.")
     logger.info("[facebook] %s lead(s) ingested", len(created))
