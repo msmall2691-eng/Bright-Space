@@ -49,6 +49,7 @@ import { ComposeModal } from '../components/comms/ComposeModal'
 import { ContactPanel } from '../components/comms/ContactPanel'
 import { ComposeBar } from '../components/comms/ComposeBar'
 import { ReplySuggestion } from '../components/comms/ReplySuggestion'
+import { UnresolvedVisitNote } from '../components/comms/UnresolvedVisitNote'
 import { ThreadHeader } from '../components/comms/ThreadHeader'
 import { InboxLeftPanel } from '../components/comms/InboxLeftPanel'
 import { InboxViewToggle } from '../components/comms/InboxViewToggle'
@@ -635,6 +636,15 @@ export default function Comms() {
                 )}
               </div>
             </div>
+
+            {/* Sits ABOVE the suggestion, because it changes what a good
+                reply says. Self-suppressing: renders nothing when every past
+                visit is closed out. */}
+            {customerCtx.unresolvedVisits?.length > 0 && (
+              <div className="border-t border-hairline bg-panel px-4 pt-3">
+                <UnresolvedVisitNote visits={customerCtx.unresolvedVisits} />
+              </div>
+            )}
 
             {showSuggestion && (
               <div className="border-t border-hairline bg-panel px-4 pt-3">

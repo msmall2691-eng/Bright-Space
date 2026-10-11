@@ -3,7 +3,8 @@ import {
   X, Phone, Mail, MapPin, User, Hash, ArrowLeft, FileText, Loader2,
   MessageSquare, Calendar, CheckCircle2, RefreshCw, DollarSign, BellRing,
 } from 'lucide-react'
-import { formatDate, combineAddress, formatAddress } from '../../utils/format'
+import { formatDate, combineAddress, formatAddress, todayYMD } from '../../utils/format'
+import { isUnresolvedVisit } from '../../hooks/useCustomerContext'
 import { contactDisplay } from './utils'
 import { Avatar, ChannelBadge } from './primitives'
 import RecordLink from '../RecordLink'
@@ -30,18 +31,37 @@ function SectionLabel({ children, right }) {
 function AppointmentRow({ job, tone = 'upcoming', onRemind }) {
   const dateLabel = formatDate(job.scheduled_date, { weekday: 'short', month: 'short', day: 'numeric' })
   const time = (job.start_time || '').slice(0, 5)
+  // A past row used to draw a tick for EVERY job dated before today, whatever
+  // its status — so a visit nobody closed out appeared under "Recent visits"
+  // with a checkmark, asserting it happened. The one place the operator looks
+  // to answer "did we go?" was answering yes on the strength of the date
+  // alone. An unresolved visit gets the attention dot and says what it is.
+  //
+  // The SAME predicate the thread's note uses, not a second spelling of it.
+  // The first version of this line said "past and not completed/cancelled",
+  // which also caught an `unscheduled` job from an accepted quote: it has no
+  // date, `(null || '') < today` is true so it sits in `pastJobs`, and the row
+  // nagged about work nobody had promised for any day.
+  const unresolved = tone === 'past' && isUnresolvedVisit(job, todayYMD())
   return (
     <div className="flex items-center justify-between gap-2 bg-bg-2 rounded-lg px-2.5 py-1.5">
       <div className="flex items-center gap-2 min-w-0">
         <div className={`w-6 h-6 rounded-lg bg-panel flex items-center justify-center shrink-0 ${
           tone === 'upcoming' ? 'text-link' : 'text-ink-3'
         }`}>
-          {tone === 'upcoming' ? <Calendar className="w-3 h-3" /> : <CheckCircle2 className="w-3 h-3" />}
+          {tone === 'upcoming'
+            ? <Calendar className="w-3 h-3" />
+            : unresolved
+              ? <span className={`h-1.5 w-1.5 rounded-full ${STATUS_DOT.attention}`} aria-hidden="true" />
+              : <CheckCircle2 className="w-3 h-3" />}
         </div>
         <div className="min-w-0">
           <RecordLink type="job" id={job.id} label={job.title || 'Cleaning'} className="min-w-0 text-[12px]" />
           <div className="text-[10px] text-ink-3 truncate">
             {dateLabel}{time ? ` · ${time}` : ''}
+            {/* Bare dot + word, per the design language — the dot alone would
+                leave the operator to infer what it means. */}
+            {unresolved && <span className={STATUS_TEXT.attention}> · not closed out</span>}
           </div>
         </div>
       </div>
