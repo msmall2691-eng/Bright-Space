@@ -153,6 +153,12 @@ _SOURCE_SYNONYMS = {
     "phone call": "phone", "call": "phone",
     "text": "sms", "text message": "sms",
     "e-mail": "email", "gmail": "email",
+    # Meta Lead Ads. A lead form shown on Instagram is delivered through the
+    # same Facebook Page webhook, so both land under one source rather than
+    # splitting the funnel's "by lead source" row in two over a placement.
+    "fb": "facebook", "meta": "facebook", "facebook ads": "facebook",
+    "facebook lead ads": "facebook", "lead ad": "facebook",
+    "ig": "facebook", "insta": "facebook", "instagram": "facebook",
 }
 
 
@@ -639,6 +645,24 @@ def upsert_lead(db: Session, data: IntakeData) -> dict:
         # Same back-fill the idempotency-key path uses — see _backfill_lead.
         gained = _backfill_lead(recent, data)
         changed = bool(gained)
+        # ADOPT the caller's idempotency key onto the row we merged into.
+        #
+        # Without this, a keyed submission that lands inside another lead's
+        # 5-minute window is deduped and its key is then recorded NOWHERE: the
+        # short-circuit above has nothing to find, so a redelivery after the
+        # window reopens as a fresh request. For a webhook that retries for
+        # hours on a lost response — Facebook Lead Ads, `fb:<leadgen_id>` —
+        # that is the exact duplicate the key exists to prevent.
+        #
+        # Only when the row has none. A row that carries its own key keeps it:
+        # overwriting would break the FIRST caller's dedup to fix the second's,
+        # and the column is UNIQUE so there can only be one. (That leaves a
+        # narrow residue — two different keyed sources for one contact inside
+        # five minutes — where the later one's retry can still open a second
+        # request, exactly as an unkeyed duplicate would today.)
+        if data.idempotency_key and not recent.idempotency_key:
+            recent.idempotency_key = data.idempotency_key
+            changed = True
         # Name+address merge: the two rows have DIFFERENT contact info by
         # definition, so preserve both. Back-fill any contact field the
         # original was missing, and when the new submission carries a

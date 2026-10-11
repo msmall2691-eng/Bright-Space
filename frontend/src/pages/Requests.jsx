@@ -5,7 +5,7 @@ import {
   MoreVertical, Plus, Search, FileText, Archive, AlertCircle,
   Home, Building2, Wind, Zap, Mail, Phone, MapPin, X, MessageSquare, Globe,
   Trash2, MessageCircle, Inbox, ChevronRight, Copy, UserPlus, ArrowUpRight,
-  SlidersHorizontal, ChevronDown,
+  SlidersHorizontal, ChevronDown, Megaphone,
 } from 'lucide-react'
 import { get, post, patch, del } from '../api'
 import { displayContactName } from '../utils/display'
@@ -68,11 +68,19 @@ export const PRIORITY_CONFIG = {
 
 // Source chip on every Lead row — makes it obvious whether a lead came
 // in via the website form, an SMS, or an email reply.
+//
+// `facebook` covers Meta Lead Ads from both Facebook and Instagram: a form
+// shown on either placement is delivered through the same Page webhook, and
+// the backend normalizes both to this one value (intake/normalize.py) rather
+// than splitting the funnel's lead-source row over a placement. Megaphone
+// rather than a brand mark — lucide dropped its brand icons at v1.0, and an
+// ad is what this actually is.
 const SOURCE_CONFIG = {
-  website: { label: 'Website', icon: Globe,         badge: 'bg-bg-2 text-ink-3' },
-  sms:     { label: 'SMS',     icon: Phone,         badge: 'bg-bg-2 text-ink-3' },
-  email:   { label: 'Email',   icon: Mail,          badge: 'bg-bg-2 text-ink-3' },
-  chat:    { label: 'Chat',    icon: MessageSquare, badge: 'bg-bg-2 text-ink-3' },
+  website:  { label: 'Website',  icon: Globe,         badge: 'bg-bg-2 text-ink-3' },
+  sms:      { label: 'SMS',      icon: Phone,         badge: 'bg-bg-2 text-ink-3' },
+  email:    { label: 'Email',    icon: Mail,          badge: 'bg-bg-2 text-ink-3' },
+  chat:     { label: 'Chat',     icon: MessageSquare, badge: 'bg-bg-2 text-ink-3' },
+  facebook: { label: 'Facebook', icon: Megaphone,     badge: 'bg-bg-2 text-ink-3' },
 }
 
 // The filters this page keeps in the URL. Module-level because `useUrlFilters`
@@ -186,7 +194,13 @@ export function buildRequestFeed(requests, { searchTerm = '', showDuplicatesOnly
 }
 
 function SourceChip({ source }) {
-  const cfg = SOURCE_CONFIG[source] || SOURCE_CONFIG.website
+  // An unknown source used to render as "Website", which is not a fallback but
+  // a wrong answer: `source` is free text normalized on the backend, so a lead
+  // from anywhere this map doesn't list claimed to be a website form. Show it
+  // by its own name instead — wrong provenance is worse than plain provenance.
+  const cfg = SOURCE_CONFIG[source]
+    || { label: (source || 'Website').replace(/[_-]+/g, ' ').replace(/^\w/, c => c.toUpperCase()),
+         icon: Inbox }
   const Ic = cfg.icon
   // Bare icon + muted word — a quiet provenance note, not a filled chip.
   return (

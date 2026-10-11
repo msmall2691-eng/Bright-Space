@@ -1,9 +1,11 @@
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import JSONResponse
+from starlette.concurrency import run_in_threadpool
 from sqlalchemy.orm import Session
 from sqlalchemy import func, or_
 from pydantic import BaseModel, ConfigDict
 from typing import Optional
+import json
 import logging
 
 from database.db import get_db
@@ -298,12 +300,16 @@ def submit_intake(request: Request, data: IntakeSubmit, db: Session = Depends(ge
     return result
 
 
-def _alert_owner_new_request(db: Session, data: IntakeSubmit, result: dict) -> None:
-    """Text + email the owner about a website request, the same way
+def _alert_owner_new_request(db: Session, data, result: dict) -> None:
+    """Text + email the owner about a new request, the same way
     /api/booking/submit does (services.owner_alerts). upsert_lead already
     web-pushes staff on a brand-new lead, but push is the one channel the owner
     may never have enabled on her phone; SMS + email were only wired for the
     /book form, so a contact-form lead could sit unseen.
+
+    `data` is duck-typed, not an `IntakeSubmit`: the Facebook Lead Ads path has
+    no wire schema of its own and passes the canonical `IntakeData` instead.
+    Everything read below exists on both.
 
     Same silence rule as booking: a deduped post that added nothing is a
     replay, not a new lead (the row is the record; the alerts follow the row).
@@ -314,7 +320,13 @@ def _alert_owner_new_request(db: Session, data: IntakeSubmit, result: dict) -> N
         from services import owner_alerts
         from services.booking_email_service import format_requested_date, service_label
         intake_id = result.get("intake_id")
-        svc = service_label(data.service_type)
+        # The RAW service the customer picked ("deep-clean"), not the canonical
+        # bucket it maps to ("residential") — the owner's text should say what
+        # was asked for. IntakeSubmit.service_type already is the raw key and
+        # has no `requested_service`, so the website path is unchanged;
+        # IntakeData carries the canonical value in service_type and the raw
+        # one beside it.
+        svc = service_label(getattr(data, "requested_service", None) or data.service_type)
         # Owner-facing: say plainly when no date was asked for (contact-form
         # leads usually carry none) instead of the customer-copy fallback.
         requested = data.requested_date or data.preferred_date
@@ -361,6 +373,183 @@ def _alert_owner_new_request(db: Session, data: IntakeSubmit, result: dict) -> N
             logger.info("[intake] owner SMS/email not sent for intake=%s (unconfigured or failed)", intake_id)
     except Exception as e:  # pragma: no cover - alerts never break the submit
         logger.warning("[intake] owner alert failed: %s", e)
+
+
+# ── Facebook / Instagram Lead Ads ───────────────────────────────────────────
+#
+# A Meta leadgen delivery is a few hundred bytes; even a batch of a hundred
+# changes is tens of kilobytes. 1 MiB is far above anything real and far below
+# anything that hurts.
+_MAX_WEBHOOK_BODY_BYTES = 1 << 20
+
+
+async def _read_capped_body(request: Request, limit: int = _MAX_WEBHOOK_BODY_BYTES) -> bytes:
+    """Buffer the request body, refusing anything oversized.
+
+    `await request.body()` reads the WHOLE stream into memory, and on a public
+    endpoint that happens before the signature can reject the caller — so an
+    unauthenticated stranger who doesn't know the app secret could still make
+    the worker hold whatever they chose to send. The rate limiter counts
+    requests, not bytes, and nothing else in the app caps a body (no
+    size middleware, and the uvicorn CMD sets no limit), so this is the cap.
+
+    Content-Length is checked first because it is free, and then the stream is
+    counted anyway: a chunked request sends no length, and a declared one is
+    just the caller's claim.
+    """
+    declared = request.headers.get("content-length")
+    if declared and declared.isdigit() and int(declared) > limit:
+        raise HTTPException(status_code=413, detail="Payload too large.")
+    chunks, total = [], 0
+    async for chunk in request.stream():
+        total += len(chunk)
+        if total > limit:
+            raise HTTPException(status_code=413, detail="Payload too large.")
+        chunks.append(chunk)
+    return b"".join(chunks)
+#
+# Declared HERE, above `GET /{intake_id}`, because route order decides which
+# one claims `GET /api/intake/facebook`. Everything about the Meta flow lives
+# in integrations/facebook_leads.py; this is the thin wiring onto the same
+# canonical intake path the website form uses.
+
+
+@router.get("/facebook")  # PUBLIC: Meta's one-time subscribe handshake
+@limiter.limit("30/hour")
+def facebook_verify(request: Request):
+    """Echo ``hub.challenge`` when ``hub.verify_token`` matches ours.
+
+    Meta calls this once, when the webhook URL is saved in the app dashboard,
+    and will not deliver anything until it succeeds. Plain text, not JSON —
+    Meta compares the body to the challenge byte for byte.
+    """
+    from integrations import facebook_leads as fb
+    from fastapi.responses import PlainTextResponse
+
+    params = request.query_params
+    if not fb.verify_token():
+        logger.error("[facebook] subscribe handshake rejected — FACEBOOK_VERIFY_TOKEN unset")
+        raise HTTPException(status_code=503, detail="Webhook not configured.")
+    if not fb.verify_subscription(params.get("hub.mode"), params.get("hub.verify_token")):
+        logger.warning("[facebook] subscribe handshake rejected — token mismatch")
+        raise HTTPException(status_code=403, detail="Verification failed.")
+    return PlainTextResponse(params.get("hub.challenge") or "")
+
+
+@router.post("/facebook")  # PUBLIC: Meta posts here; the signature is verified inside
+@limiter.limit("300/hour")
+async def facebook_leadgen(request: Request, db: Session = Depends(get_db)):
+    """A lead form submitted on Facebook or Instagram becomes a Request.
+
+    SIGNATURE FIRST, and refuse rather than trust when we cannot check — this
+    endpoint is public (Meta cannot send our API key), so the HMAC is the only
+    thing between a stranger and an unlimited supply of fake leads in the
+    owner's inbox. No secret configured means reject (BB-SEC-06 posture).
+
+    The delivery carries identifiers only, so each lead is a Graph fetch. That
+    fetch is inline and bounded (10s) rather than queued: a new background tick
+    is exactly what `scheduling-invariants` R1 forbids, and the webhook is
+    already the event. Inline, but not on the event loop — see below.
+
+    **A delivery we cannot turn into a lead gets a 503, not a 200.** Meta
+    retries a non-2xx for hours, and that retry window is the whole difference
+    between a missing Page token being recoverable and being a lost customer.
+    A 200 here would throw the lead away politely.
+    """
+    from integrations import facebook_leads as fb
+
+    if not fb.app_secret():
+        logger.error("[facebook] rejecting delivery — FACEBOOK_APP_SECRET unset, "
+                     "cannot verify the signature")
+        raise HTTPException(status_code=503, detail="Webhook not configured.")
+
+    # Capped, not `request.body()` — the body is buffered before the signature
+    # can reject it, so the cap is what stops an unauthenticated stranger
+    # choosing how much memory this worker holds. See _read_capped_body.
+    raw = await _read_capped_body(request)
+    if not fb.verify_signature(raw, request.headers.get("x-hub-signature-256")):
+        logger.warning("[facebook] rejecting delivery — bad or missing signature")
+        raise HTTPException(status_code=403, detail="Invalid signature.")
+
+    try:
+        payload = json.loads(raw or b"{}")
+    except ValueError:
+        logger.warning("[facebook] rejecting delivery — body is not JSON")
+        raise HTTPException(status_code=400, detail="Malformed payload.")
+    if not isinstance(payload, dict):
+        raise HTTPException(status_code=400, detail="Malformed payload.")
+
+    pending = fb.iter_leadgen_ids(payload)
+    if not pending:
+        # A subscription we don't act on (page edits, messages). Nothing is
+        # wrong, and retrying it would be noise for both sides.
+        return {"success": True, "leads": 0, "ignored": True}
+
+    # OFF THE EVENT LOOP.
+    #
+    # This route must be `async` to read the raw body for the HMAC, and an
+    # async route's body runs ON the event-loop thread — so the blocking work
+    # below would stall the whole worker: a Graph fetch that waits out its 10s
+    # timeout, repeated serially for a batched delivery, plus the DB writes and
+    # the owner's SMS/email. A few slow deliveries would occupy all four
+    # production workers and the rest of the API would stop answering.
+    #
+    # run_in_threadpool is what FastAPI does for a plain `def` route; the
+    # verification above stays on the loop because it is pure CPU on bytes we
+    # already have.
+    return await run_in_threadpool(_ingest_facebook_leads, db, pending)
+
+
+def _ingest_facebook_leads(db: Session, pending) -> dict:
+    """Fetch each lead and write it. Blocking by nature — see the caller."""
+    from integrations import facebook_leads as fb
+
+    created, failed = [], []
+    for leadgen_id, form_id in pending:
+        lead = fb.fetch_lead(leadgen_id)
+        if not lead:
+            failed.append(leadgen_id)
+            continue
+        fields = fb.map_lead_fields(lead.get("field_data"))
+        if not any(fields.get(k) for k in ("email", "phone", "name")):
+            # Meta guarantees a form has *something*; a lead with no way to
+            # reach anybody is not worth a row, and retrying won't add one.
+            logger.warning("[facebook] lead %s had no contact fields — skipped", leadgen_id)
+            continue
+        custom = dict(fields.pop("custom_fields", None) or {})
+        if form_id:
+            custom["facebook_form_id"] = form_id
+        payload_in = build_intake(
+            # `name` is keyword-only and has no default; a form that asked for
+            # an email and nothing else is legal, so pass it explicitly as None
+            # rather than letting the ** expansion raise.
+            name=fields.pop("name", None),
+            source="facebook",
+            # The leadgen id is Meta's own unique id for this submission, so a
+            # retried delivery (and Meta does retry) dedups exactly instead of
+            # relying on the 5-minute contact window.
+            idempotency_key=f"fb:{leadgen_id}",
+            custom_fields=custom or None,
+            **fields,
+        )
+        result = upsert_lead(db, payload_in)
+        # Same alert the website form sends. A Facebook lead that only
+        # web-pushes is a lead the owner may never see: push is the one
+        # channel she may not have enabled, and the whole point of this
+        # endpoint is that a Meta lead stops sitting somewhere unread.
+        _alert_owner_new_request(db, payload_in, result)
+        created.append(result.get("intake_id"))
+
+    if failed:
+        # Some lead we were told about could not be fetched. 503 so Meta
+        # redelivers the whole batch; `fb:<leadgen_id>` is recorded on every
+        # lead that already landed — including one merged into an existing
+        # request, see upsert_lead's key adoption — so the retry collapses
+        # onto those rows instead of duplicating them.
+        logger.error("[facebook] %s lead(s) could not be fetched; asking Meta to retry", len(failed))
+        raise HTTPException(status_code=503, detail="Lead fetch failed; retry.")
+    logger.info("[facebook] %s lead(s) ingested", len(created))
+    return {"success": True, "leads": len(created), "intake_ids": created}
 
 
 def _batch_quotes(db: Session, rows) -> dict:
